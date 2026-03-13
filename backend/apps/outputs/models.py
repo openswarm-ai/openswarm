@@ -1,0 +1,197 @@
+from pydantic import BaseModel, Field, model_validator
+from typing import Optional, Any
+from uuid import uuid4
+from datetime import datetime
+
+
+class AutoRunConfig(BaseModel):
+    enabled: bool = False
+    prompt: str = ""
+    context_paths: list[dict[str, str]] = Field(default_factory=list)
+    forced_tools: list[dict[str, Any]] = Field(default_factory=list)
+    mode: str = "agent"
+    model: str = "sonnet"
+
+
+class Output(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    name: str
+    description: str = ""
+    icon: str = "view_quilt"
+    input_schema: dict[str, Any] = Field(default_factory=lambda: {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    })
+    files: dict[str, str] = Field(default_factory=dict)
+    permission: str = "ask"
+    auto_run_config: Optional[AutoRunConfig] = None
+    thumbnail: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_flat_fields(cls, data: Any) -> Any:
+        """Migrate legacy frontend_code/backend_code fields into the files dict."""
+        if not isinstance(data, dict):
+            return data
+        if "files" not in data or not data["files"]:
+            files: dict[str, str] = {}
+            fc = data.pop("frontend_code", None)
+            bc = data.pop("backend_code", None)
+            if fc:
+                files["index.html"] = fc
+            if bc:
+                files["backend.py"] = bc
+            data["files"] = files
+        else:
+            data.pop("frontend_code", None)
+            data.pop("backend_code", None)
+        return data
+
+    @property
+    def frontend_code(self) -> str:
+        return self.files.get("index.html", "")
+
+    @property
+    def backend_code(self) -> str | None:
+        return self.files.get("backend.py")
+
+
+class OutputCreate(BaseModel):
+    name: str
+    description: str = ""
+    icon: str = "view_quilt"
+    input_schema: dict[str, Any] = Field(default_factory=lambda: {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    })
+    files: dict[str, str] = Field(default_factory=dict)
+    auto_run_config: Optional[dict[str, Any]] = None
+    thumbnail: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_flat_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "files" not in data or not data["files"]:
+            files: dict[str, str] = {}
+            fc = data.pop("frontend_code", None)
+            bc = data.pop("backend_code", None)
+            if fc:
+                files["index.html"] = fc
+            if bc:
+                files["backend.py"] = bc
+            data["files"] = files
+        else:
+            data.pop("frontend_code", None)
+            data.pop("backend_code", None)
+        return data
+
+
+class OutputUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    input_schema: Optional[dict[str, Any]] = None
+    files: Optional[dict[str, str]] = None
+    permission: Optional[str] = None
+    auto_run_config: Optional[dict[str, Any]] = None
+    thumbnail: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_flat_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "files" not in data:
+            files: dict[str, str] = {}
+            fc = data.pop("frontend_code", None)
+            bc = data.pop("backend_code", None)
+            if fc:
+                files["index.html"] = fc
+            if bc:
+                files["backend.py"] = bc
+            if files:
+                data["files"] = files
+        else:
+            data.pop("frontend_code", None)
+            data.pop("backend_code", None)
+        return data
+
+
+class OutputExecute(BaseModel):
+    output_id: str
+    input_data: dict[str, Any] = Field(default_factory=dict)
+
+
+class OutputExecuteResult(BaseModel):
+    output_id: str
+    output_name: str
+    frontend_code: str
+    input_data: dict[str, Any]
+    backend_result: Optional[dict[str, Any]] = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
+    error: Optional[str] = None
+
+
+class AutoRunRequest(BaseModel):
+    prompt: str
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    backend_code: Optional[str] = None
+    context_paths: list[dict[str, str]] = Field(default_factory=list)
+    forced_tools: list[str] = Field(default_factory=list)
+    model: str = "sonnet"
+
+
+class AutoRunAgentRequest(BaseModel):
+    prompt: str
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    output_id: str
+    model: str = "sonnet"
+    forced_tools: list[str] = Field(default_factory=list)
+    context_paths: list[dict[str, str]] = Field(default_factory=list)
+
+
+class WorkspaceSeedRequest(BaseModel):
+    workspace_id: str
+    files: Optional[dict[str, str]] = None
+    meta: Optional[dict[str, Any]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_flat_fields(cls, data: Any) -> Any:
+        """Accept legacy frontend_code/backend_code/schema_json fields."""
+        if not isinstance(data, dict):
+            return data
+        if "files" not in data:
+            files: dict[str, str] = {}
+            fc = data.pop("frontend_code", None)
+            bc = data.pop("backend_code", None)
+            sj = data.pop("schema_json", None)
+            if fc:
+                files["index.html"] = fc
+            if bc:
+                files["backend.py"] = bc
+            if sj:
+                files["schema.json"] = sj
+            if files:
+                data["files"] = files
+        else:
+            data.pop("frontend_code", None)
+            data.pop("backend_code", None)
+            data.pop("schema_json", None)
+        return data
+
+
+class VibeCodeRequest(BaseModel):
+    prompt: str
+    current_frontend_code: str = ""
+    current_backend_code: str = ""
+    current_schema: str = ""
+    name: str = ""
+    description: str = ""

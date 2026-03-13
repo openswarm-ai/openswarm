@@ -1,0 +1,6 @@
+.DS_Store
+.worktrees
+.env
+backend/data/**
+!backend/data/outputs/
+!backend/data/outputs/*.json

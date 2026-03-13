@@ -1,0 +1,29 @@
+.app-container {
+  display: flex;
+  flex-direction: column;
+  width: 90vw;
+  height: 100%;
+  padding-left: 5vw;
+  padding-right: 5vw;
+  padding-bottom: 5vh;
+  align-items: center;
+}
+
+.app-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  
+  width: 100%;
+  height: 10vh;
+
+  font-family: 'Consolas', monospace;
+  font-size: 3.45rem;
+  font-weight: bold; /* Changed from 900 to bold */
+  color: #d8d8d8;
+  text-align: center;
+
+  margin-bottom: 2vh;
+  margin-top: 2vh;
+}

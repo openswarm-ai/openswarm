@@ -1,0 +1,63 @@
+@use '@/shared/styles/color.module.scss' as g-color;
+@use '@/shared/styles/utils.module.scss' as utils;
+
+
+$font-map: (
+    'default': 'Inter',
+    'secondary': 'Times New Roman'
+);
+@function font($mode: 'default') {
+    @return utils.get-style(
+        $function-map: $font-map, 
+        $mode: $mode
+    );
+}
+
+$size-map: (
+    'small': 12px,
+    'small-medium': 14px,
+    'medium': 16px,
+    'large': 20px,
+    'title': 30px,
+);
+@function size($mode: 'default') {
+    @return utils.get-style(
+        $function-map: $size-map, 
+        $mode: $mode
+    );
+}
+
+$weight-map: (
+    'small': 400,
+    'medium': 500,
+    'large': 600,
+    'title': 700,
+);
+@function weight($mode: 'default') {
+    @return utils.get-style(
+        $function-map: $weight-map, 
+        $mode: $mode
+    );
+}
+
+$text-map: (
+    'default': (
+        font-family: 'Inter',
+        font-size: 16px,
+        font-weight: 400,
+        color: g-color.text('light-1'),
+    ),
+    'title': (
+        font-family: 'Inter',
+        font-size: 40px,
+        font-weight: 700,
+        color: g-color.accent('blue-1'),
+        line-height: 100%,
+    )
+);
+@mixin text($mode: 'default') {
+    @include utils.apply-style-map(
+        $mixin-map: $text-map,
+        $mode: $mode
+    );
+}

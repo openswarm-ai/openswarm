@@ -1,0 +1,128 @@
+@use '@/shared/styles/utils.module.scss' as utils;
+
+$text-map: (
+    'light-1': #F0F0F0,
+    'light-2': #D9D9D9,
+    'light-3': #BDBDBD,
+    'light-4': #999999,
+);
+@function text($mode: 'light-1') {
+    @return utils.get-style(
+        $function-map: $text-map,
+        $mode: $mode
+    );
+}
+
+$background-color-map: (
+    'dark-1': #232323,
+    'dark-2': #151515,
+    'dark-3': #0A0A0A,
+);
+@function background-color($mode: 'dark-1') {
+    @return utils.get-style(
+        $function-map: $background-color-map,
+        $mode: $mode
+    );
+}
+
+@mixin gradient-1() {
+    $mask-color: rgba(0, 0, 0, 0.623);
+    $gradient-color: rgba(62, 139, 241, 0.20);
+    $background-color: #151515;
+    background:
+        linear-gradient(0deg, $mask-color 0%, $mask-color 100%), 
+        radial-gradient(102.16% 48.94% at 49.58% 47.09%, rgba(6, 14, 25, 0.00) 0%, rgba(62, 139, 241, 0.20) 100%),
+        #151515;
+}
+
+$glass-map: (
+    'default': (
+        border-radius: 10px,
+        border: 1px solid rgba(255, 255, 255, 0.075),
+        background: rgba(38, 38, 38, 0.184),
+        background-blend-mode: luminosity,
+        backdrop-filter: blur(50px),
+    ),
+    'light-05': (
+        border-radius: 10px,
+        border: 1px solid rgba(255, 255, 255, 0.095),
+        background: rgba(160, 160, 160, 0.048),
+        background-blend-mode: luminosity,
+        backdrop-filter: blur(50px),
+    ),
+    'light-075': (
+        border-radius: 10px,
+        border: 1px solid rgba(255, 255, 255, 0.095),
+        background: rgba(160, 160, 160, 0.075),
+        background-blend-mode: luminosity,
+        backdrop-filter: blur(50px),
+    ),
+    'light-1': (
+        border-radius: 10px,
+        border: 1px solid rgba(255, 255, 255, 0.095),
+        background: rgba(160, 160, 160, 0.154),
+        background-blend-mode: luminosity,
+        backdrop-filter: blur(50px),
+    ),
+    'light-2': (
+        border-radius: 10px,
+        border: 1px solid rgba(255, 255, 255, 0.178),
+        background: rgba(160, 160, 160, 0.46),
+        background-blend-mode: luminosity,
+        backdrop-filter: blur(50px),
+    ),
+    'light-3': (
+        border-radius: 10px,
+        border: 1px solid rgba(255, 255, 255, 0.178),
+        background: rgba(0, 0, 0, 0.247),
+        background-blend-mode: luminosity,
+        backdrop-filter: blur(50px),
+    ),
+);
+@mixin glass($mode: 'default') {
+    @include utils.apply-style-map(
+        $mixin-map: $glass-map,
+        $mode: $mode
+    );
+}
+
+$glow-map: (
+    'default': (
+        border: 1px solid #0099ff71,
+        box-shadow: 0 0 24px #0099ff71,
+    ),
+    'dark-1': (
+        border: 1px solid #3e8cf13e,
+        box-shadow: 0 0 24px #3e8cf12b,
+    ),
+    'light-1': (
+        border: 1px solid #ab19ff47,
+        box-shadow: 0 0 44px #c259ff8a,
+    ),
+    'source-1': (
+        border: 1px solid #ff000071,
+        box-shadow: 0 0 44px #ff000071,
+    ),
+);
+@mixin glow($mode: 'default') {
+    @include utils.apply-style-map(
+        $mixin-map: $glow-map,
+        $mode: $mode
+    );
+}
+
+
+$accent-map: (
+    'blue-1': #3E8BF1,
+    'blue-2': #3e8cf1c7,
+    'blue-3': #3e8cf15b,
+    'blue-grey-1': #77a7e5c7,
+    'red-1': #F56868,
+    'red-2': #f568681a,
+);
+@function accent($mode: 'blue-1') {
+    @return utils.get-style(
+        $function-map: $accent-map,
+        $mode: $mode
+    );
+}

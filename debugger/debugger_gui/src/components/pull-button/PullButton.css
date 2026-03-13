@@ -1,0 +1,49 @@
+.pull-button-container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    width: 40vw;
+}
+
+.pull-button-img {
+    margin-right: 20px;
+    height: 100px;
+}
+
+.pull-button-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.pull-button {
+    background-color: #A3FFA9;
+    color: black;
+    border: none;
+    padding: 10px 20px;
+    font-size: 1.45rem;
+    font-weight: bold; /* Changed from 900 to bold */
+    font-family: 'Consolas', monospace;
+    cursor: pointer;
+    margin: 20px 0;
+    border-radius: 4px;
+}
+
+.pull-button:hover {
+    background-color: #84d488;
+}
+
+.pull-button:active {
+    background-color: #65a568;
+}
+
+.pull-button:focus {
+    outline: none;
+}
+
+.pull-button-container p {
+    color: #A3FFA9;
+    font-family: 'Consolas', monospace;
+    margin: 0;
+}

@@ -1,0 +1,50 @@
+.push-button-container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    width: 40vw;
+    text-align: right;
+}
+
+.push-button-img {
+    margin-left: 20px;
+    height: 100px;
+}
+
+.push-button-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.push-button {
+    background-color: #FFA3A4;
+    color: black;
+    border: none;
+    padding: 10px 20px;
+    font-size: 1.45rem;
+    font-weight: bold; /* Changed from 900 to bold */
+    font-family: 'Consolas', monospace;
+    cursor: pointer;
+    margin: 20px 0;
+    border-radius: 4px;
+}
+
+.push-button:hover {
+    background-color: #cc8182;
+}
+
+.push-button:active {
+    background-color: #a86768;
+}
+
+.push-button:focus {
+    outline: none;
+}
+
+.push-button-container p {
+    color: #FFA3A4;
+    font-family: 'Consolas', monospace;
+    margin: 0;
+}

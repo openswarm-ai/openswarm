@@ -1,0 +1,18 @@
+# ignore all py cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+*.pyzwz
+*.pyzwzw
+
+# ignore everything in apps/db/snips (except .gitignore)
+apps/db/snips/*
+!apps/db/snips/.gitkeep
+
+# ignore everything in data/
+data/**

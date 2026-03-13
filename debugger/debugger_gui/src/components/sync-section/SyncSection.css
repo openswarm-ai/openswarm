@@ -1,0 +1,16 @@
+.sync-section-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    width: 100vw;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+    gap: 0
+}
+
+.sync-section-container > div {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+}

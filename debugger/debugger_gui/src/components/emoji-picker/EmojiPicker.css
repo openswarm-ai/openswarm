@@ -1,0 +1,129 @@
+/* EmojiPicker.css */
+
+.picker-wrapper {
+    position: relative;
+    display: inline-block;
+  }
+  
+  .picker-button {
+    font-size: 1.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  }
+  
+  .emoji-popup {
+    position: absolute;
+    top: 2.5rem;
+    left: 0;
+    width: fit-content;
+    padding: 10px;
+    border: 7px solid #cccccc46;
+    border-radius: 35px;
+    background-color: #181818ef;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+  }
+  
+  .folder-section {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+    height: fit-content;
+    width: 100%;
+  }
+  
+  .folder-item {
+    cursor: pointer;
+    padding: 10px;
+    text-align: left;
+    background-color: #00000000;
+    margin: 5px 0;
+    border-radius: 5px;
+    color: #ffffff;
+  }
+  
+  .folder-item:hover {
+    background-color: #ffffff35;
+  }
+  
+  .folder-item.active {
+    background-color: #ffffff15; /* Active color for the selected folder */
+  }
+
+  .folder-item.active:hover {
+    background-color: #ffffff35; /* Active color for the selected folder */
+  }
+  
+  
+
+  
+  .emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+    height: 260px;
+    width: 330px;
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  }
+  
+  .emoji-item {
+    cursor: pointer;
+    padding: 5px;
+    text-align: center;
+    height: fit-content;
+    border-radius: 5px;
+    font-size: 1.5rem;
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  }
+
+  .emoji-item:hover {
+    background-color: #ffffff35;
+  }
+  
+  .pagination {
+    margin-top: 10px;
+    text-align: center;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+  }
+  
+  .pagination button {
+    background-color: #00000000;
+    border: 0;
+    gap: 0;
+    width: 18px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    padding: 0 16px;
+    border-radius: 50px;
+    color: #ffffff;
+    height: fit-content;
+  }
+
+  .pagination button img {
+    height: 100px;
+    width: 30px;
+    object-fit: cover;
+
+  }
+  
+  .pagination button:disabled {
+    cursor: default;
+  }
+
+  .pagination button:hover {
+    background-color: #ffffff15;
+  }
+
+  .selected-emoji-display {
+    margin-top: 20px;
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  }
+  

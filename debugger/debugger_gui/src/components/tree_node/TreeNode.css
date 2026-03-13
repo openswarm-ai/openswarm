@@ -1,0 +1,88 @@
+.tree-node {
+    border: 1px solid #ccc;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    padding: 10px;
+    border-radius: 4px;
+    width: 100%;
+    background-color: #181818;
+}
+
+.tree-node-content {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.tree-node-content-main {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+}
+
+.expand-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    margin-right: 10px;
+    padding: 0; /* Ensure no padding around the button */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.expand-button img {
+    width: 16px; /* Adjust the width as needed */
+    height: 16px; /* Adjust the height as needed */
+    max-width: 100%; /* Ensure it doesn't exceed button size */
+    max-height: 100%; /* Ensure it doesn't exceed button size */
+}
+
+.tree-node-text {
+    margin-left: 10px;
+    font-size: 1.45rem;
+    font-weight: 600;
+    font-family: 'Consolas', monospace; /* Specify fallback font */
+    color: #ffffff; /* Adjust text color to ensure it's visible on the dark background */
+}
+
+.tree-node-children {
+    margin-left: 20px;
+    margin-right: 20px;
+    margin-bottom: 10px;
+    padding-left: 20px;
+    padding-right: 20px;
+    gap: 10px;
+}
+
+.tree-node-content-secondary {
+    display: flex;
+    align-items: center;
+}
+
+.color-picker-wrapper {
+    position: relative;
+}
+
+.color-picker-icon {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    border: 1px solid #000;
+    border-radius: 4px;
+    overflow: hidden;
+    background-size: 100% 100%; /* Ensure the background color scales to fit */
+    background-clip: content-box;
+    background-color: transparent; /* Ensure the background is transparent */
+    -webkit-mask: url('../../assets/color-picker.png') center no-repeat;
+    mask: url('../../assets/color-picker.png') center no-repeat;
+    -webkit-mask-size: 20px; /* Adjust this value to fit your icon */
+    mask-size: 20px; /* Adjust this value to fit your icon */
+}
+
+.color-picker-icon img {
+    display: none;
+}
