@@ -45,9 +45,18 @@ interface Props {
   cardWidth: number;
   cardHeight: number;
   zoom?: number;
+  isSelected?: boolean;
+  multiDragDelta?: { dx: number; dy: number } | null;
+  onCardSelect?: (id: string, type: 'agent' | 'view', shiftKey: boolean) => void;
+  onDragStart?: (id: string, type: 'agent' | 'view') => void;
+  onDragMove?: (dx: number, dy: number) => void;
+  onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
 }
 
-const DashboardViewCard: React.FC<Props> = ({ output, cardX, cardY, cardWidth, cardHeight, zoom = 1 }) => {
+const DashboardViewCard: React.FC<Props> = ({
+  output, cardX, cardY, cardWidth, cardHeight, zoom = 1,
+  isSelected = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
+}) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const previewRef = useRef<ViewPreviewHandle>(null);
@@ -64,6 +73,7 @@ const DashboardViewCard: React.FC<Props> = ({ output, cardX, cardY, cardWidth, c
   const [isDragging, setIsDragging] = useState(false);
   const [localDragPos, setLocalDragPos] = useState<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
+  const justDraggedRef = useRef(false);
 
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -72,7 +82,8 @@ const DashboardViewCard: React.FC<Props> = ({ output, cardX, cardY, cardWidth, c
     didDrag.current = false;
     setIsDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, [cardX, cardY]);
+    onDragStart?.(output.id, 'view');
+  }, [cardX, cardY, onDragStart, output.id]);
 
   const handleDragPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
@@ -80,29 +91,35 @@ const DashboardViewCard: React.FC<Props> = ({ output, cardX, cardY, cardWidth, c
     const rawDy = e.clientY - dragState.current.startY;
     if (!didDrag.current && Math.sqrt(rawDx * rawDx + rawDy * rawDy) < DRAG_THRESHOLD) return;
     didDrag.current = true;
+    const dx = rawDx / zoom;
+    const dy = rawDy / zoom;
     setLocalDragPos({
-      x: dragState.current.origX + rawDx / zoom,
-      y: dragState.current.origY + rawDy / zoom,
+      x: dragState.current.origX + dx,
+      y: dragState.current.origY + dy,
     });
-  }, [zoom]);
+    onDragMove?.(dx, dy);
+  }, [zoom, onDragMove]);
 
   const handleDragPointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
+    const dx = (e.clientX - dragState.current.startX) / zoom;
+    const dy = (e.clientY - dragState.current.startY) / zoom;
     if (didDrag.current) {
-      const dx = (e.clientX - dragState.current.startX) / zoom;
-      const dy = (e.clientY - dragState.current.startY) / zoom;
       dispatch(setViewCardPosition({
         outputId: output.id,
         x: dragState.current.origX + dx,
         y: dragState.current.origY + dy,
       }));
+      justDraggedRef.current = true;
+      requestAnimationFrame(() => { justDraggedRef.current = false; });
     }
+    onDragEnd?.(dx, dy, didDrag.current);
     dragState.current = null;
     didDrag.current = false;
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [zoom, dispatch, output.id]);
+  }, [zoom, dispatch, output.id, onDragEnd]);
 
   // ---- Resize ----
   const resizeRef = useRef<{
@@ -223,17 +240,23 @@ const DashboardViewCard: React.FC<Props> = ({ output, cardX, cardY, cardWidth, c
     }
   };
 
-  // Compute display position (prefer local drag/resize during interaction)
-  const displayX = localResize?.x ?? localDragPos?.x ?? cardX;
-  const displayY = localResize?.y ?? localDragPos?.y ?? cardY;
+  const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
+  const mdDy = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dy : 0;
+  const displayX = localResize?.x ?? localDragPos?.x ?? (cardX + mdDx);
+  const displayY = localResize?.y ?? localDragPos?.y ?? (cardY + mdDy);
   const displayW = localResize?.w ?? cardWidth;
   const displayH = localResize?.h ?? cardHeight;
+  const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
 
   return (
     <Box
       data-select-type="view-card"
       data-select-id={output.id}
       data-select-meta={JSON.stringify({ name: output.name, description: output.description })}
+      onClick={(e: React.MouseEvent) => {
+        if (justDraggedRef.current) return;
+        onCardSelect?.(output.id, 'view', e.shiftKey);
+      }}
       sx={{
         position: 'absolute',
         left: displayX,
@@ -241,14 +264,18 @@ const DashboardViewCard: React.FC<Props> = ({ output, cardX, cardY, cardWidth, c
         width: displayW,
         height: displayH,
         borderRadius: `${c.radius.lg}px`,
-        border: `1px solid ${c.border.medium}`,
+        border: isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`,
         bgcolor: c.bg.surface,
-        boxShadow: (isDragging || isResizing) ? c.shadow.lg : c.shadow.md,
+        boxShadow: isDragging || isResizing
+          ? c.shadow.lg
+          : isSelected
+            ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
+            : c.shadow.md,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         zIndex: (isDragging || isResizing) ? 100 : 1,
-        transition: (isDragging || isResizing) ? 'none' : 'box-shadow 0.2s',
+        transition: noTransition ? 'none' : 'box-shadow 0.2s',
         '&:hover .resize-handle': { opacity: 1 },
       }}
     >

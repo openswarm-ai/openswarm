@@ -156,16 +156,32 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     }, [onAddView]);
 
     const handleOpenViewPicker = useCallback(() => {
+      if (viewPickerOpen) {
+        setViewPickerOpen(false);
+        setViewSearch('');
+        return;
+      }
+      setHistoryOpen(false);
+      setHistoryQuery('');
+      dispatch(clearHistorySearch());
       setViewPickerOpen(true);
       setViewSearch('');
-    }, []);
+    }, [viewPickerOpen, dispatch]);
 
     const handleOpenHistory = useCallback(() => {
+      if (historyOpen) {
+        setHistoryOpen(false);
+        setHistoryQuery('');
+        dispatch(clearHistorySearch());
+        return;
+      }
+      setViewPickerOpen(false);
+      setViewSearch('');
       setHistoryOpen(true);
       setHistoryQuery('');
       dispatch(clearHistorySearch());
       dispatch(searchHistory({ q: '', limit: HISTORY_PAGE_SIZE, offset: 0, dashboardId }));
-    }, [dispatch, dashboardId]);
+    }, [historyOpen, dispatch, dashboardId]);
 
     const handleHistorySelect = useCallback((sessionId: string) => {
       onHistoryResume(sessionId);
@@ -233,6 +249,21 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         setTimeout(() => historyInputRef.current?.focus(), 60);
       }
     }, [historyOpen]);
+
+    useEffect(() => {
+      const handleKey = (e: KeyboardEvent) => {
+        if (e.metaKey && e.key.toLowerCase() === 'm' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+          e.preventDefault();
+          handleOpenViewPicker();
+        }
+        if (e.metaKey && e.key.toLowerCase() === 'o' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+          e.preventDefault();
+          handleOpenHistory();
+        }
+      };
+      window.addEventListener('keydown', handleKey);
+      return () => window.removeEventListener('keydown', handleKey);
+    }, [handleOpenViewPicker, handleOpenHistory]);
 
     useEffect(() => {
       if (!historyOpen) return;
@@ -526,8 +557,6 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               </Box>
             </WarmTooltip>
 
-            <Box sx={{ width: '1px', height: 24, bgcolor: c.border.medium, mx: '6px', flexShrink: 0 }} />
-
             <WarmTooltip
               tokens={c}
               placement="top"
@@ -535,7 +564,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               enterDelay={200}
               title={
                 <Box sx={{ textAlign: 'center' }}>
-                  <Box sx={{ fontWeight: 600 }}>Add View</Box>
+                  <Box sx={{ fontWeight: 600 }}>Add View  ⌘M</Box>
                 </Box>
               }
             >
@@ -568,7 +597,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               enterDelay={200}
               title={
                 <Box sx={{ textAlign: 'center' }}>
-                  <Box sx={{ fontWeight: 600 }}>History</Box>
+                  <Box sx={{ fontWeight: 600 }}>History  ⌘O</Box>
                 </Box>
               }
             >

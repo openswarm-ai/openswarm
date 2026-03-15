@@ -21,6 +21,7 @@ import {
   reconcileSessions,
   tidyLayout,
   addViewCard,
+  moveCards,
   resetLayout,
 } from '@/shared/state/dashboardLayoutSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
@@ -30,21 +31,33 @@ import DashboardViewCard from './DashboardViewCard';
 import CanvasControls from './CanvasControls';
 import DashboardToolbar from './DashboardToolbar';
 import { useCanvasControls } from './useCanvasControls';
+import { useDashboardSelection } from './useDashboardSelection';
+import type { CardType } from './useDashboardSelection';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import type { ContextPath } from '@/app/components/DirectoryBrowser';
-import { ElementSelectionProvider, useElementSelection } from '@/app/components/ElementSelectionContext';
+import { ElementSelectionProvider } from '@/app/components/ElementSelectionContext';
 import { useDomElementSelector } from '@/app/components/useDomElementSelector';
 import SelectionOverlay from '@/app/components/SelectionOverlay';
+
+const SELECT_ATTR = 'data-select-type';
 
 const DashboardSelectionOverlay: React.FC = () => {
   const { overlay, dragRect, dragPreview } = useDomElementSelector();
   return <SelectionOverlay overlay={overlay} dragRect={dragRect} dragPreview={dragPreview} />;
 };
 
+function isCardTarget(target: EventTarget | null, boundary: EventTarget | null): boolean {
+  let el = target as HTMLElement | null;
+  while (el && el !== boundary) {
+    if (el.hasAttribute(SELECT_ATTR)) return true;
+    el = el.parentElement;
+  }
+  return false;
+}
+
 const DashboardInner: React.FC = () => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
-  const elementSelection = useElementSelection();
   const { id: dashboardId } = useParams<{ id: string }>();
   const dashboardName = useAppSelector((state) =>
     dashboardId ? state.dashboards.items[dashboardId]?.name : undefined,
@@ -59,13 +72,82 @@ const DashboardInner: React.FC = () => {
   const outputs = useAppSelector((state) => state.outputs.items);
   const sessionList = Object.values(sessions);
 
-  const selectModeActive = elementSelection?.selectMode ?? false;
-  const canvas = useCanvasControls(zoomSensitivity, selectModeActive);
+  const canvas = useCanvasControls(zoomSensitivity);
+  const selection = useDashboardSelection(
+    { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom, viewportRef: canvas.viewportRef },
+    cards,
+    viewCards,
+  );
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const [toolbarOpen, setToolbarOpen] = useState(false);
   const spawnOriginsRef = useRef<Record<string, { x: number; y: number }>>({});
   const hasFittedRef = useRef(false);
+
+  // ---- Multi-drag coordination ----
+  const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number } | null>(null);
+  const activeDragCardRef = useRef<string | null>(null);
+  const isMultiDragRef = useRef(false);
+
+  const handleCardDragStart = useCallback((id: string, _type: CardType) => {
+    if (selection.isSelected(id)) {
+      activeDragCardRef.current = id;
+      isMultiDragRef.current = true;
+    } else {
+      selection.deselectAll();
+      activeDragCardRef.current = null;
+      isMultiDragRef.current = false;
+    }
+  }, [selection]);
+
+  const handleCardDragMove = useCallback((dx: number, dy: number) => {
+    if (isMultiDragRef.current) {
+      setMultiDragDelta({ dx, dy });
+    }
+  }, []);
+
+  const handleCardDragEnd = useCallback((dx: number, dy: number, didDrag: boolean) => {
+    if (isMultiDragRef.current && didDrag) {
+      const items = selection.selectedArray()
+        .filter((s) => s.id !== activeDragCardRef.current);
+      if (items.length > 0) {
+        dispatch(moveCards({ items, dx, dy }));
+      }
+    }
+    activeDragCardRef.current = null;
+    isMultiDragRef.current = false;
+    setMultiDragDelta(null);
+  }, [selection, dispatch]);
+
+  const handleCardSelect = useCallback((id: string, type: CardType, shiftKey: boolean) => {
+    selection.selectCard(id, type, shiftKey);
+  }, [selection]);
+
+  // ---- Viewport event handlers (compose pan + marquee) ----
+  const handleViewportMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 1) {
+      canvas.handlers.onMouseDown(e);
+      return;
+    }
+    if (e.button !== 0) return;
+    if (isCardTarget(e.target, e.currentTarget)) return;
+
+    if (e.metaKey || e.ctrlKey || canvas.spaceHeld) {
+      selection.handleCanvasMouseDown(e.nativeEvent);
+    } else {
+      canvas.handlers.onMouseDown(e);
+    }
+  }, [canvas, selection]);
+
+  const handleViewportMouseMove = useCallback((e: React.MouseEvent) => {
+    canvas.handlers.onMouseMove(e);
+    selection.handleCanvasMouseMove(e.nativeEvent);
+  }, [canvas.handlers, selection]);
+
+  const handleViewportMouseUp = useCallback((e: React.MouseEvent) => {
+    canvas.handlers.onMouseUp();
+    selection.handleCanvasMouseUp(e.nativeEvent);
+  }, [canvas.handlers, selection]);
 
   useEffect(() => {
     if (!dashboardId) return;
@@ -279,14 +361,20 @@ const DashboardInner: React.FC = () => {
       {/* Canvas viewport */}
       <Box
         ref={canvas.viewportRef}
-        onMouseDown={canvas.handlers.onMouseDown}
-        onMouseMove={canvas.handlers.onMouseMove}
-        onMouseUp={canvas.handlers.onMouseUp}
+        onMouseDown={handleViewportMouseDown}
+        onMouseMove={handleViewportMouseMove}
+        onMouseUp={handleViewportMouseUp}
         sx={{
           position: 'absolute',
           inset: 0,
           overflow: 'hidden',
-          cursor: canvas.isPanning ? 'grabbing' : canvas.spaceHeld ? 'grab' : selectModeActive ? 'crosshair' : 'default',
+          cursor: canvas.isPanning
+            ? 'grabbing'
+            : (canvas.spaceHeld || canvas.cmdHeld)
+              ? 'crosshair'
+              : selection.marquee
+                ? 'crosshair'
+                : 'default',
         }}
       >
         {/* Dot grid background */}
@@ -346,6 +434,12 @@ const DashboardInner: React.FC = () => {
                   cardHeight={card.height}
                   zoom={canvas.zoom}
                   spawnFrom={origin}
+                  isSelected={selection.isSelected(session.id)}
+                  multiDragDelta={multiDragDelta}
+                  onCardSelect={handleCardSelect}
+                  onDragStart={handleCardDragStart}
+                  onDragMove={handleCardDragMove}
+                  onDragEnd={handleCardDragEnd}
                 />
               );
             })}
@@ -361,9 +455,32 @@ const DashboardInner: React.FC = () => {
                   cardWidth={vc.width}
                   cardHeight={vc.height}
                   zoom={canvas.zoom}
+                  isSelected={selection.isSelected(vc.output_id)}
+                  multiDragDelta={multiDragDelta}
+                  onCardSelect={handleCardSelect}
+                  onDragStart={handleCardDragStart}
+                  onDragMove={handleCardDragMove}
+                  onDragEnd={handleCardDragEnd}
                 />
               );
             })}
+            {/* Marquee selection rectangle */}
+            {selection.marquee && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: selection.marquee.x,
+                  top: selection.marquee.y,
+                  width: selection.marquee.width,
+                  height: selection.marquee.height,
+                  border: '1.5px dashed rgba(59, 130, 246, 0.6)',
+                  background: 'rgba(59, 130, 246, 0.08)',
+                  borderRadius: 2,
+                  pointerEvents: 'none',
+                  zIndex: 9999,
+                }}
+              />
+            )}
           </div>
         )}
       </Box>

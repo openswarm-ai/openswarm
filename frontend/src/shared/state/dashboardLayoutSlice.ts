@@ -256,6 +256,32 @@ const dashboardLayoutSlice = createSlice({
       delete state.viewCards[action.payload];
     },
 
+    moveCards(
+      state,
+      action: PayloadAction<{
+        items: Array<{ id: string; type: 'agent' | 'view' }>;
+        dx: number;
+        dy: number;
+      }>,
+    ) {
+      const { items, dx, dy } = action.payload;
+      for (const item of items) {
+        if (item.type === 'agent') {
+          const card = state.cards[item.id];
+          if (card) {
+            card.x += dx;
+            card.y += dy;
+          }
+        } else {
+          const card = state.viewCards[item.id];
+          if (card) {
+            card.x += dx;
+            card.y += dy;
+          }
+        }
+      }
+    },
+
     replaceDraftId(
       state,
       action: PayloadAction<{ oldId: string; newId: string }>
@@ -312,6 +338,7 @@ export const {
   setViewCardPosition,
   setViewCardSize,
   removeViewCard,
+  moveCards,
   resetLayout,
 } = dashboardLayoutSlice.actions;
 

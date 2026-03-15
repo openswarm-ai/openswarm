@@ -22,16 +22,18 @@ function clamp(val: number, min: number, max: number) {
   return Math.min(max, Math.max(min, val));
 }
 
-export function useCanvasControls(zoomSensitivity: number = 50, panDisabled: boolean = false) {
+export function useCanvasControls(zoomSensitivity: number = 50) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const [state, setState] = useState<CanvasState>({ panX: 0, panY: 0, zoom: 1 });
   const [isPanning, setIsPanning] = useState(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
+  const [cmdHeld, setCmdHeld] = useState(false);
 
   const panStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const spaceRef = useRef(false);
+  const cmdRef = useRef(false);
   const sensitivityRef = useRef(zoomSensitivity);
   sensitivityRef.current = zoomSensitivity;
 
@@ -109,6 +111,10 @@ export function useCanvasControls(zoomSensitivity: number = 50, panDisabled: boo
         spaceRef.current = true;
         setSpaceHeld(true);
       }
+      if ((e.key === 'Meta' || e.key === 'Control') && !e.repeat) {
+        cmdRef.current = true;
+        setCmdHeld(true);
+      }
       if (e.ctrlKey || e.metaKey) {
         if (e.key === '0') {
           e.preventDefault();
@@ -145,6 +151,10 @@ export function useCanvasControls(zoomSensitivity: number = 50, panDisabled: boo
         spaceRef.current = false;
         setSpaceHeld(false);
       }
+      if (e.key === 'Meta' || e.key === 'Control') {
+        cmdRef.current = false;
+        setCmdHeld(false);
+      }
     };
 
     window.addEventListener('keydown', onKeyDown);
@@ -156,23 +166,15 @@ export function useCanvasControls(zoomSensitivity: number = 50, panDisabled: boo
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    const isMiddle = e.button === 1;
-    const isBackgroundLeft = e.button === 0 && e.target === viewportRef.current;
-    const isSpaceDrag = e.button === 0 && spaceRef.current;
-
-    if (panDisabled && !isMiddle && !isSpaceDrag) return;
-
-    if (isMiddle || isBackgroundLeft || isSpaceDrag) {
-      e.preventDefault();
-      setIsPanning(true);
-      panStartRef.current = {
-        x: e.clientX,
-        y: e.clientY,
-        panX: state.panX,
-        panY: state.panY,
-      };
-    }
-  }, [state.panX, state.panY, panDisabled]);
+    e.preventDefault();
+    setIsPanning(true);
+    panStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panX: state.panX,
+      panY: state.panY,
+    };
+  }, [state.panX, state.panY]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const start = panStartRef.current;
@@ -309,6 +311,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, panDisabled: boo
     ...state,
     isPanning,
     spaceHeld,
+    cmdHeld,
     viewportRef,
     contentRef,
     handlers: {

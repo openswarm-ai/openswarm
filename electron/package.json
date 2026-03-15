@@ -22,7 +22,9 @@
     "directories": {
       "output": "dist"
     },
+    "icon": "build/icon.png",
     "mac": {
+      "icon": "build/icon.icns",
       "target": [
         {
           "target": "zip",

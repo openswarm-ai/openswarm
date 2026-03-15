@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import FormControl from '@mui/material/FormControl';
@@ -96,9 +95,54 @@ const Settings: React.FC = () => {
 
   const fieldSx = {
     '& .MuiOutlinedInput-root': {
-      bgcolor: c.bg.page,
       fontSize: '0.85rem',
     },
+  };
+
+  const sectionSx = {
+    fontSize: '0.7rem',
+    fontWeight: 600,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase' as const,
+    color: c.text.tertiary,
+    mb: 0.5,
+    mt: 0.5,
+  };
+
+  const rowSx = {
+    py: 2,
+    borderBottom: `1px solid ${c.border.subtle}`,
+  };
+
+  const rowLastSx = {
+    py: 2,
+  };
+
+  const inlineRowSx = {
+    ...rowSx,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  };
+
+  const inlineRowLastSx = {
+    ...rowLastSx,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  };
+
+  const labelSx = {
+    color: c.text.primary,
+    fontWeight: 500,
+    fontSize: '0.875rem',
+    lineHeight: 1.4,
+  };
+
+  const descSx = {
+    color: c.text.tertiary,
+    fontSize: '0.75rem',
+    lineHeight: 1.4,
   };
 
   return (
@@ -109,12 +153,12 @@ const Settings: React.FC = () => {
       maxWidth={false}
       PaperProps={{
         sx: {
-          width: 800,
+          width: 660,
           maxHeight: '85vh',
           bgcolor: c.bg.page,
-          borderRadius: 4,
+          borderRadius: 2,
           border: `1px solid ${c.border.subtle}`,
-          boxShadow: c.shadow.lg,
+          boxShadow: c.shadow.md,
         },
       }}
     >
@@ -125,38 +169,35 @@ const Settings: React.FC = () => {
           justifyContent: 'space-between',
           borderBottom: `1px solid ${c.border.subtle}`,
           px: 3,
-          py: 2,
+          py: 1.5,
         }}
       >
-        <Box>
-          <Typography variant="h6" sx={{ color: c.text.primary, fontWeight: 700 }}>
-            Settings
-          </Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem' }}>
-            Global defaults and application configuration.
-          </Typography>
-        </Box>
+        <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem' }}>
+          Settings
+        </Typography>
         <IconButton onClick={handleRequestClose} size="small" sx={{ color: c.text.tertiary, '&:hover': { color: c.text.primary } }}>
-          <CloseIcon sx={{ fontSize: 20 }} />
+          <CloseIcon sx={{ fontSize: 18 }} />
         </IconButton>
       </DialogTitle>
 
       <DialogContent sx={{
-        p: 3,
+        px: 3,
+        py: 0,
         '&::-webkit-scrollbar': { width: 6 },
         '&::-webkit-scrollbar-track': { background: 'transparent' },
         '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 3, '&:hover': { background: c.border.strong } },
         scrollbarWidth: 'thin',
         scrollbarColor: `${c.border.medium} transparent`,
       }}>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, maxWidth: 640, mx: 'auto', pt: 1 }}>
-        {/* Default System Prompt */}
-        <Paper sx={{ bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 3, p: 3, boxShadow: c.shadow.sm }}>
-          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', mb: 0.5 }}>
-            Default System Prompt
-          </Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem', mb: 2 }}>
-            A global system prompt prepended to every agent session, before any mode-specific instructions.
+      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1 }}>
+
+        {/* ── Agent Defaults ── */}
+        <Typography sx={sectionSx}>Agent Defaults</Typography>
+
+        <Box sx={rowSx}>
+          <Typography sx={labelSx}>System prompt</Typography>
+          <Typography sx={{ ...descSx, mb: 1.5 }}>
+            Prepended to every agent session before mode-specific instructions.
           </Typography>
           <TextField
             value={form.default_system_prompt ?? ''}
@@ -165,7 +206,7 @@ const Settings: React.FC = () => {
             fullWidth
             multiline
             minRows={3}
-            maxRows={10}
+            maxRows={8}
             placeholder="Enter a default system prompt..."
             sx={{
               ...fieldSx,
@@ -183,15 +224,12 @@ const Settings: React.FC = () => {
               },
             }}
           />
-        </Paper>
+        </Box>
 
-        {/* Default Folder */}
-        <Paper sx={{ bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 3, p: 3, boxShadow: c.shadow.sm }}>
-          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', mb: 0.5 }}>
-            Default Folder
-          </Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem', mb: 2 }}>
-            The working directory agents start in by default. Modes can override this per-mode.
+        <Box sx={rowSx}>
+          <Typography sx={labelSx}>Working directory</Typography>
+          <Typography sx={{ ...descSx, mb: 1.5 }}>
+            Default folder agents start in. Modes can override per-mode.
           </Typography>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <TextField
@@ -211,33 +249,32 @@ const Settings: React.FC = () => {
             <Button
               variant="outlined"
               onClick={() => setBrowseOpen(true)}
-              startIcon={<FolderOpenIcon />}
+              startIcon={<FolderOpenIcon sx={{ fontSize: 16 }} />}
               sx={{
-                color: c.accent.primary,
+                color: c.text.tertiary,
                 borderColor: c.border.medium,
                 textTransform: 'none',
                 whiteSpace: 'nowrap',
                 minWidth: 'auto',
+                fontSize: '0.8rem',
+                '&:hover': { color: c.accent.primary, borderColor: c.accent.primary },
               }}
             >
               Browse
             </Button>
           </Box>
-        </Paper>
+        </Box>
 
-        {/* Default Model */}
-        <Paper sx={{ bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 3, p: 3, boxShadow: c.shadow.sm }}>
-          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', mb: 0.5 }}>
-            Default Model
-          </Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem', mb: 2 }}>
-            The default model for new agent sessions.
-          </Typography>
-          <FormControl fullWidth size="small">
+        <Box sx={inlineRowSx}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>Model</Typography>
+            <Typography sx={descSx}>Default model for new sessions.</Typography>
+          </Box>
+          <FormControl size="small" sx={{ minWidth: 170 }}>
             <Select
               value={form.default_model}
               onChange={(e) => setForm({ ...form, default_model: e.target.value })}
-              sx={{ bgcolor: c.bg.page }}
+              sx={{ fontSize: '0.85rem' }}
               MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
             >
               <MenuItem value="sonnet">Sonnet 4.6</MenuItem>
@@ -245,21 +282,18 @@ const Settings: React.FC = () => {
               <MenuItem value="haiku">Haiku 3.5</MenuItem>
             </Select>
           </FormControl>
-        </Paper>
+        </Box>
 
-        {/* Default Mode */}
-        <Paper sx={{ bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 3, p: 3, boxShadow: c.shadow.sm }}>
-          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', mb: 0.5 }}>
-            Default Mode
-          </Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem', mb: 2 }}>
-            The default interaction mode for new agent sessions.
-          </Typography>
-          <FormControl fullWidth size="small">
+        <Box sx={inlineRowSx}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>Mode</Typography>
+            <Typography sx={descSx}>Default interaction mode for new sessions.</Typography>
+          </Box>
+          <FormControl size="small" sx={{ minWidth: 170 }}>
             <Select
               value={form.default_mode}
               onChange={(e) => setForm({ ...form, default_mode: e.target.value })}
-              sx={{ bgcolor: c.bg.page }}
+              sx={{ fontSize: '0.85rem' }}
               MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
             >
               {modesList.map((m) => (
@@ -267,35 +301,68 @@ const Settings: React.FC = () => {
               ))}
             </Select>
           </FormControl>
-        </Paper>
+        </Box>
 
-        {/* Default Max Turns */}
-        <Paper sx={{ bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 3, p: 3, boxShadow: c.shadow.sm }}>
-          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', mb: 0.5 }}>
-            Default Max Turns
-          </Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem', mb: 2 }}>
-            Maximum number of agent turns before auto-stopping. Leave empty for unlimited.
-          </Typography>
+        <Box sx={inlineRowLastSx}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>Max turns</Typography>
+            <Typography sx={descSx}>Auto-stop after this many turns. Empty = unlimited.</Typography>
+          </Box>
           <TextField
             type="number"
             value={form.default_max_turns ?? ''}
             onChange={(e) => setForm({ ...form, default_max_turns: e.target.value ? parseInt(e.target.value) : null })}
             size="small"
-            fullWidth
-            placeholder="Unlimited"
+            placeholder="∞"
             inputProps={{ min: 1 }}
-            sx={fieldSx}
+            sx={{ ...fieldSx, width: 100 }}
           />
-        </Paper>
+        </Box>
 
-        {/* Zoom Sensitivity */}
-        <Paper sx={{ bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 3, p: 3, boxShadow: c.shadow.sm }}>
-          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', mb: 0.5 }}>
-            Zoom Sensitivity
-          </Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem', mb: 2 }}>
-            Controls how responsive scroll-to-zoom is on the dashboard canvas. Lower values suit trackpads; higher values suit mouse wheels.
+        {/* ── Interface ── */}
+        <Typography sx={{ ...sectionSx, mt: 3 }}>Interface</Typography>
+
+        <Box sx={inlineRowSx}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>Theme</Typography>
+            <Typography sx={descSx}>Application color scheme.</Typography>
+          </Box>
+          <ToggleButtonGroup
+            value={form.theme}
+            exclusive
+            onChange={(_, v) => { if (v) setForm({ ...form, theme: v }); }}
+            size="small"
+            sx={{
+              '& .MuiToggleButton-root': {
+                color: c.text.muted,
+                borderColor: c.border.medium,
+                textTransform: 'none',
+                px: 2,
+                py: 0.5,
+                gap: 0.5,
+                fontSize: '0.8rem',
+                '&.Mui-selected': {
+                  bgcolor: `${c.accent.primary}15`,
+                  color: c.accent.primary,
+                  borderColor: c.accent.primary,
+                  '&:hover': { bgcolor: `${c.accent.primary}20` },
+                },
+              },
+            }}
+          >
+            <ToggleButton value="light">
+              <LightModeIcon sx={{ fontSize: 16 }} /> Light
+            </ToggleButton>
+            <ToggleButton value="dark">
+              <DarkModeIcon sx={{ fontSize: 16 }} /> Dark
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+
+        <Box sx={rowSx}>
+          <Typography sx={labelSx}>Zoom sensitivity</Typography>
+          <Typography sx={{ ...descSx, mb: 1 }}>
+            Scroll-to-zoom responsiveness. Lower for trackpads, higher for mouse wheels.
           </Typography>
           <Box sx={{ px: 1 }}>
             <Slider
@@ -312,21 +379,18 @@ const Settings: React.FC = () => {
               ]}
               sx={{
                 color: c.accent.primary,
-                '& .MuiSlider-markLabel': { color: c.text.tertiary, fontSize: '0.75rem' },
+                '& .MuiSlider-markLabel': { color: c.text.tertiary, fontSize: '0.7rem' },
                 '& .MuiSlider-valueLabel': { bgcolor: c.accent.primary },
               }}
             />
           </Box>
-        </Paper>
+        </Box>
 
-        {/* New Agent Shortcut */}
-        <Paper sx={{ bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 3, p: 3, boxShadow: c.shadow.sm }}>
-          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', mb: 0.5 }}>
-            New Agent Shortcut
-          </Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem', mb: 2 }}>
-            Keyboard shortcut to open the new agent input on the Dashboard.
-          </Typography>
+        <Box sx={inlineRowLastSx}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>New agent shortcut</Typography>
+            <Typography sx={descSx}>Keyboard shortcut to create an agent.</Typography>
+          </Box>
           <Box
             tabIndex={0}
             onKeyDown={(e) => {
@@ -347,25 +411,24 @@ const Settings: React.FC = () => {
             sx={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 1,
-              px: 2,
-              py: 1,
-              borderRadius: `${c.radius.md}px`,
+              gap: 0.75,
+              px: 1.5,
+              py: 0.75,
+              borderRadius: `${c.radius.sm}px`,
               border: `1px solid ${recordingShortcut ? c.accent.primary : c.border.medium}`,
-              bgcolor: c.bg.page,
               cursor: 'pointer',
               outline: 'none',
               transition: 'border-color 0.15s',
               '&:hover': { borderColor: c.accent.primary },
             }}
           >
-            <KeyboardIcon sx={{ fontSize: 18, color: recordingShortcut ? c.accent.primary : c.text.tertiary }} />
+            <KeyboardIcon sx={{ fontSize: 16, color: recordingShortcut ? c.accent.primary : c.text.tertiary }} />
             {recordingShortcut ? (
-              <Typography sx={{ fontSize: '0.85rem', color: c.accent.primary, fontWeight: 500 }}>
+              <Typography sx={{ fontSize: '0.8rem', color: c.accent.primary, fontWeight: 500 }}>
                 Press shortcut…
               </Typography>
             ) : (
-              <Typography sx={{ fontSize: '0.85rem', color: c.text.primary, fontFamily: c.font.mono, fontWeight: 500 }}>
+              <Typography sx={{ fontSize: '0.8rem', color: c.text.primary, fontFamily: c.font.mono, fontWeight: 500 }}>
                 {form.new_agent_shortcut
                   .split('+')
                   .map((p) => {
@@ -379,53 +442,15 @@ const Settings: React.FC = () => {
               </Typography>
             )}
           </Box>
-        </Paper>
+        </Box>
 
-        {/* Theme */}
-        <Paper sx={{ bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 3, p: 3, boxShadow: c.shadow.sm }}>
-          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', mb: 0.5 }}>
-            Theme
-          </Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem', mb: 2 }}>
-            Application color scheme.
-          </Typography>
-          <ToggleButtonGroup
-            value={form.theme}
-            exclusive
-            onChange={(_, v) => { if (v) setForm({ ...form, theme: v }); }}
-            size="small"
-            sx={{
-              '& .MuiToggleButton-root': {
-                color: c.text.muted,
-                borderColor: c.border.medium,
-                textTransform: 'none',
-                px: 2.5,
-                gap: 0.75,
-                '&.Mui-selected': {
-                  bgcolor: `${c.accent.primary}15`,
-                  color: c.accent.primary,
-                  borderColor: c.accent.primary,
-                  '&:hover': { bgcolor: `${c.accent.primary}20` },
-                },
-              },
-            }}
-          >
-            <ToggleButton value="light">
-              <LightModeIcon sx={{ fontSize: 18 }} /> Light
-            </ToggleButton>
-            <ToggleButton value="dark">
-              <DarkModeIcon sx={{ fontSize: 18 }} /> Dark
-            </ToggleButton>
-          </ToggleButtonGroup>
-        </Paper>
+        {/* ── API ── */}
+        <Typography sx={{ ...sectionSx, mt: 3 }}>API</Typography>
 
-        {/* Anthropic API Key */}
-        <Paper sx={{ bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 3, p: 3, boxShadow: c.shadow.sm }}>
-          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', mb: 0.5 }}>
-            Anthropic API Key
-          </Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem', mb: 2 }}>
-            Your API key for the Anthropic Claude API. Stored securely in the database.
+        <Box sx={rowLastSx}>
+          <Typography sx={labelSx}>Anthropic API key</Typography>
+          <Typography sx={{ ...descSx, mb: 1.5 }}>
+            Stored securely in the local database.
           </Typography>
           <TextField
             type={showApiKey ? 'text' : 'password'}
@@ -450,27 +475,27 @@ const Settings: React.FC = () => {
                     size="small"
                     sx={{ color: c.text.tertiary }}
                   >
-                    {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 18 }} /> : <VisibilityIcon sx={{ fontSize: 18 }} />}
+                    {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
                   </IconButton>
                 </InputAdornment>
               ),
             }}
           />
-        </Paper>
+        </Box>
 
       </Box>
       </DialogContent>
 
-      <DialogActions sx={{ borderTop: `1px solid ${c.border.subtle}`, px: 3, py: 2, justifyContent: 'flex-end' }}>
+      <DialogActions sx={{ borderTop: `1px solid ${c.border.subtle}`, px: 3, py: 1.5, justifyContent: 'flex-end' }}>
         <Button
           onClick={handleRequestClose}
-          sx={{ color: c.text.muted, textTransform: 'none' }}
+          sx={{ color: c.text.muted, textTransform: 'none', fontSize: '0.85rem' }}
         >
           Cancel
         </Button>
         <Button
           variant="contained"
-          startIcon={<SaveIcon />}
+          startIcon={<SaveIcon sx={{ fontSize: 16 }} />}
           onClick={handleSave}
           disabled={!hasChanges}
           sx={{
@@ -478,11 +503,12 @@ const Settings: React.FC = () => {
             '&:hover': { bgcolor: c.accent.pressed },
             '&.Mui-disabled': { bgcolor: c.bg.secondary, color: c.text.ghost },
             textTransform: 'none',
-            borderRadius: 2,
-            px: 3,
+            borderRadius: 1.5,
+            px: 2.5,
+            fontSize: '0.85rem',
           }}
         >
-          Save Settings
+          Save
         </Button>
       </DialogActions>
 
@@ -500,43 +526,42 @@ const Settings: React.FC = () => {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <Alert onClose={() => setSaved(false)} severity="success" sx={{ bgcolor: c.bg.surface, color: c.text.primary, border: `1px solid ${c.status.success}` }}>
-          Settings saved successfully
+          Settings saved
         </Alert>
       </Snackbar>
     </Dialog>
 
-    {/* Discard changes confirmation */}
     <Dialog
       open={confirmDiscard}
       onClose={() => setConfirmDiscard(false)}
       PaperProps={{
         sx: {
-          bgcolor: c.bg.surface,
-          borderRadius: 3,
+          bgcolor: c.bg.page,
+          borderRadius: 2,
           border: `1px solid ${c.border.subtle}`,
-          boxShadow: c.shadow.lg,
-          maxWidth: 400,
+          boxShadow: c.shadow.md,
+          maxWidth: 380,
         },
       }}
     >
-      <DialogTitle sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem', pb: 0.5 }}>
-        Unsaved Changes
+      <DialogTitle sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', pb: 0.5, px: 3, pt: 2.5 }}>
+        Unsaved changes
       </DialogTitle>
-      <DialogContent>
-        <Typography sx={{ color: c.text.muted, fontSize: '0.875rem' }}>
+      <DialogContent sx={{ px: 3 }}>
+        <Typography sx={{ color: c.text.muted, fontSize: '0.85rem' }}>
           You have unsaved changes. Would you like to save them before closing?
         </Typography>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
         <Button
           onClick={handleConfirmDiscard}
-          sx={{ color: c.status.error, textTransform: 'none' }}
+          sx={{ color: c.status.error, textTransform: 'none', fontSize: '0.85rem' }}
         >
           Discard
         </Button>
         <Button
           onClick={() => setConfirmDiscard(false)}
-          sx={{ color: c.text.muted, textTransform: 'none' }}
+          sx={{ color: c.text.muted, textTransform: 'none', fontSize: '0.85rem' }}
         >
           Cancel
         </Button>
@@ -547,7 +572,8 @@ const Settings: React.FC = () => {
             bgcolor: c.accent.primary,
             '&:hover': { bgcolor: c.accent.pressed },
             textTransform: 'none',
-            borderRadius: 2,
+            borderRadius: 1.5,
+            fontSize: '0.85rem',
           }}
         >
           Save & Close

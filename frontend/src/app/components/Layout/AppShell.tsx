@@ -20,6 +20,9 @@ import ViewQuiltIcon from '@mui/icons-material/ViewQuilt';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
+import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
+import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
+import ArrowForwardOutlinedIcon from '@mui/icons-material/ArrowForwardOutlined';
 import Settings from '@/app/pages/Settings/Settings';
 import GlobalApprovalOverlay from '@/app/components/GlobalApprovalOverlay';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -42,6 +45,7 @@ const AppShell: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [dashboardsExpanded, setDashboardsExpanded] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const dashboardItems = useAppSelector((state) => state.dashboards.items);
   const dashboardList = Object.values(dashboardItems).sort(
@@ -92,21 +96,88 @@ const AppShell: React.FC = () => {
           WebkitAppRegion: 'drag',
           userSelect: 'none',
           pl: '78px',
+          gap: 0.25,
         }}
       >
-        <Typography
+        <Tooltip title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}>
+          <IconButton
+            size="small"
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            sx={{
+              WebkitAppRegion: 'no-drag',
+              color: c.text.tertiary,
+              p: 0.5,
+              borderRadius: 1,
+              '&:hover': { color: c.text.secondary, bgcolor: `${c.text.tertiary}14` },
+            }}
+          >
+            <ViewSidebarOutlinedIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Back">
+          <IconButton
+            size="small"
+            onClick={() => navigate(-1)}
+            sx={{
+              WebkitAppRegion: 'no-drag',
+              color: c.text.tertiary,
+              p: 0.5,
+              borderRadius: 1,
+              '&:hover': { color: c.text.secondary, bgcolor: `${c.text.tertiary}14` },
+            }}
+          >
+            <ArrowBackOutlinedIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Forward">
+          <IconButton
+            size="small"
+            onClick={() => navigate(1)}
+            sx={{
+              WebkitAppRegion: 'no-drag',
+              color: c.text.tertiary,
+              p: 0.5,
+              borderRadius: 1,
+              '&:hover': { color: c.text.secondary, bgcolor: `${c.text.tertiary}14` },
+            }}
+          >
+            <ArrowForwardOutlinedIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
+
+        <Box sx={{ flex: 1 }} />
+
+        <Box
           sx={{
-            color: c.text.tertiary,
-            fontSize: '0.8rem',
-            fontWeight: 500,
-            letterSpacing: 0.3,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.75,
+            pr: 1.5,
+            WebkitAppRegion: 'no-drag',
           }}
         >
-          OpenSwarm
-        </Typography>
+          <Box
+            component="img"
+            src="./logo.png"
+            alt="OpenSwarm"
+            sx={{ width: 18, height: 18, borderRadius: 0.5, opacity: 0.7 }}
+          />
+          <Typography
+            sx={{
+              color: c.text.tertiary,
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              letterSpacing: 0.3,
+              lineHeight: 1,
+            }}
+          >
+            OpenSwarm
+          </Typography>
+        </Box>
       </Box>
 
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      {!sidebarCollapsed && (
       <Box
         sx={{
           width: 240,
@@ -117,25 +188,6 @@ const AppShell: React.FC = () => {
           flexDirection: 'column',
         }}
       >
-        <Box sx={{ p: 2.5, borderBottom: `0.5px solid ${c.border.medium}`, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Box
-            component="img"
-            src="./logo.png"
-            alt="Open Swarm"
-            sx={{ width: 36, height: 36, borderRadius: 1, flexShrink: 0 }}
-          />
-          <Box>
-            <Typography
-              variant="h6"
-              sx={{ color: c.text.primary, fontWeight: 700, letterSpacing: 0.5, lineHeight: 1.2 }}
-            >
-              Open Swarm
-            </Typography>
-            <Typography variant="caption" sx={{ color: c.text.tertiary }}>
-              Agent Orchestrator
-            </Typography>
-          </Box>
-        </Box>
         <List sx={{ pt: 1, px: 1, flex: 1, overflow: 'auto'}}>
           <ListItemButton
             onClick={handleDashboardsClick}
@@ -316,6 +368,7 @@ const AppShell: React.FC = () => {
           </Tooltip>
         </Box>
       </Box>
+      )}
 
       <Box sx={{ flex: 1, overflow: 'hidden', bgcolor: c.bg.page }}>
         <Outlet />
