@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI, APIRouter
 import debug
 from uuid import uuid4
@@ -30,7 +32,8 @@ class MainApp:
                 for sub_app in sub_apps:
                     debug(sub_app.name)
                     await stack.enter_async_context(sub_app.lifespan())
-                print("\nCheck out the API docs at: http://127.0.0.1:8324/docs\n")
+                _port = os.environ.get("OPENSWARM_PORT", "8324")
+                print(f"\nCheck out the API docs at: http://127.0.0.1:{_port}/docs\n")
                 yield
                 
         self.app = FastAPI(lifespan=lifespan)

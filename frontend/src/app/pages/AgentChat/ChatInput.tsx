@@ -26,6 +26,7 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import AdsClickIcon from '@mui/icons-material/AdsClick';
 import CommandPicker, { CommandPickerItem, getToolGroupIcon } from '@/app/components/CommandPicker';
 import { useElementSelection, SelectedElement } from '@/app/components/ElementSelectionContext';
+import { API_BASE } from '@/shared/config';
 import { ContextPath } from '@/app/components/DirectoryBrowser';
 import {
   SKILL_PILL_ATTR,
@@ -253,7 +254,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     try {
       const formData = new FormData();
       files.forEach((f) => formData.append('files', f));
-      const resp = await fetch(`http://${window.location.hostname}:8324/api/settings/upload-files`, {
+      const resp = await fetch(`${API_BASE}/settings/upload-files`, {
         method: 'POST',
         body: formData,
       });

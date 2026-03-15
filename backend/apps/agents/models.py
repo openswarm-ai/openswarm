@@ -56,8 +56,6 @@ class AgentSession(BaseModel):
     status: Literal["running", "waiting_approval", "completed", "error", "stopped"] = "running"
     model: str = "sonnet"
     mode: str = "agent"
-    worktree_path: Optional[str] = None
-    branch_name: Optional[str] = None
     sdk_session_id: Optional[str] = None
     system_prompt: Optional[str] = None
     allowed_tools: list[str] = Field(default_factory=list)

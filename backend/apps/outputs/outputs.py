@@ -31,18 +31,13 @@ def _resolve_model(short_name: str) -> str:
 
 
 def _get_anthropic_client():
-    """Create an AsyncAnthropic client, pulling the API key from app settings if
-    the ANTHROPIC_API_KEY env var isn't set."""
+    """Create an AsyncAnthropic client using the API key from app settings."""
     import anthropic
 
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return anthropic.AsyncAnthropic()
-
     settings = load_settings()
-    if settings.anthropic_api_key:
-        return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-
-    return anthropic.AsyncAnthropic()
+    if not settings.anthropic_api_key:
+        raise ValueError("Anthropic API key not configured. Set it in Settings.")
+    return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 
 def _validate_against_schema(data: dict, schema: dict) -> str | None:
@@ -54,15 +49,7 @@ def _validate_against_schema(data: dict, schema: dict) -> str | None:
         path = " -> ".join(str(p) for p in exc.absolute_path) if exc.absolute_path else "(root)"
         return f"Schema validation failed at {path}: {exc.message}"
 
-DATA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "outputs",
-)
-
-WORKSPACE_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "outputs_workspace",
-)
+from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR as WORKSPACE_DIR
 
 
 def _build_data_injection(input_json: str, result_json: str) -> str:
@@ -586,7 +573,7 @@ async def auto_run_agent(body: AutoRunAgentRequest):
 
 @outputs.router.delete("/auto-run-agent/{session_id}")
 async def cleanup_auto_run_agent(session_id: str):
-    """Delete a temporary auto-run agent session and its worktree."""
+    """Delete a temporary auto-run agent session."""
     from backend.apps.agents.agent_manager import agent_manager
 
     try:

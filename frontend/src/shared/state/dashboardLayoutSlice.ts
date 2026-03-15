@@ -1,7 +1,8 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { launchAndSendFirstMessage } from './agentsSlice';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/dashboards`;
+const DASHBOARDS_API = `${API_BASE}/dashboards`;
 
 export const DEFAULT_CARD_W = 480;
 export const DEFAULT_CARD_H = 280;
@@ -49,7 +50,7 @@ interface LayoutPayload {
 export const fetchLayout = createAsyncThunk(
   'dashboardLayout/fetch',
   async (dashboardId: string) => {
-    const res = await fetch(`${API_BASE}/${dashboardId}`);
+    const res = await fetch(`${DASHBOARDS_API}/${dashboardId}`);
     const data = await res.json();
     const layout = data.layout ?? {};
     return {
@@ -71,7 +72,7 @@ export const saveLayout = createAsyncThunk(
     if (saveTimeout) clearTimeout(saveTimeout);
     return new Promise<SaveLayoutPayload>((resolve) => {
       saveTimeout = setTimeout(async () => {
-        await fetch(`${API_BASE}/${payload.dashboardId}`, {
+        await fetch(`${DASHBOARDS_API}/${payload.dashboardId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

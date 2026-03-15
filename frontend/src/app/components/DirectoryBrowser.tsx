@@ -20,8 +20,9 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { BrowseResult } from '@/shared/state/settingsSlice';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/settings`;
+const SETTINGS_API = `${API_BASE}/settings`;
 
 export interface ContextPath {
   path: string;
@@ -48,7 +49,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ open, onClose, onSe
     setError(null);
     setSelected(null);
     try {
-      const res = await fetch(`${API_BASE}/browse-directories?path=${encodeURIComponent(path)}`);
+      const res = await fetch(`${SETTINGS_API}/browse-directories?path=${encodeURIComponent(path)}`);
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.detail || 'Failed to browse');

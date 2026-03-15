@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/mcp-registry`;
+const MCP_REGISTRY_API = `${API_BASE}/mcp-registry`;
 
 export interface McpServer {
   name: string;
@@ -48,20 +49,20 @@ export const searchRegistry = createAsyncThunk(
   'mcpRegistry/search',
   async ({ q, limit = 20, offset = 0, sort = 'name', source = '' }: { q: string; limit?: number; offset?: number; sort?: string; source?: string }) => {
     const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset), sort, source });
-    const res = await fetch(`${API_BASE}/search?${params}`);
+    const res = await fetch(`${MCP_REGISTRY_API}/search?${params}`);
     return (await res.json()) as { servers: McpServer[]; total: number; offset: number; limit: number };
   }
 );
 
 export const fetchRegistryStats = createAsyncThunk('mcpRegistry/stats', async () => {
-  const res = await fetch(`${API_BASE}/stats`);
+  const res = await fetch(`${MCP_REGISTRY_API}/stats`);
   return (await res.json()) as { total: number; google: number; community: number; lastUpdated: number };
 });
 
 export const fetchServerDetail = createAsyncThunk(
   'mcpRegistry/detail',
   async (name: string) => {
-    const res = await fetch(`${API_BASE}/detail/${encodeURIComponent(name)}`);
+    const res = await fetch(`${MCP_REGISTRY_API}/detail/${encodeURIComponent(name)}`);
     const data = await res.json();
     return data.server as McpServerDetail;
   }

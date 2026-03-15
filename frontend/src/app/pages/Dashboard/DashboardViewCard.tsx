@@ -8,7 +8,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import BoltIcon from '@mui/icons-material/Bolt';
 import CloseIcon from '@mui/icons-material/Close';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
-import { Output, autoRunOutput, autoRunAgentOutput, executeOutput, OutputExecuteResult, getBackendCode } from '@/shared/state/outputsSlice';
+import { Output, autoRunOutput, autoRunAgentOutput, executeOutput, OutputExecuteResult, getBackendCode, SERVE_BASE } from '@/shared/state/outputsSlice';
 import { setViewCardPosition, setViewCardSize, removeViewCard } from '@/shared/state/dashboardLayoutSlice';
 import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -329,7 +329,7 @@ const DashboardViewCard: React.FC<Props> = ({ output, cardX, cardY, cardWidth, c
       <Box sx={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         <ViewPreview
           ref={previewRef}
-          serveUrl={`/api/outputs/${output.id}/serve/index.html`}
+          serveUrl={`${SERVE_BASE}/${output.id}/serve/index.html`}
           frontendCode={output.files?.['index.html'] ?? ''}
           inputData={inputData}
           backendResult={backendResult}

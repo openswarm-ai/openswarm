@@ -41,8 +41,9 @@ import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import CodeEditor from './CodeEditor';
 import { ElementSelectionProvider } from '@/app/components/ElementSelectionContext';
 import { captureViewThumbnail } from './captureViewThumbnail';
+import { API_BASE } from '@/shared/config';
 
-const WORKSPACE_API = `http://${window.location.hostname}:8324/api/outputs/workspace`;
+const WORKSPACE_API = `${API_BASE}/outputs/workspace`;
 const POLL_INTERVAL_MS = 2000;
 
 function getFileIcon(filename: string): React.ReactNode {
@@ -477,7 +478,11 @@ interface Props {
 const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
-  const isNew = !output;
+
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const createdIdRef = useRef<string | null>(null);
+  const effectiveId = output?.id ?? createdId;
+  const isNew = !effectiveId;
 
   const [name, setName] = useState(output?.name ?? '');
   const [description, setDescription] = useState(output?.description ?? '');
@@ -502,6 +507,10 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const [activeTab, setActiveTab] = useState(TAB_PREVIEW);
   const [activeFile, setActiveFile] = useState('index.html');
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved'>('idle');
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
   const [executeResult, setExecuteResult] = useState<OutputExecuteResult | null>(null);
   const [showConsole, setShowConsole] = useState(false);
   const [consoleEntry, setConsoleEntry] = useState<ConsoleEntry | null>(null);
@@ -609,6 +618,9 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const isAgentActive = agentStatus === 'running' || agentStatus === 'waiting_approval';
 
   const workspaceId = workspacePath ? stableWorkspaceId : null;
+  const workspaceIdRef = useRef<string | null>(null);
+  workspaceIdRef.current = workspaceId;
+  const wsPushTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const initialContextPaths = useMemo(
     () => workspacePath ? [{ path: workspacePath, type: 'directory' as const }] : undefined,
@@ -742,36 +754,58 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
       .catch(() => {});
   };
 
-  const handleSave = async (close = true) => {
+  const performSaveRef = useRef<((close: boolean) => Promise<void>) | null>(null);
+
+  performSaveRef.current = async (close: boolean) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
+    setSaveStatus('saving');
     try {
       const body = buildBody();
+      const eid = output?.id ?? createdIdRef.current;
       let savedId: string;
-      if (output) {
-        await dispatch(updateOutput({ id: output.id, ...body })).unwrap();
-        savedId = output.id;
+      if (eid) {
+        await dispatch(updateOutput({ id: eid, ...body })).unwrap();
+        savedId = eid;
       } else {
         const created = await dispatch(createOutput(body)).unwrap();
         savedId = created.id;
+        createdIdRef.current = savedId;
+        setCreatedId(savedId);
       }
       savedRef.current = true;
+      setSaveStatus('saved');
+      if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current);
+      savedStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 3000);
       if (close) onClose();
+      else previewRef.current?.reload();
       captureThumbnailAsync(savedId);
     } catch (err: any) {
       console.error('Failed to save output:', err);
+      setSaveStatus('unsaved');
     } finally {
       setSaving(false);
+      savingRef.current = false;
     }
   };
 
+  const handleSave = async (close = true) => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    await performSaveRef.current?.(close);
+  };
+
   const handleClose = async () => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current);
+    const eid = output?.id ?? createdIdRef.current;
     if (!savedRef.current && (files['index.html'] ?? '').trim()) {
       try {
         const body = buildBody();
         let savedId: string;
-        if (output) {
-          await dispatch(updateOutput({ id: output.id, ...body })).unwrap();
-          savedId = output.id;
+        if (eid) {
+          await dispatch(updateOutput({ id: eid, ...body })).unwrap();
+          savedId = eid;
         } else {
           const created = await dispatch(createOutput(body)).unwrap();
           savedId = created.id;
@@ -783,7 +817,8 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   };
 
   const handleRunPreview = async () => {
-    if (!output) {
+    const eid = output?.id ?? createdIdRef.current;
+    if (!eid) {
       setExecuteResult(null);
       return;
     }
@@ -791,7 +826,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
     setHasNewConsoleOutput(true);
     try {
       const res = await dispatch(
-        executeOutput({ output_id: output.id, input_data: testInput })
+        executeOutput({ output_id: eid, input_data: testInput })
       ).unwrap();
       setExecuteResult(res);
       setConsoleEntry({ timestamp: Date.now(), inputData: res.input_data, stdout: res.stdout ?? null, stderr: res.stderr ?? null, backendResult: res.backend_result, error: res.error, source: 'execute' });
@@ -809,12 +844,13 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
     try { schema = JSON.parse(schemaText); } catch { schema = { type: 'object', properties: {} }; }
     const forcedToolNames = config.forcedTools.flatMap((ft) => ft.tools);
 
-    if (forcedToolNames.length > 0 && output?.id) {
+    const eid = output?.id ?? createdIdRef.current;
+    if (forcedToolNames.length > 0 && eid) {
       try {
         const res = await dispatch(autoRunAgentOutput({
           prompt: config.prompt,
           input_schema: schema,
-          output_id: output.id,
+          output_id: eid,
           model: autoRunModel,
           forced_tools: forcedToolNames,
           context_paths: config.contextPaths.map((cp) => ({ path: cp.path, type: cp.type })),
@@ -840,7 +876,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
         if (res.input_data) {
           setTestInput(res.input_data);
           setExecuteResult({
-            output_id: output?.id ?? '',
+            output_id: output?.id ?? createdIdRef.current ?? '',
             output_name: name,
             frontend_code: files['index.html'] ?? '',
             input_data: res.input_data,
@@ -869,7 +905,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
       if (tc.tool !== 'RenderOutput' || !tc.input?.input_data) continue;
       setTestInput(tc.input.input_data);
       setExecuteResult({
-        output_id: output?.id ?? '',
+        output_id: output?.id ?? createdIdRef.current ?? '',
         output_name: name,
         frontend_code: files['index.html'] ?? '',
         input_data: tc.input.input_data,
@@ -890,7 +926,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
       if (lastSys) {
         const errMsg = typeof lastSys.content === 'string' ? lastSys.content : JSON.stringify(lastSys.content);
         setExecuteResult({
-          output_id: output?.id ?? '',
+          output_id: output?.id ?? createdIdRef.current ?? '',
           output_name: name,
           frontend_code: files['index.html'] ?? '',
           input_data: {},
@@ -939,6 +975,21 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
 
   const updateFile = useCallback((path: string, content: string) => {
     setFiles(prev => ({ ...prev, [path]: content }));
+    const wsId = workspaceIdRef.current;
+    if (wsId) {
+      const existing = wsPushTimers.current.get(path);
+      if (existing) clearTimeout(existing);
+      wsPushTimers.current.set(path, setTimeout(() => {
+        wsPushTimers.current.delete(path);
+        fetch(`${WORKSPACE_API}/${wsId}/file/${encodeURIComponent(path)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        })
+          .then(() => previewRef.current?.reload())
+          .catch(() => {});
+      }, 300));
+    }
   }, []);
 
   const [newFileName, setNewFileName] = useState('');
@@ -985,6 +1036,34 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   }, [activeFile, filePaths, workspaceId]);
 
   const activeFileContent = files[activeFile] ?? '';
+
+  const autoSaveInitRef = useRef(true);
+  useEffect(() => {
+    if (autoSaveInitRef.current) {
+      autoSaveInitRef.current = false;
+      return;
+    }
+    const hasContent = name.trim() || (files['index.html'] ?? '').trim();
+    if (!hasContent) return;
+    if (!savingRef.current) {
+      setSaveStatus('unsaved');
+    }
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      performSaveRef.current?.(false);
+    }, 1500);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [files, name, description, autoRunEnabled, autoRunMode, autoRunModel]);
+
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current);
+      wsPushTimers.current.forEach(t => clearTimeout(t));
+    };
+  }, []);
 
   return (
     <ElementSelectionProvider>
@@ -1108,6 +1187,27 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
               {autoRunning ? 'Running…' : 'Auto Run'}
             </Button>
           )}
+          {saveStatus === 'unsaved' && (
+            <Typography sx={{ fontSize: '0.72rem', color: c.text.ghost, fontStyle: 'italic', whiteSpace: 'nowrap' }}>
+              Unsaved changes
+            </Typography>
+          )}
+          {saveStatus === 'saving' && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <CircularProgress size={12} sx={{ color: c.text.ghost }} />
+              <Typography sx={{ fontSize: '0.72rem', color: c.text.ghost, whiteSpace: 'nowrap' }}>
+                Saving…
+              </Typography>
+            </Box>
+          )}
+          {saveStatus === 'saved' && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <CheckCircleOutlineIcon sx={{ fontSize: 14, color: c.accent.primary }} />
+              <Typography sx={{ fontSize: '0.72rem', color: c.accent.primary, whiteSpace: 'nowrap' }}>
+                Saved
+              </Typography>
+            </Box>
+          )}
           <Button
             variant="contained"
             startIcon={<SaveIcon sx={{ fontSize: 16 }} />}
@@ -1123,7 +1223,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
               '&:hover': { bgcolor: c.accent.hover },
             }}
           >
-            {saving ? 'Saving...' : isNew ? 'Create' : 'Save'}
+            {saving ? 'Saving…' : isNew ? 'Create' : 'Save'}
           </Button>
         </Box>
 
@@ -1172,7 +1272,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
                   <RefreshIcon sx={{ fontSize: 18 }} />
                 </IconButton>
               </Tooltip>
-              {output && (
+              {effectiveId && (
                 <Tooltip title="Execute with backend code">
                   <IconButton
                     size="small"

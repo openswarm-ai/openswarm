@@ -8,7 +8,7 @@ from backend.apps.modes.models import Mode, ModeCreate, ModeUpdate, BUILTIN_MODE
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "modes")
+from backend.config.paths import MODES_DIR as DATA_DIR
 
 
 @asynccontextmanager

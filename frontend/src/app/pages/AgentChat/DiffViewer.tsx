@@ -6,8 +6,9 @@ import Tooltip from '@mui/material/Tooltip';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DifferenceIcon from '@mui/icons-material/Difference';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/agents`;
+const AGENTS_API = `${API_BASE}/agents`;
 
 interface Props {
   sessionId: string;
@@ -22,7 +23,7 @@ const DiffViewer: React.FC<Props> = ({ sessionId }) => {
   const fetchDiff = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/sessions/${sessionId}/diff`);
+      const res = await fetch(`${AGENTS_API}/sessions/${sessionId}/diff`);
       const data = await res.json();
       setDiff(data.diff || '');
     } catch {

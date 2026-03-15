@@ -4,3 +4,11 @@
 backend/data/**
 !backend/data/outputs/
 !backend/data/outputs/*.json
+
+# Electron build artifacts
+electron/dist/
+electron/python-env/
+electron/node_modules/
+
+# Frontend build output
+frontend/dist/

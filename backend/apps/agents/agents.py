@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def agents_lifespan():
     logger.info("Agents sub-app starting")
-    await agent_manager.worktree_mgr.cleanup_all_worktrees()
     await agent_manager.reconcile_on_startup()
     await agent_manager.restore_all_sessions()
     yield
@@ -61,9 +60,8 @@ async def send_message(session_id: str, body: dict):
     return {"ok": True}
 
 @agents.router.post("/sessions/{session_id}/stop")
-async def stop_agent(session_id: str, body: dict = {}):
-    remove_worktree = body.get("remove_worktree", False)
-    await agent_manager.stop_agent(session_id, remove_worktree=remove_worktree)
+async def stop_agent(session_id: str):
+    await agent_manager.stop_agent(session_id)
     return {"ok": True}
 
 @agents.router.post("/approval")
@@ -161,17 +159,3 @@ async def resume_session(session_id: str):
         raise HTTPException(status_code=404, detail=str(e))
     return {"session": session.model_dump(mode="json")}
 
-@agents.router.get("/worktrees")
-async def list_worktrees():
-    worktrees = await agent_manager.worktree_mgr.list_worktrees()
-    return {"worktrees": worktrees}
-
-@agents.router.get("/sessions/{session_id}/diff")
-async def get_session_diff(session_id: str):
-    session = agent_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if not session.branch_name:
-        return {"diff": ""}
-    diff = await agent_manager.worktree_mgr.get_worktree_diff(session.branch_name)
-    return {"diff": diff}

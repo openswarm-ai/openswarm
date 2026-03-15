@@ -281,7 +281,7 @@ class WebSocketManager {
   }
 }
 
-const WS_BASE = `ws://${window.location.hostname}:8324`;
+import { WS_BASE } from '@/shared/config';
 
 export const dashboardWs = new WebSocketManager(`${WS_BASE}/ws/dashboard`, { skipStreamEvents: true });
 

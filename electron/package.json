@@ -1,0 +1,73 @@
+{
+  "name": "openswarm",
+  "version": "1.0.0",
+  "description": "OpenSwarm — AI Agent Orchestrator",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac --publish never",
+    "dist:all": "electron-builder --mac --win --linux"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.0",
+    "get-port": "^5.1.1"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0"
+  },
+  "build": {
+    "appId": "com.clusterlabs.openswarm",
+    "productName": "OpenSwarm",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": ["arm64"]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "dmg": {
+      "title": "OpenSwarm",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": ["**/*", "!__pycache__/**", "!**/__pycache__/**", "!.venv/**", "!*.pyc"]
+      },
+      {
+        "from": "../debugger",
+        "to": "debugger",
+        "filter": ["**/*", "!__pycache__/**", "!**/__pycache__/**", "!*.pyc", "!.venv/**", "!**/node_modules/**"]
+      },
+      {
+        "from": "python-env",
+        "to": "python-env",
+        "filter": ["**/*"]
+      }
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "clusterlabs",
+      "repo": "openswarm"
+    },
+    "afterSign": null
+  }
+}

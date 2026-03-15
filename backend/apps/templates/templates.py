@@ -8,7 +8,7 @@ from backend.apps.templates.models import PromptTemplate, PromptTemplateCreate, 
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "templates")
+from backend.config.paths import TEMPLATES_DIR as DATA_DIR
 
 @asynccontextmanager
 async def templates_lifespan():

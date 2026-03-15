@@ -41,6 +41,7 @@
     "@types/react-dom": "^18.2.0",
     "@types/react-redux": "^7.1.34",
     "babel-loader": "^9.2.1",
+    "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^6.8.0",
     "css-modules-types-loader": "^0.6.10",
     "html-webpack-plugin": "^5.5.0",

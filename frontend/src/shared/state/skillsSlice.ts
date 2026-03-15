@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/skills`;
+const SKILLS_API = `${API_BASE}/skills`;
 
 export interface Skill {
   id: string;
@@ -22,7 +23,7 @@ const initialState: SkillsState = { items: {}, loading: false, loaded: false };
 export const fetchSkills = createAsyncThunk(
   'skills/fetch',
   async () => {
-    const res = await fetch(`${API_BASE}/list`);
+    const res = await fetch(`${SKILLS_API}/list`);
     const data = await res.json();
     return data.skills as Skill[];
   },
@@ -32,7 +33,7 @@ export const fetchSkills = createAsyncThunk(
 export const createSkill = createAsyncThunk(
   'skills/create',
   async (body: { name: string; description?: string; content: string; command?: string }) => {
-    const res = await fetch(`${API_BASE}/create`, {
+    const res = await fetch(`${SKILLS_API}/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -45,7 +46,7 @@ export const createSkill = createAsyncThunk(
 export const updateSkill = createAsyncThunk(
   'skills/update',
   async ({ id, ...updates }: Partial<Skill> & { id: string }) => {
-    const res = await fetch(`${API_BASE}/${id}`, {
+    const res = await fetch(`${SKILLS_API}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -56,7 +57,7 @@ export const updateSkill = createAsyncThunk(
 );
 
 export const deleteSkill = createAsyncThunk('skills/delete', async (id: string) => {
-  await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+  await fetch(`${SKILLS_API}/${id}`, { method: 'DELETE' });
   return id;
 });
 

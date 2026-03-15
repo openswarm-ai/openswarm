@@ -7,7 +7,7 @@ import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
-import { Output, executeOutput, OutputExecuteResult, getFrontendCode, getBackendCode, buildServeUrl } from '@/shared/state/outputsSlice';
+import { Output, executeOutput, OutputExecuteResult, getFrontendCode, getBackendCode, buildServeUrl, SERVE_BASE } from '@/shared/state/outputsSlice';
 import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import InputSchemaForm, { getDefault } from './InputSchemaForm';
@@ -109,14 +109,14 @@ const ViewRunDialog: React.FC<Props> = ({ output, onClose }) => {
               )}
               {result ? (
                 <ViewPreview
-                  serveUrl={`/api/outputs/${output.id}/serve/index.html`}
+                  serveUrl={`${SERVE_BASE}/${output.id}/serve/index.html`}
                   frontendCode={result.frontend_code}
                   inputData={result.input_data}
                   backendResult={result.backend_result}
                 />
               ) : (
                 <ViewPreview
-                  serveUrl={`/api/outputs/${output.id}/serve/index.html`}
+                  serveUrl={`${SERVE_BASE}/${output.id}/serve/index.html`}
                   frontendCode={getFrontendCode(output)}
                   inputData={inputData}
                 />

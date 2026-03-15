@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/agents`;
+const AGENTS_API = `${API_BASE}/agents`;
 
 export interface AgentMessage {
   id: string;
@@ -124,14 +125,14 @@ export const fetchSessions = createAsyncThunk(
     const params = new URLSearchParams();
     if (dashboardId) params.set('dashboard_id', dashboardId);
     const qs = params.toString();
-    const res = await fetch(`${API_BASE}/sessions${qs ? `?${qs}` : ''}`);
+    const res = await fetch(`${AGENTS_API}/sessions${qs ? `?${qs}` : ''}`);
     const data = await res.json();
     return data.sessions as AgentSession[];
   },
 );
 
 export const launchAgent = createAsyncThunk('agents/launchAgent', async (config: AgentConfig) => {
-  const res = await fetch(`${API_BASE}/launch`, {
+  const res = await fetch(`${AGENTS_API}/launch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
@@ -154,7 +155,7 @@ export interface SendMessagePayload {
 export const sendMessage = createAsyncThunk(
   'agents/sendMessage',
   async ({ sessionId, prompt, mode, model, images, contextPaths, forcedTools, attachedSkills }: SendMessagePayload) => {
-    await fetch(`${API_BASE}/sessions/${sessionId}/message`, {
+    await fetch(`${AGENTS_API}/sessions/${sessionId}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, mode, model, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills }),
@@ -166,7 +167,7 @@ export const sendMessage = createAsyncThunk(
 export const stopAgent = createAsyncThunk(
   'agents/stopAgent',
   async ({ sessionId, removeWorktree = false }: { sessionId: string; removeWorktree?: boolean }) => {
-    await fetch(`${API_BASE}/sessions/${sessionId}/stop`, {
+    await fetch(`${AGENTS_API}/sessions/${sessionId}/stop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ remove_worktree: removeWorktree }),
@@ -178,7 +179,7 @@ export const stopAgent = createAsyncThunk(
 export const editMessage = createAsyncThunk(
   'agents/editMessage',
   async ({ sessionId, messageId, content }: { sessionId: string; messageId: string; content: string }) => {
-    await fetch(`${API_BASE}/sessions/${sessionId}/edit_message`, {
+    await fetch(`${AGENTS_API}/sessions/${sessionId}/edit_message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message_id: messageId, content }),
@@ -190,7 +191,7 @@ export const editMessage = createAsyncThunk(
 export const switchBranch = createAsyncThunk(
   'agents/switchBranch',
   async ({ sessionId, branchId }: { sessionId: string; branchId: string }) => {
-    await fetch(`${API_BASE}/sessions/${sessionId}/switch_branch`, {
+    await fetch(`${AGENTS_API}/sessions/${sessionId}/switch_branch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ branch_id: branchId }),
@@ -215,7 +216,7 @@ export interface LaunchAndSendPayload {
 export const fetchSession = createAsyncThunk(
   'agents/fetchSession',
   async (sessionId: string) => {
-    const res = await fetch(`${API_BASE}/sessions/${sessionId}`);
+    const res = await fetch(`${AGENTS_API}/sessions/${sessionId}`);
     const session = await res.json();
     return session as AgentSession;
   }
@@ -224,7 +225,7 @@ export const fetchSession = createAsyncThunk(
 export const launchAndSendFirstMessage = createAsyncThunk(
   'agents/launchAndSendFirstMessage',
   async ({ draftId, config, prompt, mode, model, images, contextPaths, forcedTools, attachedSkills }: LaunchAndSendPayload) => {
-    const launchRes = await fetch(`${API_BASE}/launch`, {
+    const launchRes = await fetch(`${AGENTS_API}/launch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
@@ -232,13 +233,13 @@ export const launchAndSendFirstMessage = createAsyncThunk(
     const launchData = await launchRes.json();
     const session = launchData.session as AgentSession;
 
-    await fetch(`${API_BASE}/sessions/${session.id}/message`, {
+    await fetch(`${AGENTS_API}/sessions/${session.id}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, mode, model, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills }),
     });
 
-    const refreshRes = await fetch(`${API_BASE}/sessions/${session.id}`);
+    const refreshRes = await fetch(`${AGENTS_API}/sessions/${session.id}`);
     const updatedSession = await refreshRes.json() as AgentSession;
 
     return { draftId, session: updatedSession };
@@ -248,7 +249,7 @@ export const launchAndSendFirstMessage = createAsyncThunk(
 export const generateTitle = createAsyncThunk(
   'agents/generateTitle',
   async ({ sessionId, prompt }: { sessionId: string; prompt: string }) => {
-    const res = await fetch(`${API_BASE}/sessions/${sessionId}/generate-title`, {
+    const res = await fetch(`${AGENTS_API}/sessions/${sessionId}/generate-title`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
@@ -269,7 +270,7 @@ export interface GenerateGroupMetaPayload {
 export const generateGroupMeta = createAsyncThunk(
   'agents/generateGroupMeta',
   async ({ sessionId, groupId, toolCalls, resultsSummary, isRefinement }: GenerateGroupMetaPayload) => {
-    const res = await fetch(`${API_BASE}/sessions/${sessionId}/generate-group-meta`, {
+    const res = await fetch(`${AGENTS_API}/sessions/${sessionId}/generate-group-meta`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -287,7 +288,7 @@ export const generateGroupMeta = createAsyncThunk(
 export const updateSystemPrompt = createAsyncThunk(
   'agents/updateSystemPrompt',
   async ({ sessionId, systemPrompt }: { sessionId: string; systemPrompt: string }) => {
-    await fetch(`${API_BASE}/sessions/${sessionId}`, {
+    await fetch(`${AGENTS_API}/sessions/${sessionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ system_prompt: systemPrompt }),
@@ -309,7 +310,7 @@ export const handleApproval = createAsyncThunk(
     message?: string;
     updatedInput?: Record<string, any>;
   }) => {
-    await fetch(`${API_BASE}/approval`, {
+    await fetch(`${AGENTS_API}/approval`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ request_id: requestId, behavior, message, updated_input: updatedInput }),
@@ -321,7 +322,7 @@ export const handleApproval = createAsyncThunk(
 export const closeSession = createAsyncThunk(
   'agents/closeSession',
   async ({ sessionId }: { sessionId: string }) => {
-    await fetch(`${API_BASE}/sessions/${sessionId}/close`, { method: 'POST' });
+    await fetch(`${AGENTS_API}/sessions/${sessionId}/close`, { method: 'POST' });
     return sessionId;
   }
 );
@@ -329,7 +330,7 @@ export const closeSession = createAsyncThunk(
 export const deleteSession = createAsyncThunk(
   'agents/deleteSession',
   async ({ sessionId }: { sessionId: string }) => {
-    await fetch(`${API_BASE}/sessions/${sessionId}`, { method: 'DELETE' });
+    await fetch(`${AGENTS_API}/sessions/${sessionId}`, { method: 'DELETE' });
     return sessionId;
   }
 );
@@ -339,7 +340,7 @@ export const fetchHistory = createAsyncThunk(
   async ({ dashboardId }: { dashboardId?: string } = {}) => {
     const params = new URLSearchParams({ limit: '10000' });
     if (dashboardId) params.set('dashboard_id', dashboardId);
-    const res = await fetch(`${API_BASE}/history?${params}`);
+    const res = await fetch(`${AGENTS_API}/history?${params}`);
     const data = await res.json();
     return data.sessions as HistorySession[];
   },
@@ -357,7 +358,7 @@ export const searchHistory = createAsyncThunk(
   async ({ q = '', limit = 20, offset = 0, dashboardId }: SearchHistoryParams) => {
     const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) });
     if (dashboardId) params.set('dashboard_id', dashboardId);
-    const res = await fetch(`${API_BASE}/history?${params}`);
+    const res = await fetch(`${AGENTS_API}/history?${params}`);
     const data = await res.json();
     return {
       sessions: data.sessions as HistorySession[],
@@ -372,7 +373,7 @@ export const searchHistory = createAsyncThunk(
 export const resumeSession = createAsyncThunk(
   'agents/resumeSession',
   async ({ sessionId }: { sessionId: string }) => {
-    const res = await fetch(`${API_BASE}/sessions/${sessionId}/resume`, { method: 'POST' });
+    const res = await fetch(`${AGENTS_API}/sessions/${sessionId}/resume`, { method: 'POST' });
     const data = await res.json();
     return data.session as AgentSession;
   }

@@ -18,11 +18,8 @@ from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
-BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_DIR = os.path.join(BACKEND_DIR, "data", "dashboards")
-SESSIONS_DIR = os.path.join(BACKEND_DIR, "data", "sessions")
+from backend.config.paths import DASHBOARDS_DIR as DATA_DIR, SESSIONS_DIR, DASHBOARD_LAYOUT_DIR as OLD_LAYOUT_DIR
 
-OLD_LAYOUT_DIR = os.path.join(BACKEND_DIR, "data", "dashboard_layout")
 OLD_LAYOUT_FILE = os.path.join(OLD_LAYOUT_DIR, "layout.json")
 
 

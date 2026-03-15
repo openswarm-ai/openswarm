@@ -18,11 +18,9 @@ from backend.apps.tools_lib.models import ToolDefinition, ToolCreate, ToolUpdate
 
 logger = logging.getLogger(__name__)
 
-BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-load_dotenv(os.path.join(BACKEND_DIR, ".env"))
+from backend.config.paths import BACKEND_DIR, TOOLS_DIR as DATA_DIR, BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH
 
-DATA_DIR = os.path.join(BACKEND_DIR, "data", "tools")
-BUILTIN_PERMS_PATH = os.path.join(BACKEND_DIR, "data", "builtin_permissions.json")
+load_dotenv(os.path.join(BACKEND_DIR, ".env"))
 
 
 @asynccontextmanager
@@ -121,7 +119,8 @@ async def oauth_callback(code: str = Query(...), state: str = Query("")):
     tool = _load(tool_id)
     client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
     client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
-    redirect_uri = "http://localhost:8324/api/tools/oauth/callback"
+    _port = os.environ.get("OPENSWARM_PORT", "8324")
+    redirect_uri = f"http://localhost:{_port}/api/tools/oauth/callback"
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(GOOGLE_TOKEN_URL, data={
@@ -660,7 +659,8 @@ async def oauth_start(tool_id: str):
     if not client_id:
         raise HTTPException(status_code=400, detail="GOOGLE_OAUTH_CLIENT_ID not set in backend .env")
 
-    redirect_uri = "http://localhost:8324/api/tools/oauth/callback"
+    _port = os.environ.get("OPENSWARM_PORT", "8324")
+    redirect_uri = f"http://localhost:{_port}/api/tools/oauth/callback"
     state = tool_id
 
     _pending_oauth[state] = tool_id

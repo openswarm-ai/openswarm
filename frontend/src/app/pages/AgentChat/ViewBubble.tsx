@@ -10,6 +10,7 @@ import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useAppSelector } from '@/shared/hooks';
+import { SERVE_BASE } from '@/shared/state/outputsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ViewPreview from '../Views/ViewPreview';
 
@@ -41,7 +42,7 @@ const ViewBubble: React.FC<Props> = ({ toolInput, toolResult, isStreaming }) => 
   const outputColor = c.accent.primary;
   const outputIcon = output?.icon || 'view_quilt';
   const hasPreview = !!frontendCode.trim();
-  const serveUrl = outputId ? `/api/outputs/${outputId}/serve/index.html` : undefined;
+  const serveUrl = outputId ? `${SERVE_BASE}/${outputId}/serve/index.html` : undefined;
   const inputEntries = Object.entries(inputData);
 
   if (isStreaming && !hasPreview) {

@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/settings`;
+const SETTINGS_API = `${API_BASE}/settings`;
 
 export interface AppSettings {
   default_system_prompt: string | null;
@@ -46,14 +47,14 @@ const initialState: SettingsState = {
 };
 
 export const fetchSettings = createAsyncThunk('settings/fetch', async () => {
-  const res = await fetch(API_BASE);
+  const res = await fetch(SETTINGS_API);
   return (await res.json()) as AppSettings;
 });
 
 export const updateSettings = createAsyncThunk(
   'settings/update',
   async (settings: AppSettings) => {
-    const res = await fetch(API_BASE, {
+    const res = await fetch(SETTINGS_API, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
@@ -66,7 +67,7 @@ export const updateSettings = createAsyncThunk(
 export const browseDirectories = createAsyncThunk(
   'settings/browseDirectories',
   async (path: string) => {
-    const res = await fetch(`${API_BASE}/browse-directories?path=${encodeURIComponent(path)}`);
+    const res = await fetch(`${SETTINGS_API}/browse-directories?path=${encodeURIComponent(path)}`);
     if (!res.ok) throw new Error((await res.json()).detail);
     return (await res.json()) as BrowseResult;
   }

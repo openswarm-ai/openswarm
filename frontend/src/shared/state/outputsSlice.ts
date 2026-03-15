@@ -1,10 +1,10 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/outputs`;
+const OUTPUTS_API = `${API_BASE}/outputs`;
 
-export const SERVE_BASE = `http://${window.location.hostname}:8324/api/outputs`;
+export const SERVE_BASE = `${API_BASE}/outputs`;
 
-export const IFRAME_SERVE_BASE = '/api/outputs';
 
 export interface AutoRunConfig {
   enabled: boolean;
@@ -79,7 +79,7 @@ const initialState: OutputsState = { items: {}, loading: false, loaded: false };
 export const fetchOutputs = createAsyncThunk(
   'outputs/fetch',
   async () => {
-    const res = await fetch(`${API_BASE}/list`);
+    const res = await fetch(`${OUTPUTS_API}/list`);
     const data = await res.json();
     return data.outputs as Output[];
   },
@@ -89,7 +89,7 @@ export const fetchOutputs = createAsyncThunk(
 export const createOutput = createAsyncThunk(
   'outputs/create',
   async (body: Omit<Output, 'id' | 'created_at' | 'updated_at' | 'permission'>) => {
-    const res = await fetch(`${API_BASE}/create`, {
+    const res = await fetch(`${OUTPUTS_API}/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -103,7 +103,7 @@ export const createOutput = createAsyncThunk(
 export const updateOutput = createAsyncThunk(
   'outputs/update',
   async ({ id, ...updates }: Partial<Output> & { id: string }) => {
-    const res = await fetch(`${API_BASE}/${id}`, {
+    const res = await fetch(`${OUTPUTS_API}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -115,14 +115,14 @@ export const updateOutput = createAsyncThunk(
 );
 
 export const deleteOutput = createAsyncThunk('outputs/delete', async (id: string) => {
-  await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+  await fetch(`${OUTPUTS_API}/${id}`, { method: 'DELETE' });
   return id;
 });
 
 export const executeOutput = createAsyncThunk(
   'outputs/execute',
   async (body: { output_id: string; input_data: Record<string, any> }) => {
-    const res = await fetch(`${API_BASE}/execute`, {
+    const res = await fetch(`${OUTPUTS_API}/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -142,7 +142,7 @@ export interface AutoRunResult {
 export const autoRunOutput = createAsyncThunk(
   'outputs/autoRun',
   async (body: { prompt: string; input_schema: Record<string, any>; backend_code?: string | null; context_paths?: Array<{ path: string; type: string }>; forced_tools?: string[]; model?: string }) => {
-    const res = await fetch(`${API_BASE}/auto-run`, {
+    const res = await fetch(`${OUTPUTS_API}/auto-run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -165,7 +165,7 @@ export const autoRunAgentOutput = createAsyncThunk(
     forced_tools?: string[];
     context_paths?: Array<{ path: string; type: string }>;
   }) => {
-    const res = await fetch(`${API_BASE}/auto-run-agent`, {
+    const res = await fetch(`${OUTPUTS_API}/auto-run-agent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -176,7 +176,7 @@ export const autoRunAgentOutput = createAsyncThunk(
 );
 
 export async function cleanupAutoRunAgent(sessionId: string): Promise<void> {
-  await fetch(`${API_BASE}/auto-run-agent/${sessionId}`, { method: 'DELETE' });
+  await fetch(`${OUTPUTS_API}/auto-run-agent/${sessionId}`, { method: 'DELETE' });
 }
 
 const outputsSlice = createSlice({

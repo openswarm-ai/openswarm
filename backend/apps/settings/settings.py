@@ -13,10 +13,8 @@ from backend.apps.settings.models import AppSettings
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "settings",
-)
+from backend.config.paths import SETTINGS_DIR as DATA_DIR
+
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 
 

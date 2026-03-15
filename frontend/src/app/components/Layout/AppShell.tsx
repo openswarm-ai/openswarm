@@ -79,7 +79,34 @@ const AppShell: React.FC = () => {
   };
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh', bgcolor: c.bg.page }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: c.bg.page }}>
+      {/* Draggable title bar */}
+      <Box
+        sx={{
+          height: 38,
+          flexShrink: 0,
+          bgcolor: c.bg.secondary,
+          borderBottom: `0.5px solid ${c.border.medium}`,
+          display: 'flex',
+          alignItems: 'center',
+          WebkitAppRegion: 'drag',
+          userSelect: 'none',
+          pl: '78px',
+        }}
+      >
+        <Typography
+          sx={{
+            color: c.text.tertiary,
+            fontSize: '0.8rem',
+            fontWeight: 500,
+            letterSpacing: 0.3,
+          }}
+        >
+          OpenSwarm
+        </Typography>
+      </Box>
+
+      <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <Box
         sx={{
           width: 240,
@@ -93,7 +120,7 @@ const AppShell: React.FC = () => {
         <Box sx={{ p: 2.5, borderBottom: `0.5px solid ${c.border.medium}`, display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box
             component="img"
-            src="/logo.png"
+            src="./logo.png"
             alt="Open Swarm"
             sx={{ width: 36, height: 36, borderRadius: 1, flexShrink: 0 }}
           />
@@ -292,6 +319,7 @@ const AppShell: React.FC = () => {
 
       <Box sx={{ flex: 1, overflow: 'hidden', bgcolor: c.bg.page }}>
         <Outlet />
+      </Box>
       </Box>
 
       <Settings />

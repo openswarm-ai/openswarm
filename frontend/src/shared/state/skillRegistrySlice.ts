@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/skill-registry`;
+const SKILL_REGISTRY_API = `${API_BASE}/skill-registry`;
 
 export interface RegistrySkill {
   name: string;
@@ -40,13 +41,13 @@ export const searchSkillRegistry = createAsyncThunk(
   'skillRegistry/search',
   async ({ q, limit = 20, offset = 0, sort = 'name', category = '' }: { q: string; limit?: number; offset?: number; sort?: string; category?: string }) => {
     const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset), sort, category });
-    const res = await fetch(`${API_BASE}/search?${params}`);
+    const res = await fetch(`${SKILL_REGISTRY_API}/search?${params}`);
     return (await res.json()) as { skills: RegistrySkill[]; total: number; offset: number; limit: number };
   },
 );
 
 export const fetchSkillRegistryStats = createAsyncThunk('skillRegistry/stats', async () => {
-  const res = await fetch(`${API_BASE}/stats`);
+  const res = await fetch(`${SKILL_REGISTRY_API}/stats`);
   return (await res.json()) as { total: number; categories: Record<string, number>; lastUpdated: number };
 });
 
@@ -54,7 +55,7 @@ export const fetchAllRegistrySkills = createAsyncThunk(
   'skillRegistry/fetchAll',
   async () => {
     const params = new URLSearchParams({ q: '', limit: '100', offset: '0', sort: 'name', category: '' });
-    const res = await fetch(`${API_BASE}/search?${params}`);
+    const res = await fetch(`${SKILL_REGISTRY_API}/search?${params}`);
     return (await res.json()) as { skills: RegistrySkill[]; total: number; offset: number; limit: number };
   },
 );
@@ -62,7 +63,7 @@ export const fetchAllRegistrySkills = createAsyncThunk(
 export const fetchSkillDetail = createAsyncThunk(
   'skillRegistry/detail',
   async (name: string) => {
-    const res = await fetch(`${API_BASE}/detail/${encodeURIComponent(name)}`);
+    const res = await fetch(`${SKILL_REGISTRY_API}/detail/${encodeURIComponent(name)}`);
     const data = await res.json();
     return data.skill as RegistrySkillDetail;
   },

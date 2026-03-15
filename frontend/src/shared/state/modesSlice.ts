@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/modes`;
+const MODES_API = `${API_BASE}/modes`;
 
 export interface Mode {
   id: string;
@@ -26,7 +27,7 @@ const initialState: ModesState = { items: {}, loading: false, loaded: false };
 export const fetchModes = createAsyncThunk(
   'modes/fetch',
   async () => {
-    const res = await fetch(`${API_BASE}/list`);
+    const res = await fetch(`${MODES_API}/list`);
     const data = await res.json();
     return data.modes as Mode[];
   },
@@ -36,7 +37,7 @@ export const fetchModes = createAsyncThunk(
 export const createMode = createAsyncThunk(
   'modes/create',
   async (body: Omit<Mode, 'id' | 'is_builtin'>) => {
-    const res = await fetch(`${API_BASE}/create`, {
+    const res = await fetch(`${MODES_API}/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -49,7 +50,7 @@ export const createMode = createAsyncThunk(
 export const updateMode = createAsyncThunk(
   'modes/update',
   async ({ id, ...updates }: Partial<Mode> & { id: string }) => {
-    const res = await fetch(`${API_BASE}/${id}`, {
+    const res = await fetch(`${MODES_API}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -60,7 +61,7 @@ export const updateMode = createAsyncThunk(
 );
 
 export const deleteMode = createAsyncThunk('modes/delete', async (id: string) => {
-  await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+  await fetch(`${MODES_API}/${id}`, { method: 'DELETE' });
   return id;
 });
 

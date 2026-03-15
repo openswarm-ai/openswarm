@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = (env, argv) => {
   const isDevelopment = argv.mode === 'development';
@@ -10,7 +11,7 @@ module.exports = (env, argv) => {
     output: {
       path: path.resolve(__dirname, 'dist'),
       filename: 'bundle.js',
-      publicPath: '/',
+      publicPath: isDevelopment ? '/' : './',
       clean: true
     },
 
@@ -61,7 +62,16 @@ module.exports = (env, argv) => {
         template: './public/index.html',
         filename: 'index.html',
         favicon: './public/favicon.ico'
-      })
+      }),
+      new CopyWebpackPlugin({
+        patterns: [
+          {
+            from: 'public',
+            to: '.',
+            globOptions: { ignore: ['**/index.html', '**/favicon.ico'] },
+          },
+        ],
+      }),
     ],
 
     devtool: isDevelopment ? 'source-map' : false,

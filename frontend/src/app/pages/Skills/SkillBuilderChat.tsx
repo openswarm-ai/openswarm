@@ -16,8 +16,9 @@ import { createDraftSession, removeDraftSession } from '@/shared/state/agentsSli
 import { createSkill } from '@/shared/state/skillsSlice';
 import AgentChat from '../AgentChat/AgentChat';
 import { ContextPath } from '@/app/components/DirectoryBrowser';
+import { API_BASE } from '@/shared/config';
 
-const SKILLS_WORKSPACE_API = `http://${window.location.hostname}:8324/api/skills`;
+const SKILLS_WORKSPACE_API = `${API_BASE}/skills`;
 const POLL_INTERVAL_MS = 2000;
 
 export interface SkillPreviewData {

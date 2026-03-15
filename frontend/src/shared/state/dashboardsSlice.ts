@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/dashboards`;
+const DASHBOARDS_API = `${API_BASE}/dashboards`;
 
 export interface Dashboard {
   id: string;
@@ -20,7 +21,7 @@ const initialState: DashboardsState = {
 };
 
 export const fetchDashboards = createAsyncThunk('dashboards/fetchAll', async () => {
-  const res = await fetch(`${API_BASE}/list`);
+  const res = await fetch(`${DASHBOARDS_API}/list`);
   const data = await res.json();
   return data.dashboards as Dashboard[];
 });
@@ -28,7 +29,7 @@ export const fetchDashboards = createAsyncThunk('dashboards/fetchAll', async () 
 export const createDashboard = createAsyncThunk(
   'dashboards/create',
   async (name: string) => {
-    const res = await fetch(`${API_BASE}/create`, {
+    const res = await fetch(`${DASHBOARDS_API}/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -40,7 +41,7 @@ export const createDashboard = createAsyncThunk(
 export const renameDashboard = createAsyncThunk(
   'dashboards/rename',
   async ({ id, name }: { id: string; name: string }) => {
-    const res = await fetch(`${API_BASE}/${id}`, {
+    const res = await fetch(`${DASHBOARDS_API}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -52,7 +53,7 @@ export const renameDashboard = createAsyncThunk(
 export const deleteDashboard = createAsyncThunk(
   'dashboards/delete',
   async (id: string) => {
-    await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+    await fetch(`${DASHBOARDS_API}/${id}`, { method: 'DELETE' });
     return id;
   },
 );
@@ -60,7 +61,7 @@ export const deleteDashboard = createAsyncThunk(
 export const duplicateDashboard = createAsyncThunk(
   'dashboards/duplicate',
   async (id: string) => {
-    const res = await fetch(`${API_BASE}/${id}/duplicate`, { method: 'POST' });
+    const res = await fetch(`${DASHBOARDS_API}/${id}/duplicate`, { method: 'POST' });
     return (await res.json()) as Dashboard;
   },
 );

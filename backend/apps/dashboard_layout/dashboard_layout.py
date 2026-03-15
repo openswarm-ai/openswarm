@@ -7,7 +7,8 @@ from backend.apps.dashboard_layout.models import DashboardLayout, DashboardLayou
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "dashboard_layout")
+from backend.config.paths import DASHBOARD_LAYOUT_DIR as DATA_DIR
+
 LAYOUT_FILE = os.path.join(DATA_DIR, "layout.json")
 
 

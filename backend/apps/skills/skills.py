@@ -13,10 +13,7 @@ logger = logging.getLogger(__name__)
 SKILLS_DIR = os.path.expanduser("~/.claude/skills")
 INDEX_PATH = os.path.join(SKILLS_DIR, ".skills_index.json")
 
-SKILLS_WORKSPACE_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "skills_workspace",
-)
+from backend.config.paths import SKILLS_WORKSPACE_DIR
 
 
 @asynccontextmanager

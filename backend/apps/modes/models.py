@@ -1,17 +1,8 @@
-import os
 from pydantic import BaseModel, Field
 from typing import Optional
 from uuid import uuid4
 
-OUTPUTS_WORKSPACE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "outputs_workspace",
-)
-
-SKILLS_WORKSPACE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "skills_workspace",
-)
+from backend.config.paths import OUTPUTS_WORKSPACE_DIR as OUTPUTS_WORKSPACE, SKILLS_WORKSPACE_DIR as SKILLS_WORKSPACE
 
 
 class Mode(BaseModel):

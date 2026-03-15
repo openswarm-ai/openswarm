@@ -1,3 +1,5 @@
+import os
+
 from fastapi.responses import JSONResponse
 from backend.config.Apps import MainApp
 from backend.apps.health.health import health
@@ -87,5 +89,29 @@ async def websocket_dashboard(websocket: WebSocket):
         ws_manager.disconnect_global(websocket)
 
 if __name__ == "__main__":
+    import argparse
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8324, reload=True)
+
+    parser = argparse.ArgumentParser(description="OpenSwarm backend server")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("OPENSWARM_PORT", "8324")))
+    parser.add_argument("--host", default=os.environ.get("OPENSWARM_HOST", "127.0.0.1"))
+    parser.add_argument("--reload", action="store_true", default=False)
+    args = parser.parse_args()
+
+    os.environ["OPENSWARM_PORT"] = str(args.port)
+
+    import uvicorn.config
+
+    class _ReadyServer(uvicorn.Server):
+        """Subclass that prints a machine-readable READY line on startup."""
+        async def startup(self, sockets=None):
+            await super().startup(sockets)
+            print(f"READY:PORT={args.port}", flush=True)
+
+    if args.reload:
+        uvicorn.run("backend.main:app", host=args.host, port=args.port, reload=True)
+    else:
+        config = uvicorn.Config("backend.main:app", host=args.host, port=args.port)
+        server = _ReadyServer(config)
+        import asyncio
+        asyncio.run(server.serve())

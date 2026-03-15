@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/templates`;
+const TEMPLATES_API = `${API_BASE}/templates`;
 
 export interface TemplateField {
   name: string;
@@ -34,7 +35,7 @@ const initialState: TemplatesState = {
 export const fetchTemplates = createAsyncThunk(
   'templates/fetch',
   async () => {
-    const res = await fetch(`${API_BASE}/list`);
+    const res = await fetch(`${TEMPLATES_API}/list`);
     const data = await res.json();
     return data.templates as PromptTemplate[];
   },
@@ -44,7 +45,7 @@ export const fetchTemplates = createAsyncThunk(
 export const createTemplate = createAsyncThunk(
   'templates/create',
   async (body: Omit<PromptTemplate, 'id'>) => {
-    const res = await fetch(`${API_BASE}/create`, {
+    const res = await fetch(`${TEMPLATES_API}/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -57,7 +58,7 @@ export const createTemplate = createAsyncThunk(
 export const updateTemplate = createAsyncThunk(
   'templates/update',
   async ({ id, ...updates }: Partial<PromptTemplate> & { id: string }) => {
-    const res = await fetch(`${API_BASE}/${id}`, {
+    const res = await fetch(`${TEMPLATES_API}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -68,14 +69,14 @@ export const updateTemplate = createAsyncThunk(
 );
 
 export const deleteTemplate = createAsyncThunk('templates/delete', async (id: string) => {
-  await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+  await fetch(`${TEMPLATES_API}/${id}`, { method: 'DELETE' });
   return id;
 });
 
 export const renderTemplate = createAsyncThunk(
   'templates/render',
   async ({ templateId, values }: { templateId: string; values: Record<string, any> }) => {
-    const res = await fetch(`${API_BASE}/render`, {
+    const res = await fetch(`${TEMPLATES_API}/render`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ template_id: templateId, values }),

@@ -10,7 +10,6 @@ from typing import Optional
 from backend.apps.agents.models import (
     AgentConfig, AgentSession, Message, MessageBranch, ApprovalRequest, ToolGroupMeta,
 )
-from backend.apps.agents.worktree_manager import WorktreeManager
 from backend.apps.agents.ws_manager import ws_manager
 from backend.apps.modes.modes import load_mode
 from backend.apps.outputs.outputs import _load_all as load_all_outputs
@@ -22,15 +21,11 @@ from backend.apps.tools_lib.tools_lib import (
     load_builtin_permissions,
     refresh_google_token,
 )
+from backend.config.paths import SESSIONS_DIR
 
 logger = logging.getLogger(__name__)
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
-
-SESSIONS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "sessions",
-)
 
 
 def _save_session(session_id: str, doc_data: dict):
@@ -71,9 +66,6 @@ FULL_TOOLS = [
     "CronCreate", "CronList", "CronDelete",
     "RenderOutput",
 ]
-
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 
 def _get_denied_tool_names(tool) -> set[str]:
     """Return the set of MCP sub-tool names whose permission is 'deny'."""
@@ -122,7 +114,6 @@ class AgentManager:
     def __init__(self):
         self.sessions: dict[str, AgentSession] = {}
         self.tasks: dict[str, asyncio.Task] = {}
-        self.worktree_mgr = WorktreeManager(REPO_ROOT)
     
     def _resolve_mode(self, mode_id: str) -> tuple[list[str], str | None, str | None]:
         """Return (tools, system_prompt, default_folder) resolved from the mode store."""
@@ -246,10 +237,7 @@ class AgentManager:
 
     async def launch_agent(self, config: AgentConfig) -> AgentSession:
         session_id = uuid4().hex
-        branch_name = f"agent-{session_id[:8]}"
-        
-        worktree_path = await self.worktree_mgr.create_worktree(branch_name)
-        
+
         mode_tools, _, mode_folder = self._resolve_mode(config.mode)
         tools = mode_tools
 
@@ -258,7 +246,7 @@ class AgentManager:
             config.target_directory
             or mode_folder
             or global_settings.default_folder
-            or str(REPO_ROOT)
+            or os.path.expanduser("~")
         )
 
         if config.mode in ("view-builder", "skill-builder") and not config.target_directory:
@@ -271,8 +259,6 @@ class AgentManager:
             name=config.name,
             model=config.model,
             mode=config.mode,
-            worktree_path=worktree_path,
-            branch_name=branch_name,
             system_prompt=config.system_prompt,
             allowed_tools=tools,
             max_turns=config.max_turns,
@@ -593,8 +579,9 @@ class AgentManager:
                 "allowed_tools": effective_allowed,
                 "include_partial_messages": True,
             }
-            if global_settings.anthropic_api_key:
-                options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
+            if not global_settings.anthropic_api_key:
+                raise ValueError("Anthropic API key not configured. Set it in Settings.")
+            options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
             if mcp_servers:
                 options_kwargs["mcp_servers"] = mcp_servers
             if composed_prompt:
@@ -867,7 +854,7 @@ class AgentManager:
             f"I've processed your request: \"{prompt}\"\n\n"
             "This is a mock response because `claude-agent-sdk` is not installed. "
             "Install it with `pip install claude-agent-sdk` to use real Claude Code instances.\n\n"
-            f"The agent was configured with:\n- Model: {session.model}\n- Mode: {session.mode}\n- Worktree: {session.branch_name}"
+            f"The agent was configured with:\n- Model: {session.model}\n- Mode: {session.mode}"
         )
         asst_msg_id = uuid4().hex
         await self._stream_text(session_id, asst_msg_id, asst_text)
@@ -946,7 +933,7 @@ class AgentManager:
         task = asyncio.create_task(self._run_agent_loop(session_id, prompt, images=images, context_paths=context_paths, forced_tools=forced_tools, attached_skills=attached_skills))
         self.tasks[session_id] = task
 
-    async def stop_agent(self, session_id: str, remove_worktree: bool = False):
+    async def stop_agent(self, session_id: str):
         """Stop a running agent."""
         task = self.tasks.get(session_id)
         if task and not task.done():
@@ -964,9 +951,6 @@ class AgentManager:
                 "status": "stopped",
                 "session": session.model_dump(mode="json"),
             })
-        
-        if remove_worktree and session and session.branch_name:
-            await self.worktree_mgr.remove_worktree(session.branch_name)
 
     def handle_approval(self, request_id: str, decision: dict):
         """Resolve a pending HITL approval."""
@@ -1039,10 +1023,9 @@ class AgentManager:
         try:
             import anthropic
             global_settings = load_settings()
-            client_kwargs = {}
-            if global_settings.anthropic_api_key:
-                client_kwargs["api_key"] = global_settings.anthropic_api_key
-            client = anthropic.AsyncAnthropic(**client_kwargs)
+            if not global_settings.anthropic_api_key:
+                raise ValueError("API key not configured")
+            client = anthropic.AsyncAnthropic(api_key=global_settings.anthropic_api_key)
             resp = await client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=30,
@@ -1084,10 +1067,9 @@ class AgentManager:
         try:
             import anthropic, json as _json
             global_settings = load_settings()
-            client_kwargs = {}
-            if global_settings.anthropic_api_key:
-                client_kwargs["api_key"] = global_settings.anthropic_api_key
-            client = anthropic.AsyncAnthropic(**client_kwargs)
+            if not global_settings.anthropic_api_key:
+                raise ValueError("API key not configured")
+            client = anthropic.AsyncAnthropic(api_key=global_settings.anthropic_api_key)
 
             tool_desc = "\n".join(
                 f"- {tc.get('tool', '?')}: {tc.get('input_summary', '')}" for tc in tool_calls
@@ -1171,7 +1153,7 @@ class AgentManager:
 
     async def close_session(self, session_id: str) -> None:
         """Close a session: pause the agent if running, persist to JSON file,
-        and remove from in-memory state. Worktree is kept on disk for resume."""
+        and remove from in-memory state."""
         task = self.tasks.get(session_id)
         if task and not task.done():
             task.cancel()
@@ -1211,7 +1193,7 @@ class AgentManager:
         logger.info(f"Session {session_id} closed and persisted")
 
     async def delete_session(self, session_id: str) -> None:
-        """Permanently delete a session: remove from memory, JSON file, worktree, and branch."""
+        """Permanently delete a session: remove from memory and JSON file."""
         task = self.tasks.get(session_id)
         if task and not task.done():
             task.cancel()
@@ -1220,20 +1202,8 @@ class AgentManager:
             except asyncio.CancelledError:
                 pass
 
-        session = self.sessions.pop(session_id, None)
+        self.sessions.pop(session_id, None)
         self.tasks.pop(session_id, None)
-
-        branch_name: str | None = None
-        if session:
-            branch_name = session.branch_name
-        else:
-            data = _load_session_data(session_id)
-            if data:
-                branch_name = data.get("branch_name")
-
-        if branch_name:
-            await self.worktree_mgr.remove_worktree(branch_name)
-            await self.worktree_mgr.delete_branch(branch_name)
 
         _delete_session_file(session_id)
         logger.info(f"Session {session_id} permanently deleted")
@@ -1248,17 +1218,6 @@ class AgentManager:
             raise ValueError(f"Session {session_id} not found in history")
 
         session = AgentSession(**data)
-
-        if session.branch_name:
-            worktree_path = os.path.join(self.worktree_mgr.worktrees_dir, session.branch_name)
-            if not os.path.exists(worktree_path):
-                try:
-                    worktree_path = await self.worktree_mgr.create_worktree(session.branch_name)
-                except RuntimeError:
-                    new_branch = f"agent-{session_id[:8]}"
-                    worktree_path = await self.worktree_mgr.create_worktree(new_branch)
-                    session.branch_name = new_branch
-            session.worktree_path = worktree_path
 
         session.closed_at = None
         self.sessions[session_id] = session
@@ -1349,21 +1308,6 @@ class AgentManager:
                 session.status = "stopped"
             session.closed_at = None
             session.pending_approvals = []
-            if session.branch_name:
-                worktree_path = os.path.join(
-                    self.worktree_mgr.worktrees_dir, session.branch_name
-                )
-                if not os.path.exists(worktree_path):
-                    try:
-                        worktree_path = await self.worktree_mgr.create_worktree(
-                            session.branch_name
-                        )
-                    except RuntimeError:
-                        logger.warning(
-                            f"Could not restore worktree for session {session.id}, skipping"
-                        )
-                        continue
-                session.worktree_path = worktree_path
             self.sessions[session.id] = session
             _delete_session_file(sid)
             logger.info(f"Restored session {session.id}")

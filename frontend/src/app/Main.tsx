@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect } from 'react';
 import { Provider } from 'react-redux';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider as MuiThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { store } from '../shared/state/store';
 import { useAppDispatch } from '@/shared/hooks';
@@ -138,7 +138,7 @@ const ThemedApp: React.FC = () => {
   return (
     <MuiThemeProvider theme={muiTheme}>
       <CssBaseline />
-      <BrowserRouter>
+      <HashRouter>
         <ShortcutsProvider>
           <SettingsLoader>
             <Routes>
@@ -155,7 +155,7 @@ const ThemedApp: React.FC = () => {
             </Routes>
           </SettingsLoader>
         </ShortcutsProvider>
-      </BrowserRouter>
+      </HashRouter>
     </MuiThemeProvider>
   );
 };

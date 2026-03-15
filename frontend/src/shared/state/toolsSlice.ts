@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-const API_BASE = `http://${window.location.hostname}:8324/api/tools`;
+const TOOLS_API = `${API_BASE}/tools`;
 
 export interface ToolDefinition {
   id: string;
@@ -38,7 +39,7 @@ const initialState: ToolsState = { items: {}, builtinTools: [], builtinPermissio
 export const fetchTools = createAsyncThunk(
   'tools/fetch',
   async () => {
-    const res = await fetch(`${API_BASE}/list`);
+    const res = await fetch(`${TOOLS_API}/list`);
     const data = await res.json();
     return data.tools as ToolDefinition[];
   },
@@ -48,7 +49,7 @@ export const fetchTools = createAsyncThunk(
 export const fetchBuiltinTools = createAsyncThunk(
   'tools/fetchBuiltin',
   async () => {
-    const res = await fetch(`${API_BASE}/builtin`);
+    const res = await fetch(`${TOOLS_API}/builtin`);
     const data = await res.json();
     return data.tools as BuiltinTool[];
   },
@@ -58,7 +59,7 @@ export const fetchBuiltinTools = createAsyncThunk(
 export const createTool = createAsyncThunk(
   'tools/create',
   async (body: Partial<Omit<ToolDefinition, 'id'>> & { name: string }) => {
-    const res = await fetch(`${API_BASE}/create`, {
+    const res = await fetch(`${TOOLS_API}/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -71,7 +72,7 @@ export const createTool = createAsyncThunk(
 export const updateTool = createAsyncThunk(
   'tools/update',
   async ({ id, ...updates }: Partial<ToolDefinition> & { id: string }) => {
-    const res = await fetch(`${API_BASE}/${id}`, {
+    const res = await fetch(`${TOOLS_API}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -82,14 +83,14 @@ export const updateTool = createAsyncThunk(
 );
 
 export const deleteTool = createAsyncThunk('tools/delete', async (id: string) => {
-  await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+  await fetch(`${TOOLS_API}/${id}`, { method: 'DELETE' });
   return id;
 });
 
 export const startOAuth = createAsyncThunk(
   'tools/startOAuth',
   async (toolId: string) => {
-    const res = await fetch(`${API_BASE}/${toolId}/oauth/start`, { method: 'POST' });
+    const res = await fetch(`${TOOLS_API}/${toolId}/oauth/start`, { method: 'POST' });
     if (!res.ok) throw new Error('Failed to start OAuth');
     const data = await res.json();
     return data as { auth_url: string };
@@ -99,7 +100,7 @@ export const startOAuth = createAsyncThunk(
 export const fetchToolStatus = createAsyncThunk(
   'tools/fetchStatus',
   async (toolId: string) => {
-    const res = await fetch(`${API_BASE}/${toolId}`);
+    const res = await fetch(`${TOOLS_API}/${toolId}`);
     const data = await res.json();
     return data as ToolDefinition;
   }
@@ -108,7 +109,7 @@ export const fetchToolStatus = createAsyncThunk(
 export const discoverTools = createAsyncThunk(
   'tools/discover',
   async (toolId: string) => {
-    const res = await fetch(`${API_BASE}/${toolId}/discover`, { method: 'POST' });
+    const res = await fetch(`${TOOLS_API}/${toolId}/discover`, { method: 'POST' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Discovery failed' }));
       throw new Error(err.detail || 'Discovery failed');
@@ -119,7 +120,7 @@ export const discoverTools = createAsyncThunk(
 );
 
 export const fetchBuiltinPermissions = createAsyncThunk('tools/fetchBuiltinPermissions', async () => {
-  const res = await fetch(`${API_BASE}/builtin/permissions`);
+  const res = await fetch(`${TOOLS_API}/builtin/permissions`);
   const data = await res.json();
   return data.permissions as Record<string, string>;
 });
@@ -127,7 +128,7 @@ export const fetchBuiltinPermissions = createAsyncThunk('tools/fetchBuiltinPermi
 export const updateBuiltinPermissions = createAsyncThunk(
   'tools/updateBuiltinPermissions',
   async (permissions: Record<string, string>) => {
-    const res = await fetch(`${API_BASE}/builtin/permissions`, {
+    const res = await fetch(`${TOOLS_API}/builtin/permissions`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ permissions }),
