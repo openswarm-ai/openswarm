@@ -25,6 +25,7 @@ import DarkModeIcon from '@mui/icons-material/DarkMode';
 import SaveIcon from '@mui/icons-material/Save';
 import CloseIcon from '@mui/icons-material/Close';
 import KeyboardIcon from '@mui/icons-material/Keyboard';
+import LanguageIcon from '@mui/icons-material/Language';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { updateSettings, closeSettingsModal, AppSettings } from '@/shared/state/settingsSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
@@ -441,6 +442,33 @@ const Settings: React.FC = () => {
                   .join(' + ')}
               </Typography>
             )}
+          </Box>
+        </Box>
+
+        {/* ── Browser ── */}
+        <Typography sx={{ ...sectionSx, mt: 3 }}>Browser</Typography>
+
+        <Box sx={rowLastSx}>
+          <Typography sx={labelSx}>Default homepage</Typography>
+          <Typography sx={{ ...descSx, mb: 1.5 }}>
+            URL loaded when opening a new browser card on the dashboard.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <LanguageIcon sx={{ fontSize: 18, color: c.text.tertiary, flexShrink: 0 }} />
+            <TextField
+              value={form.browser_homepage}
+              onChange={(e) => setForm({ ...form, browser_homepage: e.target.value })}
+              size="small"
+              fullWidth
+              placeholder="https://www.google.com"
+              sx={{
+                ...fieldSx,
+                '& .MuiOutlinedInput-root': {
+                  ...fieldSx['& .MuiOutlinedInput-root'],
+                  fontFamily: c.font.mono,
+                },
+              }}
+            />
           </Box>
         </Box>
 

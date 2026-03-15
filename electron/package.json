@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "dev": "ELECTRON_DEV=1 electron .",
     "dist": "electron-builder --mac --publish never",
     "dist:all": "electron-builder --mac --win --linux"
   },

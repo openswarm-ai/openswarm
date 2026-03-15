@@ -19,6 +19,7 @@ RESET='\033[0m'
 
 BACKEND_PID=""
 FRONTEND_PID=""
+ELECTRON_PID=""
 SHUTTING_DOWN=false
 
 kill_tree() {
@@ -38,14 +39,14 @@ cleanup() {
     echo ""
     echo -e "${YELLOW}${BOLD}Gracefully shutting down all services...${RESET}"
 
-    for pid in $BACKEND_PID $FRONTEND_PID; do
+    for pid in $ELECTRON_PID $BACKEND_PID $FRONTEND_PID; do
         [[ -n "$pid" ]] && kill_tree "$pid" TERM
     done
 
     local elapsed=0
     while (( elapsed < 5 )); do
         local alive=false
-        for pid in $BACKEND_PID $FRONTEND_PID; do
+        for pid in $ELECTRON_PID $BACKEND_PID $FRONTEND_PID; do
             [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && alive=true
         done
         $alive || break
@@ -53,7 +54,7 @@ cleanup() {
         ((elapsed++))
     done
 
-    for pid in $BACKEND_PID $FRONTEND_PID; do
+    for pid in $ELECTRON_PID $BACKEND_PID $FRONTEND_PID; do
         [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && kill_tree "$pid" KILL
     done
 
@@ -104,13 +105,46 @@ bash "$PROJECT_ROOT/frontend/run.sh" > >(
 ) 2>&1 &
 FRONTEND_PID=$!
 
+# --- Wait for frontend dev server to become available ---
+echo -e "${YELLOW}${BOLD}Waiting for frontend (http://localhost:3000) to be ready...${RESET}"
+FRONTEND_MAX_WAIT=60
+frontend_elapsed=0
+while (( frontend_elapsed < FRONTEND_MAX_WAIT )); do
+    if curl -s -o /dev/null --connect-timeout 1 http://localhost:3000/ 2>/dev/null; then
+        echo -e "${GREEN}${BOLD}Frontend is ready!${RESET}"
+        break
+    fi
+    if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
+        echo -e "${RED}${BOLD}Frontend process exited before becoming ready.${RESET}"
+        exit 1
+    fi
+    sleep 2
+    ((frontend_elapsed += 2))
+done
+
+if (( frontend_elapsed >= FRONTEND_MAX_WAIT )); then
+    echo -e "${RED}${BOLD}Frontend did not become ready within ${FRONTEND_MAX_WAIT}s. Aborting.${RESET}"
+    exit 1
+fi
+
+# --- Start Electron in dev mode ---
+MAGENTA='\033[0;35m'
+echo -e "${MAGENTA}${BOLD}[electron]${RESET} Launching Electron dev shell..."
+(cd "$PROJECT_ROOT/electron" && ELECTRON_DEV=1 npx electron .) > >(
+    while IFS= read -r line; do
+        printf "${MAGENTA}${BOLD}[electron]${RESET} %s\n" "$line"
+    done
+) 2>&1 &
+ELECTRON_PID=$!
+
 echo ""
-echo -e "${BOLD}Both services are running. Press Ctrl+C to stop.${RESET}"
+echo -e "${BOLD}All services are running. Press Ctrl+C to stop.${RESET}"
 echo -e "  Backend:  ${BLUE}http://localhost:8324${RESET}"
 echo -e "  Frontend: ${GREEN}http://localhost:3000${RESET}"
+echo -e "  Electron: ${MAGENTA}dev shell (pid $ELECTRON_PID)${RESET}"
 echo ""
 
-# --- Monitor: if either service exits, tear down both ---
+# --- Monitor: if any service exits, tear down all ---
 while ! $SHUTTING_DOWN; do
     if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
         echo -e "${RED}${BOLD}Backend process exited unexpectedly. Shutting down...${RESET}"
@@ -119,6 +153,10 @@ while ! $SHUTTING_DOWN; do
     if [[ -n "$FRONTEND_PID" ]] && ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
         echo -e "${RED}${BOLD}Frontend process exited unexpectedly. Shutting down...${RESET}"
         exit 1
+    fi
+    if [[ -n "$ELECTRON_PID" ]] && ! kill -0 "$ELECTRON_PID" 2>/dev/null; then
+        echo -e "${YELLOW}${BOLD}Electron process exited. Shutting down...${RESET}"
+        exit 0
     fi
     sleep 3
 done

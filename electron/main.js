@@ -10,6 +10,7 @@ let backendProcess = null;
 let backendPort = null;
 
 const isPackaged = app.isPackaged;
+const isDev = process.env.ELECTRON_DEV === '1';
 
 function getResourcePath(...segments) {
   if (isPackaged) {
@@ -122,11 +123,16 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      webviewTag: true,
     },
   });
 
-  const frontendPath = getResourcePath('frontend', 'index.html');
-  mainWindow.loadFile(frontendPath);
+  if (isDev) {
+    mainWindow.loadURL(`http://localhost:3000`);
+  } else {
+    const frontendPath = getResourcePath('frontend', 'index.html');
+    mainWindow.loadFile(frontendPath);
+  }
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -180,9 +186,16 @@ function killBackend() {
 
 app.whenReady().then(async () => {
   try {
-    await startBackend();
+    if (isDev) {
+      backendPort = parseInt(process.env.OPENSWARM_PORT || '8324', 10);
+      console.log(`Dev mode: using existing backend on port ${backendPort}`);
+    } else {
+      await startBackend();
+    }
     createWindow();
-    setupAutoUpdater();
+    if (!isDev) {
+      setupAutoUpdater();
+    }
   } catch (err) {
     console.error('Failed to start:', err);
     app.quit();
@@ -190,12 +203,12 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  killBackend();
+  if (!isDev) killBackend();
   app.quit();
 });
 
 app.on('will-quit', () => {
-  killBackend();
+  if (!isDev) killBackend();
 });
 
 app.on('activate', () => {

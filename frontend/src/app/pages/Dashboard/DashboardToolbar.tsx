@@ -10,6 +10,7 @@ import AddIcon from '@mui/icons-material/Add';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import StickyNote2OutlinedIcon from '@mui/icons-material/StickyNote2Outlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import LanguageIcon from '@mui/icons-material/Language';
 import SearchIcon from '@mui/icons-material/Search';
 import { motion } from 'framer-motion';
 import ChatInput from '@/app/pages/AgentChat/ChatInput';
@@ -36,6 +37,7 @@ interface Props {
   ) => void;
   onAddView: (outputId: string) => void;
   onHistoryResume: (sessionId: string) => void;
+  onAddBrowser: () => void;
   dashboardId?: string;
 }
 
@@ -79,7 +81,7 @@ function formatRelativeTime(dateStr: string | null): string {
 }
 
 const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
-  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, dashboardId }, ref) => {
+  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, dashboardId }, ref) => {
     const c = useClaudeTokens();
     const dispatch = useAppDispatch();
     const elementSelection = useElementSelection();
@@ -620,6 +622,39 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 }}
               >
                 <HistoryRoundedIcon sx={{ fontSize: 22 }} />
+              </Box>
+            </WarmTooltip>
+
+            <WarmTooltip
+              tokens={c}
+              placement="top"
+              arrow
+              enterDelay={200}
+              title={
+                <Box sx={{ textAlign: 'center' }}>
+                  <Box sx={{ fontWeight: 600 }}>Browser</Box>
+                </Box>
+              }
+            >
+              <Box
+                role="button"
+                aria-label="Browser"
+                tabIndex={0}
+                onClick={onAddBrowser}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: BTN,
+                  height: BTN,
+                  borderRadius: `${c.radius.md}px`,
+                  color: c.text.tertiary,
+                  cursor: 'pointer',
+                  transition: 'opacity 0.15s, background-color 0.15s',
+                  '&:hover': { opacity: 1, bgcolor: c.bg.secondary, color: c.accent.primary },
+                }}
+              >
+                <LanguageIcon sx={{ fontSize: 22 }} />
               </Box>
             </WarmTooltip>
 

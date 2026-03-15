@@ -21,6 +21,7 @@ import {
   reconcileSessions,
   tidyLayout,
   addViewCard,
+  addBrowserCard,
   moveCards,
   resetLayout,
 } from '@/shared/state/dashboardLayoutSlice';
@@ -28,6 +29,7 @@ import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { dashboardWs } from '@/shared/ws/WebSocketManager';
 import AgentCard from './AgentCard';
 import DashboardViewCard from './DashboardViewCard';
+import BrowserCard from './BrowserCard';
 import CanvasControls from './CanvasControls';
 import DashboardToolbar from './DashboardToolbar';
 import { useCanvasControls } from './useCanvasControls';
@@ -66,9 +68,11 @@ const DashboardInner: React.FC = () => {
   const expandedSessionIds = useAppSelector((state) => state.agents.expandedSessionIds);
   const cards = useAppSelector((state) => state.dashboardLayout.cards);
   const viewCards = useAppSelector((state) => state.dashboardLayout.viewCards);
+  const browserCards = useAppSelector((state) => state.dashboardLayout.browserCards);
   const layoutInitialized = useAppSelector((state) => state.dashboardLayout.initialized);
   const zoomSensitivity = useAppSelector((state) => state.settings.data.zoom_sensitivity);
   const newAgentShortcut = useAppSelector((state) => state.settings.data.new_agent_shortcut);
+  const browserHomepage = useAppSelector((state) => state.settings.data.browser_homepage);
   const outputs = useAppSelector((state) => state.outputs.items);
   const sessionList = Object.values(sessions);
 
@@ -77,6 +81,7 @@ const DashboardInner: React.FC = () => {
     { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom, viewportRef: canvas.viewportRef },
     cards,
     viewCards,
+    browserCards,
   );
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -183,6 +188,7 @@ const DashboardInner: React.FC = () => {
 
   const cardsJson = JSON.stringify(cards);
   const viewCardsJson = JSON.stringify(viewCards);
+  const browserCardsJson = JSON.stringify(browserCards);
   const skipInitialSave = useRef(true);
   useEffect(() => {
     if (!layoutInitialized || !dashboardId) return;
@@ -190,8 +196,8 @@ const DashboardInner: React.FC = () => {
       skipInitialSave.current = false;
       return;
     }
-    dispatch(saveLayout({ dashboardId, cards, viewCards }));
-  }, [cardsJson, viewCardsJson, layoutInitialized, dashboardId]);
+    dispatch(saveLayout({ dashboardId, cards, viewCards, browserCards }));
+  }, [cardsJson, viewCardsJson, browserCardsJson, layoutInitialized, dashboardId]);
 
   useEffect(() => {
     const parts = newAgentShortcut.toLowerCase().split('+');
@@ -282,6 +288,10 @@ const DashboardInner: React.FC = () => {
     dispatch(addViewCard({ outputId }));
   }, [dispatch]);
 
+  const handleAddBrowser = useCallback(() => {
+    dispatch(addBrowserCard({ url: browserHomepage }));
+  }, [dispatch, browserHomepage]);
+
   const handleHistoryResume = useCallback((sessionId: string) => {
     dispatch(resumeSession({ sessionId })).then((action) => {
       if (resumeSession.fulfilled.match(action)) {
@@ -294,10 +304,11 @@ const DashboardInner: React.FC = () => {
     dispatch(collapseAllSessions());
     dispatch(tidyLayout());
 
-    const { cards: tidied, viewCards: tidiedViews } = store.getState().dashboardLayout;
+    const { cards: tidied, viewCards: tidiedViews, browserCards: tidiedBrowsers } = store.getState().dashboardLayout;
     const allRects = [
       ...Object.values(tidied).map((c) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
       ...Object.values(tidiedViews).map((c) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
+      ...Object.values(tidiedBrowsers).map((c) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
     ];
     canvas.actions.fitToCards(allRects);
   }, [dispatch, canvas.actions]);
@@ -389,7 +400,7 @@ const DashboardInner: React.FC = () => {
           }}
         />
 
-        {sessionList.length === 0 && Object.keys(viewCards).length === 0 ? (
+        {sessionList.length === 0 && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0 ? (
           <Box
             sx={{
               position: 'absolute',
@@ -464,6 +475,24 @@ const DashboardInner: React.FC = () => {
                 />
               );
             })}
+            {Object.values(browserCards).map((bc) => (
+              <BrowserCard
+                key={`browser-${bc.browser_id}`}
+                browserId={bc.browser_id}
+                url={bc.url}
+                cardX={bc.x}
+                cardY={bc.y}
+                cardWidth={bc.width}
+                cardHeight={bc.height}
+                zoom={canvas.zoom}
+                isSelected={selection.isSelected(bc.browser_id)}
+                multiDragDelta={multiDragDelta}
+                onCardSelect={handleCardSelect}
+                onDragStart={handleCardDragStart}
+                onDragMove={handleCardDragMove}
+                onDragEnd={handleCardDragEnd}
+              />
+            ))}
             {/* Marquee selection rectangle */}
             {selection.marquee && (
               <div
@@ -495,6 +524,7 @@ const DashboardInner: React.FC = () => {
           onSend={handleToolbarSend}
           onAddView={handleAddView}
           onHistoryResume={handleHistoryResume}
+          onAddBrowser={handleAddBrowser}
           dashboardId={dashboardId}
         />
       </Box>

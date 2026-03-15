@@ -13,6 +13,7 @@ export interface AppSettings {
   theme: 'light' | 'dark';
   new_agent_shortcut: string;
   anthropic_api_key: string | null;
+  browser_homepage: string;
 }
 
 export interface BrowseResult {
@@ -40,6 +41,7 @@ const initialState: SettingsState = {
     theme: 'dark',
     new_agent_shortcut: 'Meta+l',
     anthropic_api_key: null,
+    browser_homepage: 'https://www.google.com',
   },
   loading: false,
   loaded: false,

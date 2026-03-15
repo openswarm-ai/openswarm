@@ -12,3 +12,4 @@ class AppSettings(BaseModel):
     theme: str = "dark"
     new_agent_shortcut: str = "Meta+l"
     anthropic_api_key: Optional[str] = None
+    browser_homepage: str = "https://www.google.com"
