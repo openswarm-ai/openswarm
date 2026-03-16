@@ -71,5 +71,7 @@ class ToolUpdate(BaseModel):
     credentials: Optional[dict[str, str]] = None
     auth_type: Optional[str] = None
     auth_status: Optional[str] = None
+    oauth_tokens: Optional[dict[str, Any]] = None
     tool_permissions: Optional[dict[str, Any]] = None
+    connected_account_email: Optional[str] = None
     enabled: Optional[bool] = None

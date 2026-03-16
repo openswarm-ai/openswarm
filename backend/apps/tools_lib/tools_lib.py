@@ -652,6 +652,30 @@ async def discover_tools(tool_id: str):
     return {"ok": True, "tool": tool.model_dump()}
 
 
+@tools_lib.router.post("/{tool_id}/oauth/disconnect")
+async def oauth_disconnect(tool_id: str):
+    """Clear OAuth tokens and reset auth status so the user can reconnect with a different account."""
+    tool = _load(tool_id)
+    access_token = tool.oauth_tokens.get("access_token")
+
+    if access_token:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    "https://oauth2.googleapis.com/revoke",
+                    params={"token": access_token},
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+        except Exception as e:
+            logger.warning(f"Failed to revoke Google token for tool {tool.id}: {e}")
+
+    tool.oauth_tokens = {}
+    tool.auth_status = "configured"
+    tool.connected_account_email = None
+    _save(tool)
+    return {"ok": True, "tool": tool.model_dump()}
+
+
 @tools_lib.router.post("/{tool_id}/oauth/start")
 async def oauth_start(tool_id: str):
     _load(tool_id)

@@ -77,10 +77,17 @@ cd "$PROJECT_ROOT/electron"
 npm install
 
 if $PUBLISH_MODE; then
-    npx electron-builder --mac --publish always
+    npx electron-builder --mac --arm64 --x64 --publish always
 else
     export CSC_IDENTITY_AUTO_DISCOVERY=false
-    npx electron-builder --mac --publish never
+    ARCH=$(uname -m)
+    if [[ "$ARCH" == "arm64" ]]; then
+        npx electron-builder --mac --arm64 --publish never
+    elif [[ "$ARCH" == "x86_64" ]]; then
+        npx electron-builder --mac --x64 --publish never
+    else
+        npx electron-builder --mac --publish never
+    fi
 fi
 
 echo ""

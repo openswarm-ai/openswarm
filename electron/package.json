@@ -1,6 +1,6 @@
 {
   "name": "openswarm",
-  "version": "1.0.0",
+  "version": "1.0.11",
   "description": "OpenSwarm — AI Agent Orchestrator",
   "main": "main.js",
   "scripts": {
@@ -29,20 +29,8 @@
     "mac": {
       "icon": "build/icon.icns",
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
+        "dmg",
+        "zip"
       ],
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,

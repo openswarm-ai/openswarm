@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { openSettingsModal } from '@/shared/state/settingsSlice';
 import Box from '@mui/material/Box';
-import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
@@ -10,6 +9,9 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Collapse from '@mui/material/Collapse';
+import Button from '@mui/material/Button';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DescriptionIcon from '@mui/icons-material/Description';
 import PsychologyIcon from '@mui/icons-material/Psychology';
@@ -23,6 +25,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import ArrowForwardOutlinedIcon from '@mui/icons-material/ArrowForwardOutlined';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import Settings from '@/app/pages/Settings/Settings';
 import GlobalApprovalOverlay from '@/app/components/GlobalApprovalOverlay';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -46,6 +49,13 @@ const AppShell: React.FC = () => {
   const location = useLocation();
   const [dashboardsExpanded, setDashboardsExpanded] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  const updateStatus = useAppSelector((state) => state.update.status);
+  const availableVersion = useAppSelector((state) => state.update.availableVersion);
+  const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
+
+  const showUpdateDot = updateStatus === 'available' || updateStatus === 'downloaded';
+  const showUpdateBanner = updateStatus === 'downloaded' && !updateBannerDismissed;
 
   const dashboardItems = useAppSelector((state) => state.dashboards.items);
   const dashboardList = Object.values(dashboardItems).sort(
@@ -180,192 +190,217 @@ const AppShell: React.FC = () => {
       {!sidebarCollapsed && (
       <Box
         sx={{
-          width: 240,
+          width: 220,
           flexShrink: 0,
           bgcolor: c.bg.secondary,
-          boxShadow: '1px 0 3px rgba(0,0,0,0.04)',
+          borderRight: `0.5px solid ${c.border.subtle}`,
           display: 'flex',
           flexDirection: 'column',
         }}
       >
-        <List sx={{ pt: 1, px: 1, flex: 1, overflow: 'auto'}}>
-          <ListItemButton
-            onClick={handleDashboardsClick}
-            sx={{
-              borderRadius: dashboardsExpanded ? '22px 22px 0 0' : 2,
-              bgcolor: isDashboardRoute ? `${c.accent.primary}0F` : 'transparent',
-              '&:hover': { bgcolor: `${c.accent.primary}08` },
-            }}
-          >
-            <ListItemIcon sx={{ color: isDashboardRoute ? c.text.primary : c.text.tertiary, minWidth: 40 }}>
-              <DashboardIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary="Dashboards"
+        <Box sx={{ flex: 1, overflow: 'auto', pt: 0.5, '&::-webkit-scrollbar': { width: 0 } }}>
+          {/* Dashboards section */}
+          <Box sx={{ px: 1, mb: 0.25 }}>
+            <ListItemButton
+              onClick={handleDashboardsClick}
               sx={{
-                '& .MuiListItemText-primary': {
-                  color: isDashboardRoute ? c.text.primary : c.text.muted,
-                  fontSize: '0.875rem',
-                  fontWeight: isDashboardRoute ? 500 : 400,
-                },
-              }}
-            />
-            <Tooltip title="New dashboard">
-              <IconButton
-                size="small"
-                onClick={handleCreateDashboard}
-                sx={{
-                  color: c.text.ghost,
-                  p: 0.25,
-                  mr: 0.5,
-                  '&:hover': { color: c.accent.primary },
-                }}
-              >
-                <AddIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-            {dashboardList.length > 0 && (
-              <ExpandMoreIcon
-                sx={{
-                  color: c.text.ghost,
-                  fontSize: 18,
-                  transition: 'transform 0.2s',
-                  transform: dashboardsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                }}
-              />
-            )}
-          </ListItemButton>
-
-          <Collapse in={dashboardsExpanded && dashboardList.length > 0} timeout={200}>
-            <Box
-              sx={{
-                pl: 0.15,
-                maxHeight: 300,
-                overflow: 'auto',
-                '&::-webkit-scrollbar': { width: 4 },
-                '&::-webkit-scrollbar-track': { background: 'transparent' },
-                '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 2 },
-                scrollbarWidth: 'thin',
-                scrollbarColor: `${c.border.medium} transparent`,
+                borderRadius: 1.5,
+                py: 0.6,
+                px: 1.25,
+                bgcolor: isDashboardRoute ? `${c.accent.primary}12` : 'transparent',
+                '&:hover': { bgcolor: isDashboardRoute ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
+                transition: 'background-color 0.15s',
               }}
             >
-              {dashboardList.map((entry) => {
-                const isActive = activeDashboardId === entry.id;
-                return (
-                  <Box
-                    key={entry.id}
-                    onClick={() => handleDashboardItemClick(entry.id)}
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 0.5,
-                      px: 1.5,
-                      py: 0.75,
-                      borderRadius: 0,
-                      cursor: 'pointer',
-                      bgcolor: isActive ? `${c.accent.primary}08` : 'transparent',
-                      borderLeft: isActive ? `1.5px solid ${c.accent.primary}90` : '1.5px solid transparent',
-                      '&:hover': { bgcolor: `${c.accent.primary}0C` },
-                      transition: 'background-color 0.15s, border-color 0.15s',
-                    }}
-                  >
-                    {isActive && (
-                      <Box
-                        sx={{
-                          width: 5,
-                          height: 5,
-                          borderRadius: '50%',
-                          bgcolor: c.accent.primary,
-                          flexShrink: 0,
-                          opacity: 0.7,
-                        }}
-                      />
-                    )}
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
+              <ListItemIcon sx={{ color: isDashboardRoute ? c.accent.primary : c.text.tertiary, minWidth: 32 }}>
+                <DashboardIcon sx={{ fontSize: 20 }} />
+              </ListItemIcon>
+              <ListItemText
+                primary="Dashboards"
+                sx={{
+                  '& .MuiListItemText-primary': {
+                    color: isDashboardRoute ? c.text.primary : c.text.muted,
+                    fontSize: '0.82rem',
+                    fontWeight: isDashboardRoute ? 600 : 400,
+                  },
+                }}
+              />
+              <Tooltip title="New dashboard" placement="right">
+                <IconButton
+                  size="small"
+                  onClick={handleCreateDashboard}
+                  sx={{
+                    color: c.text.ghost,
+                    p: 0.25,
+                    mr: 0.25,
+                    borderRadius: 1,
+                    '&:hover': { color: c.accent.primary, bgcolor: `${c.accent.primary}14` },
+                  }}
+                >
+                  <AddIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+              {dashboardList.length > 0 && (
+                <ExpandMoreIcon
+                  sx={{
+                    color: c.text.ghost,
+                    fontSize: 16,
+                    transition: 'transform 0.2s',
+                    transform: dashboardsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                  }}
+                />
+              )}
+            </ListItemButton>
+
+            <Collapse in={dashboardsExpanded && dashboardList.length > 0} timeout={200}>
+              <Box
+                sx={{
+                  ml: 2,
+                  mt: 0.25,
+                  mb: 0.5,
+                  borderLeft: `1px solid ${c.border.medium}`,
+                  maxHeight: 240,
+                  overflow: 'auto',
+                  '&::-webkit-scrollbar': { width: 3 },
+                  '&::-webkit-scrollbar-track': { background: 'transparent' },
+                  '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 4 },
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: `${c.border.medium} transparent`,
+                }}
+              >
+                {dashboardList.map((entry) => {
+                  const isActive = activeDashboardId === entry.id;
+                  return (
+                    <Box
+                      key={entry.id}
+                      onClick={() => handleDashboardItemClick(entry.id)}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.75,
+                        pl: 1.25,
+                        pr: 1,
+                        py: 0.5,
+                        ml: '-0.5px',
+                        cursor: 'pointer',
+                        borderLeft: isActive ? `1.5px solid ${c.accent.primary}` : '1.5px solid transparent',
+                        bgcolor: isActive ? `${c.accent.primary}0C` : 'transparent',
+                        '&:hover': { bgcolor: `${c.text.tertiary}0A` },
+                        transition: 'background-color 0.12s, border-color 0.12s',
+                      }}
+                    >
                       <Typography
                         sx={{
-                          color: isActive ? c.text.secondary : c.text.muted,
-                          fontSize: '0.8rem',
+                          color: isActive ? c.text.secondary : c.text.ghost,
+                          fontSize: '0.78rem',
                           fontWeight: isActive ? 500 : 400,
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',
+                          flex: 1,
+                          minWidth: 0,
                         }}
                       >
                         {entry.name}
                       </Typography>
                     </Box>
-                  </Box>
-                );
-              })}
-            </Box>
-          </Collapse>
+                  );
+                })}
+              </Box>
+            </Collapse>
+          </Box>
 
-          <Box sx={{ mb: 1 }} />
+          {/* Divider */}
+          <Box sx={{ mx: 1.5, my: 0.5, borderTop: `0.5px solid ${c.border.subtle}` }} />
 
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              style={{ textDecoration: 'none', color: 'inherit' }}
-            >
-              {({ isActive }) => (
-                <ListItemButton
-                  sx={{
-                    borderRadius: 2,
-                    mb: 1,
-                    bgcolor: isActive ? `${c.accent.primary}0F` : 'transparent',
-                    '&:hover': { bgcolor: `${c.accent.primary}08` },
-                  }}
-                >
-                  <ListItemIcon
-                    sx={{ color: isActive ? c.text.primary : c.text.tertiary, minWidth: 40 }}
-                  >
-                    {item.icon}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={item.label}
+          {/* Nav items */}
+          <Box sx={{ px: 1 }}>
+            {NAV_ITEMS.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                style={{ textDecoration: 'none', color: 'inherit' }}
+              >
+                {({ isActive }) => (
+                  <ListItemButton
                     sx={{
-                      '& .MuiListItemText-primary': {
-                        color: isActive ? c.text.primary : c.text.muted,
-                        fontSize: '0.875rem',
-                        fontWeight: isActive ? 500 : 400,
-                      },
+                      borderRadius: 1.5,
+                      py: 0.6,
+                      px: 1.25,
+                      mb: 0.25,
+                      bgcolor: isActive ? `${c.accent.primary}12` : 'transparent',
+                      '&:hover': { bgcolor: isActive ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
+                      transition: 'background-color 0.15s',
                     }}
-                  />
-                </ListItemButton>
-              )}
-            </NavLink>
-          ))}
-        </List>
+                  >
+                    <ListItemIcon
+                      sx={{ color: isActive ? c.accent.primary : c.text.tertiary, minWidth: 32 }}
+                    >
+                      {React.cloneElement(item.icon, { sx: { fontSize: 20 } })}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={item.label}
+                      sx={{
+                        '& .MuiListItemText-primary': {
+                          color: isActive ? c.text.primary : c.text.muted,
+                          fontSize: '0.82rem',
+                          fontWeight: isActive ? 600 : 400,
+                        },
+                      }}
+                    />
+                  </ListItemButton>
+                )}
+              </NavLink>
+            ))}
+          </Box>
+        </Box>
 
         {/* Settings */}
         <Box
           sx={{
-            px: 2,
-            py: 1.5,
-            borderTop: `0.5px solid ${c.border.medium}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            px: 1,
+            py: 1,
+            borderTop: `0.5px solid ${c.border.subtle}`,
           }}
         >
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.75rem' }}>
-            Settings
-          </Typography>
-          <Tooltip title="Settings">
-            <IconButton
-              onClick={() => dispatch(openSettingsModal())}
-              size="small"
+          <ListItemButton
+            onClick={() => dispatch(openSettingsModal())}
+            sx={{
+              borderRadius: 1.5,
+              py: 0.6,
+              px: 1.25,
+              '&:hover': { bgcolor: `${c.text.tertiary}0A` },
+              transition: 'background-color 0.15s',
+            }}
+          >
+            <ListItemIcon sx={{ color: c.text.tertiary, minWidth: 32, position: 'relative' }}>
+              <SettingsIcon sx={{ fontSize: 20 }} />
+              {showUpdateDot && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 2,
+                    right: 10,
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    bgcolor: c.accent.primary,
+                    border: `1.5px solid ${c.bg.secondary}`,
+                  }}
+                />
+              )}
+            </ListItemIcon>
+            <ListItemText
+              primary="Settings"
               sx={{
-                color: c.text.tertiary,
-                '&:hover': { color: c.accent.primary, bgcolor: `${c.accent.primary}0A` },
-                transition: c.transition,
+                '& .MuiListItemText-primary': {
+                  color: c.text.muted,
+                  fontSize: '0.82rem',
+                  fontWeight: 400,
+                },
               }}
-            >
-              <SettingsIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
+            />
+          </ListItemButton>
         </Box>
       </Box>
       )}
@@ -377,6 +412,51 @@ const AppShell: React.FC = () => {
 
       <Settings />
       <GlobalApprovalOverlay />
+
+      <Snackbar
+        open={showUpdateBanner}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          severity="info"
+          icon={<RestartAltIcon sx={{ fontSize: 18 }} />}
+          action={
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Button
+                size="small"
+                onClick={() => setUpdateBannerDismissed(true)}
+                sx={{ color: c.text.muted, textTransform: 'none', fontSize: '0.8rem', minWidth: 'auto' }}
+              >
+                Later
+              </Button>
+              <Button
+                size="small"
+                variant="contained"
+                onClick={() => (window as any).openswarm?.installUpdate()}
+                sx={{
+                  bgcolor: c.accent.primary,
+                  '&:hover': { bgcolor: c.accent.pressed },
+                  textTransform: 'none',
+                  fontSize: '0.8rem',
+                  borderRadius: 1.5,
+                  minWidth: 'auto',
+                }}
+              >
+                Restart
+              </Button>
+            </Box>
+          }
+          sx={{
+            bgcolor: c.bg.surface,
+            color: c.text.primary,
+            border: `1px solid ${c.border.medium}`,
+            boxShadow: c.shadow.md,
+            '& .MuiAlert-icon': { color: c.accent.primary },
+          }}
+        >
+          OpenSwarm {availableVersion} downloaded — restart to update
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

@@ -97,6 +97,16 @@ export const startOAuth = createAsyncThunk(
   }
 );
 
+export const disconnectOAuth = createAsyncThunk(
+  'tools/disconnectOAuth',
+  async (toolId: string) => {
+    const res = await fetch(`${TOOLS_API}/${toolId}/oauth/disconnect`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to disconnect OAuth');
+    const data = await res.json();
+    return data.tool as ToolDefinition;
+  }
+);
+
 export const fetchToolStatus = createAsyncThunk(
   'tools/fetchStatus',
   async (toolId: string) => {
@@ -156,6 +166,7 @@ const toolsSlice = createSlice({
       .addCase(createTool.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(updateTool.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(deleteTool.fulfilled, (state, action) => { delete state.items[action.payload]; })
+      .addCase(disconnectOAuth.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(fetchToolStatus.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(discoverTools.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(fetchBuiltinPermissions.fulfilled, (state, action) => { state.builtinPermissions = action.payload; })
