@@ -5,7 +5,7 @@
   "scripts": {
     "build": "webpack --mode=production",
     "build:watch": "webpack --mode=development --watch",
-    "dev": "webpack serve --mode=development --open",
+    "dev": "webpack serve --mode=development",
     "clean": "rm -rf dist"
   },
   "dependencies": {

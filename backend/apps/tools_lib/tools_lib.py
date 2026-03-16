@@ -285,23 +285,56 @@ def _sanitize_server_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
+def _extra_bin_dirs() -> list[str]:
+    """Well-known user-local bin directories that may not be on PATH in packaged apps."""
+    home = os.path.expanduser("~")
+    dirs = [
+        os.path.join(home, ".bun", "bin"),
+        os.path.join(home, ".cargo", "bin"),
+        os.path.join(home, ".local", "bin"),
+        os.path.join(home, ".volta", "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+    ]
+    # nvm: pick the newest installed node version
+    nvm_node = os.path.join(home, ".nvm", "versions", "node")
+    try:
+        if os.path.isdir(nvm_node):
+            versions = sorted(os.listdir(nvm_node), reverse=True)
+            if versions:
+                dirs.insert(0, os.path.join(nvm_node, versions[0], "bin"))
+    except OSError:
+        pass
+    # fnm
+    fnm_bin = os.path.join(home, "Library", "Application Support", "fnm", "aliases", "default", "bin")
+    if os.path.isdir(fnm_bin):
+        dirs.insert(0, fnm_bin)
+    return dirs
+
+
 def _resolve_command(command: str) -> str | None:
     """Find a command on PATH, falling back to common user-local bin directories."""
     found = shutil.which(command)
     if found:
         return found
-    home = os.path.expanduser("~")
-    extra_dirs = [
-        os.path.join(home, ".bun", "bin"),
-        os.path.join(home, ".cargo", "bin"),
-        os.path.join(home, ".local", "bin"),
-        "/opt/homebrew/bin",
-    ]
-    for d in extra_dirs:
+    for d in _extra_bin_dirs():
         candidate = os.path.join(d, command)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
     return None
+
+
+def _augmented_path() -> str:
+    """Return PATH with extra bin dirs prepended (for child process environments)."""
+    extra = [d for d in _extra_bin_dirs() if os.path.isdir(d)]
+    current = os.environ.get("PATH", "")
+    seen: set[str] = set()
+    parts: list[str] = []
+    for p in extra + current.split(os.pathsep):
+        if p and p not in seen:
+            seen.add(p)
+            parts.append(p)
+    return os.pathsep.join(parts)
 
 
 def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
@@ -340,10 +373,13 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
             if client_secret:
                 env["GOOGLE_WORKSPACE_CLIENT_SECRET"] = client_secret
 
-    if config.get("type") == "stdio" and config.get("command"):
-        resolved = _resolve_command(config["command"])
-        if resolved:
-            config["command"] = resolved
+    if config.get("type") == "stdio":
+        if config.get("command"):
+            resolved = _resolve_command(config["command"])
+            if resolved:
+                config["command"] = resolved
+        env = config.setdefault("env", {})
+        env.setdefault("PATH", _augmented_path())
 
     return config
 
@@ -509,7 +545,7 @@ async def _discover_mcp_tools_stdio(command: str, args: list[str] | None = None,
     if not cmd_path:
         raise HTTPException(status_code=400, detail=f"Command '{command}' not found on PATH or common install locations")
 
-    proc_env = {**os.environ, **(env or {})}
+    proc_env = {**os.environ, **(env or {}), "PATH": _augmented_path()}
 
     proc = await asyncio.create_subprocess_exec(
         cmd_path, *(args or []),

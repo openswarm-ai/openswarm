@@ -1,5 +1,6 @@
 import { getWebview, type BrowserWebview } from './browserRegistry';
 import { dashboardWs } from './ws/WebSocketManager';
+import { resolveInput } from './resolveUrl';
 
 let initialized = false;
 
@@ -61,9 +62,14 @@ async function handleGetText(wv: BrowserWebview): Promise<Record<string, any>> {
 }
 
 async function handleNavigate(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
-  const url = params.url as string;
-  if (!url) return { error: 'url parameter is required' };
-  await wv.loadURL(url);
+  const raw = params.url as string;
+  if (!raw) return { error: 'url parameter is required' };
+  const url = resolveInput(raw);
+  try {
+    await wv.loadURL(url);
+  } catch (err: any) {
+    if (!err?.message?.includes('ERR_ABORTED')) throw err;
+  }
   return { text: `Navigated to ${url}`, url };
 }
 

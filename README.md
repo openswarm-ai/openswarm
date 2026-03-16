@@ -7,7 +7,7 @@
 <p align="center">
   <strong>An Army of AI Agents at Your Fingertips</strong>
   <br>
-  A locally-running orchestrator for managing multiple Claude Code instances in parallel.
+  A locally-running orchestrator for managing multiple agents in parallel.
   <br>
   Launch, monitor, and coordinate entire swarms of coding agents from a single interface.
 </p>
@@ -29,9 +29,9 @@
 
 ## Why Open Swarm?
 
-Running Claude Code in a terminal works fine for one task. But when you're juggling five agents across different branches, approving tool calls in separate windows, and losing track of who's doing what — it falls apart fast.
+Running agents in a terminal works fine for one task. But when you're juggling five agents across different branches, approving tool calls in separate windows, and losing track of who's doing what — it falls apart fast.
 
-- **Parallel agents, one screen** — Launch as many Claude Code instances as you need, arranged on a spatial canvas you can pan and zoom freely
+- **Parallel agents, one screen** — Launch as many agents as you need, arranged on a spatial canvas you can pan and zoom freely
 - **Unified approval workflow** — Every tool-use request from every agent surfaces in one place. Approve or deny with a click or a keyboard shortcut.
 - **Full conversation control** — Edit prior messages to fork conversations, navigate between branches, resume closed sessions
 - **100% local** — Everything runs on your machine. No cloud relay, no telemetry, no third-party backend.
@@ -64,7 +64,7 @@ Running Claude Code in a terminal works fine for one task. But when you're juggl
 
 **Cost Tracking** — Real-time USD spend tracking per agent session.
 
-**Dark & Light Themes** — Full theme support with Claude-inspired design tokens.
+**Dark & Light Themes** — Full theme support with design tokens.
 
 **Keyboard Shortcuts** — Navigate between agents, approve/deny requests, and switch pages without touching a mouse.
 

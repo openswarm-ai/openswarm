@@ -50,7 +50,7 @@ fi
 # Step 1: Build frontend
 echo "[1/3] Building frontend..."
 cd "$PROJECT_ROOT/frontend"
-npm ci
+npm install
 npm run build
 
 if [[ ! -f "$PROJECT_ROOT/frontend/dist/index.html" ]]; then

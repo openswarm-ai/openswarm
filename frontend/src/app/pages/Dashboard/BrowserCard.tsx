@@ -12,6 +12,7 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
 import LockIcon from '@mui/icons-material/Lock';
+import SearchIcon from '@mui/icons-material/Search';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import {
   setBrowserCardPosition,
@@ -19,11 +20,12 @@ import {
   removeBrowserCard,
   updateBrowserCardUrl,
 } from '@/shared/state/dashboardLayoutSlice';
-import { useAppDispatch } from '@/shared/hooks';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { registerWebview, unregisterWebview, type BrowserWebview } from '@/shared/browserRegistry';
 import { useBrowserActivity } from '@/shared/useBrowserActivity';
 import { getActionLabel } from '@/shared/browserCommandHandler';
+import { resolveInput, isGoogleSearch } from '@/shared/resolveUrl';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -68,12 +70,6 @@ interface Props {
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
 }
 
-function ensureProtocol(input: string): string {
-  const trimmed = input.trim();
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/.test(trimmed)) return `https://${trimmed}`;
-  return trimmed;
-}
 
 const BrowserCard: React.FC<Props> = ({
   browserId, url, cardX, cardY, cardWidth, cardHeight, zoom = 1,
@@ -150,10 +146,12 @@ const BrowserCard: React.FC<Props> = ({
   }, [browserId]);
 
   const navigate = useCallback((targetUrl: string) => {
-    const finalUrl = ensureProtocol(targetUrl);
+    const finalUrl = resolveInput(targetUrl);
     setUrlBarValue(finalUrl);
     if (isElectron && webviewRef.current) {
-      webviewRef.current.loadURL(finalUrl);
+      webviewRef.current.loadURL(finalUrl).catch((err: Error) => {
+        if (!err.message?.includes('ERR_ABORTED')) console.error('Navigation failed:', err);
+      });
     }
     setCurrentUrl(finalUrl);
     dispatch(updateBrowserCardUrl({ browserId, url: finalUrl }));
@@ -310,21 +308,43 @@ const BrowserCard: React.FC<Props> = ({
   const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
 
   const isSecure = currentUrl.startsWith('https://');
+  const isSearch = isGoogleSearch(currentUrl);
 
   const accentColor = c.accent.primary;
   const accentHover = c.accent.hover;
 
+  const glowingBrowserCards = useAppSelector((s) => s.dashboardLayout.glowingBrowserCards);
+  const isGlowingFromRedux = !!glowingBrowserCards[browserId];
+
+  const [hasBeenTouched, setHasBeenTouched] = useState(false);
+  useEffect(() => {
+    if (isGlowingFromRedux && agentActive) setHasBeenTouched(true);
+  }, [isGlowingFromRedux, agentActive]);
+  useEffect(() => {
+    if (!isGlowingFromRedux) setHasBeenTouched(false);
+  }, [isGlowingFromRedux]);
+
+  const showGlow = isGlowingFromRedux && hasBeenTouched;
+
   const agentBorder = agentActive
     ? `2px solid ${accentColor}`
-    : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`;
+    : showGlow
+      ? `2px solid ${accentColor}`
+      : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`;
+
+  const innerGlow = showGlow && !agentActive
+    ? `, inset 0 0 30px ${accentColor}25, inset 0 0 60px ${accentColor}10`
+    : '';
 
   const agentShadow = agentActive
     ? `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15`
-    : isDragging || isResizing
-      ? c.shadow.lg
-      : isSelected
-        ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
-        : c.shadow.md;
+    : showGlow
+      ? `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15${innerGlow}`
+      : isDragging || isResizing
+        ? c.shadow.lg
+        : isSelected
+          ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
+          : c.shadow.md;
 
   return (
     <Box
@@ -348,22 +368,51 @@ const BrowserCard: React.FC<Props> = ({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: (isDragging || isResizing) ? 100 : agentActive ? 50 : 1,
+        zIndex: (isDragging || isResizing) ? 100 : (agentActive || showGlow) ? 50 : 1,
         transition: noTransition ? 'none' : 'box-shadow 0.4s ease, border 0.3s ease',
         '&:hover .resize-handle': { opacity: 1 },
-        ...(agentActive && {
+        ...((agentActive || showGlow) && {
           animation: 'agent-glow-pulse 2s ease-in-out infinite',
           '@keyframes agent-glow-pulse': {
             '0%, 100%': {
-              boxShadow: `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15`,
+              boxShadow: `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15${innerGlow}`,
             },
             '50%': {
-              boxShadow: `0 0 0 3px ${accentColor}60, 0 0 28px ${accentColor}45, 0 0 56px ${accentColor}25`,
+              boxShadow: `0 0 0 3px ${accentColor}60, 0 0 28px ${accentColor}45, 0 0 56px ${accentColor}25${innerGlow}`,
             },
           },
         }),
       }}
     >
+      {/* Rotating gradient border glow for element selection / streaming */}
+      {showGlow && !agentActive && (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: 'inherit',
+            zIndex: 20,
+            pointerEvents: 'none',
+            overflow: 'hidden',
+            padding: '3px',
+            mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+            maskComposite: 'exclude',
+            WebkitMaskComposite: 'xor',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              inset: '-50%',
+              background: `conic-gradient(from 0deg, transparent 0%, ${accentColor} 25%, transparent 50%, ${accentColor} 75%, transparent 100%)`,
+              animation: 'rotate-glow 3s linear infinite',
+            },
+            '@keyframes rotate-glow': {
+              '100%': { transform: 'rotate(360deg)' },
+            },
+          }}
+        />
+      )}
+
       {/* Animated border glow (top edge overlay) */}
       {agentActive && (
         <Box
@@ -523,16 +572,18 @@ const BrowserCard: React.FC<Props> = ({
           flexShrink: 0,
         }}
       >
-        {isSecure && (
+        {isSearch ? (
+          <SearchIcon sx={{ fontSize: 14, color: c.text.muted, flexShrink: 0 }} />
+        ) : isSecure ? (
           <LockIcon sx={{ fontSize: 13, color: c.status.success, flexShrink: 0 }} />
-        )}
+        ) : null}
         <InputBase
           value={urlBarValue}
           onChange={(e) => setUrlBarValue(e.target.value)}
           onKeyDown={handleUrlKeyDown}
           onPointerDown={(e) => e.stopPropagation()}
           onFocus={(e) => (e.target as HTMLInputElement).select()}
-          placeholder="Enter URL..."
+          placeholder="Search Google or enter URL..."
           sx={{
             flex: 1,
             fontSize: '0.76rem',
@@ -698,6 +749,29 @@ const BrowserCard: React.FC<Props> = ({
               />
             ))}
           </Box>
+        )}
+
+        {/* Orange inner shadow overlay for selection / streaming glow */}
+        {showGlow && !agentActive && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 14,
+              pointerEvents: 'none',
+              borderRadius: 'inherit',
+              boxShadow: 'inset 0 0 40px rgba(255,140,0,0.35), inset 0 0 80px rgba(255,100,0,0.15)',
+              animation: 'orange-glow-pulse 2s ease-in-out infinite',
+              '@keyframes orange-glow-pulse': {
+                '0%, 100%': {
+                  boxShadow: 'inset 0 0 40px rgba(255,140,0,0.35), inset 0 0 80px rgba(255,100,0,0.15)',
+                },
+                '50%': {
+                  boxShadow: 'inset 0 0 50px rgba(255,140,0,0.45), inset 0 0 100px rgba(255,100,0,0.22)',
+                },
+              },
+            }}
+          />
         )}
 
         {/* ===== Frosted glass overlay ===== */}

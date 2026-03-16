@@ -43,6 +43,7 @@ export interface DashboardLayoutState {
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
+  glowingBrowserCards: Record<string, string>;
   persistedExpandedSessionIds: string[];
   loading: boolean;
   initialized: boolean;
@@ -52,6 +53,7 @@ const initialState: DashboardLayoutState = {
   cards: {},
   viewCards: {},
   browserCards: {},
+  glowingBrowserCards: {},
   persistedExpandedSessionIds: [],
   loading: false,
   initialized: false,
@@ -384,10 +386,32 @@ const dashboardLayoutSlice = createSlice({
       }
     },
 
+    setGlowingBrowserCards(
+      state,
+      action: PayloadAction<{ browserIds: string[]; sessionId: string }>
+    ) {
+      const { browserIds, sessionId } = action.payload;
+      for (const id of browserIds) {
+        state.glowingBrowserCards[id] = sessionId;
+      }
+    },
+
+    clearGlowingBrowserCards(state, action: PayloadAction<string>) {
+      const sessionId = action.payload;
+      for (const [browserId, sid] of Object.entries(state.glowingBrowserCards)) {
+        if (sid === sessionId) delete state.glowingBrowserCards[browserId];
+      }
+    },
+
+    clearAllGlowingBrowserCards(state) {
+      state.glowingBrowserCards = {};
+    },
+
     resetLayout(state) {
       state.cards = {};
       state.viewCards = {};
       state.browserCards = {};
+      state.glowingBrowserCards = {};
       state.persistedExpandedSessionIds = [];
       state.initialized = false;
     },
@@ -438,6 +462,9 @@ export const {
   removeBrowserCard,
   updateBrowserCardUrl,
   moveCards,
+  setGlowingBrowserCards,
+  clearGlowingBrowserCards,
+  clearAllGlowingBrowserCards,
   resetLayout,
 } = dashboardLayoutSlice.actions;
 

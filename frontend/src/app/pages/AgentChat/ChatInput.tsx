@@ -60,7 +60,7 @@ export interface ForcedToolGroup {
 export type { AttachedSkill } from '@/app/components/richEditorUtils';
 
 interface Props {
-  onSend: (message: string, images?: Array<{ data: string; media_type: string }>, contextPaths?: ContextPath[], forcedTools?: string[], attachedSkills?: Array<{ id: string; name: string; content: string }>) => void;
+  onSend: (message: string, images?: Array<{ data: string; media_type: string }>, contextPaths?: ContextPath[], forcedTools?: string[], attachedSkills?: Array<{ id: string; name: string; content: string }>, selectedBrowserIds?: string[]) => void;
   disabled?: boolean;
   mode: string;
   onModeChange: (mode: string) => void;
@@ -364,12 +364,16 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     const sendSkills = currentSkills.length > 0
       ? currentSkills.map((s) => ({ id: s.id, name: s.name, content: s.content }))
       : undefined;
+    const browserIds = selectedEls
+      .filter((el) => el.semanticType === 'browser-card' && el.semanticData?.selectId)
+      .map((el) => el.semanticData!.selectId as string);
     onSend(
       trimmed,
       sendImages,
       contextPaths.length > 0 ? contextPaths : undefined,
       allForcedToolNames.length > 0 ? allForcedToolNames : undefined,
       sendSkills,
+      browserIds.length > 0 ? browserIds : undefined,
     );
     editor.innerHTML = '';
     setImages([]);

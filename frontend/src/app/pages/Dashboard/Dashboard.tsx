@@ -25,6 +25,7 @@ import {
   addBrowserCard,
   moveCards,
   resetLayout,
+  setGlowingBrowserCards,
 } from '@/shared/state/dashboardLayoutSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { generateDashboardName } from '@/shared/state/dashboardsSlice';
@@ -253,6 +254,7 @@ const DashboardInner: React.FC = () => {
       contextPaths?: ContextPath[],
       forcedTools?: string[],
       attachedSkills?: Array<{ id: string; name: string; content: string }>,
+      selectedBrowserIds?: string[],
     ) => {
       setToolbarOpen(false);
 
@@ -290,6 +292,9 @@ const DashboardInner: React.FC = () => {
         if (launchAndSendFirstMessage.fulfilled.match(action)) {
           const realId = action.payload.session.id;
           dispatch(generateTitle({ sessionId: realId, prompt }));
+          if (selectedBrowserIds?.length) {
+            dispatch(setGlowingBrowserCards({ browserIds: selectedBrowserIds, sessionId: realId }));
+          }
           spawnOriginsRef.current[realId] = spawnOriginsRef.current[draftId];
           delete spawnOriginsRef.current[draftId];
 

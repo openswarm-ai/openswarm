@@ -1,7 +1,9 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
+const os = require('os');
+const fs = require('fs');
 const getPort = require('get-port');
 const http = require('http');
 
@@ -12,6 +14,55 @@ let backendPort = null;
 const isPackaged = app.isPackaged;
 const isDev = process.env.ELECTRON_DEV === '1';
 const iconPath = path.join(__dirname, 'build', 'icon.png');
+
+/**
+ * macOS GUI apps launched from Finder/Dock inherit a minimal PATH from launchd
+ * (/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin) — none of the user's shell
+ * additions (nvm, volta, homebrew, bun, etc.) are present. Resolve the real
+ * PATH by asking the user's default shell, then fall back to well-known dirs.
+ */
+function getShellPath() {
+  if (process.platform !== 'darwin' || isDev) return process.env.PATH || '';
+
+  try {
+    const shell = process.env.SHELL || '/bin/zsh';
+    const result = execFileSync(shell, ['-ilc', 'echo $PATH'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      env: { ...process.env, HOME: os.homedir() },
+    });
+    const resolved = result.trim();
+    if (resolved) return resolved;
+  } catch (_) { /* fall through */ }
+
+  const home = os.homedir();
+  const fallbackDirs = [
+    path.join(home, '.nvm/versions/node'),
+    path.join(home, '.volta/bin'),
+    path.join(home, '.fnm/aliases/default/bin'),
+    path.join(home, '.bun/bin'),
+    path.join(home, '.cargo/bin'),
+    path.join(home, '.local/bin'),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+  ];
+
+  // For nvm, resolve the current default version dynamically
+  const nvmDir = path.join(home, '.nvm/versions/node');
+  try {
+    if (fs.existsSync(nvmDir)) {
+      const versions = fs.readdirSync(nvmDir).sort().reverse();
+      if (versions.length) {
+        fallbackDirs.unshift(path.join(nvmDir, versions[0], 'bin'));
+      }
+    }
+  } catch (_) { /* ignore */ }
+
+  const existing = fallbackDirs.filter((d) => {
+    try { return fs.statSync(d).isDirectory(); } catch { return false; }
+  });
+  return [...existing, process.env.PATH || ''].join(':');
+}
 
 function getResourcePath(...segments) {
   if (isPackaged) {
@@ -60,8 +111,11 @@ async function startBackend() {
   const backendDir = getResourcePath('backend');
   const projectRoot = isPackaged ? process.resourcesPath : path.join(__dirname, '..');
 
+  const shellPath = getShellPath();
+
   const env = {
     ...process.env,
+    PATH: shellPath,
     OPENSWARM_PACKAGED: isPackaged ? '1' : '0',
     OPENSWARM_PORT: String(backendPort),
     PYTHONDONTWRITEBYTECODE: '1',

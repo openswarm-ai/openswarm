@@ -32,6 +32,7 @@ import ChatInput, { ChatInputHandle } from './ChatInput';
 import { ContextPath } from '@/app/components/DirectoryBrowser';
 import BranchNavigator from './BranchNavigator';
 import DiffViewer from './DiffViewer';
+import { setGlowingBrowserCards, clearGlowingBrowserCards } from '@/shared/state/dashboardLayoutSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 const CONTEXT_WINDOWS: Record<string, number> = {
@@ -162,6 +163,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     const curr = session?.status;
     prevStatusRef.current = curr;
     if (prev === 'running' && (curr === 'completed' || curr === 'stopped' || curr === 'error')) {
+      if (id) dispatch(clearGlowingBrowserCards(id));
       const currentMode = modesMap[mode];
       if (currentMode?.default_next_mode && modesMap[currentMode.default_next_mode]) {
         setMode(currentMode.default_next_mode);
@@ -197,7 +199,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     }
   }, [session?.messages.length, session?.streamingMessage?.content]);
 
-  const handleSend = (prompt: string, images?: Array<{ data: string; media_type: string }>, contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>, forcedTools?: string[], attachedSkills?: Array<{ id: string; name: string; content: string }>) => {
+  const handleSend = (prompt: string, images?: Array<{ data: string; media_type: string }>, contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>, forcedTools?: string[], attachedSkills?: Array<{ id: string; name: string; content: string }>, selectedBrowserIds?: string[]) => {
     if (!id) return;
     if (isDraft) {
       const config: Record<string, any> = { model, mode };
@@ -207,10 +209,17 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
         launchAndSendFirstMessage({ draftId: id, config, prompt, mode, model, images, contextPaths, forcedTools, attachedSkills })
       ).then((action) => {
         if (launchAndSendFirstMessage.fulfilled.match(action)) {
-          dispatch(generateTitle({ sessionId: action.payload.session.id, prompt }));
+          const realId = action.payload.session.id;
+          dispatch(generateTitle({ sessionId: realId, prompt }));
+          if (selectedBrowserIds?.length) {
+            dispatch(setGlowingBrowserCards({ browserIds: selectedBrowserIds, sessionId: realId }));
+          }
         }
       });
     } else {
+      if (selectedBrowserIds?.length) {
+        dispatch(setGlowingBrowserCards({ browserIds: selectedBrowserIds, sessionId: id }));
+      }
       dispatch(sendMessageThunk({ sessionId: id, prompt, mode, model, images, contextPaths, forcedTools, attachedSkills }));
     }
   };
