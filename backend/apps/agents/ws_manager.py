@@ -90,6 +90,9 @@ class ConnectionManager:
         self, request_id: str, action: str, browser_id: str, params: dict, tab_id: str = ""
     ) -> dict:
         """Send a browser command to the frontend and wait for the result."""
+        if not self.global_connections:
+            return {"error": "No dashboard is connected. Open the dashboard to use browser tools."}
+
         future = asyncio.get_event_loop().create_future()
         self.browser_futures[request_id] = future
 

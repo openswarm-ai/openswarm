@@ -38,7 +38,7 @@ import LinearProgress from '@mui/material/LinearProgress';
 import Collapse from '@mui/material/Collapse';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { updateSettings, closeSettingsModal, AppSettings } from '@/shared/state/settingsSlice';
+import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
 import { setChecking, setUpdateError } from '@/shared/state/updateSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
@@ -291,35 +291,54 @@ const Settings: React.FC = () => {
         <Typography sx={sectionSx}>Agent Defaults</Typography>
 
         <Box sx={rowSx}>
-          <Typography sx={labelSx}>System prompt</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+            <Typography sx={labelSx}>System prompt</Typography>
+            {form.default_system_prompt !== DEFAULT_SYSTEM_PROMPT && (
+              <Button
+                size="small"
+                startIcon={<RestartAltIcon sx={{ fontSize: 14 }} />}
+                onClick={async () => {
+                  await dispatch(resetSystemPrompt());
+                  setForm((prev) => ({ ...prev, default_system_prompt: DEFAULT_SYSTEM_PROMPT }));
+                }}
+                sx={{
+                  color: c.accent.primary,
+                  textTransform: 'none',
+                  fontSize: '0.75rem',
+                  py: 0.25,
+                  '&:hover': { bgcolor: `${c.accent.primary}10` },
+                }}
+              >
+                Reset to default
+              </Button>
+            )}
+          </Box>
           <Typography sx={{ ...descSx, mb: 1.5 }}>
-            Prepended to every agent session before mode-specific instructions.
+            Prepended to every agent session before mode-specific instructions. Modes can override with their own.
           </Typography>
-          <TextField
-            value={form.default_system_prompt ?? ''}
-            onChange={(e) => setForm({ ...form, default_system_prompt: e.target.value || null })}
-            size="small"
-            fullWidth
-            multiline
-            minRows={3}
-            maxRows={8}
-            placeholder="Enter a default system prompt..."
+          <Box
             sx={{
-              ...fieldSx,
-              '& .MuiOutlinedInput-root': {
-                ...fieldSx['& .MuiOutlinedInput-root'],
-                fontFamily: c.font.mono,
-                fontSize: '0.8rem',
-              },
-              '& textarea': {
-                '&::-webkit-scrollbar': { width: 5 },
-                '&::-webkit-scrollbar-track': { background: 'transparent' },
-                '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 3, '&:hover': { background: c.border.strong } },
-                scrollbarWidth: 'thin',
-                scrollbarColor: `${c.border.medium} transparent`,
-              },
+              p: 1.5,
+              borderRadius: `${c.radius.sm}px`,
+              border: `1px solid ${c.border.subtle}`,
+              bgcolor: c.bg.secondary,
+              fontFamily: c.font.mono,
+              fontSize: '0.8rem',
+              color: c.text.secondary,
+              lineHeight: 1.6,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              maxHeight: 200,
+              overflow: 'auto',
+              '&::-webkit-scrollbar': { width: 5 },
+              '&::-webkit-scrollbar-track': { background: 'transparent' },
+              '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 3, '&:hover': { background: c.border.strong } },
+              scrollbarWidth: 'thin',
+              scrollbarColor: `${c.border.medium} transparent`,
             }}
-          />
+          >
+            {form.default_system_prompt || DEFAULT_SYSTEM_PROMPT}
+          </Box>
         </Box>
 
         <Box sx={rowSx}>

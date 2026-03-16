@@ -1,9 +1,17 @@
 from pydantic import BaseModel
 from typing import Optional
 
+DEFAULT_SYSTEM_PROMPT = (
+    '"Ask the user as many follow ups as needed in order to eliminate any possible ambiguity. '
+    "When asking the user questions, use the AskUserQuestion tool.\n\n"
+    "You are an unstopable Agent that does whatever is needed to achieve the task. "
+    "You are particularly gifted at coding, so when needed, transpose ordinary tasks into coding tasks.\n\n"
+    'If a Browser is selected, prioritize this over other tools when it makes sense (so the user also has observability)."'
+)
+
 
 class AppSettings(BaseModel):
-    default_system_prompt: Optional[str] = None
+    default_system_prompt: Optional[str] = DEFAULT_SYSTEM_PROMPT
     default_folder: Optional[str] = None
     default_model: str = "sonnet"
     default_mode: str = "agent"

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from backend.config.Apps import SubApp
-from backend.apps.settings.models import AppSettings
+from backend.apps.settings.models import AppSettings, DEFAULT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,10 @@ def load_settings() -> AppSettings:
     """Load settings from JSON file, returning defaults if not found."""
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE) as f:
-            return AppSettings(**json.load(f))
+            settings = AppSettings(**json.load(f))
+        if settings.default_system_prompt is None:
+            settings.default_system_prompt = DEFAULT_SYSTEM_PROMPT
+        return settings
     return AppSettings()
 
 
@@ -46,6 +49,21 @@ async def update_settings(body: AppSettings):
     with open(SETTINGS_FILE, "w") as f:
         json.dump(body.model_dump(), f, indent=2)
     return {"ok": True, "settings": body.model_dump()}
+
+
+@settings.router.get("/default-system-prompt")
+async def get_default_system_prompt():
+    return {"default_system_prompt": DEFAULT_SYSTEM_PROMPT}
+
+
+@settings.router.post("/reset-system-prompt")
+async def reset_system_prompt():
+    current = load_settings()
+    current.default_system_prompt = DEFAULT_SYSTEM_PROMPT
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(current.model_dump(), f, indent=2)
+    return {"ok": True, "settings": current.model_dump()}
 
 
 class BrowseResponse(BaseModel):

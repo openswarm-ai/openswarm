@@ -63,6 +63,44 @@ export function createSkillPillElement(
   return pill;
 }
 
+const SKILL_MARKER_RE = /\{\{skill:(.+?)\}\}/g;
+
+export function deserializeToEditor(
+  editor: HTMLElement,
+  text: string,
+  skillsByName: Record<string, AttachedSkill>,
+  onRemove: (id: string) => void,
+  monoFont: string,
+  errorColor: string,
+): Record<string, AttachedSkill> {
+  editor.innerHTML = '';
+  const restored: Record<string, AttachedSkill> = {};
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(SKILL_MARKER_RE)) {
+    const before = text.slice(lastIndex, match.index);
+    if (before) editor.appendChild(document.createTextNode(before));
+
+    const skillName = match[1];
+    const skill = skillsByName[skillName];
+    if (skill) {
+      const pill = createSkillPillElement(skill, onRemove, monoFont, errorColor);
+      editor.appendChild(pill);
+      const spacer = document.createTextNode('\u200B');
+      editor.appendChild(spacer);
+      restored[skill.id] = skill;
+    } else {
+      editor.appendChild(document.createTextNode(match[0]));
+    }
+    lastIndex = match.index! + match[0].length;
+  }
+
+  const tail = text.slice(lastIndex);
+  if (tail) editor.appendChild(document.createTextNode(tail));
+
+  return restored;
+}
+
 export function serializeEditorContent(editor: HTMLElement, skills: Record<string, AttachedSkill>): string {
   const parts: string[] = [];
   let hasOutput = false;

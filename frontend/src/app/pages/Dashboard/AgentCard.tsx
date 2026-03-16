@@ -170,6 +170,7 @@ interface Props {
   zoom?: number;
   spawnFrom?: { x: number; y: number };
   isSelected?: boolean;
+  isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
   onCardSelect?: (id: string, type: 'agent' | 'view', shiftKey: boolean) => void;
   onDragStart?: (id: string, type: 'agent' | 'view') => void;
@@ -185,7 +186,7 @@ const SPAWN_SPRING = { type: 'spring' as const, stiffness: 400, damping: 28, mas
 
 const AgentCard: React.FC<Props> = ({
   session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, spawnFrom,
-  isSelected = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
+  isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -407,28 +408,53 @@ const AgentCard: React.FC<Props> = ({
         width: localResize ? activeW : Math.max(cardWidth, MIN_W),
         height: localResize ? activeH : (expanded ? Math.max(EXPANDED_OVERLAY_H, cardHeight) : 'auto'),
         bgcolor: c.bg.surface,
-        border: isSelected
-          ? '2px solid #3b82f6'
-          : hasPending && !expanded
-            ? `1px solid ${c.status.warning}`
-            : expanded
-              ? `1px solid ${c.border.strong}`
-              : `1px solid ${c.border.subtle}`,
+        border: isHighlighted
+          ? `2px solid ${c.accent.primary}`
+          : isSelected
+            ? '2px solid #3b82f6'
+            : hasPending && !expanded
+              ? `1px solid ${c.status.warning}`
+              : expanded
+                ? `1px solid ${c.border.strong}`
+                : `1px solid ${c.border.subtle}`,
         borderRadius: 3,
         p: 2,
         cursor: expanded ? 'default' : 'pointer',
         transition: noTransition ? 'none' : c.transition,
-        boxShadow: isDragging
-          ? c.shadow.lg
-          : isSelected
-            ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
-            : expanded
-              ? c.shadow.md
-              : c.shadow.sm,
+        boxShadow: isHighlighted
+          ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
+          : isDragging
+            ? c.shadow.lg
+            : isSelected
+              ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
+              : expanded
+                ? c.shadow.md
+                : c.shadow.sm,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        ...(!expanded && !isDragging && !isSelected && {
+        ...(isHighlighted && {
+          animation: 'card-highlight-pulse 2s ease-out forwards',
+          '@keyframes card-highlight-pulse': {
+            '0%': {
+              boxShadow: `0 0 0 3px ${c.accent.primary}70, 0 0 24px ${c.accent.primary}50, 0 0 48px ${c.accent.primary}25`,
+            },
+            '25%': {
+              boxShadow: `0 0 0 4px ${c.accent.primary}55, 0 0 30px ${c.accent.primary}40, 0 0 56px ${c.accent.primary}20`,
+            },
+            '50%': {
+              boxShadow: `0 0 0 3px ${c.accent.primary}45, 0 0 22px ${c.accent.primary}30, 0 0 44px ${c.accent.primary}15`,
+            },
+            '75%': {
+              boxShadow: `0 0 0 2px ${c.accent.primary}25, 0 0 14px ${c.accent.primary}18, 0 0 28px ${c.accent.primary}08`,
+            },
+            '100%': {
+              boxShadow: c.shadow.sm,
+            },
+          },
+          zIndex: 50,
+        }),
+        ...(!isHighlighted && !expanded && !isDragging && !isSelected && {
           '&:hover': {
             boxShadow: c.shadow.md,
             borderColor: hasPending ? c.status.warning : c.border.strong,

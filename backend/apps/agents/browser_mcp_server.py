@@ -154,6 +154,33 @@ TOOLS = [
             "required": ["browser_id", "expression"],
         },
     },
+    {
+        "name": "BrowserGetElements",
+        "description": (
+            "Get a list of interactive elements on the page with their CSS selectors. "
+            "Returns clickable elements, inputs, links, and buttons with selector paths "
+            "you can use with BrowserClick and BrowserType. Call this BEFORE attempting "
+            "to click or type so you know which selectors are valid."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "browser_id": {
+                    "type": "string",
+                    "description": "The browser card ID.",
+                },
+                "tab_id": TAB_ID_PROP,
+                "selector": {
+                    "type": "string",
+                    "description": (
+                        "Optional CSS selector to scope the search "
+                        "(e.g. 'form', '#main'). Defaults to 'body'."
+                    ),
+                },
+            },
+            "required": ["browser_id"],
+        },
+    },
 ]
 
 
@@ -232,6 +259,7 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         "BrowserClick": "click",
         "BrowserType": "type",
         "BrowserEvaluate": "evaluate",
+        "BrowserGetElements": "get_elements",
     }
     action = action_map.get(tool_name)
     if not action:

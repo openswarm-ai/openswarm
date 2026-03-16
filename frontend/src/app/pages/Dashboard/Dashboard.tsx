@@ -2,7 +2,7 @@ import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import DashboardIcon from '@mui/icons-material/Dashboard';
+import DashboardHeader from './DashboardHeader';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
 import {
@@ -92,6 +92,18 @@ const DashboardInner: React.FC = () => {
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const [toolbarOpen, setToolbarOpen] = useState(false);
+  const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleHighlightCard = useCallback((cardId: string) => {
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    setHighlightedCardId(cardId);
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedCardId(null);
+      highlightTimerRef.current = null;
+    }, 2000);
+  }, []);
+
   const spawnOriginsRef = useRef<Record<string, { x: number; y: number }>>({});
   const hasFittedRef = useRef(false);
   const restoredExpandedRef = useRef(false);
@@ -421,8 +433,6 @@ const DashboardInner: React.FC = () => {
     canvas.actions.fitToCards(allRects);
   }, [dispatch, canvas.actions]);
 
-  const nonDraftCount = sessionList.filter((s) => s.status !== 'draft' && s.dashboard_id === dashboardId).length;
-
   const dotSize = Math.max(1, 1.5 * canvas.zoom);
   const dotSpacing = 24 * canvas.zoom;
 
@@ -445,35 +455,17 @@ const DashboardInner: React.FC = () => {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', pointerEvents: 'auto' }}>
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              bgcolor: c.bg.surface,
-              border: `1px solid ${c.border.medium}`,
-              borderRadius: `${c.radius.lg}px`,
-              boxShadow: c.shadow.sm,
-              py: 0.75,
-              px: 1.5,
-            }}
-          >
-            <DashboardIcon sx={{ fontSize: 'small', color: c.accent.primary }} />
-            <Typography
-              sx={{
-                fontSize: '0.9rem',
-                fontWeight: 600,
-                color: c.text.primary,
-                lineHeight: 1,
-              }}
-            >
-              {dashboardName || 'Dashboard'}
-              <Box component="span" sx={{ color: c.text.muted, fontWeight: 400, mx: 0.75 }}>·</Box>
-              <Box component="span" sx={{ color: c.text.tertiary, fontWeight: 400 }}>
-                {nonDraftCount} agent{nonDraftCount !== 1 ? 's' : ''} running
-              </Box>
-            </Typography>
-          </Box>
+          <DashboardHeader
+            dashboardName={dashboardName}
+            sessions={sessions}
+            cards={cards}
+            viewCards={viewCards}
+            browserCards={browserCards}
+            outputs={outputs}
+            dashboardId={dashboardId}
+            canvasActions={canvas.actions}
+            onHighlightCard={handleHighlightCard}
+          />
         </Box>
       </Box>
 
@@ -554,6 +546,7 @@ const DashboardInner: React.FC = () => {
                   zoom={canvas.zoom}
                   spawnFrom={origin}
                   isSelected={selection.isSelected(session.id)}
+                  isHighlighted={highlightedCardId === session.id}
                   multiDragDelta={multiDragDelta}
                   onCardSelect={handleCardSelect}
                   onDragStart={handleCardDragStart}
@@ -575,6 +568,7 @@ const DashboardInner: React.FC = () => {
                   cardHeight={vc.height}
                   zoom={canvas.zoom}
                   isSelected={selection.isSelected(vc.output_id)}
+                  isHighlighted={highlightedCardId === vc.output_id}
                   multiDragDelta={multiDragDelta}
                   onCardSelect={handleCardSelect}
                   onDragStart={handleCardDragStart}
@@ -595,6 +589,7 @@ const DashboardInner: React.FC = () => {
                 cardHeight={bc.height}
                 zoom={canvas.zoom}
                 isSelected={selection.isSelected(bc.browser_id)}
+                isHighlighted={highlightedCardId === bc.browser_id}
                 multiDragDelta={multiDragDelta}
                 onCardSelect={handleCardSelect}
                 onDragStart={handleCardDragStart}

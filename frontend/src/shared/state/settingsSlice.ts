@@ -3,6 +3,13 @@ import { API_BASE } from '@/shared/config';
 
 const SETTINGS_API = `${API_BASE}/settings`;
 
+export const DEFAULT_SYSTEM_PROMPT =
+  `Ask the user as many follow ups as needed in order to eliminate any possible ambiguity. ` +
+  `When asking the user questions, use the AskUserQuestion tool.\n\n` +
+  `You are an unstopable Agent that does whatever is needed to achieve the task. ` +
+  `You are particularly gifted at coding, so when needed, transpose ordinary tasks into coding tasks.\n\n` +
+  `If a Browser is selected, prioritize this over other tools when it makes sense (so the user also has observability).`;
+
 export interface AppSettings {
   default_system_prompt: string | null;
   default_folder: string | null;
@@ -32,7 +39,7 @@ interface SettingsState {
 
 const initialState: SettingsState = {
   data: {
-    default_system_prompt: null,
+    default_system_prompt: DEFAULT_SYSTEM_PROMPT,
     default_folder: null,
     default_model: 'sonnet',
     default_mode: 'agent',
@@ -61,6 +68,15 @@ export const updateSettings = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
     });
+    const data = await res.json();
+    return data.settings as AppSettings;
+  }
+);
+
+export const resetSystemPrompt = createAsyncThunk(
+  'settings/resetSystemPrompt',
+  async () => {
+    const res = await fetch(`${SETTINGS_API}/reset-system-prompt`, { method: 'POST' });
     const data = await res.json();
     return data.settings as AppSettings;
   }
@@ -101,6 +117,9 @@ const settingsSlice = createSlice({
         state.loaded = true;
       })
       .addCase(updateSettings.fulfilled, (state, action) => {
+        state.data = action.payload;
+      })
+      .addCase(resetSystemPrompt.fulfilled, (state, action) => {
         state.data = action.payload;
       });
   },

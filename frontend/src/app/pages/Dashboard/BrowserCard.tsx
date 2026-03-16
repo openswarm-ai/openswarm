@@ -83,6 +83,7 @@ interface Props {
   cardHeight: number;
   zoom?: number;
   isSelected?: boolean;
+  isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
   onCardSelect?: (id: string, type: 'agent' | 'view' | 'browser', shiftKey: boolean) => void;
   onDragStart?: (id: string, type: 'agent' | 'view' | 'browser') => void;
@@ -93,7 +94,7 @@ interface Props {
 
 const BrowserCard: React.FC<Props> = ({
   browserId, tabs, activeTabId, cardX, cardY, cardWidth, cardHeight, zoom = 1,
-  isSelected = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
+  isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -493,25 +494,29 @@ const BrowserCard: React.FC<Props> = ({
 
   const showGlow = isGlowingFromRedux && hasBeenTouched;
 
-  const agentBorder = agentActive
-    ? `2px solid ${accentColor}`
-    : showGlow
+  const agentBorder = isHighlighted
+    ? `2px solid ${c.accent.primary}`
+    : agentActive
       ? `2px solid ${accentColor}`
-      : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`;
+      : showGlow
+        ? `2px solid ${accentColor}`
+        : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`;
 
   const innerGlow = showGlow && !agentActive
     ? `, inset 0 0 30px ${accentColor}25, inset 0 0 60px ${accentColor}10`
     : '';
 
-  const agentShadow = agentActive
-    ? `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15`
-    : showGlow
-      ? `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15${innerGlow}`
-      : isDragging || isResizing
-        ? c.shadow.lg
-        : isSelected
-          ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
-          : c.shadow.md;
+  const agentShadow = isHighlighted
+    ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
+    : agentActive
+      ? `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15`
+      : showGlow
+        ? `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15${innerGlow}`
+        : isDragging || isResizing
+          ? c.shadow.lg
+          : isSelected
+            ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
+            : c.shadow.md;
 
   return (
     <Box
@@ -535,10 +540,30 @@ const BrowserCard: React.FC<Props> = ({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: (isDragging || isResizing) ? 100 : (agentActive || showGlow) ? 50 : 1,
+        zIndex: isHighlighted ? 50 : (isDragging || isResizing) ? 100 : (agentActive || showGlow) ? 50 : 1,
         transition: noTransition ? 'none' : 'box-shadow 0.4s ease, border 0.3s ease',
         '&:hover .resize-handle': { opacity: 1 },
-        ...((agentActive || showGlow) && {
+        ...(isHighlighted && {
+          animation: 'card-highlight-pulse 2s ease-out forwards',
+          '@keyframes card-highlight-pulse': {
+            '0%': {
+              boxShadow: `0 0 0 3px ${c.accent.primary}70, 0 0 24px ${c.accent.primary}50, 0 0 48px ${c.accent.primary}25`,
+            },
+            '25%': {
+              boxShadow: `0 0 0 4px ${c.accent.primary}55, 0 0 30px ${c.accent.primary}40, 0 0 56px ${c.accent.primary}20`,
+            },
+            '50%': {
+              boxShadow: `0 0 0 3px ${c.accent.primary}45, 0 0 22px ${c.accent.primary}30, 0 0 44px ${c.accent.primary}15`,
+            },
+            '75%': {
+              boxShadow: `0 0 0 2px ${c.accent.primary}25, 0 0 14px ${c.accent.primary}18, 0 0 28px ${c.accent.primary}08`,
+            },
+            '100%': {
+              boxShadow: c.shadow.md,
+            },
+          },
+        }),
+        ...(!isHighlighted && (agentActive || showGlow) && {
           animation: 'agent-glow-pulse 2s ease-in-out infinite',
           '@keyframes agent-glow-pulse': {
             '0%, 100%': {

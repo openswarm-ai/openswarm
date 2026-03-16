@@ -276,7 +276,7 @@ export function useCanvasControls(zoomSensitivity: number = 50) {
     });
   }, []);
 
-  const fitToCards = useCallback((cardRects: Array<{ x: number; y: number; width: number; height: number }>) => {
+  const fitToCards = useCallback((cardRects: Array<{ x: number; y: number; width: number; height: number }>, maxZoom?: number) => {
     const viewport = viewportRef.current;
     if (!viewport || cardRects.length === 0) {
       setState({ panX: 0, panY: 0, zoom: 1 });
@@ -302,7 +302,8 @@ export function useCanvasControls(zoomSensitivity: number = 50) {
     const contentHeight = maxY - minY;
     const availW = vRect.width - FIT_PADDING * 2;
     const availH = vRect.height - FIT_PADDING * 2;
-    const newZoom = clamp(Math.min(availW / contentWidth, availH / contentHeight), MIN_ZOOM, MAX_ZOOM);
+    const ceiling = maxZoom ?? MAX_ZOOM;
+    const newZoom = clamp(Math.min(availW / contentWidth, availH / contentHeight), MIN_ZOOM, ceiling);
     const newPanX = (vRect.width - contentWidth * newZoom) / 2 - minX * newZoom;
     const newPanY = (vRect.height - contentHeight * newZoom) / 2 - minY * newZoom;
 

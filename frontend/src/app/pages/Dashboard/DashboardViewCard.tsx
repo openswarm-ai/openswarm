@@ -46,6 +46,7 @@ interface Props {
   cardHeight: number;
   zoom?: number;
   isSelected?: boolean;
+  isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
   onCardSelect?: (id: string, type: 'agent' | 'view', shiftKey: boolean) => void;
   onDragStart?: (id: string, type: 'agent' | 'view') => void;
@@ -55,7 +56,7 @@ interface Props {
 
 const DashboardViewCard: React.FC<Props> = ({
   output, cardX, cardY, cardWidth, cardHeight, zoom = 1,
-  isSelected = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
+  isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -264,19 +265,43 @@ const DashboardViewCard: React.FC<Props> = ({
         width: displayW,
         height: displayH,
         borderRadius: `${c.radius.lg}px`,
-        border: isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`,
+        border: isHighlighted
+          ? `2px solid ${c.accent.primary}`
+          : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`,
         bgcolor: c.bg.surface,
-        boxShadow: isDragging || isResizing
-          ? c.shadow.lg
-          : isSelected
-            ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
-            : c.shadow.md,
+        boxShadow: isHighlighted
+          ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
+          : isDragging || isResizing
+            ? c.shadow.lg
+            : isSelected
+              ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
+              : c.shadow.md,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: (isDragging || isResizing) ? 100 : 1,
+        zIndex: isHighlighted ? 50 : (isDragging || isResizing) ? 100 : 1,
         transition: noTransition ? 'none' : 'box-shadow 0.2s',
         '&:hover .resize-handle': { opacity: 1 },
+        ...(isHighlighted && {
+          animation: 'card-highlight-pulse 2s ease-out forwards',
+          '@keyframes card-highlight-pulse': {
+            '0%': {
+              boxShadow: `0 0 0 3px ${c.accent.primary}70, 0 0 24px ${c.accent.primary}50, 0 0 48px ${c.accent.primary}25`,
+            },
+            '25%': {
+              boxShadow: `0 0 0 4px ${c.accent.primary}55, 0 0 30px ${c.accent.primary}40, 0 0 56px ${c.accent.primary}20`,
+            },
+            '50%': {
+              boxShadow: `0 0 0 3px ${c.accent.primary}45, 0 0 22px ${c.accent.primary}30, 0 0 44px ${c.accent.primary}15`,
+            },
+            '75%': {
+              boxShadow: `0 0 0 2px ${c.accent.primary}25, 0 0 14px ${c.accent.primary}18, 0 0 28px ${c.accent.primary}08`,
+            },
+            '100%': {
+              boxShadow: c.shadow.md,
+            },
+          },
+        }),
       }}
     >
       {/* Header */}

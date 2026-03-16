@@ -8,6 +8,7 @@ import {
   AttachedSkill,
   createSkillPillElement,
   serializeEditorContent,
+  deserializeToEditor,
   detectEditorTrigger,
   TriggerState,
   EMPTY_TRIGGER,
@@ -47,6 +48,8 @@ const RichPromptEditor: React.FC<RichPromptEditorProps> = ({
   const attachedSkillsRef = useRef(attachedSkills);
   attachedSkillsRef.current = attachedSkills;
 
+  const removeSkillPillRef = useRef<(id: string) => void>(() => {});
+
   const [picker, setPicker] = useState<TriggerState>(EMPTY_TRIGGER);
   const [pickerRect, setPickerRect] = useState<DOMRect | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
@@ -73,11 +76,27 @@ const RichPromptEditor: React.FC<RichPromptEditorProps> = ({
     const editor = editorRef.current;
     if (!editor) return;
     if (value === lastEmittedRef.current) return;
-    // External change — update editor content
     lastEmittedRef.current = value;
-    editor.textContent = value;
+
+    if (/\{\{skill:.+?\}\}/.test(value)) {
+      const skillsByName: Record<string, AttachedSkill> = {};
+      for (const s of Object.values(skills)) {
+        skillsByName[s.name] = { id: s.id, name: s.name, content: s.content };
+      }
+      const restored = deserializeToEditor(
+        editor,
+        value,
+        skillsByName,
+        (id) => removeSkillPillRef.current(id),
+        c.font.mono,
+        c.status.error,
+      );
+      setAttachedSkills(restored);
+    } else {
+      editor.textContent = value;
+    }
     setHasContent(!!value);
-  }, [value]);
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const emitChange = useCallback(() => {
     const editor = editorRef.current;
@@ -127,6 +146,7 @@ const RichPromptEditor: React.FC<RichPromptEditorProps> = ({
     emitChange();
     editor.focus();
   }, [updateHasContent, emitChange]);
+  removeSkillPillRef.current = removeSkillPill;
 
   const detectTrigger = useCallback(() => {
     const result = detectEditorTrigger();

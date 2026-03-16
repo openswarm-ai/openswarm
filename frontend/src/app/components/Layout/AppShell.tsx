@@ -12,6 +12,7 @@ import Collapse from '@mui/material/Collapse';
 import Button from '@mui/material/Button';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
+import InputBase from '@mui/material/InputBase';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DescriptionIcon from '@mui/icons-material/Description';
 import PsychologyIcon from '@mui/icons-material/Psychology';
@@ -29,7 +30,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import Settings from '@/app/pages/Settings/Settings';
 import GlobalApprovalOverlay from '@/app/components/GlobalApprovalOverlay';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { fetchDashboards, createDashboard } from '@/shared/state/dashboardsSlice';
+import { fetchDashboards, createDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
@@ -58,6 +59,8 @@ const AppShell: React.FC = () => {
   const [appsExpanded, setAppsExpanded] = useState(true);
   const [customizationExpanded, setCustomizationExpanded] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [renamingDashboardId, setRenamingDashboardId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -143,7 +146,21 @@ const AppShell: React.FC = () => {
   };
 
   const handleDashboardItemClick = (dashboardId: string) => {
+    if (renamingDashboardId === dashboardId) return;
     navigate(`/dashboard/${dashboardId}`);
+  };
+
+  const handleStartDashboardRename = (id: string, currentName: string) => {
+    setRenamingDashboardId(id);
+    setRenameValue(currentName);
+  };
+
+  const handleDashboardRenameSubmit = (id: string) => {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== dashboardItems[id]?.name) {
+      dispatch(renameDashboard({ id, name: trimmed }));
+    }
+    setRenamingDashboardId(null);
   };
 
   const handleCreateDashboard = async (e: React.MouseEvent) => {
@@ -346,6 +363,7 @@ const AppShell: React.FC = () => {
               >
                 {dashboardList.map((entry) => {
                   const isActive = activeDashboardId === entry.id;
+                  const isRenaming = renamingDashboardId === entry.id;
                   return (
                     <Box
                       key={entry.id}
@@ -356,29 +374,63 @@ const AppShell: React.FC = () => {
                         gap: 0.75,
                         pl: 1.25,
                         pr: 1,
-                        py: 0.5,
+                        py: isRenaming ? 0.25 : 0.5,
                         ml: '-0.5px',
-                        cursor: 'pointer',
+                        cursor: isRenaming ? 'default' : 'pointer',
                         borderLeft: isActive ? `1.5px solid ${c.accent.primary}` : '1.5px solid transparent',
                         bgcolor: isActive ? `${c.accent.primary}0C` : 'transparent',
                         '&:hover': { bgcolor: `${c.text.tertiary}0A` },
                         transition: 'background-color 0.12s, border-color 0.12s',
                       }}
                     >
-                      <Typography
-                        sx={{
-                          color: isActive ? c.text.secondary : c.text.ghost,
-                          fontSize: '0.78rem',
-                          fontWeight: isActive ? 500 : 400,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          flex: 1,
-                          minWidth: 0,
-                        }}
-                      >
-                        {entry.name}
-                      </Typography>
+                      {isRenaming ? (
+                        <InputBase
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onBlur={() => handleDashboardRenameSubmit(entry.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleDashboardRenameSubmit(entry.id);
+                            if (e.key === 'Escape') setRenamingDashboardId(null);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onFocus={(e) => e.target.select()}
+                          sx={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontSize: '0.78rem',
+                            fontWeight: isActive ? 500 : 400,
+                            color: isActive ? c.text.secondary : c.text.ghost,
+                            py: 0,
+                            px: 0.5,
+                            borderRadius: 0.75,
+                            border: `1px solid ${c.accent.primary}80`,
+                            bgcolor: `${c.bg.page}`,
+                            '& input': {
+                              padding: '1px 0',
+                            },
+                          }}
+                        />
+                      ) : (
+                        <Typography
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            handleStartDashboardRename(entry.id, entry.name);
+                          }}
+                          sx={{
+                            color: isActive ? c.text.secondary : c.text.ghost,
+                            fontSize: '0.78rem',
+                            fontWeight: isActive ? 500 : 400,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                        >
+                          {entry.name}
+                        </Typography>
+                      )}
                     </Box>
                   );
                 })}

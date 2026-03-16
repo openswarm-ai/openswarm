@@ -232,8 +232,49 @@ class AgentManager:
             + "\n</available_views>"
         )
 
-    def _compose_system_prompt(self, default_prompt: str | None, mode_prompt: str | None, session_prompt: str | None, connected_tools_ctx: str | None = None, outputs_ctx: str | None = None) -> str | None:
-        parts = [p for p in (default_prompt, mode_prompt, session_prompt, connected_tools_ctx, outputs_ctx) if p]
+    def _build_browser_context(self, dashboard_id: str | None) -> str | None:
+        """Build a context block listing browser cards on the agent's dashboard."""
+        if not dashboard_id:
+            return None
+        try:
+            from backend.apps.dashboards.dashboards import _load as load_dashboard
+            dashboard = load_dashboard(dashboard_id)
+        except Exception:
+            return None
+        raw = dashboard.model_dump(mode="json")
+        browser_cards = raw.get("layout", {}).get("browser_cards", {})
+        if not browser_cards:
+            return None
+
+        lines = [
+            "<available_browser_cards>",
+            "The following browser cards are on the dashboard. "
+            "Use the browser_id value when calling any Browser tool (BrowserNavigate, "
+            "BrowserClick, BrowserType, BrowserScreenshot, BrowserGetText, BrowserGetElements, "
+            "BrowserEvaluate).\n",
+        ]
+        for card in browser_cards.values():
+            bid = card.get("browser_id", "")
+            tabs = card.get("tabs", [])
+            active_tab_id = card.get("activeTabId", "")
+            active_tab = next((t for t in tabs if t.get("id") == active_tab_id), None)
+            url = (active_tab or {}).get("url", card.get("url", ""))
+            title = (active_tab or {}).get("title", "")
+            lines.append(f"- browser_id: \"{bid}\"")
+            if title:
+                lines.append(f"  Title: {title}")
+            if url:
+                lines.append(f"  URL: {url}")
+            if len(tabs) > 1:
+                lines.append(f"  Tabs ({len(tabs)}):")
+                for t in tabs:
+                    marker = " (active)" if t.get("id") == active_tab_id else ""
+                    lines.append(f"    - tab_id: \"{t.get('id', '')}\" | {t.get('title') or t.get('url', '')}{marker}")
+        lines.append("</available_browser_cards>")
+        return "\n".join(lines)
+
+    def _compose_system_prompt(self, default_prompt: str | None, mode_prompt: str | None, session_prompt: str | None, connected_tools_ctx: str | None = None, outputs_ctx: str | None = None, browser_ctx: str | None = None) -> str | None:
+        parts = [p for p in (default_prompt, mode_prompt, session_prompt, connected_tools_ctx, outputs_ctx, browser_ctx) if p]
         return "\n\n".join(parts) if parts else None
 
     async def launch_agent(self, config: AgentConfig) -> AgentSession:
@@ -543,8 +584,9 @@ class AgentManager:
             _, mode_sys_prompt, _ = self._resolve_mode(session.mode)
             connected_tools_ctx = self._build_connected_tools_context(session.allowed_tools)
             outputs_ctx = self._build_outputs_context()
+            browser_ctx = self._build_browser_context(session.dashboard_id)
             global_settings = load_settings()
-            composed_prompt = self._compose_system_prompt(global_settings.default_system_prompt, mode_sys_prompt, session.system_prompt, connected_tools_ctx, outputs_ctx)
+            composed_prompt = self._compose_system_prompt(global_settings.default_system_prompt, mode_sys_prompt, session.system_prompt, connected_tools_ctx, outputs_ctx, browser_ctx)
 
             mcp_servers = await self._build_mcp_servers(session.allowed_tools)
 
