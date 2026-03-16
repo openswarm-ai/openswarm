@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
@@ -13,8 +14,11 @@ import ViewRunDialog from './ViewRunDialog';
 const Views: React.FC = () => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
+  const { id: routeId } = useParams<{ id: string }>();
   const items = useAppSelector((state) => state.outputs.items);
   const loading = useAppSelector((state) => state.outputs.loading);
+  const loaded = useAppSelector((state) => state.outputs.loaded);
   const outputs = useMemo(() => Object.values(items), [items]);
 
   const [editorOpen, setEditorOpen] = useState(false);
@@ -25,14 +29,25 @@ const Views: React.FC = () => {
     dispatch(fetchOutputs());
   }, [dispatch]);
 
+  useEffect(() => {
+    if (!loaded) return;
+    if (routeId === 'new') {
+      setEditingOutput(null);
+      setEditorOpen(true);
+    } else if (routeId && items[routeId]) {
+      setEditingOutput(items[routeId]);
+      setEditorOpen(true);
+    } else if (routeId && routeId !== 'new') {
+      navigate('/apps', { replace: true });
+    }
+  }, [routeId, loaded, items, navigate]);
+
   const handleNewView = () => {
-    setEditingOutput(null);
-    setEditorOpen(true);
+    navigate('/apps/new');
   };
 
   const handleEditView = (output: Output) => {
-    setEditingOutput(output);
-    setEditorOpen(true);
+    navigate(`/apps/${output.id}`);
   };
 
   const handleDeleteView = (id: string) => {
@@ -43,6 +58,7 @@ const Views: React.FC = () => {
     setEditorOpen(false);
     setEditingOutput(null);
     dispatch(fetchOutputs());
+    navigate('/apps');
   };
 
   if (editorOpen) {
@@ -66,12 +82,17 @@ const Views: React.FC = () => {
             mb: 3,
           }}
         >
-          <Typography
-            variant="h4"
-            sx={{ fontWeight: 700, color: c.text.primary }}
-          >
-            Views
-          </Typography>
+          <Box>
+            <Typography
+              variant="h4"
+              sx={{ fontWeight: 700, color: c.text.primary }}
+            >
+              Apps
+            </Typography>
+            <Typography sx={{ color: c.text.tertiary, fontSize: '0.9rem', mt: 0.5 }}>
+              In the past, we used to have to pay for expensive applications. Now, you can prompt them into existence.
+            </Typography>
+          </Box>
           <Button
             variant="contained"
             startIcon={<AddIcon />}
@@ -85,7 +106,7 @@ const Views: React.FC = () => {
               '&:hover': { bgcolor: c.accent.hover },
             }}
           >
-            New view
+            New app
           </Button>
         </Box>
 
@@ -103,10 +124,10 @@ const Views: React.FC = () => {
             }}
           >
             <Typography sx={{ fontSize: '1.1rem', mb: 1 }}>
-              No views yet
+              No apps yet
             </Typography>
             <Typography sx={{ fontSize: '0.85rem', color: c.text.tertiary }}>
-              Create your first reusable view
+              Create your first reusable app
             </Typography>
           </Box>
         ) : (

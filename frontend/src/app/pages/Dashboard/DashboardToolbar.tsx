@@ -423,7 +423,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 inputRef={searchInputRef}
                 value={viewSearch}
                 onChange={(e) => setViewSearch(e.target.value)}
-                placeholder="Search views..."
+                placeholder="Search apps..."
                 sx={{
                   flex: 1,
                   fontSize: '0.85rem',
@@ -451,7 +451,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               {filteredOutputs.length === 0 ? (
                 <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
                   <Typography sx={{ fontSize: '0.82rem', color: c.text.muted }}>
-                    {outputList.length === 0 ? 'No views created yet' : 'No matching views'}
+                    {outputList.length === 0 ? 'No apps created yet' : 'No matching apps'}
                   </Typography>
                 </Box>
               ) : (

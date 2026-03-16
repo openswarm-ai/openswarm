@@ -585,6 +585,7 @@ class AgentManager:
 
             options_kwargs = {
                 "model": session.model,
+                "max_buffer_size": 5 * 1024 * 1024,
                 "can_use_tool": can_use_tool,
                 "hooks": {
                     "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_hook])],

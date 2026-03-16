@@ -38,7 +38,7 @@ const ViewBubble: React.FC<Props> = ({ toolInput, toolResult, isStreaming }) => 
 
   const frontendCode = parsedResult?.frontend_code || (output?.files?.['index.html'] ?? '') || '';
   const backendResult = parsedResult?.backend_result || null;
-  const outputName = parsedResult?.output_name || output?.name || 'View';
+  const outputName = parsedResult?.output_name || output?.name || 'App';
   const outputColor = c.accent.primary;
   const outputIcon = output?.icon || 'view_quilt';
   const hasPreview = !!frontendCode.trim();

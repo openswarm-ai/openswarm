@@ -124,9 +124,14 @@ const DashboardSelection: React.FC = () => {
             mb: 3,
           }}
         >
-          <Typography variant="h4" sx={{ fontWeight: 700, color: c.text.primary }}>
-            Dashboards
-          </Typography>
+          <Box>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: c.text.primary }}>
+              Dashboards
+            </Typography>
+            <Typography sx={{ color: c.text.tertiary, fontSize: '0.9rem', mt: 0.5 }}>
+              Monitor and manage your agents from a single workspace.
+            </Typography>
+          </Box>
           <Button
             variant="contained"
             startIcon={<AddIcon />}
@@ -223,9 +228,23 @@ const DashboardSelection: React.FC = () => {
                     position: 'relative',
                   }}
                 >
-                  <DashboardIcon
-                    sx={{ fontSize: 48, color: c.accent.primary, opacity: 0.5 }}
-                  />
+                  {d.thumbnail ? (
+                    <Box
+                      component="img"
+                      src={d.thumbnail}
+                      alt={`${d.name} preview`}
+                      sx={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        objectPosition: 'top left',
+                      }}
+                    />
+                  ) : (
+                    <DashboardIcon
+                      sx={{ fontSize: 48, color: c.accent.primary, opacity: 0.5 }}
+                    />
+                  )}
                   <Box
                     className="card-actions"
                     sx={{

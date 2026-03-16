@@ -365,7 +365,7 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({ entry, c }) => {
 
         {!entry.stdout && !entry.stderr && !entry.backendResult && !entry.error && (
           <Typography sx={{ fontSize: '0.75rem', color: '#8b949e', fontFamily: c.font.mono }}>
-            No backend code to execute. Only input data was sent to the view.
+            No backend code to execute. Only input data was sent to the app.
           </Typography>
         )}
       </Box>
@@ -735,7 +735,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
     delete outputFiles['schema.json'];
 
     return {
-      name: name || 'Untitled View',
+      name: name || 'Untitled App',
       description,
       icon: 'view_quilt',
       input_schema: schema,
@@ -1143,7 +1143,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
           <TextField
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="View name"
+            placeholder="App name"
             variant="standard"
             sx={{
               flex: 1,
@@ -1554,7 +1554,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
                 {autoRunEnabled ? (
                   <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', p: 2, gap: 1.5, overflow: 'hidden' }}>
                     <Typography sx={{ color: c.text.ghost, fontSize: '0.8rem', lineHeight: 1.6, flexShrink: 0 }}>
-                      Describe what data to generate for this view. When triggered, an LLM will produce input data matching your schema and populate the preview.
+                      Describe what data to generate for this app. When triggered, an LLM will produce input data matching your schema and populate the preview.
                     </Typography>
                     <ChatInput
                       ref={autoRunInputRef}
@@ -1597,7 +1597,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
                   <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
                     <BoltIcon sx={{ fontSize: 40, color: c.text.ghost, opacity: 0.3 }} />
                     <Typography sx={{ color: c.text.ghost, fontSize: '0.88rem' }}>
-                      Enable Auto Run to generate live data for this view
+                      Enable Auto Run to generate live data for this app
                     </Typography>
                     <Typography sx={{ color: c.text.ghost, fontSize: '0.78rem', maxWidth: 360, textAlign: 'center', lineHeight: 1.5 }}>
                       Configure a prompt that describes what data to generate. An LLM will produce input matching your schema and populate the preview automatically.

@@ -87,7 +87,7 @@ class ConnectionManager:
             future.set_result(decision)
 
     async def send_browser_command(
-        self, request_id: str, action: str, browser_id: str, params: dict
+        self, request_id: str, action: str, browser_id: str, params: dict, tab_id: str = ""
     ) -> dict:
         """Send a browser command to the frontend and wait for the result."""
         future = asyncio.get_event_loop().create_future()
@@ -97,6 +97,7 @@ class ConnectionManager:
             "request_id": request_id,
             "action": action,
             "browser_id": browser_id,
+            "tab_id": tab_id,
             "params": params,
         })
 

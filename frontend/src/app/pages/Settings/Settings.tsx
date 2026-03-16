@@ -13,6 +13,8 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Slider from '@mui/material/Slider';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -33,12 +35,39 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import DownloadIcon from '@mui/icons-material/Download';
 import CircularProgress from '@mui/material/CircularProgress';
 import LinearProgress from '@mui/material/LinearProgress';
+import Collapse from '@mui/material/Collapse';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { updateSettings, closeSettingsModal, AppSettings } from '@/shared/state/settingsSlice';
 import { setChecking, setUpdateError } from '@/shared/state/updateSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import DirectoryBrowser from '@/app/components/DirectoryBrowser';
+import { CommandsContent } from '@/app/pages/Commands/Commands';
+
+const API_KEY_STEPS = [
+  {
+    title: 'Open the Anthropic Console',
+    detail: 'Visit console.anthropic.com — create a free account if you don\'t have one yet.',
+    link: 'https://console.anthropic.com',
+  },
+  {
+    title: 'Navigate to API Keys',
+    detail: 'In the dashboard, click "Settings" in the left sidebar, then select "API Keys".',
+  },
+  {
+    title: 'Create a new key',
+    detail: 'Click the "Create Key" button. Name it anything you like (e.g. "OpenSwarm").',
+  },
+  {
+    title: 'Copy your key',
+    detail: 'Click the copy icon next to your new key. It will start with sk-ant-api03-…',
+  },
+  {
+    title: 'Paste it above & save',
+    detail: 'Paste the key into the field above, then hit Save. You\'re all set!',
+  },
+];
 
 const Settings: React.FC = () => {
   const open = useAppSelector((s) => s.settings.modalOpen);
@@ -57,16 +86,22 @@ const Settings: React.FC = () => {
   const downloadPercent = useAppSelector((s) => s.update.downloadPercent);
   const updateError = useAppSelector((s) => s.update.error);
 
+  const [activeTab, setActiveTab] = useState<'general' | 'commands'>('general');
   const [form, setForm] = useState<AppSettings>({ ...settings });
   const [showApiKey, setShowApiKey] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [recordingShortcut, setRecordingShortcut] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [showApiHelp, setShowApiHelp] = useState(false);
 
   useEffect(() => {
     dispatch(fetchModes());
   }, [dispatch]);
+
+  useEffect(() => {
+    if (open) setActiveTab('general');
+  }, [open]);
 
   useEffect(() => {
     if (loaded) {
@@ -194,7 +229,7 @@ const Settings: React.FC = () => {
       maxWidth={false}
       PaperProps={{
         sx: {
-          width: 660,
+          width: 780,
           maxHeight: '85vh',
           bgcolor: c.bg.page,
           borderRadius: 2,
@@ -205,20 +240,39 @@ const Settings: React.FC = () => {
     >
       <DialogTitle
         sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottom: `1px solid ${c.border.subtle}`,
           px: 3,
-          py: 1.5,
+          py: 0,
+          borderBottom: `1px solid ${c.border.subtle}`,
         }}
       >
-        <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem' }}>
-          Settings
-        </Typography>
-        <IconButton onClick={handleRequestClose} size="small" sx={{ color: c.text.tertiary, '&:hover': { color: c.text.primary } }}>
-          <CloseIcon sx={{ fontSize: 18 }} />
-        </IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1.5, pb: 0.5 }}>
+          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem' }}>
+            Settings
+          </Typography>
+          <IconButton onClick={handleRequestClose} size="small" sx={{ color: c.text.tertiary, '&:hover': { color: c.text.primary } }}>
+            <CloseIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Box>
+        <Tabs
+          value={activeTab}
+          onChange={(_, v) => setActiveTab(v)}
+          sx={{
+            minHeight: 36,
+            '& .MuiTab-root': {
+              minHeight: 36,
+              textTransform: 'none',
+              fontSize: '0.85rem',
+              fontWeight: 500,
+              color: c.text.muted,
+              px: 1.5,
+              '&.Mui-selected': { color: c.accent.primary, fontWeight: 600 },
+            },
+            '& .MuiTabs-indicator': { backgroundColor: c.accent.primary, height: 2 },
+          }}
+        >
+          <Tab label="General" value="general" disableRipple />
+          <Tab label="Commands" value="commands" disableRipple />
+        </Tabs>
       </DialogTitle>
 
       <DialogContent sx={{
@@ -230,6 +284,7 @@ const Settings: React.FC = () => {
         scrollbarWidth: 'thin',
         scrollbarColor: `${c.border.medium} transparent`,
       }}>
+      {activeTab === 'general' ? (
       <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1 }}>
 
         {/* ── Agent Defaults ── */}
@@ -517,9 +572,95 @@ const Settings: React.FC = () => {
 
         <Box sx={rowLastSx}>
           <Typography sx={labelSx}>Anthropic API key</Typography>
-          <Typography sx={{ ...descSx, mb: 1.5 }}>
-            Stored securely in the local database.
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+            <Typography sx={descSx}>
+              Stored securely in the local database.
+            </Typography>
+            <Typography
+              component="span"
+              onClick={() => setShowApiHelp((v) => !v)}
+              sx={{
+                color: c.accent.primary,
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.4,
+                whiteSpace: 'nowrap',
+                userSelect: 'none',
+                '&:hover': { textDecoration: 'underline' },
+              }}
+            >
+              {showApiHelp ? 'Hide guide' : 'How do I get a key?'}
+            </Typography>
+          </Box>
+
+          <Collapse in={showApiHelp} timeout={250}>
+            <Box sx={{
+              mb: 1.5,
+              p: 2,
+              borderRadius: `${c.radius.md}px`,
+              bgcolor: `${c.accent.primary}08`,
+              border: `1px solid ${c.accent.primary}20`,
+            }}>
+              {API_KEY_STEPS.map((step, i) => (
+                <Box key={i} sx={{ display: 'flex', gap: 1.5, mb: i < API_KEY_STEPS.length - 1 ? 1.5 : 0 }}>
+                  <Box sx={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    bgcolor: `${c.accent.primary}15`,
+                    color: c.accent.primary,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    flexShrink: 0,
+                    mt: 0.1,
+                  }}>
+                    {i + 1}
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500, lineHeight: 1.4 }}>
+                      {step.title}
+                      {step.link && (
+                        <Typography
+                          component="span"
+                          onClick={() => {
+                            const w = window as any;
+                            if (w.openswarm?.openExternal) {
+                              w.openswarm.openExternal(step.link);
+                            } else {
+                              window.open(step.link, '_blank', 'noopener');
+                            }
+                          }}
+                          sx={{
+                            color: c.accent.primary,
+                            fontSize: '0.75rem',
+                            ml: 0.75,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 0.3,
+                            verticalAlign: 'middle',
+                            '&:hover': { textDecoration: 'underline' },
+                          }}
+                        >
+                          Open
+                          <OpenInNewIcon sx={{ fontSize: 12 }} />
+                        </Typography>
+                      )}
+                    </Typography>
+                    <Typography sx={{ color: c.text.muted, fontSize: '0.75rem', lineHeight: 1.4 }}>
+                      {step.detail}
+                    </Typography>
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          </Collapse>
+
           <TextField
             type={showApiKey ? 'text' : 'password'}
             value={form.anthropic_api_key ?? ''}
@@ -661,8 +802,14 @@ const Settings: React.FC = () => {
         </Box>
 
       </Box>
+      ) : (
+      <Box sx={{ pt: 2.5, pb: 1 }}>
+        <CommandsContent />
+      </Box>
+      )}
       </DialogContent>
 
+      {activeTab === 'general' && (
       <DialogActions sx={{ borderTop: `1px solid ${c.border.subtle}`, px: 3, py: 1.5, justifyContent: 'flex-end' }}>
         <Button
           onClick={handleRequestClose}
@@ -688,6 +835,7 @@ const Settings: React.FC = () => {
           Save
         </Button>
       </DialogActions>
+      )}
 
       <DirectoryBrowser
         open={browseOpen}

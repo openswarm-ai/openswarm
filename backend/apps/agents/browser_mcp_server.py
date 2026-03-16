@@ -24,6 +24,11 @@ except ImportError:
 BACKEND_PORT = os.environ.get("OPENSWARM_PORT", "8324")
 BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/browser/command"
 
+TAB_ID_PROP = {
+    "type": "string",
+    "description": "Optional tab ID within the browser card. If omitted, targets the active tab.",
+}
+
 TOOLS = [
     {
         "name": "BrowserScreenshot",
@@ -38,6 +43,7 @@ TOOLS = [
                     "type": "string",
                     "description": "The browser card ID to capture. Use the ID from the selected browser card context.",
                 },
+                "tab_id": TAB_ID_PROP,
             },
             "required": ["browser_id"],
         },
@@ -55,6 +61,7 @@ TOOLS = [
                     "type": "string",
                     "description": "The browser card ID.",
                 },
+                "tab_id": TAB_ID_PROP,
             },
             "required": ["browser_id"],
         },
@@ -69,6 +76,7 @@ TOOLS = [
                     "type": "string",
                     "description": "The browser card ID.",
                 },
+                "tab_id": TAB_ID_PROP,
                 "url": {
                     "type": "string",
                     "description": "The URL to navigate to.",
@@ -89,6 +97,7 @@ TOOLS = [
                     "type": "string",
                     "description": "The browser card ID.",
                 },
+                "tab_id": TAB_ID_PROP,
                 "selector": {
                     "type": "string",
                     "description": "CSS selector of the element to click.",
@@ -110,6 +119,7 @@ TOOLS = [
                     "type": "string",
                     "description": "The browser card ID.",
                 },
+                "tab_id": TAB_ID_PROP,
                 "selector": {
                     "type": "string",
                     "description": "CSS selector of the input element.",
@@ -135,6 +145,7 @@ TOOLS = [
                     "type": "string",
                     "description": "The browser card ID.",
                 },
+                "tab_id": TAB_ID_PROP,
                 "expression": {
                     "type": "string",
                     "description": "JavaScript expression to evaluate.",
@@ -164,10 +175,11 @@ def send_notification(method, params=None):
     sys.stdout.flush()
 
 
-def call_backend(action: str, browser_id: str, params: dict | None = None) -> dict:
+def call_backend(action: str, browser_id: str, params: dict | None = None, tab_id: str = "") -> dict:
     payload = json.dumps({
         "action": action,
         "browser_id": browser_id,
+        "tab_id": tab_id,
         "params": params or {},
     }).encode()
     req = urllib.request.Request(
@@ -186,7 +198,7 @@ def call_backend(action: str, browser_id: str, params: dict | None = None) -> di
         return {"error": str(e)}
 
 
-MAX_IMAGE_B64_BYTES = 700_000
+MAX_IMAGE_B64_BYTES = 400_000
 
 
 def compress_screenshot(b64_png: str) -> tuple[str, str] | None:
@@ -196,12 +208,12 @@ def compress_screenshot(b64_png: str) -> tuple[str, str] | None:
     try:
         raw = base64.b64decode(b64_png)
         img = Image.open(BytesIO(raw))
-        max_width = 1280
+        max_width = 1024
         if img.width > max_width:
             ratio = max_width / img.width
             img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
         buf = BytesIO()
-        img.convert("RGB").save(buf, format="JPEG", quality=55)
+        img.convert("RGB").save(buf, format="JPEG", quality=45)
         return base64.b64encode(buf.getvalue()).decode(), "image/jpeg"
     except Exception:
         return None
@@ -209,6 +221,7 @@ def compress_screenshot(b64_png: str) -> tuple[str, str] | None:
 
 def handle_tool_call(tool_name: str, arguments: dict) -> dict:
     browser_id = arguments.get("browser_id", "")
+    tab_id = arguments.get("tab_id", "")
     if not browser_id:
         return {"content": [{"type": "text", "text": "Error: browser_id is required"}], "isError": True}
 
@@ -224,8 +237,8 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
     if not action:
         return {"content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}], "isError": True}
 
-    params = {k: v for k, v in arguments.items() if k != "browser_id"}
-    result = call_backend(action, browser_id, params)
+    params = {k: v for k, v in arguments.items() if k not in ("browser_id", "tab_id")}
+    result = call_backend(action, browser_id, params, tab_id=tab_id)
 
     if "error" in result:
         return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}

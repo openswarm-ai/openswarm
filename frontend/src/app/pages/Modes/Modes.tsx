@@ -184,7 +184,7 @@ const Modes: React.FC = () => {
             Modes
           </Typography>
           <Typography sx={{ color: c.text.tertiary, fontSize: '0.9rem' }}>
-            Configure agent interaction modes with custom system prompts, tools, and auto-switching.
+            Configure agent interaction modes with custom system prompts, actions, and auto-switching.
           </Typography>
         </Box>
         <Button
@@ -266,13 +266,13 @@ const Modes: React.FC = () => {
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   {mode.tools !== null ? (
                     <Chip
-                      label={`${mode.tools.length} tool${mode.tools.length !== 1 ? 's' : ''}`}
+                      label={`${mode.tools.length} action${mode.tools.length !== 1 ? 's' : ''}`}
                       size="small"
                       sx={{ bgcolor: `${mode.color}18`, color: mode.color, fontSize: '0.75rem', height: 24 }}
                     />
                   ) : (
                     <Chip
-                      label="All tools"
+                      label="All actions"
                       size="small"
                       sx={{ bgcolor: `${mode.color}18`, color: mode.color, fontSize: '0.75rem', height: 24 }}
                     />
@@ -369,22 +369,22 @@ const Modes: React.FC = () => {
                 sx={{ color: c.text.tertiary, '&.Mui-checked': { color: c.accent.primary }, p: 0 }}
               />
               <Typography sx={{ color: c.text.secondary, fontSize: '0.85rem' }}>
-                Restrict tools {!form.toolsEnabled && <span style={{ color: c.text.tertiary }}>(all tools allowed)</span>}
+                Restrict actions {!form.toolsEnabled && <span style={{ color: c.text.tertiary }}>(all actions allowed)</span>}
               </Typography>
             </Box>
             {form.toolsEnabled && (
               <FormControl fullWidth size="small">
-                <InputLabel sx={{ color: c.text.tertiary }}>Allowed Tools</InputLabel>
+                <InputLabel sx={{ color: c.text.tertiary }}>Allowed Actions</InputLabel>
                 <Select
                   multiple
                   value={form.tools}
                   onChange={(e) => setForm({ ...form, tools: typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value })}
-                  input={<OutlinedInput label="Allowed Tools" />}
+                  input={<OutlinedInput label="Allowed Actions" />}
                   renderValue={(selected) => selected.join(', ')}
                   sx={{ bgcolor: c.bg.page }}
                   MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
                 >
-                  <ListSubheader sx={{ bgcolor: c.bg.page, color: c.text.tertiary, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: '32px' }}>Built-in Tools</ListSubheader>
+                  <ListSubheader sx={{ bgcolor: c.bg.page, color: c.text.tertiary, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: '32px' }}>Built-in Actions</ListSubheader>
                   {ALL_BUILTIN_TOOL_NAMES.map((name) => (
                     <MenuItem key={name} value={name}>
                       <Checkbox checked={form.tools.includes(name)} size="small" sx={{ '&.Mui-checked': { color: c.accent.primary } }} />
@@ -393,7 +393,7 @@ const Modes: React.FC = () => {
                   ))}
                   {mcpToolNames.length > 0 && (
                     <ListSubheader sx={{ bgcolor: c.bg.page, color: '#f59e0b', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: '32px', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <ExtensionIcon sx={{ fontSize: 14 }} /> MCP Tools
+                      <ExtensionIcon sx={{ fontSize: 14 }} /> MCP Actions
                     </ListSubheader>
                   )}
                   {mcpToolNames.map((name) => (

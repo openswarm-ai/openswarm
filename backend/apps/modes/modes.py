@@ -15,7 +15,9 @@ from backend.config.paths import MODES_DIR as DATA_DIR
 async def modes_lifespan():
     os.makedirs(DATA_DIR, exist_ok=True)
     for builtin in BUILTIN_MODES:
-        _save(builtin)
+        path = os.path.join(DATA_DIR, f"{builtin.id}.json")
+        if not os.path.exists(path):
+            _save(builtin)
     yield
 
 
@@ -85,7 +87,7 @@ async def create_mode(body: ModeCreate):
 @modes.router.put("/{mode_id}")
 async def update_mode(mode_id: str, body: ModeUpdate):
     mode = _load(mode_id)
-    for k, v in body.model_dump(exclude_none=True).items():
+    for k, v in body.model_dump(exclude_unset=True).items():
         setattr(mode, k, v)
     _save(mode)
     return {"ok": True, "mode": mode.model_dump()}

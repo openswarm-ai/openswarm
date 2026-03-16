@@ -206,7 +206,7 @@ function buildContextGroups(
       key: 'tools',
       icon: <BuildOutlinedIcon sx={{ fontSize: 13 }} />,
       color: '#f59e0b',
-      label: `${forcedTools.length} tool${forcedTools.length > 1 ? 's' : ''} requested`,
+      label: `${forcedTools.length} action${forcedTools.length > 1 ? 's' : ''} requested`,
       chips: forcedTools.map((t) => ({
         label: t,
         icon: <BuildOutlinedIcon sx={{ fontSize: 12 }} />,

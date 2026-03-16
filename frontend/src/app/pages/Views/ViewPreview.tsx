@@ -154,7 +154,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
           background: '#fff',
           ...style,
         }}
-        title="View Preview"
+        title="App Preview"
       />
     </Box>
   );

@@ -327,7 +327,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
             'message': 'Message',
             'tool-call': 'Tool Call',
             'tool-group': 'Tool Group',
-            'view-card': 'View Card',
+            'view-card': 'App Card',
             'browser-card': 'Browser Card',
             'dom-element': 'Element',
           }[el.semanticType] || el.semanticType;

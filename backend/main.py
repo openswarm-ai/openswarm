@@ -103,13 +103,14 @@ async def browser_command(request: Request):
     body = await request.json()
     action = body.get("action", "")
     browser_id = body.get("browser_id", "")
+    tab_id = body.get("tab_id", "")
     params = body.get("params", {})
 
     if not action or not browser_id:
         return JSONResponse({"error": "action and browser_id are required"}, status_code=400)
 
     request_id = uuid4().hex
-    result = await ws_manager.send_browser_command(request_id, action, browser_id, params)
+    result = await ws_manager.send_browser_command(request_id, action, browser_id, params, tab_id=tab_id)
     return JSONResponse(result)
 
 

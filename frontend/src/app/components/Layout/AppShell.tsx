@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { openSettingsModal } from '@/shared/state/settingsSlice';
 import Box from '@mui/material/Box';
@@ -17,11 +17,11 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import BuildIcon from '@mui/icons-material/Build';
 import TuneIcon from '@mui/icons-material/Tune';
-import TerminalIcon from '@mui/icons-material/Terminal';
 import ViewQuiltIcon from '@mui/icons-material/ViewQuilt';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
+import ExtensionIcon from '@mui/icons-material/Extension';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import ArrowForwardOutlinedIcon from '@mui/icons-material/ArrowForwardOutlined';
@@ -30,16 +30,23 @@ import Settings from '@/app/pages/Settings/Settings';
 import GlobalApprovalOverlay from '@/app/components/GlobalApprovalOverlay';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchDashboards, createDashboard } from '@/shared/state/dashboardsSlice';
+import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
-const NAV_ITEMS = [
-  { label: 'Templates', path: '/templates', icon: <DescriptionIcon /> },
+const SIDEBAR_MIN = 160;
+const SIDEBAR_MAX = 400;
+const SIDEBAR_DEFAULT = 220;
+const SIDEBAR_WIDTH_KEY = 'openswarm-sidebar-width';
+
+const CUSTOMIZATION_ITEMS = [
+  { label: 'Prompts', path: '/templates', icon: <DescriptionIcon /> },
   { label: 'Skills', path: '/skills', icon: <PsychologyIcon /> },
-  { label: 'Tools', path: '/tools', icon: <BuildIcon /> },
+  { label: 'Actions', path: '/actions', icon: <BuildIcon /> },
   { label: 'Modes', path: '/modes', icon: <TuneIcon /> },
-  { label: 'Commands', path: '/commands', icon: <TerminalIcon /> },
-  { label: 'Views', path: '/views', icon: <ViewQuiltIcon /> },
 ];
+
+const CUSTOMIZATION_PATHS = new Set(CUSTOMIZATION_ITEMS.map((i) => i.path));
+
 
 
 const AppShell: React.FC = () => {
@@ -47,8 +54,21 @@ const AppShell: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
-  const [dashboardsExpanded, setDashboardsExpanded] = useState(false);
+  const [dashboardsExpanded, setDashboardsExpanded] = useState(true);
+  const [appsExpanded, setAppsExpanded] = useState(true);
+  const [customizationExpanded, setCustomizationExpanded] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      if (stored) {
+        const w = Number(stored);
+        if (w >= SIDEBAR_MIN && w <= SIDEBAR_MAX) return w;
+      }
+    } catch {}
+    return SIDEBAR_DEFAULT;
+  });
+  const isResizing = useRef(false);
 
   const updateStatus = useAppSelector((state) => state.update.status);
   const availableVersion = useAppSelector((state) => state.update.availableVersion);
@@ -62,13 +82,55 @@ const AppShell: React.FC = () => {
     (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
   );
 
+  const outputItems = useAppSelector((state) => state.outputs.items);
+  const appsList = Object.values(outputItems).sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  );
+
   useEffect(() => {
     dispatch(fetchDashboards());
+    dispatch(fetchOutputs());
   }, [dispatch]);
 
+  useEffect(() => {
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)); } catch {}
+  }, [sidebarWidth]);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isResizing.current) return;
+      setSidebarWidth(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX)));
+    };
+
+    const onMouseUp = () => {
+      isResizing.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, []);
+
+  const handleResizeDoubleClick = useCallback(() => {
+    setSidebarWidth(SIDEBAR_DEFAULT);
+  }, []);
+
   const isDashboardRoute = location.pathname === '/' || location.pathname.startsWith('/dashboard/');
+  const isAppsRoute = location.pathname === '/apps' || location.pathname.startsWith('/apps/');
+  const isCustomizationRoute = location.pathname === '/customization' || CUSTOMIZATION_PATHS.has(location.pathname);
   const activeDashboardId = location.pathname.startsWith('/dashboard/')
     ? location.pathname.split('/dashboard/')[1]
+    : null;
+  const activeAppId = location.pathname.startsWith('/apps/')
+    ? location.pathname.split('/apps/')[1]
     : null;
 
   const handleDashboardsClick = () => {
@@ -90,6 +152,20 @@ const AppShell: React.FC = () => {
     if (createDashboard.fulfilled.match(result)) {
       navigate(`/dashboard/${result.payload.id}`);
     }
+  };
+
+  const handleAppsClick = () => {
+    if (isAppsRoute && location.pathname === '/apps') {
+      setAppsExpanded((prev) => !prev);
+    } else {
+      navigate('/apps');
+      setAppsExpanded(true);
+    }
+  };
+
+  const handleCreateApp = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigate('/apps/new');
   };
 
   return (
@@ -188,12 +264,12 @@ const AppShell: React.FC = () => {
 
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
       {!sidebarCollapsed && (
+      <>
       <Box
         sx={{
-          width: 220,
+          width: sidebarWidth,
           flexShrink: 0,
           bgcolor: c.bg.secondary,
-          borderRight: `0.5px solid ${c.border.subtle}`,
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -313,46 +389,210 @@ const AppShell: React.FC = () => {
           {/* Divider */}
           <Box sx={{ mx: 1.5, my: 0.5, borderTop: `0.5px solid ${c.border.subtle}` }} />
 
-          {/* Nav items */}
-          <Box sx={{ px: 1 }}>
-            {NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                style={{ textDecoration: 'none', color: 'inherit' }}
-              >
-                {({ isActive }) => (
-                  <ListItemButton
-                    sx={{
-                      borderRadius: 1.5,
-                      py: 0.6,
-                      px: 1.25,
-                      mb: 0.25,
-                      bgcolor: isActive ? `${c.accent.primary}12` : 'transparent',
-                      '&:hover': { bgcolor: isActive ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
-                      transition: 'background-color 0.15s',
-                    }}
+          {/* Customization section */}
+          <Box sx={{ px: 1, mb: 0.25 }}>
+            <ListItemButton
+              onClick={() => {
+                if (isCustomizationRoute) {
+                  setCustomizationExpanded((prev) => !prev);
+                } else {
+                  navigate('/customization');
+                  setCustomizationExpanded(true);
+                }
+              }}
+              sx={{
+                borderRadius: 1.5,
+                py: 0.6,
+                px: 1.25,
+                bgcolor: isCustomizationRoute ? `${c.accent.primary}12` : 'transparent',
+                '&:hover': { bgcolor: isCustomizationRoute ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <ListItemIcon sx={{ color: isCustomizationRoute ? c.accent.primary : c.text.tertiary, minWidth: 32 }}>
+                <ExtensionIcon sx={{ fontSize: 20 }} />
+              </ListItemIcon>
+              <ListItemText
+                primary="Customization"
+                sx={{
+                  '& .MuiListItemText-primary': {
+                    color: isCustomizationRoute ? c.text.primary : c.text.muted,
+                    fontSize: '0.82rem',
+                    fontWeight: isCustomizationRoute ? 600 : 400,
+                  },
+                }}
+              />
+              <ExpandMoreIcon
+                sx={{
+                  color: c.text.ghost,
+                  fontSize: 16,
+                  transition: 'transform 0.2s',
+                  transform: customizationExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                }}
+              />
+            </ListItemButton>
+
+            <Collapse in={customizationExpanded} timeout={200}>
+              <Box sx={{ ml: 2, mt: 0.25, mb: 0.5, borderLeft: `1px solid ${c.border.medium}` }}>
+                {CUSTOMIZATION_ITEMS.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    style={{ textDecoration: 'none', color: 'inherit' }}
                   >
-                    <ListItemIcon
-                      sx={{ color: isActive ? c.accent.primary : c.text.tertiary, minWidth: 32 }}
-                    >
-                      {React.cloneElement(item.icon, { sx: { fontSize: 20 } })}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={item.label}
-                      sx={{
-                        '& .MuiListItemText-primary': {
-                          color: isActive ? c.text.primary : c.text.muted,
-                          fontSize: '0.82rem',
-                          fontWeight: isActive ? 600 : 400,
-                        },
-                      }}
-                    />
-                  </ListItemButton>
-                )}
-              </NavLink>
-            ))}
+                    {({ isActive }) => (
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.75,
+                          pl: 1.25,
+                          pr: 1,
+                          py: 0.5,
+                          ml: '-0.5px',
+                          cursor: 'pointer',
+                          borderLeft: isActive ? `1.5px solid ${c.accent.primary}` : '1.5px solid transparent',
+                          bgcolor: isActive ? `${c.accent.primary}0C` : 'transparent',
+                          '&:hover': { bgcolor: `${c.text.tertiary}0A` },
+                          transition: 'background-color 0.12s, border-color 0.12s',
+                        }}
+                      >
+                        <Typography
+                          sx={{
+                            color: isActive ? c.text.secondary : c.text.ghost,
+                            fontSize: '0.78rem',
+                            fontWeight: isActive ? 500 : 400,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                        >
+                          {item.label}
+                        </Typography>
+                      </Box>
+                    )}
+                  </NavLink>
+                ))}
+              </Box>
+            </Collapse>
           </Box>
+
+          {/* Divider */}
+          <Box sx={{ mx: 1.5, my: 0.5, borderTop: `0.5px solid ${c.border.subtle}` }} />
+
+          {/* Apps section */}
+          <Box sx={{ px: 1, mb: 0.25 }}>
+            <ListItemButton
+              onClick={handleAppsClick}
+              sx={{
+                borderRadius: 1.5,
+                py: 0.6,
+                px: 1.25,
+                bgcolor: isAppsRoute ? `${c.accent.primary}12` : 'transparent',
+                '&:hover': { bgcolor: isAppsRoute ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <ListItemIcon sx={{ color: isAppsRoute ? c.accent.primary : c.text.tertiary, minWidth: 32 }}>
+                <ViewQuiltIcon sx={{ fontSize: 20 }} />
+              </ListItemIcon>
+              <ListItemText
+                primary="Apps"
+                sx={{
+                  '& .MuiListItemText-primary': {
+                    color: isAppsRoute ? c.text.primary : c.text.muted,
+                    fontSize: '0.82rem',
+                    fontWeight: isAppsRoute ? 600 : 400,
+                  },
+                }}
+              />
+              <Tooltip title="New app" placement="right">
+                <IconButton
+                  size="small"
+                  onClick={handleCreateApp}
+                  sx={{
+                    color: c.text.ghost,
+                    p: 0.25,
+                    mr: 0.25,
+                    borderRadius: 1,
+                    '&:hover': { color: c.accent.primary, bgcolor: `${c.accent.primary}14` },
+                  }}
+                >
+                  <AddIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+              {appsList.length > 0 && (
+                <ExpandMoreIcon
+                  sx={{
+                    color: c.text.ghost,
+                    fontSize: 16,
+                    transition: 'transform 0.2s',
+                    transform: appsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                  }}
+                />
+              )}
+            </ListItemButton>
+
+            <Collapse in={appsExpanded && appsList.length > 0} timeout={200}>
+              <Box
+                sx={{
+                  ml: 2,
+                  mt: 0.25,
+                  mb: 0.5,
+                  borderLeft: `1px solid ${c.border.medium}`,
+                  maxHeight: 240,
+                  overflow: 'auto',
+                  '&::-webkit-scrollbar': { width: 3 },
+                  '&::-webkit-scrollbar-track': { background: 'transparent' },
+                  '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 4 },
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: `${c.border.medium} transparent`,
+                }}
+              >
+                {appsList.map((app) => {
+                  const isActive = activeAppId === app.id;
+                  return (
+                    <Box
+                      key={app.id}
+                      onClick={() => navigate(`/apps/${app.id}`)}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.75,
+                        pl: 1.25,
+                        pr: 1,
+                        py: 0.5,
+                        ml: '-0.5px',
+                        cursor: 'pointer',
+                        borderLeft: isActive ? `1.5px solid ${c.accent.primary}` : '1.5px solid transparent',
+                        bgcolor: isActive ? `${c.accent.primary}0C` : 'transparent',
+                        '&:hover': { bgcolor: `${c.text.tertiary}0A` },
+                        transition: 'background-color 0.12s, border-color 0.12s',
+                      }}
+                    >
+                      <Typography
+                        sx={{
+                          color: isActive ? c.text.secondary : c.text.ghost,
+                          fontSize: '0.78rem',
+                          fontWeight: isActive ? 500 : 400,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flex: 1,
+                          minWidth: 0,
+                        }}
+                      >
+                        {app.name}
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Collapse>
+          </Box>
+
         </Box>
 
         {/* Settings */}
@@ -403,6 +643,35 @@ const AppShell: React.FC = () => {
           </ListItemButton>
         </Box>
       </Box>
+      <Box
+        onMouseDown={handleResizeStart}
+        onDoubleClick={handleResizeDoubleClick}
+        sx={{
+          width: 6,
+          flexShrink: 0,
+          cursor: 'col-resize',
+          position: 'relative',
+          zIndex: 10,
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 2,
+            bgcolor: 'transparent',
+            transition: 'background-color 0.2s',
+          },
+          '&:hover::after': {
+            bgcolor: c.border.strong,
+          },
+          '&:active::after': {
+            bgcolor: `${c.accent.primary}40`,
+          },
+        }}
+      />
+      </>
       )}
 
       <Box sx={{ flex: 1, overflow: 'hidden', bgcolor: c.bg.page }}>

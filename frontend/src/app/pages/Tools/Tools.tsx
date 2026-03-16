@@ -257,8 +257,8 @@ const ToolSection: React.FC<ToolSectionProps> = ({
   const overallPolicy = getCatGroupPolicy(allSectionTools);
   const categoryCount = CATEGORY_ORDER.filter((cat) => grouped[cat]).length;
   const sectionDescription = deferred
-    ? 'On-demand tools loaded via ToolSearch for planning, scheduling, and extended operations'
-    : 'Built-in Claude Agent SDK tools for file operations, shell commands, and search';
+    ? 'On-demand actions loaded via ToolSearch for planning, scheduling, and extended operations'
+    : 'Built-in Claude Agent SDK actions for file operations, shell commands, and search';
 
   const firstSentence = (desc: string) => {
     if (!desc) return '';
@@ -283,7 +283,7 @@ const ToolSection: React.FC<ToolSectionProps> = ({
         <Box sx={{ flex: 1, minWidth: 0, opacity: enabled ? 1 : 0.4, transition: 'opacity 0.2s' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
             <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}>{label}</Typography>
-            <Chip label={`${count} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
+            <Chip label={`${count} actions`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
             {deferred && (
               <Chip label="on-demand" size="small" sx={{ bgcolor: c.status.warningBg, color: c.status.warning, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
             )}
@@ -312,8 +312,8 @@ const ToolSection: React.FC<ToolSectionProps> = ({
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5, mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <SecurityIcon sx={{ fontSize: 14, color: c.text.muted }} />
-            <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tool Permissions</Typography>
-            <Chip label={`${count} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />
+            <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Action Permissions</Typography>
+            <Chip label={`${count} actions`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />
           </Box>
         </Box>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
@@ -441,12 +441,12 @@ const Tools: React.FC = () => {
       } else if (existing && existing.enabled === false) {
         await dispatch(updateTool({ id: existing.id, enabled: true }));
         if (integration.authType === 'oauth2' && existing.auth_status !== 'connected') {
-          setSnackbar({ open: true, message: `Enabled ${integration.name} — connect your account to discover tools` });
+          setSnackbar({ open: true, message: `Enabled ${integration.name} — connect your account to discover actions` });
         } else {
-          setSnackbar({ open: true, message: `Enabled ${integration.name} — re-discovering tools…` });
+          setSnackbar({ open: true, message: `Enabled ${integration.name} — re-discovering actions…` });
           const discoverResult = await dispatch(discoverTools(existing.id));
           if (discoverTools.fulfilled.match(discoverResult)) {
-            setSnackbar({ open: true, message: `${integration.name} ready — tools discovered` });
+            setSnackbar({ open: true, message: `${integration.name} ready — actions discovered` });
           } else {
             setSnackbar({ open: true, message: `${integration.name} enabled but discovery failed`, severity: 'error' });
           }
@@ -464,12 +464,12 @@ const Tools: React.FC = () => {
         if (createTool.fulfilled.match(result)) {
           const newTool = result.payload;
           if (integration.authType === 'oauth2') {
-            setSnackbar({ open: true, message: `Enabled ${integration.name} — connect your account to discover tools` });
+            setSnackbar({ open: true, message: `Enabled ${integration.name} — connect your account to discover actions` });
           } else {
-            setSnackbar({ open: true, message: `Enabled ${integration.name} — discovering tools…` });
+            setSnackbar({ open: true, message: `Enabled ${integration.name} — discovering actions…` });
             const discoverResult = await dispatch(discoverTools(newTool.id));
             if (discoverTools.fulfilled.match(discoverResult)) {
-              setSnackbar({ open: true, message: `${integration.name} ready — tools discovered` });
+              setSnackbar({ open: true, message: `${integration.name} ready — actions discovered` });
             } else {
               setSnackbar({ open: true, message: `${integration.name} enabled but discovery failed — is ${integration.mcp_config.command || 'the server'} installed?`, severity: 'error' });
             }
@@ -486,7 +486,7 @@ const Tools: React.FC = () => {
     try {
       const result = await dispatch(discoverTools(toolId));
       if (discoverTools.fulfilled.match(result)) {
-        setSnackbar({ open: true, message: 'Tools discovered successfully' });
+        setSnackbar({ open: true, message: 'Actions discovered successfully' });
       } else {
         setSnackbar({ open: true, message: 'Discovery failed — is the MCP server running?', severity: 'error' });
       }
@@ -726,10 +726,10 @@ const Tools: React.FC = () => {
       }));
       if (createTool.fulfilled.match(result)) {
         const newTool = result.payload;
-        setSnackbar({ open: true, message: `Installed "${f.name}" — discovering tools…` });
+        setSnackbar({ open: true, message: `Installed "${f.name}" — discovering actions…` });
         const discoverResult = await dispatch(discoverTools(newTool.id));
         if (discoverTools.fulfilled.match(discoverResult)) {
-          setSnackbar({ open: true, message: `${f.name} ready — tools discovered` });
+          setSnackbar({ open: true, message: `${f.name} ready — actions discovered` });
         } else {
           setSnackbar({ open: true, message: `${f.name} installed but discovery failed — the MCP server may need setup first`, severity: 'error' });
         }
@@ -756,7 +756,7 @@ const Tools: React.FC = () => {
       const afterConnect = async () => {
         const statusResult = await dispatch(fetchToolStatus(toolId));
         if (fetchToolStatus.fulfilled.match(statusResult) && statusResult.payload.auth_status === 'connected') {
-          setSnackbar({ open: true, message: 'Google account connected! Discovering tools…' });
+          setSnackbar({ open: true, message: 'Google account connected! Discovering actions…' });
           setExpandedToolId(toolId);
           dispatch(discoverTools(toolId));
         } else {
@@ -812,7 +812,7 @@ const Tools: React.FC = () => {
       }));
       if (updateTool.fulfilled.match(result)) {
         setCredDialogOpen(false);
-        setSnackbar({ open: true, message: `${credDialogIntegration.name} connected! Re-discovering tools…` });
+        setSnackbar({ open: true, message: `${credDialogIntegration.name} connected! Re-discovering actions…` });
         dispatch(discoverTools(credDialogToolId));
       } else {
         setSnackbar({ open: true, message: 'Failed to save credentials', severity: 'error' });
@@ -854,8 +854,8 @@ const Tools: React.FC = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box>
-          <Typography variant="h5" sx={{ color: c.text.primary, fontWeight: 700, mb: 0.5 }}>Tool Library</Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.9rem' }}>Define and manage custom tools for your Claude Code agents.</Typography>
+          <Typography variant="h5" sx={{ color: c.text.primary, fontWeight: 700, mb: 0.5 }}>Action Library</Typography>
+          <Typography sx={{ color: c.text.tertiary, fontSize: '0.9rem' }}>Define and manage custom actions for your Claude Code agents.</Typography>
         </Box>
         <Box>
           <Button
@@ -865,7 +865,7 @@ const Tools: React.FC = () => {
             onClick={handleMenuOpen}
             sx={{ bgcolor: c.accent.primary, '&:hover': { bgcolor: c.accent.pressed }, textTransform: 'none', borderRadius: 2 }}
           >
-            New Tool
+            New Action
           </Button>
           <Menu
             anchorEl={menuAnchor}
@@ -893,7 +893,7 @@ const Tools: React.FC = () => {
         >
           {builtinSectionOpen ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} />}
           <LockIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
-          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Built-in Tool Sets</Typography>
+          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Built-in Action Sets</Typography>
           <Chip label={coreTools.length + deferredTools.length + outputs.length} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
         </Box>
         <Collapse in={builtinSectionOpen}>
@@ -901,15 +901,15 @@ const Tools: React.FC = () => {
 
       {/* Core Tools */}
       {coreTools.length > 0 && (
-        <ToolSection label="Core Tools" icon={<LockIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={coreTools.length} open={coreSectionOpen} onToggle={() => setCoreSectionOpen((v) => !v)} grouped={groupedCore} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} builtinPermissions={builtinPermissions} onPermissionChange={handleBuiltinPermissionChange} onCategoryPermissionChange={handleBuiltinCategoryPermissionChange} enabled={coreSectionEnabled} onEnabledChange={(v) => handleSectionEnabledChange(coreTools, v)} />
+        <ToolSection label="Core Actions" icon={<LockIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={coreTools.length} open={coreSectionOpen} onToggle={() => setCoreSectionOpen((v) => !v)} grouped={groupedCore} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} builtinPermissions={builtinPermissions} onPermissionChange={handleBuiltinPermissionChange} onCategoryPermissionChange={handleBuiltinCategoryPermissionChange} enabled={coreSectionEnabled} onEnabledChange={(v) => handleSectionEnabledChange(coreTools, v)} />
       )}
 
       {/* Extended Tools */}
       {deferredTools.length > 0 && (
-        <ToolSection label="Extended Tools" icon={<HourglassEmptyIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={deferredTools.length} open={deferredSectionOpen} onToggle={() => setDeferredSectionOpen((v) => !v)} grouped={groupedDeferred} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} deferred builtinPermissions={builtinPermissions} onPermissionChange={handleBuiltinPermissionChange} onCategoryPermissionChange={handleBuiltinCategoryPermissionChange} enabled={deferredSectionEnabled} onEnabledChange={(v) => handleSectionEnabledChange(deferredTools, v)} />
+        <ToolSection label="Extended Actions" icon={<HourglassEmptyIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={deferredTools.length} open={deferredSectionOpen} onToggle={() => setDeferredSectionOpen((v) => !v)} grouped={groupedDeferred} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} deferred builtinPermissions={builtinPermissions} onPermissionChange={handleBuiltinPermissionChange} onCategoryPermissionChange={handleBuiltinCategoryPermissionChange} enabled={deferredSectionEnabled} onEnabledChange={(v) => handleSectionEnabledChange(deferredTools, v)} />
       )}
 
-      {/* Views */}
+      {/* Apps */}
       {outputs.length > 0 && (
         <Card sx={{ bgcolor: c.bg.surface, border: `1px solid ${viewsSectionOpen && viewsSectionEnabled ? c.accent.primary : c.border.subtle}`, borderRadius: 2, boxShadow: c.shadow.sm, '&:hover': { borderColor: c.accent.primary, boxShadow: '0 0 0 1px rgba(174,86,48,0.12)' }, transition: 'border-color 0.2s, box-shadow 0.2s' }}>
           <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
@@ -926,10 +926,10 @@ const Tools: React.FC = () => {
               </Box>
               <Box sx={{ flex: 1, minWidth: 0, opacity: viewsSectionEnabled ? 1 : 0.4, transition: 'opacity 0.2s' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-                  <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}>Views</Typography>
-                  <Chip label={`${outputs.length} view${outputs.length !== 1 ? 's' : ''}`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
+                  <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}>Apps</Typography>
+                  <Chip label={`${outputs.length} app${outputs.length !== 1 ? 's' : ''}`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
                 </Box>
-                <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>Dashboard views and data displays for your agent</Typography>
+                <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>Dashboard apps and data displays for your agent</Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                 <Switch
@@ -1001,7 +1001,7 @@ const Tools: React.FC = () => {
         <Box onClick={() => setCustomSectionOpen((v) => !v)} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, cursor: 'pointer', userSelect: 'none', '&:hover .section-arrow': { color: c.text.secondary } }}>
           {customSectionOpen ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} />}
           <BuildIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
-          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Custom Tool Sets</Typography>
+          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Custom Action Sets</Typography>
           <Chip label={tools.length + uninstalledIntegrations.length} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
         </Box>
         <Collapse in={customSectionOpen}>
@@ -1010,7 +1010,7 @@ const Tools: React.FC = () => {
           ) : (tools.length === 0 && uninstalledIntegrations.length === 0) ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 6, color: c.text.ghost, gap: 1.5 }}>
               <BuildIcon sx={{ fontSize: 40, opacity: 0.3 }} />
-              <Typography sx={{ fontSize: '0.9rem' }}>No custom tools defined yet. Create one to get started.</Typography>
+              <Typography sx={{ fontSize: '0.9rem' }}>No custom actions defined yet. Create one to get started.</Typography>
             </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1 }}>
@@ -1199,7 +1199,7 @@ const Tools: React.FC = () => {
                               <Chip icon={<SettingsIcon sx={{ fontSize: 12 }} />} label="Configured" size="small" sx={{ bgcolor: c.status.warningBg, color: c.status.warning, fontSize: '0.7rem', height: 20, '& .MuiChip-icon': { color: c.status.warning } }} />
                             )}
                             {ig && totalToolCount > 0 && (
-                              <Chip label={`${totalToolCount} tools`} size="small" sx={{ bgcolor: `${ig.color}15`, color: ig.color, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
+                              <Chip label={`${totalToolCount} actions`} size="small" sx={{ bgcolor: `${ig.color}15`, color: ig.color, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
                             )}
                             {ig && (
                               <Chip component="a" href={ig.website} target="_blank" rel="noopener" clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
@@ -1274,13 +1274,13 @@ const Tools: React.FC = () => {
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5, mb: 1 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               <SecurityIcon sx={{ fontSize: 14, color: c.text.muted }} />
-                              <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tool Permissions</Typography>
-                              {hasPerms && <Chip label={`${totalToolCount} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />}
+                              <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Action Permissions</Typography>
+                              {hasPerms && <Chip label={`${totalToolCount} actions`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />}
                             </Box>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               {hasPerms && (
                                 <>
-                                  <Tooltip title="Allow all read-only tools">
+                                  <Tooltip title="Allow all read-only actions">
                                     <Button size="small" onClick={() => handleBulkReadOnly(tool.id)} sx={{ color: c.status.info, textTransform: 'none', fontSize: '0.7rem', minWidth: 'auto', px: 1, py: 0.25 }}>
                                       Allow reads
                                     </Button>
@@ -1292,7 +1292,7 @@ const Tools: React.FC = () => {
                                   </Tooltip>
                                 </>
                               )}
-                              <Tooltip title="Discover / refresh tools from MCP server">
+                              <Tooltip title="Discover / refresh actions from MCP server">
                                 <IconButton
                                   size="small"
                                   onClick={() => handleDiscover(tool.id)}
@@ -1308,7 +1308,7 @@ const Tools: React.FC = () => {
                           {!hasPerms ? (
                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 3, gap: 1.5 }}>
                               <ExtensionIcon sx={{ fontSize: 28, color: c.text.ghost, opacity: 0.4 }} />
-                              <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem' }}>No tools discovered yet</Typography>
+                              <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem' }}>No actions discovered yet</Typography>
                               <Button
                                 size="small"
                                 variant="outlined"
@@ -1317,10 +1317,10 @@ const Tools: React.FC = () => {
                                 disabled={discovering || !canDiscover}
                                 sx={{ borderColor: c.border.medium, color: c.text.secondary, '&:hover': { borderColor: c.accent.primary, color: c.accent.primary }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5 }}
                               >
-                                Discover Tools
+                                Discover Actions
                               </Button>
                               {!canDiscover && (
-                                <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>Add an MCP configuration to enable tool discovery</Typography>
+                                <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>Add an MCP configuration to enable action discovery</Typography>
                               )}
                             </Box>
                           ) : (

@@ -19,19 +19,42 @@ export interface BrowserWebview extends HTMLElement {
 }
 
 const registry = new Map<string, BrowserWebview>();
+const activeTabMap = new Map<string, string>();
 
-export function registerWebview(browserId: string, wv: BrowserWebview): void {
-  registry.set(browserId, wv);
+function makeKey(browserId: string, tabId: string): string {
+  return `${browserId}:${tabId}`;
 }
 
-export function unregisterWebview(browserId: string): void {
-  registry.delete(browserId);
+export function registerWebview(browserId: string, tabId: string, wv: BrowserWebview): void {
+  registry.set(makeKey(browserId, tabId), wv);
 }
 
-export function getWebview(browserId: string): BrowserWebview | undefined {
-  return registry.get(browserId);
+export function unregisterWebview(browserId: string, tabId: string): void {
+  registry.delete(makeKey(browserId, tabId));
+}
+
+export function setActiveTab(browserId: string, tabId: string): void {
+  activeTabMap.set(browserId, tabId);
+}
+
+export function getWebview(browserId: string, tabId?: string): BrowserWebview | undefined {
+  const resolvedTabId = tabId || activeTabMap.get(browserId);
+  if (!resolvedTabId) return undefined;
+  return registry.get(makeKey(browserId, resolvedTabId));
+}
+
+export function getActiveTabId(browserId: string): string | undefined {
+  return activeTabMap.get(browserId);
 }
 
 export function getAllWebviews(): Map<string, BrowserWebview> {
   return new Map(registry);
+}
+
+export function unregisterAllForBrowser(browserId: string): void {
+  const prefix = `${browserId}:`;
+  for (const key of registry.keys()) {
+    if (key.startsWith(prefix)) registry.delete(key);
+  }
+  activeTabMap.delete(browserId);
 }

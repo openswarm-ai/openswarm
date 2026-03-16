@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
@@ -315,4 +315,15 @@ ipcMain.handle('download-update', async () => {
 
 ipcMain.handle('install-update', () => {
   autoUpdater.quitAndInstall(false, true);
+});
+
+ipcMain.handle('capture-page', async (event, rect) => {
+  const image = await event.sender.capturePage(rect || undefined);
+  return image.toDataURL();
+});
+
+ipcMain.handle('open-external', (_event, url) => {
+  if (typeof url === 'string' && /^https?:\/\//.test(url)) {
+    shell.openExternal(url);
+  }
 });

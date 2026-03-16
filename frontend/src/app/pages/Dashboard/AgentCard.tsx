@@ -791,4 +791,4 @@ const AgentCard: React.FC<Props> = ({
   );
 };
 
-export default AgentCard;
+export default React.memo(AgentCard);

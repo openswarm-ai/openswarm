@@ -107,14 +107,14 @@ async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): 
 }
 
 async function handleBrowserCommand(data: Record<string, any>) {
-  const { request_id, action, browser_id, params = {} } = data;
+  const { request_id, action, browser_id, tab_id, params = {} } = data;
   if (!request_id) return;
 
-  const wv = getWebview(browser_id);
+  const wv = getWebview(browser_id, tab_id || undefined);
   if (!wv) {
     dashboardWs.send('browser:result', {
       request_id,
-      error: `Browser card '${browser_id}' not found or not an Electron webview`,
+      error: `Browser card '${browser_id}'${tab_id ? ` tab '${tab_id}'` : ''} not found or not an Electron webview`,
     });
     return;
   }

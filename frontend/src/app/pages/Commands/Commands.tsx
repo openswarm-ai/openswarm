@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import Paper from '@mui/material/Paper';
 import Chip from '@mui/material/Chip';
 import DescriptionIcon from '@mui/icons-material/Description';
 import PsychologyIcon from '@mui/icons-material/Psychology';
@@ -113,7 +112,7 @@ const SectionHeader: React.FC<{
   </Box>
 );
 
-const Commands: React.FC = () => {
+export const CommandsContent: React.FC = () => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const templates = useAppSelector((state) => state.templates.items);
@@ -210,7 +209,7 @@ const Commands: React.FC = () => {
           items.push({
             prefix: `@${groupCmd}`,
             label: groupName,
-            description: `Use all ${groupName} tools`,
+            description: `Use all ${groupName} actions`,
             icon: groupIcon,
             source: tool.name,
           });
@@ -218,7 +217,7 @@ const Commands: React.FC = () => {
             items.push({
               prefix: `@${groupCmd}/${svc.name.toLowerCase().replace(/\s+/g, '-')}`,
               label: svc.name,
-              description: `Use ${svc.name} tools from ${tool.name}`,
+              description: `Use ${svc.name} actions from ${tool.name}`,
               icon: groupIcon,
               source: tool.name,
               isChild: true,
@@ -229,7 +228,7 @@ const Commands: React.FC = () => {
           items.push({
             prefix: `@${svc.name.toLowerCase().replace(/\s+/g, '-')}`,
             label: svc.name,
-            description: `Use ${svc.name} tools from ${tool.name}`,
+            description: `Use ${svc.name} actions from ${tool.name}`,
             icon: groupIcon,
             source: tool.name,
           });
@@ -241,7 +240,7 @@ const Commands: React.FC = () => {
         items.push({
           prefix: `@${svc.name.toLowerCase().replace(/\s+/g, '-')}`,
           label: svc.name,
-          description: `Use ${svc.name} tools from ${tool.name}`,
+          description: `Use ${svc.name} actions from ${tool.name}`,
           icon: <BuildOutlinedIcon sx={{ fontSize: 18 }} />,
           source: tool.name,
         });
@@ -267,27 +266,9 @@ const Commands: React.FC = () => {
   const actionShortcuts = SHORTCUTS.filter((s) => s.category === 'action');
 
   return (
-    <Box sx={{ p: 3, height: '100%', overflow: 'auto' }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h5" sx={{ color: c.text.primary, fontWeight: 700, mb: 0.5 }}>
-          Commands
-        </Typography>
-        <Typography sx={{ color: c.text.tertiary, fontSize: '0.9rem' }}>
-          Manage slash commands, context references, and keyboard shortcuts in one place.
-        </Typography>
-      </Box>
-
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 900 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
         {/* Slash Commands */}
-        <Paper
-          sx={{
-            bgcolor: c.bg.surface,
-            border: `1px solid ${c.border.subtle}`,
-            borderRadius: 3,
-            p: 3,
-            boxShadow: c.shadow.sm,
-          }}
-        >
+        <Box>
           <SectionHeader
             icon={<TerminalIcon sx={{ fontSize: 22 }} />}
             title="Slash Commands"
@@ -385,22 +366,16 @@ const Commands: React.FC = () => {
               ))}
             </Box>
           )}
-        </Paper>
+        </Box>
+
+        <Box sx={{ my: 2, borderTop: `1px solid ${c.border.subtle}` }} />
 
         {/* @ Commands */}
-        <Paper
-          sx={{
-            bgcolor: c.bg.surface,
-            border: `1px solid ${c.border.subtle}`,
-            borderRadius: 3,
-            p: 3,
-            boxShadow: c.shadow.sm,
-          }}
-        >
+        <Box>
           <SectionHeader
             icon={<AlternateEmailIcon sx={{ fontSize: 22 }} />}
             title="@ Context Commands"
-            subtitle="Type @ in chat to attach context and activate tools"
+            subtitle="Type @ in chat to attach context and activate actions"
             count={atCommands.length}
             c={c}
           />
@@ -418,7 +393,7 @@ const Commands: React.FC = () => {
             >
               <AlternateEmailIcon sx={{ fontSize: 36, opacity: 0.3 }} />
               <Typography sx={{ fontSize: '0.85rem' }}>
-                No @ commands yet. Install MCP tools to see them here.
+                No @ commands yet. Install MCP actions to see them here.
               </Typography>
             </Box>
           ) : (
@@ -480,18 +455,12 @@ const Commands: React.FC = () => {
               ))}
             </Box>
           )}
-        </Paper>
+        </Box>
+
+        <Box sx={{ my: 2, borderTop: `1px solid ${c.border.subtle}` }} />
 
         {/* Keyboard Shortcuts */}
-        <Paper
-          sx={{
-            bgcolor: c.bg.surface,
-            border: `1px solid ${c.border.subtle}`,
-            borderRadius: 3,
-            p: 3,
-            boxShadow: c.shadow.sm,
-          }}
-        >
+        <Box>
           <SectionHeader
             icon={<KeyboardIcon sx={{ fontSize: 22 }} />}
             title="Keyboard Shortcuts"
@@ -579,10 +548,9 @@ const Commands: React.FC = () => {
               </Box>
             </Box>
           </Box>
-        </Paper>
-      </Box>
+        </Box>
     </Box>
   );
 };
 
-export default Commands;
+export default CommandsContent;

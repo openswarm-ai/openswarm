@@ -43,6 +43,7 @@ class Dashboard(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     layout: DashboardLayout = Field(default_factory=DashboardLayout)
+    thumbnail: Optional[str] = None
 
 
 class DashboardCreate(BaseModel):
@@ -52,3 +53,4 @@ class DashboardCreate(BaseModel):
 class DashboardUpdate(BaseModel):
     name: Optional[str] = None
     layout: Optional[DashboardLayout] = None
+    thumbnail: Optional[str] = None

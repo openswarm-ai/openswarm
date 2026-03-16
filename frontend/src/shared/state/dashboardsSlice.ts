@@ -9,6 +9,7 @@ export interface Dashboard {
   auto_named: boolean;
   created_at: string;
   updated_at: string;
+  thumbnail?: string | null;
 }
 
 interface DashboardsState {
@@ -64,6 +65,20 @@ export const duplicateDashboard = createAsyncThunk(
   async (id: string) => {
     const res = await fetch(`${DASHBOARDS_API}/${id}/duplicate`, { method: 'POST' });
     return (await res.json()) as Dashboard;
+  },
+);
+
+export const updateDashboardThumbnail = createAsyncThunk(
+  'dashboards/updateThumbnail',
+  async ({ id, thumbnail }: { id: string; thumbnail: string }) => {
+    const res = await fetch(`${DASHBOARDS_API}/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ thumbnail }),
+    });
+    if (!res.ok) throw new Error(`Thumbnail update failed: ${res.status}`);
+    const data = await res.json();
+    return { id, thumbnail: data.thumbnail as string | null, updated_at: data.updated_at as string };
   },
 );
 
@@ -123,6 +138,13 @@ const dashboardsSlice = createSlice({
         if (state.items[id]) {
           state.items[id].name = name;
           state.items[id].auto_named = auto_named;
+        }
+      })
+      .addCase(updateDashboardThumbnail.fulfilled, (state, action) => {
+        const { id, thumbnail, updated_at } = action.payload;
+        if (state.items[id]) {
+          state.items[id].thumbnail = thumbnail;
+          state.items[id].updated_at = updated_at;
         }
       });
   },

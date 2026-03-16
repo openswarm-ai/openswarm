@@ -20,8 +20,8 @@ import Templates from './pages/Templates/Templates';
 import Skills from './pages/Skills/Skills';
 import Tools from './pages/Tools/Tools';
 import Modes from './pages/Modes/Modes';
-import Commands from './pages/Commands/Commands';
 import Views from './pages/Views/Views';
+import Customization from './pages/Customization/Customization';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -200,12 +200,13 @@ const ThemedApp: React.FC = () => {
                 <Route element={<AppShell />}>
                   <Route path="/" element={<DashboardSelection />} />
                   <Route path="/dashboard/:id" element={<Dashboard />} />
+                  <Route path="/customization" element={<Customization />} />
                   <Route path="/templates" element={<Templates />} />
                   <Route path="/skills" element={<Skills />} />
-                  <Route path="/tools" element={<Tools />} />
+                  <Route path="/actions" element={<Tools />} />
                   <Route path="/modes" element={<Modes />} />
-                  <Route path="/commands" element={<Commands />} />
-                  <Route path="/views" element={<Views />} />
+                  <Route path="/apps" element={<Views />} />
+                  <Route path="/apps/:id" element={<Views />} />
                 </Route>
               </Routes>
             </UpdateListener>
