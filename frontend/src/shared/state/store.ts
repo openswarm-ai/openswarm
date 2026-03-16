@@ -11,6 +11,7 @@ import skillRegistryReducer from './skillRegistrySlice';
 import outputsReducer from './outputsSlice';
 import dashboardLayoutReducer from './dashboardLayoutSlice';
 import dashboardsReducer from './dashboardsSlice';
+import updateReducer from './updateSlice';
 
 export const store = configureStore({
   reducer: {
@@ -26,6 +27,7 @@ export const store = configureStore({
     outputs: outputsReducer,
     dashboardLayout: dashboardLayoutReducer,
     dashboards: dashboardsReducer,
+    update: updateReducer,
   },
 });
 

@@ -141,31 +141,38 @@ function createWindow() {
   });
 }
 
+function sendToRenderer(channel, ...args) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, ...args);
+  }
+}
+
 function setupAutoUpdater() {
   autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('update-available', (info) => {
     console.log(`Update available: ${info.version}`);
-    if (mainWindow) {
-      mainWindow.webContents.executeJavaScript(
-        `window.__OPENSWARM_UPDATE_AVAILABLE__ = ${JSON.stringify(info)};`
-      );
-    }
-    autoUpdater.downloadUpdate();
+    sendToRenderer('update-available', info);
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    console.log('App is up to date');
+    sendToRenderer('update-not-available', info);
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendToRenderer('download-progress', progress);
   });
 
   autoUpdater.on('update-downloaded', (info) => {
     console.log(`Update downloaded: ${info.version}`);
-    if (mainWindow) {
-      mainWindow.webContents.executeJavaScript(
-        `window.__OPENSWARM_UPDATE_DOWNLOADED__ = ${JSON.stringify(info)};`
-      );
-    }
+    sendToRenderer('update-downloaded', info);
   });
 
   autoUpdater.on('error', (err) => {
     console.error('Auto-update error:', err);
+    sendToRenderer('update-error', err?.message || String(err));
   });
 
   autoUpdater.checkForUpdates().catch((err) => {
@@ -224,3 +231,34 @@ app.on('activate', () => {
 });
 
 ipcMain.handle('get-backend-port', () => backendPort);
+ipcMain.handle('get-app-version', () => app.getVersion());
+
+ipcMain.handle('check-for-updates', async () => {
+  if (!isPackaged) {
+    sendToRenderer('update-error', 'Update check is only available in the packaged app.');
+    return { success: false, error: 'Not packaged' };
+  }
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    if (!result) {
+      sendToRenderer('update-error', 'Unable to check for updates.');
+      return { success: false, error: 'No result from update check' };
+    }
+    return { success: true, version: result.updateInfo?.version };
+  } catch (err) {
+    return { success: false, error: err?.message || String(err) };
+  }
+});
+
+ipcMain.handle('download-update', async () => {
+  try {
+    await autoUpdater.downloadUpdate();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err?.message || String(err) };
+  }
+});
+
+ipcMain.handle('install-update', () => {
+  autoUpdater.quitAndInstall(false, true);
+});

@@ -83,6 +83,7 @@ import {
 } from '@/shared/state/outputsSlice';
 
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { API_BASE } from '@/shared/config';
 import ViewQuiltIcon from '@mui/icons-material/ViewQuilt';
 
 interface CredentialField {
@@ -822,13 +823,30 @@ const Tools: React.FC = () => {
   };
 
   const handleDisconnectIntegration = async (toolId: string, integration: Integration) => {
-    await dispatch(updateTool({
-      id: toolId,
-      credentials: {},
-      auth_type: 'none',
-      auth_status: 'configured',
-    }));
-    setSnackbar({ open: true, message: `${integration.name} disconnected` });
+    if (integration.authType === 'oauth2') {
+      // Revoke the token on Google's side (fire-and-forget)
+      fetch(`${API_BASE}/tools/${toolId}/oauth/disconnect`, { method: 'POST' }).catch(() => {});
+      // Clear OAuth state via the existing update endpoint
+      const result = await dispatch(updateTool({
+        id: toolId,
+        oauth_tokens: {},
+        auth_status: 'configured',
+        connected_account_email: '',
+      }));
+      if (updateTool.fulfilled.match(result)) {
+        setSnackbar({ open: true, message: `${integration.name} disconnected. You can now connect a different account.` });
+      } else {
+        setSnackbar({ open: true, message: `Failed to disconnect ${integration.name}`, severity: 'error' });
+      }
+    } else {
+      await dispatch(updateTool({
+        id: toolId,
+        credentials: {},
+        auth_type: 'none',
+        auth_status: 'configured',
+      }));
+      setSnackbar({ open: true, message: `${integration.name} disconnected` });
+    }
   };
 
   return (
@@ -1212,12 +1230,12 @@ const Tools: React.FC = () => {
                           </Button>
                         )}
                         {!isDisabled && ig && tool.auth_status === 'connected' && (
-                          <Tooltip title={ig.credentialFields ? 'Disconnect' : ''}>
+                          <Tooltip title={ig.credentialFields || ig.authType === 'oauth2' ? 'Disconnect' : ''}>
                             <Chip
                               icon={<CheckCircleIcon sx={{ fontSize: 12 }} />}
                               label={tool.connected_account_email ? `Connected · ${tool.connected_account_email}` : 'Connected'}
                               size="small"
-                              onDelete={ig.credentialFields ? (e: React.SyntheticEvent) => { e.stopPropagation(); handleDisconnectIntegration(tool.id, ig); } : undefined}
+                              onDelete={(ig.credentialFields || ig.authType === 'oauth2') ? (e: React.SyntheticEvent) => { e.stopPropagation(); handleDisconnectIntegration(tool.id, ig); } : undefined}
                               onClick={(e) => e.stopPropagation()}
                               sx={{ bgcolor: c.status.successBg, color: c.status.success, fontSize: '0.7rem', height: 22, '& .MuiChip-icon': { color: c.status.success }, '& .MuiChip-deleteIcon': { color: c.status.success, '&:hover': { color: c.status.error } }, flexShrink: 0 }}
                             />

@@ -29,20 +29,8 @@
     "mac": {
       "icon": "build/icon.icns",
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
+        "dmg",
+        "zip"
       ],
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
@@ -107,7 +95,7 @@
     "publish": {
       "provider": "github",
       "owner": "openswarm-ai",
-      "repo": "production"
+      "repo": "openswarm"
     },
     "afterSign": "scripts/notarize.js"
   }

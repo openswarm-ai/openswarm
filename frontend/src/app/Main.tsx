@@ -5,6 +5,14 @@ import { ThemeProvider as MuiThemeProvider, createTheme, CssBaseline } from '@mu
 import { store } from '../shared/state/store';
 import { useAppDispatch } from '@/shared/hooks';
 import { fetchSettings } from '@/shared/state/settingsSlice';
+import {
+  setAppVersion,
+  setUpdateAvailable,
+  setUpdateNotAvailable,
+  setDownloading,
+  setUpdateDownloaded,
+  setUpdateError,
+} from '@/shared/state/updateSlice';
 import AppShell from './components/Layout/AppShell';
 import Dashboard from './pages/Dashboard/Dashboard';
 import DashboardSelection from './pages/DashboardSelection/DashboardSelection';
@@ -61,6 +69,29 @@ function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
           body: {
             backgroundColor: c.bg.page,
             color: c.text.primary,
+            scrollbarWidth: 'thin',
+            scrollbarColor: `${c.border.strong} transparent`,
+          },
+          '*': {
+            scrollbarWidth: 'thin',
+            scrollbarColor: `${c.border.strong} transparent`,
+          },
+          '*::-webkit-scrollbar': {
+            width: '6px',
+            height: '6px',
+          },
+          '*::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '*::-webkit-scrollbar-thumb': {
+            background: c.border.strong,
+            borderRadius: '3px',
+          },
+          '*::-webkit-scrollbar-thumb:hover': {
+            background: c.text.ghost,
+          },
+          '*::-webkit-scrollbar-corner': {
+            background: 'transparent',
           },
         },
       },
@@ -130,6 +161,29 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+const UpdateListener: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    const api = (window as any).openswarm as OpenSwarmAPI | undefined;
+    if (!api?.getAppVersion) return;
+
+    api.getAppVersion().then((v: string) => dispatch(setAppVersion(v)));
+
+    const cleanups = [
+      api.onUpdateAvailable?.((info: OpenSwarmUpdateInfo) => dispatch(setUpdateAvailable(info.version))),
+      api.onUpdateNotAvailable?.(() => dispatch(setUpdateNotAvailable())),
+      api.onDownloadProgress?.((p: OpenSwarmDownloadProgress) => dispatch(setDownloading(p.percent))),
+      api.onUpdateDownloaded?.(() => dispatch(setUpdateDownloaded())),
+      api.onUpdateError?.((msg: string) => dispatch(setUpdateError(msg))),
+    ];
+
+    return () => cleanups.forEach((fn: (() => void) | undefined) => fn?.());
+  }, [dispatch]);
+
+  return <>{children}</>;
+};
+
 const ThemedApp: React.FC = () => {
   const c = useClaudeTokens();
   const { mode } = useThemeMode();
@@ -141,18 +195,20 @@ const ThemedApp: React.FC = () => {
       <HashRouter>
         <ShortcutsProvider>
           <SettingsLoader>
-            <Routes>
-              <Route element={<AppShell />}>
-                <Route path="/" element={<DashboardSelection />} />
-                <Route path="/dashboard/:id" element={<Dashboard />} />
-                <Route path="/templates" element={<Templates />} />
-                <Route path="/skills" element={<Skills />} />
-                <Route path="/tools" element={<Tools />} />
-                <Route path="/modes" element={<Modes />} />
-                <Route path="/commands" element={<Commands />} />
-                <Route path="/views" element={<Views />} />
-              </Route>
-            </Routes>
+            <UpdateListener>
+              <Routes>
+                <Route element={<AppShell />}>
+                  <Route path="/" element={<DashboardSelection />} />
+                  <Route path="/dashboard/:id" element={<Dashboard />} />
+                  <Route path="/templates" element={<Templates />} />
+                  <Route path="/skills" element={<Skills />} />
+                  <Route path="/tools" element={<Tools />} />
+                  <Route path="/modes" element={<Modes />} />
+                  <Route path="/commands" element={<Commands />} />
+                  <Route path="/views" element={<Views />} />
+                </Route>
+              </Routes>
+            </UpdateListener>
           </SettingsLoader>
         </ShortcutsProvider>
       </HashRouter>
