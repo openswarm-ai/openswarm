@@ -624,6 +624,25 @@ async def _discover_mcp_tools_stdio(command: str, args: list[str] | None = None,
 @tools_lib.router.post("/{tool_id}/discover")
 async def discover_tools(tool_id: str):
     tool = _load(tool_id)
+
+    if tool.auth_type == "oauth2" and tool.auth_status == "connected":
+        refreshed = await refresh_google_token(tool)
+        if not refreshed and tool.oauth_tokens.get("access_token"):
+            expiry = tool.oauth_tokens.get("token_expiry", 0)
+            if time.time() >= expiry - 60:
+                client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+                if not client_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="OAuth token expired and GOOGLE_OAUTH_CLIENT_ID is not set. "
+                               "In the packaged app, create ~/.openswarm.env or "
+                               "~/Library/Application Support/OpenSwarm/.env with your Google OAuth credentials.",
+                    )
+                raise HTTPException(
+                    status_code=502,
+                    detail="OAuth token expired and refresh failed. Try reconnecting Google.",
+                )
+
     config = derive_mcp_config(tool)
     if not config:
         raise HTTPException(status_code=400, detail="Cannot derive MCP config for tool")
@@ -657,8 +676,11 @@ async def discover_tools(tool_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning(f"MCP tool discovery failed for {tool.name}: {e}")
-        raise HTTPException(status_code=502, detail=f"Discovery failed: {e}")
+        msg = str(e).strip()
+        if not msg:
+            msg = type(e).__name__
+        logger.warning(f"MCP tool discovery failed for {tool.name}: {msg}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Discovery failed: {msg}")
 
     services: dict[str, dict[str, list[str]]] = {}
     service_groups: dict[str, list[str]] = {}

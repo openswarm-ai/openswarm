@@ -40,6 +40,7 @@ import { useBrowserActivity } from '@/shared/useBrowserActivity';
 import { getActionLabel } from '@/shared/browserCommandHandler';
 import { resolveInput, isGoogleSearch } from '@/shared/resolveUrl';
 import BrowserAgentOverlay from './BrowserAgentOverlay';
+import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -108,6 +109,7 @@ const BrowserCard: React.FC<Props> = ({
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
   const browserHomepage = useAppSelector((state) => state.settings.data.browser_homepage);
   const elementSelectionCtx = useElementSelection();
   const isElementSelectMode = elementSelectionCtx?.selectMode ?? false;
@@ -590,9 +592,10 @@ const BrowserCard: React.FC<Props> = ({
         }),
       }}
     >
-      {/* Selection overlay – blocks content interaction while selected, enabling drag from anywhere */}
+      {/* Selection overlay – blocks click interaction while selected, enabling drag from anywhere */}
       {isSelected && (
         <Box
+          ref={scrollOverlayRef}
           onPointerDown={handleDragPointerDown}
           onPointerMove={handleDragPointerMove}
           onPointerUp={handleDragPointerUp}

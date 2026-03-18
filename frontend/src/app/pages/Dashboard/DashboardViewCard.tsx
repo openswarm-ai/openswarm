@@ -14,6 +14,7 @@ import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ViewPreview, { ViewPreviewHandle } from '@/app/pages/Views/ViewPreview';
 import { getDefault } from '@/app/pages/Views/InputSchemaForm';
+import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -60,6 +61,7 @@ const DashboardViewCard: React.FC<Props> = ({
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
   const previewRef = useRef<ViewPreviewHandle>(null);
 
   const [inputData, setInputData] = useState<Record<string, any>>(() => getDefault(output.input_schema));
@@ -304,9 +306,10 @@ const DashboardViewCard: React.FC<Props> = ({
         }),
       }}
     >
-      {/* Selection overlay – blocks content interaction while selected, enabling drag from anywhere */}
+      {/* Selection overlay – blocks click interaction while selected, enabling drag from anywhere */}
       {isSelected && (
         <Box
+          ref={scrollOverlayRef}
           onPointerDown={handleDragPointerDown}
           onPointerMove={handleDragPointerMove}
           onPointerUp={handleDragPointerUp}

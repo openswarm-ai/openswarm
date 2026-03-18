@@ -481,58 +481,44 @@ class AgentManager:
         
         _builtin_perms = load_builtin_permissions()
 
-        def _check_tool_permission(tool_name: str) -> str | None:
-            """Check tool permissions for both builtin and MCP tools.
-            Returns 'always_allow', 'deny', or None (ask)."""
+        def _get_effective_policy(tool_name: str) -> str:
+            """Return 'always_allow', 'deny', or 'ask' for any tool."""
             if tool_name in _builtin_perms:
-                policy = _builtin_perms[tool_name]
-                if policy in ("always_allow", "deny"):
-                    return policy
-                return None
+                return _builtin_perms[tool_name]
 
             import re as _re
             m = _re.match(r"mcp__([^_]+(?:-[^_]+)*)__(.+)", tool_name)
-            if not m:
-                return None
-            server_slug, mcp_tool_name = m.group(1), m.group(2)
-            for t in load_all_tools():
-                if not t.mcp_config or not t.enabled:
-                    continue
-                if _sanitize_server_name(t.name) == server_slug:
-                    policy = t.tool_permissions.get(mcp_tool_name, "ask")
-                    if policy in ("always_allow", "deny"):
-                        return policy
-                    return None
-            return None
+            if m:
+                server_slug, mcp_tool_name = m.group(1), m.group(2)
+                for t in load_all_tools():
+                    if not t.mcp_config or not t.enabled:
+                        continue
+                    if _sanitize_server_name(t.name) == server_slug:
+                        return t.tool_permissions.get(mcp_tool_name, "ask")
+            return "always_allow"
 
-        async def can_use_tool(tool_name, input_data, context):
-            if tool_name != "AskUserQuestion":
-                policy = _check_tool_permission(tool_name)
-                if policy == "always_allow":
-                    return PermissionResultAllow(updated_input=input_data)
-                if policy == "deny":
-                    return PermissionResultDeny(message="Tool denied by permission policy")
-
+        async def _request_user_approval(tool_name: str, tool_input) -> dict:
+            """Send an approval request via WebSocket and wait for the user's decision."""
+            safe_input = tool_input if isinstance(tool_input, dict) else {}
             request_id = uuid4().hex
             approval_req = ApprovalRequest(
                 id=request_id,
                 session_id=session_id,
                 tool_name=tool_name,
-                tool_input=input_data if isinstance(input_data, dict) else {},
+                tool_input=safe_input,
             )
             session.pending_approvals.append(approval_req)
             session.status = "waiting_approval"
-            
+
             await ws_manager.send_to_session(session_id, "agent:status", {
                 "session_id": session_id,
                 "status": "waiting_approval",
             })
-            
+
             decision = await ws_manager.send_approval_request(
-                session_id, request_id, tool_name,
-                input_data if isinstance(input_data, dict) else {}
+                session_id, request_id, tool_name, safe_input
             )
-            
+
             session.pending_approvals = [
                 a for a in session.pending_approvals if a.id != request_id
             ]
@@ -541,22 +527,67 @@ class AgentManager:
                 "session_id": session_id,
                 "status": "running",
             })
-            
+            return decision
+
+        async def can_use_tool(tool_name, input_data, context):
+            if tool_name != "AskUserQuestion":
+                policy = _get_effective_policy(tool_name)
+                if policy == "always_allow":
+                    return PermissionResultAllow(updated_input=input_data)
+                if policy == "deny":
+                    return PermissionResultDeny(message="Tool denied by permission policy")
+
+            decision = await _request_user_approval(tool_name, input_data)
             if decision.get("behavior") == "allow":
                 return PermissionResultAllow(
                     updated_input=decision.get("updated_input", input_data)
                 )
-            else:
-                return PermissionResultDeny(
-                    message=decision.get("message", "User denied this action")
-                )
+            return PermissionResultDeny(
+                message=decision.get("message", "User denied this action")
+            )
 
         tool_start_times: dict[str, float] = {}
 
         async def pre_tool_hook(input_data, tool_use_id, context):
+            tool_name = input_data.get("tool_name", "")
+            hook_event = input_data.get("hook_event_name", "PreToolUse")
+
+            if tool_name and tool_name != "AskUserQuestion":
+                policy = _get_effective_policy(tool_name)
+
+                if policy == "deny":
+                    return {
+                        "hookSpecificOutput": {
+                            "hookEventName": hook_event,
+                            "permissionDecision": "deny",
+                            "permissionDecisionReason": "Tool denied by permission policy",
+                        }
+                    }
+
+                if policy == "ask":
+                    tool_input = input_data.get("tool_input", {})
+                    decision = await _request_user_approval(tool_name, tool_input)
+
+                    if decision.get("behavior") == "allow":
+                        if tool_use_id:
+                            tool_start_times[tool_use_id] = time.time()
+                        return {
+                            "hookSpecificOutput": {
+                                "hookEventName": hook_event,
+                                "permissionDecision": "allow",
+                            }
+                        }
+                    return {
+                        "hookSpecificOutput": {
+                            "hookEventName": hook_event,
+                            "permissionDecision": "deny",
+                            "permissionDecisionReason": decision.get("message", "User denied this action"),
+                        }
+                    }
+
             if tool_use_id:
                 tool_start_times[tool_use_id] = time.time()
-            return {"continue_": True}
+            return {}
 
         async def post_tool_hook(input_data, tool_use_id, context):
             elapsed_ms = None
@@ -628,8 +659,14 @@ class AgentManager:
 
             effective_allowed = [
                 t for t in session.allowed_tools
-                if _builtin_perms.get(t, "always_allow") == "always_allow"
+                if t in FULL_TOOLS and _builtin_perms.get(t, "always_allow") == "always_allow"
             ]
+
+            effective_disallowed = [
+                t for t in FULL_TOOLS
+                if _builtin_perms.get(t, "always_allow") == "deny"
+            ]
+
             if mcp_servers:
                 all_tools_list = load_all_tools()
                 for name in mcp_servers:
@@ -645,6 +682,8 @@ class AgentManager:
                             policy = tool_def.tool_permissions.get(tn, "ask")
                             if policy == "always_allow":
                                 effective_allowed.append(f"mcp__{name}__{tn}")
+                        for tn in denied:
+                            effective_disallowed.append(f"mcp__{name}__{tn}")
                     else:
                         effective_allowed.append(f"mcp__{name}__*")
 
@@ -653,12 +692,14 @@ class AgentManager:
             options_kwargs = {
                 "model": session.model,
                 "max_buffer_size": 5 * 1024 * 1024,
+                "permission_mode": "default",
                 "can_use_tool": can_use_tool,
                 "hooks": {
                     "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_hook])],
                     "PostToolUse": [HookMatcher(matcher=None, hooks=[post_tool_hook])],
                 },
                 "allowed_tools": effective_allowed,
+                "disallowed_tools": effective_disallowed,
                 "include_partial_messages": True,
             }
             if not global_settings.anthropic_api_key:

@@ -259,9 +259,9 @@ const dashboardLayoutSlice = createSlice({
       if (total === 0) return;
 
       const allItems = [
-        ...agentCards.map((c) => ({ kind: 'agent' as const, id: c.session_id, x: c.x, y: c.y, storedH: c.height })),
-        ...viewCards.map((c) => ({ kind: 'view' as const, id: c.output_id, x: c.x, y: c.y, storedH: c.height })),
-        ...bCards.map((c) => ({ kind: 'browser' as const, id: c.browser_id, x: c.x, y: c.y, storedH: c.height })),
+        ...agentCards.map((c) => ({ kind: 'agent' as const, id: c.session_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
+        ...viewCards.map((c) => ({ kind: 'view' as const, id: c.output_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
+        ...bCards.map((c) => ({ kind: 'browser' as const, id: c.browser_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
       ];
       allItems.sort((a, b) => a.y - b.y || a.x - b.x);
 
@@ -270,12 +270,11 @@ const dashboardLayoutSlice = createSlice({
       for (const item of allItems) {
         let w: number, h: number;
         if (item.kind === 'agent') {
-          w = DEFAULT_CARD_W;
-          h = expanded.has(item.id) ? Math.max(EXPANDED_CARD_MIN_H, item.storedH) : DEFAULT_CARD_H;
-        } else if (item.kind === 'view') {
-          w = DEFAULT_VIEW_CARD_W; h = DEFAULT_VIEW_CARD_H;
+          w = item.storedW;
+          h = expanded.has(item.id) ? Math.max(EXPANDED_CARD_MIN_H, item.storedH) : item.storedH;
         } else {
-          w = DEFAULT_BROWSER_CARD_W; h = DEFAULT_BROWSER_CARD_H;
+          w = item.storedW;
+          h = item.storedH;
         }
 
         const pos = findOpenGridCell(placedRects, w, h);
@@ -283,13 +282,13 @@ const dashboardLayoutSlice = createSlice({
 
         if (item.kind === 'agent') {
           const card = state.cards[item.id];
-          if (card) { card.x = pos.x; card.y = pos.y; card.width = w; card.height = h; }
+          if (card) { card.x = pos.x; card.y = pos.y; }
         } else if (item.kind === 'view') {
           const card = state.viewCards[item.id];
-          if (card) { card.x = pos.x; card.y = pos.y; card.width = w; card.height = h; }
+          if (card) { card.x = pos.x; card.y = pos.y; }
         } else {
           const card = state.browserCards[item.id];
-          if (card) { card.x = pos.x; card.y = pos.y; card.width = w; card.height = h; }
+          if (card) { card.x = pos.x; card.y = pos.y; }
         }
       }
     },

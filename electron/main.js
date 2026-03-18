@@ -152,6 +152,8 @@ async function startBackend() {
     OPENSWARM_PACKAGED: isPackaged ? '1' : '0',
     OPENSWARM_PORT: String(backendPort),
     PYTHONDONTWRITEBYTECODE: '1',
+    GOOGLE_OAUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID || 'REPLACE_WITH_YOUR_CLIENT_ID.apps.googleusercontent.com',
+    GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET || 'REPLACE_WITH_YOUR_CLIENT_SECRET',
   };
 
   if (isPackaged) {

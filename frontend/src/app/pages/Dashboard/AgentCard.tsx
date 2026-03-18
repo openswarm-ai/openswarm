@@ -28,6 +28,7 @@ import { QuestionForm } from '@/app/pages/AgentChat/ApprovalBar';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import { parseMcpToolName, getMcpShortAction } from '@/app/pages/AgentChat/ToolCallBubble';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
 
 // ---------------------------------------------------------------------------
 // Helper components & functions (unchanged)
@@ -190,6 +191,7 @@ const AgentCard: React.FC<Props> = ({
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
 
   const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
     running: { color: c.status.success, bg: c.status.successBg },
@@ -481,9 +483,10 @@ const AgentCard: React.FC<Props> = ({
         />
       ))}
 
-      {/* Selection overlay – blocks content interaction while selected, enabling drag from anywhere */}
+      {/* Selection overlay – blocks click interaction while selected, enabling drag from anywhere */}
       {isSelected && (
         <Box
+          ref={scrollOverlayRef}
           onPointerDown={handleDragPointerDown}
           onPointerMove={handleDragPointerMove}
           onPointerUp={handleDragPointerUp}

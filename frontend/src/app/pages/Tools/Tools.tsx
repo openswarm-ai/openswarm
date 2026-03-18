@@ -582,7 +582,7 @@ const Tools: React.FC = () => {
 
   const handleSectionEnabledChange = async (tools: BuiltinTool[], enabled: boolean) => {
     const perms: Record<string, string> = {};
-    for (const t of tools) perms[t.name] = enabled ? 'ask' : 'deny';
+    for (const t of tools) perms[t.name] = enabled ? 'always_allow' : 'deny';
     await dispatch(updateBuiltinPermissions(perms));
   };
 

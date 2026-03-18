@@ -110,6 +110,7 @@ interface AgentsState {
   expandedSessionIds: string[];
   loading: boolean;
   historySearch: HistorySearchState;
+  trackedNotificationIds: string[];
 }
 
 const initialState: AgentsState = {
@@ -119,6 +120,7 @@ const initialState: AgentsState = {
   expandedSessionIds: [],
   loading: false,
   historySearch: { results: [], total: 0, hasMore: false, query: '', loading: false },
+  trackedNotificationIds: [],
 };
 
 export const fetchSessions = createAsyncThunk(
@@ -507,6 +509,9 @@ const agentsSlice = createSlice({
         streamingMessage: existing?.streamingMessage ?? action.payload.streamingMessage ?? null,
         tool_group_meta: { ...existing?.tool_group_meta, ...action.payload.tool_group_meta },
       };
+      if (action.payload.status === 'running' && !state.trackedNotificationIds.includes(action.payload.id)) {
+        state.trackedNotificationIds.push(action.payload.id);
+      }
     },
 
     updateSessionStatus(
@@ -516,6 +521,9 @@ const agentsSlice = createSlice({
       const session = state.sessions[action.payload.sessionId];
       if (session) {
         session.status = action.payload.status;
+      }
+      if (action.payload.status === 'running' && !state.trackedNotificationIds.includes(action.payload.sessionId)) {
+        state.trackedNotificationIds.push(action.payload.sessionId);
       }
     },
 
@@ -673,6 +681,18 @@ const agentsSlice = createSlice({
     clearHistorySearch(state) {
       state.historySearch = { results: [], total: 0, hasMore: false, query: '', loading: false };
     },
+
+    trackAgentNotification(state, action: PayloadAction<string>) {
+      if (!state.trackedNotificationIds.includes(action.payload)) {
+        state.trackedNotificationIds.push(action.payload);
+      }
+    },
+
+    dismissAgentNotification(state, action: PayloadAction<string>) {
+      state.trackedNotificationIds = state.trackedNotificationIds.filter(
+        (id) => id !== action.payload,
+      );
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -704,6 +724,9 @@ const agentsSlice = createSlice({
         if (!state.expandedSessionIds.includes(action.payload.id)) {
           state.expandedSessionIds.push(action.payload.id);
         }
+        if (!state.trackedNotificationIds.includes(action.payload.id)) {
+          state.trackedNotificationIds.push(action.payload.id);
+        }
       })
       .addCase(launchAndSendFirstMessage.fulfilled, (state, action) => {
         const { draftId, session } = action.payload;
@@ -714,6 +737,9 @@ const agentsSlice = createSlice({
         state.expandedSessionIds = state.expandedSessionIds.map((id) => (id === draftId ? session.id : id));
         if (shouldExpand && !state.expandedSessionIds.includes(session.id)) {
           state.expandedSessionIds.push(session.id);
+        }
+        if (!state.trackedNotificationIds.includes(session.id)) {
+          state.trackedNotificationIds.push(session.id);
         }
       })
       .addCase(generateTitle.fulfilled, (state, action) => {
@@ -810,6 +836,7 @@ const agentsSlice = createSlice({
           state.activeSessionId = null;
         }
         state.expandedSessionIds = state.expandedSessionIds.filter((id) => id !== sessionId);
+        state.trackedNotificationIds = state.trackedNotificationIds.filter((id) => id !== sessionId);
       })
       .addCase(fetchHistory.fulfilled, (state, action) => {
         const history: Record<string, HistorySession> = {};
@@ -897,6 +924,8 @@ export const {
   closeSessionFromWs,
   removeDraftSession,
   clearHistorySearch,
+  trackAgentNotification,
+  dismissAgentNotification,
 } = agentsSlice.actions;
 
 export default agentsSlice.reducer;

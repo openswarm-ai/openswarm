@@ -90,8 +90,18 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const searchInputRef = useRef<HTMLInputElement>(null);
     const historyInputRef = useRef<HTMLInputElement>(null);
     const historyListRef = useRef<HTMLDivElement>(null);
-    const [mode, setMode] = useState('agent');
-    const [model, setModel] = useState('sonnet');
+    const defaultMode = useAppSelector((s) => s.settings.data.default_mode);
+    const defaultModel = useAppSelector((s) => s.settings.data.default_model);
+    const [mode, setMode] = useState(defaultMode || 'agent');
+    const [model, setModel] = useState(defaultModel || 'sonnet');
+    const settingsApplied = useRef(false);
+    useEffect(() => {
+      if (!settingsApplied.current) {
+        setMode(defaultMode || 'agent');
+        setModel(defaultModel || 'sonnet');
+        settingsApplied.current = true;
+      }
+    }, [defaultMode, defaultModel]);
     const [viewPickerOpen, setViewPickerOpen] = useState(false);
     const [viewSearch, setViewSearch] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);

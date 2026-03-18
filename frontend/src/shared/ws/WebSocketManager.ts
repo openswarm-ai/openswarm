@@ -14,6 +14,7 @@ import {
   addBranch,
   setActiveBranch,
   closeSessionFromWs,
+  trackAgentNotification,
 } from '../state/agentsSlice';
 import { addBrowserCardFromBackend } from '../state/dashboardLayoutSlice';
 
@@ -124,6 +125,9 @@ class WebSocketManager {
           store.dispatch(updateSession(data.session));
         } else if (session_id) {
           store.dispatch(updateSessionStatus({ sessionId: session_id, status: data.status }));
+        }
+        if (data.status === 'running' && session_id) {
+          store.dispatch(trackAgentNotification(session_id));
         }
         break;
 

@@ -1,6 +1,6 @@
 {
   "name": "openswarm",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "OpenSwarm — AI Agent Orchestrator",
   "main": "main.js",
   "scripts": {
@@ -43,6 +43,7 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
+      "artifactName": "OpenSwarm-${arch}.${ext}",
       "title": "OpenSwarm",
       "contents": [
         {
