@@ -402,9 +402,11 @@ const AgentCard: React.FC<Props> = ({
       data-select-meta={JSON.stringify({ name: session.name || session.id, status: session.status, model: session.model, mode: session.mode })}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
+        if (!isSelected && !e.shiftKey) {
+          dispatch(toggleExpandSession(session.id));
+        }
         onCardSelect?.(session.id, 'agent', e.shiftKey);
       }}
-      onDoubleClick={() => dispatch(toggleExpandSession(session.id))}
       sx={{
         position: 'relative',
         width: localResize ? activeW : Math.max(cardWidth, MIN_W),
@@ -494,7 +496,6 @@ const AgentCard: React.FC<Props> = ({
             if (justDraggedRef.current) return;
             onCardSelect?.(session.id, 'agent', e.shiftKey);
           }}
-          onDoubleClick={() => dispatch(toggleExpandSession(session.id))}
           sx={{
             position: 'absolute',
             inset: 0,

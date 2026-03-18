@@ -93,6 +93,7 @@ interface Props {
   cardWidth: number;
   cardHeight: number;
   zoom?: number;
+  cmdHeld?: boolean;
   isSelected?: boolean;
   isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
@@ -104,7 +105,7 @@ interface Props {
 
 
 const BrowserCard: React.FC<Props> = ({
-  browserId, tabs, activeTabId, cardX, cardY, cardWidth, cardHeight, zoom = 1,
+  browserId, tabs, activeTabId, cardX, cardY, cardWidth, cardHeight, zoom = 1, cmdHeld = false,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
 }) => {
   const c = useClaudeTokens();
@@ -981,6 +982,9 @@ const BrowserCard: React.FC<Props> = ({
       <Box sx={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {isElementSelectMode && (
           <Box sx={{ position: 'absolute', inset: 0, zIndex: 10 }} />
+        )}
+        {cmdHeld && !isSelected && (
+          <Box sx={{ position: 'absolute', inset: 0, zIndex: 12 }} />
         )}
         {isElectron ? (
           tabs.map((tab) => (

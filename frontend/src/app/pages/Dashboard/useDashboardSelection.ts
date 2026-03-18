@@ -79,7 +79,10 @@ export function useDashboardSelection(
           }
           return next;
         }
-        return new Map([[id, type]]);
+        if (prev.has(id)) {
+          return new Map();
+        }
+        return prev;
       });
     },
     [],

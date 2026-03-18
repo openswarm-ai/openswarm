@@ -46,6 +46,7 @@ interface Props {
   cardWidth: number;
   cardHeight: number;
   zoom?: number;
+  cmdHeld?: boolean;
   isSelected?: boolean;
   isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
@@ -56,7 +57,7 @@ interface Props {
 }
 
 const DashboardViewCard: React.FC<Props> = ({
-  output, cardX, cardY, cardWidth, cardHeight, zoom = 1,
+  output, cardX, cardY, cardWidth, cardHeight, zoom = 1, cmdHeld = false,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
 }) => {
   const c = useClaudeTokens();
@@ -404,6 +405,9 @@ const DashboardViewCard: React.FC<Props> = ({
 
       {/* Preview body */}
       <Box sx={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {cmdHeld && !isSelected && (
+          <Box sx={{ position: 'absolute', inset: 0, zIndex: 12 }} />
+        )}
         <ViewPreview
           ref={previewRef}
           serveUrl={`${SERVE_BASE}/${output.id}/serve/index.html`}

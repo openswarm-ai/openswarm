@@ -487,6 +487,11 @@ class AgentManager:
                 return _builtin_perms[tool_name]
 
             import re as _re
+
+            bm = _re.match(r"mcp__openswarm-browser-agent__(.+)", tool_name)
+            if bm:
+                return _builtin_perms.get(bm.group(1), "always_allow")
+
             m = _re.match(r"mcp__([^_]+(?:-[^_]+)*)__(.+)", tool_name)
             if m:
                 server_slug, mcp_tool_name = m.group(1), m.group(2)
@@ -639,23 +644,30 @@ class AgentManager:
 
             mcp_servers = await self._build_mcp_servers(session.allowed_tools)
 
-            browser_agent_server_path = os.path.join(
-                os.path.dirname(__file__), "browser_agent_mcp_server.py"
+            _browser_delegation_tools = ["BrowserAgent", "BrowserAgents"]
+            _browser_all_denied = all(
+                _builtin_perms.get(t, "always_allow") == "deny"
+                for t in _browser_delegation_tools
             )
-            backend_port = os.environ.get("OPENSWARM_PORT", "8324")
-            pre_selected_bids = self._get_pre_selected_browser_ids(session.dashboard_id)
-            mcp_servers["openswarm-browser-agent"] = {
-                "command": sys.executable,
-                "args": [browser_agent_server_path],
-                "env": {
-                    "OPENSWARM_PORT": backend_port,
-                    "OPENSWARM_AGENT_MODEL": session.model,
-                    "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
-                    "OPENSWARM_PRE_SELECTED_BROWSER_IDS": ",".join(pre_selected_bids),
-                    "OPENSWARM_PARENT_SESSION_ID": session.id,
-                },
-                "type": "stdio",
-            }
+
+            if not _browser_all_denied:
+                browser_agent_server_path = os.path.join(
+                    os.path.dirname(__file__), "browser_agent_mcp_server.py"
+                )
+                backend_port = os.environ.get("OPENSWARM_PORT", "8324")
+                pre_selected_bids = self._get_pre_selected_browser_ids(session.dashboard_id)
+                mcp_servers["openswarm-browser-agent"] = {
+                    "command": sys.executable,
+                    "args": [browser_agent_server_path],
+                    "env": {
+                        "OPENSWARM_PORT": backend_port,
+                        "OPENSWARM_AGENT_MODEL": session.model,
+                        "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
+                        "OPENSWARM_PRE_SELECTED_BROWSER_IDS": ",".join(pre_selected_bids),
+                        "OPENSWARM_PARENT_SESSION_ID": session.id,
+                    },
+                    "type": "stdio",
+                }
 
             effective_allowed = [
                 t for t in session.allowed_tools
@@ -670,6 +682,15 @@ class AgentManager:
             if mcp_servers:
                 all_tools_list = load_all_tools()
                 for name in mcp_servers:
+                    if name == "openswarm-browser-agent":
+                        for bt in _browser_delegation_tools:
+                            policy = _builtin_perms.get(bt, "always_allow")
+                            if policy == "always_allow":
+                                effective_allowed.append(f"mcp__openswarm-browser-agent__{bt}")
+                            elif policy == "deny":
+                                effective_disallowed.append(f"mcp__openswarm-browser-agent__{bt}")
+                        continue
+
                     tool_def = next(
                         (t for t in all_tools_list
                          if t.mcp_config and t.enabled and _sanitize_server_name(t.name) == name),
@@ -686,8 +707,6 @@ class AgentManager:
                             effective_disallowed.append(f"mcp__{name}__{tn}")
                     else:
                         effective_allowed.append(f"mcp__{name}__*")
-
-            effective_allowed.append("mcp__openswarm-browser-agent__*")
 
             options_kwargs = {
                 "model": session.model,

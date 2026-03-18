@@ -15,8 +15,9 @@ from uuid import uuid4
 
 import anthropic
 
-from backend.apps.agents.models import AgentSession, Message
+from backend.apps.agents.models import AgentSession, ApprovalRequest, Message
 from backend.apps.agents.ws_manager import ws_manager
+from backend.apps.tools_lib.tools_lib import load_builtin_permissions
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +234,40 @@ def _format_tool_result(result: dict, tool_name: str) -> list[dict]:
     return [{"type": "text", "text": str(text)}]
 
 
+async def _request_browser_approval(
+    session: AgentSession, tool_name: str, tool_input: dict,
+) -> dict:
+    """Send an approval request for a browser sub-agent tool and wait for the decision."""
+    request_id = uuid4().hex
+    approval_req = ApprovalRequest(
+        id=request_id,
+        session_id=session.id,
+        tool_name=tool_name,
+        tool_input=tool_input,
+    )
+    session.pending_approvals.append(approval_req)
+    session.status = "waiting_approval"
+
+    await ws_manager.send_to_session(session.id, "agent:status", {
+        "session_id": session.id,
+        "status": "waiting_approval",
+    })
+
+    decision = await ws_manager.send_approval_request(
+        session.id, request_id, tool_name, tool_input,
+    )
+
+    session.pending_approvals = [
+        a for a in session.pending_approvals if a.id != request_id
+    ]
+    session.status = "running"
+    await ws_manager.send_to_session(session.id, "agent:status", {
+        "session_id": session.id,
+        "status": "running",
+    })
+    return decision
+
+
 async def run_browser_agent(
     task: str,
     browser_id: str,
@@ -250,6 +285,8 @@ async def run_browser_agent(
     and returns the full action log + summary + final screenshot.
     """
     from backend.apps.agents.agent_manager import agent_manager
+
+    _browser_perms = load_builtin_permissions()
 
     session_id = uuid4().hex
     session = AgentSession(
@@ -347,6 +384,48 @@ async def run_browser_agent(
 
             tool_results = []
             for tu in tool_uses:
+                policy = _browser_perms.get(tu.name, "always_allow")
+
+                if policy == "deny":
+                    denied_text = f"Tool {tu.name} is denied by permission policy."
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": [{"type": "text", "text": denied_text}],
+                    })
+                    result_msg = Message(
+                        role="tool_result",
+                        content={"text": denied_text, "tool_name": tu.name, "elapsed_ms": 0},
+                    )
+                    session.messages.append(result_msg)
+                    await ws_manager.send_to_session(session_id, "agent:message", {
+                        "session_id": session_id,
+                        "message": result_msg.model_dump(mode="json"),
+                    })
+                    continue
+
+                if policy == "ask":
+                    decision = await _request_browser_approval(
+                        session, tu.name, tu.input,
+                    )
+                    if decision.get("behavior") == "deny":
+                        denied_text = decision.get("message") or f"Tool {tu.name} denied by user."
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tu.id,
+                            "content": [{"type": "text", "text": denied_text}],
+                        })
+                        result_msg = Message(
+                            role="tool_result",
+                            content={"text": denied_text, "tool_name": tu.name, "elapsed_ms": 0},
+                        )
+                        session.messages.append(result_msg)
+                        await ws_manager.send_to_session(session_id, "agent:message", {
+                            "session_id": session_id,
+                            "message": result_msg.model_dump(mode="json"),
+                        })
+                        continue
+
                 start = time.time()
                 result = await execute_browser_tool(
                     tu.name, tu.input, browser_id, tab_id,

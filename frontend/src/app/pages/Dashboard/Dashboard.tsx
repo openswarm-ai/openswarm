@@ -600,6 +600,7 @@ const DashboardInner: React.FC = () => {
                   cardWidth={vc.width}
                   cardHeight={vc.height}
                   zoom={canvas.zoom}
+                  cmdHeld={canvas.cmdHeld}
                   isSelected={selection.isSelected(vc.output_id)}
                   isHighlighted={highlightedCardId === vc.output_id}
                   multiDragDelta={multiDragDelta}
@@ -621,6 +622,7 @@ const DashboardInner: React.FC = () => {
                 cardWidth={bc.width}
                 cardHeight={bc.height}
                 zoom={canvas.zoom}
+                cmdHeld={canvas.cmdHeld}
                 isSelected={selection.isSelected(bc.browser_id)}
                 isHighlighted={highlightedCardId === bc.browser_id}
                 multiDragDelta={multiDragDelta}
