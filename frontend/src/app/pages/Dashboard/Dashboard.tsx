@@ -13,6 +13,7 @@ import {
   generateTitle,
   resumeSession,
   setExpandedSessionIds,
+  toggleExpandSession,
 } from '@/shared/state/agentsSlice';
 import type { AgentConfig } from '@/shared/state/agentsSlice';
 import {
@@ -159,11 +160,17 @@ const DashboardInner: React.FC = () => {
       canvas.handlers.onMouseDown(e);
       return;
     }
+
+    if (e.button === 2) {
+      e.preventDefault();
+      selection.handleCanvasMouseDown(e.nativeEvent);
+      return;
+    }
+
     if (e.button !== 0) return;
     if (isCardTarget(e.target, e.currentTarget)) return;
 
     if (isElementSelectMode) {
-      // Cmd/Ctrl held → allow panning even in element select mode
       if (e.metaKey || e.ctrlKey) {
         canvas.handlers.onMouseDown(e);
       }
@@ -348,6 +355,21 @@ const DashboardInner: React.FC = () => {
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [newAgentShortcut]);
 
+  useEffect(() => {
+    const handleEnter = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      if (selection.selectedIds.size !== 1) return;
+      const [id, type] = selection.selectedIds.entries().next().value!;
+      if (type !== 'agent') return;
+      e.preventDefault();
+      dispatch(toggleExpandSession(id));
+    };
+    window.addEventListener('keydown', handleEnter);
+    return () => window.removeEventListener('keydown', handleEnter);
+  }, [selection.selectedIds, dispatch]);
+
   const handleNewAgent = useCallback(() => {
     setToolbarOpen(true);
   }, []);
@@ -508,6 +530,7 @@ const DashboardInner: React.FC = () => {
         onMouseDown={handleViewportMouseDown}
         onMouseMove={handleViewportMouseMove}
         onMouseUp={handleViewportMouseUp}
+        onContextMenu={(e) => e.preventDefault()}
         sx={{
           position: 'absolute',
           inset: 0,

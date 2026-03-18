@@ -376,6 +376,7 @@ const BrowserCard: React.FC<Props> = ({
   const justDraggedRef = useRef(false);
 
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY };
@@ -431,6 +432,7 @@ const BrowserCard: React.FC<Props> = ({
 
   const handleResizeDown = useCallback(
     (dir: ResizeDir) => (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
       resizeRef.current = {

@@ -155,7 +155,7 @@ export function useDashboardSelection(
 
   const handleCanvasMouseDown = useCallback(
     (e: MouseEvent) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 && e.button !== 2) return;
 
       marqueeOriginRef.current = { screenX: e.clientX, screenY: e.clientY };
       isDraggingMarqueeRef.current = false;

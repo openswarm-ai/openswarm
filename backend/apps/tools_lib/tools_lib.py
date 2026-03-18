@@ -618,7 +618,10 @@ async def _discover_mcp_tools_stdio(command: str, args: list[str] | None = None,
             proc.terminate()
             await asyncio.wait_for(proc.wait(), timeout=5.0)
         except Exception:
-            proc.kill()
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
 
 @tools_lib.router.post("/{tool_id}/discover")
