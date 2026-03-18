@@ -4,7 +4,7 @@ import { resolveInput } from './resolveUrl';
 
 let initialized = false;
 
-export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements';
+export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait';
 
 export interface BrowserActivity {
   action: BrowserAction;
@@ -42,6 +42,8 @@ const ACTION_LABELS: Record<string, string> = {
   type: 'Typing...',
   evaluate: 'Evaluating...',
   get_elements: 'Inspecting...',
+  scroll: 'Scrolling...',
+  wait: 'Waiting...',
 };
 
 export function getActionLabel(action: string): string {
@@ -128,6 +130,84 @@ async function handleType(wv: BrowserWebview, params: Record<string, any>): Prom
   return result;
 }
 
+async function handleScroll(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
+  const direction = (params.direction as string) || 'down';
+  const amount = (params.amount as number) || 500;
+  const code = `(() => {
+    function findScrollable() {
+      const candidates = document.querySelectorAll(
+        '[class*="scroller"], [class*="scroll-container"], [class*="content"], '
+        + 'main, [role="main"], article, .notion-scroller, .notion-frame'
+      );
+      for (const el of candidates) {
+        const s = window.getComputedStyle(el);
+        const isScrollable = (s.overflow === 'auto' || s.overflow === 'scroll'
+          || s.overflowY === 'auto' || s.overflowY === 'scroll');
+        if (isScrollable && el.scrollHeight > el.clientHeight + 10) return el;
+      }
+      const all = document.querySelectorAll('*');
+      for (const el of all) {
+        if (el === document.body || el === document.documentElement) continue;
+        const s = window.getComputedStyle(el);
+        const isScrollable = (s.overflow === 'auto' || s.overflow === 'scroll'
+          || s.overflowY === 'auto' || s.overflowY === 'scroll');
+        if (isScrollable && el.scrollHeight > el.clientHeight + 50
+            && el.clientHeight > 200) return el;
+      }
+      return null;
+    }
+    const dy = ${JSON.stringify(direction)} === 'up' ? -${amount} : ${amount};
+    const container = findScrollable();
+    if (container) {
+      const before = container.scrollTop;
+      container.scrollBy({ top: dy, behavior: 'instant' });
+      const after = container.scrollTop;
+      return {
+        scrolled: Math.abs(after - before),
+        scrollTop: after,
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        atTop: after <= 0,
+        atBottom: after + container.clientHeight >= container.scrollHeight - 5,
+        target: 'container',
+      };
+    }
+    const before = window.scrollY;
+    window.scrollBy({ top: dy, behavior: 'instant' });
+    const after = window.scrollY;
+    return {
+      scrolled: Math.abs(after - before),
+      scrollTop: after,
+      scrollHeight: document.documentElement.scrollHeight,
+      clientHeight: window.innerHeight,
+      atTop: after <= 0,
+      atBottom: after + window.innerHeight >= document.documentElement.scrollHeight - 5,
+      target: 'window',
+    };
+  })()`;
+  try {
+    const result = await wv.executeJavaScript(code);
+    const status = result.atBottom ? ' (reached bottom)' : result.atTop ? ' (reached top)' : '';
+    return {
+      text: `Scrolled ${direction} by ${result.scrolled}px${status}. Position: ${result.scrollTop}/${result.scrollHeight - result.clientHeight}px`,
+      ...result,
+      url: wv.getURL(),
+    };
+  } catch (err: any) {
+    return { error: `Scroll failed: ${err?.message || String(err)}` };
+  }
+}
+
+async function handleWait(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
+  const ms = Math.min(Math.max((params.milliseconds as number) || 1000, 100), 10000);
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  return {
+    text: `Waited ${ms}ms. Current URL: ${wv.getURL()}`,
+    url: wv.getURL(),
+    title: wv.getTitle(),
+  };
+}
+
 async function handleGetElements(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
   const scope = (params.selector as string) || 'body';
   const safeScope = JSON.stringify(scope);
@@ -135,51 +215,57 @@ async function handleGetElements(wv: BrowserWebview, params: Record<string, any>
     const scope = document.querySelector(${safeScope}) || document.body;
     const interactive = scope.querySelectorAll(
       'a[href], button, input, textarea, select, [role="button"], [role="link"], '
-      + '[role="textbox"], [role="searchbox"], [onclick], [tabindex]:not([tabindex="-1"])'
+      + '[role="textbox"], [role="searchbox"], [role="menuitem"], [role="tab"], '
+      + '[role="checkbox"], [role="switch"], [role="option"], '
+      + '[onclick], [tabindex]:not([tabindex="-1"]), '
+      + '[data-block-id], [contenteditable="true"]'
     );
+    const seen = new Set();
     const results = [];
     for (const el of interactive) {
-      if (results.length >= 60) break;
+      if (results.length >= 80) break;
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) continue;
-      if (window.getComputedStyle(el).visibility === 'hidden') continue;
+      const style = window.getComputedStyle(el);
+      if (style.visibility === 'hidden' || style.display === 'none') continue;
+      if (style.opacity === '0') continue;
 
       let selector = el.tagName.toLowerCase();
       if (el.id) {
-        selector = '#' + el.id;
+        selector = '#' + CSS.escape(el.id);
+      } else if (el.getAttribute('data-block-id')) {
+        selector = '[data-block-id="' + el.getAttribute('data-block-id') + '"]';
       } else if (el.getAttribute('name')) {
-        selector = el.tagName.toLowerCase() + '[name="' + el.getAttribute('name') + '"]';
+        selector = el.tagName.toLowerCase() + '[name="' + CSS.escape(el.getAttribute('name')) + '"]';
       } else if (el.getAttribute('aria-label')) {
-        selector = el.tagName.toLowerCase() + '[aria-label="' + el.getAttribute('aria-label') + '"]';
+        selector = el.tagName.toLowerCase() + '[aria-label="' + CSS.escape(el.getAttribute('aria-label')) + '"]';
       } else if (el.getAttribute('type') && el.tagName === 'INPUT') {
         selector = 'input[type="' + el.getAttribute('type') + '"]';
         if (el.getAttribute('placeholder'))
-          selector += '[placeholder="' + el.getAttribute('placeholder') + '"]';
+          selector += '[placeholder="' + CSS.escape(el.getAttribute('placeholder')) + '"]';
       } else if (el.className && typeof el.className === 'string') {
         const cls = el.className.trim().split(/\\s+/)[0];
-        if (cls && cls.length < 40)
+        if (cls && cls.length < 60)
           selector = el.tagName.toLowerCase() + '.' + CSS.escape(cls);
       }
 
-      const verify = document.querySelectorAll(selector);
-      if (verify.length > 1) {
+      if (seen.has(selector)) {
         const parent = el.parentElement;
         if (parent && parent.id) {
-          selector = '#' + parent.id + ' > ' + selector;
+          selector = '#' + CSS.escape(parent.id) + ' > ' + selector;
         } else {
-          const siblings = parent ? Array.from(parent.querySelectorAll(':scope > ' + el.tagName.toLowerCase())) : [];
+          const siblings = parent ? Array.from(parent.children) : [];
           const idx = siblings.indexOf(el);
-          if (idx >= 0 && parent)
-            selector = (parent.tagName.toLowerCase() + (parent.className ? '.' + CSS.escape(parent.className.trim().split(/\\s+/)[0]) : ''))
-              + ' > ' + el.tagName.toLowerCase() + ':nth-child(' + (idx + 1) + ')';
+          if (idx >= 0) selector += ':nth-child(' + (idx + 1) + ')';
         }
       }
+      seen.add(selector);
 
       results.push({
         selector,
         tag: el.tagName.toLowerCase(),
         type: el.type || null,
-        text: (el.textContent || '').trim().substring(0, 80) || null,
+        text: (el.textContent || '').trim().substring(0, 120) || null,
         placeholder: el.placeholder || null,
         ariaLabel: el.getAttribute('aria-label') || null,
         role: el.getAttribute('role') || null,
@@ -247,6 +333,12 @@ async function handleBrowserCommand(data: Record<string, any>) {
         break;
       case 'get_elements':
         result = await handleGetElements(wv, params);
+        break;
+      case 'scroll':
+        result = await handleScroll(wv, params);
+        break;
+      case 'wait':
+        result = await handleWait(wv, params);
         break;
       default:
         result = { error: `Unknown browser action: ${action}` };

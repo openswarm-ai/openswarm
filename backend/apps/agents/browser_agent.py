@@ -112,6 +112,48 @@ BROWSER_TOOLS_SCHEMA = [
             "required": [],
         },
     },
+    {
+        "name": "BrowserScroll",
+        "description": (
+            "Scroll the page up or down. Automatically finds the correct scrollable "
+            "container (works on SPAs like Notion, Gmail, etc. that use nested scroll "
+            "containers instead of window-level scrolling). Returns scroll position info "
+            "including whether top/bottom has been reached."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string",
+                    "enum": ["up", "down"],
+                    "description": "Scroll direction. Defaults to 'down'.",
+                },
+                "amount": {
+                    "type": "number",
+                    "description": "Pixels to scroll. Defaults to 500.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "BrowserWait",
+        "description": (
+            "Wait for a specified duration. Useful after navigation or actions that "
+            "trigger page loads, animations, or async content rendering. "
+            "Min 100ms, max 10000ms."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "milliseconds": {
+                    "type": "number",
+                    "description": "Duration to wait in milliseconds. Defaults to 1000.",
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 ACTION_MAP = {
@@ -122,17 +164,29 @@ ACTION_MAP = {
     "BrowserType": "type",
     "BrowserEvaluate": "evaluate",
     "BrowserGetElements": "get_elements",
+    "BrowserScroll": "scroll",
+    "BrowserWait": "wait",
 }
 
 SYSTEM_PROMPT = (
     "You are a browser automation agent. You control a single browser tab and "
     "execute the task you are given.\n\n"
     "Strategy:\n"
-    "1. Start by taking a screenshot or calling BrowserGetElements to understand the page.\n"
-    "2. Use BrowserGetElements BEFORE clicking or typing to discover valid CSS selectors.\n"
-    "3. After performing actions, take a screenshot to verify the result.\n"
-    "4. If an action fails, try alternative selectors or approaches.\n"
-    "5. When the task is complete, provide a clear summary of what you accomplished.\n\n"
+    "1. Start by taking a screenshot to understand the page.\n"
+    "2. After navigation, use BrowserWait (1-3 seconds) to let the page finish loading.\n"
+    "3. Use BrowserScroll to scroll through pages — do NOT use BrowserEvaluate with "
+    "window.scrollBy() as many sites use nested scroll containers that BrowserScroll "
+    "handles automatically.\n"
+    "4. Use BrowserGetElements BEFORE clicking or typing to discover valid CSS selectors.\n"
+    "5. After performing actions, take a screenshot to verify the result.\n"
+    "6. If an action fails, try alternative selectors or approaches.\n"
+    "7. When the task is complete, provide a clear summary of what you accomplished.\n\n"
+    "Important notes:\n"
+    "- BrowserGetText returns up to 15000 chars of visible text — use it to read page content.\n"
+    "- BrowserScroll returns position info including atTop/atBottom — use this to know when "
+    "you've reached the end of the page.\n"
+    "- For complex SPAs (Notion, Gmail, etc.), prefer BrowserScroll over BrowserEvaluate for scrolling.\n"
+    "- Avoid looping: if scrolling shows no new content (scrolled 0px), you're at the boundary.\n\n"
     "You have access ONLY to browser tools. Do not ask the user questions — "
     "complete the task autonomously to the best of your ability."
 )
