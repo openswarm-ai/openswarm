@@ -711,6 +711,11 @@ class AgentManager:
             global_settings = load_settings()
             composed_prompt = self._compose_system_prompt(global_settings.default_system_prompt, mode_sys_prompt, session.system_prompt, connected_tools_ctx, outputs_ctx, browser_ctx)
 
+            if session.mode == "view-builder":
+                from backend.apps.outputs.view_builder_templates import VIEW_BUILDER_SKILL
+                skill_block = f"<app_builder_reference>\n{VIEW_BUILDER_SKILL}\n</app_builder_reference>"
+                composed_prompt = f"{composed_prompt}\n\n{skill_block}" if composed_prompt else skill_block
+
             mcp_servers = await self._build_mcp_servers(session.allowed_tools)
 
             _browser_delegation_tools = ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents"]

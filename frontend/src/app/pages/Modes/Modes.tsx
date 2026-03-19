@@ -27,6 +27,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import TuneIcon from '@mui/icons-material/Tune';
 import LockIcon from '@mui/icons-material/Lock';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import RestoreIcon from '@mui/icons-material/Restore';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
@@ -37,6 +38,7 @@ import {
   createMode,
   updateMode,
   deleteMode,
+  resetMode,
   Mode,
 } from '@/shared/state/modesSlice';
 import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
@@ -105,7 +107,7 @@ const ALL_BUILTIN_TOOL_NAMES = ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep',
 const Modes: React.FC = () => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
-  const { items, loading } = useAppSelector((s) => s.modes);
+  const { items, builtinDefaults, loading } = useAppSelector((s) => s.modes);
   const toolItems = useAppSelector((s) => s.tools.items);
   const modes = useMemo(() => Object.values(items), [items]);
 
@@ -172,6 +174,45 @@ const Modes: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     await dispatch(deleteMode(id));
+  };
+
+  const editingIsBuiltin = editingId ? items[editingId]?.is_builtin ?? false : false;
+
+  const hasDiverged = useMemo(() => {
+    if (!editingId || !editingIsBuiltin) return false;
+    const defaults = builtinDefaults[editingId];
+    if (!defaults) return false;
+    const current = items[editingId];
+    if (!current) return false;
+    return (
+      current.name !== defaults.name ||
+      current.description !== defaults.description ||
+      (current.system_prompt ?? '') !== (defaults.system_prompt ?? '') ||
+      JSON.stringify(current.tools) !== JSON.stringify(defaults.tools) ||
+      (current.default_next_mode ?? '') !== (defaults.default_next_mode ?? '') ||
+      current.icon !== defaults.icon ||
+      current.color !== defaults.color ||
+      (current.default_folder ?? '') !== (defaults.default_folder ?? '')
+    );
+  }, [editingId, editingIsBuiltin, items, builtinDefaults]);
+
+  const handleReset = async () => {
+    if (!editingId) return;
+    const action = await dispatch(resetMode(editingId));
+    if (resetMode.fulfilled.match(action)) {
+      const m = action.payload;
+      setForm({
+        name: m.name,
+        description: m.description,
+        system_prompt: m.system_prompt ?? '',
+        tools: m.tools ?? [],
+        toolsEnabled: m.tools !== null,
+        default_next_mode: m.default_next_mode ?? '',
+        icon: m.icon,
+        color: m.color,
+        default_folder: m.default_folder ?? '',
+      });
+    }
   };
 
   const otherModes = modes.filter((m) => m.id !== editingId);
@@ -505,23 +546,46 @@ const Modes: React.FC = () => {
             </FormControl>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDialogOpen(false)} sx={{ color: c.text.tertiary, textTransform: 'none' }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            disabled={!form.name}
-            sx={{
-              bgcolor: c.accent.primary,
-              '&:hover': { bgcolor: c.accent.pressed },
-              textTransform: 'none',
-              borderRadius: 2,
-            }}
-          >
-            {editingId ? 'Save Changes' : 'Create Mode'}
-          </Button>
+        <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
+          <Box>
+            {editingIsBuiltin && (
+              <Tooltip title={hasDiverged ? 'Restore this mode to its original built-in defaults' : 'Mode matches built-in defaults'}>
+                <span>
+                  <Button
+                    startIcon={<RestoreIcon sx={{ fontSize: 16 }} />}
+                    onClick={handleReset}
+                    disabled={!hasDiverged}
+                    sx={{
+                      color: hasDiverged ? c.text.muted : c.text.ghost,
+                      textTransform: 'none',
+                      fontSize: '0.82rem',
+                      '&:hover': hasDiverged ? { color: c.status.error, bgcolor: `${c.status.error}10` } : {},
+                    }}
+                  >
+                    Reset to Default
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button onClick={() => setDialogOpen(false)} sx={{ color: c.text.tertiary, textTransform: 'none' }}>
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleSave}
+              disabled={!form.name}
+              sx={{
+                bgcolor: c.accent.primary,
+                '&:hover': { bgcolor: c.accent.pressed },
+                textTransform: 'none',
+                borderRadius: 2,
+              }}
+            >
+              {editingId ? 'Save Changes' : 'Create Mode'}
+            </Button>
+          </Box>
         </DialogActions>
       </Dialog>
 

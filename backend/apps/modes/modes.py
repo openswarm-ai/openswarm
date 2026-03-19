@@ -59,7 +59,8 @@ def load_mode(mode_id: str) -> Mode | None:
 
 @modes.router.get("/list")
 async def list_modes():
-    return {"modes": [m.model_dump() for m in _load_all()]}
+    builtin_defaults = {m.id: m.model_dump() for m in BUILTIN_MODES}
+    return {"modes": [m.model_dump() for m in _load_all()], "builtin_defaults": builtin_defaults}
 
 
 @modes.router.get("/{mode_id}")
@@ -91,6 +92,16 @@ async def update_mode(mode_id: str, body: ModeUpdate):
         setattr(mode, k, v)
     _save(mode)
     return {"ok": True, "mode": mode.model_dump()}
+
+
+@modes.router.post("/{mode_id}/reset")
+async def reset_mode(mode_id: str):
+    """Reset a built-in mode to its hardcoded defaults."""
+    builtin = next((m for m in BUILTIN_MODES if m.id == mode_id), None)
+    if not builtin:
+        raise HTTPException(status_code=400, detail="Only built-in modes can be reset")
+    _save(builtin)
+    return {"ok": True, "mode": builtin.model_dump()}
 
 
 @modes.router.delete("/{mode_id}")

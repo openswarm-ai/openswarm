@@ -18,18 +18,19 @@ export interface Mode {
 
 interface ModesState {
   items: Record<string, Mode>;
+  builtinDefaults: Record<string, Mode>;
   loading: boolean;
   loaded: boolean;
 }
 
-const initialState: ModesState = { items: {}, loading: false, loaded: false };
+const initialState: ModesState = { items: {}, builtinDefaults: {}, loading: false, loaded: false };
 
 export const fetchModes = createAsyncThunk(
   'modes/fetch',
   async () => {
     const res = await fetch(`${MODES_API}/list`);
     const data = await res.json();
-    return data.modes as Mode[];
+    return { modes: data.modes as Mode[], builtinDefaults: (data.builtin_defaults ?? {}) as Record<string, Mode> };
   },
   { condition: (_, { getState }) => !(getState() as { modes: ModesState }).modes.loading },
 );
@@ -60,6 +61,15 @@ export const updateMode = createAsyncThunk(
   }
 );
 
+export const resetMode = createAsyncThunk(
+  'modes/reset',
+  async (id: string) => {
+    const res = await fetch(`${MODES_API}/${id}/reset`, { method: 'POST' });
+    const data = await res.json();
+    return data.mode as Mode;
+  }
+);
+
 export const deleteMode = createAsyncThunk('modes/delete', async (id: string) => {
   await fetch(`${MODES_API}/${id}`, { method: 'DELETE' });
   return id;
@@ -76,11 +86,13 @@ const modesSlice = createSlice({
         state.loading = false;
         state.loaded = true;
         state.items = {};
-        for (const m of action.payload) state.items[m.id] = m;
+        for (const m of action.payload.modes) state.items[m.id] = m;
+        state.builtinDefaults = action.payload.builtinDefaults;
       })
       .addCase(fetchModes.rejected, (state) => { state.loading = false; state.loaded = true; })
       .addCase(createMode.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(updateMode.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
+      .addCase(resetMode.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(deleteMode.fulfilled, (state, action) => { delete state.items[action.payload]; });
   },
 });

@@ -381,7 +381,7 @@ interface FileTreeItemProps {
   c: ReturnType<typeof useClaudeTokens>;
 }
 
-const PROTECTED_FILES = new Set(['index.html', 'schema.json', 'meta.json']);
+const PROTECTED_FILES = new Set(['index.html', 'schema.json', 'meta.json', 'SKILL.md']);
 
 const FileTreeItem: React.FC<FileTreeItemProps> = ({ node, depth, activeFile, onSelect, onDelete, c }) => {
   const [open, setOpen] = useState(true);
@@ -732,6 +732,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
     const outputFiles = { ...files };
     delete outputFiles['meta.json'];
     delete outputFiles['schema.json'];
+    delete outputFiles['SKILL.md'];
 
     return {
       name: name || 'Untitled App',
@@ -948,7 +949,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
     ? `${SERVE_BASE}/workspace/${workspaceId}/serve/index.html`
     : undefined;
 
-  const filePaths = useMemo(() => Object.keys(files).filter(p => p !== 'meta.json').sort(), [files]);
+  const filePaths = useMemo(() => Object.keys(files).filter(p => p !== 'meta.json' && p !== 'SKILL.md').sort(), [files]);
   const fileTree = useMemo(() => buildFileTree(filePaths), [filePaths]);
 
   const updateFile = useCallback((path: string, content: string) => {

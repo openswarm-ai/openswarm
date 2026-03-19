@@ -404,11 +404,6 @@ const AgentCard: React.FC<Props> = ({
     }
   };
 
-  const handleCollapse = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    dispatch(collapseSession(session.id));
-  };
 
   useEffect(() => {
     if (session.status === 'running' || session.status === 'waiting_approval') {
@@ -750,37 +745,20 @@ const AgentCard: React.FC<Props> = ({
             onPointerDown={(e) => e.stopPropagation()}
             sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, ml: 0.5 }}
           >
-            {expanded ? (
-              <Tooltip title="Collapse">
-                <IconButton
-                  size="small"
-                  onClick={handleCollapse}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  sx={{
-                    color: c.text.ghost,
-                    p: 0.5,
-                    '&:hover': { color: c.text.secondary, bgcolor: c.bg.secondary },
-                  }}
-                >
-                  <CloseIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Tooltip>
-            ) : (
-              <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
-                <IconButton
-                  size="small"
-                  onClick={handleRemove}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  sx={{
-                    color: c.text.ghost,
-                    p: 0.5,
-                    '&:hover': { color: c.status.error, bgcolor: `${c.status.errorBg}` },
-                  }}
-                >
-                  <CloseIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Tooltip>
-            )}
+            <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
+              <IconButton
+                size="small"
+                onClick={handleRemove}
+                onMouseDown={(e) => e.stopPropagation()}
+                sx={{
+                  color: c.text.ghost,
+                  p: 0.5,
+                  '&:hover': { color: c.status.error, bgcolor: `${c.status.errorBg}` },
+                }}
+              >
+                <CloseIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
           </Box>
         </Box>
 

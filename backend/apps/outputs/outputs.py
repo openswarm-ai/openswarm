@@ -15,6 +15,7 @@ from backend.apps.outputs.models import (
     WorkspaceSeedRequest,
 )
 from backend.apps.outputs.executor import execute_backend_code
+from backend.apps.outputs.view_builder_templates import VIEW_BUILDER_SKILL, VIEW_TEMPLATE_FILES
 from backend.apps.settings.settings import load_settings
 
 logger = logging.getLogger(__name__)
@@ -235,6 +236,14 @@ async def seed_workspace(body: WorkspaceSeedRequest):
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w") as f:
                 f.write(content)
+    else:
+        for rel_path, content in VIEW_TEMPLATE_FILES.items():
+            full_path = os.path.join(folder, rel_path)
+            with open(full_path, "w") as f:
+                f.write(content)
+
+    with open(os.path.join(folder, "SKILL.md"), "w") as f:
+        f.write(VIEW_BUILDER_SKILL)
 
     if body.meta:
         with open(os.path.join(folder, "meta.json"), "w") as f:
