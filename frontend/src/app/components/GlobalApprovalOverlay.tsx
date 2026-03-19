@@ -19,6 +19,7 @@ import {
   AgentSession,
   HistorySession,
 } from '@/shared/state/agentsSlice';
+import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import ApprovalBar, { BatchApprovalBar } from '@/app/pages/AgentChat/ApprovalBar';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
@@ -72,14 +73,14 @@ const AgentStatusRow: React.FC<{
   c: ReturnType<typeof useClaudeTokens>;
   onStop: (id: string) => void;
   onDismiss: (id: string) => void;
-  onNavigate: (dashboardId: string) => void;
+  onNavigate: (dashboardId: string, agentId: string) => void;
 }> = ({ agent, c, onStop, onDismiss, onNavigate }) => {
   const isActive = agent.status === 'running' || agent.status === 'waiting_approval';
   const cfg = STATUS_CONFIG[agent.status] ?? { label: agent.status };
 
   return (
     <Box
-      onClick={() => agent.dashboardId && onNavigate(agent.dashboardId)}
+      onClick={() => agent.dashboardId && onNavigate(agent.dashboardId, agent.id)}
       sx={{
         display: 'flex',
         alignItems: 'center',
@@ -154,7 +155,7 @@ const GlobalApprovalOverlay: React.FC = () => {
   const groups: SessionApprovalGroup[] = useMemo(() => {
     const result: SessionApprovalGroup[] = [];
     for (const [sessionId, session] of Object.entries(sessions)) {
-      if (session.pending_approvals.length > 0) {
+      if (session.pending_approvals?.length > 0) {
         result.push({
           sessionId,
           sessionName: session.name || 'Agent',
@@ -232,10 +233,11 @@ const GlobalApprovalOverlay: React.FC = () => {
   );
 
   const onNavigateToDashboard = useCallback(
-    (dashboardId: string) => {
+    (dashboardId: string, agentId: string) => {
+      dispatch(setPendingFocusAgentId(agentId));
       navigate(`/dashboard/${dashboardId}`);
     },
-    [navigate],
+    [navigate, dispatch],
   );
 
   if (totalApprovals === 0 && trackedAgents.length === 0) return null;

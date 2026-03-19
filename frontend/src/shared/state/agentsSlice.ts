@@ -337,11 +337,11 @@ export const closeSession = createAsyncThunk(
 
 export const duplicateSession = createAsyncThunk(
   'agents/duplicateSession',
-  async ({ sessionId, dashboardId }: { sessionId: string; dashboardId?: string }) => {
+  async ({ sessionId, dashboardId, upToMessageId }: { sessionId: string; dashboardId?: string; upToMessageId?: string }) => {
     const res = await fetch(`${AGENTS_API}/sessions/${sessionId}/duplicate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dashboard_id: dashboardId }),
+      body: JSON.stringify({ dashboard_id: dashboardId, up_to_message_id: upToMessageId }),
     });
     if (!res.ok) throw new Error('Failed to duplicate session');
     const data = await res.json();
@@ -881,13 +881,12 @@ const agentsSlice = createSlice({
       .addCase(fetchSession.fulfilled, (state, action) => {
         const session = action.payload;
         const existing = state.sessions[session.id];
-        if (existing) {
-          state.sessions[session.id] = {
-            ...session,
-            streamingMessage: existing.streamingMessage ?? null,
-            tool_group_meta: session.tool_group_meta ?? existing.tool_group_meta ?? {},
-          };
-        }
+        state.sessions[session.id] = {
+          ...session,
+          pending_approvals: session.pending_approvals ?? existing?.pending_approvals ?? [],
+          streamingMessage: existing?.streamingMessage ?? null,
+          tool_group_meta: session.tool_group_meta ?? existing?.tool_group_meta ?? {},
+        };
       })
       .addCase(fetchBrowserAgentChildren.fulfilled, (state, action) => {
         for (const session of action.payload) {

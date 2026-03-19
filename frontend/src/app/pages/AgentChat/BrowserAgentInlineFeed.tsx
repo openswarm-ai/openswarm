@@ -13,9 +13,11 @@ import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
+import { createSelector } from '@reduxjs/toolkit';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { AgentMessage, AgentSession, fetchBrowserAgentChildren } from '@/shared/state/agentsSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
+import type { RootState } from '@/shared/state/store';
 
 interface Props {
   parentSessionId: string;
@@ -142,28 +144,37 @@ const lightFeedColors: FeedColors = {
   scrollThumb: '#ccc9c0',
 };
 
+const selectBrowserSessions = createSelector(
+  [(state: RootState) => state.agents.sessions,
+   (_: RootState, parentSessionId: string) => parentSessionId,
+   (_: RootState, __: string, browserId?: string) => browserId],
+  (sessions, parentSessionId, browserId) =>
+    Object.values(sessions).filter(
+      (s): s is AgentSession =>
+        s.mode === 'browser-agent' &&
+        s.parent_session_id === parentSessionId &&
+        (!browserId || s.browser_id === browserId),
+    ),
+);
+
 const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const { mode } = useThemeMode();
   const fc = mode === 'dark' ? darkFeedColors : lightFeedColors;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const fetchedRef = useRef(false);
+  const fetchedForSession = useRef<string | null>(null);
 
-  const browserSessions = useAppSelector((state) => {
-    const all = state.agents.sessions;
-    return Object.values(all).filter(
-      (s): s is AgentSession =>
-        s.mode === 'browser-agent' &&
-        s.parent_session_id === parentSessionId &&
-        (!browserId || s.browser_id === browserId),
-    );
-  });
+  const browserSessions = useAppSelector((state) =>
+    selectBrowserSessions(state, parentSessionId, browserId),
+  );
 
   useEffect(() => {
-    if (browserSessions.length === 0 && !fetchedRef.current) {
-      fetchedRef.current = true;
-      dispatch(fetchBrowserAgentChildren(parentSessionId));
+    if (browserSessions.length === 0 && fetchedForSession.current !== parentSessionId) {
+      fetchedForSession.current = parentSessionId;
+      dispatch(fetchBrowserAgentChildren(parentSessionId))
+        .unwrap()
+        .catch(() => { fetchedForSession.current = null; });
     }
   }, [browserSessions.length, parentSessionId, dispatch]);
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -26,7 +27,6 @@ import {
   tidyLayout,
   addViewCard,
   addBrowserCard,
-  addBrowserTab,
   moveCards,
   resetLayout,
   setGlowingBrowserCards,
@@ -35,6 +35,8 @@ import {
   pasteBrowserCard,
   placeCard,
   setGlowingAgentCard,
+  DEFAULT_CARD_W,
+  DEFAULT_CARD_H,
   EXPANDED_CARD_MIN_H,
   GRID_GAP,
 } from '@/shared/state/dashboardLayoutSlice';
@@ -42,7 +44,7 @@ import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { generateDashboardName, updateDashboardThumbnail } from '@/shared/state/dashboardsSlice';
 import { dashboardWs } from '@/shared/ws/WebSocketManager';
 import { initBrowserCommandHandler } from '@/shared/browserCommandHandler';
-import { findBrowserByWebContentsId } from '@/shared/browserRegistry';
+import { clearPendingBrowserUrl, clearPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import AgentCard from './AgentCard';
 import DashboardViewCard from './DashboardViewCard';
 import BrowserCard from './BrowserCard';
@@ -111,6 +113,8 @@ const DashboardInner: React.FC = () => {
   const [toolbarOpen, setToolbarOpen] = useState(false);
   const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [autoFocusSessionId, setAutoFocusSessionId] = useState<string | null>(null);
+  const [pendingSelectSessionId, setPendingSelectSessionId] = useState<string | null>(null);
 
   const handleHighlightCard = useCallback((cardId: string) => {
     if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
@@ -121,7 +125,35 @@ const DashboardInner: React.FC = () => {
     }, 2000);
   }, []);
 
+  useEffect(() => {
+    if (autoFocusSessionId) {
+      const timer = setTimeout(() => setAutoFocusSessionId(null), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [autoFocusSessionId]);
+
+  useEffect(() => {
+    if (!pendingSelectSessionId) return;
+    if (!cards[pendingSelectSessionId]) return;
+    setPendingSelectSessionId(null);
+    selection.selectCard(pendingSelectSessionId, 'agent', false);
+  }, [pendingSelectSessionId, cards, selection]);
+
   const spawnOriginsRef = useRef<Record<string, { x: number; y: number; type?: 'branch' }>>({});
+  const measuredHeightsRef = useRef<Record<string, number>>({});
+  const [measuredHeightsTick, setMeasuredHeightsTick] = useState(0);
+  const handleMeasuredHeight = useCallback((sessionId: string, height: number) => {
+    if (measuredHeightsRef.current[sessionId] !== height) {
+      measuredHeightsRef.current[sessionId] = height;
+      setMeasuredHeightsTick((t) => t + 1);
+    }
+  }, []);
+  const revealSpawnedRef = useRef(new Set<string>());
+  useEffect(() => {
+    revealSpawnedRef.current.forEach((id) => {
+      if (!cards[id]) revealSpawnedRef.current.delete(id);
+    });
+  }, [cards]);
   const hasFittedRef = useRef(false);
   const restoredExpandedRef = useRef(false);
   const canvasStateRef = useRef({ panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom });
@@ -225,25 +257,19 @@ const DashboardInner: React.FC = () => {
     return () => { cleanupBrowserHandler(); dashboardWs.disconnect(); };
   }, [dispatch, dashboardId]);
 
-  useEffect(() => {
-    const w = window as any;
-    if (!w.openswarm?.onWebviewNewWindow) return;
-    let lastUrl = '';
-    let lastTime = 0;
-    return w.openswarm.onWebviewNewWindow((url: string, webContentsId: number) => {
-      const now = Date.now();
-      if (url === lastUrl && now - lastTime < 1000) return;
-      lastUrl = url;
-      lastTime = now;
+  const pendingBrowserUrl = useAppSelector((state) => state.tempState.pendingBrowserUrl);
+  const pendingFocusAgentId = useAppSelector((state) => state.tempState.pendingFocusAgentId);
 
-      const browserId = findBrowserByWebContentsId(webContentsId);
-      if (browserId) {
-        dispatch(addBrowserTab({ browserId, url, makeActive: true }));
-      } else {
-        dispatch(addBrowserCard({ url, expandedSessionIds }));
-      }
-    });
-  }, [dispatch, expandedSessionIds]);
+  useEffect(() => {
+    if (!dashboardId) return;
+    (window as any).__openswarm_last_dashboard_id = dashboardId;
+  }, [dashboardId]);
+
+  useEffect(() => {
+    if (!pendingBrowserUrl || !layoutInitialized) return;
+    dispatch(addBrowserCard({ url: pendingBrowserUrl, expandedSessionIds }));
+    dispatch(clearPendingBrowserUrl());
+  }, [pendingBrowserUrl, layoutInitialized, dispatch, expandedSessionIds]);
 
   // Capture a thumbnail screenshot of the dashboard.
   // Uses Electron's native capturePage for pixel-perfect results.
@@ -292,10 +318,25 @@ const DashboardInner: React.FC = () => {
 
   useEffect(() => {
     if (!layoutInitialized || hasFittedRef.current) return;
+    if (pendingFocusAgentId) return;
     hasFittedRef.current = true;
     const timer = setTimeout(() => canvas.actions.fitToView(), 150);
     return () => clearTimeout(timer);
-  }, [layoutInitialized, canvas.actions]);
+  }, [layoutInitialized, canvas.actions, pendingFocusAgentId]);
+
+  useEffect(() => {
+    if (!pendingFocusAgentId || !layoutInitialized) return;
+    const agentId = pendingFocusAgentId;
+    dispatch(clearPendingFocusAgentId());
+    hasFittedRef.current = true;
+    setTimeout(() => {
+      const card = store.getState().dashboardLayout.cards[agentId];
+      if (card) {
+        canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.0, true);
+        handleHighlightCard(agentId);
+      }
+    }, 350);
+  }, [pendingFocusAgentId, layoutInitialized, dispatch, canvas.actions, handleHighlightCard]);
 
   useEffect(() => {
     if (!layoutInitialized || restoredExpandedRef.current) return;
@@ -308,7 +349,7 @@ const DashboardInner: React.FC = () => {
   useEffect(() => {
     if (!layoutInitialized) return;
     const dashboardSessionIds = Object.values(sessions)
-      .filter((s) => s.dashboard_id === dashboardId && s.mode !== 'browser-agent' && s.mode !== 'invoked-agent')
+      .filter((s) => s.dashboard_id === dashboardId && s.mode !== 'browser-agent' && s.mode !== 'invoked-agent' && s.mode !== 'sub-agent')
       .map((s) => s.id);
     const liveIds = dashboardSessionIds.sort().join(',');
     if (liveIds === prevSessionIdsRef.current) return;
@@ -516,8 +557,18 @@ const DashboardInner: React.FC = () => {
       const sourceCard = cards[sourceSessionId];
       if (!sourceCard) return;
 
-      const targetX = sourceCard.x + sourceCard.width + GRID_GAP * 3;
-      const targetY = sourceCard.y;
+      const targetX = sourceCard.x + sourceCard.width + GRID_GAP * 12;
+      let targetY = sourceCard.y;
+
+      const columnCards = Object.values(cards).filter(
+        (c) => Math.abs(c.x - targetX) < 50 && c.session_id !== newSessionId,
+      );
+      if (columnCards.length > 0) {
+        const lowestBottom = Math.max(
+          ...columnCards.map((c) => c.y + Math.max(EXPANDED_CARD_MIN_H, c.height)),
+        );
+        targetY = lowestBottom + GRID_GAP;
+      }
 
       spawnOriginsRef.current[newSessionId] = {
         x: sourceCard.x,
@@ -529,15 +580,15 @@ const DashboardInner: React.FC = () => {
         sessionId: newSessionId,
         x: targetX,
         y: targetY,
-        width: sourceCard.width,
-        height: sourceCard.height,
+        width: DEFAULT_CARD_W,
+        height: DEFAULT_CARD_H,
       }));
 
       if (expandedSessionIds.includes(sourceSessionId)) {
         dispatch(expandSession(newSessionId));
       }
 
-      dispatch(setGlowingAgentCard({ sessionId: newSessionId, sourceId: sourceSessionId }));
+      dispatch(setGlowingAgentCard({ sessionId: newSessionId, sourceId: sourceSessionId, label: 'Branch' }));
     },
     [cards, dispatch, expandedSessionIds],
   );
@@ -604,6 +655,22 @@ const DashboardInner: React.FC = () => {
           spawnOriginsRef.current[realId] = spawnOriginsRef.current[draftId];
           delete spawnOriginsRef.current[draftId];
 
+          if (expandNewChats) {
+            setAutoFocusSessionId(realId);
+          } else {
+            setPendingSelectSessionId(realId);
+          }
+
+          setTimeout(() => {
+            const card = store.getState().dashboardLayout.cards[realId];
+            if (card) {
+              const isExp = store.getState().agents.expandedSessionIds.includes(realId);
+              const height = isExp ? Math.max(EXPANDED_CARD_MIN_H, card.height) : card.height;
+              canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height }], 1.0, true);
+              handleHighlightCard(realId);
+            }
+          }, 200);
+
           if (dashboardId) {
             const currentSessions = store.getState().agents.sessions;
             const agentCount = Object.values(currentSessions).filter(
@@ -624,24 +691,49 @@ const DashboardInner: React.FC = () => {
         }
       });
     },
-    [canvas.viewportRef, dispatch, dashboardId, expandNewChats],
+    [canvas.viewportRef, canvas.actions, dispatch, dashboardId, expandNewChats, handleHighlightCard],
   );
 
   const handleAddView = useCallback((outputId: string) => {
     dispatch(addViewCard({ outputId, expandedSessionIds }));
-  }, [dispatch, expandedSessionIds]);
+    setTimeout(() => {
+      const card = store.getState().dashboardLayout.viewCards[outputId];
+      if (card) {
+        canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.0, true);
+        handleHighlightCard(outputId);
+      }
+    }, 200);
+  }, [dispatch, expandedSessionIds, canvas.actions, handleHighlightCard]);
 
   const handleAddBrowser = useCallback(() => {
+    const prevIds = new Set(Object.keys(store.getState().dashboardLayout.browserCards));
     dispatch(addBrowserCard({ url: browserHomepage, expandedSessionIds }));
-  }, [dispatch, browserHomepage, expandedSessionIds]);
+    setTimeout(() => {
+      const allBrowserCards = store.getState().dashboardLayout.browserCards;
+      const newId = Object.keys(allBrowserCards).find((id) => !prevIds.has(id));
+      if (newId) {
+        const card = allBrowserCards[newId];
+        canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.0, true);
+        handleHighlightCard(newId);
+      }
+    }, 200);
+  }, [dispatch, browserHomepage, expandedSessionIds, canvas.actions, handleHighlightCard]);
 
   const handleHistoryResume = useCallback((sessionId: string) => {
     dispatch(resumeSession({ sessionId })).then((action) => {
       if (resumeSession.fulfilled.match(action)) {
-        dispatch(collapseSession(sessionId));
+        dispatch(expandSession(sessionId));
+        setAutoFocusSessionId(sessionId);
+        setTimeout(() => {
+          const card = store.getState().dashboardLayout.cards[sessionId];
+          if (card) {
+            canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.0, true);
+            handleHighlightCard(sessionId);
+          }
+        }, 200);
       }
     });
-  }, [dispatch]);
+  }, [dispatch, canvas.actions, handleHighlightCard, setAutoFocusSessionId]);
 
   const handleTidy = useCallback(() => {
     const currentExpanded = store.getState().agents.expandedSessionIds;
@@ -660,9 +752,72 @@ const DashboardInner: React.FC = () => {
     canvas.actions.fitToCards(allRects);
   }, [dispatch, canvas.actions]);
 
+  useEffect(() => {
+    const DRIFT_THRESHOLD = 60;
+
+    // Group tethered sub-agent cards by source, only including those still in the spawn column
+    const sourceToSiblings = new Map<string, string[]>();
+    for (const [id, glow] of Object.entries(glowingAgentCards)) {
+      const card = cards[id];
+      if (!card) continue;
+      const sourceCard = cards[glow.sourceId];
+      if (!sourceCard) continue;
+      const expectedX = sourceCard.x + sourceCard.width + GRID_GAP * 12;
+      if (Math.abs(card.x - expectedX) > DRIFT_THRESHOLD) continue;
+      const list = sourceToSiblings.get(glow.sourceId) ?? [];
+      list.push(id);
+      sourceToSiblings.set(glow.sourceId, list);
+    }
+
+    for (const siblings of sourceToSiblings.values()) {
+      if (siblings.length < 2) continue;
+      siblings.sort((a, b) => cards[a].y - cards[b].y);
+
+      let cursor = cards[siblings[0]].y;
+      for (const id of siblings) {
+        const card = cards[id];
+        const dy = cursor - card.y;
+        if (Math.abs(dy) > 1) {
+          dispatch(moveCards({ items: [{ id, type: 'agent' as const }], dx: 0, dy }));
+        }
+        const isExpanded = expandedSessionIds.includes(id);
+        const h = isExpanded
+          ? Math.max(EXPANDED_CARD_MIN_H, card.height)
+          : (measuredHeightsRef.current[id] ?? card.height);
+        cursor += h + GRID_GAP * 2;
+      }
+    }
+  // measuredHeightsTick in deps ensures we re-run once ResizeObserver reports
+  // the new height after a collapse (avoids stale-height no-ops)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedSessionIds, glowingAgentCards, cards, dispatch, measuredHeightsTick]);
+
   const TETHER_FADE_MS = 2500;
+
   const tethers = useMemo(() => {
-    return Object.entries(glowingAgentCards).map(([copyId, { sourceId, fading }]) => {
+    const ELBOW_RADIUS = 16;
+
+    function elbowPath(x1: number, y1: number, x2: number, y2: number): string {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const midX = x1 + dx / 2;
+      const r = (Math.abs(dy) < 1 || Math.abs(dx) < ELBOW_RADIUS * 2)
+        ? 0
+        : Math.min(ELBOW_RADIUS, Math.abs(dy) / 2, Math.abs(dx) / 4);
+      const sy = dy >= 0 ? 1 : -1;
+      const sx = dx >= 0 ? 1 : -1;
+
+      return [
+        `M ${x1},${y1}`,
+        `H ${midX - sx * r}`,
+        `Q ${midX},${y1} ${midX},${y1 + sy * r}`,
+        `V ${y2 - sy * r}`,
+        `Q ${midX},${y2} ${midX + sx * r},${y2}`,
+        `H ${x2}`,
+      ].join(' ');
+    }
+
+    return Object.entries(glowingAgentCards).map(([copyId, { sourceId, fading, sourceYRatio, label }]) => {
       const src = cards[sourceId];
       const dst = cards[copyId];
       if (!src || !dst) return null;
@@ -674,22 +829,34 @@ const DashboardInner: React.FC = () => {
         if (liveDragInfo.cardId === copyId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
       }
 
-      const srcH = expandedSessionIds.includes(sourceId)
+      const srcMeasured = measuredHeightsRef.current[sourceId];
+      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
         ? Math.max(EXPANDED_CARD_MIN_H, src.height)
-        : src.height;
-      const dstH = expandedSessionIds.includes(copyId)
+        : src.height);
+      const dstMeasured = measuredHeightsRef.current[copyId];
+      const dstH = dstMeasured ?? (expandedSessionIds.includes(copyId)
         ? Math.max(EXPANDED_CARD_MIN_H, dst.height)
-        : dst.height;
+        : dst.height);
+
+      const x1 = srcX + src.width;
+      const y1 = srcY + srcH * 0.54;
+      const x2 = dstX;
+      const y2 = dstY + dstH * (expandedSessionIds.includes(copyId) ? 0.54 : 0.79);
+      const midX = x1 + (x2 - x1) / 2;
+      const labelX = midX + (x2 - midX) * 0.15;
+      const labelY = y2;
+
       return {
         key: copyId,
-        x1: srcX + src.width,
-        y1: srcY + srcH / 2,
-        x2: dstX,
-        y2: dstY + dstH / 2,
+        path: elbowPath(x1, y1, x2, y2),
+        labelX,
+        labelY,
+        label: label || '',
         fading,
       };
-    }).filter(Boolean) as Array<{ key: string; x1: number; y1: number; x2: number; y2: number; fading: boolean }>;
-  }, [glowingAgentCards, cards, expandedSessionIds, liveDragInfo]);
+    }).filter(Boolean) as Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }>;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [glowingAgentCards, cards, expandedSessionIds, liveDragInfo, measuredHeightsTick]);
 
   const dotSize = Math.max(1, 1.5 * canvas.zoom);
   const dotSpacing = 24 * canvas.zoom;
@@ -834,41 +1001,132 @@ const DashboardInner: React.FC = () => {
                       transition: `opacity ${TETHER_FADE_MS}ms ease-out`,
                     }}
                   >
-                    <line
-                      x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2}
+                    <motion.path
+                      initial={false}
+                      animate={{ d: t.path }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
+                      fill="none"
                       stroke={c.accent.primary}
                       strokeWidth={8}
                       strokeLinecap="round"
+                      strokeLinejoin="round"
                       opacity={0.2}
                       filter="url(#tether-glow-f)"
                     />
-                    <line
-                      x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2}
+                    <motion.path
+                      initial={false}
+                      animate={{ d: t.path }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
+                      fill="none"
                       stroke={c.accent.primary}
                       strokeWidth={2}
                       strokeLinecap="round"
+                      strokeLinejoin="round"
                       opacity={0.65}
                       markerEnd="url(#tether-arrow)"
                       style={{ animation: 'tether-pulse 2s ease-in-out infinite' }}
                     />
-                    <line
-                      x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2}
+                    <motion.path
+                      initial={false}
+                      animate={{ d: t.path }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
+                      fill="none"
                       stroke={c.accent.primary}
                       strokeWidth={1.5}
                       strokeLinecap="round"
+                      strokeLinejoin="round"
                       strokeDasharray="8 8"
                       opacity={0.9}
                       style={{ animation: 'tether-flow 0.6s linear infinite' }}
                     />
+                    {t.label && (
+                      <motion.g
+                        initial={false}
+                        animate={{ x: t.labelX, y: t.labelY }}
+                        transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
+                      >
+                        <rect
+                          x={-4}
+                          y={-14}
+                          width={t.label.length * 7.5 + 8}
+                          height={20}
+                          rx={4}
+                          fill={c.bg.surface}
+                          stroke={c.accent.primary}
+                          strokeWidth={1}
+                          opacity={0.95}
+                        />
+                        <text
+                          x={t.label.length * 7.5 / 2}
+                          y={1}
+                          textAnchor="middle"
+                          fontSize={11}
+                          fontWeight={600}
+                          fontFamily="inherit"
+                          fill={c.accent.primary}
+                        >
+                          {t.label}
+                        </text>
+                      </motion.g>
+                    )}
                   </g>
                 ))}
               </svg>
             )}
+            <AnimatePresence>
             {Object.values(cards).map((card) => {
               const session = sessions[card.session_id];
               if (!session) return null;
-              const origin = spawnOriginsRef.current[session.id];
-              if (origin) delete spawnOriginsRef.current[session.id];
+
+              let origin = spawnOriginsRef.current[session.id];
+              if (origin) {
+                delete spawnOriginsRef.current[session.id];
+              } else {
+                const glow = glowingAgentCards[session.id];
+                if (glow && !revealSpawnedRef.current.has(session.id)) {
+                  revealSpawnedRef.current.add(session.id);
+                  const srcCard = cards[glow.sourceId];
+                  if (srcCard) {
+                    const srcH = measuredHeightsRef.current[glow.sourceId]
+                      ?? (expandedSessionIds.includes(glow.sourceId)
+                        ? Math.max(EXPANDED_CARD_MIN_H, srcCard.height)
+                        : srcCard.height);
+                    origin = {
+                      x: srcCard.x + srcCard.width,
+                      y: srcCard.y + srcH / 2,
+                      type: 'branch' as const,
+                    };
+                  }
+                }
+              }
+
+              let exitTarget: { x: number; y: number } | undefined;
+              const glow = glowingAgentCards[session.id];
+              if (glow) {
+                const srcCard = cards[glow.sourceId];
+                if (srcCard) {
+                  const srcH = measuredHeightsRef.current[glow.sourceId]
+                    ?? (expandedSessionIds.includes(glow.sourceId)
+                      ? Math.max(EXPANDED_CARD_MIN_H, srcCard.height)
+                      : srcCard.height);
+                  exitTarget = {
+                    x: srcCard.x + srcCard.width,
+                    y: srcCard.y + srcH / 2,
+                  };
+                }
+              }
+
+              let snapColumn: { x: number; width: number } | undefined;
+              if (glow) {
+                const srcCard = cards[glow.sourceId];
+                if (srcCard) {
+                  snapColumn = {
+                    x: srcCard.x + srcCard.width + GRID_GAP * 12,
+                    width: DEFAULT_CARD_W,
+                  };
+                }
+              }
+
               return (
                 <AgentCard
                   key={session.id}
@@ -880,6 +1138,7 @@ const DashboardInner: React.FC = () => {
                   cardHeight={card.height}
                   zoom={canvas.zoom}
                   spawnFrom={origin}
+                  exitTarget={exitTarget}
                   isSelected={selection.isSelected(session.id)}
                   isHighlighted={highlightedCardId === session.id}
                   multiDragDelta={multiDragDelta}
@@ -888,9 +1147,13 @@ const DashboardInner: React.FC = () => {
                   onDragMove={handleCardDragMove}
                   onDragEnd={handleCardDragEnd}
                   onBranch={handleBranchFromCard}
+                  onMeasuredHeight={handleMeasuredHeight}
+                  snapColumn={snapColumn}
+                  autoFocusInput={autoFocusSessionId === session.id}
                 />
               );
             })}
+            </AnimatePresence>
             {Object.values(viewCards).map((vc) => {
               const output = outputs[vc.output_id];
               if (!output) return null;

@@ -641,6 +641,60 @@ class AgentManager:
             if elapsed_ms is not None:
                 result_payload["elapsed_ms"] = elapsed_ms
 
+            if hook_tool_name == "Agent":
+                tool_input = input_data.get("tool_input", {})
+                agent_prompt = tool_input.get("prompt", tool_input.get("task", ""))
+
+                sub_text = content
+                sub_cost = 0.0
+                sub_tokens = {"input": 0, "output": 0}
+                sub_model = session.model
+                if isinstance(raw_response, dict):
+                    blocks = raw_response.get("content")
+                    if isinstance(blocks, list):
+                        parts = [
+                            b.get("text", "")
+                            for b in blocks
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        ]
+                        if parts:
+                            sub_text = "\n".join(parts) if len(parts) > 1 else parts[0]
+                    elif isinstance(raw_response.get("text"), str):
+                        sub_text = raw_response["text"]
+                    usage = raw_response.get("usage", {})
+                    if isinstance(usage, dict):
+                        sub_tokens["input"] = usage.get("input_tokens", 0) + usage.get("cache_creation_input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
+                        sub_tokens["output"] = usage.get("output_tokens", 0)
+                    if raw_response.get("model"):
+                        sub_model = raw_response["model"]
+
+                sub_session_id = uuid4().hex
+                sub_name = agent_prompt[:50] if agent_prompt else "Sub-agent"
+                sub_session = AgentSession(
+                    id=sub_session_id,
+                    name=sub_name,
+                    status="completed",
+                    model=sub_model,
+                    mode="sub-agent",
+                    cwd=session.cwd,
+                    created_at=datetime.now(),
+                    cost_usd=sub_cost,
+                    tokens=sub_tokens,
+                    messages=[
+                        Message(role="user", content=agent_prompt, branch_id="main"),
+                        Message(role="assistant", content=sub_text, branch_id="main"),
+                    ],
+                    dashboard_id=session.dashboard_id,
+                    parent_session_id=session_id,
+                )
+                self.sessions[sub_session_id] = sub_session
+                await ws_manager.broadcast_global("agent:status", {
+                    "session_id": sub_session_id,
+                    "status": sub_session.status,
+                    "session": sub_session.model_dump(mode="json"),
+                })
+                result_payload["sub_session_id"] = sub_session_id
+
             result_msg = Message(role="tool_result", content=result_payload, branch_id=session.active_branch_id)
             session.messages.append(result_msg)
             await ws_manager.send_to_session(session_id, "agent:message", {
@@ -1522,7 +1576,6 @@ class AgentManager:
             if session.status in ("running", "waiting_approval"):
                 session.status = "stopped"
             session.pending_approvals = []
-            session.closed_at = session.closed_at or datetime.now()
             doc_data = session.model_dump(mode="json")
             doc_data["search_text"] = self._build_search_text(session)
             _save_session(session_id, doc_data)
@@ -1531,22 +1584,28 @@ class AgentManager:
         self.tasks.clear()
 
     async def restore_all_sessions(self) -> None:
-        """On startup, reload all persisted sessions from JSON files back into memory."""
+        """On startup, reload all persisted sessions from JSON files back into memory.
+
+        Only sessions without closed_at are restored (they were active at
+        shutdown).  Sessions with closed_at were explicitly closed by the user
+        and stay on disk so the history endpoint can still serve them.
+        """
         for sid, data in _load_all_session_data():
             try:
                 session = AgentSession(**data)
             except Exception as e:
                 logger.warning(f"Skipping corrupt session file {sid}: {e}")
                 continue
+            if session.closed_at is not None:
+                continue
             if session.status in ("running", "waiting_approval"):
                 session.status = "stopped"
-            session.closed_at = None
             session.pending_approvals = []
             self.sessions[session.id] = session
             _delete_session_file(sid)
             logger.info(f"Restored session {session.id}")
 
-    async def duplicate_session(self, session_id: str, dashboard_id: str | None = None) -> AgentSession:
+    async def duplicate_session(self, session_id: str, dashboard_id: str | None = None, up_to_message_id: str | None = None) -> AgentSession:
         """Create an independent copy of a session with the same chat history."""
         source = self.sessions.get(session_id)
         if not source:
@@ -1555,9 +1614,18 @@ class AgentManager:
                 raise ValueError(f"Session {session_id} not found")
             source = AgentSession(**data)
 
+        source_messages = list(source.messages)
+        if up_to_message_id:
+            cut_idx = next(
+                (i for i, m in enumerate(source_messages) if m.id == up_to_message_id),
+                None,
+            )
+            if cut_idx is not None:
+                source_messages = source_messages[: cut_idx + 1]
+
         old_to_new_msg: dict[str, str] = {}
         new_messages: list[Message] = []
-        for msg in source.messages:
+        for msg in source_messages:
             new_id = uuid4().hex
             old_to_new_msg[msg.id] = new_id
             new_messages.append(Message(

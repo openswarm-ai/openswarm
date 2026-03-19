@@ -17,6 +17,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 let mainWindow = null;
 let backendProcess = null;
 let backendPort = null;
+let cachedUpdateStatus = { status: 'idle', info: null, error: null };
 
 const isPackaged = app.isPackaged;
 const isDev = process.env.ELECTRON_DEV === '1';
@@ -228,6 +229,13 @@ function createWindow() {
     webPreferences.enableBlinkFeatures = 'EncryptedMedia';
   });
 
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isDev && url.startsWith('http://localhost:3000')) return;
+    if (url.startsWith('file://')) return;
+    event.preventDefault();
+    mainWindow.webContents.send('webview-new-window', url, mainWindow.webContents.id);
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -246,25 +254,30 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-available', (info) => {
     console.log(`Update available: ${info.version}`);
+    cachedUpdateStatus = { status: 'available', info, error: null };
     sendToRenderer('update-available', info);
   });
 
   autoUpdater.on('update-not-available', (info) => {
     console.log('App is up to date');
+    cachedUpdateStatus = { status: 'not-available', info, error: null };
     sendToRenderer('update-not-available', info);
   });
 
   autoUpdater.on('download-progress', (progress) => {
+    cachedUpdateStatus = { status: 'downloading', info: progress, error: null };
     sendToRenderer('download-progress', progress);
   });
 
   autoUpdater.on('update-downloaded', (info) => {
     console.log(`Update downloaded: ${info.version}`);
+    cachedUpdateStatus = { status: 'downloaded', info, error: null };
     sendToRenderer('update-downloaded', info);
   });
 
   autoUpdater.on('error', (err) => {
     console.error('Auto-update error:', err);
+    cachedUpdateStatus = { status: 'error', info: null, error: err?.message || String(err) };
     sendToRenderer('update-error', err?.message || String(err));
   });
 
@@ -363,6 +376,13 @@ app.whenReady().then(async () => {
     createWindow();
     if (!isDev) {
       setupAutoUpdater();
+      mainWindow.webContents.on('did-finish-load', () => {
+        if (cachedUpdateStatus.status === 'available') {
+          sendToRenderer('update-available', cachedUpdateStatus.info);
+        } else if (cachedUpdateStatus.status === 'downloaded') {
+          sendToRenderer('update-downloaded', cachedUpdateStatus.info);
+        }
+      });
     }
   } catch (err) {
     console.error('Failed to start:', err);
@@ -463,6 +483,8 @@ ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('get-webview-preload-path', () => {
   return `file://${path.join(__dirname, 'webview-preload.js')}`;
 });
+
+ipcMain.handle('get-update-status', () => cachedUpdateStatus);
 
 ipcMain.handle('check-for-updates', async () => {
   if (!autoUpdater || !isPackaged) {

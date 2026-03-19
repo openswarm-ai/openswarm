@@ -670,15 +670,8 @@ const Settings: React.FC = () => {
                       {step.title}
                       {step.link && (
                         <Typography
-                          component="span"
-                          onClick={() => {
-                            const w = window as any;
-                            if (w.openswarm?.openExternal) {
-                              w.openswarm.openExternal(step.link);
-                            } else {
-                              window.open(step.link, '_blank', 'noopener');
-                            }
-                          }}
+                          component="a"
+                          href={step.link}
                           sx={{
                             color: c.accent.primary,
                             fontSize: '0.75rem',
@@ -688,6 +681,7 @@ const Settings: React.FC = () => {
                             alignItems: 'center',
                             gap: 0.3,
                             verticalAlign: 'middle',
+                            textDecoration: 'none',
                             '&:hover': { textDecoration: 'underline' },
                           }}
                         >

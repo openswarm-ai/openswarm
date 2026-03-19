@@ -53,8 +53,9 @@ export interface DashboardLayoutState {
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
+  closedCardPositions: Record<string, CardPosition>;
   glowingBrowserCards: Record<string, string>;
-  glowingAgentCards: Record<string, { sourceId: string; fading: boolean }>;
+  glowingAgentCards: Record<string, { sourceId: string; fading: boolean; sourceYRatio?: number; label?: string }>;
   persistedExpandedSessionIds: string[];
   loading: boolean;
   initialized: boolean;
@@ -64,6 +65,7 @@ const initialState: DashboardLayoutState = {
   cards: {},
   viewCards: {},
   browserCards: {},
+  closedCardPositions: {},
   glowingBrowserCards: {},
   glowingAgentCards: {},
   persistedExpandedSessionIds: [],
@@ -237,6 +239,7 @@ const dashboardLayoutSlice = createSlice({
 
       for (const id of Object.keys(state.cards)) {
         if (!liveIds.has(id)) {
+          state.closedCardPositions[id] = { ...state.cards[id] };
           delete state.cards[id];
         }
       }
@@ -245,15 +248,21 @@ const dashboardLayoutSlice = createSlice({
       const newIds = sessionIds.filter((id) => !state.cards[id]);
       for (const id of newIds) {
         if (hasDraftCard && !id.startsWith('draft-')) continue;
-        const rects = collectOccupiedRects(state, expandedSessionIds);
-        const pos = findOpenGridCell(rects, DEFAULT_CARD_W, DEFAULT_CARD_H);
-        state.cards[id] = {
-          session_id: id,
-          x: pos.x,
-          y: pos.y,
-          width: DEFAULT_CARD_W,
-          height: DEFAULT_CARD_H,
-        };
+        const savedPos = state.closedCardPositions[id];
+        if (savedPos) {
+          state.cards[id] = { ...savedPos, session_id: id };
+          delete state.closedCardPositions[id];
+        } else {
+          const rects = collectOccupiedRects(state, expandedSessionIds);
+          const pos = findOpenGridCell(rects, DEFAULT_CARD_W, DEFAULT_CARD_H);
+          state.cards[id] = {
+            session_id: id,
+            x: pos.x,
+            y: pos.y,
+            width: DEFAULT_CARD_W,
+            height: DEFAULT_CARD_H,
+          };
+        }
       }
     },
 
@@ -614,9 +623,9 @@ const dashboardLayoutSlice = createSlice({
       state.glowingBrowserCards = {};
     },
 
-    setGlowingAgentCard(state, action: PayloadAction<{ sessionId: string; sourceId: string }>) {
-      const { sessionId, sourceId } = action.payload;
-      state.glowingAgentCards[sessionId] = { sourceId, fading: false };
+    setGlowingAgentCard(state, action: PayloadAction<{ sessionId: string; sourceId: string; sourceYRatio?: number; label?: string }>) {
+      const { sessionId, sourceId, sourceYRatio, label } = action.payload;
+      state.glowingAgentCards[sessionId] = { sourceId, fading: false, sourceYRatio, label };
     },
 
     fadeGlowingAgentCard(state, action: PayloadAction<string>) {
@@ -632,6 +641,7 @@ const dashboardLayoutSlice = createSlice({
       state.cards = {};
       state.viewCards = {};
       state.browserCards = {};
+      state.closedCardPositions = {};
       state.glowingBrowserCards = {};
       state.glowingAgentCards = {};
       state.persistedExpandedSessionIds = [];

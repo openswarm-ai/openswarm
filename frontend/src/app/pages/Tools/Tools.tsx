@@ -1196,7 +1196,7 @@ const Tools: React.FC = () => {
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
                             <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}>{ig.name}</Typography>
-                            <Chip component="a" href={ig.website} target="_blank" rel="noopener" clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
+                            <Chip component="a" href={ig.website} clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
                           </Box>
                           <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>{ig.description}</Typography>
                         </Box>
@@ -1412,7 +1412,7 @@ const Tools: React.FC = () => {
                               <Chip label={`${totalToolCount} actions`} size="small" sx={{ bgcolor: `${ig.color}15`, color: ig.color, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
                             )}
                             {ig && (
-                              <Chip component="a" href={ig.website} target="_blank" rel="noopener" clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
+                              <Chip component="a" href={ig.website} clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
                             )}
                           </Box>
                           {tool.description && <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>{tool.description}</Typography>}
@@ -1804,8 +1804,6 @@ const Tools: React.FC = () => {
                               <Chip
                                 component="a"
                                 href={srv.websiteUrl}
-                                target="_blank"
-                                rel="noopener"
                                 clickable
                                 icon={<OpenInNewIcon sx={{ fontSize: 12 }} />}
                                 label="Website"
@@ -1817,8 +1815,6 @@ const Tools: React.FC = () => {
                               <Chip
                                 component="a"
                                 href={srv.repositoryUrl}
-                                target="_blank"
-                                rel="noopener"
                                 clickable
                                 icon={<OpenInNewIcon sx={{ fontSize: 12 }} />}
                                 label="Repository"

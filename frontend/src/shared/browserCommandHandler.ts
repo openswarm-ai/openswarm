@@ -9,6 +9,7 @@ export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | '
 export interface BrowserActivity {
   action: BrowserAction;
   detail?: string;
+  coords?: { xPercent: number; yPercent: number };
 }
 
 type ActivityListener = (browserId: string, activity: BrowserActivity | null) => void;
@@ -96,6 +97,8 @@ async function handleClick(wv: BrowserWebview, params: Record<string, any>): Pro
     return {
       text: 'Clicked element: ' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
       url: location.href,
+      clickX: window.innerWidth > 0 ? x / window.innerWidth : 0.5,
+      clickY: window.innerHeight > 0 ? y / window.innerHeight : 0.5,
     };
   })()`;
   const result = await wv.executeJavaScript(code);
@@ -324,6 +327,13 @@ async function handleBrowserCommand(data: Record<string, any>) {
         break;
       case 'click':
         result = await handleClick(wv, params);
+        if (result.clickX != null && result.clickY != null) {
+          setActivity(browser_id, {
+            action: 'click',
+            detail,
+            coords: { xPercent: result.clickX, yPercent: result.clickY },
+          });
+        }
         break;
       case 'type':
         result = await handleType(wv, params);

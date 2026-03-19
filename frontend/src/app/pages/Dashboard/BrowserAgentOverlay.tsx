@@ -58,8 +58,10 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
   const [expanded, setExpanded] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isRunning = session.status === 'running';
   const isDone = session.status === 'completed' || session.status === 'error' || session.status === 'stopped';
@@ -70,6 +72,13 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
     }
     return () => { if (fadeTimer.current) clearTimeout(fadeTimer.current); };
   }, [isDone]);
+
+  useEffect(() => {
+    if (fadeOut) {
+      hideTimer.current = setTimeout(() => setHidden(true), 400);
+    }
+    return () => { if (hideTimer.current) clearTimeout(hideTimer.current); };
+  }, [fadeOut]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -111,7 +120,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
   const panelW = expanded ? expandedW : collapsedW;
   const panelH = expanded ? expandedH : collapsedH;
 
-  if (fadeOut) return null;
+  if (hidden) return null;
 
   return (
     <Box
@@ -133,7 +142,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
         flexDirection: 'column',
         overflow: 'hidden',
         transition: 'width 0.25s ease, height 0.25s ease, opacity 0.4s ease',
-        opacity: isDone && !fadeOut ? 0.7 : 1,
+        opacity: fadeOut ? 0 : isDone ? 0.7 : 1,
         animation: 'overlay-enter 0.3s ease-out',
         '@keyframes overlay-enter': {
           '0%': { opacity: 0, transform: 'translateY(8px) scale(0.95)' },

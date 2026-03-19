@@ -622,7 +622,14 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
               '& a': { color: c.accent.primary },
             }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{rawText}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                a: ({ children, ...props }) => (
+                  <a {...props} style={{ cursor: 'pointer' }}>{children}</a>
+                ),
+              }}
+            >{rawText}</ReactMarkdown>
             {isStreaming && <StreamingCursor />}
           </Box>
         )}

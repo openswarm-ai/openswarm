@@ -498,20 +498,13 @@ const BrowserCard: React.FC<Props> = ({
 
   const accentColor = c.accent.primary;
   const accentHover = c.accent.hover;
+  const accentRgb = accentColor.replace('#', '').match(/.{2}/g)?.map(h => parseInt(h, 16)).join(',') || '189,100,57';
 
   // ---- Glow state ----
   const glowingBrowserCards = useAppSelector((s) => s.dashboardLayout.glowingBrowserCards);
   const isGlowingFromRedux = !!glowingBrowserCards[browserId];
 
-  const [hasBeenTouched, setHasBeenTouched] = useState(false);
-  useEffect(() => {
-    if (isGlowingFromRedux && agentActive) setHasBeenTouched(true);
-  }, [isGlowingFromRedux, agentActive]);
-  useEffect(() => {
-    if (!isGlowingFromRedux) setHasBeenTouched(false);
-  }, [isGlowingFromRedux]);
-
-  const showGlow = isGlowingFromRedux && hasBeenTouched;
+  const showGlow = isGlowingFromRedux;
 
   const agentBorder = isHighlighted
     ? `2px solid ${c.accent.primary}`
@@ -583,8 +576,8 @@ const BrowserCard: React.FC<Props> = ({
           },
         }),
         ...(!isHighlighted && (agentActive || showGlow) && {
-          animation: 'agent-glow-pulse 2s ease-in-out infinite',
-          '@keyframes agent-glow-pulse': {
+          animation: `agent-glow-${browserId} 2s ease-in-out infinite`,
+          [`@keyframes agent-glow-${browserId}`]: {
             '0%, 100%': {
               boxShadow: `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15${innerGlow}`,
             },
@@ -1049,6 +1042,7 @@ const BrowserCard: React.FC<Props> = ({
         {/* Camera flash — screenshot */}
         {(agentAction === 'screenshot' || lastAction === 'screenshot') && (
           <Box
+            key={`flash-${activity.actionSeq}`}
             sx={{
               position: 'absolute',
               inset: 0,
@@ -1076,10 +1070,10 @@ const BrowserCard: React.FC<Props> = ({
               pointerEvents: 'none',
               background: `linear-gradient(180deg, transparent, ${accentColor}90, transparent)`,
               boxShadow: `0 0 12px ${accentColor}60`,
-              animation: 'scan-sweep 1.5s ease-in-out infinite',
+              animation: 'scan-sweep 1.5s ease-in-out infinite alternate',
               '@keyframes scan-sweep': {
                 '0%': { top: '0%' },
-                '100%': { top: '100%' },
+                '100%': { top: 'calc(100% - 3px)' },
               },
             }}
           />
@@ -1088,10 +1082,11 @@ const BrowserCard: React.FC<Props> = ({
         {/* Click ripple */}
         {(agentAction === 'click' || lastAction === 'click') && (
           <Box
+            key={`ripple-${activity.actionSeq}`}
             sx={{
               position: 'absolute',
-              top: '50%',
-              left: '50%',
+              top: `${(activity.coords?.yPercent ?? 0.5) * 100}%`,
+              left: `${(activity.coords?.xPercent ?? 0.5) * 100}%`,
               width: 40,
               height: 40,
               borderRadius: '50%',
@@ -1147,7 +1142,7 @@ const BrowserCard: React.FC<Props> = ({
           </Box>
         )}
 
-        {/* Orange inner shadow overlay for selection / streaming glow */}
+        {/* Accent inner shadow overlay for selection / streaming glow */}
         {showGlow && !agentActive && (
           <Box
             sx={{
@@ -1156,14 +1151,14 @@ const BrowserCard: React.FC<Props> = ({
               zIndex: 14,
               pointerEvents: 'none',
               borderRadius: 'inherit',
-              boxShadow: 'inset 0 0 40px rgba(255,140,0,0.35), inset 0 0 80px rgba(255,100,0,0.15)',
-              animation: 'orange-glow-pulse 2s ease-in-out infinite',
-              '@keyframes orange-glow-pulse': {
+              boxShadow: `inset 0 0 40px rgba(${accentRgb},0.35), inset 0 0 80px rgba(${accentRgb},0.15)`,
+              animation: `accent-glow-${browserId} 2s ease-in-out infinite`,
+              [`@keyframes accent-glow-${browserId}`]: {
                 '0%, 100%': {
-                  boxShadow: 'inset 0 0 40px rgba(255,140,0,0.35), inset 0 0 80px rgba(255,100,0,0.15)',
+                  boxShadow: `inset 0 0 40px rgba(${accentRgb},0.35), inset 0 0 80px rgba(${accentRgb},0.15)`,
                 },
                 '50%': {
-                  boxShadow: 'inset 0 0 50px rgba(255,140,0,0.45), inset 0 0 100px rgba(255,100,0,0.22)',
+                  boxShadow: `inset 0 0 50px rgba(${accentRgb},0.45), inset 0 0 100px rgba(${accentRgb},0.22)`,
                 },
               },
             }}

@@ -11,6 +11,7 @@ const shortcuts = [
   { key: 't', description: 'Go to Templates' },
   { key: '1-9', description: 'Open agent by position' },
   { key: '⌘M', description: 'Add App' },
+  { key: '⌘N', description: 'New Browser' },
   { key: '⌘O', description: 'History' },
   { key: 'Shift+A', description: 'Approve all pending' },
   { key: 'Shift+D', description: 'Deny all pending' },

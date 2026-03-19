@@ -139,6 +139,7 @@ async def duplicate_session(session_id: str, body: dict = {}):
         session = await agent_manager.duplicate_session(
             session_id,
             dashboard_id=body.get("dashboard_id"),
+            up_to_message_id=body.get("up_to_message_id"),
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

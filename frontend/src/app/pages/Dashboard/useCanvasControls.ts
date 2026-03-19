@@ -38,6 +38,7 @@ export function useCanvasControls(zoomSensitivity: number = 50) {
   const cmdRef = useRef(false);
   const sensitivityRef = useRef(zoomSensitivity);
   sensitivityRef.current = zoomSensitivity;
+  const animFrameRef = useRef<number | null>(null);
 
   // Wheel zoom centered on cursor
   useEffect(() => {
@@ -207,6 +208,10 @@ export function useCanvasControls(zoomSensitivity: number = 50) {
     return () => window.removeEventListener('mouseup', onUp);
   }, []);
 
+  useEffect(() => {
+    return () => { if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current); };
+  }, []);
+
   const zoomIn = useCallback(() => {
     setState((prev) => {
       const newZoom = clamp(prev.zoom * ZOOM_IN_FACTOR, MIN_ZOOM, MAX_ZOOM);
@@ -276,7 +281,9 @@ export function useCanvasControls(zoomSensitivity: number = 50) {
     });
   }, []);
 
-  const fitToCards = useCallback((cardRects: Array<{ x: number; y: number; width: number; height: number }>, maxZoom?: number) => {
+  const fitToCards = useCallback((cardRects: Array<{ x: number; y: number; width: number; height: number }>, maxZoom?: number, animate?: boolean) => {
+    if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null; }
+
     const viewport = viewportRef.current;
     if (!viewport || cardRects.length === 0) {
       setState({ panX: 0, panY: 0, zoom: 1 });
@@ -303,11 +310,34 @@ export function useCanvasControls(zoomSensitivity: number = 50) {
     const availW = vRect.width - FIT_PADDING * 2;
     const availH = vRect.height - FIT_PADDING * 2;
     const ceiling = maxZoom ?? MAX_ZOOM;
-    const newZoom = clamp(Math.min(availW / contentWidth, availH / contentHeight), MIN_ZOOM, ceiling);
-    const newPanX = (vRect.width - contentWidth * newZoom) / 2 - minX * newZoom;
-    const newPanY = (vRect.height - contentHeight * newZoom) / 2 - minY * newZoom;
+    const targetZoom = clamp(Math.min(availW / contentWidth, availH / contentHeight), MIN_ZOOM, ceiling);
+    const targetPanX = (vRect.width - contentWidth * targetZoom) / 2 - minX * targetZoom;
+    const targetPanY = (vRect.height - contentHeight * targetZoom) / 2 - minY * targetZoom;
 
-    setState({ panX: newPanX, panY: newPanY, zoom: newZoom });
+    if (!animate) {
+      setState({ panX: targetPanX, panY: targetPanY, zoom: targetZoom });
+      return;
+    }
+
+    const start = { ...stateRef.current };
+    const startTime = performance.now();
+    const duration = 320;
+
+    const step = (now: number) => {
+      const t = Math.min((now - startTime) / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      setState({
+        panX: start.panX + (targetPanX - start.panX) * ease,
+        panY: start.panY + (targetPanY - start.panY) * ease,
+        zoom: start.zoom + (targetZoom - start.zoom) * ease,
+      });
+      if (t < 1) {
+        animFrameRef.current = requestAnimationFrame(step);
+      } else {
+        animFrameRef.current = null;
+      }
+    };
+    animFrameRef.current = requestAnimationFrame(step);
   }, []);
 
   const handlers = useMemo(() => ({

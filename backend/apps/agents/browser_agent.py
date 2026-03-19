@@ -542,6 +542,8 @@ async def _create_browser_card(dashboard_id: str, url: str) -> str:
         activeTabId=tab_id,
         x=40,
         y=100,
+        width=1280,
+        height=800,
     )
     dashboard.layout.browser_cards[browser_id] = card
     dashboard.updated_at = datetime.now()

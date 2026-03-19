@@ -74,6 +74,7 @@ interface Props {
   embedded?: boolean;
   autoFocus?: boolean;
   sessionId?: string;
+  queueLength?: number;
 }
 
 export interface ChatInputHandle {
@@ -131,7 +132,7 @@ const ContextRing: React.FC<{ used: number; limit: number; accentColor: string; 
   );
 };
 
-const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId }, ref) => {
+const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0 }, ref) => {
   const c = useClaudeTokens();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -891,7 +892,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
               userSelect: 'none',
             }}
           >
-            {disabled ? 'Agent is working...' : autoRunMode ? 'Describe what data to generate…' : `${modeConf.label}, @ for context, / for commands`}
+            {disabled ? 'Agent is working...' : autoRunMode ? 'Describe what data to generate…' : isRunning ? (queueLength > 0 ? `${queueLength} queued — type another or wait…` : 'Agent is working — messages will queue…') : `${modeConf.label}, @ for context, / for commands`}
           </div>
         )}
       </Box>
@@ -1096,61 +1097,66 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
             <AttachFileIcon sx={{ fontSize: 18 }} />
           </IconButton>
         </Tooltip>
-        {!autoRunMode && (isRunning ? (
-          <Tooltip title="Stop agent">
-            <IconButton
-              size="small"
-              onClick={onStop}
-              sx={{
-                bgcolor: c.status.error,
-                color: c.text.inverse,
-                p: 0.5,
-                width: 26,
-                height: 26,
-                '&:hover': { bgcolor: c.status.error, opacity: 0.85 },
-                transition: c.transition,
-              }}
-            >
-              <StopIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </Tooltip>
-        ) : hasContent ? (
-          <Tooltip title="Send message">
-            <IconButton
-              size="small"
-              onClick={handleSend}
-              disabled={disabled}
-              sx={{
-                bgcolor: c.accent.primary,
-                color: c.text.inverse,
-                p: 0.5,
-                width: 26,
-                height: 26,
-                '&:hover': { bgcolor: c.accent.hover },
-                '&.Mui-disabled': { bgcolor: c.bg.secondary, color: c.text.ghost },
-                transition: c.transition,
-              }}
-            >
-              <ArrowUpwardIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </Tooltip>
-        ) : (
-          <Tooltip title="Voice input (coming soon)">
-            <span>
-              <IconButton
-                size="small"
-                disabled
-                sx={{
-                  color: c.text.tertiary,
-                  p: 0.5,
-                  '&.Mui-disabled': { color: c.text.ghost },
-                }}
-              >
-                <MicNoneOutlinedIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
-        ))}
+        {!autoRunMode && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {hasContent && (
+              <Tooltip title={isRunning ? 'Queue message' : 'Send message'}>
+                <IconButton
+                  size="small"
+                  onClick={handleSend}
+                  disabled={disabled}
+                  sx={{
+                    bgcolor: c.accent.primary,
+                    color: c.text.inverse,
+                    p: 0.5,
+                    width: 26,
+                    height: 26,
+                    '&:hover': { bgcolor: c.accent.hover },
+                    '&.Mui-disabled': { bgcolor: c.bg.secondary, color: c.text.ghost },
+                    transition: c.transition,
+                  }}
+                >
+                  <ArrowUpwardIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {isRunning ? (
+              <Tooltip title="Stop agent">
+                <IconButton
+                  size="small"
+                  onClick={onStop}
+                  sx={{
+                    bgcolor: c.status.error,
+                    color: c.text.inverse,
+                    p: 0.5,
+                    width: 26,
+                    height: 26,
+                    '&:hover': { bgcolor: c.status.error, opacity: 0.85 },
+                    transition: c.transition,
+                  }}
+                >
+                  <StopIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            ) : !hasContent ? (
+              <Tooltip title="Voice input (coming soon)">
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled
+                    sx={{
+                      color: c.text.tertiary,
+                      p: 0.5,
+                      '&.Mui-disabled': { color: c.text.ghost },
+                    }}
+                  >
+                    <MicNoneOutlinedIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            ) : null}
+          </Box>
+        )}
       </Box>
 
       {selectedTemplate && (

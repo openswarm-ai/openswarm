@@ -24,6 +24,7 @@ import {
   setCardSize,
   fadeGlowingAgentCard,
   clearGlowingAgentCard,
+  removeCard,
 } from '@/shared/state/dashboardLayoutSlice';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { QuestionForm } from '@/app/pages/AgentChat/ApprovalBar';
@@ -172,6 +173,7 @@ interface Props {
   cardHeight: number;
   zoom?: number;
   spawnFrom?: { x: number; y: number; type?: 'branch' };
+  exitTarget?: { x: number; y: number };
   isSelected?: boolean;
   isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
@@ -180,6 +182,9 @@ interface Props {
   onDragMove?: (dx: number, dy: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
   onBranch?: (sourceSessionId: string, newSessionId: string) => void;
+  onMeasuredHeight?: (sessionId: string, height: number) => void;
+  snapColumn?: { x: number; width: number };
+  autoFocusInput?: boolean;
 }
 
 const MIN_W = 480;
@@ -188,16 +193,32 @@ const EXPANDED_OVERLAY_H = 620;
 
 const SPAWN_SPRING = { type: 'spring' as const, stiffness: 400, damping: 28, mass: 0.6 };
 const BRANCH_SPRING = { type: 'spring' as const, stiffness: 300, damping: 26, mass: 0.8 };
+const EXIT_SPRING = { type: 'spring' as const, stiffness: 350, damping: 30, mass: 0.7 };
 const GLOW_FADE_MS = 2500;
 
+const SNAP_THRESHOLD = 60;
+
 const AgentCard: React.FC<Props> = ({
-  session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, spawnFrom,
+  session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, spawnFrom, exitTarget,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
-  onBranch,
+  onBranch, onMeasuredHeight, snapColumn, autoFocusInput,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
+
+  const cardBoxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = cardBoxRef.current;
+    if (!el || !onMeasuredHeight) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        onMeasuredHeight(session.id, entry.contentRect.height);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [session.id, onMeasuredHeight]);
 
   // ---- Glow state (for branched cards) ----
   const glowEntry = useAppSelector((s) => s.dashboardLayout.glowingAgentCards[session.id]);
@@ -271,11 +292,15 @@ const AgentCard: React.FC<Props> = ({
     const dx = (e.clientX - dragState.current.startX) / zoom;
     const dy = (e.clientY - dragState.current.startY) / zoom;
     if (didDrag.current) {
-      dispatch(setCardPosition({
-        sessionId: session.id,
-        x: dragState.current.origX + dx,
-        y: dragState.current.origY + dy,
-      }));
+      let finalX = dragState.current.origX + dx;
+      const finalY = dragState.current.origY + dy;
+
+      if (snapColumn && Math.abs(finalX - snapColumn.x) < SNAP_THRESHOLD) {
+        finalX = snapColumn.x;
+        dispatch(setCardSize({ sessionId: session.id, width: snapColumn.width, height: cardHeight }));
+      }
+
+      dispatch(setCardPosition({ sessionId: session.id, x: finalX, y: finalY }));
       justDraggedRef.current = true;
       requestAnimationFrame(() => { justDraggedRef.current = false; });
     }
@@ -285,7 +310,7 @@ const AgentCard: React.FC<Props> = ({
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [zoom, dispatch, session.id, onDragEnd]);
+  }, [zoom, dispatch, session.id, onDragEnd, snapColumn, cardHeight]);
 
   // ---- Unified edge / corner resize ----
   const resizeRef = useRef<{
@@ -368,7 +393,15 @@ const AgentCard: React.FC<Props> = ({
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    dispatch(closeSession({ sessionId: session.id }));
+    dispatch(collapseSession(session.id));
+    dispatch(removeCard(session.id));
+    if (glowEntry) {
+      setTimeout(() => {
+        dispatch(clearGlowingAgentCard(session.id));
+      }, 500);
+    } else {
+      dispatch(closeSession({ sessionId: session.id }));
+    }
   };
 
   const handleCollapse = (e: React.MouseEvent) => {
@@ -419,10 +452,22 @@ const AgentCard: React.FC<Props> = ({
       ? { left: BRANCH_SPRING, top: BRANCH_SPRING, scale: BRANCH_SPRING, opacity: { duration: 0.25 } }
       : { left: SPAWN_SPRING, top: SPAWN_SPRING, scale: SPAWN_SPRING, opacity: { duration: 0.12 } };
 
+  const exitAnimation = exitTarget
+    ? {
+        opacity: 0,
+        scale: 0.3,
+        left: exitTarget.x,
+        top: exitTarget.y,
+        transition: { left: EXIT_SPRING, top: EXIT_SPRING, scale: EXIT_SPRING, opacity: { duration: 0.2 } },
+      }
+    : { opacity: 0, scale: 0.85, transition: { duration: 0.2 } };
+
   return (
     <motion.div
+      layout={false}
       initial={spawnInitial}
       animate={{ opacity: 1, scale: 1, left: activeX, top: activeY }}
+      exit={exitAnimation}
       transition={spawnTransition}
       style={{
         position: 'absolute',
@@ -430,11 +475,11 @@ const AgentCard: React.FC<Props> = ({
       }}
     >
     <Box
+      ref={cardBoxRef}
       data-select-type="agent-card"
       data-select-id={session.id}
       data-select-meta={JSON.stringify({ name: session.name || session.id, status: session.status, model: session.model, mode: session.mode })}
-      onPointerDownCapture={dismissGlow}
-      onWheelCapture={dismissGlow}
+      
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
         if (!isSelected && !e.shiftKey) {
@@ -783,6 +828,9 @@ const AgentCard: React.FC<Props> = ({
             sessionId={session.id}
             onClose={() => dispatch(collapseSession(session.id))}
             embedded
+            autoFocus={autoFocusInput}
+            isGlowing={isGlowingRedux && !glowFading}
+            onDismissGlow={dismissGlow}
             onBranch={onBranch ? (newId: string) => onBranch(session.id, newId) : undefined}
           />
         </Box>

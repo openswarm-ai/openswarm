@@ -310,10 +310,14 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           e.preventDefault();
           handleOpenHistory();
         }
+        if (e.metaKey && e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+          e.preventDefault();
+          onAddBrowser();
+        }
       };
       window.addEventListener('keydown', handleKey);
       return () => window.removeEventListener('keydown', handleKey);
-    }, [handleOpenViewPicker, handleOpenHistory]);
+    }, [handleOpenViewPicker, handleOpenHistory, onAddBrowser]);
 
     useEffect(() => {
       if (!historyOpen) return;
@@ -648,6 +652,39 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               enterDelay={200}
               title={
                 <Box sx={{ textAlign: 'center' }}>
+                  <Box sx={{ fontWeight: 600 }}>Browser  ⌘N</Box>
+                </Box>
+              }
+            >
+              <Box
+                role="button"
+                aria-label="Browser"
+                tabIndex={0}
+                onClick={onAddBrowser}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: BTN,
+                  height: BTN,
+                  borderRadius: `${c.radius.md}px`,
+                  color: c.text.tertiary,
+                  cursor: 'pointer',
+                  transition: 'opacity 0.15s, background-color 0.15s',
+                  '&:hover': { opacity: 1, bgcolor: c.bg.secondary, color: c.accent.primary },
+                }}
+              >
+                <LanguageIcon sx={{ fontSize: 22 }} />
+              </Box>
+            </WarmTooltip>
+
+            <WarmTooltip
+              tokens={c}
+              placement="top"
+              arrow
+              enterDelay={200}
+              title={
+                <Box sx={{ textAlign: 'center' }}>
                   <Box sx={{ fontWeight: 600 }}>History  ⌘O</Box>
                 </Box>
               }
@@ -671,39 +708,6 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 }}
               >
                 <HistoryRoundedIcon sx={{ fontSize: 22 }} />
-              </Box>
-            </WarmTooltip>
-
-            <WarmTooltip
-              tokens={c}
-              placement="top"
-              arrow
-              enterDelay={200}
-              title={
-                <Box sx={{ textAlign: 'center' }}>
-                  <Box sx={{ fontWeight: 600 }}>Browser</Box>
-                </Box>
-              }
-            >
-              <Box
-                role="button"
-                aria-label="Browser"
-                tabIndex={0}
-                onClick={onAddBrowser}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: BTN,
-                  height: BTN,
-                  borderRadius: `${c.radius.md}px`,
-                  color: c.text.tertiary,
-                  cursor: 'pointer',
-                  transition: 'opacity 0.15s, background-color 0.15s',
-                  '&:hover': { opacity: 1, bgcolor: c.bg.secondary, color: c.accent.primary },
-                }}
-              >
-                <LanguageIcon sx={{ fontSize: 22 }} />
               </Box>
             </WarmTooltip>
 
