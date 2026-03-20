@@ -569,7 +569,7 @@ const Settings: React.FC = () => {
           />
         </Box>
 
-        <Box sx={inlineRowLastSx}>
+        <Box sx={inlineRowSx}>
           <Box sx={{ mr: 3 }}>
             <Typography sx={labelSx}>Default agent spawn state in dashboard</Typography>
             <Typography sx={descSx}>When enabled, new agents spawn expanded instead of collapsed.</Typography>
@@ -577,6 +577,21 @@ const Settings: React.FC = () => {
           <Switch
             checked={form.expand_new_chats_in_dashboard}
             onChange={(e) => setForm({ ...form, expand_new_chats_in_dashboard: e.target.checked })}
+            sx={{
+              '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
+              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
+            }}
+          />
+        </Box>
+
+        <Box sx={inlineRowLastSx}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>Auto-reveal sub-agents on dashboard</Typography>
+            <Typography sx={descSx}>Automatically show sub-agent cards (from CreateAgent / InvokeAgent) tethered to their parent on the dashboard.</Typography>
+          </Box>
+          <Switch
+            checked={form.auto_reveal_sub_agents}
+            onChange={(e) => setForm({ ...form, auto_reveal_sub_agents: e.target.checked })}
             sx={{
               '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
               '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
