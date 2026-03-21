@@ -2,10 +2,15 @@ import React, { useMemo, useCallback, useState, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
+import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
+import Collapse from '@mui/material/Collapse';
 import SearchIcon from '@mui/icons-material/Search';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import CloseIcon from '@mui/icons-material/Close';
+import CheckIcon from '@mui/icons-material/Check';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -13,6 +18,7 @@ import {
   handleApproval,
   stopAgent,
   dismissAgentNotification,
+  dismissAllFinishedNotifications,
   ApprovalRequest,
   AgentSession,
   HistorySession,
@@ -25,7 +31,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 // Types
 // ---------------------------------------------------------------------------
 
-type IslandState = 'idle' | 'compact' | 'expanded';
+type IslandState = 'idle' | 'compact' | 'compact-actionable' | 'expanded';
 
 interface SessionApprovalGroup {
   sessionId: string;
@@ -257,14 +263,26 @@ const DynamicIsland: React.FC = () => {
   const hasApprovals = totalApprovals > 0;
   const hasAgents = trackedAgents.length > 0;
 
+  const hasOnlyQuestionApprovals = useMemo(() => {
+    if (!hasApprovals) return false;
+    const allApprovals = groups.flatMap((g) => g.approvals);
+    return allApprovals.every((a) => a.tool_name === 'AskUserQuestion');
+  }, [hasApprovals, groups]);
+
+  const nonQuestionApprovalCount = useMemo(
+    () => groups.reduce((sum, g) => sum + g.approvals.filter((a) => a.tool_name !== 'AskUserQuestion').length, 0),
+    [groups],
+  );
+
   // ---- Island state machine ----
 
   const islandState: IslandState = useMemo(() => {
-    if (hasApprovals) return 'expanded';
-    if (userExpanded && hasAgents) return 'expanded';
+    if (userExpanded && (hasAgents || hasApprovals)) return 'expanded';
+    if (hasApprovals && hasOnlyQuestionApprovals) return 'expanded';
+    if (hasApprovals) return 'compact-actionable';
     if (hasAgents) return 'compact';
     return 'idle';
-  }, [hasApprovals, userExpanded, hasAgents]);
+  }, [hasApprovals, hasOnlyQuestionApprovals, userExpanded, hasAgents]);
 
   useEffect(() => {
     if (!hasAgents && !hasApprovals) {
@@ -278,12 +296,12 @@ const DynamicIsland: React.FC = () => {
     if (islandState !== 'expanded') return;
     const handler = (e: MouseEvent) => {
       if (islandRef.current && !islandRef.current.contains(e.target as Node)) {
-        if (!hasApprovals) setUserExpanded(false);
+        setUserExpanded(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [islandState, hasApprovals]);
+  }, [islandState]);
 
   // ---- Callbacks ----
 
@@ -319,13 +337,37 @@ const DynamicIsland: React.FC = () => {
     [navigate, dispatch],
   );
 
+  const onApproveAllNonQuestion = useCallback(() => {
+    for (const g of groups) {
+      for (const req of g.approvals) {
+        if (req.tool_name !== 'AskUserQuestion') {
+          dispatch(handleApproval({ requestId: req.id, behavior: 'allow' }));
+        }
+      }
+    }
+  }, [dispatch, groups]);
+
+  const onDenyAllNonQuestion = useCallback(() => {
+    for (const g of groups) {
+      for (const req of g.approvals) {
+        if (req.tool_name !== 'AskUserQuestion') {
+          dispatch(handleApproval({ requestId: req.id, behavior: 'deny' }));
+        }
+      }
+    }
+  }, [dispatch, groups]);
+
+  const onClearAllFinished = useCallback(() => {
+    dispatch(dismissAllFinishedNotifications());
+  }, [dispatch]);
+
   const handleIslandClick = useCallback(() => {
-    if (islandState === 'compact') {
+    if (islandState === 'compact' || islandState === 'compact-actionable') {
       setUserExpanded(true);
-    } else if (islandState === 'expanded' && !hasApprovals) {
+    } else if (islandState === 'expanded') {
       setUserExpanded(false);
     }
-  }, [islandState, hasApprovals]);
+  }, [islandState]);
 
   // ---- Styling — uses the same neutral palette as the rest of the UI ----
 
@@ -333,7 +375,9 @@ const DynamicIsland: React.FC = () => {
     ? 200
     : islandState === 'compact'
       ? 210
-      : 400;
+      : islandState === 'compact-actionable'
+        ? 310
+        : 400;
 
   const islandBorderRadius = islandState === 'expanded' ? 14 : 50;
 
@@ -375,7 +419,7 @@ const DynamicIsland: React.FC = () => {
         // @ts-expect-error -- vendor prefix
         WebkitAppRegion: 'no-drag',
       }}
-      onClick={islandState !== 'expanded' ? handleIslandClick : undefined}
+      onClick={islandState !== 'expanded' && islandState !== 'compact-actionable' ? handleIslandClick : undefined}
     >
       <motion.div
         layout
@@ -401,6 +445,16 @@ const DynamicIsland: React.FC = () => {
               hasApprovals={hasApprovals}
             />
           )}
+          {islandState === 'compact-actionable' && (
+            <CompactActionablePill
+              key="compact-actionable"
+              c={c}
+              approvalCount={nonQuestionApprovalCount}
+              onApproveAll={onApproveAllNonQuestion}
+              onDenyAll={onDenyAllNonQuestion}
+              onExpand={() => setUserExpanded(true)}
+            />
+          )}
           {islandState === 'expanded' && (
             <ExpandedCard
               key="expanded"
@@ -416,6 +470,7 @@ const DynamicIsland: React.FC = () => {
               onStopAgent={onStopAgent}
               onDismissAgent={onDismissAgent}
               onNavigateToDashboard={onNavigateToDashboard}
+              onClearAllFinished={onClearAllFinished}
               onCollapse={() => setUserExpanded(false)}
             />
           )}
@@ -522,6 +577,112 @@ const CompactPill: React.FC<{
 );
 
 // ---------------------------------------------------------------------------
+// Compact-actionable pill — inline approve/deny without expanding
+// ---------------------------------------------------------------------------
+
+const CompactActionablePill: React.FC<{
+  c: ReturnType<typeof useClaudeTokens>;
+  approvalCount: number;
+  onApproveAll: () => void;
+  onDenyAll: () => void;
+  onExpand: () => void;
+}> = ({ c, approvalCount, onApproveAll, onDenyAll, onExpand }) => (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.92 }}
+    animate={{ opacity: 1, scale: 1 }}
+    exit={{ opacity: 0, scale: 0.92 }}
+    transition={SPRING_BOUNCE}
+  >
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.75,
+        px: 1.5,
+        height: 32,
+        userSelect: 'none',
+      }}
+    >
+      <Box
+        sx={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          bgcolor: c.status.warning,
+          flexShrink: 0,
+          animation: 'islandPulse 2s ease-in-out infinite',
+          '@keyframes islandPulse': {
+            '0%, 100%': { opacity: 0.8, transform: 'scale(1)' },
+            '50%': { opacity: 0.4, transform: 'scale(1.3)' },
+          },
+        }}
+      />
+      <Typography
+        sx={{
+          fontSize: '0.68rem',
+          fontWeight: 600,
+          color: c.text.tertiary,
+          flex: 1,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {approvalCount} {approvalCount === 1 ? 'approval' : 'approvals'}
+      </Typography>
+      <Button
+        size="small"
+        startIcon={<CheckIcon sx={{ fontSize: '0.75rem !important' }} />}
+        onClick={(e) => { e.stopPropagation(); onApproveAll(); }}
+        sx={{
+          minWidth: 0,
+          minHeight: 22,
+          px: 1,
+          py: 0,
+          fontSize: '0.62rem',
+          fontWeight: 700,
+          textTransform: 'none',
+          borderRadius: 50,
+          color: '#fff',
+          bgcolor: c.status.success,
+          '&:hover': { bgcolor: c.status.success, filter: 'brightness(0.85)' },
+          '& .MuiButton-startIcon': { mr: 0.25 },
+        }}
+      >
+        Approve
+      </Button>
+      <Button
+        size="small"
+        variant="outlined"
+        onClick={(e) => { e.stopPropagation(); onDenyAll(); }}
+        sx={{
+          minWidth: 0,
+          minHeight: 22,
+          px: 1,
+          py: 0,
+          fontSize: '0.62rem',
+          fontWeight: 700,
+          textTransform: 'none',
+          borderRadius: 50,
+          color: c.status.error,
+          borderColor: c.status.error,
+          '&:hover': { borderColor: c.status.error, bgcolor: `${c.status.error}0a` },
+        }}
+      >
+        Deny
+      </Button>
+      <Tooltip title="Show details" arrow>
+        <IconButton
+          size="small"
+          onClick={(e) => { e.stopPropagation(); onExpand(); }}
+          sx={{ p: 0.25, color: c.text.ghost, '&:hover': { color: c.text.tertiary } }}
+        >
+          <ExpandMoreIcon sx={{ fontSize: 15 }} />
+        </IconButton>
+      </Tooltip>
+    </Box>
+  </motion.div>
+);
+
+// ---------------------------------------------------------------------------
 // Expanded card
 // ---------------------------------------------------------------------------
 
@@ -538,12 +699,14 @@ const ExpandedCard: React.FC<{
   onStopAgent: (id: string) => void;
   onDismissAgent: (id: string) => void;
   onNavigateToDashboard: (dashboardId: string, agentId: string) => void;
+  onClearAllFinished: () => void;
   onCollapse: () => void;
 }> = ({
   c, groups, totalApprovals,
   activeAgents, finishedAgents, hasApprovals, hasAgents,
-  onApprove, onDeny, onStopAgent, onDismissAgent, onNavigateToDashboard, onCollapse,
+  onApprove, onDeny, onStopAgent, onDismissAgent, onNavigateToDashboard, onClearAllFinished, onCollapse,
 }) => {
+  const [completedExpanded, setCompletedExpanded] = useState(false);
   const headerTitle = hasApprovals && !hasAgents
     ? 'Approval Required'
     : hasAgents && !hasApprovals
@@ -612,7 +775,7 @@ const ExpandedCard: React.FC<{
       <Box
         sx={{
           overflow: 'auto',
-          maxHeight: 'calc(100vh - 100px)',
+          maxHeight: 'min(420px, calc(100vh - 100px))',
           '&::-webkit-scrollbar': { width: 4 },
           '&::-webkit-scrollbar-track': { background: 'transparent' },
           '&::-webkit-scrollbar-thumb': {
@@ -711,16 +874,71 @@ const ExpandedCard: React.FC<{
                 onNavigate={onNavigateToDashboard}
               />
             ))}
-            {finishedAgents.map((agent) => (
-              <AgentStatusRow
-                key={agent.id}
-                agent={agent}
-                c={c}
-                onStop={onStopAgent}
-                onDismiss={onDismissAgent}
-                onNavigate={onNavigateToDashboard}
-              />
-            ))}
+            {finishedAgents.length > 0 && (
+              <>
+                {activeAgents.length > 0 && (
+                  <Box sx={{ mx: 2, my: 0.5, borderTop: `0.5px solid ${c.border.subtle}` }} />
+                )}
+                <Box
+                  onClick={() => setCompletedExpanded((v) => !v)}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    px: 2,
+                    py: 0.5,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    '&:hover': { bgcolor: c.border.subtle },
+                    transition: 'background-color 0.15s',
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      fontSize: '0.58rem',
+                      fontWeight: 600,
+                      color: c.text.ghost,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      flex: 1,
+                    }}
+                  >
+                    Completed ({finishedAgents.length})
+                  </Typography>
+                  <Typography
+                    component="span"
+                    onClick={(e: React.MouseEvent) => { e.stopPropagation(); onClearAllFinished(); }}
+                    sx={{
+                      fontSize: '0.58rem',
+                      fontWeight: 600,
+                      color: c.text.ghost,
+                      cursor: 'pointer',
+                      '&:hover': { color: c.text.secondary },
+                      transition: 'color 0.15s',
+                    }}
+                  >
+                    Clear all
+                  </Typography>
+                  <IconButton size="small" sx={{ p: 0, color: c.text.ghost }}>
+                    {completedExpanded
+                      ? <ExpandLessIcon sx={{ fontSize: 14 }} />
+                      : <ExpandMoreIcon sx={{ fontSize: 14 }} />}
+                  </IconButton>
+                </Box>
+                <Collapse in={completedExpanded}>
+                  {finishedAgents.map((agent) => (
+                    <AgentStatusRow
+                      key={agent.id}
+                      agent={agent}
+                      c={c}
+                      onStop={onStopAgent}
+                      onDismiss={onDismissAgent}
+                      onNavigate={onNavigateToDashboard}
+                    />
+                  ))}
+                </Collapse>
+              </>
+            )}
           </Box>
         )}
       </Box>

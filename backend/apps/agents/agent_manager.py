@@ -1490,6 +1490,9 @@ class AgentManager:
         if session.status in ("running", "waiting_approval"):
             session.status = "stopped"
         session.closed_at = datetime.now()
+
+        for req in list(session.pending_approvals):
+            ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Session closed"})
         session.pending_approvals = []
 
         if hasattr(session, '_cancel_event'):
@@ -1619,6 +1622,8 @@ class AgentManager:
         for session_id, session in list(self.sessions.items()):
             if session.status in ("running", "waiting_approval"):
                 session.status = "stopped"
+            for req in list(session.pending_approvals):
+                ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Server shutting down"})
             session.pending_approvals = []
             doc_data = session.model_dump(mode="json")
             doc_data["search_text"] = self._build_search_text(session)

@@ -318,11 +318,14 @@ export const handleApproval = createAsyncThunk(
     message?: string;
     updatedInput?: Record<string, any>;
   }) => {
-    await fetch(`${AGENTS_API}/approval`, {
+    const res = await fetch(`${AGENTS_API}/approval`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ request_id: requestId, behavior, message, updated_input: updatedInput }),
     });
+    if (!res.ok) {
+      throw new Error(`Approval request failed (${res.status})`);
+    }
     return { requestId, behavior };
   }
 );
@@ -528,8 +531,15 @@ const agentsSlice = createSlice({
         }
       }
       const existing = state.sessions[action.payload.id];
+      // Preserve local pending_approvals if the server payload has none but
+      // the frontend has some (avoids race where backend clears approvals
+      // before the frontend processes the removal).
+      const mergedApprovals = existing?.pending_approvals?.length && !action.payload.pending_approvals?.length
+        ? existing.pending_approvals
+        : action.payload.pending_approvals ?? [];
       state.sessions[action.payload.id] = {
         ...action.payload,
+        pending_approvals: mergedApprovals,
         streamingMessage: existing?.streamingMessage ?? action.payload.streamingMessage ?? null,
         tool_group_meta: { ...existing?.tool_group_meta, ...action.payload.tool_group_meta },
       };
@@ -717,6 +727,17 @@ const agentsSlice = createSlice({
         (id) => id !== action.payload,
       );
     },
+
+    dismissAllFinishedNotifications(state) {
+      const finishedStatuses = new Set(['completed', 'error', 'stopped']);
+      state.trackedNotificationIds = state.trackedNotificationIds.filter((id) => {
+        const session = state.sessions[id];
+        if (session) return !finishedStatuses.has(session.status);
+        const hist = state.history[id];
+        if (hist) return !finishedStatuses.has(hist.status);
+        return true;
+      });
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -725,22 +746,32 @@ const agentsSlice = createSlice({
       })
       .addCase(fetchSessions.fulfilled, (state, action) => {
         state.loading = false;
-        const sessions: Record<string, AgentSession> = {};
-        const trackedSet = new Set(state.trackedNotificationIds);
+        const fetchedIds = new Set(action.payload.map((s) => s.id));
+        const activeStatuses = new Set(['running', 'waiting_approval']);
+
+        // Remove stale sessions that belong to this dashboard fetch but
+        // are no longer returned by the server — keep sessions from other
+        // dashboards, drafts, tracked notifications, and active sessions.
         for (const [id, existing] of Object.entries(state.sessions)) {
-          if (existing.status === 'draft' || trackedSet.has(id)) sessions[id] = existing;
+          if (fetchedIds.has(id)) continue;
+          if (existing.status === 'draft') continue;
+          if (state.trackedNotificationIds.includes(id)) continue;
+          if (activeStatuses.has(existing.status)) continue;
+          delete state.sessions[id];
         }
+
+        // Merge fetched sessions, preserving local-only fields
         for (const s of action.payload) {
           const existing = state.sessions[s.id];
-          sessions[s.id] = {
+          state.sessions[s.id] = {
             ...s,
+            pending_approvals: existing?.pending_approvals?.length
+              ? existing.pending_approvals
+              : s.pending_approvals ?? [],
             streamingMessage: existing?.streamingMessage ?? s.streamingMessage ?? null,
-            tool_group_meta: s.tool_group_meta ?? {},
+            tool_group_meta: { ...existing?.tool_group_meta, ...s.tool_group_meta },
           };
-        }
-        state.sessions = sessions;
-        for (const s of action.payload) {
-          if ((s.status === 'running' || s.status === 'waiting_approval') && !state.trackedNotificationIds.includes(s.id)) {
+          if (activeStatuses.has(s.status) && !state.trackedNotificationIds.includes(s.id)) {
             state.trackedNotificationIds.push(s.id);
           }
         }
@@ -821,6 +852,11 @@ const agentsSlice = createSlice({
             (r) => r.id !== action.payload.requestId
           );
         }
+      })
+      .addCase(handleApproval.rejected, (_state, action) => {
+        // Approval stays in state so the user can retry.
+        // The request was never delivered to the backend.
+        console.error('Approval request failed:', action.error.message);
       })
       .addCase(switchBranch.fulfilled, (state, action) => {
         const session = state.sessions[action.payload.sessionId];
@@ -975,6 +1011,7 @@ export const {
   clearHistorySearch,
   trackAgentNotification,
   dismissAgentNotification,
+  dismissAllFinishedNotifications,
 } = agentsSlice.actions;
 
 export default agentsSlice.reducer;
