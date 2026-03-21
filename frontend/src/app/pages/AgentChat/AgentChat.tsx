@@ -42,7 +42,7 @@ import ApprovalBar, { BatchApprovalBar } from './ApprovalBar';
 import ChatInput, { ChatInputHandle } from './ChatInput';
 import { ContextPath } from '@/app/components/DirectoryBrowser';
 import DiffViewer from './DiffViewer';
-import { setGlowingBrowserCards, clearGlowingBrowserCards } from '@/shared/state/dashboardLayoutSlice';
+import { setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards } from '@/shared/state/dashboardLayoutSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 const CONTEXT_WINDOWS: Record<string, number> = {
@@ -204,13 +204,13 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
           const realId = action.payload.session.id;
           dispatch(generateTitle({ sessionId: realId, prompt: msg.prompt }));
           if (msg.selectedBrowserIds?.length) {
-            dispatch(setGlowingBrowserCards({ browserIds: msg.selectedBrowserIds, sessionId: realId }));
+            dispatch(setGlowingBrowserCards({ browserIds: msg.selectedBrowserIds, sessionId: realId, label: 'Use Browser' }));
           }
         }
       });
     } else {
       if (msg.selectedBrowserIds?.length) {
-        dispatch(setGlowingBrowserCards({ browserIds: msg.selectedBrowserIds, sessionId: id }));
+        dispatch(setGlowingBrowserCards({ browserIds: msg.selectedBrowserIds, sessionId: id, label: 'Use Browser' }));
       }
       dispatch(sendMessageThunk({ sessionId: id, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds }))
         .then((action) => {
@@ -234,7 +234,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     const isTerminal = curr === 'completed' || curr === 'stopped' || curr === 'error';
 
     if (wasActive && isTerminal) {
-      if (id) dispatch(clearGlowingBrowserCards(id));
+      if (id) {
+        dispatch(fadeGlowingBrowserCards(id));
+        setTimeout(() => dispatch(clearGlowingBrowserCards(id)), 2800);
+      }
 
       const nextQueued = messageQueueRef.current.shift();
       if (nextQueued) {

@@ -16,7 +16,7 @@ import {
   closeSessionFromWs,
   trackAgentNotification,
 } from '../state/agentsSlice';
-import { addBrowserCardFromBackend, setBrowserCardPosition, GRID_GAP } from '../state/dashboardLayoutSlice';
+import { addBrowserCardFromBackend, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
 
 type WSEvent = {
   event: string;
@@ -248,6 +248,11 @@ class WebSocketManager {
                 browserId: data.browser_card.browser_id,
                 x: parentCard.x + parentCard.width + GRID_GAP * 12,
                 y: parentCard.y,
+              }));
+              store.dispatch(setGlowingBrowserCards({
+                browserIds: [data.browser_card.browser_id],
+                sessionId: parentId,
+                label: 'Use Browser',
               }));
             }
           }

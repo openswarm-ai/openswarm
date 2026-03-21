@@ -57,7 +57,7 @@ export interface DashboardLayoutState {
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
   closedCardPositions: Record<string, CardPosition>;
-  glowingBrowserCards: Record<string, string>;
+  glowingBrowserCards: Record<string, { sourceId: string; fading: boolean; label?: string }>;
   glowingAgentCards: Record<string, { sourceId: string; fading: boolean; sourceYRatio?: number; label?: string }>;
   persistedExpandedSessionIds: string[];
   nextZOrder: number;
@@ -632,18 +632,25 @@ const dashboardLayoutSlice = createSlice({
 
     setGlowingBrowserCards(
       state,
-      action: PayloadAction<{ browserIds: string[]; sessionId: string }>
+      action: PayloadAction<{ browserIds: string[]; sessionId: string; label?: string }>
     ) {
-      const { browserIds, sessionId } = action.payload;
+      const { browserIds, sessionId, label } = action.payload;
       for (const id of browserIds) {
-        state.glowingBrowserCards[id] = sessionId;
+        state.glowingBrowserCards[id] = { sourceId: sessionId, fading: false, label };
+      }
+    },
+
+    fadeGlowingBrowserCards(state, action: PayloadAction<string>) {
+      const sessionId = action.payload;
+      for (const entry of Object.values(state.glowingBrowserCards)) {
+        if (entry.sourceId === sessionId) entry.fading = true;
       }
     },
 
     clearGlowingBrowserCards(state, action: PayloadAction<string>) {
       const sessionId = action.payload;
-      for (const [browserId, sid] of Object.entries(state.glowingBrowserCards)) {
-        if (sid === sessionId) delete state.glowingBrowserCards[browserId];
+      for (const [browserId, entry] of Object.entries(state.glowingBrowserCards)) {
+        if (entry.sourceId === sessionId) delete state.glowingBrowserCards[browserId];
       }
     },
 
@@ -751,6 +758,7 @@ export const {
   reorderBrowserTab,
   moveCards,
   setGlowingBrowserCards,
+  fadeGlowingBrowserCards,
   clearGlowingBrowserCards,
   clearAllGlowingBrowserCards,
   setGlowingAgentCard,

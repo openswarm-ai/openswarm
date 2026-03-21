@@ -34,6 +34,7 @@ import {
   removeBrowserCard,
   pasteBrowserCard,
   placeCard,
+  setCardPosition,
   removeCard,
   bringToFront,
   setGlowingAgentCard,
@@ -103,6 +104,7 @@ const DashboardInner: React.FC = () => {
   const autoRevealSubAgents = useAppSelector((state) => state.settings.data.auto_reveal_sub_agents);
   const outputs = useAppSelector((state) => state.outputs.items);
   const glowingAgentCards = useAppSelector((state) => state.dashboardLayout.glowingAgentCards);
+  const glowingBrowserCards = useAppSelector((state) => state.dashboardLayout.glowingBrowserCards);
   const sessionList = Object.values(sessions);
 
   const canvas = useCanvasControls(zoomSensitivity);
@@ -752,7 +754,18 @@ const DashboardInner: React.FC = () => {
           const realId = action.payload.session.id;
           dispatch(generateTitle({ sessionId: realId, prompt }));
           if (selectedBrowserIds?.length) {
-            dispatch(setGlowingBrowserCards({ browserIds: selectedBrowserIds, sessionId: realId }));
+            dispatch(setGlowingBrowserCards({ browserIds: selectedBrowserIds, sessionId: realId, label: 'Use Browser' }));
+
+            if (selectedBrowserIds.length === 1) {
+              const bc = store.getState().dashboardLayout.browserCards[selectedBrowserIds[0]];
+              if (bc) {
+                dispatch(setCardPosition({
+                  sessionId: realId,
+                  x: bc.x - DEFAULT_CARD_W - GRID_GAP * 12,
+                  y: bc.y,
+                }));
+              }
+            }
           }
           spawnOriginsRef.current[realId] = spawnOriginsRef.current[draftId];
           delete spawnOriginsRef.current[draftId];
@@ -919,7 +932,7 @@ const DashboardInner: React.FC = () => {
       ].join(' ');
     }
 
-    return Object.entries(glowingAgentCards).map(([copyId, { sourceId, fading, sourceYRatio, label }]) => {
+    const agentTethers = Object.entries(glowingAgentCards).map(([copyId, { sourceId, fading, sourceYRatio, label }]) => {
       const src = cards[sourceId];
       const dst = cards[copyId];
       if (!src || !dst) return null;
@@ -957,8 +970,46 @@ const DashboardInner: React.FC = () => {
         fading,
       };
     }).filter(Boolean) as Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }>;
+
+    const browserTethers = Object.entries(glowingBrowserCards).map(([browserId, { sourceId, fading, label }]) => {
+      const src = cards[sourceId];
+      const dst = browserCards[browserId];
+      if (!src || !dst) return null;
+
+      let srcX = src.x, srcY = src.y;
+      let dstX = dst.x, dstY = dst.y;
+      if (liveDragInfo) {
+        if (liveDragInfo.cardId === sourceId) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
+        if (liveDragInfo.cardId === browserId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
+      }
+
+      const srcMeasured = measuredHeightsRef.current[sourceId];
+      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
+        ? Math.max(EXPANDED_CARD_MIN_H, src.height)
+        : src.height);
+      const dstH = dst.height;
+
+      const x1 = srcX + src.width;
+      const y1 = srcY + srcH * 0.54;
+      const x2 = dstX;
+      const y2 = dstY + dstH * 0.54;
+      const midX = x1 + (x2 - x1) / 2;
+      const labelX = midX + (x2 - midX) * 0.15;
+      const labelY = y2;
+
+      return {
+        key: `browser-${browserId}`,
+        path: elbowPath(x1, y1, x2, y2),
+        labelX,
+        labelY,
+        label: label || '',
+        fading,
+      };
+    }).filter(Boolean) as Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }>;
+
+    return [...agentTethers, ...browserTethers];
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, cards, expandedSessionIds, liveDragInfo, measuredHeightsTick]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, expandedSessionIds, liveDragInfo, measuredHeightsTick]);
 
   const dotSize = Math.max(1, 1.5 * canvas.zoom);
   const dotSpacing = 24 * canvas.zoom;
