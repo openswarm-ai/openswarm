@@ -1237,10 +1237,8 @@ const DashboardInner: React.FC = () => {
                       transition: `opacity ${TETHER_FADE_MS}ms ease-out`,
                     }}
                   >
-                    <motion.path
-                      initial={false}
-                      animate={{ d: t.path }}
-                      transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
+                    <path
+                      d={t.path}
                       fill="none"
                       stroke={c.accent.primary}
                       strokeWidth={8}
@@ -1249,10 +1247,8 @@ const DashboardInner: React.FC = () => {
                       opacity={0.2}
                       filter="url(#tether-glow-f)"
                     />
-                    <motion.path
-                      initial={false}
-                      animate={{ d: t.path }}
-                      transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
+                    <path
+                      d={t.path}
                       fill="none"
                       stroke={c.accent.primary}
                       strokeWidth={2}
@@ -1262,10 +1258,8 @@ const DashboardInner: React.FC = () => {
                       markerEnd="url(#tether-arrow)"
                       style={{ animation: 'tether-pulse 2s ease-in-out infinite' }}
                     />
-                    <motion.path
-                      initial={false}
-                      animate={{ d: t.path }}
-                      transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
+                    <path
+                      d={t.path}
                       fill="none"
                       stroke={c.accent.primary}
                       strokeWidth={1.5}
@@ -1276,11 +1270,7 @@ const DashboardInner: React.FC = () => {
                       style={{ animation: 'tether-flow 0.6s linear infinite' }}
                     />
                     {t.label && (
-                      <motion.g
-                        initial={false}
-                        animate={{ x: t.labelX, y: t.labelY }}
-                        transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
-                      >
+                      <g transform={`translate(${t.labelX},${t.labelY})`}>
                         <rect
                           x={-4}
                           y={-14}
@@ -1303,7 +1293,7 @@ const DashboardInner: React.FC = () => {
                         >
                           {t.label}
                         </text>
-                      </motion.g>
+                      </g>
                     )}
                   </g>
                 ))}
