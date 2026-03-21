@@ -244,10 +244,19 @@ class WebSocketManager {
             const layoutState = store.getState().dashboardLayout;
             const parentCard = layoutState.cards[parentId];
             if (parentCard) {
+              const targetX = parentCard.x + parentCard.width + GRID_GAP * 12;
+              let targetY = parentCard.y;
+              const columnCards = Object.values(layoutState.browserCards).filter(
+                (c) => Math.abs(c.x - targetX) < 50 && c.browser_id !== data.browser_card.browser_id,
+              );
+              if (columnCards.length > 0) {
+                const lowestBottom = Math.max(...columnCards.map((c) => c.y + c.height));
+                targetY = lowestBottom + GRID_GAP;
+              }
               store.dispatch(setBrowserCardPosition({
                 browserId: data.browser_card.browser_id,
-                x: parentCard.x + parentCard.width + GRID_GAP * 12,
-                y: parentCard.y,
+                x: targetX,
+                y: targetY,
               }));
               store.dispatch(setGlowingBrowserCards({
                 browserIds: [data.browser_card.browser_id],

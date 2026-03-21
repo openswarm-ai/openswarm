@@ -907,6 +907,38 @@ const DashboardInner: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedSessionIds, glowingAgentCards, cards, dispatch, measuredHeightsTick]);
 
+  useEffect(() => {
+    const DRIFT_THRESHOLD = 60;
+
+    const sourceToSiblings = new Map<string, string[]>();
+    for (const [browserId, glow] of Object.entries(glowingBrowserCards)) {
+      const bc = browserCards[browserId];
+      if (!bc) continue;
+      const sourceCard = cards[glow.sourceId];
+      if (!sourceCard) continue;
+      const expectedX = sourceCard.x + sourceCard.width + GRID_GAP * 12;
+      if (Math.abs(bc.x - expectedX) > DRIFT_THRESHOLD) continue;
+      const list = sourceToSiblings.get(glow.sourceId) ?? [];
+      list.push(browserId);
+      sourceToSiblings.set(glow.sourceId, list);
+    }
+
+    for (const siblings of sourceToSiblings.values()) {
+      if (siblings.length < 2) continue;
+      siblings.sort((a, b) => browserCards[a].y - browserCards[b].y);
+
+      let cursor = browserCards[siblings[0]].y;
+      for (const id of siblings) {
+        const bc = browserCards[id];
+        const dy = cursor - bc.y;
+        if (Math.abs(dy) > 1) {
+          dispatch(moveCards({ items: [{ id, type: 'browser' as const }], dx: 0, dy }));
+        }
+        cursor += bc.height + GRID_GAP * 2;
+      }
+    }
+  }, [glowingBrowserCards, browserCards, cards, dispatch]);
+
   const TETHER_FADE_MS = 2500;
 
   const tethers = useMemo(() => {
