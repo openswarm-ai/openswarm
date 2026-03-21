@@ -52,6 +52,7 @@ async def send_message(session_id: str, body: dict):
         prompt,
         mode=body.get("mode"),
         model=body.get("model"),
+        provider=body.get("provider"),
         images=body.get("images"),
         context_paths=body.get("context_paths"),
         forced_tools=body.get("forced_tools"),
@@ -177,4 +178,13 @@ async def resume_session(session_id: str):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"session": session.model_dump(mode="json")}
+
+
+@agents.router.get("/models")
+async def list_models():
+    """Return available models grouped by provider, filtered by configured credentials."""
+    from backend.apps.agents.providers.registry import get_available_models
+    from backend.apps.settings.settings import load_settings
+    settings = load_settings()
+    return {"models": get_available_models(settings)}
 

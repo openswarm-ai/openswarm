@@ -40,11 +40,203 @@ import Collapse from '@mui/material/Collapse';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
+import { fetchModels } from '@/shared/state/modelsSlice';
 import { setChecking, setUpdateError } from '@/shared/state/updateSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import DirectoryBrowser from '@/app/components/DirectoryBrowser';
 import { CommandsContent } from '@/app/pages/Commands/Commands';
+import { API_BASE } from '@/shared/config';
+
+// ── Pixel Bar ──
+const PIXEL_SALMON = ['#C46B57', '#D4795F', '#E8927A', '#F0A088', '#F5B49E'];
+const PIXEL_BLUE = ['#445588', '#5577AA', '#6688BB', '#7799CC', '#88AADD'];
+
+const PixelBarOuter: React.FC<{ value: number; max: number; width?: number; palette?: string[]; tokens: any }> = ({ value, max, width = 16, palette = PIXEL_SALMON, tokens: c }) => {
+  const filled = max > 0 ? Math.max(value > 0 ? 1 : 0, Math.round((value / max) * width)) : 0;
+  return (
+    <Box sx={{ display: 'flex', gap: '1px', mt: 0.25 }}>
+      {Array.from({ length: width }, (_, i) => (
+        <Box
+          key={i}
+          sx={{
+            width: 5,
+            height: 5,
+            bgcolor: i < filled
+              ? palette[Math.min(palette.length - 1, Math.floor((i / Math.max(filled - 1, 1)) * (palette.length - 1)))]
+              : c.border.subtle,
+            opacity: i < filled ? 1 : 0.3,
+          }}
+        />
+      ))}
+    </Box>
+  );
+};
+
+// ── Usage Stats Component ──
+const UsageStats: React.FC = () => {
+  const c = useClaudeTokens();
+  const [stats, setStats] = useState<any>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/analytics/usage-summary`)
+      .then(r => r.json())
+      .then(setStats)
+      .catch(() => {});
+  }, []);
+
+  if (!stats) return null;
+
+  const formatCost = (v: number) => {
+    if (v === 0) return '$0.00';
+    if (v < 0.001) return `$${v.toFixed(6)}`;
+    if (v < 0.01) return `$${v.toFixed(5)}`;
+    if (v < 1) return `$${v.toFixed(4)}`;
+    return `$${v.toFixed(2)}`;
+  };
+  const formatDuration = (s: number) => {
+    if (s === 0) return '0s';
+    if (s < 60) return `${s.toFixed(1)}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+    return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  };
+  const formatTotalTime = (s: number) => {
+    if (s < 60) return `${s.toFixed(1)}s`;
+    if (s < 3600) return `${(s / 60).toFixed(1)} min`;
+    return `${(s / 3600).toFixed(1)} hrs`;
+  };
+
+  const cardSx = {
+    p: 1.5,
+    borderRadius: `${c.radius.md}px`,
+    bgcolor: c.bg.elevated,
+    border: `1px solid ${c.border.subtle}`,
+  };
+  const labelSx = { fontSize: '0.58rem', fontWeight: 700, color: c.text.ghost, textTransform: 'uppercase' as const, letterSpacing: '0.06em', mb: 0.25 };
+  const valueSx = { fontSize: '1.05rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.2 };
+  const subSx = { fontSize: '0.62rem', color: c.text.tertiary, mt: 0.25 };
+
+  const modelEntries = Object.entries(stats.models_used || {}).sort((a: any, b: any) => b[1] - a[1]) as [string, number][];
+  const providerEntries = Object.entries(stats.providers_used || {}).sort((a: any, b: any) => b[1] - a[1]) as [string, number][];
+  const toolEntries = Object.entries(stats.top_tools || {}).slice(0, 10) as [string, number][];
+  const maxToolCount = toolEntries.length > 0 ? Math.max(...toolEntries.map(([, c]) => c)) : 1;
+  const statusEntries = Object.entries(stats.status_breakdown || {}) as [string, string][];
+
+  // Pixel bar helper that passes tokens
+  const PixelBar: React.FC<{ value: number; max: number; width?: number; palette?: string[] }> = (props) => (
+    <PixelBarOuter {...props} tokens={c} />
+  );
+
+  const totalTime = stats.avg_duration_seconds * stats.total_sessions;
+  const msgsPerSession = stats.total_sessions > 0 ? (stats.total_messages / stats.total_sessions).toFixed(1) : '0';
+  const toolsPerSession = stats.total_sessions > 0 ? (stats.total_tool_calls / stats.total_sessions).toFixed(1) : '0';
+
+  return (
+    <Box sx={{ mb: 2.5 }}>
+      {/* Row 1: Core metrics */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, mb: 1 }}>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Total Sessions</Typography>
+          <Typography sx={valueSx}>{stats.total_sessions.toLocaleString()}</Typography>
+          <Typography sx={subSx}>
+            {statusEntries.map(([s, n]) => `${n} ${s}`).join(', ') || 'no sessions'}
+          </Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Total Cost</Typography>
+          <Typography sx={valueSx}>{formatCost(stats.total_cost_usd)}</Typography>
+          <Typography sx={subSx}>
+            {formatCost(stats.avg_cost_per_session)} avg per session
+          </Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Total Messages</Typography>
+          <Typography sx={valueSx}>{stats.total_messages.toLocaleString()}</Typography>
+          <Typography sx={subSx}>
+            {msgsPerSession} avg per session
+          </Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Total Tool Calls</Typography>
+          <Typography sx={valueSx}>{stats.total_tool_calls.toLocaleString()}</Typography>
+          <Typography sx={subSx}>
+            {toolsPerSession} avg per session
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Row 2: Time + efficiency */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, mb: 1.5 }}>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Total Run Time</Typography>
+          <Typography sx={valueSx}>{formatTotalTime(totalTime)}</Typography>
+          <Typography sx={subSx}>across all sessions</Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Avg Session</Typography>
+          <Typography sx={valueSx}>{formatDuration(stats.avg_duration_seconds)}</Typography>
+          <Typography sx={subSx}>per session duration</Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Completion Rate</Typography>
+          <Typography sx={valueSx}>{(stats.completion_rate * 100).toFixed(1)}%</Typography>
+          <Typography sx={subSx}>
+            sessions finished successfully
+          </Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Providers</Typography>
+          <Typography sx={valueSx}>{Object.keys(stats.providers_used || {}).length}</Typography>
+          <Typography sx={subSx}>
+            {providerEntries.map(([p]) => p).join(', ') || 'none configured'}
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Model + Provider + Tool breakdown */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+        {/* Models & Providers */}
+        <Box sx={{ ...cardSx, p: 2 }}>
+          <Typography sx={{ ...labelSx, mb: 1.5 }}>Models Used</Typography>
+          {modelEntries.length > 0 ? modelEntries.map(([model, count]) => {
+            const pct = stats.total_sessions > 0 ? ((count / stats.total_sessions) * 100).toFixed(0) : '0';
+            return (
+              <Box key={model} sx={{ mb: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0 }}>
+                  <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, fontWeight: 500 }}>{model}</Typography>
+                  <Typography sx={{ fontSize: '0.68rem', color: c.text.tertiary, fontFamily: c.font.mono }}>
+                    {count} ({pct}%)
+                  </Typography>
+                </Box>
+                <PixelBar value={count} max={stats.total_sessions} palette={PIXEL_BLUE} />
+              </Box>
+            );
+          }) : <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>No sessions yet</Typography>}
+        </Box>
+
+        {/* Tools */}
+        <Box sx={{ ...cardSx, p: 2 }}>
+          <Typography sx={{ ...labelSx, mb: 1.5 }}>Top Tools</Typography>
+          {toolEntries.length > 0 ? toolEntries.map(([tool, count]) => {
+            const shortName = tool.includes('__') ? tool.split('__').pop() : tool;
+            const pct = stats.total_tool_calls > 0 ? ((count / stats.total_tool_calls) * 100).toFixed(0) : '0';
+            return (
+              <Box key={tool} sx={{ mb: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0 }}>
+                  <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, fontWeight: 500 }}>{shortName}</Typography>
+                  <Typography sx={{ fontSize: '0.62rem', color: c.text.tertiary, fontFamily: c.font.mono }}>
+                    {count} call{count !== 1 ? 's' : ''} ({pct}%)
+                  </Typography>
+                </Box>
+                <PixelBar value={count} max={maxToolCount} />
+              </Box>
+            );
+          }) : <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>No tool calls yet</Typography>}
+        </Box>
+      </Box>
+    </Box>
+  );
+};
 
 const API_KEY_STEPS = [
   {
@@ -87,7 +279,7 @@ const Settings: React.FC = () => {
   const downloadPercent = useAppSelector((s) => s.update.downloadPercent);
   const updateError = useAppSelector((s) => s.update.error);
 
-  const [activeTab, setActiveTab] = useState<'general' | 'commands'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'models' | 'usage' | 'commands'>('general');
   const [form, setForm] = useState<AppSettings>({ ...settings });
   const [showApiKey, setShowApiKey] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
@@ -143,6 +335,7 @@ const Settings: React.FC = () => {
     if (form.theme !== settings.theme) {
       setThemeMode(form.theme);
     }
+    dispatch(fetchModels());
     setSaved(true);
   };
 
@@ -165,6 +358,7 @@ const Settings: React.FC = () => {
     if (form.theme !== settings.theme) {
       setThemeMode(form.theme);
     }
+    dispatch(fetchModels());
     setSaved(true);
     setConfirmDiscard(false);
     dispatch(closeSettingsModal());
@@ -272,6 +466,8 @@ const Settings: React.FC = () => {
           }}
         >
           <Tab label="General" value="general" disableRipple />
+          <Tab label="Models" value="models" disableRipple />
+          <Tab label="Usage" value="usage" disableRipple />
           <Tab label="Commands" value="commands" disableRipple />
         </Tabs>
       </DialogTitle>
@@ -626,125 +822,6 @@ const Settings: React.FC = () => {
           </Box>
         </Box>
 
-        {/* ── API ── */}
-        <Typography sx={{ ...sectionSx, mt: 3 }}>API</Typography>
-
-        <Box sx={rowLastSx}>
-          <Typography sx={labelSx}>Anthropic API key</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-            <Typography sx={descSx}>
-              Stored securely in the local database.
-            </Typography>
-            <Typography
-              component="span"
-              onClick={() => setShowApiHelp((v) => !v)}
-              sx={{
-                color: c.accent.primary,
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 0.4,
-                whiteSpace: 'nowrap',
-                userSelect: 'none',
-                '&:hover': { textDecoration: 'underline' },
-              }}
-            >
-              {showApiHelp ? 'Hide guide' : 'How do I get a key?'}
-            </Typography>
-          </Box>
-
-          <Collapse in={showApiHelp} timeout={250}>
-            <Box sx={{
-              mb: 1.5,
-              p: 2,
-              borderRadius: `${c.radius.md}px`,
-              bgcolor: `${c.accent.primary}08`,
-              border: `1px solid ${c.accent.primary}20`,
-            }}>
-              {API_KEY_STEPS.map((step, i) => (
-                <Box key={i} sx={{ display: 'flex', gap: 1.5, mb: i < API_KEY_STEPS.length - 1 ? 1.5 : 0 }}>
-                  <Box sx={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: '50%',
-                    bgcolor: `${c.accent.primary}15`,
-                    color: c.accent.primary,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    flexShrink: 0,
-                    mt: 0.1,
-                  }}>
-                    {i + 1}
-                  </Box>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500, lineHeight: 1.4 }}>
-                      {step.title}
-                      {step.link && (
-                        <Typography
-                          component="a"
-                          href={step.link}
-                          sx={{
-                            color: c.accent.primary,
-                            fontSize: '0.75rem',
-                            ml: 0.75,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 0.3,
-                            verticalAlign: 'middle',
-                            textDecoration: 'none',
-                            '&:hover': { textDecoration: 'underline' },
-                          }}
-                        >
-                          Open
-                          <OpenInNewIcon sx={{ fontSize: 12 }} />
-                        </Typography>
-                      )}
-                    </Typography>
-                    <Typography sx={{ color: c.text.muted, fontSize: '0.75rem', lineHeight: 1.4 }}>
-                      {step.detail}
-                    </Typography>
-                  </Box>
-                </Box>
-              ))}
-            </Box>
-          </Collapse>
-
-          <TextField
-            type={showApiKey ? 'text' : 'password'}
-            value={form.anthropic_api_key ?? ''}
-            onChange={(e) => setForm({ ...form, anthropic_api_key: e.target.value || null })}
-            size="small"
-            fullWidth
-            placeholder="sk-ant-..."
-            sx={{
-              ...fieldSx,
-              '& .MuiOutlinedInput-root': {
-                ...fieldSx['& .MuiOutlinedInput-root'],
-                fontFamily: c.font.mono,
-              },
-            }}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    edge="end"
-                    size="small"
-                    sx={{ color: c.text.tertiary }}
-                  >
-                    {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-          />
-        </Box>
-
         {/* ── Advanced ── */}
         <Typography sx={{ ...sectionSx, mt: 3 }}>Advanced</Typography>
 
@@ -872,6 +949,156 @@ const Settings: React.FC = () => {
           )}
         </Box>
 
+      </Box>
+      ) : activeTab === 'models' ? (
+      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, gap: 2.5 }}>
+          <Typography sx={descSx}>
+            Connect your AI model providers. Each key is stored locally on your device.
+          </Typography>
+
+          {/* OpenRouter — recommended */}
+          <Box sx={{ p: 2, borderRadius: `${c.radius.md}px`, bgcolor: `${c.accent.primary}06`, border: `1px solid ${c.accent.primary}20` }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+              <Typography sx={{ ...labelSx, mb: 0 }}>OpenRouter</Typography>
+              <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: c.accent.primary, bgcolor: `${c.accent.primary}15`, px: 1, py: 0.25, borderRadius: '4px' }}>
+                RECOMMENDED
+              </Typography>
+            </Box>
+            <Typography sx={{ ...descSx, mb: 1 }}>
+              One key for 300+ models — Llama, DeepSeek, Mistral, Qwen, Grok, and more. Easiest way to get started.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <TextField
+                type="password"
+                value={(form as any).openrouter_api_key ?? ''}
+                onChange={(e) => setForm({ ...form, openrouter_api_key: e.target.value || null } as any)}
+                size="small"
+                fullWidth
+                placeholder="sk-or-..."
+                sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
+              />
+              <Typography
+                component="a"
+                href="https://openrouter.ai/keys"
+                target="_blank"
+                rel="noopener"
+                sx={{ color: c.accent.primary, fontSize: '0.72rem', whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
+              >
+                Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Anthropic */}
+          <Box>
+            <Typography sx={labelSx}>Anthropic</Typography>
+            <Typography sx={{ ...descSx, mb: 1 }}>Claude Sonnet, Opus, Haiku — direct API access.</Typography>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <TextField
+                type={showApiKey ? 'text' : 'password'}
+                value={form.anthropic_api_key ?? ''}
+                onChange={(e) => setForm({ ...form, anthropic_api_key: e.target.value || null })}
+                size="small"
+                fullWidth
+                placeholder="sk-ant-..."
+                sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton onClick={() => setShowApiKey(!showApiKey)} edge="end" size="small" sx={{ color: c.text.tertiary }}>
+                        {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Typography
+                component="a"
+                href="https://console.anthropic.com/settings/keys"
+                target="_blank"
+                rel="noopener"
+                sx={{ color: c.accent.primary, fontSize: '0.72rem', whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
+              >
+                Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* OpenAI */}
+          <Box>
+            <Typography sx={labelSx}>OpenAI</Typography>
+            <Typography sx={{ ...descSx, mb: 1 }}>GPT-5.4, o3, o4-mini — direct API access.</Typography>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <TextField
+                type="password"
+                value={(form as any).openai_api_key ?? ''}
+                onChange={(e) => setForm({ ...form, openai_api_key: e.target.value || null } as any)}
+                size="small"
+                fullWidth
+                placeholder="sk-..."
+                sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
+              />
+              <Typography
+                component="a"
+                href="https://platform.openai.com/api-keys"
+                target="_blank"
+                rel="noopener"
+                sx={{ color: c.accent.primary, fontSize: '0.72rem', whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
+              >
+                Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Google */}
+          <Box>
+            <Typography sx={labelSx}>Google</Typography>
+            <Typography sx={{ ...descSx, mb: 1 }}>Gemini 2.5 Pro and Flash — direct API access.</Typography>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <TextField
+                type="password"
+                value={(form as any).google_api_key ?? ''}
+                onChange={(e) => setForm({ ...form, google_api_key: e.target.value || null } as any)}
+                size="small"
+                fullWidth
+                placeholder="AIza..."
+                sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
+              />
+              <Typography
+                component="a"
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noopener"
+                sx={{ color: c.accent.primary, fontSize: '0.72rem', whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
+              >
+                Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
+              </Typography>
+            </Box>
+          </Box>
+      </Box>
+      ) : activeTab === 'usage' ? (
+      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1 }}>
+        <UsageStats />
+
+        {/* ── Analytics ── */}
+        <Typography sx={{ ...sectionSx, mt: 1 }}>Analytics</Typography>
+
+        <Box sx={inlineRowLastSx}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>Share anonymous usage data</Typography>
+            <Typography sx={descSx}>
+              Help improve OpenSwarm by sharing anonymous statistics like session counts, model usage, and feature adoption. No conversations, file paths, or personal information is ever collected.
+            </Typography>
+          </Box>
+          <Switch
+            checked={(form as any).analytics_opt_in ?? true}
+            onChange={(e) => setForm({ ...form, analytics_opt_in: e.target.checked } as any)}
+            sx={{
+              '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
+              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
+            }}
+          />
+        </Box>
       </Box>
       ) : (
       <Box sx={{ pt: 2.5, pb: 1 }}>

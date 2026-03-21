@@ -1,5 +1,8 @@
 anthropic
-claude-agent-sdk
+openai
+google-genai
+mcp
+posthog
 jsonschema
 fastapi[standard]
 pydantic==2.10.5

@@ -50,6 +50,7 @@ export interface AgentSession {
   id: string;
   name: string;
   status: 'draft' | 'running' | 'waiting_approval' | 'completed' | 'error' | 'stopped';
+  provider: string;
   model: string;
   mode: string;
   worktree_path: string | null;
@@ -75,6 +76,7 @@ export interface AgentSession {
 
 export interface AgentConfig {
   name?: string;
+  provider?: string;
   model?: string;
   mode?: string;
   system_prompt?: string;
@@ -151,6 +153,7 @@ export interface SendMessagePayload {
   prompt: string;
   mode?: string;
   model?: string;
+  provider?: string;
   images?: Array<{ data: string; media_type: string }>;
   contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>;
   forcedTools?: string[];
@@ -161,11 +164,11 @@ export interface SendMessagePayload {
 
 export const sendMessage = createAsyncThunk(
   'agents/sendMessage',
-  async ({ sessionId, prompt, mode, model, images, contextPaths, forcedTools, attachedSkills, hidden, selectedBrowserIds }: SendMessagePayload) => {
+  async ({ sessionId, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, hidden, selectedBrowserIds }: SendMessagePayload) => {
     await fetch(`${AGENTS_API}/sessions/${sessionId}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, mode, model, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, hidden, selected_browser_ids: selectedBrowserIds }),
+      body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, hidden, selected_browser_ids: selectedBrowserIds }),
     });
     return { sessionId, prompt };
   }
@@ -213,6 +216,7 @@ export interface LaunchAndSendPayload {
   prompt: string;
   mode: string;
   model: string;
+  provider?: string;
   images?: Array<{ data: string; media_type: string }>;
   contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>;
   forcedTools?: string[];
@@ -232,7 +236,7 @@ export const fetchSession = createAsyncThunk(
 
 export const launchAndSendFirstMessage = createAsyncThunk(
   'agents/launchAndSendFirstMessage',
-  async ({ draftId, config, prompt, mode, model, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds }: LaunchAndSendPayload) => {
+  async ({ draftId, config, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds }: LaunchAndSendPayload) => {
     const launchRes = await fetch(`${AGENTS_API}/launch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -244,7 +248,7 @@ export const launchAndSendFirstMessage = createAsyncThunk(
     await fetch(`${AGENTS_API}/sessions/${session.id}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, mode, model, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, selected_browser_ids: selectedBrowserIds }),
+      body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, selected_browser_ids: selectedBrowserIds }),
     });
 
     const refreshRes = await fetch(`${AGENTS_API}/sessions/${session.id}`);
@@ -421,6 +425,7 @@ const agentsSlice = createSlice({
           id: draftId,
           name: 'New chat',
           status: 'draft',
+          provider: 'anthropic',
           model: 'sonnet',
           mode,
           worktree_path: null,
@@ -645,6 +650,13 @@ const agentsSlice = createSlice({
       const session = state.sessions[action.payload.sessionId];
       if (session) {
         session.active_branch_id = action.payload.branchId;
+      }
+    },
+
+    updateSessionProvider(state, action: PayloadAction<{ sessionId: string; provider: string }>) {
+      const session = state.sessions[action.payload.sessionId];
+      if (session) {
+        session.provider = action.payload.provider;
       }
     },
 
@@ -942,6 +954,7 @@ export const {
   updateSessionCost,
   addBranch,
   setActiveBranch,
+  updateSessionProvider,
   updateSessionModel,
   updateSessionMode,
   closeSessionFromWs,

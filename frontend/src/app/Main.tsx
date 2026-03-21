@@ -5,6 +5,7 @@ import { ThemeProvider as MuiThemeProvider, createTheme, CssBaseline } from '@mu
 import { store } from '../shared/state/store';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchSettings } from '@/shared/state/settingsSlice';
+import { fetchModels } from '@/shared/state/modelsSlice';
 import {
   setAppVersion,
   setUpdateAvailable,
@@ -23,6 +24,8 @@ import Modes from './pages/Modes/Modes';
 import Views from './pages/Views/Views';
 import Customization from './pages/Customization/Customization';
 import Channels from './pages/Channels/Channels';
+import Analytics from './pages/Analytics/Analytics';
+import AnalyticsOptIn from './components/AnalyticsOptIn';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -161,6 +164,7 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const loaded = useAppSelector((s) => s.settings.loaded);
   useEffect(() => {
     dispatch(fetchSettings());
+    dispatch(fetchModels());
   }, [dispatch]);
   useEffect(() => {
     if (loaded) setThemeMode(theme as 'light' | 'dark');
@@ -230,8 +234,10 @@ const ThemedApp: React.FC = () => {
                   <Route path="/apps" element={<Views />} />
                   <Route path="/apps/:id" element={<Views />} />
                   <Route path="/channels" element={<Channels />} />
+                  <Route path="/analytics" element={<Analytics />} />
                 </Route>
               </Routes>
+              <AnalyticsOptIn />
             </UpdateListener>
           </SettingsLoader>
         </ShortcutsProvider>

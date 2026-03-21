@@ -24,6 +24,7 @@ import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import PhoneIcon from '@mui/icons-material/Phone';
+import BarChartIcon from '@mui/icons-material/BarChart';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import ArrowForwardOutlinedIcon from '@mui/icons-material/ArrowForwardOutlined';
@@ -33,6 +34,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import LinearProgress from '@mui/material/LinearProgress';
 import Settings from '@/app/pages/Settings/Settings';
 import GlobalApprovalOverlay from '@/app/components/GlobalApprovalOverlay';
+import TalkModeOverlay from '@/app/components/TalkModeOverlay';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchDashboards, createDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
 import { addBrowserCard, addBrowserTab } from '@/shared/state/dashboardLayoutSlice';
@@ -69,6 +71,7 @@ const AppShell: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [renamingDashboardId, setRenamingDashboardId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [talkModeOpen, setTalkModeOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -231,6 +234,7 @@ const AppShell: React.FC = () => {
   const isAppsRoute = location.pathname === '/apps' || location.pathname.startsWith('/apps/');
   const isCustomizationRoute = location.pathname === '/customization' || CUSTOMIZATION_PATHS.has(location.pathname);
   const isChannelsRoute = location.pathname === '/channels';
+  const isAnalyticsRoute = location.pathname === '/analytics';
   const activeDashboardId = location.pathname.startsWith('/dashboard/')
     ? location.pathname.split('/dashboard/')[1]
     : null;
@@ -959,6 +963,10 @@ const AppShell: React.FC = () => {
 
       <Settings />
       <GlobalApprovalOverlay />
+      <TalkModeOverlay
+        open={talkModeOpen}
+        onClose={() => setTalkModeOpen(false)}
+      />
 
       <Snackbar
         open={showUpdateSnackbar}

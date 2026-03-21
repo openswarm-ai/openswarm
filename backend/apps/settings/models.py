@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Any
 
 DEFAULT_SYSTEM_PROMPT = (
     '"Ask the user as many follow ups as needed in order to eliminate any possible ambiguity. '
@@ -28,9 +28,22 @@ class AppSettings(BaseModel):
     elevenlabs_api_key: Optional[str] = None
     deepgram_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
+    google_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
+    custom_providers: list["CustomProvider"] = Field(default_factory=list)
     webhook_base_url: Optional[str] = None
     # Dashboard / UI preferences
     auto_select_mode_on_new_agent: bool = False
     expand_new_chats_in_dashboard: bool = False
     auto_reveal_sub_agents: bool = True
     dev_mode: bool = False
+    # Analytics: opted in by default, user can toggle off
+    analytics_opt_in: bool = True
+    installation_id: Optional[str] = None
+
+
+class CustomProvider(BaseModel):
+    name: str
+    base_url: str
+    api_key: str = ""
+    models: list[dict[str, Any]] = Field(default_factory=list)

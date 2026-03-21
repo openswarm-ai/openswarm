@@ -67,6 +67,8 @@ interface Props {
   onModeChange: (mode: string) => void;
   model: string;
   onModelChange: (model: string) => void;
+  provider?: string;
+  onProviderChange?: (provider: string) => void;
   isRunning?: boolean;
   onStop?: () => void;
   autoRunMode?: boolean;
@@ -92,10 +94,10 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 
 const FALLBACK_MODE_BASE = { label: 'Agent', icon: ICON_MAP.smart_toy };
 
-const MODEL_OPTIONS = [
-  { value: 'sonnet', label: 'Sonnet', version: '4.6' },
-  { value: 'opus', label: 'Opus', version: '4.6' },
-  { value: 'haiku', label: 'Haiku', version: '3.5' },
+const FALLBACK_MODELS = [
+  { value: 'sonnet', label: 'Claude Sonnet 4.6', context_window: 1_000_000 },
+  { value: 'opus', label: 'Claude Opus 4.6', context_window: 1_000_000 },
+  { value: 'haiku', label: 'Claude Haiku 4.5', context_window: 200_000 },
 ];
 
 function formatTokenCount(n: number): string {
@@ -132,7 +134,7 @@ const ContextRing: React.FC<{ used: number; limit: number; accentColor: string; 
   );
 };
 
-const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0 }, ref) => {
+const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, provider, onProviderChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0 }, ref) => {
   const c = useClaudeTokens();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -158,6 +160,24 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
   const skills = useAppSelector((state) => state.skills.items);
   const modesMap = useAppSelector((state) => state.modes.items);
   const modesArr = useMemo(() => Object.values(modesMap), [modesMap]);
+  const modelsByProvider = useAppSelector((state) => state.models.byProvider);
+  const modelsLoaded = useAppSelector((state) => state.models.loaded);
+
+  // Build flat model list with provider grouping
+  const allModelOptions = useMemo(() => {
+    if (!modelsLoaded || Object.keys(modelsByProvider).length === 0) {
+      return { flat: FALLBACK_MODELS.map(m => ({ ...m, provider: 'Anthropic' })), grouped: { Anthropic: FALLBACK_MODELS } };
+    }
+    const flat: Array<{ value: string; label: string; context_window: number; provider: string }> = [];
+    const grouped: Record<string, Array<{ value: string; label: string; context_window: number }>> = {};
+    for (const [prov, models] of Object.entries(modelsByProvider)) {
+      grouped[prov] = models.map(m => ({ value: m.value, label: m.label, context_window: m.context_window ?? 200_000 }));
+      for (const m of models) {
+        flat.push({ value: m.value, label: m.label, context_window: m.context_window ?? 200_000, provider: prov });
+      }
+    }
+    return { flat, grouped };
+  }, [modelsByProvider, modelsLoaded]);
 
   useEffect(() => {
     if (modesArr.length === 0) dispatch(fetchModes());
@@ -566,7 +586,8 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
       bgcolor: c.bg.surface,
       border: `1px solid ${c.border.subtle}`,
       borderRadius: '10px',
-      minWidth: 140,
+      minWidth: 180,
+      maxHeight: 400,
       boxShadow: c.shadow.lg,
       '& .MuiMenuItem-root': {
         fontSize: '0.8rem',
@@ -979,7 +1000,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
           }}
         >
           <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
-            {(() => { const m = MODEL_OPTIONS.find((m) => m.value === model); return m ? `${m.label} ${m.version}` : model; })()}
+            {(() => { const m = allModelOptions.flat.find((m) => m.value === model); return m ? m.label : model; })()}
           </Typography>
           <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
         </Box>
@@ -992,21 +1013,45 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
           transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
           slotProps={{ paper: menuPaperProps }}
         >
-          {MODEL_OPTIONS.map((opt) => (
-            <MenuItem
-              key={opt.value}
-              selected={model === opt.value}
-              onClick={() => {
-                onModelChange(opt.value);
-                setModelAnchor(null);
-              }}
-            >
-              <ListItemText
-                primary={`${opt.label} ${opt.version}`}
-                slotProps={{ primary: { sx: { fontSize: '0.8rem', color: model === opt.value ? c.text.primary : c.text.muted } } }}
-              />
-            </MenuItem>
-          ))}
+          {Object.entries(allModelOptions.grouped).map(([prov, models]) => [
+            <MenuItem key={`header-${prov}`} disabled sx={{ opacity: '0.7 !important', py: 0.5, px: 1.5, minHeight: 'auto' }}>
+              <Typography sx={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: c.text.tertiary }}>
+                {prov}
+              </Typography>
+            </MenuItem>,
+            ...models.map((opt) => (
+              <MenuItem
+                key={opt.value}
+                selected={model === opt.value}
+                onClick={() => {
+                  onModelChange(opt.value);
+                  if (onProviderChange) {
+                    // Derive API-level provider key from the display group name
+                    const provLower = prov.toLowerCase();
+                    const providerMap: Record<string, string> = {
+                      anthropic: 'anthropic',
+                      openai: 'openai',
+                      google: 'gemini',
+                      // OpenRouter-backed providers
+                      xai: 'openrouter',
+                      meta: 'openrouter',
+                      deepseek: 'openrouter',
+                      mistral: 'openrouter',
+                      qwen: 'openrouter',
+                      cohere: 'openrouter',
+                    };
+                    onProviderChange(providerMap[provLower] || provLower);
+                  }
+                  setModelAnchor(null);
+                }}
+              >
+                <ListItemText
+                  primary={opt.label}
+                  slotProps={{ primary: { sx: { fontSize: '0.8rem', color: model === opt.value ? c.text.primary : c.text.muted } } }}
+                />
+              </MenuItem>
+            )),
+          ]).flat()}
         </Menu>
 
         <Box sx={{ flex: 1 }} />

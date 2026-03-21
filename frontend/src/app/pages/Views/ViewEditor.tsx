@@ -519,6 +519,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const [autoRunEnabled, setAutoRunEnabled] = useState(savedAutoRun?.enabled ?? false);
   const [autoRunMode, setAutoRunMode] = useState(savedAutoRun?.mode ?? 'agent');
   const [autoRunModel, setAutoRunModel] = useState(savedAutoRun?.model ?? 'sonnet');
+  const [autoRunProvider, setAutoRunProvider] = useState('anthropic');
   const [autoRunning, setAutoRunning] = useState(false);
   const autoRunInputRef = useRef<ChatInputHandle>(null);
   const autoRunInitialized = useRef(false);
@@ -1539,6 +1540,8 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
                       onModeChange={setAutoRunMode}
                       model={autoRunModel}
                       onModelChange={setAutoRunModel}
+                      provider={autoRunProvider}
+                      onProviderChange={setAutoRunProvider}
                     />
                     <Button
                       variant="contained"

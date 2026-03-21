@@ -11,6 +11,13 @@ export const DEFAULT_SYSTEM_PROMPT =
   `If a Browser is selected, prioritize this over other tools when it makes sense (so the user also has observability).\n\n` +
   `If multiple Browsers are selected, parallelize the tasks across them.`;
 
+export interface CustomProvider {
+  name: string;
+  base_url: string;
+  api_key: string;
+  models: Array<{ value: string; label: string; context_window?: number }>;
+}
+
 export interface AppSettings {
   default_system_prompt: string | null;
   default_folder: string | null;
@@ -21,6 +28,10 @@ export interface AppSettings {
   theme: 'light' | 'dark';
   new_agent_shortcut: string;
   anthropic_api_key: string | null;
+  openai_api_key?: string | null;
+  google_api_key?: string | null;
+  openrouter_api_key?: string | null;
+  custom_providers?: CustomProvider[];
   browser_homepage: string;
   auto_select_mode_on_new_agent: boolean;
   expand_new_chats_in_dashboard: boolean;

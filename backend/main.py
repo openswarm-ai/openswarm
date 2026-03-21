@@ -20,11 +20,13 @@ from backend.apps.skill_registry.skill_registry import skill_registry
 from backend.apps.outputs.outputs import outputs
 from backend.apps.dashboards.dashboards import dashboards
 from backend.apps.channels.channels import channels
+from backend.apps.analytics.analytics import analytics
+from backend.apps.auth.auth import auth
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 import json
 
-main_app = MainApp([health, agents, templates, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, dashboards, channels])
+main_app = MainApp([health, agents, templates, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, dashboards, channels, analytics, auth])
 app = main_app.app
 
 app.add_middleware(
@@ -52,6 +54,7 @@ async def websocket_session(websocket: WebSocket, session_id: str):
                     payload.get("prompt", ""),
                     mode=payload.get("mode"),
                     model=payload.get("model"),
+                    provider=payload.get("provider"),
                     images=payload.get("images"),
                 )
             elif event == "agent:approval_response":

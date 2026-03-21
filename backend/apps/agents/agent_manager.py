@@ -23,10 +23,34 @@ from backend.apps.tools_lib.tools_lib import (
     refresh_google_token,
 )
 from backend.config.paths import SESSIONS_DIR
+from backend.apps.analytics.collector import record as _analytics
 
 logger = logging.getLogger(__name__)
 
-os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
+_TOOL_CATEGORIES: dict[str, str] = {
+    "gmail": "email", "calendar": "calendar", "drive": "files",
+    "sheet": "files", "doc": "files", "slide": "files",
+    "tweet": "social", "twitter": "social", "reddit": "social",
+    "Bash": "coding", "Edit": "coding", "Write": "coding", "Read": "coding",
+    "Glob": "coding", "Grep": "coding",
+    "BrowserAgent": "browsing", "BrowserAgents": "browsing",
+    "WebSearch": "research", "WebFetch": "research",
+}
+
+
+def _infer_task_category(tool_names: list[str]) -> str:
+    """Infer what the user was doing from the tools used."""
+    if not tool_names:
+        return "chat"
+    counts: dict[str, int] = {}
+    for name in tool_names:
+        for keyword, category in _TOOL_CATEGORIES.items():
+            if keyword.lower() in name.lower():
+                counts[category] = counts.get(category, 0) + 1
+                break
+    if not counts:
+        return "other"
+    return max(counts, key=counts.get)
 
 
 def _save_session(session_id: str, doc_data: dict):
@@ -328,6 +352,7 @@ class AgentManager:
         session = AgentSession(
             id=session_id,
             name=config.name,
+            provider=config.provider,
             model=config.model,
             mode=config.mode,
             system_prompt=config.system_prompt,
@@ -337,13 +362,20 @@ class AgentManager:
             dashboard_id=config.dashboard_id,
         )
         self.sessions[session_id] = session
-        
+
+        _analytics("session.started", {
+            "model": session.model,
+            "provider": session.provider,
+            "mode": session.mode,
+            "tool_count": len(tools),
+        }, session_id=session_id, dashboard_id=config.dashboard_id)
+
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
             "status": "running",
             "session": session.model_dump(mode="json"),
         })
-        
+
         return session
 
     def _resolve_context_paths(self, context_paths: list | None) -> str:
@@ -468,28 +500,20 @@ class AgentManager:
         return content
 
     async def _run_agent_loop(self, session_id: str, prompt: str, images: list | None = None, context_paths: list | None = None, forced_tools: list[str] | None = None, attached_skills: list | None = None, fork_session: bool = False, selected_browser_ids: list[str] | None = None):
-        """Run the Claude Agent SDK query loop for a session."""
+        """Run the owned agent loop for a session (multi-provider)."""
+        from backend.apps.agents.agent_loop import AgentLoop
+        from backend.apps.agents.mcp_client import MCPClientManager
+        from backend.apps.agents.providers.registry import create_provider, calculate_cost
+        from backend.apps.settings.credentials import validate_credentials
+
         session = self.sessions.get(session_id)
         if not session:
             return
-        
+
         prompt_content = self._build_prompt_content(prompt, images, context_paths, forced_tools, attached_skills)
 
-        try:
-            from claude_agent_sdk import (
-                query, ClaudeAgentOptions, AssistantMessage, ResultMessage,
-            )
-            from claude_agent_sdk.types import (
-                HookMatcher, PermissionResultAllow, PermissionResultDeny,
-                TextBlock, ToolUseBlock, StreamEvent,
-            )
-        except ImportError:
-            logger.warning("claude_agent_sdk not installed, running in mock mode")
-            await self._run_mock_agent(session_id, prompt)
-            return
-
         session.status = "running"
-        
+
         _builtin_perms = load_builtin_permissions()
 
         def _get_effective_policy(tool_name: str) -> str:
@@ -539,6 +563,11 @@ class AgentManager:
                 session_id, request_id, tool_name, safe_input
             )
 
+            _analytics("tool.approval_resolved", {
+                "tool_name": tool_name,
+                "decision": decision.get("behavior", "deny"),
+            }, session_id=session_id)
+
             session.pending_approvals = [
                 a for a in session.pending_approvals if a.id != request_id
             ]
@@ -549,159 +578,7 @@ class AgentManager:
             })
             return decision
 
-        async def can_use_tool(tool_name, input_data, context):
-            if tool_name != "AskUserQuestion":
-                policy = _get_effective_policy(tool_name)
-                if policy == "always_allow":
-                    return PermissionResultAllow(updated_input=input_data)
-                if policy == "deny":
-                    return PermissionResultDeny(message="Tool denied by permission policy")
-
-            decision = await _request_user_approval(tool_name, input_data)
-            if decision.get("behavior") == "allow":
-                return PermissionResultAllow(
-                    updated_input=decision.get("updated_input", input_data)
-                )
-            return PermissionResultDeny(
-                message=decision.get("message", "User denied this action")
-            )
-
-        tool_start_times: dict[str, float] = {}
-
-        async def pre_tool_hook(input_data, tool_use_id, context):
-            tool_name = input_data.get("tool_name", "")
-            hook_event = input_data.get("hook_event_name", "PreToolUse")
-
-            if tool_name and tool_name != "AskUserQuestion":
-                policy = _get_effective_policy(tool_name)
-
-                if policy == "deny":
-                    return {
-                        "hookSpecificOutput": {
-                            "hookEventName": hook_event,
-                            "permissionDecision": "deny",
-                            "permissionDecisionReason": "Tool denied by permission policy",
-                        }
-                    }
-
-                if policy == "ask":
-                    tool_input = input_data.get("tool_input", {})
-                    decision = await _request_user_approval(tool_name, tool_input)
-
-                    if decision.get("behavior") == "allow":
-                        if tool_use_id:
-                            tool_start_times[tool_use_id] = time.time()
-                        return {
-                            "hookSpecificOutput": {
-                                "hookEventName": hook_event,
-                                "permissionDecision": "allow",
-                            }
-                        }
-                    return {
-                        "hookSpecificOutput": {
-                            "hookEventName": hook_event,
-                            "permissionDecision": "deny",
-                            "permissionDecisionReason": decision.get("message", "User denied this action"),
-                        }
-                    }
-
-            if tool_use_id:
-                tool_start_times[tool_use_id] = time.time()
-            return {}
-
-        async def post_tool_hook(input_data, tool_use_id, context):
-            elapsed_ms = None
-            if tool_use_id and tool_use_id in tool_start_times:
-                elapsed_ms = int((time.time() - tool_start_times.pop(tool_use_id)) * 1000)
-
-            raw_response = input_data.get("tool_response", "")
-
-            if isinstance(raw_response, list) and raw_response:
-                text_parts = [
-                    block.get("text", "")
-                    for block in raw_response
-                    if isinstance(block, dict) and block.get("type") == "text"
-                ]
-                if text_parts:
-                    raw_response = "\n".join(text_parts) if len(text_parts) > 1 else text_parts[0]
-
-            if isinstance(raw_response, str):
-                content = raw_response
-            else:
-                try:
-                    import json as _json
-                    content = _json.dumps(raw_response, indent=2, default=str)
-                except Exception:
-                    content = str(raw_response)
-
-            result_payload = {"text": content}
-            hook_tool_name = input_data.get("tool_name", "")
-            if hook_tool_name:
-                result_payload["tool_name"] = hook_tool_name
-            if elapsed_ms is not None:
-                result_payload["elapsed_ms"] = elapsed_ms
-
-            if hook_tool_name == "Agent":
-                tool_input = input_data.get("tool_input", {})
-                agent_prompt = tool_input.get("prompt", tool_input.get("task", ""))
-
-                sub_text = content
-                sub_cost = 0.0
-                sub_tokens = {"input": 0, "output": 0}
-                sub_model = session.model
-                if isinstance(raw_response, dict):
-                    blocks = raw_response.get("content")
-                    if isinstance(blocks, list):
-                        parts = [
-                            b.get("text", "")
-                            for b in blocks
-                            if isinstance(b, dict) and b.get("type") == "text"
-                        ]
-                        if parts:
-                            sub_text = "\n".join(parts) if len(parts) > 1 else parts[0]
-                    elif isinstance(raw_response.get("text"), str):
-                        sub_text = raw_response["text"]
-                    usage = raw_response.get("usage", {})
-                    if isinstance(usage, dict):
-                        sub_tokens["input"] = usage.get("input_tokens", 0) + usage.get("cache_creation_input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
-                        sub_tokens["output"] = usage.get("output_tokens", 0)
-                    if raw_response.get("model"):
-                        sub_model = raw_response["model"]
-
-                sub_session_id = uuid4().hex
-                sub_name = agent_prompt[:50] if agent_prompt else "Sub-agent"
-                sub_session = AgentSession(
-                    id=sub_session_id,
-                    name=sub_name,
-                    status="completed",
-                    model=sub_model,
-                    mode="sub-agent",
-                    cwd=session.cwd,
-                    created_at=datetime.now(),
-                    cost_usd=sub_cost,
-                    tokens=sub_tokens,
-                    messages=[
-                        Message(role="user", content=agent_prompt, branch_id="main"),
-                        Message(role="assistant", content=sub_text, branch_id="main"),
-                    ],
-                    dashboard_id=session.dashboard_id,
-                    parent_session_id=session_id,
-                )
-                self.sessions[sub_session_id] = sub_session
-                await ws_manager.broadcast_global("agent:status", {
-                    "session_id": sub_session_id,
-                    "status": sub_session.status,
-                    "session": sub_session.model_dump(mode="json"),
-                })
-                result_payload["sub_session_id"] = sub_session_id
-
-            result_msg = Message(role="tool_result", content=result_payload, branch_id=session.active_branch_id)
-            session.messages.append(result_msg)
-            await ws_manager.send_to_session(session_id, "agent:message", {
-                "session_id": session_id,
-                "message": result_msg.model_dump(mode="json"),
-            })
-            return {"continue_": True}
+        mcp_manager: MCPClientManager | None = None
 
         try:
             _, mode_sys_prompt, _ = self._resolve_mode(session.mode)
@@ -716,6 +593,13 @@ class AgentManager:
                 skill_block = f"<app_builder_reference>\n{VIEW_BUILDER_SKILL}\n</app_builder_reference>"
                 composed_prompt = f"{composed_prompt}\n\n{skill_block}" if composed_prompt else skill_block
 
+            # Validate credentials for the provider
+            validate_credentials(global_settings, session.provider)
+
+            # Create the provider adapter
+            provider = create_provider(session.provider, global_settings)
+
+            # Build MCP servers config
             mcp_servers = await self._build_mcp_servers(session.allowed_tools)
 
             _browser_delegation_tools = ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents"]
@@ -765,214 +649,111 @@ class AgentManager:
                     "type": "stdio",
                 }
 
-            effective_allowed = [
-                t for t in session.allowed_tools
-                if t in FULL_TOOLS and _builtin_perms.get(t, "always_allow") == "always_allow"
-            ]
+            # Connect MCP servers and collect tool schemas
+            mcp_manager = MCPClientManager()
+            await mcp_manager.__aenter__()
 
-            effective_disallowed = [
-                t for t in FULL_TOOLS
-                if _builtin_perms.get(t, "always_allow") == "deny"
-            ]
+            mcp_tool_schemas = []
+            for server_name, server_config in mcp_servers.items():
+                tools = await mcp_manager.connect(server_name, server_config)
+                mcp_tool_schemas.extend(tools)
 
-            if mcp_servers:
-                all_tools_list = load_all_tools()
-                for name in mcp_servers:
-                    if name == "openswarm-browser-agent":
-                        for bt in _browser_delegation_tools:
-                            policy = _builtin_perms.get(bt, "always_allow")
-                            if policy == "always_allow":
-                                effective_allowed.append(f"mcp__openswarm-browser-agent__{bt}")
-                            elif policy == "deny":
-                                effective_disallowed.append(f"mcp__openswarm-browser-agent__{bt}")
-                        continue
+            # Collect builtin + MCP tool schemas
+            from backend.apps.agents.tools.registry import get_all_tool_schemas
+            all_tool_schemas = list(get_all_tool_schemas()) + list(mcp_tool_schemas)
 
-                    if name == "openswarm-invoke-agent":
-                        for it in _invoke_agent_tools:
-                            policy = _builtin_perms.get(it, "always_allow")
-                            if policy == "always_allow":
-                                effective_allowed.append(f"mcp__openswarm-invoke-agent__{it}")
-                            elif policy == "deny":
-                                effective_disallowed.append(f"mcp__openswarm-invoke-agent__{it}")
-                        continue
+            # HITL handler for the agent loop
+            async def hitl_handler(tool_name: str, tool_input: dict) -> tuple[bool, dict | None]:
+                policy = _get_effective_policy(tool_name)
+                if policy == "always_allow":
+                    return True, None
+                if policy == "deny":
+                    return False, None
+                # policy == "ask"
+                decision = await _request_user_approval(tool_name, tool_input)
+                if decision.get("behavior") == "allow":
+                    return True, decision.get("updated_input")
+                return False, None
 
-                    tool_def = next(
-                        (t for t in all_tools_list
-                         if t.mcp_config and t.enabled and _sanitize_server_name(t.name) == name),
-                        None,
-                    )
-                    if tool_def:
-                        denied = _get_denied_tool_names(tool_def)
-                        known = _get_all_known_tool_names(tool_def)
-                        for tn in known - denied:
-                            policy = tool_def.tool_permissions.get(tn, "ask")
-                            if policy == "always_allow":
-                                effective_allowed.append(f"mcp__{name}__{tn}")
-                        for tn in denied:
-                            effective_disallowed.append(f"mcp__{name}__{tn}")
-                    else:
-                        effective_allowed.append(f"mcp__{name}__*")
+            # Tool executor — routes to builtins or MCP servers
+            async def tool_executor(tool_name: str, tool_input: dict) -> list[dict]:
+                t0 = time.time()
 
-            options_kwargs = {
-                "model": session.model,
-                "max_buffer_size": 5 * 1024 * 1024,
-                "permission_mode": "default",
-                "can_use_tool": can_use_tool,
-                "hooks": {
-                    "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_hook])],
-                    "PostToolUse": [HookMatcher(matcher=None, hooks=[post_tool_hook])],
-                },
-                "allowed_tools": effective_allowed,
-                "disallowed_tools": effective_disallowed,
-                "include_partial_messages": True,
-            }
-            if not global_settings.anthropic_api_key:
-                raise ValueError("Anthropic API key not configured. Set it in Settings.")
-            options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
-            if mcp_servers:
-                options_kwargs["mcp_servers"] = mcp_servers
-            if composed_prompt:
-                options_kwargs["system_prompt"] = composed_prompt
-            if session.max_turns:
-                options_kwargs["max_turns"] = session.max_turns
+                # Check builtin tools first
+                from backend.apps.agents.tools.registry import get_tool
+                from backend.apps.agents.tools.base import ToolContext
+                builtin = get_tool(tool_name)
+                if builtin:
+                    ctx = ToolContext(cwd=session.cwd or os.path.expanduser("~"), session_id=session_id)
+                    result = await builtin.execute(tool_input, ctx)
+                    elapsed_ms = int((time.time() - t0) * 1000)
+                    _analytics("tool.called", {
+                        "tool_name": tool_name,
+                        "tool_type": "builtin",
+                        "elapsed_ms": elapsed_ms,
+                        "input_summary": str(tool_input)[:200],
+                    }, session_id=session_id)
+                    return result
 
-            if session.cwd:
-                options_kwargs["cwd"] = session.cwd
+                # Check MCP tools
+                parsed = mcp_manager.parse_mcp_tool_name(tool_name)
+                if parsed:
+                    server_name, bare_name = parsed
+                    result = await mcp_manager.call_tool(server_name, bare_name, tool_input)
+                    elapsed_ms = int((time.time() - t0) * 1000)
+                    _analytics("tool.called", {
+                        "tool_name": tool_name,
+                        "tool_short_name": bare_name,
+                        "tool_type": "mcp",
+                        "mcp_server": server_name,
+                        "elapsed_ms": elapsed_ms,
+                        "input_summary": str(tool_input)[:200],
+                    }, session_id=session_id)
+                    return result
 
-            if session.sdk_session_id:
-                options_kwargs["resume"] = session.sdk_session_id
-                if fork_session:
-                    options_kwargs["fork_session"] = True
+                return [{"type": "text", "text": f"Unknown tool: {tool_name}"}]
 
-            options = ClaudeAgentOptions(**options_kwargs)
+            # WebSocket emitter — captures messages into session
+            async def ws_emitter(event_type: str, data: dict) -> None:
+                data["session_id"] = session_id
+                await ws_manager.send_to_session(session_id, event_type, data)
+                # Capture finalized messages into session.messages
+                if event_type == "agent:message" and "message" in data:
+                    msg_data = data["message"]
+                    try:
+                        msg = Message(**msg_data)
+                        msg.branch_id = session.active_branch_id
+                        session.messages.append(msg)
+                    except Exception:
+                        pass
 
-            async def prompt_stream():
-                yield {
-                    "type": "user",
-                    "message": {"role": "user", "content": prompt_content},
-                }
+            # Create and run the agent loop
+            loop = AgentLoop(
+                session_id=session_id,
+                provider=provider,
+                model=session.model,
+                system_prompt=composed_prompt,
+                tools=all_tool_schemas,
+                tool_executor=tool_executor,
+                hitl_handler=hitl_handler,
+                ws_emitter=ws_emitter,
+                max_turns=session.max_turns,
+                cwd=session.cwd,
+            )
 
-            stream_text_msg_id = None
-            stream_tool_msg_ids_ordered = []
-            stream_block_index_map = {}
+            await loop.run(prompt_content)
 
-            async for message in query(
-                prompt=prompt_stream(),
-                options=options,
-            ):
-                if isinstance(message, StreamEvent):
-                    event = message.event
-                    event_type = event.get("type")
-
-                    if event_type == "content_block_start":
-                        block = event.get("content_block", {})
-                        index = event.get("index")
-                        block_type = block.get("type")
-
-                        if block_type == "text":
-                            if stream_text_msg_id is None:
-                                stream_text_msg_id = uuid4().hex
-                                await ws_manager.send_to_session(session_id, "agent:stream_start", {
-                                    "session_id": session_id,
-                                    "message_id": stream_text_msg_id,
-                                    "role": "assistant",
-                                })
-                            stream_block_index_map[index] = stream_text_msg_id
-
-                        elif block_type == "tool_use":
-                            tool_msg_id = uuid4().hex
-                            stream_tool_msg_ids_ordered.append(tool_msg_id)
-                            stream_block_index_map[index] = tool_msg_id
-                            await ws_manager.send_to_session(session_id, "agent:stream_start", {
-                                "session_id": session_id,
-                                "message_id": tool_msg_id,
-                                "role": "tool_call",
-                                "tool_name": block.get("name", ""),
-                            })
-
-                    elif event_type == "content_block_delta":
-                        index = event.get("index")
-                        delta = event.get("delta", {})
-                        delta_type = delta.get("type")
-                        msg_id = stream_block_index_map.get(index)
-
-                        if msg_id and delta_type == "text_delta":
-                            await ws_manager.send_to_session(session_id, "agent:stream_delta", {
-                                "session_id": session_id,
-                                "message_id": msg_id,
-                                "delta": delta.get("text", ""),
-                            })
-                        elif msg_id and delta_type == "input_json_delta":
-                            await ws_manager.send_to_session(session_id, "agent:stream_delta", {
-                                "session_id": session_id,
-                                "message_id": msg_id,
-                                "delta": delta.get("partial_json", ""),
-                            })
-
-                    elif event_type == "content_block_stop":
-                        index = event.get("index")
-                        msg_id = stream_block_index_map.get(index)
-                        if msg_id and msg_id != stream_text_msg_id:
-                            await ws_manager.send_to_session(session_id, "agent:stream_end", {
-                                "session_id": session_id,
-                                "message_id": msg_id,
-                            })
-
-                    elif event_type == "message_stop":
-                        if stream_text_msg_id:
-                            await ws_manager.send_to_session(session_id, "agent:stream_end", {
-                                "session_id": session_id,
-                                "message_id": stream_text_msg_id,
-                            })
-
-                elif isinstance(message, AssistantMessage):
-                    content_parts = []
-                    tool_uses = []
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            content_parts.append(block.text)
-                        elif isinstance(block, ToolUseBlock):
-                            tool_uses.append({
-                                "id": block.id,
-                                "tool": block.name,
-                                "input": block.input,
-                            })
-
-                    if content_parts:
-                        asst_msg = Message(
-                            id=stream_text_msg_id or uuid4().hex,
-                            role="assistant",
-                            content="\n".join(content_parts),
-                            branch_id=session.active_branch_id,
-                        )
-                        session.messages.append(asst_msg)
-                        await ws_manager.send_to_session(session_id, "agent:message", {
-                            "session_id": session_id,
-                            "message": asst_msg.model_dump(mode="json"),
-                        })
-
-                    for i, tu in enumerate(tool_uses):
-                        msg_id = stream_tool_msg_ids_ordered[i] if i < len(stream_tool_msg_ids_ordered) else uuid4().hex
-                        tool_msg = Message(id=msg_id, role="tool_call", content=tu, branch_id=session.active_branch_id)
-                        session.messages.append(tool_msg)
-                        await ws_manager.send_to_session(session_id, "agent:message", {
-                            "session_id": session_id,
-                            "message": tool_msg.model_dump(mode="json"),
-                        })
-
-                    stream_text_msg_id = None
-                    stream_tool_msg_ids_ordered = []
-                    stream_block_index_map = {}
-
-                elif isinstance(message, ResultMessage):
-                    session.sdk_session_id = getattr(message, "session_id", None)
-                    cost = getattr(message, "total_cost_usd", None)
-                    if cost is not None:
-                        session.cost_usd = cost
-                        await ws_manager.send_to_session(session_id, "agent:cost_update", {
-                            "session_id": session_id,
-                            "cost_usd": session.cost_usd,
-                        })
+            # Update cost from token usage
+            session.tokens["input"] += loop.total_input_tokens
+            session.tokens["output"] += loop.total_output_tokens
+            session.cost_usd += calculate_cost(
+                session.provider, session.model,
+                loop.total_input_tokens, loop.total_output_tokens,
+            )
+            await ws_manager.send_to_session(session_id, "agent:cost_update", {
+                "session_id": session_id,
+                "cost_usd": session.cost_usd,
+            })
 
             session.status = "completed"
         except asyncio.CancelledError:
@@ -980,6 +761,10 @@ class AgentManager:
         except Exception as e:
             logger.exception(f"Agent {session_id} error: {e}")
             session.status = "error"
+            _analytics("error.occurred", {
+                "error_category": type(e).__name__,
+                "error_message": str(e)[:200],
+            }, session_id=session_id)
             error_msg = Message(role="system", content=f"Error: {str(e)}", branch_id=session.active_branch_id)
             session.messages.append(error_msg)
             await ws_manager.send_to_session(session_id, "agent:message", {
@@ -987,7 +772,61 @@ class AgentManager:
                 "message": error_msg.model_dump(mode="json"),
             })
         finally:
+            if mcp_manager:
+                try:
+                    await mcp_manager.__aexit__(None, None, None)
+                except Exception as e:
+                    logger.warning(f"MCP cleanup error: {e}")
             if session_id in self.sessions:
+                # Track session completion
+                duration = 0.0
+                if session.created_at:
+                    duration = (datetime.now() - session.created_at).total_seconds()
+                msg_count = len([m for m in session.messages if m.role in ("user", "assistant")])
+                tool_names = [m.content.get("tool", "") for m in session.messages if m.role == "tool_call" and isinstance(m.content, dict)]
+                task_category = _infer_task_category(tool_names)
+
+                # Collect rich session data for analytics — full messages, no truncation
+                user_messages = [
+                    m.content if isinstance(m.content, str) else str(m.content)
+                    for m in session.messages if m.role == "user"
+                ]
+                assistant_messages = [
+                    m.content if isinstance(m.content, str) else str(m.content)
+                    for m in session.messages if m.role == "assistant"
+                ]
+                # Unique tools used with call counts
+                tool_call_counts: dict[str, int] = {}
+                for tn in tool_names:
+                    short = tn.split("__")[-1] if "__" in tn else tn
+                    tool_call_counts[short] = tool_call_counts.get(short, 0) + 1
+                # MCP servers used
+                mcp_servers_used = list(set(
+                    tn.split("__")[1] for tn in tool_names
+                    if tn.startswith("mcp__") and len(tn.split("__")) >= 3
+                ))
+
+                _analytics("session.completed", {
+                    "model": session.model,
+                    "provider": session.provider,
+                    "mode": session.mode,
+                    "cost_usd": session.cost_usd,
+                    "message_count": msg_count,
+                    "duration_seconds": round(duration, 1),
+                    "status": session.status,
+                    "task_category": task_category,
+                    "tool_count": len(tool_names),
+                    # Rich data
+                    "session_title": session.name,
+                    "user_messages": user_messages,
+                    "assistant_messages": assistant_messages,
+                    "first_user_message": user_messages[0] if user_messages else "",
+                    "tools_used": tool_call_counts,
+                    "tools_list": list(tool_call_counts.keys()),
+                    "mcp_servers_used": mcp_servers_used,
+                    "system_prompt_length": len(session.system_prompt or ""),
+                }, session_id=session_id, dashboard_id=session.dashboard_id)
+
                 await ws_manager.send_to_session(session_id, "agent:status", {
                     "session_id": session_id,
                     "status": session.status,
@@ -1134,6 +973,7 @@ class AgentManager:
         prompt: str,
         mode: str | None = None,
         model: str | None = None,
+        provider: str | None = None,
         images: list | None = None,
         context_paths: list | None = None,
         forced_tools: list[str] | None = None,
@@ -1145,12 +985,15 @@ class AgentManager:
         session = self.sessions.get(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
-        
+
         existing = self.tasks.get(session_id)
         if existing and not existing.done():
             return
 
         session_changed = False
+        if provider and provider != session.provider:
+            session.provider = provider
+            session_changed = True
         if model and model != session.model:
             session.model = model
             session_changed = True

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 class AgentConfig(BaseModel):
     name: str = Field(default_factory=lambda: f"Agent-{uuid4().hex[:6]}")
+    provider: str = "anthropic"
     model: str = "sonnet"
     mode: str = "agent"
     system_prompt: Optional[str] = None
@@ -55,6 +56,7 @@ class AgentSession(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     name: str
     status: Literal["running", "waiting_approval", "completed", "error", "stopped"] = "running"
+    provider: str = "anthropic"
     model: str = "sonnet"
     mode: str = "agent"
     sdk_session_id: Optional[str] = None

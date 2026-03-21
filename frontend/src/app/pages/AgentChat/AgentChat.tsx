@@ -27,6 +27,7 @@ import {
   switchBranch,
   duplicateSession,
   setActiveSession,
+  updateSessionProvider,
   updateSessionModel,
   updateSessionMode,
   fetchSession,
@@ -45,9 +46,9 @@ import DiffViewer from './DiffViewer';
 import { setGlowingBrowserCards, clearGlowingBrowserCards } from '@/shared/state/dashboardLayoutSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
-const CONTEXT_WINDOWS: Record<string, number> = {
-  sonnet: 200_000,
-  opus: 200_000,
+const CONTEXT_WINDOWS_DEFAULT: Record<string, number> = {
+  sonnet: 1_000_000,
+  opus: 1_000_000,
   haiku: 200_000,
 };
 
@@ -135,6 +136,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const dispatch = useAppDispatch();
   const session = useAppSelector((state) => (id ? state.agents.sessions[id] : undefined));
   const modesMap = useAppSelector((state) => state.modes.items);
+  const modelsByProvider = useAppSelector((state) => state.models.byProvider);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<ChatInputHandle>(null);
   const isAtBottomRef = useRef(true);
@@ -143,6 +145,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const [awaitingResponse, setAwaitingResponse] = useState(false);
   const [mode, setMode] = useState('agent');
   const [model, setModel] = useState('sonnet');
+  const [provider, setProvider] = useState('anthropic');
 
   const wsRef = useRef<ReturnType<typeof createSessionWs> | null>(null);
   const initialContextApplied = useRef(false);
@@ -186,6 +189,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   }, [session?.model]);
 
   useEffect(() => {
+    if (session?.provider) setProvider(session.provider);
+  }, [session?.provider]);
+
+  useEffect(() => {
     if (Object.keys(modesMap).length === 0) dispatch(fetchModes());
   }, [dispatch, modesMap]);
 
@@ -194,11 +201,11 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     setShowResumeBubble(false);
     setAwaitingResponse(true);
     if (isDraft) {
-      const config: Record<string, any> = { model, mode };
+      const config: Record<string, any> = { provider, model, mode };
       if (session?.system_prompt) config.system_prompt = session.system_prompt;
       if (session?.target_directory) config.target_directory = session.target_directory;
       dispatch(
-        launchAndSendFirstMessage({ draftId: id, config, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds })
+        launchAndSendFirstMessage({ draftId: id, config, prompt: msg.prompt, mode, model, provider, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds })
       ).then((action) => {
         if (launchAndSendFirstMessage.fulfilled.match(action)) {
           const realId = action.payload.session.id;
@@ -212,14 +219,14 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       if (msg.selectedBrowserIds?.length) {
         dispatch(setGlowingBrowserCards({ browserIds: msg.selectedBrowserIds, sessionId: id }));
       }
-      dispatch(sendMessageThunk({ sessionId: id, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds }))
+      dispatch(sendMessageThunk({ sessionId: id, prompt: msg.prompt, mode, model, provider, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds }))
         .then((action) => {
           if (sendMessageThunk.rejected.match(action)) {
             setAwaitingResponse(false);
           }
         });
     }
-  }, [id, isDraft, mode, model, session?.system_prompt, session?.target_directory, dispatch]);
+  }, [id, isDraft, mode, model, provider, session?.system_prompt, session?.target_directory, dispatch]);
 
   const agentBusy = awaitingResponse || (!isDraft && (session?.status === 'running' || session?.status === 'waiting_approval'));
 
@@ -304,6 +311,11 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     if (id && !isDraft) dispatch(updateSessionMode({ sessionId: id, mode: newMode }));
   }, [id, isDraft, dispatch]);
 
+  const handleProviderChange = useCallback((newProvider: string) => {
+    setProvider(newProvider);
+    if (id && !isDraft) dispatch(updateSessionProvider({ sessionId: id, provider: newProvider }));
+  }, [id, isDraft, dispatch]);
+
   const handleModelChange = useCallback((newModel: string) => {
     setModel(newModel);
     if (id && !isDraft) dispatch(updateSessionModel({ sessionId: id, model: newModel }));
@@ -330,9 +342,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       prompt: "Continue where you left off. Start you're response EXACTLY with 'Sorry, let me pick up where I left off",
       mode,
       model,
+      provider,
       hidden: true,
     }));
-  }, [id, mode, model, dispatch]);
+  }, [id, mode, model, provider, dispatch]);
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
 
@@ -427,7 +440,12 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   }, [id, dispatch, onBranch, session?.dashboard_id]);
 
   const contextEstimate = useMemo(() => {
-    const limit = CONTEXT_WINDOWS[model] || 200_000;
+    // Look up context window from dynamic models first, then fall back to defaults
+    let limit = CONTEXT_WINDOWS_DEFAULT[model] || 200_000;
+    for (const models of Object.values(modelsByProvider)) {
+      const found = models.find((m: any) => m.value === model);
+      if (found?.context_window) { limit = found.context_window; break; }
+    }
     let totalChars = 0;
     if (session?.system_prompt) totalChars += session.system_prompt.length;
     for (const msg of activeBranchMessages) {
@@ -438,7 +456,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     }
     const used = Math.round(totalChars / 4);
     return { used, limit };
-  }, [activeBranchMessages, session?.system_prompt, session?.streamingMessage?.content, model]);
+  }, [activeBranchMessages, session?.system_prompt, session?.streamingMessage?.content, model, modelsByProvider]);
 
   const sessionRunning = session?.status === 'running' || session?.status === 'waiting_approval';
 
@@ -1116,6 +1134,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 onModeChange={handleModeChange}
                 model={model}
                 onModelChange={handleModelChange}
+                provider={provider}
+                onProviderChange={handleProviderChange}
                 isRunning={agentBusy}
                 onStop={handleStop}
                 queueLength={queueLength}

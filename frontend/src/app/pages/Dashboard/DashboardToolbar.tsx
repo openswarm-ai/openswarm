@@ -95,6 +95,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const defaultModel = useAppSelector((s) => s.settings.data.default_model);
     const [mode, setMode] = useState(defaultMode || 'agent');
     const [model, setModel] = useState(defaultModel || 'sonnet');
+    const [provider, setProvider] = useState('anthropic');
     const settingsApplied = useRef(false);
     useEffect(() => {
       if (!settingsApplied.current) {
@@ -365,6 +366,8 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               onModeChange={setMode}
               model={model}
               onModelChange={setModel}
+              provider={provider}
+              onProviderChange={setProvider}
               embedded
               autoFocus
               sessionId={TOOLBAR_OWNER_ID}
