@@ -2,7 +2,6 @@ import React, { useMemo, useCallback, useState, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
-import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import Collapse from '@mui/material/Collapse';
 import SearchIcon from '@mui/icons-material/Search';
@@ -24,7 +23,7 @@ import {
   HistorySession,
 } from '@/shared/state/agentsSlice';
 import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
-import ApprovalBar, { BatchApprovalBar } from '@/app/pages/AgentChat/ApprovalBar';
+import ApprovalBar, { BatchApprovalBar, parseMcpToolName, useMcpToolMeta, getToolIcon } from '@/app/pages/AgentChat/ApprovalBar';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 // ---------------------------------------------------------------------------
@@ -274,6 +273,16 @@ const DynamicIsland: React.FC = () => {
     [groups],
   );
 
+  const oldestNonQuestionApproval = useMemo(() => {
+    const all = groups
+      .flatMap((g) => g.approvals)
+      .filter((a) => a.tool_name !== 'AskUserQuestion');
+    if (all.length === 0) return null;
+    return all.reduce((oldest, a) =>
+      a.created_at < oldest.created_at ? a : oldest,
+    );
+  }, [groups]);
+
   // ---- Island state machine ----
 
   const islandState: IslandState = useMemo(() => {
@@ -445,13 +454,14 @@ const DynamicIsland: React.FC = () => {
               hasApprovals={hasApprovals}
             />
           )}
-          {islandState === 'compact-actionable' && (
+          {islandState === 'compact-actionable' && oldestNonQuestionApproval && (
             <CompactActionablePill
               key="compact-actionable"
               c={c}
-              approvalCount={nonQuestionApprovalCount}
-              onApproveAll={onApproveAllNonQuestion}
-              onDenyAll={onDenyAllNonQuestion}
+              request={oldestNonQuestionApproval}
+              remainingCount={nonQuestionApprovalCount}
+              onApprove={onApprove}
+              onDeny={onDeny}
               onExpand={() => setUserExpanded(true)}
             />
           )}
@@ -577,110 +587,127 @@ const CompactPill: React.FC<{
 );
 
 // ---------------------------------------------------------------------------
-// Compact-actionable pill — inline approve/deny without expanding
+// Compact-actionable pill — single approval with icon + name + approve/deny
 // ---------------------------------------------------------------------------
 
 const CompactActionablePill: React.FC<{
   c: ReturnType<typeof useClaudeTokens>;
-  approvalCount: number;
-  onApproveAll: () => void;
-  onDenyAll: () => void;
+  request: ApprovalRequest;
+  remainingCount: number;
+  onApprove: (requestId: string) => void;
+  onDeny: (requestId: string) => void;
   onExpand: () => void;
-}> = ({ c, approvalCount, onApproveAll, onDenyAll, onExpand }) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.92 }}
-    animate={{ opacity: 1, scale: 1 }}
-    exit={{ opacity: 0, scale: 0.92 }}
-    transition={SPRING_BOUNCE}
-  >
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 0.75,
-        px: 1.5,
-        height: 32,
-        userSelect: 'none',
-      }}
+}> = ({ c, request, remainingCount, onApprove, onDeny, onExpand }) => {
+  const parsed = useMemo(() => parseMcpToolName(request.tool_name), [request.tool_name]);
+  const meta = useMcpToolMeta(parsed);
+
+  const icon = parsed.isMcp
+    ? (meta.integration?.icon || null)
+    : getToolIcon(request.tool_name);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.92 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.92 }}
+      transition={SPRING_BOUNCE}
     >
       <Box
         sx={{
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          bgcolor: c.status.warning,
-          flexShrink: 0,
-          animation: 'islandPulse 2s ease-in-out infinite',
-          '@keyframes islandPulse': {
-            '0%, 100%': { opacity: 0.8, transform: 'scale(1)' },
-            '50%': { opacity: 0.4, transform: 'scale(1.3)' },
-          },
-        }}
-      />
-      <Typography
-        sx={{
-          fontSize: '0.68rem',
-          fontWeight: 600,
-          color: c.text.tertiary,
-          flex: 1,
-          whiteSpace: 'nowrap',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.75,
+          px: 0.5,
+          height: 24,
+          userSelect: 'none',
         }}
       >
-        {approvalCount} {approvalCount === 1 ? 'approval' : 'approvals'}
-      </Typography>
-      <Button
-        size="small"
-        startIcon={<CheckIcon sx={{ fontSize: '0.75rem !important' }} />}
-        onClick={(e) => { e.stopPropagation(); onApproveAll(); }}
-        sx={{
-          minWidth: 0,
-          minHeight: 22,
-          px: 1,
-          py: 0,
-          fontSize: '0.62rem',
-          fontWeight: 700,
-          textTransform: 'none',
-          borderRadius: 50,
-          color: '#fff',
-          bgcolor: c.status.success,
-          '&:hover': { bgcolor: c.status.success, filter: 'brightness(0.85)' },
-          '& .MuiButton-startIcon': { mr: 0.25 },
-        }}
-      >
-        Approve
-      </Button>
-      <Button
-        size="small"
-        variant="outlined"
-        onClick={(e) => { e.stopPropagation(); onDenyAll(); }}
-        sx={{
-          minWidth: 0,
-          minHeight: 22,
-          px: 1,
-          py: 0,
-          fontSize: '0.62rem',
-          fontWeight: 700,
-          textTransform: 'none',
-          borderRadius: 50,
-          color: c.status.error,
-          borderColor: c.status.error,
-          '&:hover': { borderColor: c.status.error, bgcolor: `${c.status.error}0a` },
-        }}
-      >
-        Deny
-      </Button>
-      <Tooltip title="Show details" arrow>
-        <IconButton
-          size="small"
-          onClick={(e) => { e.stopPropagation(); onExpand(); }}
-          sx={{ p: 0.25, color: c.text.ghost, '&:hover': { color: c.text.tertiary } }}
+        <Box
+          sx={{
+            width: 16,
+            height: 16,
+            borderRadius: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            color: c.text.tertiary,
+            '& svg': { width: 12, height: 12 },
+          }}
         >
-          <ExpandMoreIcon sx={{ fontSize: 15 }} />
-        </IconButton>
-      </Tooltip>
-    </Box>
-  </motion.div>
-);
+          {icon}
+        </Box>
+        <Typography
+          sx={{
+            fontSize: '0.68rem',
+            fontWeight: 600,
+            color: c.text.secondary,
+            flex: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            minWidth: 0,
+          }}
+        >
+          {parsed.displayName}
+        </Typography>
+        {remainingCount > 1 && (
+          <Typography
+            sx={{
+              fontSize: '0.6rem',
+              fontWeight: 600,
+              color: c.text.ghost,
+              flexShrink: 0,
+            }}
+          >
+            +{remainingCount - 1}
+          </Typography>
+        )}
+        <Tooltip title="Approve" arrow>
+          <IconButton
+            size="small"
+            onClick={(e) => { e.stopPropagation(); onApprove(request.id); }}
+            sx={{
+              p: 0,
+              width: 18,
+              height: 18,
+              color: '#fff',
+              bgcolor: c.status.success,
+              '&:hover': { bgcolor: c.status.success, filter: 'brightness(0.85)' },
+            }}
+          >
+            <CheckIcon sx={{ fontSize: 11 }} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Deny" arrow>
+          <IconButton
+            size="small"
+            onClick={(e) => { e.stopPropagation(); onDeny(request.id); }}
+            sx={{
+              p: 0,
+              width: 18,
+              height: 18,
+              color: c.status.error,
+              border: `1px solid ${c.status.error}`,
+              '&:hover': { bgcolor: `${c.status.error}0a` },
+            }}
+          >
+            <CloseIcon sx={{ fontSize: 11 }} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Show details" arrow>
+          <IconButton
+            size="small"
+            onClick={(e) => { e.stopPropagation(); onExpand(); }}
+            sx={{ p: 0.25, color: c.text.ghost, '&:hover': { color: c.text.tertiary } }}
+          >
+            <ExpandMoreIcon sx={{ fontSize: 15 }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
+    </motion.div>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Expanded card
