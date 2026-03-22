@@ -108,12 +108,19 @@ class WebSearchTool(BaseTool):
             if len(entries) >= num_results:
                 break
 
-            # Title + URL
+            # Title + URL — handle both class-before-href and href-before-class
             link_match = re.search(
                 r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
                 block,
                 flags=re.DOTALL,
             )
+            if not link_match:
+                # Try reversed attribute order
+                link_match = re.search(
+                    r'<a[^>]*href="([^"]*)"[^>]*class="[^"]*result__a[^"]*"[^>]*>(.*?)</a>',
+                    block,
+                    flags=re.DOTALL,
+                )
             if not link_match:
                 continue
 
