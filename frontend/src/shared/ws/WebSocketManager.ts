@@ -38,6 +38,8 @@ class WebSocketManager {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
   private deltaBuffer: Map<string, { sessionId: string; messageId: string; accumulated: string }> = new Map();
   private flushScheduled = false;
+  private seenStreamIds: Set<string> = new Set();
+  private seenMessageIds: Set<string> = new Set();
 
   constructor(url: string, options?: WSManagerOptions) {
     this.url = url;
@@ -133,6 +135,9 @@ class WebSocketManager {
 
       case 'agent:message':
         if (session_id && data.message) {
+          const msgId = data.message.id;
+          if (msgId && this.seenMessageIds.has(msgId)) break; // Dedup
+          if (msgId) this.seenMessageIds.add(msgId);
           if (this.deltaBuffer.size > 0) this.flushDeltas();
           store.dispatch(addMessage({ sessionId: session_id, message: data.message }));
         }
@@ -140,6 +145,8 @@ class WebSocketManager {
 
       case 'agent:stream_start':
         if (session_id && data.message_id) {
+          if (this.seenStreamIds.has(data.message_id)) break; // Dedup
+          this.seenStreamIds.add(data.message_id);
           store.dispatch(streamStart({
             sessionId: session_id,
             messageId: data.message_id,
@@ -151,12 +158,15 @@ class WebSocketManager {
 
       case 'agent:stream_delta':
         if (session_id && data.message_id) {
+          if (!this.seenStreamIds.has(data.message_id)) break; // Only accept deltas for streams WE started
           this.bufferDelta(session_id, data.message_id, data.delta);
         }
         break;
 
       case 'agent:stream_end':
         if (session_id && data.message_id) {
+          if (!this.seenStreamIds.has(data.message_id)) break; // Dedup
+          this.seenStreamIds.delete(data.message_id); // Clean up
           if (this.deltaBuffer.size > 0) this.flushDeltas();
           store.dispatch(streamEnd({
             sessionId: session_id,
