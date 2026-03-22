@@ -30,8 +30,8 @@ class OpenAICompatProvider(BaseProvider):
         base_url: str | None = None,
     ):
         kwargs: dict[str, Any] = {}
-        if api_key:
-            kwargs["api_key"] = api_key
+        # Always set api_key — use "none" as placeholder if empty (some endpoints don't need real keys)
+        kwargs["api_key"] = api_key if api_key else "none"
         if base_url:
             kwargs["base_url"] = base_url
         self.client = AsyncOpenAI(**kwargs)

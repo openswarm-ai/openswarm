@@ -186,10 +186,13 @@ def create_provider(
 
     if api_type == "openrouter":
         from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-        return OpenAICompatProvider(
-            api_key=getattr(settings, "openrouter_api_key", "") or "",
-            base_url=OPENROUTER_BASE_URL,
-        )
+        openrouter_key = getattr(settings, "openrouter_api_key", None)
+        if openrouter_key:
+            return OpenAICompatProvider(api_key=openrouter_key, base_url=OPENROUTER_BASE_URL)
+        # No OpenRouter key — try 9Router as fallback
+        if _is_9router_available():
+            return OpenAICompatProvider(api_key="9router", base_url="http://localhost:20128/v1")
+        raise ValueError(f"OpenRouter API key not configured for {provider_name}. Set it in Settings, or connect a subscription.")
 
     # Custom provider — look up in settings.custom_providers
     if provider_config:

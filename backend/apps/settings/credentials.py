@@ -29,42 +29,50 @@ def validate_credentials(settings: AppSettings, provider: str = "anthropic") -> 
     """Raise ValueError if credentials are missing for the given provider.
 
     Allows through if 9Router is running as a fallback.
+    Handles both display names ('Anthropic') and lowercase ('anthropic').
     """
+    p = provider.lower().strip()
+
     # 9Router or GitHub Copilot providers don't need traditional credentials
-    if provider in ("9Router", "9router", "GitHub Copilot", "copilot"):
+    if p in ("9router", "github copilot", "copilot"):
         return
 
-    if provider == "anthropic":
+    # If 9Router is running, all providers are accessible
+    if _check_9router():
+        return
+
+    if p == "anthropic":
         if getattr(settings, "connection_mode", "own_key") == "managed":
             if not getattr(settings, "openswarm_auth_token", None):
                 raise ValueError("Open Swarm account not connected. Sign in via Settings → API.")
             return
         if settings.anthropic_api_key:
             return
-        if _check_9router():
-            return  # 9Router will handle it
-        raise ValueError("Anthropic API key not configured. Set it in Settings, or connect 9Router.")
-    elif provider == "openai":
+        raise ValueError("Anthropic API key not configured. Set it in Settings, or connect a subscription.")
+    elif p == "openai":
         if settings.openai_api_key:
             return
-        if _check_9router():
-            return
-        raise ValueError("OpenAI API key not configured. Set it in Settings, or connect 9Router.")
-    elif provider == "gemini":
+        raise ValueError("OpenAI API key not configured. Set it in Settings, or connect a subscription.")
+    elif p in ("gemini", "google"):
         if getattr(settings, "google_api_key", None):
             return
-        if _check_9router():
+        raise ValueError("Google API key not configured. Set it in Settings, or connect a subscription.")
+    elif p == "openrouter":
+        if getattr(settings, "openrouter_api_key", None):
             return
-        raise ValueError("Google API key not configured. Set it in Settings, or connect 9Router.")
-    elif provider == "openrouter":
-        if not getattr(settings, "openrouter_api_key", None):
-            raise ValueError("OpenRouter API key not configured. Set it in Settings.")
+        raise ValueError("OpenRouter API key not configured. Set it in Settings.")
+    elif p in ("xai", "meta", "deepseek", "mistral", "qwen", "cohere"):
+        # These route through OpenRouter — need either OpenRouter key or 9Router
+        if getattr(settings, "openrouter_api_key", None):
+            return
+        raise ValueError(f"{provider} requires an OpenRouter API key, or connect a subscription via 9Router.")
     else:
         # Custom provider — check if it exists in custom_providers
         for cp in getattr(settings, "custom_providers", []):
-            if cp.name == provider:
-                return  # Custom providers may have empty api_key (e.g. local Ollama)
-        raise ValueError(f"Provider '{provider}' not found in settings.")
+            if cp.name.lower() == p:
+                return
+        # Unknown provider — allow through (create_provider will handle the error)
+        return
 
 
 def get_provider_credentials(settings: AppSettings, provider: str) -> dict[str, str]:
