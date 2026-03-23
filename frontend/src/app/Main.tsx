@@ -29,6 +29,7 @@ import AnalyticsOptIn from './components/AnalyticsOptIn';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
+import OnboardingModal from './components/OnboardingModal';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 
 function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
@@ -238,6 +239,7 @@ const ThemedApp: React.FC = () => {
                 </Route>
               </Routes>
               <AnalyticsOptIn />
+              <OnboardingModal />
             </UpdateListener>
           </SettingsLoader>
         </ShortcutsProvider>
