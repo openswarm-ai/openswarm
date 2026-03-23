@@ -314,7 +314,7 @@ class AgentLoop:
             result_msg = Message(
                 role="tool_result",
                 content={
-                    "text": result_text[:2000] if result_text else "Done.",
+                    "text": result_text[:15000] if result_text else "Done.",
                     "tool_name": tc.name,
                     "elapsed_ms": elapsed_ms,
                 },
