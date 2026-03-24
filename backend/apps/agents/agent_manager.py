@@ -23,6 +23,7 @@ from backend.apps.tools_lib.tools_lib import (
     refresh_google_token,
 )
 from backend.config.paths import SESSIONS_DIR
+from backend.apps.analytics.collector import record as _analytics
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +329,7 @@ class AgentManager:
         session = AgentSession(
             id=session_id,
             name=config.name,
+            provider=getattr(config, "provider", "anthropic"),
             model=config.model,
             mode=config.mode,
             system_prompt=config.system_prompt,
@@ -337,13 +339,20 @@ class AgentManager:
             dashboard_id=config.dashboard_id,
         )
         self.sessions[session_id] = session
-        
+
+        _analytics("session.started", {
+            "model": session.model,
+            "provider": session.provider,
+            "mode": session.mode,
+            "tool_count": len(tools),
+        }, session_id=session_id, dashboard_id=config.dashboard_id)
+
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
             "status": "running",
             "session": session.model_dump(mode="json"),
         })
-        
+
         return session
 
     def _resolve_context_paths(self, context_paths: list | None) -> str:
@@ -826,9 +835,17 @@ class AgentManager:
                 "disallowed_tools": effective_disallowed,
                 "include_partial_messages": True,
             }
-            if not global_settings.anthropic_api_key:
-                raise ValueError("Anthropic API key not configured. Set it in Settings.")
-            options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
+            if global_settings.anthropic_api_key:
+                options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
+            else:
+                # Try 9Router as fallback for subscription access
+                from backend.apps.nine_router import is_running as _9r_running
+                if _9r_running():
+                    options_kwargs["env"] = {
+                        "ANTHROPIC_BASE_URL": "http://localhost:20128",
+                    }
+                else:
+                    raise ValueError("No AI provider configured. Set an API key or connect a subscription.")
             if mcp_servers:
                 options_kwargs["mcp_servers"] = mcp_servers
             if composed_prompt:
@@ -988,6 +1005,30 @@ class AgentManager:
             })
         finally:
             if session_id in self.sessions:
+                # Analytics
+                duration = (datetime.now() - session.created_at).total_seconds()
+                tool_names = [
+                    m.content.get("tool", "") for m in session.messages
+                    if m.role == "tool_call" and isinstance(m.content, dict)
+                ]
+                user_messages = [
+                    (m.content if isinstance(m.content, str) else str(m.content))[:200]
+                    for m in session.messages if m.role == "user"
+                ]
+                _analytics("session.completed", {
+                    "model": session.model,
+                    "provider": getattr(session, "provider", "anthropic"),
+                    "mode": session.mode,
+                    "cost_usd": session.cost_usd,
+                    "message_count": len([m for m in session.messages if m.role in ("user", "assistant")]),
+                    "duration_seconds": round(duration, 1),
+                    "status": session.status,
+                    "tool_count": len(tool_names),
+                    "tools_list": list(set(tool_names)),
+                    "session_title": session.name,
+                    "first_user_message": user_messages[0] if user_messages else "",
+                }, session_id=session_id, dashboard_id=session.dashboard_id)
+
                 await ws_manager.send_to_session(session_id, "agent:status", {
                     "session_id": session_id,
                     "status": session.status,
@@ -1134,6 +1175,7 @@ class AgentManager:
         prompt: str,
         mode: str | None = None,
         model: str | None = None,
+        provider: str | None = None,
         images: list | None = None,
         context_paths: list | None = None,
         forced_tools: list[str] | None = None,

@@ -7,6 +7,7 @@ class AgentConfig(BaseModel):
     name: str = Field(default_factory=lambda: f"Agent-{uuid4().hex[:6]}")
     model: str = "sonnet"
     mode: str = "agent"
+    provider: str = "anthropic"
     system_prompt: Optional[str] = None
     allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion"])
     max_turns: Optional[int] = None
@@ -55,6 +56,7 @@ class AgentSession(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     name: str
     status: Literal["running", "waiting_approval", "completed", "error", "stopped"] = "running"
+    provider: str = "anthropic"
     model: str = "sonnet"
     mode: str = "agent"
     sdk_session_id: Optional[str] = None

@@ -40,11 +40,508 @@ import Collapse from '@mui/material/Collapse';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
+import { fetchModels } from '@/shared/state/modelsSlice';
 import { setChecking, setUpdateError } from '@/shared/state/updateSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import DirectoryBrowser from '@/app/components/DirectoryBrowser';
 import { CommandsContent } from '@/app/pages/Commands/Commands';
+import { API_BASE } from '@/shared/config';
+
+// ── Copilot Auth Button ──
+const CopilotAuthButton: React.FC = () => {
+  const c = useClaudeTokens();
+  const [status, setStatus] = useState<'idle' | 'waiting' | 'connected' | 'error'>('idle');
+  const [userCode, setUserCode] = useState('');
+  const [username, setUsername] = useState('');
+  const [error, setError] = useState('');
+
+  // Check if already connected
+  useEffect(() => {
+    fetch(`${API_BASE}/agents/copilot/models`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.models && d.models.length > 0) setStatus('connected');
+      })
+      .catch(() => {});
+  }, []);
+
+  const startAuth = async () => {
+    setStatus('waiting');
+    setError('');
+    try {
+      const resp = await fetch(`${API_BASE}/agents/copilot/start-auth`, { method: 'POST' });
+      const data = await resp.json();
+      setUserCode(data.user_code);
+      window.open(data.verification_uri, '_blank');
+
+      // Poll for completion
+      const deviceCode = data.device_code;
+      const poll = setInterval(async () => {
+        try {
+          const r = await fetch(`${API_BASE}/agents/copilot/poll-auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_code: deviceCode }),
+          });
+          const d = await r.json();
+          if (d.status === 'connected') {
+            clearInterval(poll);
+            setStatus('connected');
+            setUsername(d.username || '');
+          }
+        } catch {}
+      }, 5000);
+
+      // Timeout after 5 minutes
+      setTimeout(() => { clearInterval(poll); if (status === 'waiting') { setStatus('error'); setError('Auth timed out'); } }, 300000);
+    } catch (e: any) {
+      setStatus('error');
+      setError(e.message || 'Failed to start auth');
+    }
+  };
+
+  const disconnect = async () => {
+    await fetch(`${API_BASE}/agents/copilot/disconnect`, { method: 'POST' });
+    setStatus('idle');
+    setUsername('');
+  };
+
+  if (status === 'connected') {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: c.status.success, flexShrink: 0 }} />
+        <Typography sx={{ fontSize: '0.78rem', color: c.text.primary }}>
+          Connected{username ? ` as @${username}` : ''}
+        </Typography>
+        <Typography
+          onClick={disconnect}
+          sx={{ fontSize: '0.72rem', color: c.text.tertiary, cursor: 'pointer', ml: 'auto', '&:hover': { color: c.status.error } }}
+        >
+          Disconnect
+        </Typography>
+      </Box>
+    );
+  }
+
+  if (status === 'waiting') {
+    return (
+      <Box>
+        <Typography sx={{ fontSize: '0.78rem', color: c.text.primary, mb: 0.5 }}>
+          Enter code <strong style={{ fontFamily: 'monospace', fontSize: '0.9rem', letterSpacing: '0.1em' }}>{userCode}</strong> at github.com/login/device
+        </Typography>
+        <Typography sx={{ fontSize: '0.68rem', color: c.text.tertiary }}>Waiting for authorization...</Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      <Button
+        onClick={startAuth}
+        variant="outlined"
+        size="small"
+        sx={{
+          textTransform: 'none',
+          fontSize: '0.78rem',
+          color: c.text.primary,
+          borderColor: c.border.medium,
+          '&:hover': { borderColor: c.accent.primary, color: c.accent.primary },
+        }}
+      >
+        Sign in with GitHub
+      </Button>
+      {error && <Typography sx={{ fontSize: '0.7rem', color: c.status.error, mt: 0.5 }}>{error}</Typography>}
+    </Box>
+  );
+};
+
+// ── Subscription Provider Card ──
+const SUBSCRIPTION_PROVIDERS = [
+  { id: 'claude', name: 'Claude Pro / Max', desc: 'Sonnet, Opus, Haiku — use your Anthropic subscription', color: '#E8927A', preview: false },
+  { id: 'gemini-cli', name: 'Gemini Advanced', desc: 'Gemini 2.5 Pro and Flash — use your Google subscription', color: '#4285F4', preview: true },
+  { id: 'codex', name: 'ChatGPT Plus / Pro', desc: 'GPT-5.4, o3, o4-mini — use your OpenAI subscription', color: '#74AA9C', preview: true },
+  { id: 'github', name: 'GitHub Copilot', desc: 'Claude + GPT models via your Copilot subscription', color: '#8B949E', preview: true },
+];
+
+const SubscriptionCard: React.FC<{ provider: typeof SUBSCRIPTION_PROVIDERS[0]; connected: boolean; onConnect: () => void; onDisconnect: () => void; connecting: boolean; userCode?: string }> = ({ provider, connected, onConnect, onDisconnect, connecting, userCode }) => {
+  const c = useClaudeTokens();
+  const isPreview = (provider as any).preview;
+  return (
+    <Box sx={{ p: 1.5, borderRadius: `${c.radius.md}px`, border: `1px solid ${connected ? c.status.success + '30' : c.border.subtle}`, bgcolor: connected ? `${c.status.success}04` : 'transparent', opacity: isPreview ? 0.5 : 1 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: connected ? c.status.success : c.border.medium, flexShrink: 0 }} />
+          <Box>
+            <Typography sx={{ fontSize: '0.78rem', fontWeight: 600, color: c.text.primary }}>{provider.name}</Typography>
+            <Typography sx={{ fontSize: '0.65rem', color: c.text.muted }}>{provider.desc}</Typography>
+          </Box>
+        </Box>
+        {isPreview ? (
+          <Typography sx={{ fontSize: '0.65rem', color: c.text.ghost, fontStyle: 'italic' }}>
+            Coming soon
+          </Typography>
+        ) : connected ? (
+          <Typography onClick={onDisconnect} sx={{ fontSize: '0.68rem', color: c.text.tertiary, cursor: 'pointer', '&:hover': { color: c.status.error } }}>
+            Disconnect
+          </Typography>
+        ) : connecting && userCode ? (
+          <Box sx={{ textAlign: 'right' }}>
+            <Typography sx={{ fontSize: '0.68rem', color: c.text.muted }}>Enter code:</Typography>
+            <Typography sx={{ fontSize: '0.85rem', fontWeight: 700, color: c.accent.primary, fontFamily: 'monospace', letterSpacing: '0.1em' }}>{userCode}</Typography>
+          </Box>
+        ) : (
+          <Button onClick={onConnect} disabled={connecting} variant="outlined" size="small" sx={{ textTransform: 'none', fontSize: '0.7rem', color: c.text.primary, borderColor: c.border.medium, minWidth: 70, '&:hover': { borderColor: c.accent.primary } }}>
+            {connecting ? 'Waiting...' : 'Connect'}
+          </Button>
+        )}
+      </Box>
+    </Box>
+  );
+};
+
+const SubscriptionCards: React.FC = () => {
+  const c = useClaudeTokens();
+  const [status, setStatus] = useState<any>(null);
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const [userCode, setUserCode] = useState('');
+  const [pollTimer, setPollTimer] = useState<any>(null);
+
+  const fetchStatus = () => {
+    fetch(`${API_BASE}/agents/subscriptions/status`)
+      .then(r => r.json())
+      .then(setStatus)
+      .catch(() => setStatus({ running: false, providers: [], models: [] }));
+  };
+
+  useEffect(() => { fetchStatus(); }, []);
+
+  const isConnected = (providerId: string) => {
+    if (!status?.providers) return false;
+    const connections = status.providers?.connections || (Array.isArray(status.providers) ? status.providers : []);
+    return connections.some((p: any) => p.provider === providerId && p.isActive);
+  };
+
+  const handleConnect = async (providerId: string) => {
+    setConnecting(providerId);
+    setUserCode('');
+    try {
+      const r = await fetch(`${API_BASE}/agents/subscriptions/connect`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: providerId }),
+      });
+      const data = await r.json();
+
+      if (data.flow === 'device_code') {
+        // Device code flow (GitHub, Qwen, etc.) — show code, poll
+        const code = data.user_code || '';
+        setUserCode(code);
+        if (data.verification_uri) window.open(data.verification_uri, '_blank');
+
+        const timer = setInterval(async () => {
+          try {
+            const pr = await fetch(`${API_BASE}/agents/subscriptions/poll`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ provider: providerId, device_code: data.device_code, code_verifier: data.code_verifier, extra_data: data.extra_data }),
+            });
+            const pd = await pr.json();
+            if (pd.success) {
+              clearInterval(timer);
+              setConnecting(null);
+              setUserCode('');
+              fetchStatus();
+            }
+          } catch {}
+        }, 5000);
+        setPollTimer(timer);
+        setTimeout(() => { clearInterval(timer); setConnecting(null); setUserCode(''); }, 300000);
+
+      } else if (data.flow === 'authorization_code') {
+        // Open auth URL as popup — window.opener lets callback page postMessage back
+        const popup = window.open(data.auth_url, 'oauth_connect', 'width=600,height=700');
+
+        const msgHandler = async (event: MessageEvent) => {
+          const d = event.data;
+          const callbackData = d?.type === 'oauth_callback' ? d.data : d;
+          if (callbackData?.code) {
+            window.removeEventListener('message', msgHandler);
+            clearInterval(statusPoller);
+            if (popup && !popup.closed) popup.close();
+            try {
+              await fetch(`${API_BASE}/agents/subscriptions/exchange`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  provider: providerId, code: callbackData.code,
+                  redirect_uri: data.redirect_uri, code_verifier: data.code_verifier,
+                  state: callbackData.state || data.state,
+                }),
+              });
+            } catch {}
+            setConnecting(null);
+            fetchStatus();
+          }
+        };
+        window.addEventListener('message', msgHandler);
+
+        const statusPoller = setInterval(async () => {
+          try {
+            const sr = await fetch(`${API_BASE}/agents/subscriptions/status`);
+            const sd = await sr.json();
+            const connections = sd.providers?.connections || [];
+            if (connections.some((p: any) => p.provider === providerId && p.isActive)) {
+              clearInterval(statusPoller);
+              window.removeEventListener('message', msgHandler);
+              setConnecting(null);
+              fetchStatus();
+            }
+          } catch {}
+        }, 2000);
+        setPollTimer(statusPoller);
+        setTimeout(() => { clearInterval(statusPoller); window.removeEventListener('message', msgHandler); setConnecting(null); }, 300000);
+
+      } else {
+        setConnecting(null);
+      }
+    } catch { setConnecting(null); }
+  };
+
+  const handleDisconnect = async (providerId: string) => {
+    // TODO: implement disconnect via 9Router API
+    fetchStatus();
+  };
+
+  if (!status?.running) {
+    return (
+      <Box sx={{ p: 2, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}`, textAlign: 'center' }}>
+        <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 1 }}>
+          Starting subscription service...
+        </Typography>
+        <Typography sx={{ fontSize: '0.65rem', color: c.text.ghost }}>
+          This connects your existing AI subscriptions. If this doesn't load, make sure Node.js is installed.
+        </Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {SUBSCRIPTION_PROVIDERS.map(p => (
+        <SubscriptionCard
+          key={p.id}
+          provider={p}
+          connected={isConnected(p.id)}
+          onConnect={() => handleConnect(p.id)}
+          onDisconnect={() => handleDisconnect(p.id)}
+          connecting={connecting === p.id}
+          userCode={connecting === p.id ? userCode : undefined}
+        />
+      ))}
+    </Box>
+  );
+};
+
+// ── Pixel Bar ──
+const PIXEL_SALMON = ['#C46B57', '#D4795F', '#E8927A', '#F0A088', '#F5B49E'];
+const PIXEL_BLUE = ['#445588', '#5577AA', '#6688BB', '#7799CC', '#88AADD'];
+
+const PixelBarOuter: React.FC<{ value: number; max: number; width?: number; palette?: string[]; tokens: any }> = ({ value, max, width = 16, palette = PIXEL_SALMON, tokens: c }) => {
+  const filled = max > 0 ? Math.max(value > 0 ? 1 : 0, Math.round((value / max) * width)) : 0;
+  return (
+    <Box sx={{ display: 'flex', gap: '1px', mt: 0.25 }}>
+      {Array.from({ length: width }, (_, i) => (
+        <Box
+          key={i}
+          sx={{
+            width: 5,
+            height: 5,
+            bgcolor: i < filled
+              ? palette[Math.min(palette.length - 1, Math.floor((i / Math.max(filled - 1, 1)) * (palette.length - 1)))]
+              : c.border.subtle,
+            opacity: i < filled ? 1 : 0.3,
+          }}
+        />
+      ))}
+    </Box>
+  );
+};
+
+// ── Usage Stats Component ──
+const UsageStats: React.FC = () => {
+  const c = useClaudeTokens();
+  const [stats, setStats] = useState<any>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/analytics/usage-summary`)
+      .then(r => r.json())
+      .then(setStats)
+      .catch(() => {});
+  }, []);
+
+  if (!stats) return null;
+
+  const formatCost = (v: number) => {
+    if (v === 0) return '$0.00';
+    if (v < 0.001) return `$${v.toFixed(6)}`;
+    if (v < 0.01) return `$${v.toFixed(5)}`;
+    if (v < 1) return `$${v.toFixed(4)}`;
+    return `$${v.toFixed(2)}`;
+  };
+  const formatDuration = (s: number) => {
+    if (s === 0) return '0s';
+    if (s < 60) return `${s.toFixed(1)}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+    return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  };
+  const formatTotalTime = (s: number) => {
+    if (s < 60) return `${s.toFixed(1)}s`;
+    if (s < 3600) return `${(s / 60).toFixed(1)} min`;
+    return `${(s / 3600).toFixed(1)} hrs`;
+  };
+
+  const cardSx = {
+    p: 1.5,
+    borderRadius: `${c.radius.md}px`,
+    bgcolor: c.bg.elevated,
+    border: `1px solid ${c.border.subtle}`,
+  };
+  const labelSx = { fontSize: '0.58rem', fontWeight: 700, color: c.text.ghost, textTransform: 'uppercase' as const, letterSpacing: '0.06em', mb: 0.25 };
+  const valueSx = { fontSize: '1.05rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.2 };
+  const subSx = { fontSize: '0.62rem', color: c.text.tertiary, mt: 0.25 };
+
+  const modelEntries = Object.entries(stats.models_used || {}).sort((a: any, b: any) => b[1] - a[1]) as [string, number][];
+  const providerEntries = Object.entries(stats.providers_used || {}).sort((a: any, b: any) => b[1] - a[1]) as [string, number][];
+  const toolEntries = Object.entries(stats.top_tools || {}).slice(0, 10) as [string, number][];
+  const maxToolCount = toolEntries.length > 0 ? Math.max(...toolEntries.map(([, c]) => c)) : 1;
+  const statusEntries = Object.entries(stats.status_breakdown || {}) as [string, string][];
+
+  // Pixel bar helper that passes tokens
+  const PixelBar: React.FC<{ value: number; max: number; width?: number; palette?: string[] }> = (props) => (
+    <PixelBarOuter {...props} tokens={c} />
+  );
+
+  const totalTime = stats.avg_duration_seconds * stats.total_sessions;
+  const msgsPerSession = stats.total_sessions > 0 ? (stats.total_messages / stats.total_sessions).toFixed(1) : '0';
+  const toolsPerSession = stats.total_sessions > 0 ? (stats.total_tool_calls / stats.total_sessions).toFixed(1) : '0';
+  const formatTokens = (n: number) => {
+    if (n === 0) return '0';
+    if (n < 1000) return String(n);
+    if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
+    return `${(n / 1_000_000).toFixed(2)}M`;
+  };
+  const costSourceLabel = stats.cost_source === '9router' ? 'via subscription' : stats.cost_source === 'sdk' ? 'via API' : '';
+
+  return (
+    <Box sx={{ mb: 2.5 }}>
+      {/* Row 1: Core metrics */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, mb: 1 }}>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Total Sessions</Typography>
+          <Typography sx={valueSx}>{stats.total_sessions.toLocaleString()}</Typography>
+          <Typography sx={subSx}>
+            {statusEntries.map(([s, n]) => `${n} ${s}`).join(', ') || 'no sessions'}
+          </Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Total Cost</Typography>
+          <Typography sx={valueSx}>{formatCost(stats.total_cost_usd)}</Typography>
+          <Typography sx={subSx}>
+            {costSourceLabel ? `${formatCost(stats.avg_cost_per_session)} avg · ${costSourceLabel}` : 'no cost data'}
+          </Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Total Messages</Typography>
+          <Typography sx={valueSx}>{stats.total_messages.toLocaleString()}</Typography>
+          <Typography sx={subSx}>
+            {msgsPerSession} avg per session
+          </Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Total Tool Calls</Typography>
+          <Typography sx={valueSx}>{stats.total_tool_calls.toLocaleString()}</Typography>
+          <Typography sx={subSx}>
+            {toolsPerSession} avg per session
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Row 2: Time + efficiency + tokens */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, mb: 1.5 }}>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Total Run Time</Typography>
+          <Typography sx={valueSx}>{formatTotalTime(totalTime)}</Typography>
+          <Typography sx={subSx}>across all sessions</Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Avg Session</Typography>
+          <Typography sx={valueSx}>{formatDuration(stats.avg_duration_seconds)}</Typography>
+          <Typography sx={subSx}>per session duration</Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Completion Rate</Typography>
+          <Typography sx={valueSx}>{(stats.completion_rate * 100).toFixed(1)}%</Typography>
+          <Typography sx={subSx}>
+            sessions finished successfully
+          </Typography>
+        </Box>
+        <Box sx={cardSx}>
+          <Typography sx={labelSx}>Tokens Used</Typography>
+          <Typography sx={valueSx}>
+            {stats.total_prompt_tokens || stats.total_completion_tokens
+              ? formatTokens((stats.total_prompt_tokens || 0) + (stats.total_completion_tokens || 0))
+              : Object.keys(stats.providers_used || {}).length}
+          </Typography>
+          <Typography sx={subSx}>
+            {stats.total_prompt_tokens || stats.total_completion_tokens
+              ? `${formatTokens(stats.total_prompt_tokens || 0)} in · ${formatTokens(stats.total_completion_tokens || 0)} out`
+              : providerEntries.map(([p]) => p).join(', ') || 'none'}
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Model + Provider + Tool breakdown */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+        {/* Models & Providers */}
+        <Box sx={{ ...cardSx, p: 2 }}>
+          <Typography sx={{ ...labelSx, mb: 1.5 }}>Models Used</Typography>
+          {modelEntries.length > 0 ? modelEntries.map(([model, count]) => {
+            const pct = stats.total_sessions > 0 ? ((count / stats.total_sessions) * 100).toFixed(0) : '0';
+            return (
+              <Box key={model} sx={{ mb: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0 }}>
+                  <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, fontWeight: 500 }}>{model}</Typography>
+                  <Typography sx={{ fontSize: '0.68rem', color: c.text.tertiary, fontFamily: c.font.mono }}>
+                    {count} ({pct}%)
+                  </Typography>
+                </Box>
+                <PixelBar value={count} max={stats.total_sessions} palette={PIXEL_BLUE} />
+              </Box>
+            );
+          }) : <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>No sessions yet</Typography>}
+        </Box>
+
+        {/* Tools */}
+        <Box sx={{ ...cardSx, p: 2 }}>
+          <Typography sx={{ ...labelSx, mb: 1.5 }}>Top Tools</Typography>
+          {toolEntries.length > 0 ? toolEntries.map(([tool, count]) => {
+            const shortName = tool.includes('__') ? tool.split('__').pop() : tool;
+            const pct = stats.total_tool_calls > 0 ? ((count / stats.total_tool_calls) * 100).toFixed(0) : '0';
+            return (
+              <Box key={tool} sx={{ mb: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0 }}>
+                  <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, fontWeight: 500 }}>{shortName}</Typography>
+                  <Typography sx={{ fontSize: '0.62rem', color: c.text.tertiary, fontFamily: c.font.mono }}>
+                    {count} call{count !== 1 ? 's' : ''} ({pct}%)
+                  </Typography>
+                </Box>
+                <PixelBar value={count} max={maxToolCount} />
+              </Box>
+            );
+          }) : <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>No tool calls yet</Typography>}
+        </Box>
+      </Box>
+    </Box>
+  );
+};
 
 const API_KEY_STEPS = [
   {
@@ -87,7 +584,7 @@ const Settings: React.FC = () => {
   const downloadPercent = useAppSelector((s) => s.update.downloadPercent);
   const updateError = useAppSelector((s) => s.update.error);
 
-  const [activeTab, setActiveTab] = useState<'general' | 'commands'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'models' | 'usage' | 'commands'>('general');
   const [form, setForm] = useState<AppSettings>({ ...settings });
   const [showApiKey, setShowApiKey] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
@@ -143,6 +640,7 @@ const Settings: React.FC = () => {
     if (form.theme !== settings.theme) {
       setThemeMode(form.theme);
     }
+    dispatch(fetchModels());
     setSaved(true);
   };
 
@@ -165,6 +663,7 @@ const Settings: React.FC = () => {
     if (form.theme !== settings.theme) {
       setThemeMode(form.theme);
     }
+    dispatch(fetchModels());
     setSaved(true);
     setConfirmDiscard(false);
     dispatch(closeSettingsModal());
@@ -272,6 +771,8 @@ const Settings: React.FC = () => {
           }}
         >
           <Tab label="General" value="general" disableRipple />
+          <Tab label="Models" value="models" disableRipple />
+          <Tab label="Usage" value="usage" disableRipple />
           <Tab label="Commands" value="commands" disableRipple />
         </Tabs>
       </DialogTitle>
@@ -626,125 +1127,6 @@ const Settings: React.FC = () => {
           </Box>
         </Box>
 
-        {/* ── API ── */}
-        <Typography sx={{ ...sectionSx, mt: 3 }}>API</Typography>
-
-        <Box sx={rowLastSx}>
-          <Typography sx={labelSx}>Anthropic API key</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-            <Typography sx={descSx}>
-              Stored securely in the local database.
-            </Typography>
-            <Typography
-              component="span"
-              onClick={() => setShowApiHelp((v) => !v)}
-              sx={{
-                color: c.accent.primary,
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 0.4,
-                whiteSpace: 'nowrap',
-                userSelect: 'none',
-                '&:hover': { textDecoration: 'underline' },
-              }}
-            >
-              {showApiHelp ? 'Hide guide' : 'How do I get a key?'}
-            </Typography>
-          </Box>
-
-          <Collapse in={showApiHelp} timeout={250}>
-            <Box sx={{
-              mb: 1.5,
-              p: 2,
-              borderRadius: `${c.radius.md}px`,
-              bgcolor: `${c.accent.primary}08`,
-              border: `1px solid ${c.accent.primary}20`,
-            }}>
-              {API_KEY_STEPS.map((step, i) => (
-                <Box key={i} sx={{ display: 'flex', gap: 1.5, mb: i < API_KEY_STEPS.length - 1 ? 1.5 : 0 }}>
-                  <Box sx={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: '50%',
-                    bgcolor: `${c.accent.primary}15`,
-                    color: c.accent.primary,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    flexShrink: 0,
-                    mt: 0.1,
-                  }}>
-                    {i + 1}
-                  </Box>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500, lineHeight: 1.4 }}>
-                      {step.title}
-                      {step.link && (
-                        <Typography
-                          component="a"
-                          href={step.link}
-                          sx={{
-                            color: c.accent.primary,
-                            fontSize: '0.75rem',
-                            ml: 0.75,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 0.3,
-                            verticalAlign: 'middle',
-                            textDecoration: 'none',
-                            '&:hover': { textDecoration: 'underline' },
-                          }}
-                        >
-                          Open
-                          <OpenInNewIcon sx={{ fontSize: 12 }} />
-                        </Typography>
-                      )}
-                    </Typography>
-                    <Typography sx={{ color: c.text.muted, fontSize: '0.75rem', lineHeight: 1.4 }}>
-                      {step.detail}
-                    </Typography>
-                  </Box>
-                </Box>
-              ))}
-            </Box>
-          </Collapse>
-
-          <TextField
-            type={showApiKey ? 'text' : 'password'}
-            value={form.anthropic_api_key ?? ''}
-            onChange={(e) => setForm({ ...form, anthropic_api_key: e.target.value || null })}
-            size="small"
-            fullWidth
-            placeholder="sk-ant-..."
-            sx={{
-              ...fieldSx,
-              '& .MuiOutlinedInput-root': {
-                ...fieldSx['& .MuiOutlinedInput-root'],
-                fontFamily: c.font.mono,
-              },
-            }}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    edge="end"
-                    size="small"
-                    sx={{ color: c.text.tertiary }}
-                  >
-                    {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-          />
-        </Box>
-
         {/* ── Advanced ── */}
         <Typography sx={{ ...sectionSx, mt: 3 }}>Advanced</Typography>
 
@@ -873,6 +1255,94 @@ const Settings: React.FC = () => {
         </Box>
 
       </Box>
+      ) : activeTab === 'models' ? (
+      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, gap: 2.5 }}>
+
+          {/* ── USE EXISTING SUBSCRIPTIONS ── */}
+          <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+            Use Your Existing Subscriptions
+          </Typography>
+
+          <Typography sx={{ ...descSx, mb: 0 }}>
+            Already paying for Claude, ChatGPT, or Gemini? Connect your subscription — no API key needed, no extra cost.
+          </Typography>
+
+          <SubscriptionCards />
+
+          {/* ── API KEYS ── */}
+          <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, mt: 1 }}>
+            Or Connect With API Keys
+          </Typography>
+
+          <Typography sx={{ ...descSx, mb: -1 }}>
+            Pay per use. Each key is stored locally on your device.
+          </Typography>
+
+          {/* Anthropic */}
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography sx={labelSx}>Anthropic</Typography>
+              {form.anthropic_api_key ? (
+                <Typography sx={{ fontSize: '0.6rem', fontWeight: 600, color: c.status.success, bgcolor: `${c.status.success}15`, px: 0.75, py: 0.15, borderRadius: '3px' }}>CONNECTED</Typography>
+              ) : null}
+            </Box>
+            <Typography sx={{ ...descSx, mb: 1 }}>Claude Sonnet, Opus, Haiku.</Typography>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <TextField
+                type={showApiKey ? 'text' : 'password'}
+                value={form.anthropic_api_key ?? ''}
+                onChange={(e) => setForm({ ...form, anthropic_api_key: e.target.value || null })}
+                size="small"
+                fullWidth
+                placeholder="sk-ant-..."
+                sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton onClick={() => setShowApiKey(!showApiKey)} edge="end" size="small" sx={{ color: c.text.tertiary }}>
+                        {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Typography
+                component="a"
+                href="https://console.anthropic.com/settings/keys"
+                target="_blank"
+                rel="noopener"
+                sx={{ color: c.accent.primary, fontSize: '0.72rem', whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
+              >
+                Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
+              </Typography>
+            </Box>
+          </Box>
+
+      </Box>
+      ) : activeTab === 'usage' ? (
+      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1 }}>
+        <UsageStats />
+
+        {/* ── Analytics ── */}
+        <Typography sx={{ ...sectionSx, mt: 1 }}>Analytics</Typography>
+
+        <Box sx={inlineRowLastSx}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>Share anonymous usage data</Typography>
+            <Typography sx={descSx}>
+              Help improve OpenSwarm by sharing anonymous statistics like session counts, model usage, and feature adoption. No conversations, file paths, or personal information is ever collected.
+            </Typography>
+          </Box>
+          <Switch
+            checked={(form as any).analytics_opt_in ?? true}
+            onChange={(e) => setForm({ ...form, analytics_opt_in: e.target.checked } as any)}
+            sx={{
+              '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
+              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
+            }}
+          />
+        </Box>
+      </Box>
       ) : (
       <Box sx={{ pt: 2.5, pb: 1 }}>
         <CommandsContent />
@@ -880,7 +1350,7 @@ const Settings: React.FC = () => {
       )}
       </DialogContent>
 
-      {activeTab === 'general' && (
+      {(activeTab === 'general' || activeTab === 'models') && (
       <DialogActions sx={{ borderTop: `1px solid ${c.border.subtle}`, px: 3, py: 1.5, justifyContent: 'flex-end' }}>
         <Button
           onClick={handleRequestClose}

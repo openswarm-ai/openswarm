@@ -284,7 +284,7 @@ class WebSocketManager {
   sendMessage(
     sessionId: string,
     prompt: string,
-    opts?: { mode?: string; model?: string; images?: Array<{ data: string; media_type: string }> },
+    opts?: { mode?: string; model?: string; provider?: string; images?: Array<{ data: string; media_type: string }> },
   ) {
     this.send('agent:send_message', {
       session_id: sessionId,

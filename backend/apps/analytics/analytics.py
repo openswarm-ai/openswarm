@@ -26,6 +26,14 @@ async def analytics_lifespan():
         providers = []
         if getattr(settings, "anthropic_api_key", None):
             providers.append("anthropic")
+        if getattr(settings, "openai_api_key", None):
+            providers.append("openai")
+        if getattr(settings, "google_api_key", None):
+            providers.append("gemini")
+        if getattr(settings, "openrouter_api_key", None):
+            providers.append("openrouter")
+        for cp in getattr(settings, "custom_providers", []):
+            providers.append(cp.name)
 
         record("app.opened", {
             "os": platform.system(),
@@ -41,7 +49,21 @@ async def analytics_lifespan():
     except Exception as e:
         logger.debug(f"Analytics startup event failed (non-critical): {e}")
 
+    # Auto-start 9Router for subscription access
+    try:
+        from backend.apps.nine_router import ensure_running as ensure_9router
+        await ensure_9router()
+    except Exception as e:
+        logger.debug(f"9Router auto-start skipped: {e}")
+
     yield
+
+    # Stop 9Router
+    try:
+        from backend.apps.nine_router import stop as stop_9router
+        stop_9router()
+    except Exception:
+        pass
 
     shutdown_collector()
     logger.info("PostHog analytics shut down")
@@ -102,7 +124,6 @@ async def usage_summary():
         if created and closed:
             try:
                 from datetime import datetime
-                fmt = "%Y-%m-%dT%H:%M:%S"
                 c_str = created[:19]
                 cl_str = closed[:19]
                 dur = (datetime.fromisoformat(cl_str) - datetime.fromisoformat(c_str)).total_seconds()
@@ -120,9 +141,47 @@ async def usage_summary():
                     tool_counts[tool_name] += 1
 
     avg_duration = total_duration / total_sessions if total_sessions > 0 else 0
-    avg_cost = total_cost / total_sessions if total_sessions > 0 else 0
     completed = status_counts.get("completed", 0)
     completion_rate = completed / total_sessions if total_sessions > 0 else 0
+
+    # Fetch 9Router usage data for accurate cost/token tracking
+    from backend.apps.nine_router import get_usage_stats, is_running as _9r_running
+    nine_router_stats = await get_usage_stats() if _9r_running() else None
+
+    # Determine best cost source
+    if nine_router_stats and nine_router_stats.get("totalCost", 0) > 0:
+        cost_source = "9router"
+        total_cost = nine_router_stats["totalCost"]
+    elif total_cost > 0:
+        cost_source = "sdk"
+    else:
+        cost_source = "none"
+
+    avg_cost = total_cost / total_sessions if total_sessions > 0 else 0
+
+    # Extract 9Router breakdowns
+    cost_by_model = {}
+    cost_by_provider = {}
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_requests = 0
+
+    if nine_router_stats:
+        total_prompt_tokens = nine_router_stats.get("totalPromptTokens", 0)
+        total_completion_tokens = nine_router_stats.get("totalCompletionTokens", 0)
+        total_requests = nine_router_stats.get("totalRequests", 0)
+        for key, val in (nine_router_stats.get("byModel") or {}).items():
+            cost_by_model[key] = {
+                "cost": val.get("cost", 0),
+                "requests": val.get("count", 0),
+                "prompt_tokens": val.get("promptTokens", 0),
+                "completion_tokens": val.get("completionTokens", 0),
+            }
+        for key, val in (nine_router_stats.get("byProvider") or {}).items():
+            cost_by_provider[key] = {
+                "cost": val.get("cost", 0),
+                "requests": val.get("count", 0),
+            }
 
     return {
         "total_sessions": total_sessions,
@@ -136,6 +195,35 @@ async def usage_summary():
         "providers_used": dict(provider_counts.most_common(10)),
         "top_tools": dict(tool_counts.most_common(15)),
         "status_breakdown": dict(status_counts),
+        # 9Router enrichment
+        "total_prompt_tokens": total_prompt_tokens,
+        "total_completion_tokens": total_completion_tokens,
+        "cost_by_model": cost_by_model,
+        "cost_by_provider": cost_by_provider,
+        "cost_source": cost_source,
+        "nine_router_available": nine_router_stats is not None,
+        "total_requests": total_requests,
+    }
+
+
+@analytics.router.get("/cost-breakdown")
+async def cost_breakdown(period: str = "7d"):
+    """Get detailed cost breakdown from 9Router."""
+    from backend.apps.nine_router import get_usage_stats, is_running as _9r_running
+    if not _9r_running():
+        return {"available": False, "by_model": {}, "by_provider": {}}
+    stats = await get_usage_stats(period)
+    if not stats:
+        return {"available": False, "by_model": {}, "by_provider": {}}
+    return {
+        "available": True,
+        "period": period,
+        "total_cost": stats.get("totalCost", 0),
+        "total_requests": stats.get("totalRequests", 0),
+        "total_prompt_tokens": stats.get("totalPromptTokens", 0),
+        "total_completion_tokens": stats.get("totalCompletionTokens", 0),
+        "by_model": stats.get("byModel", {}),
+        "by_provider": stats.get("byProvider", {}),
     }
 
 

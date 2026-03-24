@@ -178,3 +178,98 @@ async def resume_session(session_id: str):
         raise HTTPException(status_code=404, detail=str(e))
     return {"session": session.model_dump(mode="json")}
 
+
+# ---------------------------------------------------------------------------
+# 9Router / Subscription endpoints
+# ---------------------------------------------------------------------------
+
+@agents.router.get("/subscriptions/status")
+async def subscriptions_status():
+    """Check if 9Router is running and list connected providers."""
+    from backend.apps.nine_router import is_running, get_providers, get_models
+    if not is_running():
+        return {"running": False, "providers": [], "models": []}
+    providers = await get_providers()
+    models = await get_models()
+    return {"running": True, "providers": providers, "models": models}
+
+
+@agents.router.post("/subscriptions/connect")
+async def subscriptions_connect(body: dict):
+    """Start OAuth flow for a subscription provider."""
+    from backend.apps.nine_router import is_running, ensure_running, start_oauth
+    provider = body.get("provider", "")
+    if not provider:
+        raise HTTPException(status_code=400, detail="provider required")
+
+    if not is_running():
+        await ensure_running()
+        if not is_running():
+            raise HTTPException(status_code=503, detail="9Router not available. Please install Node.js.")
+
+    try:
+        result = await start_oauth(provider)
+
+        # For auth_code flows, store pending state so the callback can exchange
+        if result.get("flow") == "authorization_code" and result.get("state"):
+            from backend.main import _pending_oauth
+            _pending_oauth[result["state"]] = {
+                "provider": provider,
+                "code_verifier": result.get("code_verifier", ""),
+                "redirect_uri": result.get("redirect_uri", ""),
+            }
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@agents.router.post("/subscriptions/poll")
+async def subscriptions_poll(body: dict):
+    """Poll for OAuth completion."""
+    from backend.apps.nine_router import poll_oauth
+    provider = body.get("provider", "")
+    device_code = body.get("device_code", "")
+    if not provider or not device_code:
+        raise HTTPException(status_code=400, detail="provider and device_code required")
+
+    try:
+        result = await poll_oauth(
+            provider, device_code,
+            code_verifier=body.get("code_verifier"),
+            extra_data=body.get("extra_data"),
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@agents.router.post("/subscriptions/exchange")
+async def subscriptions_exchange(body: dict):
+    """Exchange OAuth code for tokens via 9Router."""
+    from backend.apps.nine_router import exchange_oauth
+    provider = body.get("provider", "")
+    code = body.get("code", "")
+    redirect_uri = body.get("redirect_uri", "")
+    code_verifier = body.get("code_verifier", "")
+    state = body.get("state", "")
+
+    if not provider or not code:
+        raise HTTPException(status_code=400, detail="provider and code required")
+
+    try:
+        result = await exchange_oauth(provider, code, redirect_uri, code_verifier, state)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@agents.router.get("/subscriptions/models")
+async def subscriptions_models():
+    """List all models available through connected subscriptions."""
+    from backend.apps.nine_router import is_running, get_models
+    if not is_running():
+        return {"models": []}
+    models = await get_models()
+    return {"models": models}
+

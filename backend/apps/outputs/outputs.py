@@ -33,12 +33,9 @@ def _resolve_model(short_name: str) -> str:
 
 def _get_anthropic_client():
     """Create an AsyncAnthropic client using the API key from app settings."""
-    import anthropic
-
+    from backend.apps.settings.credentials import get_anthropic_client
     settings = load_settings()
-    if not settings.anthropic_api_key:
-        raise ValueError("Anthropic API key not configured. Set it in Settings.")
-    return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    return get_anthropic_client(settings)
 
 
 def _validate_against_schema(data: dict, schema: dict) -> str | None:

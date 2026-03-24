@@ -72,8 +72,11 @@ const GoogleServiceIcon: React.FC<{ service: string; size?: number }> = ({ servi
   return null;
 };
 
-function formatDuration(createdAt: string): string {
-  const seconds = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
+function formatDuration(createdAt: string, closedAt?: string | null, status?: string): string {
+  const start = new Date(createdAt).getTime();
+  const end = (closedAt ? new Date(closedAt).getTime() : null)
+    || (status === 'running' || status === 'waiting_approval' ? Date.now() : Date.now());
+  const seconds = Math.max(0, Math.floor((end - start) / 1000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
@@ -778,7 +781,7 @@ const AgentCard: React.FC<Props> = ({
             {session.mode}
           </Typography>
           <Typography variant="caption" sx={{ color: c.text.tertiary }}>
-            {formatDuration(session.created_at)}
+            {formatDuration(session.created_at, (session as any).closed_at, session.status)}
           </Typography>
           {session.cost_usd > 0 && (
             <Typography variant="caption" sx={{ color: c.accent.primary }}>
