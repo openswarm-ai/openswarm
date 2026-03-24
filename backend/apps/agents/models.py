@@ -5,6 +5,7 @@ from uuid import uuid4
 
 class AgentConfig(BaseModel):
     name: str = Field(default_factory=lambda: f"Agent-{uuid4().hex[:6]}")
+    provider: str = "anthropic"
     model: str = "sonnet"
     mode: str = "agent"
     system_prompt: Optional[str] = None
@@ -37,6 +38,7 @@ class Message(BaseModel):
     attached_skills: Optional[list[dict]] = None
     forced_tools: Optional[list[str]] = None
     images: Optional[list[dict]] = None
+    hidden: bool = False
 
 class MessageBranch(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
@@ -54,6 +56,7 @@ class AgentSession(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     name: str
     status: Literal["running", "waiting_approval", "completed", "error", "stopped"] = "running"
+    provider: str = "anthropic"
     model: str = "sonnet"
     mode: str = "agent"
     sdk_session_id: Optional[str] = None
@@ -72,3 +75,4 @@ class AgentSession(BaseModel):
     tool_group_meta: dict[str, "ToolGroupMeta"] = Field(default_factory=dict)
     dashboard_id: Optional[str] = None
     browser_id: Optional[str] = None
+    parent_session_id: Optional[str] = None

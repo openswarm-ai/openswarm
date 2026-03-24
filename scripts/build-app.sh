@@ -48,7 +48,7 @@ if $PUBLISH_MODE; then
 fi
 
 # Step 1: Build frontend
-echo "[1/3] Building frontend..."
+echo "[1/4] Building frontend..."
 cd "$PROJECT_ROOT/frontend"
 npm install
 npm run build
@@ -61,7 +61,7 @@ echo "Frontend build complete."
 echo ""
 
 # Step 2: Build Python environment
-echo "[2/3] Building Python environment..."
+echo "[2/4] Building Python environment..."
 bash "$SCRIPT_DIR/build-python-env.sh"
 
 if [[ ! -d "$PROJECT_ROOT/electron/python-env" ]]; then
@@ -71,8 +71,34 @@ fi
 echo "Python environment ready."
 echo ""
 
-# Step 3: Package with electron-builder
-echo "[3/3] Packaging with electron-builder..."
+# Step 3: Snapshot source directories for packaging
+echo "[3/4] Snapshotting source directories..."
+STAGING_DIR="$PROJECT_ROOT/electron/build-staging"
+rm -rf "$STAGING_DIR"
+mkdir -p "$STAGING_DIR"
+
+rsync -a \
+    --exclude='__pycache__' --exclude='**/__pycache__' \
+    --exclude='*.pyc' --exclude='.venv' \
+    "$PROJECT_ROOT/backend/" "$STAGING_DIR/backend/"
+
+rsync -a \
+    --exclude='__pycache__' --exclude='**/__pycache__' \
+    --exclude='*.pyc' --exclude='.venv' --exclude='**/.venv' \
+    --exclude='**/node_modules' \
+    "$PROJECT_ROOT/debugger/" "$STAGING_DIR/debugger/"
+
+rsync -a "$PROJECT_ROOT/frontend/dist/" "$STAGING_DIR/frontend/"
+
+echo ""
+printf '\033[1;42;97m%s\033[0m\n' "========================================"
+printf '\033[1;42;97m%s\033[0m\n' "  ✅ SOURCE SNAPSHOT COMPLETE            "
+printf '\033[1;42;97m%s\033[0m\n' "  It is now safe to modify your codebase."
+printf '\033[1;42;97m%s\033[0m\n' "========================================"
+echo ""
+
+# Step 4: Package with electron-builder
+echo "[4/4] Packaging with electron-builder..."
 cd "$PROJECT_ROOT/electron"
 npm install
 
@@ -89,6 +115,8 @@ else
         npx electron-builder --mac --publish never
     fi
 fi
+
+rm -rf "$PROJECT_ROOT/electron/build-staging"
 
 echo ""
 echo "========================================"

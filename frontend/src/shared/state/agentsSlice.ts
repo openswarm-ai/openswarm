@@ -14,6 +14,7 @@ export interface AgentMessage {
   attached_skills?: Array<{ id: string; name: string }>;
   forced_tools?: string[];
   images?: Array<{ data: string; media_type: string }>;
+  hidden?: boolean;
 }
 
 export interface ApprovalRequest {
@@ -49,6 +50,7 @@ export interface AgentSession {
   id: string;
   name: string;
   status: 'draft' | 'running' | 'waiting_approval' | 'completed' | 'error' | 'stopped';
+  provider: string;
   model: string;
   mode: string;
   worktree_path: string | null;
@@ -69,10 +71,12 @@ export interface AgentSession {
   tool_group_meta: Record<string, ToolGroupMeta>;
   dashboard_id?: string;
   browser_id?: string | null;
+  parent_session_id?: string | null;
 }
 
 export interface AgentConfig {
   name?: string;
+  provider?: string;
   model?: string;
   mode?: string;
   system_prompt?: string;
@@ -109,6 +113,7 @@ interface AgentsState {
   expandedSessionIds: string[];
   loading: boolean;
   historySearch: HistorySearchState;
+  trackedNotificationIds: string[];
 }
 
 const initialState: AgentsState = {
@@ -118,6 +123,7 @@ const initialState: AgentsState = {
   expandedSessionIds: [],
   loading: false,
   historySearch: { results: [], total: 0, hasMore: false, query: '', loading: false },
+  trackedNotificationIds: [],
 };
 
 export const fetchSessions = createAsyncThunk(
@@ -147,19 +153,22 @@ export interface SendMessagePayload {
   prompt: string;
   mode?: string;
   model?: string;
+  provider?: string;
   images?: Array<{ data: string; media_type: string }>;
   contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>;
   forcedTools?: string[];
   attachedSkills?: Array<{ id: string; name: string; content: string }>;
+  hidden?: boolean;
+  selectedBrowserIds?: string[];
 }
 
 export const sendMessage = createAsyncThunk(
   'agents/sendMessage',
-  async ({ sessionId, prompt, mode, model, images, contextPaths, forcedTools, attachedSkills }: SendMessagePayload) => {
+  async ({ sessionId, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, hidden, selectedBrowserIds }: SendMessagePayload) => {
     await fetch(`${AGENTS_API}/sessions/${sessionId}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, mode, model, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills }),
+      body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, hidden, selected_browser_ids: selectedBrowserIds }),
     });
     return { sessionId, prompt };
   }
@@ -207,11 +216,13 @@ export interface LaunchAndSendPayload {
   prompt: string;
   mode: string;
   model: string;
+  provider?: string;
   images?: Array<{ data: string; media_type: string }>;
   contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>;
   forcedTools?: string[];
   attachedSkills?: Array<{ id: string; name: string; content: string }>;
   expand?: boolean;
+  selectedBrowserIds?: string[];
 }
 
 export const fetchSession = createAsyncThunk(
@@ -225,7 +236,7 @@ export const fetchSession = createAsyncThunk(
 
 export const launchAndSendFirstMessage = createAsyncThunk(
   'agents/launchAndSendFirstMessage',
-  async ({ draftId, config, prompt, mode, model, images, contextPaths, forcedTools, attachedSkills }: LaunchAndSendPayload) => {
+  async ({ draftId, config, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds }: LaunchAndSendPayload) => {
     const launchRes = await fetch(`${AGENTS_API}/launch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -237,7 +248,7 @@ export const launchAndSendFirstMessage = createAsyncThunk(
     await fetch(`${AGENTS_API}/sessions/${session.id}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, mode, model, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills }),
+      body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, selected_browser_ids: selectedBrowserIds }),
     });
 
     const refreshRes = await fetch(`${AGENTS_API}/sessions/${session.id}`);
@@ -311,11 +322,14 @@ export const handleApproval = createAsyncThunk(
     message?: string;
     updatedInput?: Record<string, any>;
   }) => {
-    await fetch(`${AGENTS_API}/approval`, {
+    const res = await fetch(`${AGENTS_API}/approval`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ request_id: requestId, behavior, message, updated_input: updatedInput }),
     });
+    if (!res.ok) {
+      throw new Error(`Approval request failed (${res.status})`);
+    }
     return { requestId, behavior };
   }
 );
@@ -325,6 +339,20 @@ export const closeSession = createAsyncThunk(
   async ({ sessionId }: { sessionId: string }) => {
     await fetch(`${AGENTS_API}/sessions/${sessionId}/close`, { method: 'POST' });
     return sessionId;
+  }
+);
+
+export const duplicateSession = createAsyncThunk(
+  'agents/duplicateSession',
+  async ({ sessionId, dashboardId, upToMessageId }: { sessionId: string; dashboardId?: string; upToMessageId?: string }) => {
+    const res = await fetch(`${AGENTS_API}/sessions/${sessionId}/duplicate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dashboard_id: dashboardId, up_to_message_id: upToMessageId }),
+    });
+    if (!res.ok) throw new Error('Failed to duplicate session');
+    const data = await res.json();
+    return data.session as AgentSession;
   }
 );
 
@@ -380,6 +408,15 @@ export const resumeSession = createAsyncThunk(
   }
 );
 
+export const fetchBrowserAgentChildren = createAsyncThunk(
+  'agents/fetchBrowserAgentChildren',
+  async (parentSessionId: string) => {
+    const res = await fetch(`${AGENTS_API}/sessions/${parentSessionId}/browser-agents`);
+    const data = await res.json();
+    return data.sessions as AgentSession[];
+  }
+);
+
 const agentsSlice = createSlice({
   name: 'agents',
   initialState,
@@ -391,6 +428,7 @@ const agentsSlice = createSlice({
           id: draftId,
           name: 'New chat',
           status: 'draft',
+          provider: 'anthropic',
           model: 'sonnet',
           mode,
           worktree_path: null,
@@ -490,13 +528,29 @@ const agentsSlice = createSlice({
     },
 
     updateSession(state, action: PayloadAction<AgentSession>) {
-      if (state.history[action.payload.id]) return;
+      if (state.history[action.payload.id]) {
+        if (action.payload.status === 'running' || action.payload.mode === 'browser-agent') {
+          delete state.history[action.payload.id];
+        } else {
+          return;
+        }
+      }
       const existing = state.sessions[action.payload.id];
+      // Preserve local pending_approvals if the server payload has none but
+      // the frontend has some (avoids race where backend clears approvals
+      // before the frontend processes the removal).
+      const mergedApprovals = existing?.pending_approvals?.length && !action.payload.pending_approvals?.length
+        ? existing.pending_approvals
+        : action.payload.pending_approvals ?? [];
       state.sessions[action.payload.id] = {
         ...action.payload,
+        pending_approvals: mergedApprovals,
         streamingMessage: existing?.streamingMessage ?? action.payload.streamingMessage ?? null,
         tool_group_meta: { ...existing?.tool_group_meta, ...action.payload.tool_group_meta },
       };
+      if (action.payload.status === 'running' && !state.trackedNotificationIds.includes(action.payload.id)) {
+        state.trackedNotificationIds.push(action.payload.id);
+      }
     },
 
     updateSessionStatus(
@@ -506,6 +560,9 @@ const agentsSlice = createSlice({
       const session = state.sessions[action.payload.sessionId];
       if (session) {
         session.status = action.payload.status;
+      }
+      if (action.payload.status === 'running' && !state.trackedNotificationIds.includes(action.payload.sessionId)) {
+        state.trackedNotificationIds.push(action.payload.sessionId);
       }
     },
 
@@ -612,6 +669,13 @@ const agentsSlice = createSlice({
       }
     },
 
+    updateSessionProvider(state, action: PayloadAction<{ sessionId: string; provider: string }>) {
+      const session = state.sessions[action.payload.sessionId];
+      if (session) {
+        session.provider = action.payload.provider;
+      }
+    },
+
     updateSessionModel(state, action: PayloadAction<{ sessionId: string; model: string }>) {
       const session = state.sessions[action.payload.sessionId];
       if (session) {
@@ -629,7 +693,19 @@ const agentsSlice = createSlice({
     closeSessionFromWs(state, action: PayloadAction<HistorySession>) {
       const entry = action.payload;
       state.history[entry.id] = entry;
-      delete state.sessions[entry.id];
+
+      const session = state.sessions[entry.id];
+      if (session?.mode === 'browser-agent' && session.parent_session_id) {
+        session.status = (entry.status as AgentSession['status']) || 'completed';
+      } else {
+        delete state.sessions[entry.id];
+        for (const [id, s] of Object.entries(state.sessions)) {
+          if (s.mode === 'browser-agent' && s.parent_session_id === entry.id) {
+            s.status = 'stopped';
+          }
+        }
+      }
+
       if (state.activeSessionId === entry.id) {
         state.activeSessionId = null;
       }
@@ -651,6 +727,29 @@ const agentsSlice = createSlice({
     clearHistorySearch(state) {
       state.historySearch = { results: [], total: 0, hasMore: false, query: '', loading: false };
     },
+
+    trackAgentNotification(state, action: PayloadAction<string>) {
+      if (!state.trackedNotificationIds.includes(action.payload)) {
+        state.trackedNotificationIds.push(action.payload);
+      }
+    },
+
+    dismissAgentNotification(state, action: PayloadAction<string>) {
+      state.trackedNotificationIds = state.trackedNotificationIds.filter(
+        (id) => id !== action.payload,
+      );
+    },
+
+    dismissAllFinishedNotifications(state) {
+      const finishedStatuses = new Set(['completed', 'error', 'stopped']);
+      state.trackedNotificationIds = state.trackedNotificationIds.filter((id) => {
+        const session = state.sessions[id];
+        if (session) return !finishedStatuses.has(session.status);
+        const hist = state.history[id];
+        if (hist) return !finishedStatuses.has(hist.status);
+        return true;
+      });
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -659,19 +758,35 @@ const agentsSlice = createSlice({
       })
       .addCase(fetchSessions.fulfilled, (state, action) => {
         state.loading = false;
-        const sessions: Record<string, AgentSession> = {};
+        const fetchedIds = new Set(action.payload.map((s) => s.id));
+        const activeStatuses = new Set(['running', 'waiting_approval']);
+
+        // Remove stale sessions that belong to this dashboard fetch but
+        // are no longer returned by the server — keep sessions from other
+        // dashboards, drafts, tracked notifications, and active sessions.
         for (const [id, existing] of Object.entries(state.sessions)) {
-          if (existing.status === 'draft') sessions[id] = existing;
+          if (fetchedIds.has(id)) continue;
+          if (existing.status === 'draft') continue;
+          if (state.trackedNotificationIds.includes(id)) continue;
+          if (activeStatuses.has(existing.status)) continue;
+          delete state.sessions[id];
         }
+
+        // Merge fetched sessions, preserving local-only fields
         for (const s of action.payload) {
           const existing = state.sessions[s.id];
-          sessions[s.id] = {
+          state.sessions[s.id] = {
             ...s,
+            pending_approvals: existing?.pending_approvals?.length
+              ? existing.pending_approvals
+              : s.pending_approvals ?? [],
             streamingMessage: existing?.streamingMessage ?? s.streamingMessage ?? null,
-            tool_group_meta: s.tool_group_meta ?? {},
+            tool_group_meta: { ...existing?.tool_group_meta, ...s.tool_group_meta },
           };
+          if (activeStatuses.has(s.status) && !state.trackedNotificationIds.includes(s.id)) {
+            state.trackedNotificationIds.push(s.id);
+          }
         }
-        state.sessions = sessions;
       })
       .addCase(fetchSessions.rejected, (state) => {
         state.loading = false;
@@ -681,6 +796,9 @@ const agentsSlice = createSlice({
         state.activeSessionId = action.payload.id;
         if (!state.expandedSessionIds.includes(action.payload.id)) {
           state.expandedSessionIds.push(action.payload.id);
+        }
+        if (!state.trackedNotificationIds.includes(action.payload.id)) {
+          state.trackedNotificationIds.push(action.payload.id);
         }
       })
       .addCase(launchAndSendFirstMessage.fulfilled, (state, action) => {
@@ -692,6 +810,9 @@ const agentsSlice = createSlice({
         state.expandedSessionIds = state.expandedSessionIds.map((id) => (id === draftId ? session.id : id));
         if (shouldExpand && !state.expandedSessionIds.includes(session.id)) {
           state.expandedSessionIds.push(session.id);
+        }
+        if (!state.trackedNotificationIds.includes(session.id)) {
+          state.trackedNotificationIds.push(session.id);
         }
       })
       .addCase(generateTitle.fulfilled, (state, action) => {
@@ -717,10 +838,24 @@ const agentsSlice = createSlice({
           session.system_prompt = action.payload.systemPrompt;
         }
       })
+      .addCase(sendMessage.pending, (state, action) => {
+        const session = state.sessions[action.meta.arg.sessionId];
+        if (session) {
+          session.status = 'running';
+        }
+      })
+      .addCase(editMessage.pending, (state, action) => {
+        const session = state.sessions[action.meta.arg.sessionId];
+        if (session) {
+          session.status = 'running';
+        }
+      })
       .addCase(stopAgent.fulfilled, (state, action) => {
         const session = state.sessions[action.payload];
         if (session) {
           session.status = 'stopped';
+          session.streamingMessage = null;
+          session.pending_approvals = [];
         }
       })
       .addCase(handleApproval.fulfilled, (state, action) => {
@@ -730,11 +865,20 @@ const agentsSlice = createSlice({
           );
         }
       })
+      .addCase(handleApproval.rejected, (_state, action) => {
+        // Approval stays in state so the user can retry.
+        // The request was never delivered to the backend.
+        console.error('Approval request failed:', action.error.message);
+      })
       .addCase(switchBranch.fulfilled, (state, action) => {
         const session = state.sessions[action.payload.sessionId];
         if (session) {
           session.active_branch_id = action.payload.branchId;
         }
+      })
+      .addCase(duplicateSession.fulfilled, (state, action) => {
+        const session = action.payload;
+        state.sessions[session.id] = session;
       })
       .addCase(closeSession.fulfilled, (state, action) => {
         const sessionId = action.payload;
@@ -757,6 +901,7 @@ const agentsSlice = createSlice({
           state.activeSessionId = null;
         }
         state.expandedSessionIds = state.expandedSessionIds.filter((id) => id !== sessionId);
+        state.trackedNotificationIds = state.trackedNotificationIds.filter((id) => id !== sessionId);
       })
       .addCase(closeSession.rejected, (state, action) => {
         const sessionId = action.meta.arg.sessionId;
@@ -779,6 +924,7 @@ const agentsSlice = createSlice({
           state.activeSessionId = null;
         }
         state.expandedSessionIds = state.expandedSessionIds.filter((id) => id !== sessionId);
+        state.trackedNotificationIds = state.trackedNotificationIds.filter((id) => id !== sessionId);
       })
       .addCase(deleteSession.fulfilled, (state, action) => {
         const sessionId = action.payload;
@@ -788,6 +934,7 @@ const agentsSlice = createSlice({
           state.activeSessionId = null;
         }
         state.expandedSessionIds = state.expandedSessionIds.filter((id) => id !== sessionId);
+        state.trackedNotificationIds = state.trackedNotificationIds.filter((id) => id !== sessionId);
       })
       .addCase(fetchHistory.fulfilled, (state, action) => {
         const history: Record<string, HistorySession> = {};
@@ -808,12 +955,22 @@ const agentsSlice = createSlice({
       .addCase(fetchSession.fulfilled, (state, action) => {
         const session = action.payload;
         const existing = state.sessions[session.id];
-        if (existing) {
-          state.sessions[session.id] = {
-            ...session,
-            streamingMessage: existing.streamingMessage ?? null,
-            tool_group_meta: session.tool_group_meta ?? existing.tool_group_meta ?? {},
-          };
+        state.sessions[session.id] = {
+          ...session,
+          pending_approvals: session.pending_approvals ?? existing?.pending_approvals ?? [],
+          streamingMessage: existing?.streamingMessage ?? null,
+          tool_group_meta: session.tool_group_meta ?? existing?.tool_group_meta ?? {},
+        };
+      })
+      .addCase(fetchBrowserAgentChildren.fulfilled, (state, action) => {
+        for (const session of action.payload) {
+          if (!state.sessions[session.id]) {
+            state.sessions[session.id] = {
+              ...session,
+              streamingMessage: null,
+              tool_group_meta: session.tool_group_meta ?? {},
+            };
+          }
         }
       })
       .addCase(searchHistory.pending, (state) => {
@@ -859,11 +1016,15 @@ export const {
   updateSessionCost,
   addBranch,
   setActiveBranch,
+  updateSessionProvider,
   updateSessionModel,
   updateSessionMode,
   closeSessionFromWs,
   removeDraftSession,
   clearHistorySearch,
+  trackAgentNotification,
+  dismissAgentNotification,
+  dismissAllFinishedNotifications,
 } = agentsSlice.actions;
 
 export default agentsSlice.reducer;

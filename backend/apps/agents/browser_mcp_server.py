@@ -181,6 +181,58 @@ TOOLS = [
             "required": ["browser_id"],
         },
     },
+    {
+        "name": "BrowserScroll",
+        "description": (
+            "Scroll the page up or down. Automatically finds the correct scrollable "
+            "container (works on SPAs like Notion, Gmail, etc. that use nested scroll "
+            "containers instead of window-level scrolling). Returns scroll position info "
+            "including whether top/bottom has been reached."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "browser_id": {
+                    "type": "string",
+                    "description": "The browser card ID.",
+                },
+                "tab_id": TAB_ID_PROP,
+                "direction": {
+                    "type": "string",
+                    "enum": ["up", "down"],
+                    "description": "Scroll direction. Defaults to 'down'.",
+                },
+                "amount": {
+                    "type": "number",
+                    "description": "Pixels to scroll. Defaults to 500.",
+                },
+            },
+            "required": ["browser_id"],
+        },
+    },
+    {
+        "name": "BrowserWait",
+        "description": (
+            "Wait for a specified duration. Useful after navigation or actions that "
+            "trigger page loads, animations, or async content rendering. "
+            "Min 100ms, max 10000ms."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "browser_id": {
+                    "type": "string",
+                    "description": "The browser card ID.",
+                },
+                "tab_id": TAB_ID_PROP,
+                "milliseconds": {
+                    "type": "number",
+                    "description": "Duration to wait in milliseconds. Defaults to 1000.",
+                },
+            },
+            "required": ["browser_id"],
+        },
+    },
 ]
 
 
@@ -260,6 +312,8 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         "BrowserType": "type",
         "BrowserEvaluate": "evaluate",
         "BrowserGetElements": "get_elements",
+        "BrowserScroll": "scroll",
+        "BrowserWait": "wait",
     }
     action = action_map.get(tool_name)
     if not action:

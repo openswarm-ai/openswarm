@@ -9,7 +9,6 @@ import Tab from '@mui/material/Tab';
 import Tooltip from '@mui/material/Tooltip';
 import Switch from '@mui/material/Switch';
 import CircularProgress from '@mui/material/CircularProgress';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import HtmlIcon from '@mui/icons-material/Code';
@@ -382,7 +381,7 @@ interface FileTreeItemProps {
   c: ReturnType<typeof useClaudeTokens>;
 }
 
-const PROTECTED_FILES = new Set(['index.html', 'schema.json', 'meta.json']);
+const PROTECTED_FILES = new Set(['index.html', 'schema.json', 'meta.json', 'SKILL.md']);
 
 const FileTreeItem: React.FC<FileTreeItemProps> = ({ node, depth, activeFile, onSelect, onDelete, c }) => {
   const [open, setOpen] = useState(true);
@@ -520,6 +519,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const [autoRunEnabled, setAutoRunEnabled] = useState(savedAutoRun?.enabled ?? false);
   const [autoRunMode, setAutoRunMode] = useState(savedAutoRun?.mode ?? 'agent');
   const [autoRunModel, setAutoRunModel] = useState(savedAutoRun?.model ?? 'sonnet');
+  const [autoRunProvider, setAutoRunProvider] = useState('anthropic');
   const [autoRunning, setAutoRunning] = useState(false);
   const autoRunInputRef = useRef<ChatInputHandle>(null);
   const autoRunInitialized = useRef(false);
@@ -733,6 +733,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
     const outputFiles = { ...files };
     delete outputFiles['meta.json'];
     delete outputFiles['schema.json'];
+    delete outputFiles['SKILL.md'];
 
     return {
       name: name || 'Untitled App',
@@ -793,27 +794,6 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const handleSave = async (close = true) => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     await performSaveRef.current?.(close);
-  };
-
-  const handleClose = async () => {
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current);
-    const eid = output?.id ?? createdIdRef.current;
-    if (!savedRef.current && (files['index.html'] ?? '').trim()) {
-      try {
-        const body = buildBody();
-        let savedId: string;
-        if (eid) {
-          await dispatch(updateOutput({ id: eid, ...body })).unwrap();
-          savedId = eid;
-        } else {
-          const created = await dispatch(createOutput(body)).unwrap();
-          savedId = created.id;
-        }
-        captureThumbnailAsync(savedId);
-      } catch {}
-    }
-    onClose();
   };
 
   const handleRunPreview = async () => {
@@ -970,7 +950,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
     ? `${SERVE_BASE}/workspace/${workspaceId}/serve/index.html`
     : undefined;
 
-  const filePaths = useMemo(() => Object.keys(files).filter(p => p !== 'meta.json').sort(), [files]);
+  const filePaths = useMemo(() => Object.keys(files).filter(p => p !== 'meta.json' && p !== 'SKILL.md').sort(), [files]);
   const fileTree = useMemo(() => buildFileTree(filePaths), [filePaths]);
 
   const updateFile = useCallback((path: string, content: string) => {
@@ -1136,10 +1116,6 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
             minHeight: 44,
           }}
         >
-          <IconButton onClick={handleClose} size="small" sx={{ color: c.text.muted }}>
-            <ArrowBackIcon fontSize="small" />
-          </IconButton>
-
           <TextField
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -1564,6 +1540,8 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
                       onModeChange={setAutoRunMode}
                       model={autoRunModel}
                       onModelChange={setAutoRunModel}
+                      provider={autoRunProvider}
+                      onProviderChange={setAutoRunProvider}
                     />
                     <Button
                       variant="contained"

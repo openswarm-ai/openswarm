@@ -21,31 +21,38 @@ const BranchNavigator: React.FC<Props> = ({ currentIndex, totalBranches, onPrevi
     <Box
       sx={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 0.5,
-        my: 0.25,
+        justifyContent: 'flex-end',
+        mt: -0.25,
+        mb: 0.5,
       }}
     >
-      <IconButton
-        size="small"
-        onClick={onPrevious}
-        disabled={currentIndex === 0}
-        sx={{ color: c.text.tertiary, p: 0.25, '&.Mui-disabled': { color: c.border.medium } }}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.25,
+        }}
       >
-        <ChevronLeftIcon sx={{ fontSize: 18 }} />
-      </IconButton>
-      <Typography sx={{ color: c.text.tertiary, fontSize: '0.7rem', minWidth: 32, textAlign: 'center' }}>
-        {currentIndex + 1}/{totalBranches}
-      </Typography>
-      <IconButton
-        size="small"
-        onClick={onNext}
-        disabled={currentIndex === totalBranches - 1}
-        sx={{ color: c.text.tertiary, p: 0.25, '&.Mui-disabled': { color: c.border.medium } }}
-      >
-        <ChevronRightIcon sx={{ fontSize: 18 }} />
-      </IconButton>
+        <IconButton
+          size="small"
+          onClick={onPrevious}
+          disabled={currentIndex === 0}
+          sx={{ color: c.text.tertiary, p: 0.25, '&.Mui-disabled': { color: c.border.medium } }}
+        >
+          <ChevronLeftIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+        <Typography sx={{ color: c.text.tertiary, fontSize: '0.7rem', minWidth: 28, textAlign: 'center', userSelect: 'none' }}>
+          {currentIndex + 1} / {totalBranches}
+        </Typography>
+        <IconButton
+          size="small"
+          onClick={onNext}
+          disabled={currentIndex === totalBranches - 1}
+          sx={{ color: c.text.tertiary, p: 0.25, '&.Mui-disabled': { color: c.border.medium } }}
+        >
+          <ChevronRightIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Box>
     </Box>
   );
 };

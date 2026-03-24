@@ -92,7 +92,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
   const handleFocus = useCallback(
     (cardId: string, card: { x: number; y: number; width: number; height: number }) => {
-      canvasActions.fitToCards([card], 1.0);
+      canvasActions.fitToCards([card], 1.0, true);
       onHighlightCard?.(cardId);
       setExpanded(false);
     },

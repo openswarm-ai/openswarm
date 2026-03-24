@@ -68,9 +68,10 @@ interface Props {
   group: ToolGroup;
   isSessionRunning?: boolean;
   meta?: ToolGroupMeta;
+  sessionId?: string;
 }
 
-const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning = false, meta }) => {
+const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning = false, meta, sessionId }) => {
   const c = useClaudeTokens();
   const isMcp = !!group.mcpServer;
   const [expanded, setExpanded] = useState(isMcp);
@@ -186,6 +187,7 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
                 result={pair.result}
                 isPending={pair.result === null && isSessionRunning}
                 mcpCompact
+                sessionId={sessionId}
               />
             ))}
           </Box>

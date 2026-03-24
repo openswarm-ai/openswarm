@@ -39,6 +39,9 @@ const Views: React.FC = () => {
       setEditorOpen(true);
     } else if (routeId && routeId !== 'new') {
       navigate('/apps', { replace: true });
+    } else if (!routeId) {
+      setEditorOpen(false);
+      setEditingOutput(null);
     }
   }, [routeId, loaded, items, navigate]);
 
@@ -62,7 +65,7 @@ const Views: React.FC = () => {
   };
 
   if (editorOpen) {
-    return <ViewEditor output={editingOutput} onClose={handleEditorClose} />;
+    return <ViewEditor key={editingOutput?.id ?? 'new'} output={editingOutput} onClose={handleEditorClose} />;
   }
 
   return (

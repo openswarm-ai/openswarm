@@ -120,6 +120,7 @@ export function useDomElementSelector(): DomSelectorState {
   const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
   const isDraggingRef = useRef(false);
   const dragBoundsRef = useRef<{ left: number; top: number; right: number; bottom: number } | null>(null);
+  const preDragFocusRef = useRef<HTMLElement | null>(null);
 
   const excludeIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -245,8 +246,11 @@ export function useDomElementSelector(): DomSelectorState {
     if (e.button !== 0) return;
     if (e.metaKey || e.ctrlKey) return;
     const target = e.target as Element;
-    // Only start drag on "empty" canvas areas (not on selectable elements)
-    if (target && findSelectableAncestor(target, excludeIdRef.current)) return;
+    if (target && findSelectableAncestor(target, excludeIdRef.current)) {
+      e.preventDefault();
+      return;
+    }
+    preDragFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dragOriginRef.current = { x: e.clientX, y: e.clientY };
     isDraggingRef.current = false;
   }, []);
@@ -291,12 +295,17 @@ export function useDomElementSelector(): DomSelectorState {
       });
     }
 
+    const wasDragging = isDraggingRef.current;
     dragOriginRef.current = null;
     isDraggingRef.current = false;
     dragBoundsRef.current = null;
     setDragRect(EMPTY_DRAG);
     setDragPreview([]);
     if (dragPreviewRafRef.current) cancelAnimationFrame(dragPreviewRafRef.current);
+    if (wasDragging && preDragFocusRef.current) {
+      preDragFocusRef.current.focus();
+    }
+    preDragFocusRef.current = null;
   }, [ctx]);
 
   const handleClick = useCallback((e: MouseEvent) => {
@@ -327,6 +336,7 @@ export function useDomElementSelector(): DomSelectorState {
       dragOriginRef.current = null;
       dragBoundsRef.current = null;
       isDraggingRef.current = false;
+      preDragFocusRef.current = null;
       return;
     }
 
@@ -353,6 +363,7 @@ export function useDomElementSelector(): DomSelectorState {
       dragOriginRef.current = null;
       dragBoundsRef.current = null;
       isDraggingRef.current = false;
+      preDragFocusRef.current = null;
     };
   }, [ctx?.selectMode, handleMouseMove, handleMouseDown, handleMouseUp, handleClick]);
 

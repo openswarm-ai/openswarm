@@ -40,6 +40,7 @@ import { useBrowserActivity } from '@/shared/useBrowserActivity';
 import { getActionLabel } from '@/shared/browserCommandHandler';
 import { resolveInput, isGoogleSearch } from '@/shared/resolveUrl';
 import BrowserAgentOverlay from './BrowserAgentOverlay';
+import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -67,6 +68,14 @@ const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
 
 const isElectron = navigator.userAgent.includes('Electron');
 
+const chromeUserAgent = navigator.userAgent
+  .replace(/\s*Electron\/\S+/, '')
+  .replace(/\s*OpenSwarm\/\S+/, '');
+
+const webviewPreloadPath: string | undefined = isElectron
+  ? (window as any).openswarm?.getWebviewPreloadPath?.()
+  : undefined;
+
 type WebviewElement = BrowserWebview;
 
 interface TabLocalState {
@@ -84,6 +93,7 @@ interface Props {
   cardWidth: number;
   cardHeight: number;
   zoom?: number;
+  cmdHeld?: boolean;
   isSelected?: boolean;
   isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
@@ -91,29 +101,35 @@ interface Props {
   onDragStart?: (id: string, type: 'agent' | 'view' | 'browser') => void;
   onDragMove?: (dx: number, dy: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
+  cardZOrder?: number;
+  onBringToFront?: (id: string, type: 'agent' | 'view' | 'browser') => void;
 }
 
 
 const BrowserCard: React.FC<Props> = ({
-  browserId, tabs, activeTabId, cardX, cardY, cardWidth, cardHeight, zoom = 1,
+  browserId, tabs, activeTabId, cardX, cardY, cardWidth, cardHeight, zoom = 1, cmdHeld = false,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
+  cardZOrder = 0, onBringToFront,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
   const browserHomepage = useAppSelector((state) => state.settings.data.browser_homepage);
   const elementSelectionCtx = useElementSelection();
   const isElementSelectMode = elementSelectionCtx?.selectMode ?? false;
 
   const browserAgentSession = useAppSelector((state) => {
     const sessions = state.agents.sessions;
-    return Object.values(sessions).find(
+    const matches = Object.values(sessions).filter(
       (s) => s.browser_id === browserId && s.mode === 'browser-agent'
-        && (s.status === 'running' || s.status === 'completed' || s.status === 'error'),
-    ) ?? null;
+        && (s.status === 'running' || s.status === 'completed' || s.status === 'error' || s.status === 'stopped'),
+    );
+    return matches.find((s) => s.status === 'running') ?? matches[matches.length - 1] ?? null;
   });
 
   const activity = useBrowserActivity(browserId);
-  const agentActive = activity.active;
+  const agentRunning = browserAgentSession?.status === 'running';
+  const agentActive = activity.active || agentRunning;
   const agentAction = activity.action;
   const lastAction = activity.lastAction;
 
@@ -192,10 +208,6 @@ const BrowserCard: React.FC<Props> = ({
         onTitleUpdate();
       };
 
-      const onNewWindow = (e: any) => {
-        if (e.url) dispatch(addBrowserTab({ browserId, url: e.url, makeActive: true }));
-      };
-
       const onFaviconUpdate = (e: any) => {
         const favicons = e.favicons || (e.detail && e.detail.favicons);
         if (favicons?.[0]) {
@@ -208,7 +220,6 @@ const BrowserCard: React.FC<Props> = ({
       wv.addEventListener('page-title-updated', onTitleUpdate);
       wv.addEventListener('did-start-loading', onLoadStart);
       wv.addEventListener('did-stop-loading', onLoadStop);
-      wv.addEventListener('new-window', onNewWindow);
       wv.addEventListener('page-favicon-updated', onFaviconUpdate);
 
       cleanups.push(() => {
@@ -218,7 +229,6 @@ const BrowserCard: React.FC<Props> = ({
         wv.removeEventListener('page-title-updated', onTitleUpdate);
         wv.removeEventListener('did-start-loading', onLoadStart);
         wv.removeEventListener('did-stop-loading', onLoadStop);
-        wv.removeEventListener('new-window', onNewWindow);
         wv.removeEventListener('page-favicon-updated', onFaviconUpdate);
       });
     }
@@ -371,6 +381,7 @@ const BrowserCard: React.FC<Props> = ({
   const justDraggedRef = useRef(false);
 
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY };
@@ -426,6 +437,7 @@ const BrowserCard: React.FC<Props> = ({
 
   const handleResizeDown = useCallback(
     (dir: ResizeDir) => (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
       resizeRef.current = {
@@ -491,20 +503,13 @@ const BrowserCard: React.FC<Props> = ({
 
   const accentColor = c.accent.primary;
   const accentHover = c.accent.hover;
+  const accentRgb = accentColor.replace('#', '').match(/.{2}/g)?.map(h => parseInt(h, 16)).join(',') || '189,100,57';
 
   // ---- Glow state ----
   const glowingBrowserCards = useAppSelector((s) => s.dashboardLayout.glowingBrowserCards);
   const isGlowingFromRedux = !!glowingBrowserCards[browserId];
 
-  const [hasBeenTouched, setHasBeenTouched] = useState(false);
-  useEffect(() => {
-    if (isGlowingFromRedux && agentActive) setHasBeenTouched(true);
-  }, [isGlowingFromRedux, agentActive]);
-  useEffect(() => {
-    if (!isGlowingFromRedux) setHasBeenTouched(false);
-  }, [isGlowingFromRedux]);
-
-  const showGlow = isGlowingFromRedux && hasBeenTouched;
+  const showGlow = isGlowingFromRedux;
 
   const agentBorder = isHighlighted
     ? `2px solid ${c.accent.primary}`
@@ -535,6 +540,7 @@ const BrowserCard: React.FC<Props> = ({
       data-select-type="browser-card"
       data-select-id={browserId}
       data-select-meta={JSON.stringify({ name: activeTitle || 'Browser', url: activeUrl })}
+      onPointerDownCapture={() => onBringToFront?.(browserId, 'browser')}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
         onCardSelect?.(browserId, 'browser', e.shiftKey);
@@ -552,7 +558,7 @@ const BrowserCard: React.FC<Props> = ({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: isHighlighted ? 50 : (isDragging || isResizing) ? 100 : (agentActive || showGlow) ? 50 : 1,
+        zIndex: (isDragging || isResizing) ? 999999 : cardZOrder,
         transition: noTransition ? 'none' : 'box-shadow 0.4s ease, border 0.3s ease',
         '&:hover .resize-handle': { opacity: 1 },
         ...(isHighlighted && {
@@ -576,8 +582,8 @@ const BrowserCard: React.FC<Props> = ({
           },
         }),
         ...(!isHighlighted && (agentActive || showGlow) && {
-          animation: 'agent-glow-pulse 2s ease-in-out infinite',
-          '@keyframes agent-glow-pulse': {
+          animation: `agent-glow-${browserId} 2s ease-in-out infinite`,
+          [`@keyframes agent-glow-${browserId}`]: {
             '0%, 100%': {
               boxShadow: `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15${innerGlow}`,
             },
@@ -588,9 +594,10 @@ const BrowserCard: React.FC<Props> = ({
         }),
       }}
     >
-      {/* Selection overlay – blocks content interaction while selected, enabling drag from anywhere */}
+      {/* Selection overlay – blocks click interaction while selected, enabling drag from anywhere */}
       {isSelected && (
         <Box
+          ref={scrollOverlayRef}
           onPointerDown={handleDragPointerDown}
           onPointerMove={handleDragPointerMove}
           onPointerUp={handleDragPointerUp}
@@ -977,6 +984,9 @@ const BrowserCard: React.FC<Props> = ({
         {isElementSelectMode && (
           <Box sx={{ position: 'absolute', inset: 0, zIndex: 10 }} />
         )}
+        {cmdHeld && !isSelected && (
+          <Box sx={{ position: 'absolute', inset: 0, zIndex: 12 }} />
+        )}
         {isElectron ? (
           tabs.map((tab) => (
             <webview
@@ -988,6 +998,9 @@ const BrowserCard: React.FC<Props> = ({
               data-tab-id={tab.id}
               src="about:blank"
               allowpopups="true"
+              useragent={chromeUserAgent}
+              {...(webviewPreloadPath ? { preload: webviewPreloadPath } : {})}
+              webpreferences="plugins=yes, autoplayPolicy=no-user-gesture-required"
               style={{
                 position: 'absolute',
                 top: 0,
@@ -1035,6 +1048,7 @@ const BrowserCard: React.FC<Props> = ({
         {/* Camera flash — screenshot */}
         {(agentAction === 'screenshot' || lastAction === 'screenshot') && (
           <Box
+            key={`flash-${activity.actionSeq}`}
             sx={{
               position: 'absolute',
               inset: 0,
@@ -1062,10 +1076,10 @@ const BrowserCard: React.FC<Props> = ({
               pointerEvents: 'none',
               background: `linear-gradient(180deg, transparent, ${accentColor}90, transparent)`,
               boxShadow: `0 0 12px ${accentColor}60`,
-              animation: 'scan-sweep 1.5s ease-in-out infinite',
+              animation: 'scan-sweep 1.5s ease-in-out infinite alternate',
               '@keyframes scan-sweep': {
                 '0%': { top: '0%' },
-                '100%': { top: '100%' },
+                '100%': { top: 'calc(100% - 3px)' },
               },
             }}
           />
@@ -1074,10 +1088,11 @@ const BrowserCard: React.FC<Props> = ({
         {/* Click ripple */}
         {(agentAction === 'click' || lastAction === 'click') && (
           <Box
+            key={`ripple-${activity.actionSeq}`}
             sx={{
               position: 'absolute',
-              top: '50%',
-              left: '50%',
+              top: `${(activity.coords?.yPercent ?? 0.5) * 100}%`,
+              left: `${(activity.coords?.xPercent ?? 0.5) * 100}%`,
               width: 40,
               height: 40,
               borderRadius: '50%',
@@ -1133,7 +1148,7 @@ const BrowserCard: React.FC<Props> = ({
           </Box>
         )}
 
-        {/* Orange inner shadow overlay for selection / streaming glow */}
+        {/* Accent inner shadow overlay for selection / streaming glow */}
         {showGlow && !agentActive && (
           <Box
             sx={{
@@ -1142,14 +1157,14 @@ const BrowserCard: React.FC<Props> = ({
               zIndex: 14,
               pointerEvents: 'none',
               borderRadius: 'inherit',
-              boxShadow: 'inset 0 0 40px rgba(255,140,0,0.35), inset 0 0 80px rgba(255,100,0,0.15)',
-              animation: 'orange-glow-pulse 2s ease-in-out infinite',
-              '@keyframes orange-glow-pulse': {
+              boxShadow: `inset 0 0 40px rgba(${accentRgb},0.35), inset 0 0 80px rgba(${accentRgb},0.15)`,
+              animation: `accent-glow-${browserId} 2s ease-in-out infinite`,
+              [`@keyframes accent-glow-${browserId}`]: {
                 '0%, 100%': {
-                  boxShadow: 'inset 0 0 40px rgba(255,140,0,0.35), inset 0 0 80px rgba(255,100,0,0.15)',
+                  boxShadow: `inset 0 0 40px rgba(${accentRgb},0.35), inset 0 0 80px rgba(${accentRgb},0.15)`,
                 },
                 '50%': {
-                  boxShadow: 'inset 0 0 50px rgba(255,140,0,0.45), inset 0 0 100px rgba(255,100,0,0.22)',
+                  boxShadow: `inset 0 0 50px rgba(${accentRgb},0.45), inset 0 0 100px rgba(${accentRgb},0.22)`,
                 },
               },
             }}

@@ -22,12 +22,16 @@ import {
 import {
   setCardPosition,
   setCardSize,
+  fadeGlowingAgentCard,
+  clearGlowingAgentCard,
+  removeCard,
 } from '@/shared/state/dashboardLayoutSlice';
-import { useAppDispatch } from '@/shared/hooks';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { QuestionForm } from '@/app/pages/AgentChat/ApprovalBar';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import { parseMcpToolName, getMcpShortAction } from '@/app/pages/AgentChat/ToolCallBubble';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
 
 // ---------------------------------------------------------------------------
 // Helper components & functions (unchanged)
@@ -168,7 +172,8 @@ interface Props {
   cardWidth: number;
   cardHeight: number;
   zoom?: number;
-  spawnFrom?: { x: number; y: number };
+  spawnFrom?: { x: number; y: number; type?: 'branch' };
+  exitTarget?: { x: number; y: number };
   isSelected?: boolean;
   isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
@@ -176,6 +181,12 @@ interface Props {
   onDragStart?: (id: string, type: 'agent' | 'view') => void;
   onDragMove?: (dx: number, dy: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
+  onBranch?: (sourceSessionId: string, newSessionId: string) => void;
+  onMeasuredHeight?: (sessionId: string, height: number) => void;
+  snapColumn?: { x: number; width: number };
+  autoFocusInput?: boolean;
+  cardZOrder?: number;
+  onBringToFront?: (id: string, type: 'agent' | 'view' | 'browser') => void;
 }
 
 const MIN_W = 480;
@@ -183,13 +194,54 @@ const MIN_H = 120;
 const EXPANDED_OVERLAY_H = 620;
 
 const SPAWN_SPRING = { type: 'spring' as const, stiffness: 400, damping: 28, mass: 0.6 };
+const BRANCH_SPRING = { type: 'spring' as const, stiffness: 300, damping: 26, mass: 0.8 };
+const EXIT_SPRING = { type: 'spring' as const, stiffness: 350, damping: 30, mass: 0.7 };
+const GLOW_FADE_MS = 2500;
+
+const SNAP_THRESHOLD = 60;
 
 const AgentCard: React.FC<Props> = ({
-  session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, spawnFrom,
+  session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, spawnFrom, exitTarget,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
+  onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onBringToFront,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
+
+  const cardBoxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = cardBoxRef.current;
+    if (!el || !onMeasuredHeight) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        onMeasuredHeight(session.id, entry.contentRect.height);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [session.id, onMeasuredHeight]);
+
+  // ---- Glow state (for branched cards) ----
+  const glowEntry = useAppSelector((s) => s.dashboardLayout.glowingAgentCards[session.id]);
+  const isGlowingRedux = !!glowEntry;
+  const glowFading = glowEntry?.fading ?? false;
+  const glowFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const dismissGlow = useCallback(() => {
+    if (!isGlowingRedux || glowFading) return;
+    dispatch(fadeGlowingAgentCard(session.id));
+    glowFadeTimer.current = setTimeout(() => {
+      dispatch(clearGlowingAgentCard(session.id));
+    }, GLOW_FADE_MS + 300);
+  }, [isGlowingRedux, glowFading, dispatch, session.id]);
+
+  useEffect(() => () => {
+    if (glowFadeTimer.current) clearTimeout(glowFadeTimer.current);
+  }, []);
+
+  const accentColor = c.accent.primary;
+  const accentHover = c.accent.hover;
 
   const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
     running: { color: c.status.success, bg: c.status.successBg },
@@ -212,6 +264,7 @@ const AgentCard: React.FC<Props> = ({
   const justDraggedRef = useRef(false);
 
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY };
@@ -241,11 +294,15 @@ const AgentCard: React.FC<Props> = ({
     const dx = (e.clientX - dragState.current.startX) / zoom;
     const dy = (e.clientY - dragState.current.startY) / zoom;
     if (didDrag.current) {
-      dispatch(setCardPosition({
-        sessionId: session.id,
-        x: dragState.current.origX + dx,
-        y: dragState.current.origY + dy,
-      }));
+      let finalX = dragState.current.origX + dx;
+      const finalY = dragState.current.origY + dy;
+
+      if (snapColumn && Math.abs(finalX - snapColumn.x) < SNAP_THRESHOLD) {
+        finalX = snapColumn.x;
+        dispatch(setCardSize({ sessionId: session.id, width: snapColumn.width, height: cardHeight }));
+      }
+
+      dispatch(setCardPosition({ sessionId: session.id, x: finalX, y: finalY }));
       justDraggedRef.current = true;
       requestAnimationFrame(() => { justDraggedRef.current = false; });
     }
@@ -255,7 +312,7 @@ const AgentCard: React.FC<Props> = ({
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [zoom, dispatch, session.id, onDragEnd]);
+  }, [zoom, dispatch, session.id, onDragEnd, snapColumn, cardHeight]);
 
   // ---- Unified edge / corner resize ----
   const resizeRef = useRef<{
@@ -272,6 +329,7 @@ const AgentCard: React.FC<Props> = ({
 
   const handleResizeDown = useCallback(
     (dir: ResizeDir) => (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
       const effectiveW = Math.max(cardWidth, MIN_W);
@@ -337,14 +395,17 @@ const AgentCard: React.FC<Props> = ({
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    dispatch(closeSession({ sessionId: session.id }));
+    dispatch(collapseSession(session.id));
+    dispatch(removeCard(session.id));
+    if (glowEntry) {
+      setTimeout(() => {
+        dispatch(clearGlowingAgentCard(session.id));
+      }, 500);
+    } else {
+      dispatch(closeSession({ sessionId: session.id }));
+    }
   };
 
-  const handleCollapse = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    dispatch(collapseSession(session.id));
-  };
 
   useEffect(() => {
     if (session.status === 'running' || session.status === 'waiting_approval') {
@@ -376,33 +437,54 @@ const AgentCard: React.FC<Props> = ({
   const activeW = localResize?.w ?? cardWidth;
   const activeH = localResize?.h ?? cardHeight;
 
+  const isBranchSpawn = spawnFrom?.type === 'branch';
+  const spawnInitial = spawnFrom
+    ? isBranchSpawn
+      ? { opacity: 0.5, scale: 0.92, left: spawnFrom.x, top: spawnFrom.y }
+      : { opacity: 0, scale: 0.3, left: spawnFrom.x, top: spawnFrom.y }
+    : false;
+  const spawnTransition = noTransition || !spawnFrom
+    ? { duration: 0 }
+    : isBranchSpawn
+      ? { left: BRANCH_SPRING, top: BRANCH_SPRING, scale: BRANCH_SPRING, opacity: { duration: 0.25 } }
+      : { left: SPAWN_SPRING, top: SPAWN_SPRING, scale: SPAWN_SPRING, opacity: { duration: 0.12 } };
+
+  const exitAnimation = exitTarget
+    ? {
+        opacity: 0,
+        scale: 0.3,
+        left: exitTarget.x,
+        top: exitTarget.y,
+        transition: { left: EXIT_SPRING, top: EXIT_SPRING, scale: EXIT_SPRING, opacity: { duration: 0.2 } },
+      }
+    : { opacity: 0, scale: 0.85, transition: { duration: 0.2 } };
+
   return (
     <motion.div
-      initial={spawnFrom
-        ? { opacity: 0, scale: 0.3, left: spawnFrom.x, top: spawnFrom.y }
-        : { opacity: 0, scale: 0.92, left: activeX, top: activeY }
-      }
+      layout={false}
+      initial={spawnInitial}
       animate={{ opacity: 1, scale: 1, left: activeX, top: activeY }}
-      transition={noTransition
-        ? { duration: 0 }
-        : spawnFrom
-          ? { left: SPAWN_SPRING, top: SPAWN_SPRING, scale: SPAWN_SPRING, opacity: { duration: 0.12 } }
-          : { duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }
-      }
+      exit={exitAnimation}
+      transition={spawnTransition}
+      onPointerDownCapture={() => onBringToFront?.(session.id, 'agent')}
       style={{
         position: 'absolute',
-        zIndex: isDragging || isResizing ? 999 : expanded ? 100 : 'auto',
+        zIndex: isDragging || isResizing ? 999999 : cardZOrder,
       }}
     >
     <Box
+      ref={cardBoxRef}
       data-select-type="agent-card"
       data-select-id={session.id}
       data-select-meta={JSON.stringify({ name: session.name || session.id, status: session.status, model: session.model, mode: session.mode })}
+      
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
+        if (!isSelected && !e.shiftKey) {
+          dispatch(toggleExpandSession(session.id));
+        }
         onCardSelect?.(session.id, 'agent', e.shiftKey);
       }}
-      onDoubleClick={() => dispatch(toggleExpandSession(session.id))}
       sx={{
         position: 'relative',
         width: localResize ? activeW : Math.max(cardWidth, MIN_W),
@@ -410,26 +492,34 @@ const AgentCard: React.FC<Props> = ({
         bgcolor: c.bg.surface,
         border: isHighlighted
           ? `2px solid ${c.accent.primary}`
-          : isSelected
-            ? '2px solid #3b82f6'
-            : hasPending && !expanded
-              ? `1px solid ${c.status.warning}`
-              : expanded
-                ? `1px solid ${c.border.strong}`
-                : `1px solid ${c.border.subtle}`,
+          : (isGlowingRedux && !glowFading)
+            ? `2px solid ${accentColor}`
+            : isSelected
+              ? '2px solid #3b82f6'
+              : hasPending && !expanded
+                ? `1px solid ${c.status.warning}`
+                : expanded
+                  ? `1px solid ${c.border.strong}`
+                  : `1px solid ${c.border.subtle}`,
         borderRadius: 3,
         p: 2,
         cursor: expanded ? 'default' : 'pointer',
-        transition: noTransition ? 'none' : c.transition,
+        transition: noTransition
+          ? 'none'
+          : glowFading
+            ? `border ${GLOW_FADE_MS}ms ease-out, box-shadow ${GLOW_FADE_MS}ms ease-out`
+            : c.transition,
         boxShadow: isHighlighted
           ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
-          : isDragging
-            ? c.shadow.lg
-            : isSelected
-              ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
-              : expanded
-                ? c.shadow.md
-                : c.shadow.sm,
+          : (isGlowingRedux && !glowFading)
+            ? `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15`
+            : isDragging
+              ? c.shadow.lg
+              : isSelected
+                ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
+                : expanded
+                  ? c.shadow.md
+                  : c.shadow.sm,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -452,9 +542,19 @@ const AgentCard: React.FC<Props> = ({
               boxShadow: c.shadow.sm,
             },
           },
-          zIndex: 50,
         }),
-        ...(!isHighlighted && !expanded && !isDragging && !isSelected && {
+        ...(!isHighlighted && isGlowingRedux && !glowFading && {
+          animation: 'agent-card-glow-pulse 2s ease-in-out infinite',
+          '@keyframes agent-card-glow-pulse': {
+            '0%, 100%': {
+              boxShadow: `0 0 0 2px ${accentColor}40, 0 0 18px ${accentColor}30, 0 0 40px ${accentColor}15`,
+            },
+            '50%': {
+              boxShadow: `0 0 0 3px ${accentColor}60, 0 0 28px ${accentColor}45, 0 0 56px ${accentColor}25`,
+            },
+          },
+        }),
+        ...(!isHighlighted && !(isGlowingRedux && !glowFading) && !expanded && !isDragging && !isSelected && {
           '&:hover': {
             boxShadow: c.shadow.md,
             borderColor: hasPending ? c.status.warning : c.border.strong,
@@ -462,6 +562,82 @@ const AgentCard: React.FC<Props> = ({
         }),
       }}
     >
+      {/* Glow overlays for branched cards */}
+      {isGlowingRedux && (
+        <Box
+          className="agent-card-glow-overlays"
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            borderRadius: 'inherit',
+            zIndex: 20,
+            opacity: glowFading ? 0 : 1,
+            transition: `opacity ${GLOW_FADE_MS}ms ease-out`,
+          }}
+        >
+          {/* Rotating conic gradient border */}
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: 'inherit',
+              overflow: 'hidden',
+              padding: '3px',
+              mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+              WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+              maskComposite: 'exclude',
+              WebkitMaskComposite: 'xor',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                inset: '-50%',
+                background: `conic-gradient(from 0deg, transparent 0%, ${accentColor} 25%, transparent 50%, ${accentColor} 75%, transparent 100%)`,
+                animation: 'agent-card-rotate-glow 3s linear infinite',
+              },
+              '@keyframes agent-card-rotate-glow': {
+                '100%': { transform: 'rotate(360deg)' },
+              },
+            }}
+          />
+          {/* Top edge shimmer */}
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '2px',
+              background: `linear-gradient(90deg, transparent, ${accentColor}, ${accentHover}, ${accentColor}, transparent)`,
+              backgroundSize: '200% 100%',
+              animation: 'agent-card-border-shimmer 2s linear infinite',
+              '@keyframes agent-card-border-shimmer': {
+                '0%': { backgroundPosition: '200% 0' },
+                '100%': { backgroundPosition: '-200% 0' },
+              },
+            }}
+          />
+          {/* Inner shadow overlay */}
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: 'inherit',
+              boxShadow: `inset 0 0 40px ${accentColor}30, inset 0 0 80px ${accentColor}12`,
+              animation: 'agent-card-inner-pulse 2s ease-in-out infinite',
+              '@keyframes agent-card-inner-pulse': {
+                '0%, 100%': {
+                  boxShadow: `inset 0 0 40px ${accentColor}30, inset 0 0 80px ${accentColor}12`,
+                },
+                '50%': {
+                  boxShadow: `inset 0 0 50px ${accentColor}40, inset 0 0 100px ${accentColor}18`,
+                },
+              },
+            }}
+          />
+        </Box>
+      )}
+
       {/* Resize handles: 4 edges + 4 corners */}
       {HANDLE_DEFS.map(({ dir, sx }) => (
         <Box
@@ -481,9 +657,10 @@ const AgentCard: React.FC<Props> = ({
         />
       ))}
 
-      {/* Selection overlay – blocks content interaction while selected, enabling drag from anywhere */}
+      {/* Selection overlay – blocks click interaction while selected, enabling drag from anywhere */}
       {isSelected && (
         <Box
+          ref={scrollOverlayRef}
           onPointerDown={handleDragPointerDown}
           onPointerMove={handleDragPointerMove}
           onPointerUp={handleDragPointerUp}
@@ -491,7 +668,6 @@ const AgentCard: React.FC<Props> = ({
             if (justDraggedRef.current) return;
             onCardSelect?.(session.id, 'agent', e.shiftKey);
           }}
-          onDoubleClick={() => dispatch(toggleExpandSession(session.id))}
           sx={{
             position: 'absolute',
             inset: 0,
@@ -571,37 +747,20 @@ const AgentCard: React.FC<Props> = ({
             onPointerDown={(e) => e.stopPropagation()}
             sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, ml: 0.5 }}
           >
-            {expanded ? (
-              <Tooltip title="Collapse">
-                <IconButton
-                  size="small"
-                  onClick={handleCollapse}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  sx={{
-                    color: c.text.ghost,
-                    p: 0.5,
-                    '&:hover': { color: c.text.secondary, bgcolor: c.bg.secondary },
-                  }}
-                >
-                  <CloseIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Tooltip>
-            ) : (
-              <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
-                <IconButton
-                  size="small"
-                  onClick={handleRemove}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  sx={{
-                    color: c.text.ghost,
-                    p: 0.5,
-                    '&:hover': { color: c.status.error, bgcolor: `${c.status.errorBg}` },
-                  }}
-                >
-                  <CloseIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Tooltip>
-            )}
+            <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
+              <IconButton
+                size="small"
+                onClick={handleRemove}
+                onMouseDown={(e) => e.stopPropagation()}
+                sx={{
+                  color: c.text.ghost,
+                  p: 0.5,
+                  '&:hover': { color: c.status.error, bgcolor: `${c.status.errorBg}` },
+                }}
+              >
+                <CloseIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
           </Box>
         </Box>
 
@@ -649,6 +808,10 @@ const AgentCard: React.FC<Props> = ({
             sessionId={session.id}
             onClose={() => dispatch(collapseSession(session.id))}
             embedded
+            autoFocus={autoFocusInput}
+            isGlowing={isGlowingRedux && !glowFading}
+            onDismissGlow={dismissGlow}
+            onBranch={onBranch ? (newId: string) => onBranch(session.id, newId) : undefined}
           />
         </Box>
       )}

@@ -18,9 +18,11 @@ from backend.apps.tools_lib.models import ToolDefinition, ToolCreate, ToolUpdate
 
 logger = logging.getLogger(__name__)
 
-from backend.config.paths import BACKEND_DIR, TOOLS_DIR as DATA_DIR, BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH
+from backend.config.paths import BACKEND_DIR, DATA_ROOT, TOOLS_DIR as DATA_DIR, BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH
 
 load_dotenv(os.path.join(BACKEND_DIR, ".env"))
+if os.environ.get("OPENSWARM_PACKAGED") == "1":
+    load_dotenv(os.path.join(os.path.dirname(DATA_ROOT), ".env"), override=True)
 
 
 @asynccontextmanager
@@ -380,6 +382,7 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
                 config["command"] = resolved
         env = config.setdefault("env", {})
         env.setdefault("PATH", _augmented_path())
+        env.setdefault("PYTHONPATH", "")
 
     return config
 
@@ -510,7 +513,7 @@ async def _discover_mcp_tools_http(url: str, headers: dict | None = None) -> lis
             raise HTTPException(status_code=502, detail="Empty response from MCP server")
 
         tools_list = data.get("result", {}).get("tools", [])
-        return [{"name": t.get("name", ""), "description": t.get("description", "")} for t in tools_list]
+        return [{"name": t.get("name", ""), "description": t.get("description", ""), "inputSchema": t.get("inputSchema")} for t in tools_list]
 
 
 async def _discover_mcp_tools_sse(url: str, headers: dict | None = None) -> list[dict]:
@@ -533,7 +536,7 @@ async def _discover_mcp_tools_sse(url: str, headers: dict | None = None) -> list
             ) as session:
                 await session.initialize()
                 result = await session.list_tools()
-                return [{"name": t.name, "description": t.description or ""} for t in result.tools]
+                return [{"name": t.name, "description": t.description or "", "inputSchema": t.inputSchema if t.inputSchema else None} for t in result.tools]
     except BaseExceptionGroup as eg:
         first = eg.exceptions[0] if eg.exceptions else eg
         raise HTTPException(status_code=502, detail=f"SSE discovery failed: {first}") from first
@@ -546,6 +549,7 @@ async def _discover_mcp_tools_stdio(command: str, args: list[str] | None = None,
         raise HTTPException(status_code=400, detail=f"Command '{command}' not found on PATH or common install locations")
 
     proc_env = {**os.environ, **(env or {}), "PATH": _augmented_path()}
+    proc_env.pop("PYTHONPATH", None)
 
     proc = await asyncio.create_subprocess_exec(
         cmd_path, *(args or []),
@@ -601,7 +605,7 @@ async def _discover_mcp_tools_stdio(command: str, args: list[str] | None = None,
         data = await _recv()
 
         tools_list = data.get("result", {}).get("tools", [])
-        return [{"name": t.get("name", ""), "description": t.get("description", "")} for t in tools_list]
+        return [{"name": t.get("name", ""), "description": t.get("description", ""), "inputSchema": t.get("inputSchema")} for t in tools_list]
 
     except HTTPException:
         raise
@@ -616,12 +620,34 @@ async def _discover_mcp_tools_stdio(command: str, args: list[str] | None = None,
             proc.terminate()
             await asyncio.wait_for(proc.wait(), timeout=5.0)
         except Exception:
-            proc.kill()
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
 
 @tools_lib.router.post("/{tool_id}/discover")
 async def discover_tools(tool_id: str):
     tool = _load(tool_id)
+
+    if tool.auth_type == "oauth2" and tool.auth_status == "connected":
+        refreshed = await refresh_google_token(tool)
+        if not refreshed and tool.oauth_tokens.get("access_token"):
+            expiry = tool.oauth_tokens.get("token_expiry", 0)
+            if time.time() >= expiry - 60:
+                client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+                if not client_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="OAuth token expired and GOOGLE_OAUTH_CLIENT_ID is not set. "
+                               "In the packaged app, create ~/.openswarm.env or "
+                               "~/Library/Application Support/OpenSwarm/.env with your Google OAuth credentials.",
+                    )
+                raise HTTPException(
+                    status_code=502,
+                    detail="OAuth token expired and refresh failed. Try reconnecting Google.",
+                )
+
     config = derive_mcp_config(tool)
     if not config:
         raise HTTPException(status_code=400, detail="Cannot derive MCP config for tool")
@@ -655,8 +681,11 @@ async def discover_tools(tool_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning(f"MCP tool discovery failed for {tool.name}: {e}")
-        raise HTTPException(status_code=502, detail=f"Discovery failed: {e}")
+        msg = str(e).strip()
+        if not msg:
+            msg = type(e).__name__
+        logger.warning(f"MCP tool discovery failed for {tool.name}: {msg}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Discovery failed: {msg}")
 
     services: dict[str, dict[str, list[str]]] = {}
     service_groups: dict[str, list[str]] = {}
@@ -681,6 +710,7 @@ async def discover_tools(tool_id: str):
     permissions["_services"] = services
     permissions["_service_groups"] = service_groups
     permissions["_tool_descriptions"] = {t["name"]: t["description"] for t in raw_tools}
+    permissions["_tool_schemas"] = {t["name"]: t.get("inputSchema") for t in raw_tools if t.get("inputSchema")}
 
     tool.tool_permissions = permissions
     _save(tool)

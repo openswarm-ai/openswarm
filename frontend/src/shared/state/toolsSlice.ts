@@ -20,6 +20,7 @@ export interface ToolDefinition {
 
 export interface BuiltinTool {
   name: string;
+  display_name?: string;
   description: string;
   category: string;
   deferred: boolean;

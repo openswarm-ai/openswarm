@@ -2,15 +2,18 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 (async () => {
   const port = await ipcRenderer.invoke('get-backend-port');
+  const webviewPreloadPath = await ipcRenderer.invoke('get-webview-preload-path');
 
   contextBridge.exposeInMainWorld('__OPENSWARM_PORT__', port);
 
   contextBridge.exposeInMainWorld('openswarm', {
     getBackendPort: () => port,
+    getWebviewPreloadPath: () => webviewPreloadPath,
 
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     capturePage: (rect) => ipcRenderer.invoke('capture-page', rect),
+    getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
     downloadUpdate: () => ipcRenderer.invoke('download-update'),
     installUpdate: () => ipcRenderer.invoke('install-update'),
@@ -39,6 +42,12 @@ const { contextBridge, ipcRenderer } = require('electron');
       const listener = (_event, message) => cb(message);
       ipcRenderer.on('update-error', listener);
       return () => ipcRenderer.removeListener('update-error', listener);
+    },
+
+    onWebviewNewWindow: (cb) => {
+      const listener = (_event, url, webContentsId) => cb(url, webContentsId);
+      ipcRenderer.on('webview-new-window', listener);
+      return () => ipcRenderer.removeListener('webview-new-window', listener);
     },
   });
 })();

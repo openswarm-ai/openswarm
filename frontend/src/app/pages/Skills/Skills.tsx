@@ -579,8 +579,6 @@ const Skills: React.FC = () => {
                         size="small"
                         component="a"
                         href={selectedReg.repositoryUrl}
-                        target="_blank"
-                        rel="noopener"
                         sx={{ color: c.text.tertiary, '&:hover': { color: c.text.primary } }}
                       >
                         <OpenInNewIcon sx={{ fontSize: 18 }} />

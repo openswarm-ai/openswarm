@@ -34,8 +34,8 @@ class BrowserCardPosition(BaseModel):
     activeTabId: str = ""
     x: float = 0
     y: float = 0
-    width: float = 640
-    height: float = 480
+    width: float = 1280
+    height: float = 800
 
 
 class DashboardLayout(BaseModel):

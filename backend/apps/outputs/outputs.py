@@ -15,6 +15,7 @@ from backend.apps.outputs.models import (
     WorkspaceSeedRequest,
 )
 from backend.apps.outputs.executor import execute_backend_code
+from backend.apps.outputs.view_builder_templates import VIEW_BUILDER_SKILL, VIEW_TEMPLATE_FILES
 from backend.apps.settings.settings import load_settings
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 MODEL_MAP = {
     "sonnet": "claude-sonnet-4-20250514",
     "opus": "claude-opus-4-20250514",
-    "haiku": "claude-haiku-4-20250414",
+    "haiku": "claude-haiku-4-5-20251001",
 }
 
 
@@ -31,13 +32,11 @@ def _resolve_model(short_name: str) -> str:
 
 
 def _get_anthropic_client():
-    """Create an AsyncAnthropic client using the API key from app settings."""
-    import anthropic
+    """Create an AsyncAnthropic client using credentials from app settings."""
+    from backend.apps.settings.credentials import get_anthropic_client
 
     settings = load_settings()
-    if not settings.anthropic_api_key:
-        raise ValueError("Anthropic API key not configured. Set it in Settings.")
-    return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    return get_anthropic_client(settings)
 
 
 def _validate_against_schema(data: dict, schema: dict) -> str | None:
@@ -235,6 +234,14 @@ async def seed_workspace(body: WorkspaceSeedRequest):
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w") as f:
                 f.write(content)
+    else:
+        for rel_path, content in VIEW_TEMPLATE_FILES.items():
+            full_path = os.path.join(folder, rel_path)
+            with open(full_path, "w") as f:
+                f.write(content)
+
+    with open(os.path.join(folder, "SKILL.md"), "w") as f:
+        f.write(VIEW_BUILDER_SKILL)
 
     if body.meta:
         with open(os.path.join(folder, "meta.json"), "w") as f:

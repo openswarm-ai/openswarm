@@ -25,26 +25,20 @@ BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/browser-agent/run"
 MODEL = os.environ.get("OPENSWARM_AGENT_MODEL", "sonnet")
 DASHBOARD_ID = os.environ.get("OPENSWARM_DASHBOARD_ID", "")
 PRE_SELECTED_BROWSER_IDS = os.environ.get("OPENSWARM_PRE_SELECTED_BROWSER_IDS", "")
+PARENT_SESSION_ID = os.environ.get("OPENSWARM_PARENT_SESSION_ID", "")
 
 TOOLS = [
     {
-        "name": "BrowserAgent",
+        "name": "CreateBrowserAgent",
         "description": (
-            "Delegate a browser task to a dedicated browser agent. The browser agent "
+            "Create a new browser card and run a task on it. A dedicated browser agent "
             "will autonomously perform the task (navigating, clicking, typing, etc.) "
             "and return a summary of actions taken plus a final screenshot. "
-            "Use this for any task that requires interacting with a web page."
+            "Use this when you need a fresh browser for a new task."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "browser_id": {
-                    "type": "string",
-                    "description": (
-                        "The ID of the browser card to use. If omitted, a new browser "
-                        "card will be automatically created."
-                    ),
-                },
                 "task": {
                     "type": "string",
                     "description": (
@@ -55,8 +49,8 @@ TOOLS = [
                 "url": {
                     "type": "string",
                     "description": (
-                        "Optional starting URL. If provided and no browser_id is given, "
-                        "the new browser will navigate here first."
+                        "Optional starting URL. The new browser will navigate here "
+                        "before beginning the task."
                     ),
                 },
             },
@@ -64,11 +58,38 @@ TOOLS = [
         },
     },
     {
+        "name": "BrowserAgent",
+        "description": (
+            "Delegate a browser task to a dedicated browser agent on an existing "
+            "browser card. The browser agent will autonomously perform the task "
+            "(navigating, clicking, typing, etc.) and return a summary of actions "
+            "taken plus a final screenshot."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "browser_id": {
+                    "type": "string",
+                    "description": "The ID of the existing browser card to use.",
+                },
+                "task": {
+                    "type": "string",
+                    "description": (
+                        "The task for the browser agent to perform. Be specific and "
+                        "detailed about what you want accomplished."
+                    ),
+                },
+            },
+            "required": ["browser_id", "task"],
+        },
+    },
+    {
         "name": "BrowserAgents",
         "description": (
-            "Delegate multiple browser tasks to run in parallel, each on a different "
-            "browser. All tasks execute concurrently and results are returned together. "
-            "Use this when you need to perform tasks on multiple web pages simultaneously."
+            "Delegate multiple browser tasks to run in parallel, each on an existing "
+            "browser card. All tasks execute concurrently and results are returned "
+            "together. Use this when you need to perform tasks on multiple web pages "
+            "simultaneously."
         ),
         "inputSchema": {
             "type": "object",
@@ -81,18 +102,14 @@ TOOLS = [
                         "properties": {
                             "browser_id": {
                                 "type": "string",
-                                "description": "Optional browser card ID. If omitted, a new browser will be created.",
+                                "description": "The ID of the existing browser card to use.",
                             },
                             "task": {
                                 "type": "string",
                                 "description": "The task for this browser agent.",
                             },
-                            "url": {
-                                "type": "string",
-                                "description": "Optional starting URL.",
-                            },
                         },
-                        "required": ["task"],
+                        "required": ["browser_id", "task"],
                     },
                 },
             },
@@ -119,6 +136,7 @@ def call_backend(tasks: list[dict]) -> dict:
         "model": MODEL,
         "dashboard_id": DASHBOARD_ID,
         "pre_selected_browser_ids": pre_selected,
+        "parent_session_id": PARENT_SESSION_ID,
     }).encode()
     req = urllib.request.Request(
         BACKEND_URL,
@@ -219,11 +237,28 @@ def format_batch_results(results: list[dict]) -> dict:
 
 
 def handle_tool_call(tool_name: str, arguments: dict) -> dict:
-    if tool_name == "BrowserAgent":
+    if tool_name == "CreateBrowserAgent":
         task_def = {
             "task": arguments.get("task", ""),
-            "browser_id": arguments.get("browser_id", ""),
+            "browser_id": "",
             "url": arguments.get("url", ""),
+        }
+        result = call_backend([task_def])
+        if "error" in result:
+            return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
+        results = result.get("results", [result])
+        if results:
+            return format_result(results[0])
+        return {"content": [{"type": "text", "text": "No result returned."}], "isError": True}
+
+    elif tool_name == "BrowserAgent":
+        browser_id = arguments.get("browser_id", "")
+        if not browser_id:
+            return {"content": [{"type": "text", "text": "Error: browser_id is required"}], "isError": True}
+        task_def = {
+            "task": arguments.get("task", ""),
+            "browser_id": browser_id,
+            "url": "",
         }
         result = call_backend([task_def])
         if "error" in result:
@@ -237,6 +272,9 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         tasks = arguments.get("tasks", [])
         if not tasks:
             return {"content": [{"type": "text", "text": "Error: tasks array is empty"}], "isError": True}
+        for t in tasks:
+            if not t.get("browser_id"):
+                return {"content": [{"type": "text", "text": "Error: browser_id is required for each task"}], "isError": True}
         result = call_backend(tasks)
         if "error" in result:
             return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}

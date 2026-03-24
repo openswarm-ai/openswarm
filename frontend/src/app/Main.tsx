@@ -3,8 +3,9 @@ import { Provider } from 'react-redux';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider as MuiThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { store } from '../shared/state/store';
-import { useAppDispatch } from '@/shared/hooks';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchSettings } from '@/shared/state/settingsSlice';
+import { fetchModels } from '@/shared/state/modelsSlice';
 import {
   setAppVersion,
   setUpdateAvailable,
@@ -22,9 +23,13 @@ import Tools from './pages/Tools/Tools';
 import Modes from './pages/Modes/Modes';
 import Views from './pages/Views/Views';
 import Customization from './pages/Customization/Customization';
+import Channels from './pages/Channels/Channels';
+import Analytics from './pages/Analytics/Analytics';
+import AnalyticsOptIn from './components/AnalyticsOptIn';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
+import OnboardingModal from './components/OnboardingModal';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 
 function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
@@ -155,9 +160,16 @@ const ShortcutsProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
 const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const dispatch = useAppDispatch();
+  const { setMode: setThemeMode } = useThemeMode();
+  const theme = useAppSelector((s) => s.settings.data.theme);
+  const loaded = useAppSelector((s) => s.settings.loaded);
   useEffect(() => {
     dispatch(fetchSettings());
+    dispatch(fetchModels());
   }, [dispatch]);
+  useEffect(() => {
+    if (loaded) setThemeMode(theme as 'light' | 'dark');
+  }, [loaded, theme, setThemeMode]);
   return <>{children}</>;
 };
 
@@ -169,6 +181,21 @@ const UpdateListener: React.FC<{ children: React.ReactNode }> = ({ children }) =
     if (!api?.getAppVersion) return;
 
     api.getAppVersion().then((v: string) => dispatch(setAppVersion(v)));
+
+    api.getUpdateStatus?.().then((cached) => {
+      if (!cached) return;
+      if (cached.status === 'available' && cached.info?.version) {
+        dispatch(setUpdateAvailable(cached.info.version));
+      } else if (cached.status === 'not-available') {
+        dispatch(setUpdateNotAvailable());
+      } else if (cached.status === 'downloading' && cached.info?.percent != null) {
+        dispatch(setDownloading(cached.info.percent));
+      } else if (cached.status === 'downloaded') {
+        dispatch(setUpdateDownloaded());
+      } else if (cached.status === 'error' && cached.error) {
+        dispatch(setUpdateError(cached.error));
+      }
+    });
 
     const cleanups = [
       api.onUpdateAvailable?.((info: OpenSwarmUpdateInfo) => dispatch(setUpdateAvailable(info.version))),
@@ -207,8 +234,12 @@ const ThemedApp: React.FC = () => {
                   <Route path="/modes" element={<Modes />} />
                   <Route path="/apps" element={<Views />} />
                   <Route path="/apps/:id" element={<Views />} />
+                  <Route path="/channels" element={<Channels />} />
+                  <Route path="/analytics" element={<Analytics />} />
                 </Route>
               </Routes>
+              <AnalyticsOptIn />
+              <OnboardingModal />
             </UpdateListener>
           </SettingsLoader>
         </ShortcutsProvider>

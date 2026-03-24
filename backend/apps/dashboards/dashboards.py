@@ -123,8 +123,10 @@ async def list_dashboards():
 
 @dashboards.router.post("/create")
 async def create_dashboard(body: DashboardCreate):
+    from backend.apps.analytics.collector import record as _analytics
     dashboard = Dashboard(name=body.name)
     _save(dashboard)
+    _analytics("dashboard.created", {}, dashboard_id=dashboard.id)
     return dashboard.model_dump(mode="json")
 
 
@@ -151,13 +153,10 @@ async def generate_name(dashboard_id: str):
 
     fallback = prompts[0][:40]
     try:
-        import anthropic
         from backend.apps.settings.settings import load_settings
+        from backend.apps.settings.credentials import get_anthropic_client
         global_settings = load_settings()
-        if not global_settings.anthropic_api_key:
-            raise ValueError("API key not configured")
-
-        client = anthropic.AsyncAnthropic(api_key=global_settings.anthropic_api_key)
+        client = get_anthropic_client(global_settings)
 
         if len(prompts) == 1:
             system = (
@@ -173,7 +172,7 @@ async def generate_name(dashboard_id: str):
             user_content = "\n".join(f"- {p}" for p in prompts)
 
         resp = await client.messages.create(
-            model="claude-haiku-4-20250414",
+            model="claude-haiku-4-5-20251001",
             max_tokens=30,
             system=system,
             messages=[{"role": "user", "content": user_content}],

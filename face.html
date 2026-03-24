@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixel Face</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body { background: #000; overflow: hidden; cursor: none; }
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+
+// Grid
+const PX = 20;
+let COLS, ROWS;
+
+function resize() {
+  COLS = Math.ceil(window.innerWidth / PX);
+  ROWS = Math.ceil(window.innerHeight / PX);
+  C.width = COLS * PX;
+  C.height = ROWS * PX;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const BG = '#E8927A';
+const EYE = '#1E1E1E';
+const MOUTH = '#1E1E1E';
+
+// State
+let state = 'idle';
+let breath = 0;
+let talk = 0;
+let think = 0;
+let sleepZ = 0;
+let heartP = 0;
+
+// Lerped eye/mouth sizes
+let eyeH = 3, eyeHTarget = 3;
+let mouthW = 2, mouthWTarget = 2;
+let mouthH = 2, mouthHTarget = 2;
+let eyeOffX = 0, eyeOffXTarget = 0;
+let eyeOffY = 0, eyeOffYTarget = 0;
+
+// Idle behavior system
+let idleTimer = 0;
+let idleAction = 'none';
+let idleActionTimer = 0;
+let idleGlanceX = 0;
+let idleGlanceY = 0;
+let blinkOpen = true;
+let blinkCD = 120 + Math.random() * 200;
+let doubleBlink = false;
+let idleSinceInput = 0;
+let sleepTransitioned = false;
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function px(col, row, color) {
+  X.fillStyle = color;
+  X.fillRect(col * PX, row * PX, PX, PX);
+}
+
+function pxRect(x, y, w, h, color) {
+  for (let r = 0; r < Math.round(h); r++)
+    for (let c = 0; c < Math.round(w); c++)
+      px(Math.round(x) + c, Math.round(y) + r, color);
+}
+
+function set(s) {
+  state = s;
+  idleSinceInput = 0;
+  sleepTransitioned = false;
+}
+
+// --- Idle behavior ---
+function updateIdle() {
+  idleSinceInput++;
+
+  // Auto-sleep after ~45s no input
+  if (idleSinceInput > 2700 && state === 'idle' && !sleepTransitioned) {
+    state = 'sleeping';
+    sleepTransitioned = true;
+    return;
+  }
+  // Wake from auto-sleep on input (handled in set())
+
+  if (state !== 'idle') return;
+
+  idleTimer++;
+  idleActionTimer--;
+
+  // Blink system
+  blinkCD--;
+  if (blinkCD <= 0 && blinkOpen) {
+    blinkOpen = false;
+    blinkCD = 6;
+    doubleBlink = Math.random() < 0.3;
+  } else if (!blinkOpen && blinkCD <= 0) {
+    blinkOpen = true;
+    if (doubleBlink) {
+      doubleBlink = false;
+      blinkCD = 8;
+    } else {
+      blinkCD = 100 + Math.random() * 280;
+    }
+  }
+
+  // Pick new idle action
+  if (idleActionTimer <= 0) {
+    const roll = Math.random();
+    if (roll < 0.30) {
+      idleAction = 'glance';
+      idleGlanceX = Math.floor(Math.random() * 5) - 2;
+      idleGlanceY = (Math.random() - 0.5) * 1.2;
+      idleActionTimer = 50 + Math.random() * 120;
+    } else if (roll < 0.45) {
+      idleAction = 'scan';
+      idleActionTimer = 180;
+    } else if (roll < 0.55) {
+      idleAction = 'squint';
+      idleActionTimer = 35 + Math.random() * 40;
+    } else if (roll < 0.65) {
+      idleAction = 'lookup';
+      idleActionTimer = 50 + Math.random() * 70;
+    } else {
+      idleAction = 'none';
+      idleGlanceX = 0;
+      idleGlanceY = 0;
+      idleActionTimer = 60 + Math.random() * 200;
+    }
+  }
+}
+
+function draw() {
+  breath += 0.025;
+  talk += 0.3;
+  think += 0.025;
+  sleepZ += 0.012;
+  heartP += 0.05;
+
+  updateIdle();
+
+  // Blink for non-idle blinking states
+  if (state === 'talking' || state === 'thinking') {
+    blinkCD--;
+    if (blinkCD <= 0 && blinkOpen) { blinkOpen = false; blinkCD = 6; }
+    else if (!blinkOpen && blinkCD <= 0) { blinkOpen = true; blinkCD = 120 + Math.random() * 250; }
+  }
+  if (state !== 'idle' && state !== 'talking' && state !== 'thinking') {
+    blinkOpen = true;
+  }
+
+  const b = Math.sin(breath) * 0.3;
+  switch (state) {
+    case 'idle': {
+      eyeHTarget = blinkOpen ? 3 : 0;
+      mouthWTarget = 2; mouthHTarget = 2;
+      let gx = 0, gy = b;
+      if (idleAction === 'glance') {
+        gx = idleGlanceX; gy = idleGlanceY + b;
+      } else if (idleAction === 'scan') {
+        const t = 1 - (idleActionTimer / 180);
+        gx = Math.sin(t * Math.PI * 2) * 2.5; gy = b;
+      } else if (idleAction === 'squint') {
+        eyeHTarget = blinkOpen ? 2 : 0;
+        gy = b + 0.3;
+      } else if (idleAction === 'lookup') {
+        gy = -1.2 + b;
+      }
+      eyeOffXTarget = gx; eyeOffYTarget = gy;
+      break;
+    }
+    case 'happy':
+      eyeHTarget = 1; mouthWTarget = 6; mouthHTarget = 1;
+      eyeOffXTarget = 0; eyeOffYTarget = b;
+      break;
+    case 'thinking':
+      eyeHTarget = blinkOpen ? 3 : 0;
+      mouthWTarget = 2; mouthHTarget = 2;
+      eyeOffXTarget = 2; eyeOffYTarget = b;
+      break;
+    case 'talking': {
+      eyeHTarget = blinkOpen ? 3 : 0;
+      const open = Math.round(Math.abs(Math.sin(talk)) * 2 + 1);
+      mouthWTarget = 4; mouthHTarget = open;
+      eyeOffXTarget = 0; eyeOffYTarget = b;
+      break;
+    }
+    case 'surprised':
+      eyeHTarget = 4; mouthWTarget = 3; mouthHTarget = 3;
+      eyeOffXTarget = 0; eyeOffYTarget = b;
+      break;
+    case 'sleeping':
+      eyeHTarget = 1; mouthWTarget = 2; mouthHTarget = 1;
+      eyeOffXTarget = 0; eyeOffYTarget = b * 2;
+      break;
+    case 'angry':
+      eyeHTarget = 2; mouthWTarget = 6; mouthHTarget = 1;
+      eyeOffXTarget = 0; eyeOffYTarget = b * 0.3;
+      break;
+    case 'love':
+      eyeHTarget = 3; mouthWTarget = 2; mouthHTarget = 2;
+      eyeOffXTarget = 0; eyeOffYTarget = b;
+      break;
+  }
+
+  // Lerp
+  eyeH = lerp(eyeH, eyeHTarget, 0.18);
+  mouthW = lerp(mouthW, mouthWTarget, 0.15);
+  mouthH = lerp(mouthH, mouthHTarget, 0.2);
+  eyeOffX = lerp(eyeOffX, eyeOffXTarget, 0.1);
+  eyeOffY = lerp(eyeOffY, eyeOffYTarget, 0.15);
+
+  // --- Draw ---
+  // Full screen pink
+  X.fillStyle = BG;
+  X.fillRect(0, 0, C.width, C.height);
+
+  // Center of screen in grid coords
+  const cx = Math.floor(COLS / 2);
+  const cy = Math.floor(ROWS / 2);
+
+  // Eye positions: spread apart, centered
+  const eyeSpread = 5;
+  const eyeW = 3;
+  const eh = Math.max(1, Math.round(eyeH));
+  const eOffX = Math.round(eyeOffX);
+  const eOffY = Math.round(eyeOffY);
+
+  // Vertical centering for blink (close from middle)
+  const eyeBaseY = cy - 2;
+  const blinkOff = Math.round((3 - eh) / 2);
+
+  if (state === 'love') {
+    // Hearts instead of eyes
+    const pulse = Math.sin(heartP) > 0 ? '#CC2244' : '#BB1E3E';
+    function heart(hx, hy) {
+      px(hx-1, hy, pulse); px(hx+1, hy, pulse);
+      px(hx-2, hy+1, pulse); px(hx-1, hy+1, pulse); px(hx, hy+1, pulse); px(hx+1, hy+1, pulse); px(hx+2, hy+1, pulse);
+      px(hx-1, hy+2, pulse); px(hx, hy+2, pulse); px(hx+1, hy+2, pulse);
+      px(hx, hy+3, pulse);
+    }
+    heart(cx - eyeSpread + eOffX, eyeBaseY + eOffY);
+    heart(cx + eyeSpread + eOffX, eyeBaseY + eOffY);
+  } else {
+    // Left eye
+    pxRect(cx - eyeSpread - 1 + eOffX, eyeBaseY + blinkOff + eOffY, eyeW, eh, EYE);
+    // Right eye
+    pxRect(cx + eyeSpread - 1 + eOffX, eyeBaseY + blinkOff + eOffY, eyeW, eh, EYE);
+  }
+
+  // Angry eyebrows
+  if (state === 'angry') {
+    const lx = cx - eyeSpread - 1 + eOffX;
+    const ly = eyeBaseY + blinkOff + eOffY - 2;
+    px(lx, ly + 1, EYE); px(lx + 1, ly, EYE); px(lx + 2, ly, EYE);
+    const rx = cx + eyeSpread - 1 + eOffX;
+    px(rx + 2, ly + 1, EYE); px(rx + 1, ly, EYE); px(rx, ly, EYE);
+  }
+
+  // Mouth
+  const mw = Math.max(1, Math.round(mouthW));
+  const mh = Math.max(1, Math.round(mouthH));
+  const mouthY = cy + 4 + Math.round(eyeOffY);
+
+  if (state === 'happy') {
+    // Smile: line with corners up
+    pxRect(cx - Math.floor(mw/2), mouthY, mw, 1, MOUTH);
+    px(cx - Math.floor(mw/2), mouthY - 1, MOUTH);
+    px(cx - Math.floor(mw/2) + mw - 1, mouthY - 1, MOUTH);
+  } else if (state === 'angry') {
+    // Frown: line with corners down
+    pxRect(cx - Math.floor(mw/2), mouthY, mw, 1, MOUTH);
+    px(cx - Math.floor(mw/2), mouthY + 1, MOUTH);
+    px(cx - Math.floor(mw/2) + mw - 1, mouthY + 1, MOUTH);
+  } else {
+    // Simple rect
+    pxRect(cx - Math.floor(mw/2), mouthY, mw, mh, MOUTH);
+  }
+
+  // Sleeping Z's
+  if (state === 'sleeping') {
+    const zFrame = Math.floor(sleepZ * 60) % 90;
+    const zy = Math.round(cy - 5 - (zFrame / 90) * 4);
+    const zx = cx + eyeSpread + 3;
+    if (zy >= 1 && zFrame < 70) {
+      px(zx, zy, '#5577CC'); px(zx+1, zy, '#5577CC');
+      px(zx+1, zy+1, '#5577CC');
+      px(zx, zy+2, '#5577CC'); px(zx+1, zy+2, '#5577CC');
+    }
+  }
+
+  // Thinking dots
+  if (state === 'thinking') {
+    const phase = Math.floor(think * 10) % 4;
+    const dx = cx + eyeSpread + 3;
+    const dy = cy - 5;
+    if (phase >= 1) px(dx, dy, '#7799DD');
+    if (phase >= 2) px(dx + 1, dy - 1, '#7799DD');
+    if (phase >= 3) px(dx + 2, dy - 2, '#7799DD');
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  const m = {'1':'idle','2':'happy','3':'thinking','4':'talking','5':'surprised','6':'sleeping','7':'angry','8':'love'};
+  if (m[e.key]) set(m[e.key]);
+});
+
+// Click cycles through states
+let si = 0;
+const STATES = ['idle','happy','thinking','talking','surprised','sleeping','angry','love'];
+document.addEventListener('click', () => {
+  si = (si + 1) % STATES.length;
+  set(STATES[si]);
+});
+
+draw();
+</script>
+</body>
+</html>

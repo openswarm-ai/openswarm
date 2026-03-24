@@ -38,6 +38,13 @@ def load_settings() -> AppSettings:
     return AppSettings()
 
 
+def _save_settings(settings: AppSettings):
+    """Persist settings to JSON file."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(settings.model_dump(), f, indent=2)
+
+
 @settings.router.get("")
 async def get_settings():
     return load_settings().model_dump()

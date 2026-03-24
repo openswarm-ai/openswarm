@@ -8,7 +8,9 @@ backend/data/**
 # Electron build artifacts
 electron/dist/
 electron/python-env/
+electron/build-staging/
 electron/node_modules/
+electron/package-lock.json
 
 # Frontend build output
 frontend/dist/

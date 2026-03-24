@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -15,10 +16,14 @@ import FolderIcon from '@mui/icons-material/Folder';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import SearchIcon from '@mui/icons-material/Search';
 import SendIcon from '@mui/icons-material/Send';
+import CallSplitIcon from '@mui/icons-material/CallSplit';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { AgentMessage } from '@/shared/state/agentsSlice';
+import { AgentMessage, expandSession, collapseSession, fetchSession } from '@/shared/state/agentsSlice';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { placeCard, removeCard, setGlowingAgentCard, clearGlowingAgentCard, DEFAULT_CARD_W, DEFAULT_CARD_H, EXPANDED_CARD_MIN_H, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
+import BrowserAgentInlineFeed from './BrowserAgentInlineFeed';
 
 const GoogleServiceIcon: React.FC<{ service: string; size?: number }> = ({ service, size = 14 }) => {
   if (service === 'gmail') {
@@ -68,7 +73,13 @@ export interface ToolPair {
   result: AgentMessage | null;
 }
 
-const pulsingKeyframes = `
+let toolCallKeyframesInjected = false;
+function ensureToolCallKeyframes() {
+  if (toolCallKeyframesInjected) return;
+  toolCallKeyframesInjected = true;
+  const style = document.createElement('style');
+  style.setAttribute('data-tool-call-keyframes', '');
+  style.textContent = `
 @keyframes tool-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -77,14 +88,13 @@ const pulsingKeyframes = `
   0%, 100% { box-shadow: 0 0 0 0 rgba(var(--glow-rgb), 0); }
   50% { box-shadow: 0 0 10px 2px rgba(var(--glow-rgb), 0.12); }
 }
-`;
-
-const streamingCursorKeyframes = `
 @keyframes blink-cursor {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
 `;
+  document.head.appendChild(style);
+}
 
 const ElapsedTimer: React.FC<{ startTime: string }> = ({ startTime }) => {
   const c = useClaudeTokens();
@@ -466,6 +476,7 @@ interface ToolCallBubbleProps {
   isPending?: boolean;
   isStreaming?: boolean;
   mcpCompact?: boolean;
+  sessionId?: string;
 }
 
 interface TermColors {
@@ -929,7 +940,7 @@ const GmailCard: React.FC<{ data: Record<string, any>; action: string; hideSubje
           }}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              components={{ a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a> }}
+              components={{ a: ({ children, ...props }) => <a {...props}>{children}</a> }}
             >
               {email.bodyPreview || email.snippet}
             </ReactMarkdown>
@@ -1169,18 +1180,92 @@ const McpResultCard: React.FC<{ parsed: ParsedMcpResult; compact?: boolean }> = 
   return <GenericMcpCard data={data} />;
 };
 
+function isBrowserAgentTool(name: string): boolean {
+  if (name === 'CreateBrowserAgent' || name === 'BrowserAgent' || name === 'BrowserAgents') return true;
+  const mcp = parseMcpToolName(name);
+  return mcp.isMcp && mcp.serverSlug === 'openswarm-browser-agent';
+}
+
+function isInvokeAgentTool(name: string): boolean {
+  if (name === 'InvokeAgent') return true;
+  const mcp = parseMcpToolName(name);
+  return mcp.isMcp && mcp.serverSlug === 'openswarm-invoke-agent';
+}
+
+function isCreateAgentTool(name: string): boolean {
+  return name === 'Agent';
+}
+
+function parseInvokedSessionId(rawText: string): string | null {
+  const match = rawText.match(/\(forked session:\s*([a-f0-9]+)\)/);
+  return match ? match[1] : null;
+}
+
+interface InvokeAgentParsed {
+  agentName: string;
+  sessionId: string | null;
+  cost: string | null;
+  response: string;
+}
+
+function parseCreateAgentResult(rawText: string): string {
+  if (!rawText) return '';
+  try {
+    const parsed = JSON.parse(rawText);
+    if (typeof parsed === 'string') return parsed;
+    if (typeof parsed === 'object' && parsed !== null) {
+      if (parsed.text) return parsed.text;
+      if (parsed.content) return typeof parsed.content === 'string' ? parsed.content : JSON.stringify(parsed.content);
+      if (parsed.result) return typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result);
+    }
+  } catch {}
+  return rawText;
+}
+
+function parseInvokeAgentResult(rawText: string): InvokeAgentParsed | null {
+  const headerMatch = rawText.match(
+    /\*\*Invoked Agent Result\*\*(?:\s*—\s*(.+?))?\s*\(forked session:\s*([a-f0-9]+)\)/,
+  );
+  if (!headerMatch) return null;
+
+  const agentName = headerMatch[1]?.trim() || 'Agent';
+  const sessionId = headerMatch[2];
+
+  const costMatch = rawText.match(/\*Cost:\s*\$([0-9.]+)\*/);
+  const cost = costMatch ? costMatch[1] : null;
+
+  const bodyStart = rawText.indexOf('\n\n');
+  let response = bodyStart >= 0 ? rawText.slice(bodyStart + 2).trim() : '';
+  if (response.startsWith('*Cost:')) {
+    const afterCost = response.indexOf('\n');
+    response = afterCost >= 0 ? response.slice(afterCost + 1).trim() : '';
+  }
+
+  return { agentName, sessionId, cost, response };
+}
+
 const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
-  ({ call, result = null, isPending = false, isStreaming = false, mcpCompact = false }) => {
+  ({ call, result = null, isPending = false, isStreaming = false, mcpCompact = false, sessionId }) => {
+    ensureToolCallKeyframes();
+
     const c = useClaudeTokens();
     const tc = useTermColors();
+    const dispatch = useAppDispatch();
+    const cards = useAppSelector((s) => s.dashboardLayout.cards);
     const [expanded, setExpanded] = useState(false);
+    const bubbleRef = useRef<HTMLDivElement>(null);
 
     const { toolName, input, isDenied } = getToolData(call);
     const mcpInfo = useMemo(() => parseMcpToolName(toolName), [toolName]);
     const inputSummary = getInputSummary(toolName, input);
     const formattedInput = useMemo(() => formatInputDisplay(toolName, input), [toolName, input]);
     const showTimer = isPending && !isDenied && !isStreaming;
-    const showBody = expanded || isStreaming;
+
+    const isBrowserAgent = isBrowserAgentTool(toolName);
+    const isInvokeAgent = isInvokeAgentTool(toolName);
+    const isCreateAgent = isCreateAgentTool(toolName);
+    const browserAgentAutoExpand = isBrowserAgent && isPending && !isStreaming;
+    const showBody = expanded || isStreaming || browserAgentAutoExpand;
 
     const resultContent = result?.content;
     const hasStructuredResult =
@@ -1205,6 +1290,95 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
       resultSummary?.startsWith('✗') ||
       (parsedResult?.type === 'bash' && parsedResult.exitCode !== null && parsedResult.exitCode !== 0) ||
       (parsedResult?.type === 'text' && parsedResult.isError);
+
+    const invokedSessionId = useMemo(
+      () => (isInvokeAgent && result ? parseInvokedSessionId(resultRawText) : null),
+      [isInvokeAgent, result, resultRawText],
+    );
+
+    const invokeAgentParsed = useMemo(
+      () => (isInvokeAgent && result ? parseInvokeAgentResult(resultRawText) : null),
+      [isInvokeAgent, result, resultRawText],
+    );
+
+    const createAgentResponse = useMemo(
+      () => (isCreateAgent && result ? parseCreateAgentResult(resultRawText) : ''),
+      [isCreateAgent, result, resultRawText],
+    );
+
+    const createAgentSessionId: string | null = useMemo(
+      () => (isCreateAgent && hasStructuredResult && resultContent?.sub_session_id) ? resultContent.sub_session_id : null,
+      [isCreateAgent, hasStructuredResult, resultContent],
+    );
+
+    const revealTargetSessionId = invokedSessionId || createAgentSessionId;
+
+    const sessions = useAppSelector((s) => s.agents.sessions);
+
+    const handleRevealAgent = useCallback(
+      (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!revealTargetSessionId || !sessionId) return;
+
+        if (cards[revealTargetSessionId]) {
+          dispatch(collapseSession(revealTargetSessionId));
+          dispatch(removeCard(revealTargetSessionId));
+          setTimeout(() => {
+            dispatch(clearGlowingAgentCard(revealTargetSessionId));
+          }, 500);
+          return;
+        }
+
+        let sourceYRatio: number | undefined;
+        if (bubbleRef.current) {
+          const bubbleEl = bubbleRef.current;
+          const cardEl = bubbleEl.closest('[data-select-type="agent-card"]') as HTMLElement | null;
+          if (cardEl) {
+            const cardRect = cardEl.getBoundingClientRect();
+            const bubbleRect = bubbleEl.getBoundingClientRect();
+            const bubbleCenterY = bubbleRect.top + bubbleRect.height / 2;
+            const ratio = (bubbleCenterY - cardRect.top) / cardRect.height;
+            sourceYRatio = Math.max(0, Math.min(1, ratio));
+          }
+        }
+
+        const doPlace = () => {
+          const parentCard = cards[sessionId];
+          const targetX = parentCard
+            ? parentCard.x + parentCard.width + GRID_GAP * 12
+            : 40;
+          let targetY = parentCard ? parentCard.y : 100;
+          if (parentCard) {
+            const columnCards = Object.values(cards).filter(
+              (c) => Math.abs(c.x - targetX) < 50 && c.session_id !== revealTargetSessionId,
+            );
+            if (columnCards.length > 0) {
+              const lowestBottom = Math.max(
+                ...columnCards.map((c) => c.y + Math.max(EXPANDED_CARD_MIN_H, c.height)),
+              );
+              targetY = lowestBottom + GRID_GAP;
+            }
+          }
+          dispatch(placeCard({
+            sessionId: revealTargetSessionId,
+            x: targetX,
+            y: targetY,
+            width: DEFAULT_CARD_W,
+            height: DEFAULT_CARD_H,
+          }));
+          dispatch(expandSession(revealTargetSessionId));
+          const label = isCreateAgent ? 'Create Agent' : isInvokeAgent ? 'Invoke Agent' : 'Agent';
+          dispatch(setGlowingAgentCard({ sessionId: revealTargetSessionId, sourceId: sessionId, sourceYRatio, label }));
+        };
+
+        if (!sessions[revealTargetSessionId]) {
+          dispatch(fetchSession(revealTargetSessionId)).then(doPlace);
+        } else {
+          doPlace();
+        }
+      },
+      [revealTargetSessionId, sessionId, cards, sessions, dispatch],
+    );
 
     const toggle = useCallback(() => {
       if (!isStreaming) setExpanded((v) => !v);
@@ -1233,10 +1407,415 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
       'data-select-meta': JSON.stringify({ tool: toolName, inputSummary }),
     };
 
+    if (isInvokeAgent) {
+      const agentName = invokeAgentParsed?.agentName || input?.session_id || 'Agent';
+      const responsePreview = invokeAgentParsed?.response || '';
+      const costLabel = invokeAgentParsed?.cost ? `$${invokeAgentParsed.cost}` : null;
+      const hasResponse = !!invokeAgentParsed;
+
+      return (
+        <Box ref={bubbleRef} {...selectAttrs} sx={{ maxWidth: '85%', my: 0.5 }}>
+          <Box
+            sx={{
+              '--glow-rgb': accentRgb,
+              bgcolor: c.bg.elevated,
+              border: `1px solid ${
+                isPending ? c.accent.primary : isDenied ? c.status.error + '60' : c.border.subtle
+              }`,
+              borderRadius: 2,
+              overflow: 'hidden',
+              animation: isPending ? 'border-glow 2s ease-in-out infinite' : 'none',
+              transition: 'border-color 0.3s, box-shadow 0.3s',
+            } as any}
+          >
+            {/* Header */}
+            <Box
+              onClick={toggle}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                px: 1.5,
+                py: 0.75,
+                cursor: hasResponse ? 'pointer' : 'default',
+                '&:hover': hasResponse ? { bgcolor: 'rgba(0,0,0,0.02)' } : {},
+              }}
+            >
+              <CallSplitIcon sx={{ fontSize: 15, color: c.accent.primary, flexShrink: 0 }} />
+              <Typography
+                sx={{
+                  color: c.accent.primary,
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  flexShrink: 0,
+                }}
+              >
+                InvokeAgent
+              </Typography>
+              <Box
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  bgcolor: `${c.accent.primary}14`,
+                  borderRadius: 1,
+                  px: 0.75,
+                  py: 0.15,
+                  maxWidth: 180,
+                  overflow: 'hidden',
+                }}
+              >
+                <Typography
+                  noWrap
+                  sx={{
+                    fontSize: '0.72rem',
+                    fontWeight: 500,
+                    color: c.text.secondary,
+                    fontFamily: c.font.sans,
+                  }}
+                >
+                  {agentName}
+                </Typography>
+              </Box>
+
+              {!hasResponse && !showTimer && <Box sx={{ flex: 1 }} />}
+
+              {hasResponse && responsePreview && !expanded && (
+                <Typography
+                  noWrap
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: '0.73rem',
+                    color: c.text.tertiary,
+                    fontFamily: c.font.sans,
+                  }}
+                >
+                  {responsePreview.slice(0, 100)}{responsePreview.length > 100 ? '…' : ''}
+                </Typography>
+              )}
+              {expanded && <Box sx={{ flex: 1 }} />}
+
+              {isDenied && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                  <BlockIcon sx={{ fontSize: 13, color: c.status.error }} />
+                  <Typography sx={{ color: c.status.error, fontSize: '0.7rem', fontWeight: 500 }}>denied</Typography>
+                </Box>
+              )}
+
+              {hasResponse && !isDenied && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {isError ? (
+                    <ErrorOutlineIcon sx={{ fontSize: 13, color: c.status.error }} />
+                  ) : (
+                    <CheckCircleOutlineIcon sx={{ fontSize: 13, color: c.status.success }} />
+                  )}
+                  {resultElapsedMs != null && (
+                    <Typography sx={{ fontSize: '0.65rem', fontFamily: c.font.mono, color: c.text.tertiary }}>
+                      {formatElapsed(resultElapsedMs)}
+                    </Typography>
+                  )}
+                  {costLabel && (
+                    <Typography sx={{ fontSize: '0.63rem', fontFamily: c.font.mono, color: c.text.tertiary }}>
+                      {costLabel}
+                    </Typography>
+                  )}
+                </Box>
+              )}
+
+              {showTimer && <ElapsedTimer startTime={call.timestamp} />}
+
+              {invokedSessionId && (
+                <Tooltip title="Reveal on dashboard" arrow>
+                  <IconButton
+                    size="small"
+                    onClick={handleRevealAgent}
+                    sx={{
+                      color: c.accent.primary,
+                      p: 0.25,
+                      flexShrink: 0,
+                      '&:hover': { bgcolor: `${c.accent.primary}18` },
+                    }}
+                  >
+                    <CallSplitIcon sx={{ fontSize: 15, transform: 'rotate(180deg)' }} />
+                  </IconButton>
+                </Tooltip>
+              )}
+
+              {hasResponse && (
+                <IconButton size="small" sx={{ color: c.text.tertiary, p: 0.25, flexShrink: 0 }}>
+                  {expanded ? <ExpandLessIcon sx={{ fontSize: 18 }} /> : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+                </IconButton>
+              )}
+            </Box>
+
+            {/* Expanded body — markdown rendered, not terminal */}
+            <Collapse in={expanded && hasResponse}>
+              <Box
+                sx={{
+                  borderTop: `1px solid ${c.border.subtle}`,
+                  px: 1.5,
+                  py: 1.25,
+                  maxHeight: 400,
+                  overflowY: 'auto',
+                  overflowX: 'hidden',
+                  color: c.text.secondary,
+                  fontFamily: c.font.sans,
+                  fontSize: '0.78rem',
+                  lineHeight: 1.65,
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word',
+                  '& p': { m: 0, mb: 0.75, '&:last-child': { mb: 0 } },
+                  '& h1, & h2, & h3, & h4': {
+                    color: c.text.primary, fontFamily: c.font.sans,
+                    mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 },
+                  },
+                  '& h1': { fontSize: '0.88rem' }, '& h2': { fontSize: '0.84rem' },
+                  '& h3': { fontSize: '0.8rem' }, '& h4': { fontSize: '0.78rem' },
+                  '& strong': { color: c.text.primary, fontWeight: 600 },
+                  '& a': { color: c.accent.primary, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } },
+                  '& ul, & ol': { pl: 2, mb: 0.75, mt: 0 },
+                  '& li': { mb: 0.2 },
+                  '& blockquote': {
+                    m: 0, mb: 0.75, pl: 1, ml: 0,
+                    borderLeft: `2px solid ${c.border.subtle}`,
+                    color: c.text.tertiary, fontStyle: 'italic',
+                  },
+                  '& code': {
+                    bgcolor: c.bg.secondary, px: 0.4, py: 0.15,
+                    borderRadius: 0.5, fontSize: '0.72rem', fontFamily: c.font.mono,
+                  },
+                  '& pre': {
+                    bgcolor: c.bg.secondary, borderRadius: 1, p: 1,
+                    overflow: 'auto', fontSize: '0.72rem', fontFamily: c.font.mono,
+                    m: 0, mb: 0.75,
+                  },
+                  '& pre code': { bgcolor: 'transparent', p: 0 },
+                  '& hr': { border: 'none', borderTop: `1px solid ${c.border.subtle}`, my: 0.75 },
+                  '&::-webkit-scrollbar': { width: 5 },
+                  '&::-webkit-scrollbar-track': { background: 'transparent' },
+                  '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 3 },
+                }}
+              >
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({ children, ...props }) => (
+                      <a {...props}>{children}</a>
+                    ),
+                  }}
+                >
+                  {responsePreview}
+                </ReactMarkdown>
+              </Box>
+            </Collapse>
+          </Box>
+        </Box>
+      );
+    }
+
+    if (isCreateAgent) {
+      const taskPrompt = input?.prompt || input?.task || input?.message || '';
+      const taskLabel = taskPrompt
+        ? taskPrompt.length > 40 ? taskPrompt.slice(0, 40) + '…' : taskPrompt
+        : 'Sub-agent';
+      const hasResponse = !!createAgentResponse;
+
+      return (
+        <Box ref={bubbleRef} {...selectAttrs} sx={{ maxWidth: '85%', my: 0.5 }}>
+          <Box
+            sx={{
+              '--glow-rgb': accentRgb,
+              bgcolor: c.bg.elevated,
+              border: `1px solid ${
+                isPending ? c.accent.primary : isDenied ? c.status.error + '60' : c.border.subtle
+              }`,
+              borderRadius: 2,
+              overflow: 'hidden',
+              animation: isPending ? 'border-glow 2s ease-in-out infinite' : 'none',
+              transition: 'border-color 0.3s, box-shadow 0.3s',
+            } as any}
+          >
+            <Box
+              onClick={toggle}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                px: 1.5,
+                py: 0.75,
+                cursor: hasResponse ? 'pointer' : 'default',
+                '&:hover': hasResponse ? { bgcolor: 'rgba(0,0,0,0.02)' } : {},
+              }}
+            >
+              <CallSplitIcon sx={{ fontSize: 15, color: c.accent.primary, flexShrink: 0 }} />
+              <Typography
+                sx={{
+                  color: c.accent.primary,
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  flexShrink: 0,
+                }}
+              >
+                CreateAgent
+              </Typography>
+              <Box
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  bgcolor: `${c.accent.primary}14`,
+                  borderRadius: 1,
+                  px: 0.75,
+                  py: 0.15,
+                  maxWidth: 180,
+                  overflow: 'hidden',
+                }}
+              >
+                <Typography
+                  noWrap
+                  sx={{
+                    fontSize: '0.72rem',
+                    fontWeight: 500,
+                    color: c.text.secondary,
+                    fontFamily: c.font.sans,
+                  }}
+                >
+                  {taskLabel}
+                </Typography>
+              </Box>
+
+              {!hasResponse && !showTimer && <Box sx={{ flex: 1 }} />}
+
+              {hasResponse && createAgentResponse && !expanded && (
+                <Typography
+                  noWrap
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: '0.73rem',
+                    color: c.text.tertiary,
+                    fontFamily: c.font.sans,
+                  }}
+                >
+                  {createAgentResponse.slice(0, 100)}{createAgentResponse.length > 100 ? '…' : ''}
+                </Typography>
+              )}
+              {expanded && <Box sx={{ flex: 1 }} />}
+
+              {isDenied && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                  <BlockIcon sx={{ fontSize: 13, color: c.status.error }} />
+                  <Typography sx={{ color: c.status.error, fontSize: '0.7rem', fontWeight: 500 }}>denied</Typography>
+                </Box>
+              )}
+
+              {hasResponse && !isDenied && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {isError ? (
+                    <ErrorOutlineIcon sx={{ fontSize: 13, color: c.status.error }} />
+                  ) : (
+                    <CheckCircleOutlineIcon sx={{ fontSize: 13, color: c.status.success }} />
+                  )}
+                  {resultElapsedMs != null && (
+                    <Typography sx={{ fontSize: '0.65rem', fontFamily: c.font.mono, color: c.text.tertiary }}>
+                      {formatElapsed(resultElapsedMs)}
+                    </Typography>
+                  )}
+                </Box>
+              )}
+
+              {showTimer && <ElapsedTimer startTime={call.timestamp} />}
+
+              {createAgentSessionId && (
+                <Tooltip title="Reveal on dashboard" arrow>
+                  <IconButton
+                    size="small"
+                    onClick={handleRevealAgent}
+                    sx={{
+                      color: c.accent.primary,
+                      p: 0.25,
+                      flexShrink: 0,
+                      '&:hover': { bgcolor: `${c.accent.primary}18` },
+                    }}
+                  >
+                    <CallSplitIcon sx={{ fontSize: 15, transform: 'rotate(180deg)' }} />
+                  </IconButton>
+                </Tooltip>
+              )}
+
+              {hasResponse && (
+                <IconButton size="small" sx={{ color: c.text.tertiary, p: 0.25, flexShrink: 0 }}>
+                  {expanded ? <ExpandLessIcon sx={{ fontSize: 18 }} /> : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+                </IconButton>
+              )}
+            </Box>
+
+            <Collapse in={expanded && hasResponse}>
+              <Box
+                sx={{
+                  borderTop: `1px solid ${c.border.subtle}`,
+                  px: 1.5,
+                  py: 1.25,
+                  maxHeight: 400,
+                  overflowY: 'auto',
+                  overflowX: 'hidden',
+                  color: c.text.secondary,
+                  fontFamily: c.font.sans,
+                  fontSize: '0.78rem',
+                  lineHeight: 1.65,
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word',
+                  '& p': { m: 0, mb: 0.75, '&:last-child': { mb: 0 } },
+                  '& h1, & h2, & h3, & h4': {
+                    color: c.text.primary, fontFamily: c.font.sans,
+                    mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 },
+                  },
+                  '& h1': { fontSize: '0.88rem' }, '& h2': { fontSize: '0.84rem' },
+                  '& h3': { fontSize: '0.8rem' }, '& h4': { fontSize: '0.78rem' },
+                  '& strong': { color: c.text.primary, fontWeight: 600 },
+                  '& a': { color: c.accent.primary, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } },
+                  '& ul, & ol': { pl: 2, mb: 0.75, mt: 0 },
+                  '& li': { mb: 0.2 },
+                  '& blockquote': {
+                    m: 0, mb: 0.75, pl: 1, ml: 0,
+                    borderLeft: `2px solid ${c.border.subtle}`,
+                    color: c.text.tertiary, fontStyle: 'italic',
+                  },
+                  '& code': {
+                    bgcolor: c.bg.secondary, px: 0.4, py: 0.15,
+                    borderRadius: 0.5, fontSize: '0.72rem', fontFamily: c.font.mono,
+                  },
+                  '& pre': {
+                    bgcolor: c.bg.secondary, borderRadius: 1, p: 1,
+                    overflow: 'auto', fontSize: '0.72rem', fontFamily: c.font.mono,
+                    m: 0, mb: 0.75,
+                  },
+                  '& pre code': { bgcolor: 'transparent', p: 0 },
+                  '& hr': { border: 'none', borderTop: `1px solid ${c.border.subtle}`, my: 0.75 },
+                  '&::-webkit-scrollbar': { width: 5 },
+                  '&::-webkit-scrollbar-track': { background: 'transparent' },
+                  '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 3 },
+                }}
+              >
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({ children, ...props }) => (
+                      <a {...props}>{children}</a>
+                    ),
+                  }}
+                >
+                  {createAgentResponse}
+                </ReactMarkdown>
+              </Box>
+            </Collapse>
+          </Box>
+        </Box>
+      );
+    }
+
     if (mcpCompact && mcpInfo.isMcp) {
       return (
         <Box {...selectAttrs} sx={{ my: 0 }}>
-          <style>{pulsingKeyframes}</style>
           <Box
             onClick={toggle}
             sx={{
@@ -1320,6 +1899,12 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
                 '&::-webkit-scrollbar-thumb': { background: tc.SCROLLBAR_THUMB, borderRadius: 3 },
               }}
             >
+              {isBrowserAgent && sessionId && (
+                <BrowserAgentInlineFeed
+                  parentSessionId={sessionId}
+                  browserId={input?.browser_id}
+                />
+              )}
               {parsedResult && parsedResult.type === 'mcp' ? (
                 <McpResultCard parsed={parsedResult} compact />
               ) : parsedResult ? (
@@ -1330,7 +1915,7 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
                   {parsedResult.type === 'text' ? parsedResult.content : ''}
                 </pre>
               ) : null}
-              {!parsedResult && isPending && !isStreaming && (
+              {!parsedResult && isPending && !isStreaming && !isBrowserAgent && (
                 <Box sx={{ px: 1.5, py: 1 }}>
                   <Box sx={{ width: 8, height: 2, bgcolor: tc.PROMPT_COLOR, animation: 'tool-pulse 1s ease-in-out infinite', borderRadius: 1 }} />
                 </Box>
@@ -1343,8 +1928,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
 
     return (
       <Box {...selectAttrs} sx={{ maxWidth: mcpCompact ? '100%' : '85%', my: mcpCompact ? 0 : 0.5 }}>
-        <style>{pulsingKeyframes}</style>
-        {isStreaming && <style>{streamingCursorKeyframes}</style>}
         <Box
           sx={{
             '--glow-rgb': accentRgb,
@@ -1525,6 +2108,14 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
                 )}
               </pre>
 
+              {/* Browser agent inline feed */}
+              {isBrowserAgent && sessionId && (
+                <BrowserAgentInlineFeed
+                  parentSessionId={sessionId}
+                  browserId={input?.browser_id}
+                />
+              )}
+
               {/* Output */}
               {parsedResult && parsedResult.type === 'mcp' ? (
                 <McpResultCard parsed={parsedResult} />
@@ -1566,8 +2157,8 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
                 </pre>
               ) : null}
 
-              {/* Pending indicator when waiting for result */}
-              {!parsedResult && isPending && !isStreaming && (
+              {/* Pending indicator when waiting for result (skip for browser agent — feed replaces it) */}
+              {!parsedResult && isPending && !isStreaming && !isBrowserAgent && (
                 <Box sx={{ px: 1.5, pb: 1, pt: 0.5 }}>
                   <Box
                     sx={{

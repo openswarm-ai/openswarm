@@ -42,6 +42,7 @@ interface Props {
   dashboardId?: string;
 }
 
+const TOOLBAR_OWNER_ID = '__toolbar__';
 const BTN = 40;
 
 const WarmTooltip = styled(
@@ -90,8 +91,19 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const searchInputRef = useRef<HTMLInputElement>(null);
     const historyInputRef = useRef<HTMLInputElement>(null);
     const historyListRef = useRef<HTMLDivElement>(null);
-    const [mode, setMode] = useState('agent');
-    const [model, setModel] = useState('sonnet');
+    const defaultMode = useAppSelector((s) => s.settings.data.default_mode);
+    const defaultModel = useAppSelector((s) => s.settings.data.default_model);
+    const [mode, setMode] = useState(defaultMode || 'agent');
+    const [model, setModel] = useState(defaultModel || 'sonnet');
+    const [provider, setProvider] = useState('anthropic');
+    const settingsApplied = useRef(false);
+    useEffect(() => {
+      if (!settingsApplied.current) {
+        setMode(defaultMode || 'agent');
+        setModel(defaultModel || 'sonnet');
+        settingsApplied.current = true;
+      }
+    }, [defaultMode, defaultModel]);
     const [viewPickerOpen, setViewPickerOpen] = useState(false);
     const [viewSearch, setViewSearch] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
@@ -204,13 +216,23 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
 
     const isExpanded = inputOpen || viewPickerOpen || historyOpen;
 
+    const autoSelectOnNew = useAppSelector((s) => s.settings.data.auto_select_mode_on_new_agent);
     const prevInputOpenRef = useRef(inputOpen);
     useEffect(() => {
-      if (prevInputOpenRef.current && !inputOpen && elementSelection?.selectMode) {
-        elementSelection.setSelectMode(false);
+      if (prevInputOpenRef.current && !inputOpen && elementSelection) {
+        elementSelection.clearOwnerElements(TOOLBAR_OWNER_ID);
+        if (elementSelection.selectMode && elementSelection.activeOwnerId === TOOLBAR_OWNER_ID) {
+          elementSelection.setSelectMode(false);
+        }
+      }
+      if (!prevInputOpenRef.current && inputOpen && autoSelectOnNew && elementSelection) {
+        elementSelection.clearOwnerElements(TOOLBAR_OWNER_ID);
+        elementSelection.setActiveOwnerId(TOOLBAR_OWNER_ID);
+        elementSelection.setExcludeSelectId(null);
+        elementSelection.setSelectMode(true);
       }
       prevInputOpenRef.current = inputOpen;
-    }, [inputOpen, elementSelection]);
+    }, [inputOpen, elementSelection, autoSelectOnNew]);
 
     useEffect(() => {
       if (!isExpanded) return;
@@ -226,21 +248,44 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
 
     useEffect(() => {
       if (!isExpanded) return;
-      const handleClick = (e: MouseEvent) => {
-        if (elementSelection?.selectMode) return;
+      let downPos: { x: number; y: number; target: Node } | null = null;
+      const DRAG_THRESHOLD = 5;
+
+      const handleDown = (e: MouseEvent) => {
         const target = e.target as Node;
         if (containerRef.current && !containerRef.current.contains(target)) {
-          const el = target instanceof Element ? target : target.parentElement;
-          if (el?.closest('[role="dialog"], [role="presentation"], .MuiModal-root, .MuiPopover-root')) {
-            return;
-          }
-          handleDismiss();
+          downPos = { x: e.clientX, y: e.clientY, target };
+        } else {
+          downPos = null;
         }
       };
-      const t = setTimeout(() => document.addEventListener('mousedown', handleClick), 50);
+
+      const handleUp = (e: MouseEvent) => {
+        if (!downPos) return;
+        const dx = e.clientX - downPos.x;
+        const dy = e.clientY - downPos.y;
+        const target = downPos.target;
+        downPos = null;
+        if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) return;
+
+        const el = target instanceof Element ? target : (target as Node).parentElement;
+        if (el?.closest('[role="dialog"], [role="presentation"], .MuiModal-root, .MuiPopover-root')) {
+          return;
+        }
+        if (elementSelection?.selectMode && el?.closest('[data-select-type]')) {
+          return;
+        }
+        handleDismiss();
+      };
+
+      const t = setTimeout(() => {
+        document.addEventListener('mousedown', handleDown, true);
+        document.addEventListener('mouseup', handleUp, true);
+      }, 50);
       return () => {
         clearTimeout(t);
-        document.removeEventListener('mousedown', handleClick);
+        document.removeEventListener('mousedown', handleDown, true);
+        document.removeEventListener('mouseup', handleUp, true);
       };
     }, [isExpanded, handleDismiss, elementSelection?.selectMode]);
 
@@ -266,10 +311,14 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           e.preventDefault();
           handleOpenHistory();
         }
+        if (e.metaKey && e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+          e.preventDefault();
+          onAddBrowser();
+        }
       };
       window.addEventListener('keydown', handleKey);
       return () => window.removeEventListener('keydown', handleKey);
-    }, [handleOpenViewPicker, handleOpenHistory]);
+    }, [handleOpenViewPicker, handleOpenHistory, onAddBrowser]);
 
     useEffect(() => {
       if (!historyOpen) return;
@@ -317,8 +366,11 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               onModeChange={setMode}
               model={model}
               onModelChange={setModel}
+              provider={provider}
+              onProviderChange={setProvider}
               embedded
               autoFocus
+              sessionId={TOOLBAR_OWNER_ID}
             />
           </div>
         ) : historyOpen ? (
@@ -603,6 +655,39 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               enterDelay={200}
               title={
                 <Box sx={{ textAlign: 'center' }}>
+                  <Box sx={{ fontWeight: 600 }}>Browser  ⌘N</Box>
+                </Box>
+              }
+            >
+              <Box
+                role="button"
+                aria-label="Browser"
+                tabIndex={0}
+                onClick={onAddBrowser}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: BTN,
+                  height: BTN,
+                  borderRadius: `${c.radius.md}px`,
+                  color: c.text.tertiary,
+                  cursor: 'pointer',
+                  transition: 'opacity 0.15s, background-color 0.15s',
+                  '&:hover': { opacity: 1, bgcolor: c.bg.secondary, color: c.accent.primary },
+                }}
+              >
+                <LanguageIcon sx={{ fontSize: 22 }} />
+              </Box>
+            </WarmTooltip>
+
+            <WarmTooltip
+              tokens={c}
+              placement="top"
+              arrow
+              enterDelay={200}
+              title={
+                <Box sx={{ textAlign: 'center' }}>
                   <Box sx={{ fontWeight: 600 }}>History  ⌘O</Box>
                 </Box>
               }
@@ -626,39 +711,6 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 }}
               >
                 <HistoryRoundedIcon sx={{ fontSize: 22 }} />
-              </Box>
-            </WarmTooltip>
-
-            <WarmTooltip
-              tokens={c}
-              placement="top"
-              arrow
-              enterDelay={200}
-              title={
-                <Box sx={{ textAlign: 'center' }}>
-                  <Box sx={{ fontWeight: 600 }}>Browser</Box>
-                </Box>
-              }
-            >
-              <Box
-                role="button"
-                aria-label="Browser"
-                tabIndex={0}
-                onClick={onAddBrowser}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: BTN,
-                  height: BTN,
-                  borderRadius: `${c.radius.md}px`,
-                  color: c.text.tertiary,
-                  cursor: 'pointer',
-                  transition: 'opacity 0.15s, background-color 0.15s',
-                  '&:hover': { opacity: 1, bgcolor: c.bg.secondary, color: c.accent.primary },
-                }}
-              >
-                <LanguageIcon sx={{ fontSize: 22 }} />
               </Box>
             </WarmTooltip>
 

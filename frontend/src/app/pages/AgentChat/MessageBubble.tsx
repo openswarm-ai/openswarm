@@ -8,7 +8,6 @@ import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
 import Collapse from '@mui/material/Collapse';
 import Modal from '@mui/material/Modal';
-import EditIcon from '@mui/icons-material/Edit';
 import CloseIcon from '@mui/icons-material/Close';
 import AdsClickIcon from '@mui/icons-material/AdsClick';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -391,13 +390,14 @@ const MessageImageThumbnails: React.FC<{
 
 interface Props {
   message: AgentMessage;
-  onEdit?: (messageId: string, newContent: string) => void;
+  editing?: boolean;
+  onSaveEdit?: (messageId: string, newContent: string) => void;
+  onCancelEdit?: () => void;
   isStreaming?: boolean;
 }
 
-const MessageBubble: React.FC<Props> = React.memo(({ message, onEdit, isStreaming }) => {
+const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, onSaveEdit, onCancelEdit, isStreaming }) => {
   const c = useClaudeTokens();
-  const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const { role, content } = message;
 
@@ -440,23 +440,22 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, onEdit, isStreamin
     ? parseElementContext(rawText)
     : { userMessage: rawText, elements: [] };
 
-  const handleStartEdit = () => {
-    setEditText(rawText);
-    setEditing(true);
-  };
+  React.useEffect(() => {
+    if (editing) setEditText(rawText);
+  }, [editing, rawText]);
 
   const handleCancelEdit = () => {
-    setEditing(false);
     setEditText('');
+    onCancelEdit?.();
   };
 
   const handleSaveEdit = () => {
     const trimmed = editText.trim();
-    if (trimmed && trimmed !== rawText && onEdit) {
-      onEdit(message.id, trimmed);
+    if (trimmed && trimmed !== rawText && onSaveEdit) {
+      onSaveEdit(message.id, trimmed);
     }
-    setEditing(false);
     setEditText('');
+    onCancelEdit?.();
   };
 
   const truncatedContent = typeof content === 'string'
@@ -472,26 +471,8 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, onEdit, isStreamin
         display: 'flex',
         justifyContent: isUser ? 'flex-end' : 'flex-start',
         my: 0.75,
-        '&:hover .edit-btn': { opacity: 1 },
       }}
     >
-      {isUser && onEdit && !editing && (
-        <IconButton
-          className="edit-btn"
-          size="small"
-          onClick={handleStartEdit}
-          sx={{
-            opacity: 0,
-            transition: 'opacity 0.15s',
-            color: c.text.tertiary,
-            alignSelf: 'center',
-            mr: 0.5,
-            p: 0.5,
-          }}
-        >
-          <EditIcon sx={{ fontSize: 16 }} />
-        </IconButton>
-      )}
       <Box
         sx={{
           maxWidth: '85%',
@@ -641,7 +622,14 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, onEdit, isStreamin
               '& a': { color: c.accent.primary },
             }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{rawText}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                a: ({ children, ...props }) => (
+                  <a {...props} style={{ cursor: 'pointer' }}>{children}</a>
+                ),
+              }}
+            >{rawText}</ReactMarkdown>
             {isStreaming && <StreamingCursor />}
           </Box>
         )}

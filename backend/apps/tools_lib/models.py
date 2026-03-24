@@ -5,6 +5,7 @@ from uuid import uuid4
 
 class BuiltinTool(BaseModel):
     name: str
+    display_name: Optional[str] = None
     description: str
     category: str = "filesystem"
     deferred: bool = False
@@ -33,6 +34,23 @@ BUILTIN_TOOLS: list[BuiltinTool] = [
     BuiltinTool(name="CronList", description="List all scheduled tasks", category="scheduling", deferred=True),
     BuiltinTool(name="CronDelete", description="Delete a scheduled task", category="scheduling", deferred=True),
     BuiltinTool(name="RenderOutput", description="Render a reusable View artifact with structured input data", category="views", deferred=True),
+    # Agent tools
+    BuiltinTool(name="Agent", display_name="CreateAgent", description="Spawn a sub-agent to handle a complex subtask", category="agents"),
+    BuiltinTool(name="InvokeAgent", description="Invoke a copy of an existing agent with a new message, preserving full conversation context", category="agents"),
+    # Browser delegation tools (Layer 1 — what the main agent calls)
+    BuiltinTool(name="CreateBrowserAgent", description="Create a new browser and run a task on it", category="browser_delegation"),
+    BuiltinTool(name="BrowserAgent", description="Delegate a browser task to an existing browser agent", category="browser_delegation"),
+    BuiltinTool(name="BrowserAgents", description="Run multiple browser tasks in parallel on existing browsers", category="browser_delegation"),
+    # Browser action tools (Layer 2 — what the sub-agent executes)
+    BuiltinTool(name="BrowserScreenshot", description="Capture a screenshot of the browser page", category="browser_action"),
+    BuiltinTool(name="BrowserNavigate", description="Navigate the browser to a URL", category="browser_action"),
+    BuiltinTool(name="BrowserClick", description="Click an element by CSS selector", category="browser_action"),
+    BuiltinTool(name="BrowserType", description="Type text into an input element", category="browser_action"),
+    BuiltinTool(name="BrowserEvaluate", description="Execute JavaScript in the browser", category="browser_action"),
+    BuiltinTool(name="BrowserGetText", description="Get visible text content of the page", category="browser_action"),
+    BuiltinTool(name="BrowserGetElements", description="List interactive elements with CSS selectors", category="browser_action"),
+    BuiltinTool(name="BrowserScroll", description="Scroll the page up or down", category="browser_action"),
+    BuiltinTool(name="BrowserWait", description="Wait for page loads or animations", category="browser_action"),
 ]
 
 

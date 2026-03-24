@@ -11,7 +11,7 @@ export const DEFAULT_VIEW_CARD_H = 800;
 export const DEFAULT_BROWSER_CARD_W = 1280;
 export const DEFAULT_BROWSER_CARD_H = 800;
 export const EXPANDED_CARD_MIN_H = 620;
-const GRID_GAP = 24;
+export const GRID_GAP = 24;
 const GRID_ORIGIN = { x: 40, y: 100 };
 const GRID_COLS_FALLBACK = 4;
 
@@ -21,6 +21,7 @@ export interface CardPosition {
   y: number;
   width: number;
   height: number;
+  zOrder: number;
 }
 
 export interface ViewCardPosition {
@@ -29,6 +30,7 @@ export interface ViewCardPosition {
   y: number;
   width: number;
   height: number;
+  zOrder: number;
 }
 
 export interface BrowserTab {
@@ -47,14 +49,18 @@ export interface BrowserCardPosition {
   y: number;
   width: number;
   height: number;
+  zOrder: number;
 }
 
 export interface DashboardLayoutState {
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
-  glowingBrowserCards: Record<string, string>;
+  closedCardPositions: Record<string, CardPosition>;
+  glowingBrowserCards: Record<string, { sourceId: string; fading: boolean; label?: string }>;
+  glowingAgentCards: Record<string, { sourceId: string; fading: boolean; sourceYRatio?: number; label?: string }>;
   persistedExpandedSessionIds: string[];
+  nextZOrder: number;
   loading: boolean;
   initialized: boolean;
 }
@@ -63,8 +69,11 @@ const initialState: DashboardLayoutState = {
   cards: {},
   viewCards: {},
   browserCards: {},
+  closedCardPositions: {},
   glowingBrowserCards: {},
+  glowingAgentCards: {},
   persistedExpandedSessionIds: [],
+  nextZOrder: 1,
   loading: false,
   initialized: false,
 };
@@ -214,6 +223,32 @@ const dashboardLayoutSlice = createSlice({
       }
     },
 
+    placeCard(
+      state,
+      action: PayloadAction<{ sessionId: string; x: number; y: number; width: number; height: number }>
+    ) {
+      const { sessionId, x, y, width, height } = action.payload;
+      state.cards[sessionId] = { session_id: sessionId, x, y, width, height, zOrder: state.nextZOrder++ };
+    },
+
+    bringToFront(
+      state,
+      action: PayloadAction<{ id: string; type: 'agent' | 'view' | 'browser' }>,
+    ) {
+      const { id, type } = action.payload;
+      const z = state.nextZOrder++;
+      if (type === 'agent') {
+        const card = state.cards[id];
+        if (card) card.zOrder = z;
+      } else if (type === 'view') {
+        const card = state.viewCards[id];
+        if (card) card.zOrder = z;
+      } else {
+        const card = state.browserCards[id];
+        if (card) card.zOrder = z;
+      }
+    },
+
     removeCard(state, action: PayloadAction<string>) {
       delete state.cards[action.payload];
     },
@@ -227,6 +262,7 @@ const dashboardLayoutSlice = createSlice({
 
       for (const id of Object.keys(state.cards)) {
         if (!liveIds.has(id)) {
+          state.closedCardPositions[id] = { ...state.cards[id] };
           delete state.cards[id];
         }
       }
@@ -235,15 +271,22 @@ const dashboardLayoutSlice = createSlice({
       const newIds = sessionIds.filter((id) => !state.cards[id]);
       for (const id of newIds) {
         if (hasDraftCard && !id.startsWith('draft-')) continue;
-        const rects = collectOccupiedRects(state, expandedSessionIds);
-        const pos = findOpenGridCell(rects, DEFAULT_CARD_W, DEFAULT_CARD_H);
-        state.cards[id] = {
-          session_id: id,
-          x: pos.x,
-          y: pos.y,
-          width: DEFAULT_CARD_W,
-          height: DEFAULT_CARD_H,
-        };
+        const savedPos = state.closedCardPositions[id];
+        if (savedPos) {
+          state.cards[id] = { ...savedPos, session_id: id, zOrder: savedPos.zOrder || state.nextZOrder++ };
+          delete state.closedCardPositions[id];
+        } else {
+          const rects = collectOccupiedRects(state, expandedSessionIds);
+          const pos = findOpenGridCell(rects, DEFAULT_CARD_W, DEFAULT_CARD_H);
+          state.cards[id] = {
+            session_id: id,
+            x: pos.x,
+            y: pos.y,
+            width: DEFAULT_CARD_W,
+            height: DEFAULT_CARD_H,
+            zOrder: state.nextZOrder++,
+          };
+        }
       }
     },
 
@@ -259,9 +302,9 @@ const dashboardLayoutSlice = createSlice({
       if (total === 0) return;
 
       const allItems = [
-        ...agentCards.map((c) => ({ kind: 'agent' as const, id: c.session_id, x: c.x, y: c.y, storedH: c.height })),
-        ...viewCards.map((c) => ({ kind: 'view' as const, id: c.output_id, x: c.x, y: c.y, storedH: c.height })),
-        ...bCards.map((c) => ({ kind: 'browser' as const, id: c.browser_id, x: c.x, y: c.y, storedH: c.height })),
+        ...agentCards.map((c) => ({ kind: 'agent' as const, id: c.session_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
+        ...viewCards.map((c) => ({ kind: 'view' as const, id: c.output_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
+        ...bCards.map((c) => ({ kind: 'browser' as const, id: c.browser_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
       ];
       allItems.sort((a, b) => a.y - b.y || a.x - b.x);
 
@@ -270,12 +313,11 @@ const dashboardLayoutSlice = createSlice({
       for (const item of allItems) {
         let w: number, h: number;
         if (item.kind === 'agent') {
-          w = DEFAULT_CARD_W;
-          h = expanded.has(item.id) ? Math.max(EXPANDED_CARD_MIN_H, item.storedH) : DEFAULT_CARD_H;
-        } else if (item.kind === 'view') {
-          w = DEFAULT_VIEW_CARD_W; h = DEFAULT_VIEW_CARD_H;
+          w = item.storedW;
+          h = expanded.has(item.id) ? Math.max(EXPANDED_CARD_MIN_H, item.storedH) : item.storedH;
         } else {
-          w = DEFAULT_BROWSER_CARD_W; h = DEFAULT_BROWSER_CARD_H;
+          w = item.storedW;
+          h = item.storedH;
         }
 
         const pos = findOpenGridCell(placedRects, w, h);
@@ -283,28 +325,40 @@ const dashboardLayoutSlice = createSlice({
 
         if (item.kind === 'agent') {
           const card = state.cards[item.id];
-          if (card) { card.x = pos.x; card.y = pos.y; card.width = w; card.height = h; }
+          if (card) { card.x = pos.x; card.y = pos.y; }
         } else if (item.kind === 'view') {
           const card = state.viewCards[item.id];
-          if (card) { card.x = pos.x; card.y = pos.y; card.width = w; card.height = h; }
+          if (card) { card.x = pos.x; card.y = pos.y; }
         } else {
           const card = state.browserCards[item.id];
-          if (card) { card.x = pos.x; card.y = pos.y; card.width = w; card.height = h; }
+          if (card) { card.x = pos.x; card.y = pos.y; }
         }
       }
     },
 
-    addViewCard(state, action: PayloadAction<{ outputId: string; expandedSessionIds?: string[] }>) {
-      const { outputId, expandedSessionIds } = action.payload;
+    addViewCard(state, action: PayloadAction<{
+      outputId: string; expandedSessionIds?: string[];
+      x?: number; y?: number; width?: number; height?: number;
+    }>) {
+      const { outputId, expandedSessionIds, x, y, width, height } = action.payload;
       if (state.viewCards[outputId]) return;
-      const rects = collectOccupiedRects(state, expandedSessionIds);
-      const pos = findOpenGridCell(rects, DEFAULT_VIEW_CARD_W, DEFAULT_VIEW_CARD_H);
+      let posX: number, posY: number;
+      if (x != null && y != null) {
+        posX = x;
+        posY = y;
+      } else {
+        const rects = collectOccupiedRects(state, expandedSessionIds);
+        const pos = findOpenGridCell(rects, DEFAULT_VIEW_CARD_W, DEFAULT_VIEW_CARD_H);
+        posX = pos.x;
+        posY = pos.y;
+      }
       state.viewCards[outputId] = {
         output_id: outputId,
-        x: pos.x,
-        y: pos.y,
-        width: DEFAULT_VIEW_CARD_W,
-        height: DEFAULT_VIEW_CARD_H,
+        x: posX,
+        y: posY,
+        width: width || DEFAULT_VIEW_CARD_W,
+        height: height || DEFAULT_VIEW_CARD_H,
+        zOrder: state.nextZOrder++,
       };
     },
 
@@ -347,6 +401,7 @@ const dashboardLayoutSlice = createSlice({
         y: pos.y,
         width: DEFAULT_BROWSER_CARD_W,
         height: DEFAULT_BROWSER_CARD_H,
+        zOrder: state.nextZOrder++,
       };
     },
 
@@ -357,6 +412,7 @@ const dashboardLayoutSlice = createSlice({
         ...card,
         width: card.width || DEFAULT_BROWSER_CARD_W,
         height: card.height || DEFAULT_BROWSER_CARD_H,
+        zOrder: card.zOrder || state.nextZOrder++,
       };
     },
 
@@ -383,6 +439,45 @@ const dashboardLayoutSlice = createSlice({
 
     removeBrowserCard(state, action: PayloadAction<string>) {
       delete state.browserCards[action.payload];
+    },
+
+    pasteBrowserCard(
+      state,
+      action: PayloadAction<{
+        tabs: BrowserTab[]; url: string; expandedSessionIds?: string[];
+        id?: string; x?: number; y?: number; width?: number; height?: number;
+      }>
+    ) {
+      const { x, y, width, height } = action.payload;
+      const id = action.payload.id || `browser-${Date.now().toString(36)}`;
+      const newTabs = action.payload.tabs.map((t) => ({
+        id: generateTabId(),
+        url: t.url,
+        title: '',
+        favicon: undefined,
+      }));
+      const activeTab = newTabs[0];
+      let posX: number, posY: number;
+      if (x != null && y != null) {
+        posX = x;
+        posY = y;
+      } else {
+        const rects = collectOccupiedRects(state, action.payload.expandedSessionIds);
+        const pos = findOpenGridCell(rects, DEFAULT_BROWSER_CARD_W, DEFAULT_BROWSER_CARD_H);
+        posX = pos.x;
+        posY = pos.y;
+      }
+      state.browserCards[id] = {
+        browser_id: id,
+        url: activeTab?.url || action.payload.url,
+        tabs: newTabs.length > 0 ? newTabs : [{ id: generateTabId(), url: action.payload.url, title: '' }],
+        activeTabId: activeTab?.id || generateTabId(),
+        x: posX,
+        y: posY,
+        width: width || DEFAULT_BROWSER_CARD_W,
+        height: height || DEFAULT_BROWSER_CARD_H,
+        zOrder: state.nextZOrder++,
+      };
     },
 
     updateBrowserCardUrl(
@@ -537,18 +632,25 @@ const dashboardLayoutSlice = createSlice({
 
     setGlowingBrowserCards(
       state,
-      action: PayloadAction<{ browserIds: string[]; sessionId: string }>
+      action: PayloadAction<{ browserIds: string[]; sessionId: string; label?: string }>
     ) {
-      const { browserIds, sessionId } = action.payload;
+      const { browserIds, sessionId, label } = action.payload;
       for (const id of browserIds) {
-        state.glowingBrowserCards[id] = sessionId;
+        state.glowingBrowserCards[id] = { sourceId: sessionId, fading: false, label };
+      }
+    },
+
+    fadeGlowingBrowserCards(state, action: PayloadAction<string>) {
+      const sessionId = action.payload;
+      for (const entry of Object.values(state.glowingBrowserCards)) {
+        if (entry.sourceId === sessionId) entry.fading = true;
       }
     },
 
     clearGlowingBrowserCards(state, action: PayloadAction<string>) {
       const sessionId = action.payload;
-      for (const [browserId, sid] of Object.entries(state.glowingBrowserCards)) {
-        if (sid === sessionId) delete state.glowingBrowserCards[browserId];
+      for (const [browserId, entry] of Object.entries(state.glowingBrowserCards)) {
+        if (entry.sourceId === sessionId) delete state.glowingBrowserCards[browserId];
       }
     },
 
@@ -556,12 +658,29 @@ const dashboardLayoutSlice = createSlice({
       state.glowingBrowserCards = {};
     },
 
+    setGlowingAgentCard(state, action: PayloadAction<{ sessionId: string; sourceId: string; sourceYRatio?: number; label?: string }>) {
+      const { sessionId, sourceId, sourceYRatio, label } = action.payload;
+      state.glowingAgentCards[sessionId] = { sourceId, fading: false, sourceYRatio, label };
+    },
+
+    fadeGlowingAgentCard(state, action: PayloadAction<string>) {
+      const entry = state.glowingAgentCards[action.payload];
+      if (entry) entry.fading = true;
+    },
+
+    clearGlowingAgentCard(state, action: PayloadAction<string>) {
+      delete state.glowingAgentCards[action.payload];
+    },
+
     resetLayout(state) {
       state.cards = {};
       state.viewCards = {};
       state.browserCards = {};
+      state.closedCardPositions = {};
       state.glowingBrowserCards = {};
+      state.glowingAgentCards = {};
       state.persistedExpandedSessionIds = [];
+      state.nextZOrder = 1;
       state.initialized = false;
     },
 
@@ -578,6 +697,22 @@ const dashboardLayoutSlice = createSlice({
         state.viewCards = action.payload.viewCards;
         state.browserCards = action.payload.browserCards;
         state.persistedExpandedSessionIds = action.payload.expandedSessionIds;
+
+        // Ensure all cards have a zOrder and compute nextZOrder from persisted data
+        let maxZ = 0;
+        for (const c of Object.values(state.cards)) {
+          if (!c.zOrder) c.zOrder = 0;
+          if (c.zOrder > maxZ) maxZ = c.zOrder;
+        }
+        for (const c of Object.values(state.viewCards)) {
+          if (!c.zOrder) c.zOrder = 0;
+          if (c.zOrder > maxZ) maxZ = c.zOrder;
+        }
+        for (const c of Object.values(state.browserCards)) {
+          if (!c.zOrder) c.zOrder = 0;
+          if (c.zOrder > maxZ) maxZ = c.zOrder;
+        }
+        state.nextZOrder = maxZ + 1;
       })
       .addCase(fetchLayout.rejected, (state) => {
         state.loading = false;
@@ -588,7 +723,7 @@ const dashboardLayoutSlice = createSlice({
         const card = state.cards[draftId];
         if (card) {
           delete state.cards[draftId];
-          state.cards[session.id] = { ...card, session_id: session.id };
+          state.cards[session.id] = { ...card, session_id: session.id, zOrder: state.nextZOrder++ };
         }
       });
   },
@@ -596,8 +731,10 @@ const dashboardLayoutSlice = createSlice({
 
 export const {
   setCardPosition,
+  placeCard,
   setCardSize,
   removeCard,
+  bringToFront,
   reconcileSessions,
   replaceDraftId,
   tidyLayout,
@@ -610,6 +747,7 @@ export const {
   setBrowserCardPosition,
   setBrowserCardSize,
   removeBrowserCard,
+  pasteBrowserCard,
   updateBrowserCardUrl,
   addBrowserTab,
   removeBrowserTab,
@@ -620,8 +758,12 @@ export const {
   reorderBrowserTab,
   moveCards,
   setGlowingBrowserCards,
+  fadeGlowingBrowserCards,
   clearGlowingBrowserCards,
   clearAllGlowingBrowserCards,
+  setGlowingAgentCard,
+  fadeGlowingAgentCard,
+  clearGlowingAgentCard,
   resetLayout,
 } = dashboardLayoutSlice.actions;
 

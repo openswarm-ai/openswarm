@@ -56,6 +56,7 @@ import BlockIcon from '@mui/icons-material/Block';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import SecurityIcon from '@mui/icons-material/Security';
 import PanToolIcon from '@mui/icons-material/PanTool';
+import CallSplitIcon from '@mui/icons-material/CallSplit';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   fetchTools,
@@ -74,6 +75,8 @@ import {
 import {
   searchRegistry,
   fetchRegistryStats,
+  fetchServerDetail,
+  clearDetail,
   McpServer,
 } from '@/shared/state/mcpRegistrySlice';
 import {
@@ -156,7 +159,7 @@ const INTEGRATIONS: Integration[] = [
   },
 ];
 
-const CATEGORY_ORDER = ['filesystem', 'system', 'search', 'interaction', 'planning', 'scheduling'];
+const CATEGORY_ORDER = ['filesystem', 'system', 'search', 'interaction', 'agents', 'planning', 'scheduling'];
 
 interface ToolForm {
   name: string;
@@ -235,6 +238,7 @@ const ToolSection: React.FC<ToolSectionProps> = ({
     interaction: { label: 'Interaction', color: '#a855f7', icon: <QuestionAnswerIcon sx={{ fontSize: 16 }} /> },
     planning: { label: 'Planning', color: '#ec4899', icon: <MapIcon sx={{ fontSize: 16 }} /> },
     scheduling: { label: 'Scheduling', color: '#14b8a6', icon: <ScheduleIcon sx={{ fontSize: 16 }} /> },
+    agents: { label: 'Agents', color: '#f97316', icon: <CallSplitIcon sx={{ fontSize: 16 }} /> },
   };
 
   const PermToggle = ({ value, onChange, size = 16 }: { value: string; onChange: (v: string) => void; size?: number }) => (
@@ -343,7 +347,7 @@ const ToolSection: React.FC<ToolSectionProps> = ({
                       return (
                         <Box key={bt.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.4, px: 1.5, borderRadius: 1, '&:hover': { bgcolor: c.bg.secondary } }}>
                           <Box sx={{ minWidth: 0, flex: 1, mr: 1 }}>
-                            <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{bt.name}</Typography>
+                            <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{bt.display_name || bt.name}</Typography>
                             {bt.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{firstSentence(bt.description)}</Typography>}
                           </Box>
                           <PermToggle value={toolPolicy} onChange={(v) => onPermissionChange(bt.name, v)} size={14} />
@@ -370,7 +374,8 @@ const Tools: React.FC = () => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const { items, builtinTools, builtinPermissions, loading } = useAppSelector((s) => s.tools);
-  const { servers: regServers, total: regTotal, loading: regLoading, stats: regStats } = useAppSelector((s) => s.mcpRegistry);
+  const { servers: regServers, total: regTotal, loading: regLoading, stats: regStats, detail: regDetail, detailLoading: regDetailLoading } = useAppSelector((s) => s.mcpRegistry);
+  const devMode = useAppSelector((s) => s.settings.data.dev_mode);
   const outputItems = useAppSelector((s) => s.outputs.items);
   const outputs = useMemo(() => Object.values(outputItems), [outputItems]);
   const allTools = Object.values(items);
@@ -488,7 +493,8 @@ const Tools: React.FC = () => {
       if (discoverTools.fulfilled.match(result)) {
         setSnackbar({ open: true, message: 'Actions discovered successfully' });
       } else {
-        setSnackbar({ open: true, message: 'Discovery failed — is the MCP server running?', severity: 'error' });
+        const detail = (result as any).error?.message || 'Discovery failed — is the MCP server running?';
+        setSnackbar({ open: true, message: detail, severity: 'error' });
       }
     } finally {
       setDiscovering(false);
@@ -530,8 +536,11 @@ const Tools: React.FC = () => {
   };
 
   const [expandedServices, setExpandedServices] = useState<Record<string, boolean>>({});
+  const [expandedSchema, setExpandedSchema] = useState<string | null>(null);
 
   const [viewsSectionOpen, setViewsSectionOpen] = useState(false);
+  const [browserSectionOpen, setBrowserSectionOpen] = useState(false);
+  const [browserCollapsed, setBrowserCollapsed] = useState<Record<string, boolean>>({ browser_delegation: true, browser_action: true });
   const [builtinSectionOpen, setBuiltinSectionOpen] = useState(true);
 
   useEffect(() => {
@@ -556,8 +565,12 @@ const Tools: React.FC = () => {
   };
 
   // Built-in tool grouping
-  const coreTools = useMemo(() => builtinTools.filter((bt) => !bt.deferred), [builtinTools]);
-  const deferredTools = useMemo(() => builtinTools.filter((bt) => bt.deferred), [builtinTools]);
+  const BROWSER_CATEGORIES = new Set(['browser_delegation', 'browser_action']);
+  const coreTools = useMemo(() => builtinTools.filter((bt) => !bt.deferred && !BROWSER_CATEGORIES.has(bt.category)), [builtinTools]);
+  const deferredTools = useMemo(() => builtinTools.filter((bt) => bt.deferred && !BROWSER_CATEGORIES.has(bt.category)), [builtinTools]);
+  const browserTools = useMemo(() => builtinTools.filter((bt) => BROWSER_CATEGORIES.has(bt.category)), [builtinTools]);
+  const browserDelegationTools = useMemo(() => browserTools.filter((bt) => bt.category === 'browser_delegation'), [browserTools]);
+  const browserActionTools = useMemo(() => browserTools.filter((bt) => bt.category === 'browser_action'), [browserTools]);
   const groupTools = (list: BuiltinTool[]) => {
     const g: Record<string, BuiltinTool[]> = {};
     for (const bt of list) { if (!g[bt.category]) g[bt.category] = []; g[bt.category].push(bt); }
@@ -578,10 +591,14 @@ const Tools: React.FC = () => {
     () => !outputs.every((o) => o.permission === 'deny'),
     [outputs],
   );
+  const browserSectionEnabled = useMemo(
+    () => browserTools.length > 0 && !browserTools.every((t) => builtinPermissions[t.name] === 'deny'),
+    [browserTools, builtinPermissions],
+  );
 
   const handleSectionEnabledChange = async (tools: BuiltinTool[], enabled: boolean) => {
     const perms: Record<string, string> = {};
-    for (const t of tools) perms[t.name] = enabled ? 'ask' : 'deny';
+    for (const t of tools) perms[t.name] = enabled ? 'always_allow' : 'deny';
     await dispatch(updateBuiltinPermissions(perms));
   };
 
@@ -894,7 +911,7 @@ const Tools: React.FC = () => {
           {builtinSectionOpen ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} />}
           <LockIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
           <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Built-in Action Sets</Typography>
-          <Chip label={coreTools.length + deferredTools.length + outputs.length} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
+          <Chip label={coreTools.length + deferredTools.length + outputs.length + browserTools.length} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
         </Box>
         <Collapse in={builtinSectionOpen}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1 }}>
@@ -992,6 +1009,156 @@ const Tools: React.FC = () => {
         </Card>
       )}
 
+      {/* Browser */}
+      {browserTools.length > 0 && (
+        <Card sx={{ bgcolor: c.bg.surface, border: `1px solid ${browserSectionOpen && browserSectionEnabled ? c.accent.primary : c.border.subtle}`, borderRadius: 2, boxShadow: c.shadow.sm, '&:hover': { borderColor: c.accent.primary, boxShadow: '0 0 0 1px rgba(174,86,48,0.12)' }, transition: 'border-color 0.2s, box-shadow 0.2s' }}>
+          <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+            <Box
+              onClick={() => browserSectionEnabled && setBrowserSectionOpen((v) => !v)}
+              sx={{ display: 'flex', alignItems: 'center', gap: 2, cursor: browserSectionEnabled ? 'pointer' : 'default' }}
+            >
+              <Box sx={{
+                width: 36, height: 36, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                bgcolor: c.bg.secondary, color: c.text.tertiary, flexShrink: 0,
+                opacity: browserSectionEnabled ? 1 : 0.4, transition: 'opacity 0.2s',
+              }}>
+                <PublicIcon sx={{ fontSize: 18 }} />
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0, opacity: browserSectionEnabled ? 1 : 0.4, transition: 'opacity 0.2s' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
+                  <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}>Browser</Typography>
+                  <Chip label={`${browserTools.length} actions`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
+                </Box>
+                <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>Browser automation delegation and individual browser actions</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                <Switch
+                  checked={browserSectionEnabled}
+                  onChange={(_, checked) => handleSectionEnabledChange(browserTools, checked)}
+                  sx={{
+                    '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
+                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
+                  }}
+                />
+              </Box>
+              {browserSectionEnabled && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
+                  <KeyboardArrowDownIcon sx={{ fontSize: 18, color: c.text.ghost, transition: 'transform 0.2s', transform: browserSectionOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+                </Box>
+              )}
+            </Box>
+          </CardContent>
+          <Collapse in={browserSectionOpen && browserSectionEnabled}>
+            <Box sx={{ px: 2, pb: 2, pt: 0, borderTop: `1px solid ${c.border.subtle}` }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5, mb: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <SecurityIcon sx={{ fontSize: 14, color: c.text.muted }} />
+                  <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Action Permissions</Typography>
+                  <Chip label={`${browserTools.length} actions`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />
+                </Box>
+              </Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                {/* Delegation group */}
+                {browserDelegationTools.length > 0 && (() => {
+                  const delegationPolicies = browserDelegationTools.map((t) => builtinPermissions[t.name] || 'always_allow');
+                  const groupPolicy = delegationPolicies.every((p) => p === 'always_allow') ? 'always_allow'
+                    : delegationPolicies.every((p) => p === 'deny') ? 'deny'
+                    : delegationPolicies.every((p) => p === 'ask') ? 'ask' : 'ask';
+                  const isOpen = !browserCollapsed.browser_delegation;
+                  return (
+                    <Box sx={{ border: `1px solid ${c.border.subtle}`, borderRadius: 1.5, overflow: 'hidden', '&:hover': { borderColor: c.border.medium } }}>
+                      <Box
+                        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1.5, py: 0.75, cursor: 'pointer', bgcolor: isOpen ? c.bg.secondary : 'transparent', '&:hover': { bgcolor: c.bg.secondary } }}
+                        onClick={() => setBrowserCollapsed((p) => ({ ...p, browser_delegation: !p.browser_delegation }))}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <KeyboardArrowDownIcon sx={{ fontSize: 16, color: c.text.ghost, transition: 'transform 0.15s', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
+                          <Typography sx={{ color: c.text.primary, fontSize: '0.85rem', fontWeight: 600 }}>Delegation</Typography>
+                          <Chip label={browserDelegationTools.length} size="small" sx={{ bgcolor: c.bg.page, color: c.text.muted, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 0.25 }} onClick={(e) => e.stopPropagation()}>
+                          <Tooltip title="Always allow"><IconButton size="small" onClick={() => handleBuiltinCategoryPermissionChange(browserDelegationTools.map((t) => t.name), 'always_allow')} sx={{ p: 0.4, borderRadius: 1, bgcolor: groupPolicy === 'always_allow' ? `${c.status.success}20` : 'transparent', color: groupPolicy === 'always_allow' ? c.status.success : c.text.ghost, '&:hover': { bgcolor: `${c.status.success}15`, color: c.status.success } }}><CheckCircleIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
+                          <Tooltip title="Ask permission"><IconButton size="small" onClick={() => handleBuiltinCategoryPermissionChange(browserDelegationTools.map((t) => t.name), 'ask')} sx={{ p: 0.4, borderRadius: 1, bgcolor: groupPolicy === 'ask' ? `${c.status.warning}20` : 'transparent', color: groupPolicy === 'ask' ? c.status.warning : c.text.ghost, '&:hover': { bgcolor: `${c.status.warning}15`, color: c.status.warning } }}><PanToolIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
+                          <Tooltip title="Always deny"><IconButton size="small" onClick={() => handleBuiltinCategoryPermissionChange(browserDelegationTools.map((t) => t.name), 'deny')} sx={{ p: 0.4, borderRadius: 1, bgcolor: groupPolicy === 'deny' ? `${c.status.error}20` : 'transparent', color: groupPolicy === 'deny' ? c.status.error : c.text.ghost, '&:hover': { bgcolor: `${c.status.error}15`, color: c.status.error } }}><BlockIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
+                        </Box>
+                      </Box>
+                      <Collapse in={isOpen}>
+                        <Box sx={{ px: 1, pb: 1 }}>
+                          {browserDelegationTools.map((bt) => {
+                            const toolPolicy = builtinPermissions[bt.name] || 'always_allow';
+                            return (
+                              <Box key={bt.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.4, px: 1.5, borderRadius: 1, '&:hover': { bgcolor: c.bg.secondary } }}>
+                                <Box sx={{ minWidth: 0, flex: 1, mr: 1 }}>
+                                  <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{bt.display_name || bt.name}</Typography>
+                                  {bt.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bt.description}</Typography>}
+                                </Box>
+                                <Box sx={{ display: 'flex', gap: 0.25 }} onClick={(e) => e.stopPropagation()}>
+                                  <Tooltip title="Always allow"><IconButton size="small" onClick={() => handleBuiltinPermissionChange(bt.name, 'always_allow')} sx={{ p: 0.4, borderRadius: 1, bgcolor: toolPolicy === 'always_allow' ? `${c.status.success}20` : 'transparent', color: toolPolicy === 'always_allow' ? c.status.success : c.text.ghost, '&:hover': { bgcolor: `${c.status.success}15`, color: c.status.success } }}><CheckCircleIcon sx={{ fontSize: 14 }} /></IconButton></Tooltip>
+                                  <Tooltip title="Ask permission"><IconButton size="small" onClick={() => handleBuiltinPermissionChange(bt.name, 'ask')} sx={{ p: 0.4, borderRadius: 1, bgcolor: toolPolicy === 'ask' ? `${c.status.warning}20` : 'transparent', color: toolPolicy === 'ask' ? c.status.warning : c.text.ghost, '&:hover': { bgcolor: `${c.status.warning}15`, color: c.status.warning } }}><PanToolIcon sx={{ fontSize: 14 }} /></IconButton></Tooltip>
+                                  <Tooltip title="Always deny"><IconButton size="small" onClick={() => handleBuiltinPermissionChange(bt.name, 'deny')} sx={{ p: 0.4, borderRadius: 1, bgcolor: toolPolicy === 'deny' ? `${c.status.error}20` : 'transparent', color: toolPolicy === 'deny' ? c.status.error : c.text.ghost, '&:hover': { bgcolor: `${c.status.error}15`, color: c.status.error } }}><BlockIcon sx={{ fontSize: 14 }} /></IconButton></Tooltip>
+                                </Box>
+                              </Box>
+                            );
+                          })}
+                        </Box>
+                      </Collapse>
+                    </Box>
+                  );
+                })()}
+
+                {/* Browser Actions group */}
+                {browserActionTools.length > 0 && (() => {
+                  const actionPolicies = browserActionTools.map((t) => builtinPermissions[t.name] || 'always_allow');
+                  const groupPolicy = actionPolicies.every((p) => p === 'always_allow') ? 'always_allow'
+                    : actionPolicies.every((p) => p === 'deny') ? 'deny'
+                    : actionPolicies.every((p) => p === 'ask') ? 'ask' : 'ask';
+                  const isOpen = !browserCollapsed.browser_action;
+                  return (
+                    <Box sx={{ border: `1px solid ${c.border.subtle}`, borderRadius: 1.5, overflow: 'hidden', '&:hover': { borderColor: c.border.medium } }}>
+                      <Box
+                        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1.5, py: 0.75, cursor: 'pointer', bgcolor: isOpen ? c.bg.secondary : 'transparent', '&:hover': { bgcolor: c.bg.secondary } }}
+                        onClick={() => setBrowserCollapsed((p) => ({ ...p, browser_action: !p.browser_action }))}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <KeyboardArrowDownIcon sx={{ fontSize: 16, color: c.text.ghost, transition: 'transform 0.15s', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
+                          <Typography sx={{ color: c.text.primary, fontSize: '0.85rem', fontWeight: 600 }}>Browser Actions</Typography>
+                          <Chip label={browserActionTools.length} size="small" sx={{ bgcolor: c.bg.page, color: c.text.muted, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 0.25 }} onClick={(e) => e.stopPropagation()}>
+                          <Tooltip title="Always allow"><IconButton size="small" onClick={() => handleBuiltinCategoryPermissionChange(browserActionTools.map((t) => t.name), 'always_allow')} sx={{ p: 0.4, borderRadius: 1, bgcolor: groupPolicy === 'always_allow' ? `${c.status.success}20` : 'transparent', color: groupPolicy === 'always_allow' ? c.status.success : c.text.ghost, '&:hover': { bgcolor: `${c.status.success}15`, color: c.status.success } }}><CheckCircleIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
+                          <Tooltip title="Ask permission"><IconButton size="small" onClick={() => handleBuiltinCategoryPermissionChange(browserActionTools.map((t) => t.name), 'ask')} sx={{ p: 0.4, borderRadius: 1, bgcolor: groupPolicy === 'ask' ? `${c.status.warning}20` : 'transparent', color: groupPolicy === 'ask' ? c.status.warning : c.text.ghost, '&:hover': { bgcolor: `${c.status.warning}15`, color: c.status.warning } }}><PanToolIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
+                          <Tooltip title="Always deny"><IconButton size="small" onClick={() => handleBuiltinCategoryPermissionChange(browserActionTools.map((t) => t.name), 'deny')} sx={{ p: 0.4, borderRadius: 1, bgcolor: groupPolicy === 'deny' ? `${c.status.error}20` : 'transparent', color: groupPolicy === 'deny' ? c.status.error : c.text.ghost, '&:hover': { bgcolor: `${c.status.error}15`, color: c.status.error } }}><BlockIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
+                        </Box>
+                      </Box>
+                      <Collapse in={isOpen}>
+                        <Box sx={{ px: 1, pb: 1 }}>
+                          {browserActionTools.map((bt) => {
+                            const toolPolicy = builtinPermissions[bt.name] || 'always_allow';
+                            return (
+                              <Box key={bt.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.4, px: 1.5, borderRadius: 1, '&:hover': { bgcolor: c.bg.secondary } }}>
+                                <Box sx={{ minWidth: 0, flex: 1, mr: 1 }}>
+                                  <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{bt.display_name || bt.name}</Typography>
+                                  {bt.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bt.description}</Typography>}
+                                </Box>
+                                <Box sx={{ display: 'flex', gap: 0.25 }} onClick={(e) => e.stopPropagation()}>
+                                  <Tooltip title="Always allow"><IconButton size="small" onClick={() => handleBuiltinPermissionChange(bt.name, 'always_allow')} sx={{ p: 0.4, borderRadius: 1, bgcolor: toolPolicy === 'always_allow' ? `${c.status.success}20` : 'transparent', color: toolPolicy === 'always_allow' ? c.status.success : c.text.ghost, '&:hover': { bgcolor: `${c.status.success}15`, color: c.status.success } }}><CheckCircleIcon sx={{ fontSize: 14 }} /></IconButton></Tooltip>
+                                  <Tooltip title="Ask permission"><IconButton size="small" onClick={() => handleBuiltinPermissionChange(bt.name, 'ask')} sx={{ p: 0.4, borderRadius: 1, bgcolor: toolPolicy === 'ask' ? `${c.status.warning}20` : 'transparent', color: toolPolicy === 'ask' ? c.status.warning : c.text.ghost, '&:hover': { bgcolor: `${c.status.warning}15`, color: c.status.warning } }}><PanToolIcon sx={{ fontSize: 14 }} /></IconButton></Tooltip>
+                                  <Tooltip title="Always deny"><IconButton size="small" onClick={() => handleBuiltinPermissionChange(bt.name, 'deny')} sx={{ p: 0.4, borderRadius: 1, bgcolor: toolPolicy === 'deny' ? `${c.status.error}20` : 'transparent', color: toolPolicy === 'deny' ? c.status.error : c.text.ghost, '&:hover': { bgcolor: `${c.status.error}15`, color: c.status.error } }}><BlockIcon sx={{ fontSize: 14 }} /></IconButton></Tooltip>
+                                </Box>
+                              </Box>
+                            );
+                          })}
+                        </Box>
+                      </Collapse>
+                    </Box>
+                  );
+                })()}
+              </Box>
+            </Box>
+          </Collapse>
+        </Card>
+      )}
+
           </Box>
         </Collapse>
       </Box>
@@ -1029,7 +1196,7 @@ const Tools: React.FC = () => {
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
                             <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}>{ig.name}</Typography>
-                            <Chip component="a" href={ig.website} target="_blank" rel="noopener" clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
+                            <Chip component="a" href={ig.website} clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
                           </Box>
                           <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>{ig.description}</Typography>
                         </Box>
@@ -1059,6 +1226,7 @@ const Tools: React.FC = () => {
                 const perms = tool.tool_permissions || {};
                 const services = perms._services as Record<string, { read?: string[]; write?: string[] }> | undefined;
                 const descriptions = (perms._tool_descriptions || {}) as Record<string, string>;
+                const schemas = (perms._tool_schemas || {}) as Record<string, any>;
                 const serviceNames = services ? Object.keys(services) : [];
                 const hasPerms = serviceNames.length > 0;
                 const totalToolCount = serviceNames.reduce((acc, s) => acc + (services![s].read?.length || 0) + (services![s].write?.length || 0), 0);
@@ -1131,15 +1299,36 @@ const Tools: React.FC = () => {
                                 </Box>
                                 <PermToggle value={getGroupPolicy(data.read!) === 'mixed' ? 'ask' : getGroupPolicy(data.read!)} onChange={(v) => handleGroupPermissionChange(tool.id, data.read!, v)} size={14} />
                               </Box>
-                              {data.read!.map((name) => (
-                                <Box key={name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.4, px: 1.5, borderRadius: 1, '&:hover': { bgcolor: c.bg.secondary } }}>
-                                  <Box sx={{ minWidth: 0, flex: 1, mr: 1 }}>
-                                    <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{toDisplayName(name, serviceName)}</Typography>
-                                    {descriptions[name] && <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{firstSentence(descriptions[name])}</Typography>}
+                              {data.read!.map((name) => {
+                                const schemaKey = `${tool.id}:${name}`;
+                                const schema = schemas[name];
+                                const schemaProps = schema?.properties as Record<string, any> | undefined;
+                                const schemaRequired = (schema?.required || []) as string[];
+                                return (
+                                  <Box key={name}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.4, px: 1.5, borderRadius: 1, cursor: devMode && schema ? 'pointer' : undefined, '&:hover': { bgcolor: c.bg.secondary } }} onClick={() => devMode && schema && setExpandedSchema((p) => p === schemaKey ? null : schemaKey)}>
+                                      <Box sx={{ minWidth: 0, flex: 1, mr: 1 }}>
+                                        <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{toDisplayName(name, serviceName)}</Typography>
+                                        {descriptions[name] && <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{firstSentence(descriptions[name])}</Typography>}
+                                      </Box>
+                                      <PermToggle value={perms[name] || 'ask'} onChange={(v) => handlePermissionChange(tool.id, name, v)} size={14} />
+                                    </Box>
+                                    {devMode && expandedSchema === schemaKey && schemaProps && (
+                                      <Box sx={{ mx: 1.5, mb: 0.75, px: 1.5, py: 1, bgcolor: c.bg.page, borderRadius: 1, border: `1px solid ${c.border.subtle}` }}>
+                                        <Typography sx={{ color: c.text.ghost, fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', mb: 0.5 }}>Input Parameters</Typography>
+                                        {Object.entries(schemaProps).map(([pName, pDef]: [string, any]) => (
+                                          <Box key={pName} sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, py: 0.2 }}>
+                                            <Typography sx={{ color: c.accent.primary, fontSize: '0.72rem', fontFamily: c.font.mono, fontWeight: 600, flexShrink: 0 }}>{pName}</Typography>
+                                            <Typography sx={{ color: c.text.muted, fontSize: '0.68rem', fontFamily: c.font.mono }}>{pDef?.type || 'any'}</Typography>
+                                            {schemaRequired.includes(pName) && <Chip label="required" size="small" sx={{ bgcolor: `${c.status.error}12`, color: c.status.error, fontSize: '0.55rem', height: 14, '& .MuiChip-label': { px: 0.4 } }} />}
+                                            {pDef?.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.68rem', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pDef.description}</Typography>}
+                                          </Box>
+                                        ))}
+                                      </Box>
+                                    )}
                                   </Box>
-                                  <PermToggle value={perms[name] || 'ask'} onChange={(v) => handlePermissionChange(tool.id, name, v)} size={14} />
-                                </Box>
-                              ))}
+                                );
+                              })}
                             </Box>
                           )}
                           {(data.write?.length || 0) > 0 && (
@@ -1152,15 +1341,36 @@ const Tools: React.FC = () => {
                                 </Box>
                                 <PermToggle value={getGroupPolicy(data.write!) === 'mixed' ? 'ask' : getGroupPolicy(data.write!)} onChange={(v) => handleGroupPermissionChange(tool.id, data.write!, v)} size={14} />
                               </Box>
-                              {data.write!.map((name) => (
-                                <Box key={name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.4, px: 1.5, borderRadius: 1, '&:hover': { bgcolor: c.bg.secondary } }}>
-                                  <Box sx={{ minWidth: 0, flex: 1, mr: 1 }}>
-                                    <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{toDisplayName(name, serviceName)}</Typography>
-                                    {descriptions[name] && <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{firstSentence(descriptions[name])}</Typography>}
+                              {data.write!.map((name) => {
+                                const schemaKey = `${tool.id}:${name}`;
+                                const schema = schemas[name];
+                                const schemaProps = schema?.properties as Record<string, any> | undefined;
+                                const schemaRequired = (schema?.required || []) as string[];
+                                return (
+                                  <Box key={name}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.4, px: 1.5, borderRadius: 1, cursor: devMode && schema ? 'pointer' : undefined, '&:hover': { bgcolor: c.bg.secondary } }} onClick={() => devMode && schema && setExpandedSchema((p) => p === schemaKey ? null : schemaKey)}>
+                                      <Box sx={{ minWidth: 0, flex: 1, mr: 1 }}>
+                                        <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{toDisplayName(name, serviceName)}</Typography>
+                                        {descriptions[name] && <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{firstSentence(descriptions[name])}</Typography>}
+                                      </Box>
+                                      <PermToggle value={perms[name] || 'ask'} onChange={(v) => handlePermissionChange(tool.id, name, v)} size={14} />
+                                    </Box>
+                                    {devMode && expandedSchema === schemaKey && schemaProps && (
+                                      <Box sx={{ mx: 1.5, mb: 0.75, px: 1.5, py: 1, bgcolor: c.bg.page, borderRadius: 1, border: `1px solid ${c.border.subtle}` }}>
+                                        <Typography sx={{ color: c.text.ghost, fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', mb: 0.5 }}>Input Parameters</Typography>
+                                        {Object.entries(schemaProps).map(([pName, pDef]: [string, any]) => (
+                                          <Box key={pName} sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, py: 0.2 }}>
+                                            <Typography sx={{ color: c.accent.primary, fontSize: '0.72rem', fontFamily: c.font.mono, fontWeight: 600, flexShrink: 0 }}>{pName}</Typography>
+                                            <Typography sx={{ color: c.text.muted, fontSize: '0.68rem', fontFamily: c.font.mono }}>{pDef?.type || 'any'}</Typography>
+                                            {schemaRequired.includes(pName) && <Chip label="required" size="small" sx={{ bgcolor: `${c.status.error}12`, color: c.status.error, fontSize: '0.55rem', height: 14, '& .MuiChip-label': { px: 0.4 } }} />}
+                                            {pDef?.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.68rem', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pDef.description}</Typography>}
+                                          </Box>
+                                        ))}
+                                      </Box>
+                                    )}
                                   </Box>
-                                  <PermToggle value={perms[name] || 'ask'} onChange={(v) => handlePermissionChange(tool.id, name, v)} size={14} />
-                                </Box>
-                              ))}
+                                );
+                              })}
                             </Box>
                           )}
                         </Box>
@@ -1202,7 +1412,7 @@ const Tools: React.FC = () => {
                               <Chip label={`${totalToolCount} actions`} size="small" sx={{ bgcolor: `${ig.color}15`, color: ig.color, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
                             )}
                             {ig && (
-                              <Chip component="a" href={ig.website} target="_blank" rel="noopener" clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
+                              <Chip component="a" href={ig.website} clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
                             )}
                           </Box>
                           {tool.description && <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>{tool.description}</Typography>}
@@ -1330,6 +1540,46 @@ const Tools: React.FC = () => {
                               ))}
                             </Box>
                           )}
+
+                          {devMode && isMcp && (
+                            <Box sx={{ mt: 2, pt: 1.5, borderTop: `1px solid ${c.border.subtle}`, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                              <Typography sx={{ color: c.text.muted, fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                Developer Info
+                              </Typography>
+                              <Box sx={{ bgcolor: c.bg.page, borderRadius: 1.5, border: `1px solid ${c.border.subtle}`, px: 1.5, py: 1 }}>
+                                <Typography sx={{ color: c.text.ghost, fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', mb: 0.5 }}>
+                                  MCP Config
+                                </Typography>
+                                <Typography component="pre" sx={{ color: c.text.muted, fontSize: '0.75rem', fontFamily: c.font.mono, whiteSpace: 'pre-wrap', wordBreak: 'break-all', m: 0, lineHeight: 1.5 }}>
+                                  {JSON.stringify(tool.mcp_config, null, 2)}
+                                </Typography>
+                              </Box>
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>Auth type:</Typography>
+                                  <Typography sx={{ color: c.text.muted, fontSize: '0.72rem', fontFamily: c.font.mono }}>{tool.auth_type || 'none'}</Typography>
+                                </Box>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>Status:</Typography>
+                                  <Typography sx={{ color: c.text.muted, fontSize: '0.72rem', fontFamily: c.font.mono }}>{tool.auth_status || 'none'}</Typography>
+                                </Box>
+                                {tool.connected_account_email && (
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>Account:</Typography>
+                                    <Typography sx={{ color: c.text.muted, fontSize: '0.72rem', fontFamily: c.font.mono }}>{tool.connected_account_email}</Typography>
+                                  </Box>
+                                )}
+                              </Box>
+                              {tool.credentials && Object.keys(tool.credentials).length > 0 && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                                  <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>Credentials:</Typography>
+                                  {Object.keys(tool.credentials).map((key) => (
+                                    <Chip key={key} label={`${key}: configured`} size="small" sx={{ bgcolor: `${c.status.success}12`, color: c.status.success, fontSize: '0.65rem', height: 18, fontFamily: c.font.mono, '& .MuiChip-label': { px: 0.6 } }} />
+                                  ))}
+                                </Box>
+                              )}
+                            </Box>
+                          )}
                         </Box>
                       </Collapse>
                   </Card>
@@ -1366,17 +1616,24 @@ const Tools: React.FC = () => {
           <StorefrontIcon sx={{ color: c.accent.primary }} />
           MCP Registry
           {regStats && (
-            <Chip
-              label={
-                regSource === 'google'
-                  ? `${regStats.google.toLocaleString()} Google servers`
-                  : regSource === 'community'
-                    ? `${regStats.community.toLocaleString()} Community servers`
-                    : `${regStats.total.toLocaleString()} servers`
-              }
-              size="small"
-              sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, ml: 'auto' }}
-            />
+            <>
+              <Chip
+                label={
+                  regSource === 'google'
+                    ? `${regStats.google.toLocaleString()} Google servers`
+                    : regSource === 'community'
+                      ? `${regStats.community.toLocaleString()} Community servers`
+                      : `${regStats.total.toLocaleString()} servers`
+                }
+                size="small"
+                sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, ml: 'auto' }}
+              />
+              {devMode && regStats.lastUpdated > 0 && (
+                <Typography sx={{ color: c.text.ghost, fontSize: '0.68rem', flexShrink: 0 }}>
+                  Synced {Math.round((Date.now() / 1000 - regStats.lastUpdated) / 60)}m ago
+                </Typography>
+              )}
+            </>
           )}
         </DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 0, px: 3, pb: 0, overflow: 'hidden',
@@ -1463,10 +1720,18 @@ const Tools: React.FC = () => {
               </Typography>
               {regServers.map((srv) => {
                 const isExpanded = expandedServer === srv.name;
+                const isInstalled = allTools.some((t) => t.name === (srv.title || cleanServerName(srv.name)));
                 return (
                   <Box key={srv.name}>
                     <Box
-                      onClick={() => setExpandedServer(isExpanded ? null : srv.name)}
+                      onClick={() => {
+                        const next = isExpanded ? null : srv.name;
+                        setExpandedServer(next);
+                        if (next && devMode) {
+                          dispatch(clearDetail());
+                          dispatch(fetchServerDetail(srv.name));
+                        }
+                      }}
                       sx={{
                         display: 'flex', alignItems: 'center', gap: 1.5,
                         px: 1.5, py: 1, borderRadius: 1.5, cursor: 'pointer',
@@ -1504,6 +1769,12 @@ const Tools: React.FC = () => {
                               </Typography>
                             </Box>
                           )}
+                          {devMode && !srv.remoteType && (
+                            <Chip label="stdio" size="small" sx={{ bgcolor: '#8b5cf615', color: '#8b5cf6', fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                          )}
+                          {isInstalled && (
+                            <Chip icon={<CheckCircleIcon sx={{ fontSize: 12 }} />} label="Installed" size="small" sx={{ bgcolor: `${c.status.success}15`, color: c.status.success, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, color: c.status.success } }} />
+                          )}
                         </Box>
                         <Typography sx={{ color: c.text.tertiary, fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {srv.description}
@@ -1533,8 +1804,6 @@ const Tools: React.FC = () => {
                               <Chip
                                 component="a"
                                 href={srv.websiteUrl}
-                                target="_blank"
-                                rel="noopener"
                                 clickable
                                 icon={<OpenInNewIcon sx={{ fontSize: 12 }} />}
                                 label="Website"
@@ -1546,8 +1815,6 @@ const Tools: React.FC = () => {
                               <Chip
                                 component="a"
                                 href={srv.repositoryUrl}
-                                target="_blank"
-                                rel="noopener"
                                 clickable
                                 icon={<OpenInNewIcon sx={{ fontSize: 12 }} />}
                                 label="Repository"
@@ -1557,6 +1824,46 @@ const Tools: React.FC = () => {
                             )}
                           </Box>
                         </Box>
+
+                        {devMode && (
+                          <Box sx={{ mb: 2 }}>
+                            {regDetailLoading && expandedServer === srv.name ? (
+                              <CircularProgress size={14} sx={{ color: c.text.ghost }} />
+                            ) : regDetail && regDetail.name === srv.name ? (
+                              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                {(regDetail.keywords?.length > 0 || regDetail.license) && (
+                                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center' }}>
+                                    {regDetail.license && (
+                                      <Chip label={regDetail.license} size="small" sx={{ bgcolor: `${c.status.info}15`, color: c.status.info, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                                    )}
+                                    {regDetail.keywords?.map((kw) => (
+                                      <Chip key={kw} label={kw} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                                    ))}
+                                  </Box>
+                                )}
+                                {regDetail.environmentVariables?.length > 0 && (
+                                  <Box sx={{ bgcolor: c.bg.page, borderRadius: 1.5, border: `1px solid ${c.border.subtle}`, px: 1.5, py: 1 }}>
+                                    <Typography sx={{ color: c.text.muted, fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', mb: 0.75 }}>
+                                      Required Environment Variables
+                                    </Typography>
+                                    {regDetail.environmentVariables.map((ev) => (
+                                      <Box key={ev.name} sx={{ display: 'flex', alignItems: 'baseline', gap: 1, py: 0.25 }}>
+                                        <Typography sx={{ color: c.accent.primary, fontSize: '0.75rem', fontFamily: c.font.mono, fontWeight: 600, flexShrink: 0 }}>
+                                          {ev.name}
+                                        </Typography>
+                                        {ev.description && (
+                                          <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>
+                                            {ev.description}
+                                          </Typography>
+                                        )}
+                                      </Box>
+                                    ))}
+                                  </Box>
+                                )}
+                              </Box>
+                            ) : null}
+                          </Box>
+                        )}
 
                         <Box sx={{ display: 'flex', gap: 1 }}>
                           <Button

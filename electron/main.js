@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
-const { autoUpdater } = require('electron-updater');
+const { app, components, BrowserWindow, ipcMain, shell, session } = require('electron');
+let autoUpdater;
+try { autoUpdater = require('electron-updater').autoUpdater; } catch (_) {}
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const os = require('os');
@@ -7,9 +8,16 @@ const fs = require('fs');
 const getPort = require('get-port');
 const http = require('http');
 
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 let mainWindow = null;
 let backendProcess = null;
 let backendPort = null;
+let cachedUpdateStatus = { status: 'idle', info: null, error: null };
 
 const isPackaged = app.isPackaged;
 const isDev = process.env.ELECTRON_DEV === '1';
@@ -24,9 +32,10 @@ const iconPath = path.join(__dirname, 'build', 'icon.png');
 function getShellPath() {
   if (process.platform !== 'darwin' || isDev) return process.env.PATH || '';
 
+  // Strategy 1: ask the user's login shell for its PATH
   try {
-    const shell = process.env.SHELL || '/bin/zsh';
-    const result = execFileSync(shell, ['-ilc', 'echo $PATH'], {
+    const userShell = process.env.SHELL || '/bin/zsh';
+    const result = execFileSync(userShell, ['-ilc', 'echo $PATH'], {
       encoding: 'utf8',
       timeout: 5000,
       env: { ...process.env, HOME: os.homedir() },
@@ -35,19 +44,40 @@ function getShellPath() {
     if (resolved) return resolved;
   } catch (_) { /* fall through */ }
 
+  // Strategy 2: read macOS system PATH config (/etc/paths + /etc/paths.d/*)
+  const systemPaths = [];
+  try {
+    const base = fs.readFileSync('/etc/paths', 'utf8');
+    for (const line of base.split('\n')) {
+      const p = line.trim();
+      if (p) systemPaths.push(p);
+    }
+  } catch (_) { /* ignore */ }
+  try {
+    const pathsD = '/etc/paths.d';
+    if (fs.existsSync(pathsD)) {
+      for (const file of fs.readdirSync(pathsD).sort()) {
+        const content = fs.readFileSync(path.join(pathsD, file), 'utf8');
+        for (const line of content.split('\n')) {
+          const p = line.trim();
+          if (p) systemPaths.push(p);
+        }
+      }
+    }
+  } catch (_) { /* ignore */ }
+
+  // Strategy 3: well-known user-local bin directories
   const home = os.homedir();
   const fallbackDirs = [
-    path.join(home, '.nvm/versions/node'),
+    path.join(home, '.local/bin'),
     path.join(home, '.volta/bin'),
     path.join(home, '.fnm/aliases/default/bin'),
     path.join(home, '.bun/bin'),
     path.join(home, '.cargo/bin'),
-    path.join(home, '.local/bin'),
     '/opt/homebrew/bin',
     '/usr/local/bin',
   ];
 
-  // For nvm, resolve the current default version dynamically
   const nvmDir = path.join(home, '.nvm/versions/node');
   try {
     if (fs.existsSync(nvmDir)) {
@@ -58,10 +88,14 @@ function getShellPath() {
     }
   } catch (_) { /* ignore */ }
 
-  const existing = fallbackDirs.filter((d) => {
-    try { return fs.statSync(d).isDirectory(); } catch { return false; }
-  });
-  return [...existing, process.env.PATH || ''].join(':');
+  const seen = new Set();
+  const dirs = [];
+  for (const d of [...fallbackDirs, ...systemPaths, ...(process.env.PATH || '').split(':')]) {
+    if (!d || seen.has(d)) continue;
+    seen.add(d);
+    try { if (fs.statSync(d).isDirectory()) dirs.push(d); } catch { /* skip */ }
+  }
+  return dirs.join(':');
 }
 
 function getResourcePath(...segments) {
@@ -190,6 +224,18 @@ function createWindow() {
     mainWindow.loadFile(frontendPath);
   }
 
+  mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, _params) => {
+    webPreferences.plugins = true;
+    webPreferences.enableBlinkFeatures = 'EncryptedMedia';
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isDev && url.startsWith('http://localhost:3000')) return;
+    if (url.startsWith('file://')) return;
+    event.preventDefault();
+    mainWindow.webContents.send('webview-new-window', url, mainWindow.webContents.id);
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -202,30 +248,36 @@ function sendToRenderer(channel, ...args) {
 }
 
 function setupAutoUpdater() {
+  if (!autoUpdater) return;
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('update-available', (info) => {
     console.log(`Update available: ${info.version}`);
+    cachedUpdateStatus = { status: 'available', info, error: null };
     sendToRenderer('update-available', info);
   });
 
   autoUpdater.on('update-not-available', (info) => {
     console.log('App is up to date');
+    cachedUpdateStatus = { status: 'not-available', info, error: null };
     sendToRenderer('update-not-available', info);
   });
 
   autoUpdater.on('download-progress', (progress) => {
+    cachedUpdateStatus = { status: 'downloading', info: progress, error: null };
     sendToRenderer('download-progress', progress);
   });
 
   autoUpdater.on('update-downloaded', (info) => {
     console.log(`Update downloaded: ${info.version}`);
+    cachedUpdateStatus = { status: 'downloaded', info, error: null };
     sendToRenderer('update-downloaded', info);
   });
 
   autoUpdater.on('error', (err) => {
     console.error('Auto-update error:', err);
+    cachedUpdateStatus = { status: 'error', info: null, error: err?.message || String(err) };
     sendToRenderer('update-error', err?.message || String(err));
   });
 
@@ -252,6 +304,68 @@ app.whenReady().then(async () => {
     try { app.dock.setIcon(iconPath); } catch (_) {}
   }
 
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    const allowed = [
+      'media', 'mediaKeySystem', 'protected-media-identifier',
+      'geolocation', 'notifications', 'midi', 'midiSysex',
+      'clipboard-read', 'clipboard-sanitized-write',
+      'pointerLock', 'fullscreen', 'idle-detection',
+    ];
+    console.log('Permission request:', permission, '->', allowed.includes(permission) ? 'granted' : 'denied');
+    callback(allowed.includes(permission));
+  });
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    const allowed = [
+      'media', 'mediaKeySystem', 'protected-media-identifier',
+      'clipboard-read', 'clipboard-sanitized-write',
+      'pointerLock', 'fullscreen', 'idle-detection',
+    ];
+    return allowed.includes(permission);
+  });
+
+  // Read-only logging for DRM license requests — no modifying interceptors
+  // so the network stack can set Content-Type and other headers normally.
+  session.defaultSession.webRequest.onSendHeaders(
+    { urls: ['*://*/*widevine*license*'] },
+    (details) => {
+      console.log(`[drm-req] ${details.method} ${details.url}`);
+      for (const [k, v] of Object.entries(details.requestHeaders || {})) {
+        if (/content-type|origin|referer|auth|accept/i.test(k)) {
+          console.log(`[drm-req]   ${k}: ${v}`);
+        }
+      }
+    },
+  );
+  session.defaultSession.webRequest.onCompleted(
+    { urls: ['*://*/*widevine*', '*://*/*license*'] },
+    (details) => {
+      console.log(`[drm-net] ${details.method} ${details.url} → ${details.statusCode}`);
+    },
+  );
+  session.defaultSession.webRequest.onErrorOccurred(
+    { urls: ['*://*/*widevine*', '*://*/*license*'] },
+    (details) => {
+      console.log(`[drm-net] FAILED ${details.method} ${details.url} → ${details.error}`);
+    },
+  );
+
+  // Wait for the Widevine CDM to be downloaded/ready (CastLabs Component
+  // Updater Service). On first launch this downloads the CDM; subsequent
+  // launches use the cached version.
+  if (components && typeof components.whenReady === 'function') {
+    try {
+      await components.whenReady();
+      console.log('Widevine CDM ready');
+      if (typeof components.status === 'function') {
+        console.log('CDM component status:', JSON.stringify(components.status()));
+      }
+    } catch (err) {
+      console.warn('Widevine CDM not available:', err.message);
+    }
+  } else {
+    console.log('CastLabs components API not available — using standard Electron (no DRM)');
+  }
+
   try {
     if (isDev) {
       backendPort = parseInt(process.env.OPENSWARM_PORT || '8324', 10);
@@ -262,10 +376,90 @@ app.whenReady().then(async () => {
     createWindow();
     if (!isDev) {
       setupAutoUpdater();
+      mainWindow.webContents.on('did-finish-load', () => {
+        if (cachedUpdateStatus.status === 'available') {
+          sendToRenderer('update-available', cachedUpdateStatus.info);
+        } else if (cachedUpdateStatus.status === 'downloaded') {
+          sendToRenderer('update-downloaded', cachedUpdateStatus.info);
+        }
+      });
     }
   } catch (err) {
     console.error('Failed to start:', err);
     app.quit();
+  }
+});
+
+app.on('web-contents-created', (_event, contents) => {
+  contents.setWindowOpenHandler(({ url, disposition }) => {
+    if (disposition === 'foreground-tab' || disposition === 'background-tab') {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('webview-new-window', url, contents.id);
+      }
+      return { action: 'deny' };
+    }
+
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        parent: mainWindow || undefined,
+      },
+    };
+  });
+
+  contents.on('did-create-window', (childWindow) => {
+    if (mainWindow && !mainWindow.isDestroyed() && !childWindow.isDestroyed()) {
+      childWindow.setParentWindow(mainWindow);
+    }
+  });
+
+  if (contents.getType() === 'webview') {
+    contents.on('console-message', (_e, level, message, line, sourceId) => {
+      if (message.includes('widevine') || message.includes('drm') ||
+          message.includes('license') || message.includes('MediaKeySession') ||
+          message.includes('EME') || message.includes('[drm-diag]') || level >= 2) {
+        const tag = ['LOG', 'INFO', 'WARN', 'ERROR'][level] || 'LOG';
+        const src = sourceId ? sourceId.split('/').pop() : '';
+        console.log(`[webview:${tag}] ${message}${src ? ` (${src}:${line})` : ''}`);
+      }
+    });
+
+    contents.on('dom-ready', () => {
+      const url = contents.getURL();
+      if (url.includes('spotify')) {
+        contents.executeJavaScript(`
+          (function() {
+            const origFetch = window.fetch;
+            window.fetch = async function(...args) {
+              const resp = await origFetch.apply(this, args);
+              const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+              if (url.includes('widevine-license') && !resp.ok) {
+                const clone = resp.clone();
+                try {
+                  const text = await clone.text();
+                  console.log('[drm-diag] License response ' + resp.status + ': ' + text.substring(0, 500));
+                } catch(e) {}
+              }
+              return resp;
+            };
+
+            // Check EME availability
+            if (navigator.requestMediaKeySystemAccess) {
+              navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
+                initDataTypes: ['cenc'],
+                audioCapabilities: [{contentType: 'audio/mp4; codecs="mp4a.40.2"'}],
+              }]).then(function(access) {
+                console.log('[drm-diag] Widevine EME access: ' + access.keySystem);
+              }).catch(function(err) {
+                console.log('[drm-diag] Widevine EME FAILED: ' + err.message);
+              });
+            } else {
+              console.log('[drm-diag] EME API not available');
+            }
+          })();
+        `).catch(() => {});
+      }
+    });
   }
 });
 
@@ -286,9 +480,14 @@ app.on('activate', () => {
 
 ipcMain.handle('get-backend-port', () => backendPort);
 ipcMain.handle('get-app-version', () => app.getVersion());
+ipcMain.handle('get-webview-preload-path', () => {
+  return `file://${path.join(__dirname, 'webview-preload.js')}`;
+});
+
+ipcMain.handle('get-update-status', () => cachedUpdateStatus);
 
 ipcMain.handle('check-for-updates', async () => {
-  if (!isPackaged) {
+  if (!autoUpdater || !isPackaged) {
     sendToRenderer('update-error', 'Update check is only available in the packaged app.');
     return { success: false, error: 'Not packaged' };
   }
@@ -305,6 +504,7 @@ ipcMain.handle('check-for-updates', async () => {
 });
 
 ipcMain.handle('download-update', async () => {
+  if (!autoUpdater) return { success: false, error: 'Updater not available' };
   try {
     await autoUpdater.downloadUpdate();
     return { success: true };
@@ -314,6 +514,7 @@ ipcMain.handle('download-update', async () => {
 });
 
 ipcMain.handle('install-update', () => {
+  if (!autoUpdater) return;
   autoUpdater.quitAndInstall(false, true);
 });
 

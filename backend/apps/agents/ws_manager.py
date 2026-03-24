@@ -61,10 +61,12 @@ class ConnectionManager:
                 pass
 
     async def send_approval_request(
-        self, session_id: str, request_id: str, tool_name: str, tool_input: dict
+        self, session_id: str, request_id: str, tool_name: str, tool_input: dict,
+        timeout: float = 600.0,
     ) -> dict:
         """Send an approval request and wait for the user's response.
-        Returns the approval decision dict."""
+        Returns the approval decision dict.  Times out after *timeout* seconds
+        (default 10 minutes) to prevent permanently stuck agents."""
         future = asyncio.get_event_loop().create_future()
         self.pending_futures[request_id] = future
         
@@ -75,8 +77,11 @@ class ConnectionManager:
         })
         
         try:
-            result = await future
+            result = await asyncio.wait_for(future, timeout=timeout)
             return result
+        except asyncio.TimeoutError:
+            logger.warning("Approval %s for session %s timed out after %ss", request_id, session_id, timeout)
+            return {"behavior": "deny", "message": "Approval timed out"}
         finally:
             self.pending_futures.pop(request_id, None)
 

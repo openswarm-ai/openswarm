@@ -79,7 +79,10 @@ export function useDashboardSelection(
           }
           return next;
         }
-        return new Map([[id, type]]);
+        if (prev.has(id)) {
+          return new Map();
+        }
+        return prev;
       });
     },
     [],
@@ -152,7 +155,7 @@ export function useDashboardSelection(
 
   const handleCanvasMouseDown = useCallback(
     (e: MouseEvent) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 && e.button !== 2) return;
 
       marqueeOriginRef.current = { screenX: e.clientX, screenY: e.clientY };
       isDraggingMarqueeRef.current = false;

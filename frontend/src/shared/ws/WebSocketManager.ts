@@ -14,8 +14,9 @@ import {
   addBranch,
   setActiveBranch,
   closeSessionFromWs,
+  trackAgentNotification,
 } from '../state/agentsSlice';
-import { addBrowserCardFromBackend } from '../state/dashboardLayoutSlice';
+import { addBrowserCardFromBackend, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
 
 type WSEvent = {
   event: string;
@@ -37,6 +38,8 @@ class WebSocketManager {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
   private deltaBuffer: Map<string, { sessionId: string; messageId: string; accumulated: string }> = new Map();
   private flushScheduled = false;
+  private seenStreamIds: Set<string> = new Set();
+  private seenMessageIds: Set<string> = new Set();
 
   constructor(url: string, options?: WSManagerOptions) {
     this.url = url;
@@ -125,10 +128,16 @@ class WebSocketManager {
         } else if (session_id) {
           store.dispatch(updateSessionStatus({ sessionId: session_id, status: data.status }));
         }
+        if (data.status === 'running' && session_id) {
+          store.dispatch(trackAgentNotification(session_id));
+        }
         break;
 
       case 'agent:message':
         if (session_id && data.message) {
+          const msgId = data.message.id;
+          if (msgId && this.seenMessageIds.has(msgId)) break; // Dedup
+          if (msgId) this.seenMessageIds.add(msgId);
           if (this.deltaBuffer.size > 0) this.flushDeltas();
           store.dispatch(addMessage({ sessionId: session_id, message: data.message }));
         }
@@ -136,6 +145,8 @@ class WebSocketManager {
 
       case 'agent:stream_start':
         if (session_id && data.message_id) {
+          if (this.seenStreamIds.has(data.message_id)) break; // Dedup
+          this.seenStreamIds.add(data.message_id);
           store.dispatch(streamStart({
             sessionId: session_id,
             messageId: data.message_id,
@@ -147,12 +158,15 @@ class WebSocketManager {
 
       case 'agent:stream_delta':
         if (session_id && data.message_id) {
+          if (!this.seenStreamIds.has(data.message_id)) break; // Only accept deltas for streams WE started
           this.bufferDelta(session_id, data.message_id, data.delta);
         }
         break;
 
       case 'agent:stream_end':
         if (session_id && data.message_id) {
+          if (!this.seenStreamIds.has(data.message_id)) break; // Dedup
+          this.seenStreamIds.delete(data.message_id); // Clean up
           if (this.deltaBuffer.size > 0) this.flushDeltas();
           store.dispatch(streamEnd({
             sessionId: session_id,
@@ -235,6 +249,32 @@ class WebSocketManager {
       case 'dashboard:browser_card_added':
         if (data.browser_card) {
           store.dispatch(addBrowserCardFromBackend(data.browser_card));
+          const parentId = data.parent_session_id;
+          if (parentId) {
+            const layoutState = store.getState().dashboardLayout;
+            const parentCard = layoutState.cards[parentId];
+            if (parentCard) {
+              const targetX = parentCard.x + parentCard.width + GRID_GAP * 12;
+              let targetY = parentCard.y;
+              const columnCards = Object.values(layoutState.browserCards).filter(
+                (c) => Math.abs(c.x - targetX) < 50 && c.browser_id !== data.browser_card.browser_id,
+              );
+              if (columnCards.length > 0) {
+                const lowestBottom = Math.max(...columnCards.map((c) => c.y + c.height));
+                targetY = lowestBottom + GRID_GAP;
+              }
+              store.dispatch(setBrowserCardPosition({
+                browserId: data.browser_card.browser_id,
+                x: targetX,
+                y: targetY,
+              }));
+              store.dispatch(setGlowingBrowserCards({
+                browserIds: [data.browser_card.browser_id],
+                sessionId: parentId,
+                label: 'Use Browser',
+              }));
+            }
+          }
         }
         break;
     }

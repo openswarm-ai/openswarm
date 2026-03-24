@@ -51,6 +51,15 @@ export function getAllWebviews(): Map<string, BrowserWebview> {
   return new Map(registry);
 }
 
+export function findBrowserByWebContentsId(wcId: number): string | undefined {
+  for (const [key, wv] of registry.entries()) {
+    if ((wv as any).getWebContentsId?.() === wcId) {
+      return key.split(':')[0];
+    }
+  }
+  return undefined;
+}
+
 export function unregisterAllForBrowser(browserId: string): void {
   const prefix = `${browserId}:`;
   for (const key of registry.keys()) {

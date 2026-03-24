@@ -127,10 +127,18 @@ if (( frontend_elapsed >= FRONTEND_MAX_WAIT )); then
     exit 1
 fi
 
+# --- Sign Electron VMP for DRM (if EVS account exists) ---
+if [ -f "$PROJECT_ROOT/electron/scripts/sign-vmp.sh" ]; then
+    echo -e "${YELLOW}${BOLD}[vmp]${RESET}      Checking VMP signature..."
+    bash "$PROJECT_ROOT/electron/scripts/sign-vmp.sh" 2>&1 | while IFS= read -r line; do
+        printf "${YELLOW}${BOLD}%s${RESET}\n" "$line"
+    done
+fi
+
 # --- Start Electron in dev mode ---
 MAGENTA='\033[0;35m'
 echo -e "${MAGENTA}${BOLD}[electron]${RESET} Launching Electron dev shell..."
-(cd "$PROJECT_ROOT/electron" && ELECTRON_DEV=1 npx electron .) > >(
+(cd "$PROJECT_ROOT/electron" && unset ELECTRON_RUN_AS_NODE && ELECTRON_DEV=1 npx electron .) > >(
     while IFS= read -r line; do
         printf "${MAGENTA}${BOLD}[electron]${RESET} %s\n" "$line"
     done

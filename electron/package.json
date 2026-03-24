@@ -1,11 +1,13 @@
 {
   "name": "openswarm",
-  "version": "1.0.3",
+  "version": "1.0.12",
   "description": "OpenSwarm — AI Agent Orchestrator",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dev": "ELECTRON_DEV=1 electron .",
+    "postinstall": "bash scripts/sign-vmp.sh",
+    "sign-vmp": "bash scripts/sign-vmp.sh",
     "dist": "electron-builder --mac --publish never",
     "dist:publish": "electron-builder --mac --publish always",
     "dist:all": "electron-builder --mac --win --linux"
@@ -16,12 +18,15 @@
   },
   "devDependencies": {
     "@electron/notarize": "^3.1.1",
-    "electron": "^33.0.0",
+    "electron": "castlabs/electron-releases#v33.4.11+wvcus",
     "electron-builder": "^25.1.0"
   },
   "build": {
     "appId": "com.clusterlabs.openswarm",
     "productName": "OpenSwarm",
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/v"
+    },
     "directories": {
       "output": "dist"
     },
@@ -38,6 +43,7 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
+      "artifactName": "OpenSwarm-${arch}.${ext}",
       "title": "OpenSwarm",
       "contents": [
         {
@@ -54,34 +60,24 @@
     },
     "extraResources": [
       {
-        "from": "../frontend/dist",
+        "from": "build-staging/frontend",
         "to": "frontend",
         "filter": [
           "**/*"
         ]
       },
       {
-        "from": "../backend",
+        "from": "build-staging/backend",
         "to": "backend",
         "filter": [
-          "**/*",
-          "!__pycache__/**",
-          "!**/__pycache__/**",
-          "!.venv/**",
-          "!*.pyc"
+          "**/*"
         ]
       },
       {
-        "from": "../debugger",
+        "from": "build-staging/debugger",
         "to": "debugger",
         "filter": [
-          "**/*",
-          "!__pycache__/**",
-          "!**/__pycache__/**",
-          "!*.pyc",
-          "!.venv/**",
-          "!**/.venv/**",
-          "!**/node_modules/**"
+          "**/*"
         ]
       },
       {
