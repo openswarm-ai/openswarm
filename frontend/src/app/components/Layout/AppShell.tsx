@@ -23,8 +23,6 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ExtensionIcon from '@mui/icons-material/Extension';
-import PhoneIcon from '@mui/icons-material/Phone';
-import BarChartIcon from '@mui/icons-material/BarChart';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import ArrowForwardOutlinedIcon from '@mui/icons-material/ArrowForwardOutlined';
@@ -33,8 +31,7 @@ import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import CloseIcon from '@mui/icons-material/Close';
 import LinearProgress from '@mui/material/LinearProgress';
 import Settings from '@/app/pages/Settings/Settings';
-import GlobalApprovalOverlay from '@/app/components/GlobalApprovalOverlay';
-import TalkModeOverlay from '@/app/components/TalkModeOverlay';
+import DynamicIsland from '@/app/components/DynamicIsland';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchDashboards, createDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
 import { addBrowserCard, addBrowserTab } from '@/shared/state/dashboardLayoutSlice';
@@ -71,7 +68,6 @@ const AppShell: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [renamingDashboardId, setRenamingDashboardId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [talkModeOpen, setTalkModeOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -233,8 +229,6 @@ const AppShell: React.FC = () => {
   const isDashboardRoute = location.pathname === '/' || location.pathname.startsWith('/dashboard/');
   const isAppsRoute = location.pathname === '/apps' || location.pathname.startsWith('/apps/');
   const isCustomizationRoute = location.pathname === '/customization' || CUSTOMIZATION_PATHS.has(location.pathname);
-  const isChannelsRoute = location.pathname === '/channels';
-  const isAnalyticsRoute = location.pathname === '/analytics';
   const activeDashboardId = location.pathname.startsWith('/dashboard/')
     ? location.pathname.split('/dashboard/')[1]
     : null;
@@ -302,6 +296,8 @@ const AppShell: React.FC = () => {
           borderBottom: `0.5px solid ${c.border.medium}`,
           display: 'flex',
           alignItems: 'center',
+          position: 'relative',
+          overflow: 'visible',
           WebkitAppRegion: 'drag',
           userSelect: 'none',
           pl: '78px',
@@ -354,6 +350,8 @@ const AppShell: React.FC = () => {
           </IconButton>
         </Tooltip>
 
+        <DynamicIsland />
+
         <Box sx={{ flex: 1 }} />
 
         <Box
@@ -369,12 +367,12 @@ const AppShell: React.FC = () => {
             component="img"
             src="./logo.png"
             alt="OpenSwarm"
-            sx={{ width: 18, height: 18, borderRadius: 0.5, opacity: 0.7 }}
+            sx={{ width: 16, height: 16, borderRadius: 0.5, opacity: 0.6 }}
           />
           <Typography
             sx={{
               color: c.text.tertiary,
-              fontSize: '0.75rem',
+              fontSize: '0.72rem',
               fontWeight: 500,
               letterSpacing: 0.3,
               lineHeight: 1,
@@ -845,38 +843,6 @@ const AppShell: React.FC = () => {
 
         </Box>
 
-          {/* Divider */}
-          <Box sx={{ mx: 1.5, my: 0.5, borderTop: `0.5px solid ${c.border.subtle}` }} />
-
-          {/* Channels section */}
-          <Box sx={{ px: 1, mb: 0.25 }}>
-            <ListItemButton
-              onClick={() => navigate('/channels')}
-              sx={{
-                borderRadius: 1.5,
-                py: 0.6,
-                px: 1.25,
-                bgcolor: isChannelsRoute ? `${c.accent.primary}12` : 'transparent',
-                '&:hover': { bgcolor: isChannelsRoute ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
-                transition: 'background-color 0.15s',
-              }}
-            >
-              <ListItemIcon sx={{ color: isChannelsRoute ? c.accent.primary : c.text.tertiary, minWidth: 32 }}>
-                <PhoneIcon sx={{ fontSize: 20 }} />
-              </ListItemIcon>
-              <ListItemText
-                primary="Channels"
-                sx={{
-                  '& .MuiListItemText-primary': {
-                    color: isChannelsRoute ? c.text.primary : c.text.muted,
-                    fontSize: '0.82rem',
-                    fontWeight: isChannelsRoute ? 600 : 400,
-                  },
-                }}
-              />
-            </ListItemButton>
-          </Box>
-
         {/* Settings */}
         <Box
           sx={{
@@ -962,11 +928,6 @@ const AppShell: React.FC = () => {
       </Box>
 
       <Settings />
-      <GlobalApprovalOverlay />
-      <TalkModeOverlay
-        open={talkModeOpen}
-        onClose={() => setTalkModeOpen(false)}
-      />
 
       <Snackbar
         open={showUpdateSnackbar}

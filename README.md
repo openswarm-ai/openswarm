@@ -229,14 +229,6 @@ Please open an issue first for larger changes so we can discuss the approach.
 
 <br>
 
-## Community
-
-- [Twitter / X](https://twitter.com/openswarm_ai)
-- [Discord](https://discord.gg/openswarm)
-- [Website](https://openswarm.ai)
-
-<br>
-
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.

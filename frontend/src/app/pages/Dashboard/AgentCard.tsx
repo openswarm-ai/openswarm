@@ -185,6 +185,8 @@ interface Props {
   onMeasuredHeight?: (sessionId: string, height: number) => void;
   snapColumn?: { x: number; width: number };
   autoFocusInput?: boolean;
+  cardZOrder?: number;
+  onBringToFront?: (id: string, type: 'agent' | 'view' | 'browser') => void;
 }
 
 const MIN_W = 480;
@@ -201,7 +203,7 @@ const SNAP_THRESHOLD = 60;
 const AgentCard: React.FC<Props> = ({
   session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, spawnFrom, exitTarget,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
-  onBranch, onMeasuredHeight, snapColumn, autoFocusInput,
+  onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onBringToFront,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -464,9 +466,10 @@ const AgentCard: React.FC<Props> = ({
       animate={{ opacity: 1, scale: 1, left: activeX, top: activeY }}
       exit={exitAnimation}
       transition={spawnTransition}
+      onPointerDownCapture={() => onBringToFront?.(session.id, 'agent')}
       style={{
         position: 'absolute',
-        zIndex: isDragging || isResizing ? 999 : expanded ? 100 : 'auto',
+        zIndex: isDragging || isResizing ? 999999 : cardZOrder,
       }}
     >
     <Box
@@ -539,7 +542,6 @@ const AgentCard: React.FC<Props> = ({
               boxShadow: c.shadow.sm,
             },
           },
-          zIndex: 50,
         }),
         ...(!isHighlighted && isGlowingRedux && !glowFading && {
           animation: 'agent-card-glow-pulse 2s ease-in-out infinite',

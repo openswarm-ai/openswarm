@@ -34,7 +34,9 @@ import {
   removeBrowserCard,
   pasteBrowserCard,
   placeCard,
+  setCardPosition,
   removeCard,
+  bringToFront,
   setGlowingAgentCard,
   clearGlowingAgentCard,
   DEFAULT_CARD_W,
@@ -102,6 +104,7 @@ const DashboardInner: React.FC = () => {
   const autoRevealSubAgents = useAppSelector((state) => state.settings.data.auto_reveal_sub_agents);
   const outputs = useAppSelector((state) => state.outputs.items);
   const glowingAgentCards = useAppSelector((state) => state.dashboardLayout.glowingAgentCards);
+  const glowingBrowserCards = useAppSelector((state) => state.dashboardLayout.glowingBrowserCards);
   const sessionList = Object.values(sessions);
 
   const canvas = useCanvasControls(zoomSensitivity);
@@ -204,6 +207,10 @@ const DashboardInner: React.FC = () => {
   const handleCardSelect = useCallback((id: string, type: CardType, shiftKey: boolean) => {
     selection.selectCard(id, type, shiftKey);
   }, [selection]);
+
+  const handleBringToFront = useCallback((id: string, type: CardType) => {
+    dispatch(bringToFront({ id, type }));
+  }, [dispatch]);
 
   // ---- Viewport event handlers (compose pan + marquee) ----
   const handleViewportMouseDown = useCallback((e: React.MouseEvent) => {
@@ -747,7 +754,18 @@ const DashboardInner: React.FC = () => {
           const realId = action.payload.session.id;
           dispatch(generateTitle({ sessionId: realId, prompt }));
           if (selectedBrowserIds?.length) {
-            dispatch(setGlowingBrowserCards({ browserIds: selectedBrowserIds, sessionId: realId }));
+            dispatch(setGlowingBrowserCards({ browserIds: selectedBrowserIds, sessionId: realId, label: 'Use Browser' }));
+
+            if (selectedBrowserIds.length === 1) {
+              const bc = store.getState().dashboardLayout.browserCards[selectedBrowserIds[0]];
+              if (bc) {
+                dispatch(setCardPosition({
+                  sessionId: realId,
+                  x: bc.x - DEFAULT_CARD_W - GRID_GAP * 12,
+                  y: bc.y,
+                }));
+              }
+            }
           }
           spawnOriginsRef.current[realId] = spawnOriginsRef.current[draftId];
           delete spawnOriginsRef.current[draftId];
@@ -889,6 +907,38 @@ const DashboardInner: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedSessionIds, glowingAgentCards, cards, dispatch, measuredHeightsTick]);
 
+  useEffect(() => {
+    const DRIFT_THRESHOLD = 60;
+
+    const sourceToSiblings = new Map<string, string[]>();
+    for (const [browserId, glow] of Object.entries(glowingBrowserCards)) {
+      const bc = browserCards[browserId];
+      if (!bc) continue;
+      const sourceCard = cards[glow.sourceId];
+      if (!sourceCard) continue;
+      const expectedX = sourceCard.x + sourceCard.width + GRID_GAP * 12;
+      if (Math.abs(bc.x - expectedX) > DRIFT_THRESHOLD) continue;
+      const list = sourceToSiblings.get(glow.sourceId) ?? [];
+      list.push(browserId);
+      sourceToSiblings.set(glow.sourceId, list);
+    }
+
+    for (const siblings of sourceToSiblings.values()) {
+      if (siblings.length < 2) continue;
+      siblings.sort((a, b) => browserCards[a].y - browserCards[b].y);
+
+      let cursor = browserCards[siblings[0]].y;
+      for (const id of siblings) {
+        const bc = browserCards[id];
+        const dy = cursor - bc.y;
+        if (Math.abs(dy) > 1) {
+          dispatch(moveCards({ items: [{ id, type: 'browser' as const }], dx: 0, dy }));
+        }
+        cursor += bc.height + GRID_GAP * 2;
+      }
+    }
+  }, [glowingBrowserCards, browserCards, cards, dispatch]);
+
   const TETHER_FADE_MS = 2500;
 
   const tethers = useMemo(() => {
@@ -914,7 +964,7 @@ const DashboardInner: React.FC = () => {
       ].join(' ');
     }
 
-    return Object.entries(glowingAgentCards).map(([copyId, { sourceId, fading, sourceYRatio, label }]) => {
+    const agentTethers = Object.entries(glowingAgentCards).map(([copyId, { sourceId, fading, sourceYRatio, label }]) => {
       const src = cards[sourceId];
       const dst = cards[copyId];
       if (!src || !dst) return null;
@@ -952,8 +1002,97 @@ const DashboardInner: React.FC = () => {
         fading,
       };
     }).filter(Boolean) as Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }>;
+
+    const browserTethers = Object.entries(glowingBrowserCards).map(([browserId, { sourceId, fading, label }]) => {
+      const src = cards[sourceId];
+      const dst = browserCards[browserId];
+      if (!src || !dst) return null;
+
+      let srcX = src.x, srcY = src.y;
+      let dstX = dst.x, dstY = dst.y;
+      if (liveDragInfo) {
+        if (liveDragInfo.cardId === sourceId) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
+        if (liveDragInfo.cardId === browserId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
+      }
+
+      const srcMeasured = measuredHeightsRef.current[sourceId];
+      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
+        ? Math.max(EXPANDED_CARD_MIN_H, src.height)
+        : src.height);
+      const dstH = dst.height;
+
+      const srcCx = srcX + src.width / 2;
+      const dstCx = dstX + dst.width / 2;
+
+      type Anchor = { x: number; y: number; side: 'left' | 'right' | 'top' | 'bottom' };
+      const srcAnchors: Anchor[] = [
+        { x: srcX + src.width, y: srcY + srcH * 0.54, side: 'right' },
+        { x: srcX, y: srcY + srcH * 0.54, side: 'left' },
+        { x: srcCx, y: srcY, side: 'top' },
+        { x: srcCx, y: srcY + srcH, side: 'bottom' },
+      ];
+      const dstAnchors: Anchor[] = [
+        { x: dstX, y: dstY + dstH * 0.54, side: 'left' },
+        { x: dstX + dst.width, y: dstY + dstH * 0.54, side: 'right' },
+        { x: dstCx, y: dstY, side: 'top' },
+        { x: dstCx, y: dstY + dstH, side: 'bottom' },
+      ];
+
+      let bestSrc = srcAnchors[0], bestDst = dstAnchors[0];
+      let bestDist = Infinity;
+      for (const sa of srcAnchors) {
+        for (const da of dstAnchors) {
+          const d = Math.hypot(sa.x - da.x, sa.y - da.y);
+          if (d < bestDist) { bestDist = d; bestSrc = sa; bestDst = da; }
+        }
+      }
+
+      const x1 = bestSrc.x, y1 = bestSrc.y;
+      const x2 = bestDst.x, y2 = bestDst.y;
+
+      const isVertical = (bestSrc.side === 'top' || bestSrc.side === 'bottom')
+        && (bestDst.side === 'top' || bestDst.side === 'bottom');
+
+      let pathD: string;
+      if (isVertical) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const midY = y1 + dy / 2;
+        const r = (Math.abs(dx) < 1 || Math.abs(dy) < ELBOW_RADIUS * 2)
+          ? 0
+          : Math.min(ELBOW_RADIUS, Math.abs(dx) / 2, Math.abs(dy) / 4);
+        const sx = dx >= 0 ? 1 : -1;
+        const sy = dy >= 0 ? 1 : -1;
+        pathD = [
+          `M ${x1},${y1}`,
+          `V ${midY - sy * r}`,
+          `Q ${x1},${midY} ${x1 + sx * r},${midY}`,
+          `H ${x2 - sx * r}`,
+          `Q ${x2},${midY} ${x2},${midY + sy * r}`,
+          `V ${y2}`,
+        ].join(' ');
+      } else {
+        pathD = elbowPath(x1, y1, x2, y2);
+      }
+
+      const midX = x1 + (x2 - x1) / 2;
+      const midY = y1 + (y2 - y1) / 2;
+      const labelX = isVertical ? midX : midX + (x2 - midX) * 0.15;
+      const labelY = isVertical ? midY + (y2 - midY) * 0.15 : y2;
+
+      return {
+        key: `browser-${browserId}`,
+        path: pathD,
+        labelX,
+        labelY,
+        label: label || '',
+        fading,
+      };
+    }).filter(Boolean) as Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }>;
+
+    return [...agentTethers, ...browserTethers];
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, cards, expandedSessionIds, liveDragInfo, measuredHeightsTick]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, expandedSessionIds, liveDragInfo, measuredHeightsTick]);
 
   const dotSize = Math.max(1, 1.5 * canvas.zoom);
   const dotSpacing = 24 * canvas.zoom;
@@ -1098,10 +1237,8 @@ const DashboardInner: React.FC = () => {
                       transition: `opacity ${TETHER_FADE_MS}ms ease-out`,
                     }}
                   >
-                    <motion.path
-                      initial={false}
-                      animate={{ d: t.path }}
-                      transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
+                    <path
+                      d={t.path}
                       fill="none"
                       stroke={c.accent.primary}
                       strokeWidth={8}
@@ -1110,10 +1247,8 @@ const DashboardInner: React.FC = () => {
                       opacity={0.2}
                       filter="url(#tether-glow-f)"
                     />
-                    <motion.path
-                      initial={false}
-                      animate={{ d: t.path }}
-                      transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
+                    <path
+                      d={t.path}
                       fill="none"
                       stroke={c.accent.primary}
                       strokeWidth={2}
@@ -1123,10 +1258,8 @@ const DashboardInner: React.FC = () => {
                       markerEnd="url(#tether-arrow)"
                       style={{ animation: 'tether-pulse 2s ease-in-out infinite' }}
                     />
-                    <motion.path
-                      initial={false}
-                      animate={{ d: t.path }}
-                      transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
+                    <path
+                      d={t.path}
                       fill="none"
                       stroke={c.accent.primary}
                       strokeWidth={1.5}
@@ -1137,11 +1270,7 @@ const DashboardInner: React.FC = () => {
                       style={{ animation: 'tether-flow 0.6s linear infinite' }}
                     />
                     {t.label && (
-                      <motion.g
-                        initial={false}
-                        animate={{ x: t.labelX, y: t.labelY }}
-                        transition={{ type: 'spring', stiffness: 200, damping: 25, mass: 0.8 }}
-                      >
+                      <g transform={`translate(${t.labelX},${t.labelY})`}>
                         <rect
                           x={-4}
                           y={-14}
@@ -1164,7 +1293,7 @@ const DashboardInner: React.FC = () => {
                         >
                           {t.label}
                         </text>
-                      </motion.g>
+                      </g>
                     )}
                   </g>
                 ))}
@@ -1233,6 +1362,7 @@ const DashboardInner: React.FC = () => {
                   cardY={card.y}
                   cardWidth={card.width}
                   cardHeight={card.height}
+                  cardZOrder={card.zOrder ?? 0}
                   zoom={canvas.zoom}
                   spawnFrom={origin}
                   exitTarget={exitTarget}
@@ -1247,6 +1377,7 @@ const DashboardInner: React.FC = () => {
                   onMeasuredHeight={handleMeasuredHeight}
                   snapColumn={snapColumn}
                   autoFocusInput={autoFocusSessionId === session.id}
+                  onBringToFront={handleBringToFront}
                 />
               );
             })}
@@ -1262,6 +1393,7 @@ const DashboardInner: React.FC = () => {
                   cardY={vc.y}
                   cardWidth={vc.width}
                   cardHeight={vc.height}
+                  cardZOrder={vc.zOrder ?? 0}
                   zoom={canvas.zoom}
                   cmdHeld={canvas.cmdHeld}
                   isSelected={selection.isSelected(vc.output_id)}
@@ -1271,6 +1403,7 @@ const DashboardInner: React.FC = () => {
                   onDragStart={handleCardDragStart}
                   onDragMove={handleCardDragMove}
                   onDragEnd={handleCardDragEnd}
+                  onBringToFront={handleBringToFront}
                 />
               );
             })}
@@ -1284,6 +1417,7 @@ const DashboardInner: React.FC = () => {
                 cardY={bc.y}
                 cardWidth={bc.width}
                 cardHeight={bc.height}
+                cardZOrder={bc.zOrder ?? 0}
                 zoom={canvas.zoom}
                 cmdHeld={canvas.cmdHeld}
                 isSelected={selection.isSelected(bc.browser_id)}
@@ -1293,6 +1427,7 @@ const DashboardInner: React.FC = () => {
                 onDragStart={handleCardDragStart}
                 onDragMove={handleCardDragMove}
                 onDragEnd={handleCardDragEnd}
+                onBringToFront={handleBringToFront}
               />
             ))}
             {/* Marquee selection rectangle */}

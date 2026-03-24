@@ -16,7 +16,7 @@ import {
   closeSessionFromWs,
   trackAgentNotification,
 } from '../state/agentsSlice';
-import { addBrowserCardFromBackend } from '../state/dashboardLayoutSlice';
+import { addBrowserCardFromBackend, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
 
 type WSEvent = {
   event: string;
@@ -249,6 +249,32 @@ class WebSocketManager {
       case 'dashboard:browser_card_added':
         if (data.browser_card) {
           store.dispatch(addBrowserCardFromBackend(data.browser_card));
+          const parentId = data.parent_session_id;
+          if (parentId) {
+            const layoutState = store.getState().dashboardLayout;
+            const parentCard = layoutState.cards[parentId];
+            if (parentCard) {
+              const targetX = parentCard.x + parentCard.width + GRID_GAP * 12;
+              let targetY = parentCard.y;
+              const columnCards = Object.values(layoutState.browserCards).filter(
+                (c) => Math.abs(c.x - targetX) < 50 && c.browser_id !== data.browser_card.browser_id,
+              );
+              if (columnCards.length > 0) {
+                const lowestBottom = Math.max(...columnCards.map((c) => c.y + c.height));
+                targetY = lowestBottom + GRID_GAP;
+              }
+              store.dispatch(setBrowserCardPosition({
+                browserId: data.browser_card.browser_id,
+                x: targetX,
+                y: targetY,
+              }));
+              store.dispatch(setGlowingBrowserCards({
+                browserIds: [data.browser_card.browser_id],
+                sessionId: parentId,
+                label: 'Use Browser',
+              }));
+            }
+          }
         }
         break;
     }

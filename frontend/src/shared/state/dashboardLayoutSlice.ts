@@ -21,6 +21,7 @@ export interface CardPosition {
   y: number;
   width: number;
   height: number;
+  zOrder: number;
 }
 
 export interface ViewCardPosition {
@@ -29,6 +30,7 @@ export interface ViewCardPosition {
   y: number;
   width: number;
   height: number;
+  zOrder: number;
 }
 
 export interface BrowserTab {
@@ -47,6 +49,7 @@ export interface BrowserCardPosition {
   y: number;
   width: number;
   height: number;
+  zOrder: number;
 }
 
 export interface DashboardLayoutState {
@@ -54,9 +57,10 @@ export interface DashboardLayoutState {
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
   closedCardPositions: Record<string, CardPosition>;
-  glowingBrowserCards: Record<string, string>;
+  glowingBrowserCards: Record<string, { sourceId: string; fading: boolean; label?: string }>;
   glowingAgentCards: Record<string, { sourceId: string; fading: boolean; sourceYRatio?: number; label?: string }>;
   persistedExpandedSessionIds: string[];
+  nextZOrder: number;
   loading: boolean;
   initialized: boolean;
 }
@@ -69,6 +73,7 @@ const initialState: DashboardLayoutState = {
   glowingBrowserCards: {},
   glowingAgentCards: {},
   persistedExpandedSessionIds: [],
+  nextZOrder: 1,
   loading: false,
   initialized: false,
 };
@@ -223,7 +228,25 @@ const dashboardLayoutSlice = createSlice({
       action: PayloadAction<{ sessionId: string; x: number; y: number; width: number; height: number }>
     ) {
       const { sessionId, x, y, width, height } = action.payload;
-      state.cards[sessionId] = { session_id: sessionId, x, y, width, height };
+      state.cards[sessionId] = { session_id: sessionId, x, y, width, height, zOrder: state.nextZOrder++ };
+    },
+
+    bringToFront(
+      state,
+      action: PayloadAction<{ id: string; type: 'agent' | 'view' | 'browser' }>,
+    ) {
+      const { id, type } = action.payload;
+      const z = state.nextZOrder++;
+      if (type === 'agent') {
+        const card = state.cards[id];
+        if (card) card.zOrder = z;
+      } else if (type === 'view') {
+        const card = state.viewCards[id];
+        if (card) card.zOrder = z;
+      } else {
+        const card = state.browserCards[id];
+        if (card) card.zOrder = z;
+      }
     },
 
     removeCard(state, action: PayloadAction<string>) {
@@ -250,7 +273,7 @@ const dashboardLayoutSlice = createSlice({
         if (hasDraftCard && !id.startsWith('draft-')) continue;
         const savedPos = state.closedCardPositions[id];
         if (savedPos) {
-          state.cards[id] = { ...savedPos, session_id: id };
+          state.cards[id] = { ...savedPos, session_id: id, zOrder: savedPos.zOrder || state.nextZOrder++ };
           delete state.closedCardPositions[id];
         } else {
           const rects = collectOccupiedRects(state, expandedSessionIds);
@@ -261,6 +284,7 @@ const dashboardLayoutSlice = createSlice({
             y: pos.y,
             width: DEFAULT_CARD_W,
             height: DEFAULT_CARD_H,
+            zOrder: state.nextZOrder++,
           };
         }
       }
@@ -334,6 +358,7 @@ const dashboardLayoutSlice = createSlice({
         y: posY,
         width: width || DEFAULT_VIEW_CARD_W,
         height: height || DEFAULT_VIEW_CARD_H,
+        zOrder: state.nextZOrder++,
       };
     },
 
@@ -376,6 +401,7 @@ const dashboardLayoutSlice = createSlice({
         y: pos.y,
         width: DEFAULT_BROWSER_CARD_W,
         height: DEFAULT_BROWSER_CARD_H,
+        zOrder: state.nextZOrder++,
       };
     },
 
@@ -386,6 +412,7 @@ const dashboardLayoutSlice = createSlice({
         ...card,
         width: card.width || DEFAULT_BROWSER_CARD_W,
         height: card.height || DEFAULT_BROWSER_CARD_H,
+        zOrder: card.zOrder || state.nextZOrder++,
       };
     },
 
@@ -449,6 +476,7 @@ const dashboardLayoutSlice = createSlice({
         y: posY,
         width: width || DEFAULT_BROWSER_CARD_W,
         height: height || DEFAULT_BROWSER_CARD_H,
+        zOrder: state.nextZOrder++,
       };
     },
 
@@ -604,18 +632,25 @@ const dashboardLayoutSlice = createSlice({
 
     setGlowingBrowserCards(
       state,
-      action: PayloadAction<{ browserIds: string[]; sessionId: string }>
+      action: PayloadAction<{ browserIds: string[]; sessionId: string; label?: string }>
     ) {
-      const { browserIds, sessionId } = action.payload;
+      const { browserIds, sessionId, label } = action.payload;
       for (const id of browserIds) {
-        state.glowingBrowserCards[id] = sessionId;
+        state.glowingBrowserCards[id] = { sourceId: sessionId, fading: false, label };
+      }
+    },
+
+    fadeGlowingBrowserCards(state, action: PayloadAction<string>) {
+      const sessionId = action.payload;
+      for (const entry of Object.values(state.glowingBrowserCards)) {
+        if (entry.sourceId === sessionId) entry.fading = true;
       }
     },
 
     clearGlowingBrowserCards(state, action: PayloadAction<string>) {
       const sessionId = action.payload;
-      for (const [browserId, sid] of Object.entries(state.glowingBrowserCards)) {
-        if (sid === sessionId) delete state.glowingBrowserCards[browserId];
+      for (const [browserId, entry] of Object.entries(state.glowingBrowserCards)) {
+        if (entry.sourceId === sessionId) delete state.glowingBrowserCards[browserId];
       }
     },
 
@@ -645,6 +680,7 @@ const dashboardLayoutSlice = createSlice({
       state.glowingBrowserCards = {};
       state.glowingAgentCards = {};
       state.persistedExpandedSessionIds = [];
+      state.nextZOrder = 1;
       state.initialized = false;
     },
 
@@ -661,6 +697,22 @@ const dashboardLayoutSlice = createSlice({
         state.viewCards = action.payload.viewCards;
         state.browserCards = action.payload.browserCards;
         state.persistedExpandedSessionIds = action.payload.expandedSessionIds;
+
+        // Ensure all cards have a zOrder and compute nextZOrder from persisted data
+        let maxZ = 0;
+        for (const c of Object.values(state.cards)) {
+          if (!c.zOrder) c.zOrder = 0;
+          if (c.zOrder > maxZ) maxZ = c.zOrder;
+        }
+        for (const c of Object.values(state.viewCards)) {
+          if (!c.zOrder) c.zOrder = 0;
+          if (c.zOrder > maxZ) maxZ = c.zOrder;
+        }
+        for (const c of Object.values(state.browserCards)) {
+          if (!c.zOrder) c.zOrder = 0;
+          if (c.zOrder > maxZ) maxZ = c.zOrder;
+        }
+        state.nextZOrder = maxZ + 1;
       })
       .addCase(fetchLayout.rejected, (state) => {
         state.loading = false;
@@ -671,7 +723,7 @@ const dashboardLayoutSlice = createSlice({
         const card = state.cards[draftId];
         if (card) {
           delete state.cards[draftId];
-          state.cards[session.id] = { ...card, session_id: session.id };
+          state.cards[session.id] = { ...card, session_id: session.id, zOrder: state.nextZOrder++ };
         }
       });
   },
@@ -682,6 +734,7 @@ export const {
   placeCard,
   setCardSize,
   removeCard,
+  bringToFront,
   reconcileSessions,
   replaceDraftId,
   tidyLayout,
@@ -705,6 +758,7 @@ export const {
   reorderBrowserTab,
   moveCards,
   setGlowingBrowserCards,
+  fadeGlowingBrowserCards,
   clearGlowingBrowserCards,
   clearAllGlowingBrowserCards,
   setGlowingAgentCard,

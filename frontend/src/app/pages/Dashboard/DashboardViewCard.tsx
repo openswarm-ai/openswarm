@@ -54,11 +54,14 @@ interface Props {
   onDragStart?: (id: string, type: 'agent' | 'view') => void;
   onDragMove?: (dx: number, dy: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
+  cardZOrder?: number;
+  onBringToFront?: (id: string, type: 'agent' | 'view' | 'browser') => void;
 }
 
 const DashboardViewCard: React.FC<Props> = ({
   output, cardX, cardY, cardWidth, cardHeight, zoom = 1, cmdHeld = false,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
+  cardZOrder = 0, onBringToFront,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -259,6 +262,7 @@ const DashboardViewCard: React.FC<Props> = ({
       data-select-type="view-card"
       data-select-id={output.id}
       data-select-meta={JSON.stringify({ name: output.name, description: output.description })}
+      onPointerDownCapture={() => onBringToFront?.(output.id, 'view')}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
         onCardSelect?.(output.id, 'view', e.shiftKey);
@@ -284,7 +288,7 @@ const DashboardViewCard: React.FC<Props> = ({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: isHighlighted ? 50 : (isDragging || isResizing) ? 100 : 1,
+        zIndex: (isDragging || isResizing) ? 999999 : cardZOrder,
         transition: noTransition ? 'none' : 'box-shadow 0.2s',
         '&:hover .resize-handle': { opacity: 1 },
         ...(isHighlighted && {

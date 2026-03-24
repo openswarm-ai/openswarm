@@ -59,14 +59,14 @@ const INTEGRATION_META: Record<string, IntegrationMeta> = {
 // MCP tool name parser
 // ---------------------------------------------------------------------------
 
-interface ParsedTool {
+export interface ParsedTool {
   isMcp: boolean;
   serverSlug: string;
   actionName: string;
   displayName: string;
 }
 
-function parseMcpToolName(rawName: string): ParsedTool {
+export function parseMcpToolName(rawName: string): ParsedTool {
   const m = rawName.match(/^mcp__([^_]+(?:-[^_]+)*)__(.+)$/);
   if (!m) {
     return { isMcp: false, serverSlug: '', actionName: rawName, displayName: rawName };
@@ -93,7 +93,7 @@ interface McpToolMeta {
   serverLabel: string;
 }
 
-function useMcpToolMeta(parsed: ParsedTool): McpToolMeta {
+export function useMcpToolMeta(parsed: ParsedTool): McpToolMeta {
   const toolItems = useAppSelector((s) => s.tools.items);
 
   return useMemo(() => {
@@ -185,7 +185,7 @@ interface Props {
   onDeny: (requestId: string, message?: string) => void;
 }
 
-function getToolIcon(toolName: string) {
+export function getToolIcon(toolName: string) {
   switch (toolName) {
     case 'Bash': return <TerminalIcon sx={{ fontSize: '1rem' }} />;
     case 'Read': return <DescriptionIcon sx={{ fontSize: '1rem' }} />;

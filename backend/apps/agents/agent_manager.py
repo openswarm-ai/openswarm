@@ -1070,7 +1070,7 @@ class AgentManager:
         self.tasks[session_id] = task
 
     async def stop_agent(self, session_id: str):
-        """Stop a running agent."""
+        """Stop a running agent and all its browser-agent children."""
         task = self.tasks.get(session_id)
         if task and not task.done():
             task.cancel()
@@ -1081,12 +1081,26 @@ class AgentManager:
         
         session = self.sessions.get(session_id)
         if session:
+            for req in list(session.pending_approvals):
+                ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Agent stopped"})
+            session.pending_approvals = []
+
+            if hasattr(session, '_cancel_event'):
+                session._cancel_event.set()
+
             session.status = "stopped"
             await ws_manager.send_to_session(session_id, "agent:status", {
                 "session_id": session_id,
                 "status": "stopped",
                 "session": session.model_dump(mode="json"),
             })
+
+        children = [
+            s for s in self.sessions.values()
+            if s.parent_session_id == session_id and s.mode == "browser-agent"
+        ]
+        for child in children:
+            await self.stop_agent(child.id)
 
     def handle_approval(self, request_id: str, decision: dict):
         """Resolve a pending HITL approval."""
@@ -1160,6 +1174,13 @@ class AgentManager:
         })
 
         session.sdk_session_id = None
+        session.status = "running"
+        await ws_manager.send_to_session(session_id, "agent:status", {
+            "session_id": session_id,
+            "status": "running",
+            "session": session.model_dump(mode="json"),
+        })
+
         task = asyncio.create_task(self._run_agent_loop(
             session_id, new_content,
             images=target_msg.images,
@@ -1321,7 +1342,14 @@ class AgentManager:
 
     async def close_session(self, session_id: str) -> None:
         """Close a session: pause the agent if running, persist to JSON file,
-        and remove from in-memory state."""
+        and remove from in-memory state. Also stops browser-agent children."""
+        children = [
+            s for s in self.sessions.values()
+            if s.parent_session_id == session_id and s.mode == "browser-agent"
+        ]
+        for child in children:
+            await self.stop_agent(child.id)
+
         task = self.tasks.get(session_id)
         if task and not task.done():
             task.cancel()
@@ -1337,7 +1365,13 @@ class AgentManager:
         if session.status in ("running", "waiting_approval"):
             session.status = "stopped"
         session.closed_at = datetime.now()
+
+        for req in list(session.pending_approvals):
+            ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Session closed"})
         session.pending_approvals = []
+
+        if hasattr(session, '_cancel_event'):
+            session._cancel_event.set()
 
         doc_data = session.model_dump(mode="json")
         doc_data["search_text"] = self._build_search_text(session)
@@ -1361,7 +1395,15 @@ class AgentManager:
         logger.info(f"Session {session_id} closed and persisted")
 
     async def delete_session(self, session_id: str) -> None:
-        """Permanently delete a session: remove from memory and JSON file."""
+        """Permanently delete a session: remove from memory and JSON file.
+        Also stops browser-agent children first."""
+        children = [
+            s for s in self.sessions.values()
+            if s.parent_session_id == session_id and s.mode == "browser-agent"
+        ]
+        for child in children:
+            await self.stop_agent(child.id)
+
         task = self.tasks.get(session_id)
         if task and not task.done():
             task.cancel()
@@ -1455,6 +1497,8 @@ class AgentManager:
         for session_id, session in list(self.sessions.items()):
             if session.status in ("running", "waiting_approval"):
                 session.status = "stopped"
+            for req in list(session.pending_approvals):
+                ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Server shutting down"})
             session.pending_approvals = []
             doc_data = session.model_dump(mode="json")
             doc_data["search_text"] = self._build_search_text(session)

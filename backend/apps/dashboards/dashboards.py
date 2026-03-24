@@ -172,7 +172,7 @@ async def generate_name(dashboard_id: str):
             user_content = "\n".join(f"- {p}" for p in prompts)
 
         resp = await client.messages.create(
-            model="claude-haiku-4-20250414",
+            model="claude-haiku-4-5-20251001",
             max_tokens=30,
             system=system,
             messages=[{"role": "user", "content": user_content}],

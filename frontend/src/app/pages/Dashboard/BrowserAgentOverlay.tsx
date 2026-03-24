@@ -66,6 +66,16 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
   const isRunning = session.status === 'running';
   const isDone = session.status === 'completed' || session.status === 'error' || session.status === 'stopped';
 
+  const prevSessionId = useRef(session.id);
+  useEffect(() => {
+    if (session.id !== prevSessionId.current) {
+      prevSessionId.current = session.id;
+      setFadeOut(false);
+      setHidden(false);
+      setConfirmStop(false);
+    }
+  }, [session.id]);
+
   useEffect(() => {
     if (isDone) {
       fadeTimer.current = setTimeout(() => setFadeOut(true), 2000);
