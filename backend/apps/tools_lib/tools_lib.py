@@ -18,6 +18,14 @@ from backend.apps.tools_lib.models import ToolDefinition, ToolCreate, ToolUpdate
 
 logger = logging.getLogger(__name__)
 
+# Default Google OAuth credentials for the OpenSwarm project.
+# These are public credentials for a desktop/web OAuth client (safe to embed per Google's docs).
+# Users can override via GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET env vars.
+_DEFAULT_GOOGLE_CLIENT_ID = "514323102245-ivhcnod6q9jj16ck1hbaiaelivtgtnd1.apps.googleusercontent.com"
+_DEFAULT_GOOGLE_CLIENT_SECRET = "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"
+os.environ.setdefault("GOOGLE_OAUTH_CLIENT_ID", _DEFAULT_GOOGLE_CLIENT_ID)
+os.environ.setdefault("GOOGLE_OAUTH_CLIENT_SECRET", _DEFAULT_GOOGLE_CLIENT_SECRET)
+
 from backend.config.paths import BACKEND_DIR, DATA_ROOT, TOOLS_DIR as DATA_DIR, BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH
 
 load_dotenv(os.path.join(BACKEND_DIR, ".env"))
