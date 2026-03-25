@@ -129,8 +129,6 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
     """Return a configured AsyncAnthropic client based on connection mode."""
     import anthropic
 
-    validate_credentials(settings, "anthropic")
-
     if getattr(settings, "connection_mode", "own_key") == "managed":
         proxy_url = getattr(settings, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL
         return anthropic.AsyncAnthropic(
@@ -138,4 +136,14 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
             base_url=proxy_url,
         )
 
-    return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    if settings.anthropic_api_key:
+        return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+
+    # Fallback to 9Router
+    if _check_9router():
+        return anthropic.AsyncAnthropic(
+            api_key="9router",
+            base_url="http://localhost:20128",
+        )
+
+    raise ValueError("No AI provider configured. Set an API key or connect a subscription.")

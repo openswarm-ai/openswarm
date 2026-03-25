@@ -1377,11 +1377,9 @@ class AgentManager:
 
         title = first_prompt[:40].strip()
         try:
-            import anthropic
+            from backend.apps.settings.credentials import get_anthropic_client
             global_settings = load_settings()
-            if not global_settings.anthropic_api_key:
-                raise ValueError("API key not configured")
-            client = anthropic.AsyncAnthropic(api_key=global_settings.anthropic_api_key)
+            client = get_anthropic_client(global_settings)
             resp = await client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=30,
@@ -1421,11 +1419,10 @@ class AgentManager:
         svg = ""
 
         try:
-            import anthropic, json as _json
+            import json as _json
+            from backend.apps.settings.credentials import get_anthropic_client
             global_settings = load_settings()
-            if not global_settings.anthropic_api_key:
-                raise ValueError("API key not configured")
-            client = anthropic.AsyncAnthropic(api_key=global_settings.anthropic_api_key)
+            client = get_anthropic_client(global_settings)
 
             tool_desc = "\n".join(
                 f"- {tc.get('tool', '?')}: {tc.get('input_summary', '')}" for tc in tool_calls

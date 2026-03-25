@@ -86,6 +86,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build-staging/9router",
+        "to": "9router",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "publish": {

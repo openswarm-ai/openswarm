@@ -12,5 +12,10 @@ electron/build-staging/
 electron/node_modules/
 electron/package-lock.json
 
+# 9Router build artifacts
+9router/node_modules/
+9router/.next/
+9router/package-lock.json
+
 # Frontend build output
 frontend/dist/

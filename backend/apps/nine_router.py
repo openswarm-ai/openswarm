@@ -34,6 +34,47 @@ def is_running() -> bool:
         return False
 
 
+def _find_9router_dir() -> str | None:
+    """Locate the bundled 9Router directory (works in both dev and packaged mode)."""
+    _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+
+    if _is_packaged:
+        # Packaged Electron app — 9router is in extraResources
+        import sys
+        # In packaged mode, backend is at <resources>/backend/
+        # So 9router is at <resources>/9router/
+        _resources = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        _candidate = os.path.join(_resources, "9router")
+        if os.path.isdir(_candidate):
+            return _candidate
+    else:
+        # Dev mode — 9router is at project root
+        _backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _project_root = os.path.dirname(_backend_dir)
+        _candidate = os.path.join(_project_root, "9router")
+        if os.path.isdir(_candidate):
+            return _candidate
+
+    return None
+
+
+def _find_node() -> str | None:
+    """Find a Node.js binary (works in both dev and packaged mode)."""
+    _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+
+    if _is_packaged:
+        # Electron bundles Node.js — find its binary
+        # Electron's node is the electron binary itself with ELECTRON_RUN_AS_NODE=1
+        # But we can also check for system node
+        node = shutil.which("node")
+        if node:
+            return node
+        # Electron's own node can be used with ELECTRON_RUN_AS_NODE
+        return None
+    else:
+        return shutil.which("node")
+
+
 async def ensure_running():
     """Start 9Router if not already running."""
     global _process
@@ -41,29 +82,75 @@ async def ensure_running():
         logger.info("9Router already running on port %d", NINE_ROUTER_PORT)
         return
 
-    npx = shutil.which("npx")
-    if not npx:
-        logger.warning("npx not found — cannot auto-start 9Router. Install Node.js or run 9Router manually.")
-        return
+    _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+    _9router_dir = _find_9router_dir()
 
-    logger.info("Starting 9Router on port %d...", NINE_ROUTER_PORT)
-    try:
+    if _is_packaged and _9router_dir:
+        # Production mode — use pre-built standalone server
+        standalone_server = os.path.join(_9router_dir, ".next", "standalone", "server.js")
+        if not os.path.exists(standalone_server):
+            logger.warning("9Router standalone build not found at %s", standalone_server)
+            return
+
+        node = _find_node()
+        if not node:
+            logger.warning("Node.js not found — cannot start 9Router in packaged mode.")
+            return
+
+        logger.info("Starting 9Router (production) on port %d...", NINE_ROUTER_PORT)
+        cmd = [node, standalone_server]
+        cwd = os.path.join(_9router_dir, ".next", "standalone")
+        env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production"}
+
+    elif _9router_dir:
+        # Dev mode with bundled 9Router — use next dev
+        npx = shutil.which("npx")
+        if not npx:
+            logger.warning("npx not found — cannot auto-start 9Router.")
+            return
+
+        # Install deps if needed
+        if not os.path.isdir(os.path.join(_9router_dir, "node_modules")):
+            logger.info("Installing 9Router dependencies...")
+            npm = shutil.which("npm")
+            if npm:
+                subprocess.run([npm, "install"], cwd=_9router_dir,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+
+        logger.info("Starting 9Router (dev) on port %d...", NINE_ROUTER_PORT)
+        cmd = [npx, "next", "dev", "--webpack", "-p", str(NINE_ROUTER_PORT)]
+        cwd = _9router_dir
         env = {**os.environ, "PORT": str(NINE_ROUTER_PORT)}
+
+    else:
+        # No bundled 9Router — try npx 9router as last resort
+        npx = shutil.which("npx")
+        if not npx:
+            logger.warning("npx not found and no bundled 9Router — cannot start.")
+            return
+        logger.info("Starting 9Router (npx) on port %d...", NINE_ROUTER_PORT)
+        cmd = [npx, "9router"]
+        cwd = None
+        env = {**os.environ, "PORT": str(NINE_ROUTER_PORT)}
+
+    try:
         _process = subprocess.Popen(
-            [npx, "9router"],
+            cmd,
+            cwd=cwd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             env=env,
         )
 
-        # Wait up to 15 seconds for it to start
-        for _ in range(30):
+        # Wait up to 30 seconds for startup (production standalone is faster)
+        timeout = 20 if _is_packaged else 30
+        for _ in range(timeout * 2):
             await asyncio.sleep(0.5)
             if is_running():
                 logger.info("9Router started successfully")
                 return
 
-        logger.warning("9Router did not start within 15 seconds")
+        logger.warning("9Router did not start within %ds", timeout)
     except Exception as e:
         logger.warning(f"Failed to start 9Router: {e}")
 

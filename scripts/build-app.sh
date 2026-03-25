@@ -71,8 +71,30 @@ fi
 echo "Python environment ready."
 echo ""
 
-# Step 3: Snapshot source directories for packaging
-echo "[3/4] Snapshotting source directories..."
+# Step 3: Build 9Router
+echo "[3/5] Building 9Router..."
+cd "$PROJECT_ROOT/9router"
+npm install
+npm run build
+
+if [[ ! -d "$PROJECT_ROOT/9router/.next/standalone" ]]; then
+    echo "ERROR: 9Router build failed — .next/standalone not found"
+    exit 1
+fi
+
+# Copy static assets into standalone (required by Next.js standalone mode)
+if [[ -d "$PROJECT_ROOT/9router/.next/static" ]]; then
+    cp -r "$PROJECT_ROOT/9router/.next/static" "$PROJECT_ROOT/9router/.next/standalone/.next/static"
+fi
+if [[ -d "$PROJECT_ROOT/9router/public" ]]; then
+    cp -r "$PROJECT_ROOT/9router/public" "$PROJECT_ROOT/9router/.next/standalone/public"
+fi
+
+echo "9Router build complete."
+echo ""
+
+# Step 4: Snapshot source directories for packaging
+echo "[4/5] Snapshotting source directories..."
 STAGING_DIR="$PROJECT_ROOT/electron/build-staging"
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
@@ -90,6 +112,15 @@ rsync -a \
 
 rsync -a "$PROJECT_ROOT/frontend/dist/" "$STAGING_DIR/frontend/"
 
+# 9Router — copy the pre-built standalone directory
+rsync -a \
+    "$PROJECT_ROOT/9router/.next/standalone/" "$STAGING_DIR/9router/"
+# Copy the .next directory structure needed by standalone
+mkdir -p "$STAGING_DIR/9router/.next"
+if [[ -d "$PROJECT_ROOT/9router/.next/static" ]]; then
+    rsync -a "$PROJECT_ROOT/9router/.next/static/" "$STAGING_DIR/9router/.next/static/"
+fi
+
 echo ""
 printf '\033[1;42;97m%s\033[0m\n' "========================================"
 printf '\033[1;42;97m%s\033[0m\n' "  ✅ SOURCE SNAPSHOT COMPLETE            "
@@ -97,8 +128,8 @@ printf '\033[1;42;97m%s\033[0m\n' "  It is now safe to modify your codebase."
 printf '\033[1;42;97m%s\033[0m\n' "========================================"
 echo ""
 
-# Step 4: Package with electron-builder
-echo "[4/4] Packaging with electron-builder..."
+# Step 5: Package with electron-builder
+echo "[5/5] Packaging with electron-builder..."
 cd "$PROJECT_ROOT/electron"
 npm install
 
