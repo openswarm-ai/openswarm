@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Typography, Modal, Button } from '@mui/material';
+import React, { useState, useEffect, useRef } from 'react';
+import { Box, Typography, Modal, Button, CircularProgress } from '@mui/material';
 import { useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { API_BASE } from '@/shared/config';
@@ -16,42 +16,70 @@ const OnboardingModal: React.FC = () => {
   const settings = useAppSelector((s) => s.settings);
   const [open, setOpen] = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
-  const [nineRouterStatus, setNineRouterStatus] = useState<any>(null);
+  const [nineRouterReady, setNineRouterReady] = useState<boolean | null>(null);
+  const pollTimerRef = useRef<any>(null);
+  const msgHandlerRef = useRef<any>(null);
 
-  // Check if user has any credentials configured
-  const hasAnyKey = !!(
-    settings.data.anthropic_api_key ||
-    settings.data.openai_api_key ||
-    settings.data.google_api_key ||
-    settings.data.openrouter_api_key
-  );
-
-  // Check 9Router subscription status
+  // Poll for 9Router readiness (it may still be starting when onboarding shows)
   useEffect(() => {
-    fetch(`${API_BASE}/agents/subscriptions/status`)
-      .then((r) => r.json())
-      .then(setNineRouterStatus)
-      .catch(() => setNineRouterStatus({ running: false, providers: [], models: [] }));
+    let attempts = 0;
+    const maxAttempts = 15; // 30 seconds
+    const check = () => {
+      fetch(`${API_BASE}/agents/subscriptions/status`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.running) {
+            setNineRouterReady(true);
+            // Check if already has subscription
+            const connections = data.providers?.connections || [];
+            if (connections.some((p: any) => p.isActive)) {
+              // Already connected — don't show onboarding
+              return;
+            }
+          } else {
+            attempts++;
+            if (attempts < maxAttempts) {
+              setTimeout(check, 2000);
+            } else {
+              setNineRouterReady(false);
+            }
+          }
+        })
+        .catch(() => {
+          attempts++;
+          if (attempts < maxAttempts) setTimeout(check, 2000);
+          else setNineRouterReady(false);
+        });
+    };
+    check();
   }, []);
 
-  const hasSubscription = (() => {
-    if (!nineRouterStatus?.running) return false;
-    const connections = nineRouterStatus?.providers?.connections || [];
-    return connections.some((p: any) => p.isActive);
-  })();
-
-  // Show once: if no subscription connected AND not previously dismissed (persisted in localStorage)
+  // Show once: if not previously dismissed
   useEffect(() => {
     const alreadySeen = localStorage.getItem('openswarm_onboarding_seen');
     if (alreadySeen === 'true') return;
-    if (nineRouterStatus === null) return; // still loading
+    if (nineRouterReady === null) return; // still checking
 
-    // Show if no subscription, regardless of API key status
-    if (!hasSubscription) {
-      setOpen(true);
-    }
-  }, [hasSubscription, nineRouterStatus]);
+    setOpen(true);
+  }, [nineRouterReady]);
 
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      if (msgHandlerRef.current) window.removeEventListener('message', msgHandlerRef.current);
+    };
+  }, []);
+
+  const dismiss = () => {
+    localStorage.setItem('openswarm_onboarding_seen', 'true');
+    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+    if (msgHandlerRef.current) { window.removeEventListener('message', msgHandlerRef.current); msgHandlerRef.current = null; }
+    setConnecting(null);
+    setOpen(false);
+  };
+
+  // Exact same connect logic as Settings/SubscriptionCards
   const handleConnect = async (providerId: string) => {
     setConnecting(providerId);
     try {
@@ -60,77 +88,100 @@ const OnboardingModal: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: providerId }),
       });
+      if (!r.ok) {
+        setConnecting(null);
+        return;
+      }
       const data = await r.json();
 
       if (data.flow === 'device_code') {
-        const verifyUrl = data.verification_uri;
-        if (verifyUrl) window.open(verifyUrl, '_blank');
-        // Poll for completion
+        if (data.verification_uri) window.open(data.verification_uri, '_blank');
+
         const timer = setInterval(async () => {
           try {
             const pr = await fetch(`${API_BASE}/agents/subscriptions/poll`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ provider: providerId, device_code: data.device_code, code_verifier: data.code_verifier, extra_data: data.extra_data }),
+              body: JSON.stringify({
+                provider: providerId,
+                device_code: data.device_code,
+                code_verifier: data.code_verifier,
+                extra_data: data.extra_data,
+              }),
             });
             const pd = await pr.json();
             if (pd.success) {
               clearInterval(timer);
-              setConnecting(null);
+              pollTimerRef.current = null;
               dismiss();
             }
           } catch {}
         }, 5000);
-        setTimeout(() => { clearInterval(timer); setConnecting(null); }, 300000);
+        pollTimerRef.current = timer;
+        setTimeout(() => { clearInterval(timer); pollTimerRef.current = null; setConnecting(null); }, 300000);
+
       } else if (data.flow === 'authorization_code') {
         const popup = window.open(data.auth_url, 'oauth_connect', 'width=600,height=700');
 
+        // Poll status as primary detection (works in Electron where postMessage may not)
+        const statusPoller = setInterval(async () => {
+          try {
+            const sr = await fetch(`${API_BASE}/agents/subscriptions/status`);
+            const sd = await sr.json();
+            const connections = sd.providers?.connections || [];
+            if (connections.some((p: any) => p.provider === providerId && p.isActive)) {
+              clearInterval(statusPoller);
+              pollTimerRef.current = null;
+              if (msgHandlerRef.current) {
+                window.removeEventListener('message', msgHandlerRef.current);
+                msgHandlerRef.current = null;
+              }
+              dismiss();
+            }
+          } catch {}
+        }, 2000);
+        pollTimerRef.current = statusPoller;
+
+        // Also listen for postMessage from callback page (faster when it works)
         const msgHandler = async (event: MessageEvent) => {
           const d = event.data;
           const callbackData = d?.type === 'oauth_callback' ? d.data : d;
           if (callbackData?.code) {
             window.removeEventListener('message', msgHandler);
-            clearInterval(statusPoller);
+            msgHandlerRef.current = null;
+            if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
             if (popup && !popup.closed) popup.close();
             try {
               await fetch(`${API_BASE}/agents/subscriptions/exchange`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  provider: providerId, code: callbackData.code,
-                  redirect_uri: data.redirect_uri, code_verifier: data.code_verifier,
+                  provider: providerId,
+                  code: callbackData.code,
+                  redirect_uri: data.redirect_uri,
+                  code_verifier: data.code_verifier,
                   state: callbackData.state || data.state,
                 }),
               });
             } catch {}
-            setConnecting(null);
             dismiss();
           }
         };
         window.addEventListener('message', msgHandler);
+        msgHandlerRef.current = msgHandler;
 
-        const statusPoller = setInterval(async () => {
-          try {
-            const sr = await fetch(`${API_BASE}/agents/subscriptions/status`);
-            const sd = await sr.json();
-            const conns = sd.providers?.connections || [];
-            if (conns.some((p: any) => p.provider === providerId && p.isActive)) {
-              clearInterval(statusPoller);
-              window.removeEventListener('message', msgHandler);
-              setConnecting(null);
-              dismiss();
-            }
-          } catch {}
-        }, 2000);
-        setTimeout(() => { clearInterval(statusPoller); window.removeEventListener('message', msgHandler); setConnecting(null); }, 300000);
+        setTimeout(() => {
+          if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+          if (msgHandlerRef.current) { window.removeEventListener('message', msgHandlerRef.current); msgHandlerRef.current = null; }
+          setConnecting(null);
+        }, 300000);
+
+      } else {
+        setConnecting(null);
       }
     } catch {
       setConnecting(null);
     }
-  };
-
-  const dismiss = () => {
-    localStorage.setItem('openswarm_onboarding_seen', 'true');
-    setOpen(false);
   };
 
   const handleApiKey = () => dismiss();
@@ -160,22 +211,22 @@ const OnboardingModal: React.FC = () => {
           {SUBSCRIPTION_PROVIDERS.map((p) => (
             <Box
               key={p.id}
-              onClick={() => !p.preview && !connecting && handleConnect(p.id)}
+              onClick={() => !p.preview && !connecting && nineRouterReady && handleConnect(p.id)}
               sx={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 p: 1.5, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}`,
-                cursor: p.preview ? 'default' : connecting ? 'wait' : 'pointer',
-                opacity: p.preview ? 0.5 : 1,
+                cursor: p.preview || !nineRouterReady ? 'default' : connecting ? 'wait' : 'pointer',
+                opacity: p.preview ? 0.5 : !nineRouterReady ? 0.6 : 1,
                 transition: 'border-color 0.15s, background 0.15s',
-                ...(!p.preview && { '&:hover': { borderColor: c.border.medium, bgcolor: `${c.accent.primary}05` } }),
+                ...(!p.preview && nineRouterReady && { '&:hover': { borderColor: c.border.medium, bgcolor: `${c.accent.primary}05` } }),
               }}
             >
               <Box>
                 <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: c.text.primary }}>{p.name}</Typography>
                 <Typography sx={{ fontSize: '0.65rem', color: c.text.muted }}>{p.desc}</Typography>
               </Box>
-              <Typography sx={{ fontSize: '0.68rem', color: p.preview ? c.text.ghost : connecting === p.id ? c.accent.primary : c.text.tertiary, fontStyle: p.preview ? 'italic' : 'normal' }}>
-                {p.preview ? 'Coming soon' : connecting === p.id ? 'Connecting...' : 'Connect \u2192'}
+              <Typography sx={{ fontSize: '0.68rem', color: p.preview ? c.text.ghost : connecting === p.id ? c.accent.primary : !nineRouterReady ? c.text.ghost : c.text.tertiary, fontStyle: p.preview ? 'italic' : 'normal' }}>
+                {p.preview ? 'Coming soon' : connecting === p.id ? 'Connecting...' : !nineRouterReady && nineRouterReady !== false ? 'Starting...' : 'Connect \u2192'}
               </Typography>
             </Box>
           ))}
