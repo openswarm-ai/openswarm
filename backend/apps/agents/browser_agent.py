@@ -22,8 +22,8 @@ from backend.apps.tools_lib.tools_lib import load_builtin_permissions
 logger = logging.getLogger(__name__)
 
 MODEL_MAP = {
-    "sonnet": "claude-sonnet-4-20250514",
-    "opus": "claude-opus-4-20250514",
+    "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-6",
     "haiku": "claude-haiku-4-5-20251001",
 }
 
@@ -278,7 +278,6 @@ async def run_browser_agent(
     task: str,
     browser_id: str,
     model: str,
-    api_key: str,
     dashboard_id: str | None = None,
     tab_id: str = "",
     pre_selected: bool = False,
@@ -323,7 +322,9 @@ async def run_browser_agent(
         logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
 
     api_model = MODEL_MAP.get(model, model)
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    from backend.apps.settings.settings import load_settings
+    from backend.apps.settings.credentials import get_anthropic_client
+    client = get_anthropic_client(load_settings())
 
     messages: list[dict] = [{"role": "user", "content": task}]
     action_log: list[dict] = []
@@ -582,7 +583,6 @@ async def _create_browser_card(dashboard_id: str, url: str, parent_session_id: s
 async def run_browser_agents(
     tasks: list[dict],
     model: str,
-    api_key: str,
     dashboard_id: str | None = None,
     pre_selected_browser_ids: list[str] | None = None,
     parent_session_id: str | None = None,
@@ -608,7 +608,6 @@ async def run_browser_agents(
             task=task_text,
             browser_id=browser_id,
             model=model,
-            api_key=api_key,
             dashboard_id=dashboard_id,
             pre_selected=is_pre_selected,
             initial_url=url if url and browser_id not in pre_selected else None,

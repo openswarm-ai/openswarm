@@ -126,7 +126,10 @@ def get_agent_sdk_env(settings: AppSettings) -> dict[str, str]:
 
 
 def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
-    """Return a configured AsyncAnthropic client based on connection mode."""
+    """Return a configured AsyncAnthropic client based on connection mode.
+
+    Priority: managed mode → 9Router subscription → API key
+    """
     import anthropic
 
     if getattr(settings, "connection_mode", "own_key") == "managed":
@@ -136,14 +139,15 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
             base_url=proxy_url,
         )
 
-    if settings.anthropic_api_key:
-        return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-
-    # Fallback to 9Router
+    # Prefer 9Router subscription (free for users with Claude/ChatGPT/Gemini subscriptions)
     if _check_9router():
         return anthropic.AsyncAnthropic(
             api_key="9router",
             base_url="http://localhost:20128",
         )
+
+    # Fall back to API key
+    if settings.anthropic_api_key:
+        return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     raise ValueError("No AI provider configured. Set an API key or connect a subscription.")

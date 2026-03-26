@@ -835,17 +835,16 @@ class AgentManager:
                 "disallowed_tools": effective_disallowed,
                 "include_partial_messages": True,
             }
-            if global_settings.anthropic_api_key:
+            # Priority: 9Router subscription → API key
+            from backend.apps.nine_router import is_running as _9r_running
+            if _9r_running():
+                options_kwargs["env"] = {
+                    "ANTHROPIC_BASE_URL": "http://localhost:20128",
+                }
+            elif global_settings.anthropic_api_key:
                 options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
             else:
-                # Try 9Router as fallback for subscription access
-                from backend.apps.nine_router import is_running as _9r_running
-                if _9r_running():
-                    options_kwargs["env"] = {
-                        "ANTHROPIC_BASE_URL": "http://localhost:20128",
-                    }
-                else:
-                    raise ValueError("No AI provider configured. Set an API key or connect a subscription.")
+                raise ValueError("No AI provider configured. Set an API key or connect a subscription.")
             if mcp_servers:
                 options_kwargs["mcp_servers"] = mcp_servers
             if composed_prompt:

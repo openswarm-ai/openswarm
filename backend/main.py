@@ -186,31 +186,12 @@ async def browser_agent_run(request: Request):
     if not tasks:
         return JSONResponse({"error": "tasks array is required"}, status_code=400)
 
-    settings = load_settings()
-
-    # Determine API credentials — check API key, then 9Router
-    api_key = settings.anthropic_api_key
-    auth_token = None
-    base_url = None
-
-    if not api_key:
-        # Try 9Router
-        from backend.apps.nine_router import is_running as _9r_running
-        if _9r_running():
-            api_key = "9router"
-            base_url = "http://localhost:20128/v1"
-        else:
-            return JSONResponse({"error": "No AI provider configured. Set an API key or connect a subscription."}, status_code=400)
-
     results = await run_browser_agents(
         tasks=tasks,
         model=model,
-        api_key=api_key,
         dashboard_id=dashboard_id or None,
         pre_selected_browser_ids=pre_selected_browser_ids,
         parent_session_id=parent_session_id or None,
-        auth_token=auth_token,
-        base_url=base_url,
     )
     return JSONResponse({"results": results})
 
