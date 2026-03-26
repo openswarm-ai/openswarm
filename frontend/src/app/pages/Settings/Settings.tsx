@@ -306,8 +306,15 @@ const SubscriptionCards: React.FC = () => {
   };
 
   const handleDisconnect = async (providerId: string) => {
-    // TODO: implement disconnect via 9Router API
-    fetchStatus();
+    try {
+      await fetch(`${API_BASE}/agents/subscriptions/disconnect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: providerId }),
+      });
+    } catch {}
+    // Wait briefly for 9Router to process, then refresh
+    setTimeout(fetchStatus, 500);
   };
 
   if (!status?.running) {

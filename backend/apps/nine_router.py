@@ -85,9 +85,14 @@ async def ensure_running():
 
     if _is_packaged and _9router_dir:
         # Production mode — use pre-built standalone server
-        standalone_server = os.path.join(_9router_dir, ".next", "standalone", "server.js")
+        # In packaged app, build-staging copies .next/standalone/ contents to 9router/
+        # So server.js is at 9router/server.js (not 9router/.next/standalone/server.js)
+        standalone_server = os.path.join(_9router_dir, "server.js")
         if not os.path.exists(standalone_server):
-            logger.warning("9Router standalone build not found at %s", standalone_server)
+            # Fallback: check nested path in case build layout changes
+            standalone_server = os.path.join(_9router_dir, ".next", "standalone", "server.js")
+        if not os.path.exists(standalone_server):
+            logger.warning("9Router standalone build not found in %s", _9router_dir)
             return
 
         node = _find_node()
@@ -97,7 +102,7 @@ async def ensure_running():
 
         logger.info("Starting 9Router (production) on port %d...", NINE_ROUTER_PORT)
         cmd = [node, standalone_server]
-        cwd = os.path.join(_9router_dir, ".next", "standalone")
+        cwd = os.path.dirname(standalone_server)
         env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production"}
         # If using Electron binary as node, enable ELECTRON_RUN_AS_NODE
         if node == os.environ.get("OPENSWARM_ELECTRON_PATH"):

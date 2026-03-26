@@ -273,3 +273,25 @@ async def subscriptions_models():
     models = await get_models()
     return {"models": models}
 
+
+@agents.router.post("/subscriptions/disconnect")
+async def subscriptions_disconnect(body: dict):
+    """Disconnect a subscription provider via 9Router."""
+    import httpx
+    provider = body.get("provider", "")
+    if not provider:
+        raise HTTPException(status_code=400, detail="provider required")
+
+    try:
+        from backend.apps.nine_router import NINE_ROUTER_API, get_providers
+        providers_data = await get_providers()
+        connections = providers_data.get("connections", []) if isinstance(providers_data, dict) else []
+        conn = next((c for c in connections if c.get("provider") == provider), None)
+        if conn and conn.get("id"):
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.delete(f"{NINE_ROUTER_API}/providers/{conn['id']}")
+            return {"ok": True}
+        return {"ok": False, "error": "Connection not found"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
