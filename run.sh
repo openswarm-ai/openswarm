@@ -65,6 +65,25 @@ cleanup() {
 trap 'cleanup; exit 0' INT TERM
 trap cleanup EXIT
 
+# --- Ensure bundled uv/uvx for MCP servers ---
+UV_BIN_DIR="$PROJECT_ROOT/backend/uv-bin"
+if [ ! -f "$UV_BIN_DIR/uvx" ]; then
+    echo -e "${YELLOW}${BOLD}[uv]${RESET}       Downloading uv/uvx..."
+    mkdir -p "$UV_BIN_DIR"
+    ARCH=$(uname -m)
+    if [[ "$ARCH" == "arm64" ]]; then
+        curl -sL "https://github.com/astral-sh/uv/releases/latest/download/uv-aarch64-apple-darwin.tar.gz" | tar xz -C /tmp
+        cp /tmp/uv-aarch64-apple-darwin/uv "$UV_BIN_DIR/uv"
+        cp /tmp/uv-aarch64-apple-darwin/uvx "$UV_BIN_DIR/uvx"
+    else
+        curl -sL "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-apple-darwin.tar.gz" | tar xz -C /tmp
+        cp /tmp/uv-x86_64-apple-darwin/uv "$UV_BIN_DIR/uv"
+        cp /tmp/uv-x86_64-apple-darwin/uvx "$UV_BIN_DIR/uvx"
+    fi
+    chmod +x "$UV_BIN_DIR/uv" "$UV_BIN_DIR/uvx"
+    rm -rf /tmp/uv-*-apple-darwin
+fi
+
 # --- Start backend ---
 echo -e "${BLUE}${BOLD}[backend]${RESET}  Starting backend server..."
 bash "$PROJECT_ROOT/backend/run.sh" > >(

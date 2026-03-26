@@ -19,3 +19,5 @@ electron/package-lock.json
 
 # Frontend build output
 frontend/dist/
+# Bundled uv binaries (downloaded during build)
+backend/uv-bin/

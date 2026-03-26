@@ -47,6 +47,25 @@ if $PUBLISH_MODE; then
     fi
 fi
 
+# Step 0: Ensure bundled uv/uvx binaries exist
+UV_BIN_DIR="$PROJECT_ROOT/backend/uv-bin"
+if [[ ! -f "$UV_BIN_DIR/uvx" ]]; then
+    echo "[0] Downloading uv/uvx binaries..."
+    mkdir -p "$UV_BIN_DIR"
+    TMPDIR_UV=$(mktemp -d)
+    # Download both architectures and create universal binaries
+    curl -sL "https://github.com/astral-sh/uv/releases/latest/download/uv-aarch64-apple-darwin.tar.gz" | tar xz -C "$TMPDIR_UV"
+    curl -sL "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-apple-darwin.tar.gz" | tar xz -C "$TMPDIR_UV"
+    lipo -create "$TMPDIR_UV/uv-aarch64-apple-darwin/uv" "$TMPDIR_UV/uv-x86_64-apple-darwin/uv" -output "$UV_BIN_DIR/uv"
+    lipo -create "$TMPDIR_UV/uv-aarch64-apple-darwin/uvx" "$TMPDIR_UV/uv-x86_64-apple-darwin/uvx" -output "$UV_BIN_DIR/uvx"
+    chmod +x "$UV_BIN_DIR/uv" "$UV_BIN_DIR/uvx"
+    rm -rf "$TMPDIR_UV"
+    echo "uv/uvx downloaded and bundled."
+else
+    echo "[0] uv/uvx binaries already present."
+fi
+echo ""
+
 # Step 1: Build frontend
 echo "[1/4] Building frontend..."
 cd "$PROJECT_ROOT/frontend"

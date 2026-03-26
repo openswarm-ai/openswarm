@@ -298,7 +298,10 @@ def _sanitize_server_name(name: str) -> str:
 def _extra_bin_dirs() -> list[str]:
     """Well-known user-local bin directories that may not be on PATH in packaged apps."""
     home = os.path.expanduser("~")
+    # Bundled uv-bin (ships uvx for non-dev users)
+    _backend = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     dirs = [
+        os.path.join(_backend, "uv-bin"),
         os.path.join(home, ".bun", "bin"),
         os.path.join(home, ".cargo", "bin"),
         os.path.join(home, ".local", "bin"),
@@ -324,7 +327,7 @@ def _extra_bin_dirs() -> list[str]:
 
 def _resolve_command(command: str) -> str | None:
     """Find a command on PATH, falling back to common user-local bin directories
-    and the bundled Python environment."""
+    and bundled binaries (uv-bin for uvx/uv)."""
     found = shutil.which(command)
     if found:
         return found
@@ -332,18 +335,17 @@ def _resolve_command(command: str) -> str | None:
         candidate = os.path.join(d, command)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    # Check the bundled Python venv (for pip-installed MCP servers like google-workspace-worker)
+    # Check bundled uv-bin directory (ships uv/uvx for non-dev users)
+    _backend = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
     if _is_packaged:
-        # In packaged app, check python-env/bin/
-        _resources = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        candidate = os.path.join(_resources, "python-env", "bin", command)
+        # In packaged app: <resources>/backend/uv-bin/
+        candidate = os.path.join(_backend, "uv-bin", command)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
     else:
-        # In dev, check the backend venv (tools_lib.py is at backend/apps/tools_lib/)
-        _backend = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        candidate = os.path.join(_backend, ".venv", "bin", command)
+        # In dev: backend/uv-bin/
+        candidate = os.path.join(_backend, "uv-bin", command)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
     return None
@@ -403,17 +405,8 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
             resolved = _resolve_command(config["command"])
             if resolved:
                 config["command"] = resolved
-            elif config["command"] in ("uvx", "pipx"):
-                # uvx/pipx not installed — try to find the target binary directly
-                # uvx args: ["--from", "package-name", "binary-name"]
-                args = config.get("args", [])
-                if len(args) >= 3 and args[0] == "--from":
-                    binary_name = args[2]
-                    resolved_binary = _resolve_command(binary_name)
-                    if resolved_binary:
-                        config["command"] = resolved_binary
-                        config["args"] = args[3:]  # strip --from pkg binary
-                        logger.info(f"uvx fallback: using installed {binary_name} at {resolved_binary}")
+            else:
+                logger.warning(f"Command '{config['command']}' not found on PATH or bundled directories")
         env = config.setdefault("env", {})
         env.setdefault("PATH", _augmented_path())
         env.setdefault("PYTHONPATH", "")
