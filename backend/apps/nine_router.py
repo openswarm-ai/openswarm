@@ -60,19 +60,17 @@ def _find_9router_dir() -> str | None:
 
 def _find_node() -> str | None:
     """Find a Node.js binary (works in both dev and packaged mode)."""
-    _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+    # Check system node first
+    node = shutil.which("node")
+    if node:
+        return node
 
-    if _is_packaged:
-        # Electron bundles Node.js — find its binary
-        # Electron's node is the electron binary itself with ELECTRON_RUN_AS_NODE=1
-        # But we can also check for system node
-        node = shutil.which("node")
-        if node:
-            return node
-        # Electron's own node can be used with ELECTRON_RUN_AS_NODE
-        return None
-    else:
-        return shutil.which("node")
+    # In packaged Electron app, use the Electron binary with ELECTRON_RUN_AS_NODE=1
+    electron_path = os.environ.get("OPENSWARM_ELECTRON_PATH")
+    if electron_path and os.path.exists(electron_path):
+        return electron_path
+
+    return None
 
 
 async def ensure_running():
@@ -101,6 +99,9 @@ async def ensure_running():
         cmd = [node, standalone_server]
         cwd = os.path.join(_9router_dir, ".next", "standalone")
         env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production"}
+        # If using Electron binary as node, enable ELECTRON_RUN_AS_NODE
+        if node == os.environ.get("OPENSWARM_ELECTRON_PATH"):
+            env["ELECTRON_RUN_AS_NODE"] = "1"
 
     elif _9router_dir:
         # Dev mode with bundled 9Router — use next dev

@@ -15,7 +15,6 @@ const OnboardingModal: React.FC = () => {
   const c = useClaudeTokens();
   const settings = useAppSelector((s) => s.settings);
   const [open, setOpen] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [nineRouterStatus, setNineRouterStatus] = useState<any>(null);
 
@@ -32,7 +31,7 @@ const OnboardingModal: React.FC = () => {
     fetch(`${API_BASE}/agents/subscriptions/status`)
       .then((r) => r.json())
       .then(setNineRouterStatus)
-      .catch(() => setNineRouterStatus(null));
+      .catch(() => setNineRouterStatus({ running: false, providers: [], models: [] }));
   }, []);
 
   const hasSubscription = (() => {
@@ -41,14 +40,17 @@ const OnboardingModal: React.FC = () => {
     return connections.some((p: any) => p.isActive);
   })();
 
-  // Show modal if no keys AND no subscriptions AND not dismissed
+  // Show once: if no subscription connected AND not previously dismissed (persisted in localStorage)
   useEffect(() => {
-    if (!hasAnyKey && !hasSubscription && !dismissed && nineRouterStatus !== null) {
+    const alreadySeen = localStorage.getItem('openswarm_onboarding_seen');
+    if (alreadySeen === 'true') return;
+    if (nineRouterStatus === null) return; // still loading
+
+    // Show if no subscription, regardless of API key status
+    if (!hasSubscription) {
       setOpen(true);
-    } else {
-      setOpen(false);
     }
-  }, [hasAnyKey, hasSubscription, dismissed, nineRouterStatus]);
+  }, [hasSubscription, nineRouterStatus]);
 
   const handleConnect = async (providerId: string) => {
     setConnecting(providerId);
@@ -75,7 +77,7 @@ const OnboardingModal: React.FC = () => {
             if (pd.success) {
               clearInterval(timer);
               setConnecting(null);
-              setOpen(false);
+              dismiss();
             }
           } catch {}
         }, 5000);
@@ -101,7 +103,7 @@ const OnboardingModal: React.FC = () => {
               });
             } catch {}
             setConnecting(null);
-            setOpen(false);
+            dismiss();
           }
         };
         window.addEventListener('message', msgHandler);
@@ -115,7 +117,7 @@ const OnboardingModal: React.FC = () => {
               clearInterval(statusPoller);
               window.removeEventListener('message', msgHandler);
               setConnecting(null);
-              setOpen(false);
+              dismiss();
             }
           } catch {}
         }, 2000);
@@ -126,15 +128,13 @@ const OnboardingModal: React.FC = () => {
     }
   };
 
-  const handleApiKey = () => {
-    setDismissed(true);
+  const dismiss = () => {
+    localStorage.setItem('openswarm_onboarding_seen', 'true');
     setOpen(false);
   };
 
-  const handleSkip = () => {
-    setDismissed(true);
-    setOpen(false);
-  };
+  const handleApiKey = () => dismiss();
+  const handleSkip = () => dismiss();
 
   if (!open) return null;
 

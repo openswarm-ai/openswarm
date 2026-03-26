@@ -152,6 +152,7 @@ async function startBackend() {
     PATH: shellPath,
     OPENSWARM_PACKAGED: isPackaged ? '1' : '0',
     OPENSWARM_PORT: String(backendPort),
+    OPENSWARM_ELECTRON_PATH: process.execPath,
     PYTHONDONTWRITEBYTECODE: '1',
   };
 
