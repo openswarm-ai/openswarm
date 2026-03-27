@@ -77,9 +77,10 @@ def validate_credentials(settings: AppSettings, provider: str = "anthropic") -> 
 
 def get_provider_credentials(settings: AppSettings, provider: str) -> dict[str, str]:
     """Return credential dict for a specific provider."""
+    p = provider.lower().strip()
     validate_credentials(settings, provider)
 
-    if provider == "anthropic":
+    if p in ("anthropic", "claude"):
         if getattr(settings, "connection_mode", "own_key") == "managed":
             return {
                 "auth_token": getattr(settings, "openswarm_auth_token", "") or "",
@@ -87,18 +88,18 @@ def get_provider_credentials(settings: AppSettings, provider: str) -> dict[str, 
             }
         return {"api_key": settings.anthropic_api_key or ""}
 
-    if provider == "openai":
+    if p in ("openai", "codex"):
         return {"api_key": settings.openai_api_key or ""}
 
-    if provider == "gemini":
+    if p in ("gemini", "google", "gemini-cli"):
         return {"api_key": getattr(settings, "google_api_key", "") or ""}
 
-    if provider == "openrouter":
+    if p == "openrouter":
         return {"api_key": getattr(settings, "openrouter_api_key", "") or ""}
 
     # Custom provider
     for cp in getattr(settings, "custom_providers", []):
-        if cp.name == provider:
+        if cp.name.lower() == p:
             return {"api_key": cp.api_key, "base_url": cp.base_url}
 
     raise ValueError(f"No credentials for provider: {provider}")
@@ -139,15 +140,15 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
             base_url=proxy_url,
         )
 
-    # Prefer 9Router subscription (free for users with Claude/ChatGPT/Gemini subscriptions)
+    # Prefer API key when set
+    if settings.anthropic_api_key:
+        return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+
+    # Fall back to 9Router subscription (free for users with Claude/ChatGPT/Gemini subscriptions)
     if _check_9router():
         return anthropic.AsyncAnthropic(
             api_key="9router",
             base_url="http://localhost:20128",
         )
-
-    # Fall back to API key
-    if settings.anthropic_api_key:
-        return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     raise ValueError("No AI provider configured. Set an API key or connect a subscription.")

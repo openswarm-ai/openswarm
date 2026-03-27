@@ -862,17 +862,17 @@ class AgentManager:
                 "disallowed_tools": effective_disallowed,
                 "include_partial_messages": True,
             }
-            # Priority: 9Router subscription → API key
+            # Priority: API key → 9Router subscription
             from backend.apps.nine_router import is_running as _9r_running
-            if _9r_running():
+            if global_settings.anthropic_api_key:
+                options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
+            elif _9r_running():
                 options_kwargs["env"] = {
                     "ANTHROPIC_API_KEY": "9router",
                     "ANTHROPIC_BASE_URL": "http://localhost:20128",
                 }
                 # --bare skips CLI's own OAuth/keychain auth, uses only ANTHROPIC_API_KEY
                 options_kwargs["extra_args"] = {"bare": None}
-            elif global_settings.anthropic_api_key:
-                options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
             else:
                 raise ValueError("No AI provider configured. Set an API key or connect a subscription.")
             if mcp_servers:

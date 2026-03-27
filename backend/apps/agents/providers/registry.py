@@ -114,6 +114,7 @@ def create_provider(
                 auth_token=getattr(settings, "openswarm_auth_token", None),
                 base_url=getattr(settings, "openswarm_proxy_url", None) or "https://api.openswarm.ai",
             )
+        # Priority: API key → 9Router subscription
         if settings.anthropic_api_key:
             return AnthropicProvider(api_key=settings.anthropic_api_key)
         # No API key — try 9Router as fallback

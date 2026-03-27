@@ -76,11 +76,32 @@ def _find_node() -> str | None:
 async def ensure_running():
     """Start 9Router if not already running."""
     global _process
-    if is_running():
-        logger.info("9Router already running on port %d", NINE_ROUTER_PORT)
-        return
-
     _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+
+    if is_running():
+        # In dev mode, kill stale standalone servers (from previous builds)
+        # so we can start `next dev` which always uses latest source code
+        if not _is_packaged:
+            import subprocess as _sp
+            try:
+                result = _sp.run(
+                    ["pgrep", "-f", "next-server"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                if result.stdout.strip():
+                    logger.info("Dev mode: killing stale standalone 9Router to use next dev instead")
+                    _sp.run(["pkill", "-f", "next-server"], timeout=5)
+                    import asyncio
+                    await asyncio.sleep(2)
+                else:
+                    logger.info("9Router already running on port %d", NINE_ROUTER_PORT)
+                    return
+            except Exception:
+                logger.info("9Router already running on port %d", NINE_ROUTER_PORT)
+                return
+        else:
+            logger.info("9Router already running on port %d", NINE_ROUTER_PORT)
+            return
     _9router_dir = _find_9router_dir()
 
     if _is_packaged and _9router_dir:

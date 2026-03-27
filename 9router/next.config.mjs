@@ -5,6 +5,8 @@ const nextConfig = {
     unoptimized: true
   },
   env: {},
+  // Allow builds with both Turbopack (Next 16 default) and webpack
+  turbopack: {},
   webpack: (config, { isServer }) => {
     // Ignore fs/path modules in browser bundle
     if (!isServer) {

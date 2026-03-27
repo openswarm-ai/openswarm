@@ -164,17 +164,36 @@ const SUBSCRIPTION_PROVIDERS = [
   { id: 'github', name: 'GitHub Copilot', desc: 'Claude + GPT models via your Copilot subscription', color: '#8B949E', preview: true },
 ];
 
-const SubscriptionCard: React.FC<{ provider: typeof SUBSCRIPTION_PROVIDERS[0]; connected: boolean; onConnect: () => void; onDisconnect: () => void; connecting: boolean; userCode?: string }> = ({ provider, connected, onConnect, onDisconnect, connecting, userCode }) => {
+const SubscriptionCard: React.FC<{ provider: typeof SUBSCRIPTION_PROVIDERS[0]; connected: boolean; onConnect: () => void; onDisconnect: () => void; connecting: boolean; userCode?: string; disconnecting?: boolean }> = ({ provider, connected, onConnect, onDisconnect, connecting, userCode, disconnecting }) => {
   const c = useClaudeTokens();
   const isPreview = (provider as any).preview;
   return (
-    <Box sx={{ p: 1.5, borderRadius: `${c.radius.md}px`, border: `1px solid ${connected ? c.status.success + '30' : c.border.subtle}`, bgcolor: connected ? `${c.status.success}04` : 'transparent', opacity: isPreview ? 0.5 : 1 }}>
+    <Box sx={{
+      p: 1.5, borderRadius: `${c.radius.md}px`,
+      border: `1px solid ${connected ? c.status.success + '30' : connecting ? c.accent.primary + '30' : c.border.subtle}`,
+      bgcolor: connected ? `${c.status.success}04` : connecting ? `${c.accent.primary}04` : 'transparent',
+      opacity: isPreview ? 0.5 : 1,
+      transition: 'all 0.3s ease',
+    }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: connected ? c.status.success : c.border.medium, flexShrink: 0 }} />
+          <Box sx={{
+            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+            bgcolor: connected ? c.status.success : connecting ? c.accent.primary : c.border.medium,
+            transition: 'background-color 0.3s ease',
+            ...(connecting ? {
+              animation: 'pulse-dot 1.5s ease-in-out infinite',
+              '@keyframes pulse-dot': {
+                '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+                '50%': { opacity: 0.4, transform: 'scale(0.8)' },
+              },
+            } : {}),
+          }} />
           <Box>
             <Typography sx={{ fontSize: '0.78rem', fontWeight: 600, color: c.text.primary }}>{provider.name}</Typography>
-            <Typography sx={{ fontSize: '0.65rem', color: c.text.muted }}>{provider.desc}</Typography>
+            <Typography sx={{ fontSize: '0.65rem', color: connecting ? c.accent.primary : c.text.muted, transition: 'color 0.3s ease' }}>
+              {connecting ? 'Waiting for authorization...' : provider.desc}
+            </Typography>
           </Box>
         </Box>
         {isPreview ? (
@@ -182,17 +201,26 @@ const SubscriptionCard: React.FC<{ provider: typeof SUBSCRIPTION_PROVIDERS[0]; c
             Coming soon
           </Typography>
         ) : connected ? (
-          <Typography onClick={onDisconnect} sx={{ fontSize: '0.68rem', color: c.text.tertiary, cursor: 'pointer', '&:hover': { color: c.status.error } }}>
-            Disconnect
-          </Typography>
+          disconnecting ? (
+            <CircularProgress size={14} sx={{ color: c.text.ghost }} />
+          ) : (
+            <Typography onClick={onDisconnect} sx={{ fontSize: '0.68rem', color: c.text.tertiary, cursor: 'pointer', '&:hover': { color: c.status.error }, transition: 'color 0.2s ease' }}>
+              Disconnect
+            </Typography>
+          )
         ) : connecting && userCode ? (
           <Box sx={{ textAlign: 'right' }}>
             <Typography sx={{ fontSize: '0.68rem', color: c.text.muted }}>Enter code:</Typography>
             <Typography sx={{ fontSize: '0.85rem', fontWeight: 700, color: c.accent.primary, fontFamily: 'monospace', letterSpacing: '0.1em' }}>{userCode}</Typography>
           </Box>
+        ) : connecting ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+            <CircularProgress size={14} sx={{ color: c.accent.primary }} />
+            <Typography sx={{ fontSize: '0.68rem', color: c.accent.primary }}>Connecting...</Typography>
+          </Box>
         ) : (
-          <Button onClick={onConnect} disabled={connecting} variant="outlined" size="small" sx={{ textTransform: 'none', fontSize: '0.7rem', color: c.text.primary, borderColor: c.border.medium, minWidth: 70, '&:hover': { borderColor: c.accent.primary } }}>
-            {connecting ? 'Waiting...' : 'Connect'}
+          <Button onClick={onConnect} variant="outlined" size="small" sx={{ textTransform: 'none', fontSize: '0.7rem', color: c.text.primary, borderColor: c.border.medium, minWidth: 70, '&:hover': { borderColor: c.accent.primary }, transition: 'all 0.2s ease' }}>
+            Connect
           </Button>
         )}
       </Box>
@@ -204,6 +232,7 @@ const SubscriptionCards: React.FC = () => {
   const c = useClaudeTokens();
   const [status, setStatus] = useState<any>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [userCode, setUserCode] = useState('');
   const [pollTimer, setPollTimer] = useState<any>(null);
 
@@ -323,6 +352,7 @@ const SubscriptionCards: React.FC = () => {
   };
 
   const handleDisconnect = async (providerId: string) => {
+    setDisconnecting(providerId);
     try {
       await fetch(`${API_BASE}/agents/subscriptions/disconnect`, {
         method: 'POST',
@@ -331,13 +361,36 @@ const SubscriptionCards: React.FC = () => {
       });
     } catch {}
     // Wait briefly for 9Router to process, then refresh
-    setTimeout(fetchStatus, 500);
+    setTimeout(() => { fetchStatus(); setDisconnecting(null); }, 500);
   };
+
+  if (!status) {
+    // Initial loading — show skeleton cards
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {SUBSCRIPTION_PROVIDERS.map(p => (
+          <Box key={p.id} sx={{
+            p: 1.5, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}`,
+            display: 'flex', alignItems: 'center', gap: 1,
+            animation: 'skeleton-pulse 1.5s ease-in-out infinite',
+            '@keyframes skeleton-pulse': { '0%, 100%': { opacity: 0.5 }, '50%': { opacity: 0.25 } },
+          }}>
+            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: c.border.medium, flexShrink: 0 }} />
+            <Box sx={{ flex: 1 }}>
+              <Box sx={{ width: 100, height: 12, bgcolor: c.border.subtle, borderRadius: 1, mb: 0.5 }} />
+              <Box sx={{ width: 180, height: 10, bgcolor: c.border.subtle, borderRadius: 1 }} />
+            </Box>
+          </Box>
+        ))}
+      </Box>
+    );
+  }
 
   if (!status?.running) {
     return (
       <Box sx={{ p: 2, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}`, textAlign: 'center' }}>
-        <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 1 }}>
+        <CircularProgress size={18} sx={{ color: c.text.ghost, mb: 1 }} />
+        <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 0.5 }}>
           Starting subscription service...
         </Typography>
         <Typography sx={{ fontSize: '0.65rem', color: c.text.ghost }}>
@@ -357,6 +410,7 @@ const SubscriptionCards: React.FC = () => {
           onConnect={() => handleConnect(p.id)}
           onDisconnect={() => handleDisconnect(p.id)}
           connecting={connecting === p.id}
+          disconnecting={disconnecting === p.id}
           userCode={connecting === p.id ? userCode : undefined}
         />
       ))}
@@ -401,7 +455,59 @@ const UsageStats: React.FC = () => {
       .catch(() => {});
   }, []);
 
-  if (!stats) return null;
+  if (!stats) {
+    // Skeleton loading state
+    const skeletonPulse = {
+      animation: 'skeleton-pulse 1.5s ease-in-out infinite',
+      '@keyframes skeleton-pulse': { '0%, 100%': { opacity: 0.5 }, '50%': { opacity: 0.25 } },
+    };
+    const skeletonCard = {
+      p: 1.5, borderRadius: `${c.radius.md}px`, bgcolor: c.bg.elevated,
+      border: `1px solid ${c.border.subtle}`, ...skeletonPulse,
+    };
+    return (
+      <Box sx={{ mb: 2.5 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, mb: 1 }}>
+          {Array.from({ length: 4 }, (_, i) => (
+            <Box key={i} sx={skeletonCard}>
+              <Box sx={{ width: 60, height: 8, bgcolor: c.border.subtle, borderRadius: 1, mb: 1 }} />
+              <Box sx={{ width: 50, height: 18, bgcolor: c.border.subtle, borderRadius: 1, mb: 0.5 }} />
+              <Box sx={{ width: 90, height: 8, bgcolor: c.border.subtle, borderRadius: 1 }} />
+            </Box>
+          ))}
+        </Box>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, mb: 1.5 }}>
+          {Array.from({ length: 4 }, (_, i) => (
+            <Box key={i} sx={skeletonCard}>
+              <Box sx={{ width: 70, height: 8, bgcolor: c.border.subtle, borderRadius: 1, mb: 1 }} />
+              <Box sx={{ width: 45, height: 18, bgcolor: c.border.subtle, borderRadius: 1, mb: 0.5 }} />
+              <Box sx={{ width: 80, height: 8, bgcolor: c.border.subtle, borderRadius: 1 }} />
+            </Box>
+          ))}
+        </Box>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+          {Array.from({ length: 2 }, (_, i) => (
+            <Box key={i} sx={{ ...skeletonCard, p: 2 }}>
+              <Box sx={{ width: 80, height: 8, bgcolor: c.border.subtle, borderRadius: 1, mb: 2 }} />
+              {Array.from({ length: 3 }, (_, j) => (
+                <Box key={j} sx={{ mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Box sx={{ width: 60 + j * 15, height: 10, bgcolor: c.border.subtle, borderRadius: 1 }} />
+                    <Box sx={{ width: 35, height: 10, bgcolor: c.border.subtle, borderRadius: 1 }} />
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: '1px' }}>
+                    {Array.from({ length: 16 }, (_, k) => (
+                      <Box key={k} sx={{ width: 5, height: 5, bgcolor: c.border.subtle, opacity: k < 8 - j * 2 ? 0.6 : 0.2 }} />
+                    ))}
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          ))}
+        </Box>
+      </Box>
+    );
+  }
 
   const formatCost = (v: number) => {
     if (v === 0) return '$0.00';
@@ -757,11 +863,12 @@ const Settings: React.FC = () => {
       PaperProps={{
         sx: {
           width: 780,
-          maxHeight: '85vh',
+          height: '85vh',
           bgcolor: c.bg.page,
           borderRadius: 2,
           border: `1px solid ${c.border.subtle}`,
           boxShadow: c.shadow.md,
+          transition: 'none',
         },
       }}
     >
@@ -814,7 +921,7 @@ const Settings: React.FC = () => {
         scrollbarColor: `${c.border.medium} transparent`,
       }}>
       {activeTab === 'general' ? (
-      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
 
         {/* ── Agent Defaults ── */}
         <Typography sx={sectionSx}>Agent Defaults</Typography>
@@ -1283,7 +1390,7 @@ const Settings: React.FC = () => {
 
       </Box>
       ) : activeTab === 'models' ? (
-      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, gap: 2.5 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, gap: 2.5, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
 
           {/* ── USE EXISTING SUBSCRIPTIONS ── */}
           <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
@@ -1347,11 +1454,11 @@ const Settings: React.FC = () => {
 
       </Box>
       ) : activeTab === 'usage' ? (
-      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
         <UsageStats />
       </Box>
       ) : (
-      <Box sx={{ pt: 2.5, pb: 1 }}>
+      <Box sx={{ pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
         <CommandsContent />
       </Box>
       )}
