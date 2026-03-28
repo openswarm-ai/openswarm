@@ -135,24 +135,33 @@ class AgentManager:
         mcp_servers: dict = {}
         all_tools = load_all_tools()
         mcp_tools = [t for t in all_tools if t.mcp_config and t.enabled and t.auth_status in ("configured", "connected")]
+        logger.info(f"[MCP-DEBUG] Building MCP servers. {len(mcp_tools)} MCP tools found, allowed_tools has {len(allowed_tools)} entries")
 
         for tool in mcp_tools:
             tool_ref = f"mcp:{tool.name}"
             if tool_ref not in allowed_tools and allowed_tools != get_all_tool_names():
                 if not any(tool_ref == at for at in allowed_tools):
+                    logger.info(f"[MCP-DEBUG] SKIPPED {tool.name}: '{tool_ref}' not in allowed_tools")
                     continue
 
             if _is_fully_denied(tool):
+                logger.info(f"[MCP-DEBUG] SKIPPED {tool.name}: fully denied")
                 continue
 
             if tool.auth_type == "oauth2" and tool.auth_status == "connected":
-                await refresh_google_token(tool)
+                refreshed = await refresh_google_token(tool)
+                logger.info(f"[MCP-DEBUG] {tool.name} token refresh: {'OK' if refreshed else 'FAILED'}")
 
             config = derive_mcp_config(tool)
             if config:
                 server_name = _sanitize_server_name(tool.name)
                 mcp_servers[server_name] = config
+                env_keys = list(config.get("env", {}).keys())
+                logger.info(f"[MCP-DEBUG] ADDED {server_name}: command={config.get('command')}, args={config.get('args')}, env_keys={env_keys}")
+            else:
+                logger.warning(f"[MCP-DEBUG] {tool.name}: derive_mcp_config returned None")
 
+        logger.info(f"[MCP-DEBUG] Final mcp_servers: {list(mcp_servers.keys())}")
         return mcp_servers
 
     def _build_connected_tools_context(self, allowed_tools: list[str]) -> str | None:
@@ -489,6 +498,7 @@ class AgentManager:
             from claude_agent_sdk.types import (
                 HookMatcher, PermissionResultAllow, PermissionResultDeny,
                 TextBlock, ToolUseBlock, StreamEvent,
+                SystemMessage,
             )
         except ImportError:
             logger.warning("claude_agent_sdk not installed, running in mock mode")
@@ -858,6 +868,15 @@ class AgentManager:
                     else:
                         effective_allowed.append(f"mcp__{name}__*")
 
+            # Log effective tool lists
+            google_allowed = [t for t in effective_allowed if "google-workspace" in t]
+            reddit_allowed = [t for t in effective_allowed if "reddit" in t]
+            builtin_allowed = [t for t in effective_allowed if not t.startswith("mcp__")]
+            logger.info(f"[MCP-DEBUG] effective_allowed: {len(effective_allowed)} total "
+                        f"(builtins={len(builtin_allowed)}, google={len(google_allowed)}, reddit={len(reddit_allowed)})")
+            if effective_disallowed:
+                logger.info(f"[MCP-DEBUG] effective_disallowed: {effective_disallowed}")
+
             options_kwargs = {
                 "model": session.model,
                 "max_buffer_size": 5 * 1024 * 1024,
@@ -875,6 +894,7 @@ class AgentManager:
             from backend.apps.nine_router import is_running as _9r_running
             if global_settings.anthropic_api_key:
                 options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
+                logger.info("[MCP-DEBUG] Using direct API key")
             elif _9r_running():
                 options_kwargs["env"] = {
                     "ANTHROPIC_API_KEY": "9router",
@@ -882,10 +902,13 @@ class AgentManager:
                 }
                 # --bare skips CLI's own OAuth/keychain auth, uses only ANTHROPIC_API_KEY
                 options_kwargs["extra_args"] = {"bare": None}
+                logger.info("[MCP-DEBUG] Using 9Router (bare mode)")
             else:
                 raise ValueError("No AI provider configured. Set an API key or connect a subscription.")
             if mcp_servers:
                 options_kwargs["mcp_servers"] = mcp_servers
+                mcp_json_len = len(json.dumps({"mcpServers": mcp_servers}))
+                logger.info(f"[MCP-DEBUG] mcp_servers passed to SDK: {list(mcp_servers.keys())}, JSON length={mcp_json_len}")
             if composed_prompt:
                 options_kwargs["system_prompt"] = composed_prompt
             if session.max_turns:
@@ -899,7 +922,9 @@ class AgentManager:
                 if fork_session:
                     options_kwargs["fork_session"] = True
 
+            logger.info(f"[MCP-DEBUG] Creating ClaudeAgentOptions with model={session.model}")
             options = ClaudeAgentOptions(**options_kwargs)
+            logger.info(f"[MCP-DEBUG] ClaudeAgentOptions created. Starting query...")
 
             async def prompt_stream():
                 yield {
@@ -911,11 +936,21 @@ class AgentManager:
             stream_tool_msg_ids_ordered = []
             stream_block_index_map = {}
             _turn_number = 0
+            _first_event = True
 
             async for message in query(
                 prompt=prompt_stream(),
                 options=options,
             ):
+                if _first_event:
+                    logger.info(f"[MCP-DEBUG] First event received: {type(message).__name__}")
+                    _first_event = False
+
+                # Log system messages (MCP server status, errors, etc.)
+                if isinstance(message, SystemMessage):
+                    raw = message.__dict__ if hasattr(message, '__dict__') else str(message)
+                    logger.info(f"[MCP-DEBUG] SystemMessage: {raw}")
+
                 if isinstance(message, StreamEvent):
                     event = message.event
                     event_type = event.get("type")
