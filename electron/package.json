@@ -74,13 +74,6 @@
         ]
       },
       {
-        "from": "build-staging/debugger",
-        "to": "debugger",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
         "from": "python-env",
         "to": "python-env",
         "filter": [

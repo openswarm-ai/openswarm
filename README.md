@@ -14,7 +14,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <a href="GETTING_STARTED.md"><img src="https://img.shields.io/badge/📖_Getting_Started-guide-orange.svg" alt="Getting Started"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/📖_Contributing-guide-orange.svg" alt="Contributing"></a>
   <a href="#"><img src="https://img.shields.io/badge/platform-macOS-lightgrey.svg" alt="Platform"></a>
   <a href="https://github.com/openswarm-ai/openswarm/stargazers"><img src="https://img.shields.io/github/stars/openswarm-ai/openswarm?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/openswarm-ai/openswarm/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
@@ -67,7 +67,7 @@ Running agents in a terminal works fine for one task. But when you're juggling f
 
 **Dark & Light Themes** — Full theme support with design tokens.
 
-**Keyboard Shortcuts** — Navigate between agents, approve/deny requests, and switch pages without touching a mouse.
+**Keyboard Shortcuts** — Navigate between agents, approve/deny requests, and switch pages. Press `?` in-app to see all shortcuts.
 
 <br>
 
@@ -91,12 +91,7 @@ bash run/local.sh
 
 This starts the backend (port 8324), frontend (port 3000), and Electron shell together. Once running, set your Anthropic API key in the in-app Settings page.
 
-To run services individually:
-
-```bash
-bash backend/run.sh     # API at http://localhost:8324 — docs at /docs
-bash frontend/run.sh    # App at http://localhost:3000
-```
+See the **[Contributing Guide](CONTRIBUTING.md)** for detailed setup options, environment configuration, Google Workspace integration, and troubleshooting.
 
 <br>
 
@@ -121,93 +116,6 @@ Electron Shell (desktop wrapper, auto-updater)
 
 <br>
 
-## Configuration
-
-The Anthropic API key is configured in-app via the **Settings** page — no environment variable needed for normal usage.
-
-For advanced configuration, copy `backend/.env.example` to `backend/.env`:
-
-| Variable | Purpose |
-|----------|---------|
-| `BACKEND_PORT` | Backend server port (default: `8324`) |
-| `GOOGLE_OAUTH_CLIENT_ID` | Google Workspace integration (Gmail, Calendar, Drive) |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | Google Workspace integration |
-| `APPLE_ID` | macOS code signing & notarization (release builds only) |
-| `APPLE_APP_SPECIFIC_PASSWORD` | macOS notarization (release builds only) |
-| `APPLE_TEAM_ID` | macOS code signing (release builds only) |
-| `GH_TOKEN` | GitHub Releases publishing (release builds only) |
-
-<br>
-
-## Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `D` | Go to Dashboard |
-| `T` | Go to Templates |
-| `1` – `9` | Open agent by position |
-| `Shift+A` | Approve all pending requests |
-| `Shift+D` | Deny all pending requests |
-| `?` | Show shortcuts help |
-
-Type `/` in the chat input to invoke prompt templates and skills as slash commands.
-
-<br>
-
-## Project Structure
-
-```
-backend/
-  apps/
-    agents/           Agent lifecycle, streaming, worktree management
-    dashboards/       Dashboard CRUD and layout persistence
-    dashboard_layout/ Card positions and spatial canvas state
-    templates/        Prompt template CRUD
-    skills/           Skills CRUD (synced to ~/.claude/skills/)
-    tools_lib/        MCP tool configuration and discovery
-    modes/            Agent mode definitions
-    outputs/          Views/outputs, vibe coding, Python executor
-    settings/         App settings and file browser
-    health/           Health check endpoint
-    mcp_registry/     MCP server registry proxy
-    skill_registry/   Anthropic skills marketplace proxy
-  config/             FastAPI app configuration
-  data/               Persistent JSON file storage
-
-frontend/
-  src/
-    app/
-      components/     AppShell, Layout, shared UI
-      pages/
-        Dashboard/    Spatial canvas with agent/view/browser cards
-        AgentChat/    Streaming chat, HITL approvals, branching, diff viewer
-        Templates/    Template library with structured input fields
-        Skills/       Skills library, skill builder, registry browser
-        Tools/        Tool config, MCP discovery, OAuth, registry browser
-        Modes/        Mode definitions with system prompts
-        Views/        Output artifacts, code editor, vibe coding
-        Commands/     Keyboard shortcuts reference
-        Settings/     App configuration
-    shared/
-      state/          Redux slices (agents, dashboards, templates, skills, tools, modes, etc.)
-      ws/             WebSocket manager
-      hooks/          Custom hooks
-      styles/         Theme tokens, global styles
-
-electron/
-  main.js             Electron main process, auto-updater, Python env management
-  scripts/            Build and notarization scripts
-
-run/
-  utils/
-    build-app.sh        Desktop app packaging (electron-builder)
-    build-python-env.sh Standalone Python 3.13 environment bundler
-  local.sh           Start backend, frontend, and Electron shell
-  publish.sh         Build and deploy to Firebase Hosting
-```
-
-<br>
-
 ## Tech Stack
 
 **Frontend** — React 18, TypeScript, Redux Toolkit, Material UI v7, CodeMirror 6, Framer Motion, React Router v7, Webpack 5
@@ -222,14 +130,7 @@ run/
 
 ## Contributing
 
-Contributions are welcome. To get started:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Make your changes
-4. Submit a pull request
-
-Please open an issue first for larger changes so we can discuss the approach.
+Contributions are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full development setup, project structure, and contribution workflow.
 
 <br>
 

@@ -59,18 +59,6 @@ source "$VENV_DIR/bin/activate"
 # --- Upgrade pip if outdated ---
 pip3 install --upgrade pip --quiet
 
-# --- Install custom debugger module if not already installed ---
-DEBUGGER_DIR_ABSPATH="$PROJECT_ROOT_ABSPATH/debugger"
-if ! pip3 show debug > /dev/null 2>&1; then
-    echo "Installing debugger module..."
-    cd "$DEBUGGER_DIR_ABSPATH"
-    pip3 install -e .
-    if [[ $? -ne 0 ]]; then
-        echo "Failed to install debugger module."
-        exit 1
-    fi
-fi
-
 # --- Install Python dependencies ---
 echo "Installing dependencies..."
 cd "$BACKEND_DIR_ABSPATH"

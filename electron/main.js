@@ -161,8 +161,7 @@ async function startBackend() {
       process.resourcesPath, 'python-env', 'lib',
       'python3.13', 'site-packages'
     );
-    const debuggerDir = getResourcePath('debugger');
-    env.PYTHONPATH = [projectRoot, debuggerDir, pythonEnvSitePackages].join(':');
+    env.PYTHONPATH = [projectRoot, pythonEnvSitePackages].join(':');
   }
 
   console.log(`Starting backend: ${pythonPath} on port ${backendPort}`);

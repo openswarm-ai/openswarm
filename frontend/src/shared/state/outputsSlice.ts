@@ -47,16 +47,6 @@ export function buildServeUrl(
   return `${SERVE_BASE}/${outputId}/serve/index.html?_d=${encodeURIComponent(encoded)}`;
 }
 
-export function buildWorkspaceServeUrl(
-  workspaceId: string,
-  inputData: Record<string, any> = {},
-  backendResult: Record<string, any> | null = null,
-): string {
-  const dataPayload = JSON.stringify({ i: inputData, r: backendResult });
-  const encoded = btoa(unescape(encodeURIComponent(dataPayload)));
-  return `${SERVE_BASE}/workspace/${workspaceId}/serve/index.html?_d=${encodeURIComponent(encoded)}`;
-}
-
 export interface OutputExecuteResult {
   output_id: string;
   output_name: string;

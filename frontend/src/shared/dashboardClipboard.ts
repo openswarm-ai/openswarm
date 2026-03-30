@@ -13,22 +13,15 @@ export interface ClipboardCard {
 }
 
 let clipboardCards: ClipboardCard[] = [];
-let clipboardTimestamp = 0;
 
 export function setClipboardCards(cards: ClipboardCard[]): void {
   clipboardCards = cards;
-  clipboardTimestamp = Date.now();
 }
 
 export function getClipboardCards(): ClipboardCard[] {
   return clipboardCards;
 }
 
-export function getClipboardTimestamp(): number {
-  return clipboardTimestamp;
-}
-
 export function clearClipboard(): void {
   clipboardCards = [];
-  clipboardTimestamp = 0;
 }

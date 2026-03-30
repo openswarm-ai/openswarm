@@ -57,11 +57,6 @@ const updateSlice = createSlice({
       state.status = 'error';
       state.error = action.payload;
     },
-    resetUpdateStatus(state) {
-      state.status = 'idle';
-      state.error = null;
-      state.downloadPercent = 0;
-    },
   },
 });
 
@@ -73,7 +68,6 @@ export const {
   setDownloading,
   setUpdateDownloaded,
   setUpdateError,
-  resetUpdateStatus,
 } = updateSlice.actions;
 
 export default updateSlice.reducer;

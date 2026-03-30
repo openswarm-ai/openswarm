@@ -7,7 +7,6 @@ Other modules should import from here instead of maintaining their own
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass(frozen=True)
@@ -51,7 +50,6 @@ ALL_MODELS: list[ModelDef] = [
 # fmt: on
 
 _BY_VALUE: dict[str, ModelDef] = {m.value: m for m in ALL_MODELS}
-_BY_MODEL_ID: dict[str, ModelDef] = {m.model_id: m for m in ALL_MODELS}
 
 
 def resolve_model_id(short_name: str) -> str:
@@ -63,49 +61,3 @@ def resolve_model_id(short_name: str) -> str:
     return m.model_id if m else short_name
 
 
-def get_cost_rates(provider: str, model: str) -> tuple[float, float] | None:
-    """Return ``(input_cost_per_1m, output_cost_per_1m)`` or ``None``."""
-    m = _BY_VALUE.get(model)
-    if m and m.provider.lower() == provider.lower():
-        return (m.input_cost_per_1m, m.output_cost_per_1m)
-    for md in ALL_MODELS:
-        if md.value == model and md.provider.lower() == provider.lower():
-            return (md.input_cost_per_1m, md.output_cost_per_1m)
-    return None
-
-
-def calculate_cost(
-    provider: str, model: str, input_tokens: int, output_tokens: int,
-) -> float:
-    """Calculate cost in USD from token counts."""
-    rates = get_cost_rates(provider, model)
-    if not rates:
-        return 0.0
-    input_rate, output_rate = rates
-    return (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
-
-
-def get_context_window(model: str) -> int:
-    """Look up context window for a model by its short value name."""
-    m = _BY_VALUE.get(model) or _BY_MODEL_ID.get(model)
-    return m.context_window if m else 128_000
-
-
-def get_builtin_models_by_provider() -> dict[str, list[dict[str, Any]]]:
-    """Return built-in models grouped by provider, matching the legacy format.
-
-    Only includes the curated built-in models (Anthropic) — not
-    OpenRouter-backed models which are exposed through custom providers.
-    """
-    result: dict[str, list[dict[str, Any]]] = {}
-    for m in ALL_MODELS:
-        if m.api == "openrouter":
-            continue
-        result.setdefault(m.provider, []).append({
-            "value": m.value,
-            "label": m.label,
-            "context_window": m.context_window,
-            "model_id": m.model_id,
-            "api": m.api,
-        })
-    return result

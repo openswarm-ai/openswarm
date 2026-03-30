@@ -20,7 +20,6 @@
     "@mui/icons-material": "^7.3.9",
     "@mui/material": "^7.3.9",
     "@reduxjs/toolkit": "^2.8.2",
-    "@types/react-syntax-highlighter": "^15.5.13",
     "codemirror": "^6.0.2",
     "framer-motion": "^12.35.2",
     "html-to-image": "^1.11.13",
@@ -29,7 +28,6 @@
     "react-markdown": "^10.1.0",
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.13.1",
-    "react-syntax-highlighter": "^16.1.1",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {

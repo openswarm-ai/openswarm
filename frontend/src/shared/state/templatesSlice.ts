@@ -73,19 +73,6 @@ export const deleteTemplate = createAsyncThunk('templates/delete', async (id: st
   return id;
 });
 
-export const renderTemplate = createAsyncThunk(
-  'templates/render',
-  async ({ templateId, values }: { templateId: string; values: Record<string, any> }) => {
-    const res = await fetch(`${TEMPLATES_API}/render`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ template_id: templateId, values }),
-    });
-    const data = await res.json();
-    return data.rendered as string;
-  }
-);
-
 const templatesSlice = createSlice({
   name: 'templates',
   initialState,

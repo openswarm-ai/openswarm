@@ -4,8 +4,8 @@ set -euo pipefail
 # Master build script for the OpenSwarm desktop app.
 #
 # Usage:
-#   bash scripts/build-app.sh              Local dev build (unsigned)
-#   bash scripts/build-app.sh --publish    Production build (signed, notarized, published to GitHub Releases)
+#   bash run/utils/build-app.sh              Local dev build (unsigned)
+#   bash run/utils/build-app.sh --publish    Production build (signed, notarized, published to GitHub Releases)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -67,7 +67,7 @@ fi
 echo ""
 
 # Step 1: Build frontend
-echo "[1/4] Building frontend..."
+echo "[1/5] Building frontend..."
 cd "$PROJECT_ROOT/frontend"
 npm install
 npm run build
@@ -80,7 +80,7 @@ echo "Frontend build complete."
 echo ""
 
 # Step 2: Build Python environment
-echo "[2/4] Building Python environment..."
+echo "[2/5] Building Python environment..."
 bash "$SCRIPT_DIR/build-python-env.sh"
 
 if [[ ! -d "$PROJECT_ROOT/electron/python-env" ]]; then
@@ -122,12 +122,6 @@ rsync -a \
     --exclude='__pycache__' --exclude='**/__pycache__' \
     --exclude='*.pyc' --exclude='.venv' \
     "$PROJECT_ROOT/backend/" "$STAGING_DIR/backend/"
-
-rsync -a \
-    --exclude='__pycache__' --exclude='**/__pycache__' \
-    --exclude='*.pyc' --exclude='.venv' --exclude='**/.venv' \
-    --exclude='**/node_modules' \
-    "$PROJECT_ROOT/debugger/" "$STAGING_DIR/debugger/"
 
 rsync -a "$PROJECT_ROOT/frontend/dist/" "$STAGING_DIR/frontend/"
 

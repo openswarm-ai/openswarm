@@ -84,10 +84,6 @@ echo "Installing backend dependencies..."
 "$PYTHON_BIN" -m pip install --upgrade pip
 "$PYTHON_BIN" -m pip install -r "$PROJECT_ROOT/backend/requirements.txt"
 
-# Install the debugger module
-echo "Installing debugger module..."
-"$PYTHON_BIN" -m pip install -e "$PROJECT_ROOT/debugger"
-
 # Verify claude-agent-sdk and its bundled binary
 echo "Verifying claude-agent-sdk..."
 "$PYTHON_BIN" -c "import claude_agent_sdk; print(f'claude-agent-sdk installed')"
