@@ -67,7 +67,7 @@ trap 'cleanup; exit 0' INT TERM
 trap cleanup EXIT
 
 # --- Ensure bundled uv/uvx for MCP servers ---
-UV_BIN_DIR="$PROJECT_ROOT/backend/uv-bin"
+UV_BIN_DIR="$PROJECT_ROOT/backend/apps/tools_lib/uv-bin"
 if [ ! -f "$UV_BIN_DIR/uvx" ]; then
     echo -e "${YELLOW}${BOLD}[uv]${RESET}       Downloading uv/uvx..."
     mkdir -p "$UV_BIN_DIR"

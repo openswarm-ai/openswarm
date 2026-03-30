@@ -2,7 +2,7 @@
   "include": ["../backend"],
   "exclude": [
     "../backend/.venv",
-    "../backend/uv-bin",
+    "../backend/apps/tools_lib/uv-bin",
     "../backend/data",
     "../backend/tests"
   ],

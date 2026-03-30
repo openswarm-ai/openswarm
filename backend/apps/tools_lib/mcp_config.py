@@ -12,13 +12,15 @@ from backend.apps.tools_lib.oauth_providers import OAUTH_PROVIDERS
 
 logger = logging.getLogger(__name__)
 
+_TOOLS_LIB_DIR = os.path.dirname(os.path.abspath(__file__))
+_UV_BIN_DIR = os.path.join(_TOOLS_LIB_DIR, "uv-bin")
+
 
 def _extra_bin_dirs() -> list[str]:
     """Well-known user-local bin directories that may not be on PATH in packaged apps."""
     home = os.path.expanduser("~")
-    _backend = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     dirs = [
-        os.path.join(_backend, "uv-bin"),
+        _UV_BIN_DIR,
         os.path.join(home, ".bun", "bin"),
         os.path.join(home, ".cargo", "bin"),
         os.path.join(home, ".local", "bin"),
@@ -48,8 +50,7 @@ def _resolve_command(command: str) -> str | None:
         candidate = os.path.join(d, command)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    _backend = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    candidate = os.path.join(_backend, "uv-bin", command)
+    candidate = os.path.join(_UV_BIN_DIR, command)
     if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
         return candidate
     return None

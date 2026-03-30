@@ -48,7 +48,7 @@ if $PUBLISH_MODE; then
 fi
 
 # Step 0: Ensure bundled uv/uvx binaries exist
-UV_BIN_DIR="$PROJECT_ROOT/backend/uv-bin"
+UV_BIN_DIR="$PROJECT_ROOT/backend/apps/tools_lib/uv-bin"
 if [[ ! -f "$UV_BIN_DIR/uvx" ]]; then
     echo "[0] Downloading uv/uvx binaries..."
     mkdir -p "$UV_BIN_DIR"
