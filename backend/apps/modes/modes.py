@@ -4,7 +4,9 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import HTTPException
 from backend.config.Apps import SubApp
-from backend.apps.modes.models import Mode, ModeCreate, ModeUpdate, BUILTIN_MODES
+from backend.apps.common.json_store import JsonStore
+from backend.apps.modes.models import Mode, ModeCreate, ModeUpdate
+from backend.apps.modes.builtin import BUILTIN_MODES
 
 logger = logging.getLogger(__name__)
 
@@ -24,37 +26,12 @@ async def modes_lifespan():
 modes = SubApp("modes", modes_lifespan)
 
 
-def _load_all() -> list[Mode]:
-    result = []
-    if not os.path.exists(DATA_DIR):
-        return result
-    for fname in os.listdir(DATA_DIR):
-        if fname.endswith(".json"):
-            with open(os.path.join(DATA_DIR, fname)) as f:
-                result.append(Mode(**json.load(f)))
-    return result
+_store = JsonStore(Mode, DATA_DIR, not_found_detail="Mode not found")
 
-
-def _save(mode: Mode):
-    with open(os.path.join(DATA_DIR, f"{mode.id}.json"), "w") as f:
-        json.dump(mode.model_dump(), f, indent=2)
-
-
-def _load(mode_id: str) -> Mode:
-    path = os.path.join(DATA_DIR, f"{mode_id}.json")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Mode not found")
-    with open(path) as f:
-        return Mode(**json.load(f))
-
-
-def load_mode(mode_id: str) -> Mode | None:
-    """Public helper for other modules to resolve a mode by ID."""
-    path = os.path.join(DATA_DIR, f"{mode_id}.json")
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        return Mode(**json.load(f))
+_load_all = _store.load_all
+_save = _store.save
+_load = _store.load
+load_mode = _store.load_or_none
 
 
 @modes.router.get("/list")
@@ -109,7 +86,5 @@ async def delete_mode(mode_id: str):
     mode = _load(mode_id)
     if mode.is_builtin:
         raise HTTPException(status_code=403, detail="Cannot delete built-in modes")
-    path = os.path.join(DATA_DIR, f"{mode_id}.json")
-    if os.path.exists(path):
-        os.remove(path)
+    _store.delete(mode_id)
     return {"ok": True}

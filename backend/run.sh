@@ -2,15 +2,9 @@
 # The comment above is shebang, DO NOT REMOVE
 DEV_ABSPATH="$(readlink -f "${BASH_SOURCE[0]}")"
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    # echo "In macOS server sed START"
-    # echo "SERVER_ABSPATH: $SERVER_ABSPATH"
     sed -i '' 's/\r//g' "$DEV_ABSPATH"
-    # echo "In macOS server sed END"
 else
-    # echo "NOT in macOS server START"
-    # echo "SERVER_ABSPATH: $SERVER_ABSPATH"
     sed -i 's/\r//g' "$DEV_ABSPATH"
-    # echo "NOT in macOS server START"
 fi
 chmod +x "$DEV_ABSPATH"
 
@@ -24,13 +18,46 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# --- Find Python >= 3.10 ---
+REQUIRED_PYTHON_MINOR=10
+PYTHON_BIN=""
+for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+    if command -v "$candidate" &>/dev/null; then
+        ver=$("$candidate" -c "import sys; print(sys.version_info.minor)" 2>/dev/null)
+        if [[ -n "$ver" ]] && (( ver >= REQUIRED_PYTHON_MINOR )); then
+            PYTHON_BIN="$(command -v "$candidate")"
+            break
+        fi
+    fi
+done
+
+if [[ -z "$PYTHON_BIN" ]]; then
+    echo "ERROR: Python >= 3.${REQUIRED_PYTHON_MINOR} is required but not found."
+    echo "Install it with: brew install python@3.13"
+    exit 1
+fi
+
 # --- Create virtual environment if it doesn't exist ---
 VENV_DIR="$BACKEND_DIR_ABSPATH/.venv"
 if [[ ! -d "$VENV_DIR" ]]; then
-    echo "Creating virtual environment..."
-    python3 -m venv "$VENV_DIR"
+    echo "Creating virtual environment with $("$PYTHON_BIN" --version)..."
+    "$PYTHON_BIN" -m venv "$VENV_DIR"
 fi
+
+# --- Verify the venv Python meets the minimum version ---
+VENV_PYTHON="$VENV_DIR/bin/python3"
+VENV_VER=$("$VENV_PYTHON" -c "import sys; print(sys.version_info.minor)" 2>/dev/null)
+if [[ -z "$VENV_VER" ]] || (( VENV_VER < REQUIRED_PYTHON_MINOR )); then
+    echo "Existing venv uses Python 3.${VENV_VER:-?}, need >= 3.${REQUIRED_PYTHON_MINOR}. Recreating..."
+    rm -rf "$VENV_DIR"
+    echo "Creating virtual environment with $("$PYTHON_BIN" --version)..."
+    "$PYTHON_BIN" -m venv "$VENV_DIR"
+fi
+
 source "$VENV_DIR/bin/activate"
+
+# --- Upgrade pip if outdated ---
+pip3 install --upgrade pip --quiet
 
 # --- Install custom debugger module if not already installed ---
 DEBUGGER_DIR_ABSPATH="$PROJECT_ROOT_ABSPATH/debugger"

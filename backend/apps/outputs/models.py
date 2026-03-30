@@ -4,6 +4,53 @@ from uuid import uuid4
 from datetime import datetime
 
 
+def _migrate_legacy_files(
+    data: dict,
+    *,
+    allow_schema_json: bool = False,
+    always_set_files: bool = False,
+) -> dict:
+    """Convert legacy frontend_code/backend_code fields into the files dict.
+
+    Parameters
+    ----------
+    allow_schema_json:
+        Also migrate a ``schema_json`` field to ``files["schema.json"]``.
+    always_set_files:
+        When ``True``, set ``data["files"]`` even to an empty dict if no
+        legacy fields are found (used by Output / OutputCreate).  When
+        ``False``, only set ``data["files"]`` if there are actual files to
+        migrate (used by OutputUpdate / WorkspaceSeedRequest).
+    """
+    if not isinstance(data, dict):
+        return data
+
+    files_present = "files" in data
+    files_truthy = files_present and data["files"]
+
+    if not files_present or (always_set_files and not files_truthy):
+        files: dict[str, str] = {}
+        fc = data.pop("frontend_code", None)
+        bc = data.pop("backend_code", None)
+        if fc:
+            files["index.html"] = fc
+        if bc:
+            files["backend.py"] = bc
+        if allow_schema_json:
+            sj = data.pop("schema_json", None)
+            if sj:
+                files["schema.json"] = sj
+        if files or always_set_files:
+            data["files"] = files
+    else:
+        data.pop("frontend_code", None)
+        data.pop("backend_code", None)
+        if allow_schema_json:
+            data.pop("schema_json", None)
+
+    return data
+
+
 class AutoRunConfig(BaseModel):
     enabled: bool = False
     prompt: str = ""
@@ -33,22 +80,7 @@ class Output(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_flat_fields(cls, data: Any) -> Any:
-        """Migrate legacy frontend_code/backend_code fields into the files dict."""
-        if not isinstance(data, dict):
-            return data
-        if "files" not in data or not data["files"]:
-            files: dict[str, str] = {}
-            fc = data.pop("frontend_code", None)
-            bc = data.pop("backend_code", None)
-            if fc:
-                files["index.html"] = fc
-            if bc:
-                files["backend.py"] = bc
-            data["files"] = files
-        else:
-            data.pop("frontend_code", None)
-            data.pop("backend_code", None)
-        return data
+        return _migrate_legacy_files(data, always_set_files=True)
 
     @property
     def frontend_code(self) -> str:
@@ -75,21 +107,7 @@ class OutputCreate(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_flat_fields(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        if "files" not in data or not data["files"]:
-            files: dict[str, str] = {}
-            fc = data.pop("frontend_code", None)
-            bc = data.pop("backend_code", None)
-            if fc:
-                files["index.html"] = fc
-            if bc:
-                files["backend.py"] = bc
-            data["files"] = files
-        else:
-            data.pop("frontend_code", None)
-            data.pop("backend_code", None)
-        return data
+        return _migrate_legacy_files(data, always_set_files=True)
 
 
 class OutputUpdate(BaseModel):
@@ -105,22 +123,7 @@ class OutputUpdate(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_flat_fields(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        if "files" not in data:
-            files: dict[str, str] = {}
-            fc = data.pop("frontend_code", None)
-            bc = data.pop("backend_code", None)
-            if fc:
-                files["index.html"] = fc
-            if bc:
-                files["backend.py"] = bc
-            if files:
-                data["files"] = files
-        else:
-            data.pop("frontend_code", None)
-            data.pop("backend_code", None)
-        return data
+        return _migrate_legacy_files(data)
 
 
 class OutputExecute(BaseModel):
@@ -165,27 +168,7 @@ class WorkspaceSeedRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_flat_fields(cls, data: Any) -> Any:
-        """Accept legacy frontend_code/backend_code/schema_json fields."""
-        if not isinstance(data, dict):
-            return data
-        if "files" not in data:
-            files: dict[str, str] = {}
-            fc = data.pop("frontend_code", None)
-            bc = data.pop("backend_code", None)
-            sj = data.pop("schema_json", None)
-            if fc:
-                files["index.html"] = fc
-            if bc:
-                files["backend.py"] = bc
-            if sj:
-                files["schema.json"] = sj
-            if files:
-                data["files"] = files
-        else:
-            data.pop("frontend_code", None)
-            data.pop("backend_code", None)
-            data.pop("schema_json", None)
-        return data
+        return _migrate_legacy_files(data, allow_schema_json=True)
 
 
 class VibeCodeRequest(BaseModel):

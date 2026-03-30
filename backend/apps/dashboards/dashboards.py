@@ -6,6 +6,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from backend.config.Apps import SubApp
+from backend.apps.common.json_store import JsonStore
 from backend.apps.dashboards.models import (
     Dashboard,
     DashboardCreate,
@@ -24,34 +25,14 @@ from backend.config.paths import DASHBOARDS_DIR as DATA_DIR, SESSIONS_DIR, DASHB
 OLD_LAYOUT_FILE = os.path.join(OLD_LAYOUT_DIR, "layout.json")
 
 
-def _load_all() -> list[Dashboard]:
-    result = []
-    if not os.path.exists(DATA_DIR):
-        return result
-    for fname in os.listdir(DATA_DIR):
-        if fname.endswith(".json"):
-            with open(os.path.join(DATA_DIR, fname)) as f:
-                result.append(Dashboard(**json.load(f)))
-    return result
+_store = JsonStore(
+    Dashboard, DATA_DIR, dump_mode="json", not_found_detail="Dashboard not found",
+)
 
-
-def _save(dashboard: Dashboard):
-    with open(os.path.join(DATA_DIR, f"{dashboard.id}.json"), "w") as f:
-        json.dump(dashboard.model_dump(mode="json"), f, indent=2)
-
-
-def _load(dashboard_id: str) -> Dashboard:
-    path = os.path.join(DATA_DIR, f"{dashboard_id}.json")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Dashboard not found")
-    with open(path) as f:
-        return Dashboard(**json.load(f))
-
-
-def _delete(dashboard_id: str):
-    path = os.path.join(DATA_DIR, f"{dashboard_id}.json")
-    if os.path.exists(path):
-        os.remove(path)
+_load_all = _store.load_all
+_save = _store.save
+_load = _store.load
+_delete = _store.delete
 
 
 def _migrate_if_needed():

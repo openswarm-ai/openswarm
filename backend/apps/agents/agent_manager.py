@@ -15,14 +15,15 @@ from backend.apps.agents.ws_manager import ws_manager
 from backend.apps.modes.modes import load_mode
 from backend.apps.outputs.outputs import _load_all as load_all_outputs
 from backend.apps.settings.settings import load_settings
+from backend.apps.common.mcp_utils import sanitize_server_name as _sanitize_server_name
 from backend.apps.tools_lib.tools_lib import (
     _load_all as load_all_tools,
-    _sanitize_server_name,
     derive_mcp_config,
     load_builtin_permissions,
     refresh_google_token,
 )
 from backend.config.paths import SESSIONS_DIR
+from backend.apps.common.json_store import SessionStore
 from backend.apps.analytics.collector import record as _analytics
 
 logger = logging.getLogger(__name__)
@@ -30,35 +31,12 @@ logger = logging.getLogger(__name__)
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 
 
-def _save_session(session_id: str, doc_data: dict):
-    os.makedirs(SESSIONS_DIR, exist_ok=True)
-    with open(os.path.join(SESSIONS_DIR, f"{session_id}.json"), "w") as f:
-        json.dump(doc_data, f, indent=2)
+_session_store = SessionStore(SESSIONS_DIR)
 
-
-def _load_session_data(session_id: str) -> dict | None:
-    path = os.path.join(SESSIONS_DIR, f"{session_id}.json")
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        return json.load(f)
-
-
-def _delete_session_file(session_id: str):
-    path = os.path.join(SESSIONS_DIR, f"{session_id}.json")
-    if os.path.exists(path):
-        os.remove(path)
-
-
-def _load_all_session_data() -> list[tuple[str, dict]]:
-    results = []
-    if not os.path.exists(SESSIONS_DIR):
-        return results
-    for fname in os.listdir(SESSIONS_DIR):
-        if fname.endswith(".json"):
-            with open(os.path.join(SESSIONS_DIR, fname)) as f:
-                results.append((fname[:-5], json.load(f)))
-    return results
+_save_session = _session_store.save
+_load_session_data = _session_store.load
+_delete_session_file = _session_store.delete
+_load_all_session_data = _session_store.load_all
 
 FULL_TOOLS = [
     "Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion",

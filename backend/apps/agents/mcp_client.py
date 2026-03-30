@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from backend.apps.agents.providers.base import ToolSchema
+from backend.apps.common.mcp_utils import parse_sse_json as _parse_sse_json
 
 logger = logging.getLogger(__name__)
 
@@ -231,22 +232,7 @@ class MCPClientManager:
         conn._next_id = 3  # type: ignore[attr-defined]
         return conn
 
-    @staticmethod
-    def _parse_sse_json(text: str) -> dict | None:
-        """Extract JSON from an SSE response body."""
-        for line in text.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("data:"):
-                payload = stripped[len("data:"):].strip()
-                if payload:
-                    try:
-                        return json.loads(payload)
-                    except json.JSONDecodeError:
-                        continue
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return None
+    _parse_sse_json = staticmethod(_parse_sse_json)
 
     async def call_tool(
         self, server_name: str, tool_name: str, arguments: dict,

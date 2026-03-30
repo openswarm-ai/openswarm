@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import HTTPException
 from backend.config.Apps import SubApp
+from backend.apps.common.json_store import JsonStore
 from backend.apps.templates.models import PromptTemplate, PromptTemplateCreate, PromptTemplateUpdate
 
 logger = logging.getLogger(__name__)
@@ -17,32 +18,12 @@ async def templates_lifespan():
 
 templates = SubApp("templates", templates_lifespan)
 
-def _load_all() -> list[PromptTemplate]:
-    result = []
-    if not os.path.exists(DATA_DIR):
-        return result
-    for fname in os.listdir(DATA_DIR):
-        if fname.endswith(".json"):
-            with open(os.path.join(DATA_DIR, fname)) as f:
-                result.append(PromptTemplate(**json.load(f)))
-    return result
+_store = JsonStore(PromptTemplate, DATA_DIR, not_found_detail="Template not found")
 
-def _save(template: PromptTemplate):
-    path = os.path.join(DATA_DIR, f"{template.id}.json")
-    with open(path, "w") as f:
-        json.dump(template.model_dump(), f, indent=2)
-
-def _load(template_id: str) -> PromptTemplate:
-    path = os.path.join(DATA_DIR, f"{template_id}.json")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Template not found")
-    with open(path) as f:
-        return PromptTemplate(**json.load(f))
-
-def _delete(template_id: str):
-    path = os.path.join(DATA_DIR, f"{template_id}.json")
-    if os.path.exists(path):
-        os.remove(path)
+_load_all = _store.load_all
+_save = _store.save
+_load = _store.load
+_delete = _store.delete
 
 @templates.router.get("/list")
 async def list_templates():

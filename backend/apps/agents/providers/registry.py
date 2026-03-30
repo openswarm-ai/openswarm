@@ -12,23 +12,18 @@ import logging
 from typing import Any, TYPE_CHECKING
 
 from backend.apps.agents.providers.base import BaseProvider
+from backend.apps.common.model_registry import (
+    get_builtin_models_by_provider,
+    get_context_window as _registry_get_context_window,
+    calculate_cost as _registry_calculate_cost,
+)
 
 if TYPE_CHECKING:
     from backend.apps.settings.models import AppSettings
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Tier 1: Built-in models (curated, we know their quirks)
-# ---------------------------------------------------------------------------
-
-BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
-    "Anthropic": [
-        {"value": "sonnet", "label": "Claude Sonnet 4.6", "context_window": 1_000_000, "model_id": "claude-sonnet-4-6", "api": "anthropic"},
-        {"value": "opus", "label": "Claude Opus 4.6", "context_window": 1_000_000, "model_id": "claude-opus-4-6", "api": "anthropic"},
-        {"value": "haiku", "label": "Claude Haiku 4.5", "context_window": 200_000, "model_id": "claude-haiku-4-5", "api": "anthropic"},
-    ],
-}
+BUILTIN_MODELS = get_builtin_models_by_provider()
 
 # ---------------------------------------------------------------------------
 # OpenRouter: built-in integration for 300+ models
@@ -261,52 +256,17 @@ def get_available_models(settings: AppSettings) -> dict[str, list[dict]]:
 
 def get_context_window(provider: str, model: str, settings: AppSettings | None = None) -> int:
     """Look up context window for any model."""
-    # Check built-in models first
-    for models in BUILTIN_MODELS.values():
-        for m in models:
-            if m["value"] == model:
-                return m.get("context_window", 128_000)
+    result = _registry_get_context_window(model)
+    if result != 128_000:
+        return result
 
-    # Check custom providers
     if settings:
         for cp in getattr(settings, "custom_providers", []):
             for m in cp.models:
                 if m.get("value") == model or m.get("id") == model:
                     return m.get("context_window", 128_000)
 
-    return 128_000  # safe default
-
-
-# ---------------------------------------------------------------------------
-# Cost tracking
-# ---------------------------------------------------------------------------
-
-COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
-    # (provider, model): (input_cost_per_1M, output_cost_per_1M)
-    # Anthropic
-    ("Anthropic", "sonnet"): (3.0, 15.0),
-    ("Anthropic", "opus"): (5.0, 25.0),
-    ("Anthropic", "haiku"): (1.0, 5.0),
-    # OpenAI
-    ("OpenAI", "gpt-5.4"): (2.50, 15.0),
-    ("OpenAI", "gpt-5.4-mini"): (0.75, 3.0),
-    ("OpenAI", "o3"): (2.0, 8.0),
-    ("OpenAI", "o4-mini"): (1.10, 4.40),
-    # Google
-    ("Google", "gemini-2.5-flash"): (0.15, 0.60),
-    ("Google", "gemini-2.5-pro"): (1.25, 10.0),
-    # OpenRouter-backed (approximate)
-    ("xAI", "x-ai/grok-4-0214"): (3.0, 15.0),
-    ("Meta", "meta-llama/llama-4-maverick"): (0.50, 0.70),
-    ("Meta", "meta-llama/llama-4-scout"): (0.15, 0.40),
-    ("DeepSeek", "deepseek/deepseek-chat-v3-0324"): (0.30, 0.90),
-    ("DeepSeek", "deepseek/deepseek-r1"): (0.80, 2.40),
-    ("Mistral", "mistralai/mistral-large-2501"): (2.0, 6.0),
-    ("Mistral", "mistralai/mistral-small-3.1-24b-instruct"): (0.10, 0.30),
-    ("Qwen", "qwen/qwen3-coder"): (0.0, 0.0),
-    ("Qwen", "qwen/qwen3-235b-a22b"): (0.20, 0.70),
-    ("Cohere", "cohere/command-a-03-2025"): (2.50, 10.0),
-}
+    return 128_000
 
 
 def calculate_cost(
@@ -314,16 +274,4 @@ def calculate_cost(
     input_tokens: int, output_tokens: int,
 ) -> float:
     """Calculate cost in USD from token counts."""
-    # Direct lookup first
-    rates = COST_PER_1M_TOKENS.get((provider, model))
-    if not rates:
-        # Case-insensitive provider lookup
-        lower = provider.lower()
-        for (p, m), r in COST_PER_1M_TOKENS.items():
-            if p.lower() == lower and m == model:
-                rates = r
-                break
-    if not rates:
-        return 0.0
-    input_rate, output_rate = rates
-    return (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
+    return _registry_calculate_cost(provider, model, input_tokens, output_tokens)

@@ -17,15 +17,10 @@ import anthropic
 
 from backend.apps.agents.models import AgentSession, ApprovalRequest, Message
 from backend.apps.agents.ws_manager import ws_manager
+from backend.apps.common.model_registry import resolve_model_id
 from backend.apps.tools_lib.tools_lib import load_builtin_permissions
 
 logger = logging.getLogger(__name__)
-
-MODEL_MAP = {
-    "sonnet": "claude-sonnet-4-6",
-    "opus": "claude-opus-4-6",
-    "haiku": "claude-haiku-4-5-20251001",
-}
 
 BROWSER_TOOLS_SCHEMA = [
     {
@@ -321,7 +316,7 @@ async def run_browser_agent(
         )
         logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
 
-    api_model = MODEL_MAP.get(model, model)
+    api_model = resolve_model_id(model)
     from backend.apps.settings.settings import load_settings
     from backend.apps.settings.credentials import get_anthropic_client
     client = get_anthropic_client(load_settings())

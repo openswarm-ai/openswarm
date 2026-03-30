@@ -9,6 +9,7 @@ from fastapi import HTTPException, Query
 from fastapi.responses import Response
 from jsonschema import validate as schema_validate, ValidationError as SchemaValidationError
 from backend.config.Apps import SubApp
+from backend.apps.common.json_store import JsonStore
 from backend.apps.outputs.models import (
     Output, OutputCreate, OutputUpdate, OutputExecute, OutputExecuteResult,
     VibeCodeRequest, AutoRunRequest, AutoRunConfig, AutoRunAgentRequest,
@@ -16,19 +17,10 @@ from backend.apps.outputs.models import (
 )
 from backend.apps.outputs.executor import execute_backend_code
 from backend.apps.outputs.view_builder_templates import VIEW_BUILDER_SKILL, VIEW_TEMPLATE_FILES
+from backend.apps.common.model_registry import resolve_model_id as _resolve_model
 from backend.apps.settings.settings import load_settings
 
 logger = logging.getLogger(__name__)
-
-MODEL_MAP = {
-    "sonnet": "claude-sonnet-4-20250514",
-    "opus": "claude-opus-4-20250514",
-    "haiku": "claude-haiku-4-5-20251001",
-}
-
-
-def _resolve_model(short_name: str) -> str:
-    return MODEL_MAP.get(short_name, short_name)
 
 
 def _get_anthropic_client():
@@ -100,37 +92,12 @@ async def outputs_lifespan():
 outputs = SubApp("outputs", outputs_lifespan)
 
 
-def _load_all() -> list[Output]:
-    result = []
-    if not os.path.exists(DATA_DIR):
-        return result
-    for fname in os.listdir(DATA_DIR):
-        if fname.endswith(".json"):
-            with open(os.path.join(DATA_DIR, fname)) as f:
-                result.append(Output(**json.load(f)))
-    return result
+_store = JsonStore(Output, DATA_DIR, not_found_detail="Output not found")
 
-
-def _save(output: Output):
-    with open(os.path.join(DATA_DIR, f"{output.id}.json"), "w") as f:
-        json.dump(output.model_dump(), f, indent=2)
-
-
-def _load(output_id: str) -> Output:
-    path = os.path.join(DATA_DIR, f"{output_id}.json")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Output not found")
-    with open(path) as f:
-        return Output(**json.load(f))
-
-
-def load_output(output_id: str) -> Output | None:
-    """Public helper for other modules to resolve an output by ID."""
-    path = os.path.join(DATA_DIR, f"{output_id}.json")
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        return Output(**json.load(f))
+_load_all = _store.load_all
+_save = _store.save
+_load = _store.load
+load_output = _store.load_or_none
 
 
 def _walk_directory(folder: str) -> dict[str, str]:

@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from fastapi import HTTPException, Query
 from fastapi.responses import HTMLResponse
 from backend.config.Apps import SubApp
+from backend.apps.common.json_store import JsonStore
 from backend.apps.tools_lib.models import ToolDefinition, ToolCreate, ToolUpdate, BUILTIN_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -252,28 +253,11 @@ _pending_oauth: dict[str, str] = {}
 _pending_pkce: dict[str, str] = {}  # state -> code_verifier (for PKCE flows)
 
 
-def _load_all() -> list[ToolDefinition]:
-    result = []
-    if not os.path.exists(DATA_DIR):
-        return result
-    for fname in os.listdir(DATA_DIR):
-        if fname.endswith(".json"):
-            with open(os.path.join(DATA_DIR, fname)) as f:
-                result.append(ToolDefinition(**json.load(f)))
-    return result
+_store = JsonStore(ToolDefinition, DATA_DIR, not_found_detail="Tool not found")
 
-
-def _save(tool: ToolDefinition):
-    with open(os.path.join(DATA_DIR, f"{tool.id}.json"), "w") as f:
-        json.dump(tool.model_dump(), f, indent=2)
-
-
-def _load(tool_id: str) -> ToolDefinition:
-    path = os.path.join(DATA_DIR, f"{tool_id}.json")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Tool not found")
-    with open(path) as f:
-        return ToolDefinition(**json.load(f))
+_load_all = _store.load_all
+_save = _store.save
+_load = _store.load
 
 
 @tools_lib.router.get("/builtin")
@@ -478,9 +462,7 @@ async def delete_tool(tool_id: str):
 # MCP config derivation
 # ---------------------------------------------------------------------------
 
-def _sanitize_server_name(name: str) -> str:
-    """Convert a tool name into a valid MCP server identifier (alphanumeric + hyphens)."""
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+from backend.apps.common.mcp_utils import sanitize_server_name as _sanitize_server_name
 
 
 def _extra_bin_dirs() -> list[str]:
@@ -637,15 +619,6 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
     return config
 
 
-# ---------------------------------------------------------------------------
-# OAuth2 flow for Google Workspace (and other OAuth providers)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# MCP tool discovery
-# ---------------------------------------------------------------------------
-
 _READ_PREFIXES = ("get", "list", "read", "search", "fetch", "find", "query", "count", "check", "describe", "show", "download", "browse", "analy", "explain")
 _WRITE_PREFIXES = ("create", "write", "delete", "update", "send", "remove", "modify", "add", "set", "put", "post", "patch", "insert", "move", "copy", "rename", "archive", "trash", "publish", "approve", "reject")
 
@@ -770,21 +743,7 @@ def _extract_service(name: str) -> tuple[str, str]:
     return "Other", ""
 
 
-def _parse_sse_json(text: str) -> dict | None:
-    """Extract JSON from an SSE response body (handles `data: {...}` lines)."""
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("data:"):
-            payload = stripped[len("data:"):].strip()
-            if payload:
-                try:
-                    return json.loads(payload)
-                except json.JSONDecodeError:
-                    continue
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return None
+from backend.apps.common.mcp_utils import parse_sse_json as _parse_sse_json
 
 
 async def _discover_mcp_tools_http(url: str, headers: dict | None = None) -> list[dict]:
