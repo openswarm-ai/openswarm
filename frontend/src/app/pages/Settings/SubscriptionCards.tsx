@@ -18,6 +18,11 @@ const SubscriptionCards: React.FC = () => {
       .then(setStatus)
       .catch(() => setStatus({ running: false, providers: [], models: [] }));
   };
+  const fetchStatusWithRetry = () => {
+    fetchStatus();
+    setTimeout(fetchStatus, 1000);
+    setTimeout(fetchStatus, 3000);
+  };
   useEffect(() => {
     fetchStatus();
     retryRef.current = setInterval(fetchStatus, 3000);
@@ -62,7 +67,7 @@ const SubscriptionCards: React.FC = () => {
               setPollTimer(null);
               setConnecting(null);
               setUserCode('');
-              fetchStatus();
+              fetchStatusWithRetry();
             }
           } catch {}
         }, 5000);
@@ -79,7 +84,7 @@ const SubscriptionCards: React.FC = () => {
           window.removeEventListener('message', msgHandler);
           if (popup && !popup.closed) popup.close();
           setConnecting(null);
-          fetchStatus();
+          fetchStatusWithRetry();
         };
         const msgHandler = (event: MessageEvent) => {
           const d = event.data;
@@ -117,7 +122,7 @@ const SubscriptionCards: React.FC = () => {
         body: JSON.stringify({ provider: providerId }),
       });
     } catch {}
-    setTimeout(() => { fetchStatus(); setDisconnecting(null); }, 500);
+    setTimeout(() => { fetchStatusWithRetry(); setDisconnecting(null); }, 500);
   };
   if (!status) {
     return (
