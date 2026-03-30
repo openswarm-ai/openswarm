@@ -237,7 +237,7 @@ const SubscriptionCards: React.FC = () => {
   const [pollTimer, setPollTimer] = useState<any>(null);
 
   const fetchStatus = () => {
-    fetch(`${API_BASE}/agents/subscriptions/status`)
+    fetch(`${API_BASE}/subscriptions/status`)
       .then(r => r.json())
       .then(setStatus)
       .catch(() => setStatus({ running: false, providers: [], models: [] }));
@@ -261,7 +261,7 @@ const SubscriptionCards: React.FC = () => {
     await new Promise(r => setTimeout(r, 500));
 
     try {
-      const r = await fetch(`${API_BASE}/agents/subscriptions/connect`, {
+      const r = await fetch(`${API_BASE}/subscriptions/connect`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: providerId }),
       });
@@ -275,7 +275,7 @@ const SubscriptionCards: React.FC = () => {
 
         const timer = setInterval(async () => {
           try {
-            const pr = await fetch(`${API_BASE}/agents/subscriptions/poll`, {
+            const pr = await fetch(`${API_BASE}/subscriptions/poll`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ provider: providerId, device_code: data.device_code, code_verifier: data.code_verifier, extra_data: data.extra_data }),
             });
@@ -298,7 +298,7 @@ const SubscriptionCards: React.FC = () => {
         // Status polling as primary detection
         const statusPoller = setInterval(async () => {
           try {
-            const sr = await fetch(`${API_BASE}/agents/subscriptions/status`);
+            const sr = await fetch(`${API_BASE}/subscriptions/status`);
             const sd = await sr.json();
             const connections = sd.providers?.connections || [];
             if (connections.some((p: any) => p.provider === providerId && p.isActive)) {
@@ -322,7 +322,7 @@ const SubscriptionCards: React.FC = () => {
             setPollTimer(null);
             if (popup && !popup.closed) popup.close();
             try {
-              await fetch(`${API_BASE}/agents/subscriptions/exchange`, {
+              await fetch(`${API_BASE}/subscriptions/exchange`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   provider: providerId, code: callbackData.code,
@@ -354,7 +354,7 @@ const SubscriptionCards: React.FC = () => {
   const handleDisconnect = async (providerId: string) => {
     setDisconnecting(providerId);
     try {
-      await fetch(`${API_BASE}/agents/subscriptions/disconnect`, {
+      await fetch(`${API_BASE}/subscriptions/disconnect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: providerId }),

@@ -3,9 +3,9 @@ from backend.apps.agents.agent_manager import agent_manager
 from backend.apps.agents.ws_manager import ws_manager
 from backend.apps.agents.models import AgentConfig, ApprovalResponse
 from contextlib import asynccontextmanager
-from fastapi import WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
-import json
+from uuid import uuid4
 import logging
 
 logger = logging.getLogger(__name__)
@@ -179,127 +179,57 @@ async def resume_session(session_id: str):
     return {"session": session.model_dump(mode="json")}
 
 
-# ---------------------------------------------------------------------------
-# 9Router / Subscription endpoints
-# ---------------------------------------------------------------------------
+@agents.router.post("/browser/command")
+async def browser_command(request: Request):
+    """Proxy browser commands to the frontend via WebSocket and wait for results."""
+    body = await request.json()
+    action = body.get("action", "")
+    browser_id = body.get("browser_id", "")
+    tab_id = body.get("tab_id", "")
+    params = body.get("params", {})
+    if not action or not browser_id:
+        return JSONResponse({"error": "action and browser_id are required"}, status_code=400)
+    request_id = uuid4().hex
+    result = await ws_manager.send_browser_command(request_id, action, browser_id, params, tab_id=tab_id)
+    return JSONResponse(result)
 
-@agents.router.get("/subscriptions/status")
-async def subscriptions_status():
-    """Check if 9Router is running and list connected providers."""
-    from backend.apps.nine_router import is_running, get_providers, get_models
-    if not is_running():
-        return {"running": False, "providers": [], "models": []}
-    providers = await get_providers()
-    models = await get_models()
-    return {"running": True, "providers": providers, "models": models}
+
+@agents.router.post("/browser-agent/run")
+async def browser_agent_run(request: Request):
+    """Run one or more browser sub-agents in parallel."""
+    from backend.apps.agents.browser_agent import run_browser_agents
+    body = await request.json()
+    tasks = body.get("tasks", [])
+    if not tasks:
+        return JSONResponse({"error": "tasks array is required"}, status_code=400)
+    results = await run_browser_agents(
+        tasks=tasks, model=body.get("model", "sonnet"),
+        dashboard_id=body.get("dashboard_id", "") or None,
+        pre_selected_browser_ids=body.get("pre_selected_browser_ids", []),
+        parent_session_id=body.get("parent_session_id", "") or None,
+    )
+    return JSONResponse({"results": results})
 
 
-@agents.router.post("/subscriptions/connect")
-async def subscriptions_connect(body: dict):
-    """Start OAuth flow for a subscription provider."""
-    from backend.apps.nine_router import is_running, ensure_running, start_oauth
-    provider = body.get("provider", "")
-    if not provider:
-        raise HTTPException(status_code=400, detail="provider required")
-
-    if not is_running():
-        await ensure_running()
-        if not is_running():
-            raise HTTPException(status_code=503, detail="9Router not available. Please install Node.js.")
-
+@agents.router.post("/invoke-agent/run")
+async def invoke_agent_run(request: Request):
+    """Fork an existing agent session and send it a new message."""
+    body = await request.json()
+    session_id = body.get("session_id", "")
+    message = body.get("message", "")
+    if not session_id:
+        return JSONResponse({"error": "session_id is required"}, status_code=400)
+    if not message:
+        return JSONResponse({"error": "message is required"}, status_code=400)
     try:
-        result = await start_oauth(provider)
-
-        # For auth_code flows, store pending state so the callback can exchange
-        if result.get("flow") == "authorization_code" and result.get("state"):
-            from backend.main import _pending_oauth
-            _pending_oauth[result["state"]] = {
-                "provider": provider,
-                "code_verifier": result.get("code_verifier", ""),
-                "redirect_uri": result.get("redirect_uri", ""),
-            }
-
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@agents.router.post("/subscriptions/poll")
-async def subscriptions_poll(body: dict):
-    """Poll for OAuth completion."""
-    from backend.apps.nine_router import poll_oauth
-    provider = body.get("provider", "")
-    device_code = body.get("device_code", "")
-    if not provider or not device_code:
-        raise HTTPException(status_code=400, detail="provider and device_code required")
-
-    try:
-        result = await poll_oauth(
-            provider, device_code,
-            code_verifier=body.get("code_verifier"),
-            extra_data=body.get("extra_data"),
+        result = await agent_manager.invoke_agent(
+            source_session_id=session_id, message=message,
+            parent_session_id=body.get("parent_session_id", "") or None,
+            dashboard_id=body.get("dashboard_id", "") or None,
         )
-        if result.get("success"):
-            from backend.apps.analytics.collector import record as _analytics
-            _analytics("subscription.connected", {"provider": provider})
-        return result
+        return JSONResponse(result)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@agents.router.post("/subscriptions/exchange")
-async def subscriptions_exchange(body: dict):
-    """Exchange OAuth code for tokens via 9Router."""
-    from backend.apps.nine_router import exchange_oauth
-    provider = body.get("provider", "")
-    code = body.get("code", "")
-    redirect_uri = body.get("redirect_uri", "")
-    code_verifier = body.get("code_verifier", "")
-    state = body.get("state", "")
-
-    if not provider or not code:
-        raise HTTPException(status_code=400, detail="provider and code required")
-
-    try:
-        result = await exchange_oauth(provider, code, redirect_uri, code_verifier, state)
-        if result.get("success"):
-            from backend.apps.analytics.collector import record as _analytics
-            _analytics("subscription.connected", {"provider": provider})
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@agents.router.get("/subscriptions/models")
-async def subscriptions_models():
-    """List all models available through connected subscriptions."""
-    from backend.apps.nine_router import is_running, get_models
-    if not is_running():
-        return {"models": []}
-    models = await get_models()
-    return {"models": models}
-
-
-@agents.router.post("/subscriptions/disconnect")
-async def subscriptions_disconnect(body: dict):
-    """Disconnect a subscription provider via 9Router."""
-    import httpx
-    provider = body.get("provider", "")
-    if not provider:
-        raise HTTPException(status_code=400, detail="provider required")
-
-    try:
-        from backend.apps.nine_router import NINE_ROUTER_API, get_providers
-        providers_data = await get_providers()
-        connections = providers_data.get("connections", []) if isinstance(providers_data, dict) else []
-        conn = next((c for c in connections if c.get("provider") == provider), None)
-        if conn and conn.get("id"):
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                await client.delete(f"{NINE_ROUTER_API}/providers/{conn['id']}")
-            from backend.apps.analytics.collector import record as _analytics
-            _analytics("subscription.disconnected", {"provider": provider})
-            return {"ok": True}
-        return {"ok": False, "error": "Connection not found"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse({"error": str(e)}, status_code=500)
 

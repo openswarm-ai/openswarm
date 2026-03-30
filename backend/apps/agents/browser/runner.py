@@ -42,10 +42,7 @@ async def run_browser_agent(
     session._cancel_event = cancel_event
     agent_manager.sessions[session_id] = session
 
-    await ws_manager.send_to_session(session_id, "agent:status", {
-        "session_id": session_id, "status": "running",
-        "session": session.model_dump(mode="json"),
-    })
+    await ws_manager.emit_status(session_id, "running", session)
 
     if initial_url:
         nav_result = await execute_browser_tool("BrowserNavigate", {"url": initial_url}, browser_id, tab_id)
@@ -62,9 +59,7 @@ async def run_browser_agent(
 
     user_msg = Message(role="user", content=task)
     session.messages.append(user_msg)
-    await ws_manager.send_to_session(session_id, "agent:message", {
-        "session_id": session_id, "message": user_msg.model_dump(mode="json"),
-    })
+    await ws_manager.emit_message(session_id, user_msg)
 
     try:
         for turn in range(MAX_TURNS):
@@ -88,15 +83,11 @@ async def run_browser_agent(
             if text_parts:
                 asst_msg = Message(role="assistant", content="\n".join(text_parts))
                 session.messages.append(asst_msg)
-                await ws_manager.send_to_session(session_id, "agent:message", {
-                    "session_id": session_id, "message": asst_msg.model_dump(mode="json"),
-                })
+                await ws_manager.emit_message(session_id, asst_msg)
             for tu in tool_uses:
                 tool_msg = Message(role="tool_call", content={"id": tu.id, "tool": tu.name, "input": tu.input})
                 session.messages.append(tool_msg)
-                await ws_manager.send_to_session(session_id, "agent:message", {
-                    "session_id": session_id, "message": tool_msg.model_dump(mode="json"),
-                })
+                await ws_manager.emit_message(session_id, tool_msg)
 
             messages.append({"role": "assistant", "content": assistant_content})
             if response.stop_reason != "tool_use":
@@ -114,7 +105,7 @@ async def run_browser_agent(
                     tool_results.append({"type": "tool_result", "tool_use_id": tu.id, "content": [{"type": "text", "text": denied_text}]})
                     result_msg = Message(role="tool_result", content={"text": denied_text, "tool_name": tu.name, "elapsed_ms": 0})
                     session.messages.append(result_msg)
-                    await ws_manager.send_to_session(session_id, "agent:message", {"session_id": session_id, "message": result_msg.model_dump(mode="json")})
+                    await ws_manager.emit_message(session_id, result_msg)
                     continue
                 if policy == "ask":
                     decision = await _request_browser_approval(session, tu.name, tu.input)
@@ -123,7 +114,7 @@ async def run_browser_agent(
                         tool_results.append({"type": "tool_result", "tool_use_id": tu.id, "content": [{"type": "text", "text": denied_text}]})
                         result_msg = Message(role="tool_result", content={"text": denied_text, "tool_name": tu.name, "elapsed_ms": 0})
                         session.messages.append(result_msg)
-                        await ws_manager.send_to_session(session_id, "agent:message", {"session_id": session_id, "message": result_msg.model_dump(mode="json")})
+                        await ws_manager.emit_message(session_id, result_msg)
                         continue
 
                 start = time.time()
@@ -137,7 +128,7 @@ async def run_browser_agent(
                 result_text = result.get("text", result.get("error", ""))
                 result_msg = Message(role="tool_result", content={"text": result_text, "tool_name": tu.name, "elapsed_ms": elapsed_ms})
                 session.messages.append(result_msg)
-                await ws_manager.send_to_session(session_id, "agent:message", {"session_id": session_id, "message": result_msg.model_dump(mode="json")})
+                await ws_manager.emit_message(session_id, result_msg)
 
             messages.append({"role": "user", "content": tool_results})
             if cancelled:
@@ -145,7 +136,7 @@ async def run_browser_agent(
 
         if cancel_event.is_set():
             session.status = "stopped"
-            await ws_manager.send_to_session(session_id, "agent:status", {"session_id": session_id, "status": "stopped", "session": session.model_dump(mode="json")})
+            await ws_manager.emit_status(session_id, "stopped", session)
             return {"session_id": session_id, "browser_id": browser_id, "summary": "Agent was stopped.", "action_log": action_log, "final_screenshot": final_screenshot}
 
         summary_parts = text_parts if text_parts else ["Task completed."]
@@ -160,7 +151,7 @@ async def run_browser_agent(
                 pass
 
         session.status = "completed"
-        await ws_manager.send_to_session(session_id, "agent:status", {"session_id": session_id, "status": "completed", "session": session.model_dump(mode="json")})
+        await ws_manager.emit_status(session_id, "completed", session)
         return {"session_id": session_id, "browser_id": browser_id, "summary": summary, "action_log": action_log, "final_screenshot": final_screenshot}
 
     except Exception as e:
@@ -168,8 +159,8 @@ async def run_browser_agent(
         session.status = "error"
         error_msg = Message(role="system", content=f"Error: {str(e)}")
         session.messages.append(error_msg)
-        await ws_manager.send_to_session(session_id, "agent:message", {"session_id": session_id, "message": error_msg.model_dump(mode="json")})
-        await ws_manager.send_to_session(session_id, "agent:status", {"session_id": session_id, "status": "error", "session": session.model_dump(mode="json")})
+        await ws_manager.emit_message(session_id, error_msg)
+        await ws_manager.emit_status(session_id, "error", session)
         return {"session_id": session_id, "browser_id": browser_id, "summary": f"Error: {str(e)}", "action_log": action_log, "final_screenshot": None}
 
 

@@ -123,4 +123,75 @@ class ConnectionManager:
         if future and not future.done():
             future.set_result(result)
 
+    # ------------------------------------------------------------------
+    # Typed event emitters
+    # ------------------------------------------------------------------
+
+    async def emit_status(self, session_id: str, status: str, session=None):
+        data: dict = {"session_id": session_id, "status": status}
+        if session is not None:
+            data["session"] = session.model_dump(mode="json") if hasattr(session, "model_dump") else session
+        await self.send_to_session(session_id, "agent:status", data)
+
+    async def emit_message(self, session_id: str, message):
+        dumped = message.model_dump(mode="json") if hasattr(message, "model_dump") else message
+        await self.send_to_session(session_id, "agent:message", {
+            "session_id": session_id, "message": dumped,
+        })
+
+    async def emit_cost_update(self, session_id: str, cost_usd: float):
+        await self.send_to_session(session_id, "agent:cost_update", {
+            "session_id": session_id, "cost_usd": cost_usd,
+        })
+
+    async def emit_stream_start(self, session_id: str, message_id: str, role: str, tool_name: str = ""):
+        payload: dict = {"session_id": session_id, "message_id": message_id, "role": role}
+        if tool_name:
+            payload["tool_name"] = tool_name
+        await self.send_to_session(session_id, "agent:stream_start", payload)
+
+    async def emit_stream_delta(self, session_id: str, message_id: str, delta: str):
+        await self.send_to_session(session_id, "agent:stream_delta", {
+            "session_id": session_id, "message_id": message_id, "delta": delta,
+        })
+
+    async def emit_stream_end(self, session_id: str, message_id: str):
+        await self.send_to_session(session_id, "agent:stream_end", {
+            "session_id": session_id, "message_id": message_id,
+        })
+
+    async def emit_branch_created(self, session_id: str, branch, active_branch_id: str):
+        dumped = branch.model_dump(mode="json") if hasattr(branch, "model_dump") else branch
+        await self.send_to_session(session_id, "agent:branch_created", {
+            "session_id": session_id, "branch": dumped, "active_branch_id": active_branch_id,
+        })
+
+    async def emit_branch_switched(self, session_id: str, active_branch_id: str):
+        await self.send_to_session(session_id, "agent:branch_switched", {
+            "session_id": session_id, "active_branch_id": active_branch_id,
+        })
+
+    async def emit_name_updated(self, session_id: str, name: str):
+        await self.send_to_session(session_id, "agent:name_updated", {
+            "session_id": session_id, "name": name,
+        })
+
+    async def emit_group_meta_updated(
+        self, session_id: str, group_id: str, name: str, svg: str, is_refined: bool,
+    ):
+        await self.send_to_session(session_id, "agent:group_meta_updated", {
+            "session_id": session_id, "group_id": group_id,
+            "name": name, "svg": svg, "is_refined": is_refined,
+        })
+
+    async def emit_closed(self, session_id: str, session):
+        await self.send_to_session(session_id, "agent:closed", {
+            "session_id": session_id, "status": session.status,
+            "name": session.name, "model": session.model, "mode": session.mode,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "closed_at": session.closed_at.isoformat() if session.closed_at else None,
+            "cost_usd": session.cost_usd, "dashboard_id": session.dashboard_id,
+        })
+
+
 ws_manager = ConnectionManager()

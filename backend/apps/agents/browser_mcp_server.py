@@ -22,7 +22,7 @@ except ImportError:
     HAS_PIL = False
 
 BACKEND_PORT = os.environ.get("OPENSWARM_PORT", "8324")
-BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/browser/command"
+BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/agents/browser/command"
 
 TAB_ID_PROP = {
     "type": "string",

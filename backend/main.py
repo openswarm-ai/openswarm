@@ -1,18 +1,13 @@
 import logging
 import os
-from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
-from fastapi.responses import JSONResponse, HTMLResponse
-from fastapi import Request
-
-# In-memory store for pending OAuth flows (state -> {provider, code_verifier, redirect_uri})
-_pending_oauth: dict[str, dict] = {}
 from backend.config.Apps import MainApp
 from backend.apps.health.health import health
 from backend.apps.agents.agents import agents
 from backend.apps.agents.ws_manager import ws_manager
+from backend.apps.agents.ws_routes import handle_session_message, handle_dashboard_message
 from backend.apps.templates.templates import templates
 from backend.apps.skills.skills import skills
 from backend.apps.tools_lib.tools_lib import tools_lib
@@ -23,11 +18,16 @@ from backend.apps.skill_registry.skill_registry import skill_registry
 from backend.apps.outputs.outputs import outputs
 from backend.apps.dashboards.dashboards import dashboards
 from backend.apps.analytics.analytics import analytics
+from backend.apps.subscriptions.subscriptions import subscriptions
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 import json
 
-main_app = MainApp([health, agents, templates, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, dashboards, analytics])
+main_app = MainApp([
+    health, agents, templates, skills, tools_lib, modes, settings,
+    mcp_registry, skill_registry, outputs, dashboards, analytics,
+    subscriptions,
+])
 app = main_app.app
 
 app.add_middleware(
@@ -38,6 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.websocket("/ws/agents/{session_id}")
 async def websocket_session(websocket: WebSocket, session_id: str):
     await ws_manager.connect_session(session_id, websocket)
@@ -45,38 +46,10 @@ async def websocket_session(websocket: WebSocket, session_id: str):
         while True:
             data = await websocket.receive_text()
             msg = json.loads(data)
-            event = msg.get("event")
-            payload = msg.get("data", {})
-            
-            if event == "agent:send_message":
-                from backend.apps.agents.agent_manager import agent_manager
-                await agent_manager.send_message(
-                    session_id,
-                    payload.get("prompt", ""),
-                    mode=payload.get("mode"),
-                    model=payload.get("model"),
-                    provider=payload.get("provider"),
-                    images=payload.get("images"),
-                )
-            elif event == "agent:approval_response":
-                from backend.apps.agents.agent_manager import agent_manager
-                agent_manager.handle_approval(payload.get("request_id"), {
-                    "behavior": payload.get("behavior", "deny"),
-                    "message": payload.get("message"),
-                    "updated_input": payload.get("updated_input"),
-                })
-            elif event == "agent:edit_message":
-                from backend.apps.agents.agent_manager import agent_manager
-                await agent_manager.edit_message(
-                    session_id,
-                    payload.get("message_id", ""),
-                    payload.get("content", ""),
-                )
-            elif event == "agent:stop":
-                from backend.apps.agents.agent_manager import agent_manager
-                await agent_manager.stop_agent(session_id)
+            await handle_session_message(session_id, msg.get("event"), msg.get("data", {}))
     except WebSocketDisconnect:
         ws_manager.disconnect_session(session_id, websocket)
+
 
 @app.websocket("/ws/dashboard")
 async def websocket_dashboard(websocket: WebSocket):
@@ -85,146 +58,9 @@ async def websocket_dashboard(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             msg = json.loads(data)
-            event = msg.get("event")
-            payload = msg.get("data", {})
-            
-            if event == "agent:approval_response":
-                from backend.apps.agents.agent_manager import agent_manager
-                agent_manager.handle_approval(payload.get("request_id"), {
-                    "behavior": payload.get("behavior", "deny"),
-                    "message": payload.get("message"),
-                    "updated_input": payload.get("updated_input"),
-                })
-            elif event == "browser:result":
-                ws_manager.resolve_browser_command(
-                    payload.get("request_id", ""),
-                    payload,
-                )
+            await handle_dashboard_message(msg.get("event"), msg.get("data", {}))
     except WebSocketDisconnect:
         ws_manager.disconnect_global(websocket)
-
-
-@app.post("/api/browser/command")
-async def browser_command(request: Request):
-    """HTTP endpoint called by the browser MCP server subprocess.
-    Proxies commands to the frontend via WebSocket and waits for results."""
-    body = await request.json()
-    action = body.get("action", "")
-    browser_id = body.get("browser_id", "")
-    tab_id = body.get("tab_id", "")
-    params = body.get("params", {})
-
-    if not action or not browser_id:
-        return JSONResponse({"error": "action and browser_id are required"}, status_code=400)
-
-    request_id = uuid4().hex
-    result = await ws_manager.send_browser_command(request_id, action, browser_id, params, tab_id=tab_id)
-    return JSONResponse(result)
-
-
-@app.get("/api/subscriptions/pending/{state}")
-async def subscriptions_pending(state: str):
-    """Return pending OAuth data for a state param. Called by 9Router's callback page."""
-    pending = _pending_oauth.get(state)
-    if not pending:
-        return JSONResponse({"error": "not found"}, status_code=404,
-                           headers={"Access-Control-Allow-Origin": "*"})
-    return JSONResponse({
-        "provider": pending["provider"],
-        "code_verifier": pending["code_verifier"],
-        "redirect_uri": pending["redirect_uri"],
-    }, headers={"Access-Control-Allow-Origin": "*"})
-
-
-@app.get("/api/subscriptions/callback")
-async def subscriptions_callback(request: Request):
-    """Catch OAuth redirect from provider, exchange code via 9Router, close window."""
-    code = request.query_params.get("code", "")
-    state = request.query_params.get("state", "")
-    error = request.query_params.get("error", "")
-
-    if error:
-        desc = request.query_params.get("error_description", error)
-        return HTMLResponse(f'<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif"><div style="text-align:center"><h2>Authorization failed</h2><p style="color:#888">{desc}</p></div></body></html>')
-
-    pending = _pending_oauth.pop(state, None)
-    if not pending:
-        return HTMLResponse('<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif"><div style="text-align:center"><h2>Session expired</h2><p style="color:#888">Please try connecting again.</p></div></body></html>')
-
-    from backend.apps.nine_router import exchange_oauth
-    try:
-        await exchange_oauth(pending["provider"], code, pending["redirect_uri"], pending["code_verifier"], state)
-    except Exception as e:
-        return HTMLResponse(f'<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif"><div style="text-align:center"><h2>Connection failed</h2><p style="color:#888">{e}</p></div></body></html>')
-
-    return HTMLResponse(
-        '<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif">'
-        '<div style="text-align:center">'
-        '<div style="width:64px;height:64px;border-radius:50%;background:#22c55e20;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px">&#10003;</div>'
-        '<h2 style="margin:0 0 8px">Connected!</h2>'
-        '<p style="color:#888;margin:0">You can close this window</p>'
-        '</div>'
-        '<script>setTimeout(()=>window.close(),1500)</script>'
-        '</body></html>'
-    )
-
-
-@app.post("/api/browser-agent/run")
-async def browser_agent_run(request: Request):
-    """Run one or more browser sub-agents in parallel.
-    Called by the browser_agent_mcp_server stdio subprocess."""
-    from backend.apps.settings.settings import load_settings
-    from backend.apps.agents.browser_agent import run_browser_agents
-
-    body = await request.json()
-    tasks = body.get("tasks", [])
-    model = body.get("model", "sonnet")
-    dashboard_id = body.get("dashboard_id", "")
-    pre_selected_browser_ids = body.get("pre_selected_browser_ids", [])
-    parent_session_id = body.get("parent_session_id", "")
-
-    if not tasks:
-        return JSONResponse({"error": "tasks array is required"}, status_code=400)
-
-    results = await run_browser_agents(
-        tasks=tasks,
-        model=model,
-        dashboard_id=dashboard_id or None,
-        pre_selected_browser_ids=pre_selected_browser_ids,
-        parent_session_id=parent_session_id or None,
-    )
-    return JSONResponse({"results": results})
-
-
-@app.post("/api/invoke-agent/run")
-async def invoke_agent_run(request: Request):
-    """Fork an existing agent session and send it a new message.
-    Called by the invoke_agent_mcp_server stdio subprocess."""
-    body = await request.json()
-    session_id = body.get("session_id", "")
-    message = body.get("message", "")
-    parent_session_id = body.get("parent_session_id", "")
-    dashboard_id = body.get("dashboard_id", "")
-
-    if not session_id:
-        return JSONResponse({"error": "session_id is required"}, status_code=400)
-    if not message:
-        return JSONResponse({"error": "message is required"}, status_code=400)
-
-    try:
-        from backend.apps.agents.agent_manager import agent_manager
-        result = await agent_manager.invoke_agent(
-            source_session_id=session_id,
-            message=message,
-            parent_session_id=parent_session_id or None,
-            dashboard_id=dashboard_id or None,
-        )
-        return JSONResponse(result)
-    except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=404)
-    except Exception as e:
-        logger.exception("invoke_agent_run failed")
-        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 if __name__ == "__main__":

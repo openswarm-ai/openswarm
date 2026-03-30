@@ -40,7 +40,7 @@ const OnboardingModal: React.FC = () => {
     let attempts = 0;
     const maxAttempts = 15; // 30 seconds
     const check = () => {
-      fetch(`${API_BASE}/agents/subscriptions/status`)
+      fetch(`${API_BASE}/subscriptions/status`)
         .then((r) => r.json())
         .then((data) => {
           if (data.running) {
@@ -106,7 +106,7 @@ const OnboardingModal: React.FC = () => {
     await new Promise(r => setTimeout(r, 1000));
 
     try {
-      const r = await fetch(`${API_BASE}/agents/subscriptions/connect`, {
+      const r = await fetch(`${API_BASE}/subscriptions/connect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: providerId }),
@@ -122,7 +122,7 @@ const OnboardingModal: React.FC = () => {
 
         const timer = setInterval(async () => {
           try {
-            const pr = await fetch(`${API_BASE}/agents/subscriptions/poll`, {
+            const pr = await fetch(`${API_BASE}/subscriptions/poll`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -149,7 +149,7 @@ const OnboardingModal: React.FC = () => {
         // Poll status as primary detection (works in Electron where postMessage may not)
         const statusPoller = setInterval(async () => {
           try {
-            const sr = await fetch(`${API_BASE}/agents/subscriptions/status`);
+            const sr = await fetch(`${API_BASE}/subscriptions/status`);
             const sd = await sr.json();
             const connections = sd.providers?.connections || [];
             if (connections.some((p: any) => p.provider === providerId && p.isActive)) {
@@ -175,7 +175,7 @@ const OnboardingModal: React.FC = () => {
             if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
             if (popup && !popup.closed) popup.close();
             try {
-              await fetch(`${API_BASE}/agents/subscriptions/exchange`, {
+              await fetch(`${API_BASE}/subscriptions/exchange`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
