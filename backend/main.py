@@ -19,6 +19,7 @@ from backend.apps.mcp_registry.mcp_registry import mcp_registry
 from backend.apps.skill_registry.skill_registry import skill_registry
 from backend.apps.outputs.outputs import outputs
 from backend.apps.dashboards.dashboards import dashboards
+from backend.apps.nine_router import nine_router
 from backend.apps.analytics.analytics import analytics
 from backend.apps.subscriptions.subscriptions import subscriptions
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,7 +28,7 @@ import json
 
 main_app = MainApp([
     health, agents, templates, skills, tools_lib, modes, settings,
-    mcp_registry, skill_registry, outputs, dashboards, analytics,
+    mcp_registry, skill_registry, outputs, dashboards, nine_router, analytics,
     subscriptions,
 ])
 app = main_app.app

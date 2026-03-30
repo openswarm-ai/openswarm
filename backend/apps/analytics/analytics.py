@@ -110,12 +110,6 @@ async def analytics_lifespan():
     except Exception as e:
         logger.debug(f"Analytics startup event failed (non-critical): {e}")
 
-    try:
-        from backend.apps.nine_router import ensure_running as ensure_9router
-        await ensure_9router()
-    except Exception as e:
-        logger.warning(f"9Router auto-start failed: {e}")
-
     _heartbeat_task = asyncio.create_task(_heartbeat_loop())
 
     yield
@@ -127,12 +121,6 @@ async def analytics_lifespan():
         except asyncio.CancelledError:
             pass
         _heartbeat_task = None
-
-    try:
-        from backend.apps.nine_router import stop as stop_9router
-        stop_9router()
-    except Exception:
-        pass
 
     shutdown_collector()
     logger.info("PostHog analytics shut down")

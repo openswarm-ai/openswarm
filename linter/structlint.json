@@ -21,6 +21,8 @@
   ],
   "exceptions": {
     "max-file-lines": [],
-    "max-folder-items": []
+    "max-folder-items": [
+      "frontend"
+    ]
   }
 }

@@ -89,6 +89,20 @@ fi
 BACKEND_PORT=$(python3 -c "import json; print(json.load(open('$PROJECT_ROOT/ports.config.json'))['backend']['dev'])")
 FRONTEND_PORT=$(python3 -c "import json; print(json.load(open('$PROJECT_ROOT/ports.config.json'))['frontend']['dev'])")
 
+# --- Run structural linter (warnings only, non-blocking) ---
+LINT_OUTPUT=$(python3 "$PROJECT_ROOT/linter/structlint.py" --root "$PROJECT_ROOT" 2>&1)
+LINT_EXIT=$?
+if [ $LINT_EXIT -ne 0 ]; then
+    echo ""
+    echo -e "${YELLOW}${BOLD}[structlint] Violations found:${RESET}"
+    echo "$LINT_OUTPUT" | grep -v "^structlint:" | while IFS= read -r line; do
+        echo -e "${YELLOW}  $line${RESET}"
+    done
+    LINT_COUNT=$(echo "$LINT_OUTPUT" | grep -oE '[0-9]+ error' | head -1 | grep -oE '[0-9]+')
+    echo -e "${YELLOW}${BOLD}  ${LINT_COUNT} violation(s) — fix or add exceptions in linter/structlint.json${RESET}"
+    echo ""
+fi
+
 # --- Start backend ---
 echo -e "${BLUE}${BOLD}[backend]${RESET}  Starting backend server..."
 bash "$PROJECT_ROOT/backend/run.sh" > >(
