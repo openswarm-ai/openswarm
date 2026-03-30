@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.png" alt="Open Swarm" width="128" height="128">
+  <img src="readme_assets/icon.png" alt="Open Swarm" width="128" height="128">
 </p>
 
 <h1 align="center">Open Swarm</h1>
@@ -22,7 +22,7 @@
 <br>
 
 <p align="center">
-  <img src="assets/screenshot.png" alt="Open Swarm Dashboard" width="900">
+  <img src="readme_assets/screenshot.png" alt="Open Swarm Dashboard" width="900">
 </p>
 
 <br>
