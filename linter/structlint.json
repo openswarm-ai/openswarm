@@ -1,0 +1,26 @@
+{
+  "rules": {
+    "max-file-lines": 250,
+    "max-folder-items": 6
+  },
+  "include_extensions": [".py", ".ts", ".tsx", ".js", ".jsx"],
+  "exclude": [
+    "node_modules",
+    ".venv",
+    "dist",
+    "build",
+    "__pycache__",
+    ".git",
+    ".cursor",
+    ".vscode",
+    "uv-bin",
+    "data",
+    "public",
+    "readme_assets",
+    "ASSISTANT_UI_MIGRATION"
+  ],
+  "exceptions": {
+    "max-file-lines": [],
+    "max-folder-items": []
+  }
+}

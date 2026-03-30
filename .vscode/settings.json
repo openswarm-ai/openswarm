@@ -1,0 +1,13 @@
+{
+  "python.analysis.typeCheckingMode": "strict",
+  "python.analysis.include": ["backend"],
+  "python.analysis.exclude": [
+    "backend/.venv",
+    "backend/uv-bin",
+    "backend/data",
+    "backend/tests"
+  ],
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingTypeStubs": "none"
+  }
+}

@@ -3,8 +3,9 @@
 9Router is a free AI subscription proxy that lets users connect their
 Claude/ChatGPT/Gemini subscriptions to OpenSwarm without API keys.
 
-It runs silently in the background on port 20128 and exposes an
-OpenAI-compatible API at localhost:20128/v1.
+It runs silently in the background and exposes an OpenAI-compatible API
+at localhost:<port>/v1.  The port is read from ports.config.json (dev
+vs prod) so the packaged app and the dev server never collide.
 """
 
 import asyncio
@@ -115,7 +116,12 @@ async def ensure_running():
         print(f"9Router: starting (production) on port {NINE_ROUTER_PORT}...", flush=True)
         cmd = [node, standalone_server]
         cwd = os.path.dirname(standalone_server)
-        env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production"}
+        env = {
+            **os.environ,
+            "PORT": str(NINE_ROUTER_PORT),
+            "NEXT_PUBLIC_BASE_URL": NINE_ROUTER_URL,
+            "NODE_ENV": "production",
+        }
         if node == os.environ.get("OPENSWARM_ELECTRON_PATH"):
             env["ELECTRON_RUN_AS_NODE"] = "1"
 
@@ -135,7 +141,11 @@ async def ensure_running():
         print(f"9Router: starting (dev) on port {NINE_ROUTER_PORT}...", flush=True)
         cmd = [npx, "next", "dev", "--webpack", "-p", str(NINE_ROUTER_PORT)]
         cwd = _9router_dir
-        env = {**os.environ, "PORT": str(NINE_ROUTER_PORT)}
+        env = {
+            **os.environ,
+            "PORT": str(NINE_ROUTER_PORT),
+            "NEXT_PUBLIC_BASE_URL": NINE_ROUTER_URL,
+        }
 
     else:
         npx = shutil.which("npx")
@@ -143,9 +153,13 @@ async def ensure_running():
             print("9Router: npx not found and no bundled 9router directory", flush=True)
             return
         print(f"9Router: starting (npx) on port {NINE_ROUTER_PORT}...", flush=True)
-        cmd = [npx, "9router"]
+        cmd = [npx, "9router", "--port", str(NINE_ROUTER_PORT)]
         cwd = None
-        env = {**os.environ, "PORT": str(NINE_ROUTER_PORT)}
+        env = {
+            **os.environ,
+            "PORT": str(NINE_ROUTER_PORT),
+            "NEXT_PUBLIC_BASE_URL": NINE_ROUTER_URL,
+        }
 
     try:
         _process = subprocess.Popen(

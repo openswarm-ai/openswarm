@@ -6,5 +6,8 @@
   "frontend": {
     "dev": 3000
   },
-  "nineRouter": 20128
+  "nineRouter": {
+    "dev": 20129,
+    "prod": 20128
+  }
 }
