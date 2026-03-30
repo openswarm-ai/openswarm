@@ -140,20 +140,15 @@ async def generate_name(dashboard_id: str):
         client = get_anthropic_client(global_settings)
 
         if len(prompts) == 1:
-            system = (
-                "Generate a concise 2-5 word workspace name for a project based on this task. "
-                "Return only the name, nothing else."
-            )
+            system = "Generate a concise 2-5 word workspace name for a project based on this task. Return only the name, nothing else."
             user_content = prompts[0]
         else:
-            system = (
-                "Generate a concise 2-5 word workspace name that captures the overall theme of these tasks. "
-                "Return only the name, nothing else."
-            )
+            system = "Generate a concise 2-5 word workspace name that captures the overall theme of these tasks. Return only the name, nothing else."
             user_content = "\n".join(f"- {p}" for p in prompts)
 
+        from backend.apps.common.llm_helpers import _resolve_model as _rm
         resp = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=_rm("claude-haiku-4-5-20251001", global_settings),
             max_tokens=30,
             system=system,
             messages=[{"role": "user", "content": user_content}],

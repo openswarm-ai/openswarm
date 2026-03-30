@@ -70,50 +70,39 @@ const SubscriptionCards: React.FC = () => {
         setTimeout(() => { clearInterval(timer); setPollTimer(null); setConnecting(null); setUserCode(''); }, 300000);
       } else if (data.flow === 'authorization_code') {
         const popup = window.open(data.auth_url, 'oauth_connect', 'width=600,height=700');
+        let resolved = false;
+        const cleanup = () => {
+          if (resolved) return;
+          resolved = true;
+          clearInterval(statusPoller);
+          setPollTimer(null);
+          window.removeEventListener('message', msgHandler);
+          if (popup && !popup.closed) popup.close();
+          setConnecting(null);
+          fetchStatus();
+        };
+        const msgHandler = (event: MessageEvent) => {
+          const d = event.data;
+          if (d?.type === 'oauth_callback' && d?.data?.connected) cleanup();
+        };
+        window.addEventListener('message', msgHandler);
         const statusPoller = setInterval(async () => {
           try {
+            if (popup?.closed && !resolved) {
+              await new Promise(r => setTimeout(r, 1000));
+              cleanup();
+              return;
+            }
             const sr = await fetch(`${API_BASE}/subscriptions/status`);
             const sd = await sr.json();
             const connections = sd.providers?.connections || [];
             if (connections.some((p: any) => p.provider === providerId && p.isActive)) {
-              clearInterval(statusPoller);
-              setPollTimer(null);
-              window.removeEventListener('message', msgHandler);
-              setConnecting(null);
-              fetchStatus();
+              cleanup();
             }
           } catch {}
         }, 2000);
         setPollTimer(statusPoller);
-        const msgHandler = async (event: MessageEvent) => {
-          const d = event.data;
-          const callbackData = d?.type === 'oauth_callback' ? d.data : d;
-          if (callbackData?.code) {
-            window.removeEventListener('message', msgHandler);
-            clearInterval(statusPoller);
-            setPollTimer(null);
-            if (popup && !popup.closed) popup.close();
-            try {
-              await fetch(`${API_BASE}/subscriptions/exchange`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  provider: providerId, code: callbackData.code,
-                  redirect_uri: data.redirect_uri, code_verifier: data.code_verifier,
-                  state: callbackData.state || data.state,
-                }),
-              });
-            } catch {}
-            setConnecting(null);
-            fetchStatus();
-          }
-        };
-        window.addEventListener('message', msgHandler);
-        setTimeout(() => {
-          clearInterval(statusPoller);
-          setPollTimer(null);
-          window.removeEventListener('message', msgHandler);
-          setConnecting(null);
-        }, 30000);
+        setTimeout(cleanup, 120000);
       } else {
         setConnecting(null);
       }

@@ -51,7 +51,10 @@ async def run_browser_agent(
     api_model = resolve_model_id(model)
     from backend.apps.settings.settings import load_settings
     from backend.apps.settings.credentials import get_anthropic_client
-    client = get_anthropic_client(load_settings())
+    from backend.apps.common.llm_helpers import _resolve_model as _resolve_9r
+    _settings = load_settings()
+    api_model = _resolve_9r(api_model, _settings)
+    client = get_anthropic_client(_settings)
 
     messages: list[dict] = [{"role": "user", "content": task}]
     action_log: list[dict] = []

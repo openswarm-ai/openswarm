@@ -132,6 +132,10 @@ async def build_agent_options(
             "ANTHROPIC_BASE_URL": f"http://localhost:{NINE_ROUTER_PORT}",
         }
         options_kwargs["extra_args"] = {"bare": None}
+        from backend.apps.common.model_registry import resolve_model_id as _resolve_mid
+        resolved = _resolve_mid(session.model)
+        if not resolved.startswith("cc/"):
+            options_kwargs["model"] = f"cc/{resolved}"
         logger.info("[MCP-DEBUG] Using 9Router (bare mode)")
     else:
         raise ValueError("No AI provider configured. Set an API key or connect a subscription.")

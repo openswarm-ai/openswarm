@@ -68,9 +68,11 @@ async def vibe_code(body: VibeCodeRequest):
         user_message = "\n\n".join(context_parts) + "\n\nUser request: " + body.prompt
 
     client = _get_anthropic_client()
+    from backend.apps.common.llm_helpers import _resolve_model as _resolve_9r
+    from backend.apps.settings.settings import load_settings as _ls
     try:
         resp = await client.messages.create(
-            model="claude-sonnet-4-20250514", max_tokens=8000,
+            model=_resolve_9r("claude-sonnet-4-20250514", _ls()), max_tokens=8000,
             system=VIBE_CODE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
         )
@@ -123,6 +125,9 @@ async def auto_run_output(body: AutoRunRequest):
     user_message = f"Schema:\n```json\n{schema_str}\n```\n\nGenerate data for: {body.prompt}"
 
     api_model = _resolve_model(body.model)
+    from backend.apps.common.llm_helpers import _resolve_model as _resolve_9r
+    from backend.apps.settings.settings import load_settings as _ls
+    api_model = _resolve_9r(api_model, _ls())
     client = _get_anthropic_client()
     try:
         resp = await client.messages.create(

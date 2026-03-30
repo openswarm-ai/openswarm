@@ -420,6 +420,27 @@ app.on('web-contents-created', (_event, contents) => {
     if (mainWindow && !mainWindow.isDestroyed() && !childWindow.isDestroyed()) {
       childWindow.setParentWindow(mainWindow);
     }
+
+    const interceptOAuthCallback = (event, url) => {
+      if (!backendPort) return;
+      if (!url.includes('/callback') || !url.includes('code=')) return;
+      if (url.includes(`localhost:${backendPort}`)) return;
+      try {
+        const parsed = new URL(url);
+        const code = parsed.searchParams.get('code');
+        const state = parsed.searchParams.get('state');
+        if (code) {
+          event.preventDefault();
+          const backendUrl = `http://localhost:${backendPort}/api/subscriptions/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || '')}`;
+          console.log('[oauth] intercepted callback, redirecting to backend:', backendUrl);
+          childWindow.loadURL(backendUrl);
+        }
+      } catch (e) {
+        console.error('[oauth] intercept error:', e.message);
+      }
+    };
+    childWindow.webContents.on('will-redirect', interceptOAuthCallback);
+    childWindow.webContents.on('will-navigate', interceptOAuthCallback);
   });
 
   if (contents.getType() === 'webview') {

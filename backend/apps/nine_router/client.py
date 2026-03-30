@@ -59,8 +59,6 @@ async def start_oauth(provider: str) -> dict:
         except Exception:
             pass
 
-        # Authorization code flow — Anthropic only accepts redirect URIs
-        # registered with 9Router's client ID
         callback_url = f"http://localhost:{NINE_ROUTER_PORT}/callback"
         r = await client.get(
             f"{NINE_ROUTER_API}/oauth/{provider}/authorize",
@@ -68,12 +66,13 @@ async def start_oauth(provider: str) -> dict:
         )
         r.raise_for_status()
         data = r.json()
+        redirect_uri = callback_url
         return {
             "flow": "authorization_code",
             "auth_url": data.get("authUrl", ""),
             "code_verifier": data.get("codeVerifier", ""),
             "state": data.get("state", ""),
-            "redirect_uri": callback_url,
+            "redirect_uri": redirect_uri,
         }
 
 
@@ -110,16 +109,17 @@ async def exchange_oauth(
     state: str = "",
 ) -> dict:
     """Exchange OAuth code for tokens via 9Router."""
+    url = f"{NINE_ROUTER_API}/oauth/{provider}/exchange"
+    payload = {
+        "code": code,
+        "redirectUri": redirect_uri,
+        "codeVerifier": code_verifier,
+        "state": state,
+    }
+    logger.info(f"exchange_oauth: POST {url} provider={provider} redirect_uri={redirect_uri}")
     async with httpx.AsyncClient(timeout=15.0) as client:
-        r = await client.post(
-            f"{NINE_ROUTER_API}/oauth/{provider}/exchange",
-            json={
-                "code": code,
-                "redirectUri": redirect_uri,
-                "codeVerifier": code_verifier,
-                "state": state,
-            },
-        )
+        r = await client.post(url, json=payload)
+        logger.info(f"exchange_oauth: status={r.status_code}")
         r.raise_for_status()
         return r.json()
 

@@ -184,9 +184,15 @@ async def subscriptions_callback(request: Request):
 
     from backend.apps.nine_router import exchange_oauth
     try:
-        await exchange_oauth(pending["provider"], code, pending["redirect_uri"], pending["code_verifier"], state)
+        logger.info(f"OAuth callback: exchanging code for provider={pending['provider']}")
+        result = await exchange_oauth(pending["provider"], code, pending["redirect_uri"], pending["code_verifier"], state)
+        logger.info(f"OAuth callback: exchange result success={result.get('success')}")
     except Exception as e:
+        logger.error(f"OAuth callback: exchange failed for provider={pending['provider']}: {e}")
         return HTMLResponse(f'<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif"><div style="text-align:center"><h2>Connection failed</h2><p style="color:#888">{e}</p></div></body></html>')
+
+    from backend.apps.analytics.collector import record as _analytics
+    _analytics("subscription.connected", {"provider": pending["provider"]})
 
     return HTMLResponse(
         '<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif">'
@@ -195,6 +201,9 @@ async def subscriptions_callback(request: Request):
         '<h2 style="margin:0 0 8px">Connected!</h2>'
         '<p style="color:#888;margin:0">You can close this window</p>'
         '</div>'
-        '<script>setTimeout(()=>window.close(),1500)</script>'
+        '<script>'
+        'try{if(window.opener)window.opener.postMessage({type:"oauth_callback",data:{connected:true}},"*")}catch(e){}'
+        'setTimeout(()=>window.close(),1500)'
+        '</script>'
         '</body></html>'
     )

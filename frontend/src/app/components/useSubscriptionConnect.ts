@@ -58,57 +58,46 @@ export function useSubscriptionConnect({
 
       } else if (data.flow === 'authorization_code') {
         const popup = window.open(data.auth_url, 'oauth_connect', 'width=600,height=700');
-
-        const statusPoller = setInterval(async () => {
-          try {
-            const sr = await fetch(`${API_BASE}/subscriptions/status`);
-            const sd = await sr.json();
-            const connections = sd.providers?.connections || [];
-            if (connections.some((p: any) => p.provider === providerId && p.isActive)) {
-              clearInterval(statusPoller);
-              pollTimerRef.current = null;
-              if (msgHandlerRef.current) {
-                window.removeEventListener('message', msgHandlerRef.current);
-                msgHandlerRef.current = null;
-              }
-              advanceToTools();
-            }
-          } catch {}
-        }, 2000);
-        pollTimerRef.current = statusPoller;
-
-        const msgHandler = async (event: MessageEvent) => {
-          const d = event.data;
-          const callbackData = d?.type === 'oauth_callback' ? d.data : d;
-          if (callbackData?.code) {
-            window.removeEventListener('message', msgHandler);
+        let resolved = false;
+        const cleanup = () => {
+          if (resolved) return;
+          resolved = true;
+          clearInterval(statusPoller);
+          pollTimerRef.current = null;
+          if (msgHandlerRef.current) {
+            window.removeEventListener('message', msgHandlerRef.current);
             msgHandlerRef.current = null;
-            if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-            if (popup && !popup.closed) popup.close();
-            try {
-              await fetch(`${API_BASE}/subscriptions/exchange`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  provider: providerId,
-                  code: callbackData.code,
-                  redirect_uri: data.redirect_uri,
-                  code_verifier: data.code_verifier,
-                  state: callbackData.state || data.state,
-                }),
-              });
-            } catch {}
+          }
+          if (popup && !popup.closed) popup.close();
+        };
+        const msgHandler = (event: MessageEvent) => {
+          const d = event.data;
+          if (d?.type === 'oauth_callback' && d?.data?.connected) {
+            cleanup();
             advanceToTools();
           }
         };
         window.addEventListener('message', msgHandler);
         msgHandlerRef.current = msgHandler;
-
-        setTimeout(() => {
-          if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-          if (msgHandlerRef.current) { window.removeEventListener('message', msgHandlerRef.current); msgHandlerRef.current = null; }
-          setConnecting(null);
-        }, 30000);
+        const statusPoller = setInterval(async () => {
+          try {
+            if (popup?.closed && !resolved) {
+              await new Promise(r => setTimeout(r, 1000));
+              cleanup();
+              advanceToTools();
+              return;
+            }
+            const sr = await fetch(`${API_BASE}/subscriptions/status`);
+            const sd = await sr.json();
+            const connections = sd.providers?.connections || [];
+            if (connections.some((p: any) => p.provider === providerId && p.isActive)) {
+              cleanup();
+              advanceToTools();
+            }
+          } catch {}
+        }, 2000);
+        pollTimerRef.current = statusPoller;
+        setTimeout(() => { cleanup(); setConnecting(null); }, 120000);
 
       } else {
         setConnecting(null);

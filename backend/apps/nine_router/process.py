@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import subprocess
+import threading
 
 import httpx
 
@@ -18,6 +19,22 @@ NINE_ROUTER_V1 = f"{NINE_ROUTER_URL}/v1"
 _process: subprocess.Popen | None = None
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _forward_output(pipe):
+    """Read subprocess output line by line and print with [9router] prefix."""
+    try:
+        for line in iter(pipe.readline, b''):
+            text = line.decode('utf-8', errors='replace').rstrip()
+            if text:
+                print(f"[9router] {text}", flush=True)
+    except Exception:
+        pass
+    finally:
+        try:
+            pipe.close()
+        except Exception:
+            pass
 
 
 def is_running() -> bool:
@@ -144,7 +161,8 @@ async def ensure_running():
             print("9Router: npx not found and no bundled 9router directory", flush=True)
             return
         print(f"9Router: starting (npx) on port {NINE_ROUTER_PORT}...", flush=True)
-        cmd = [npx, "9router", "--port", str(NINE_ROUTER_PORT)]
+        cmd = [npx, "9router", "--port", str(NINE_ROUTER_PORT),
+               "--no-browser", "--skip-update"]
         cwd = None
         env = {
             **os.environ,
@@ -156,10 +174,14 @@ async def ensure_running():
         _process = subprocess.Popen(
             cmd,
             cwd=cwd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             env=env,
         )
+        threading.Thread(
+            target=_forward_output, args=(_process.stdout,), daemon=True,
+        ).start()
 
         timeout = 20 if _is_packaged else 30
         for _ in range(timeout * 2):

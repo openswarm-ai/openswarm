@@ -22,6 +22,18 @@ def strip_markdown_fences(text: str) -> str:
     return stripped.strip()
 
 
+def _resolve_model(model: str, settings) -> str:
+    """Resolve short aliases and prefix with cc/ when routing through 9Router."""
+    if settings.anthropic_api_key or model.startswith("cc/"):
+        return model
+    from backend.apps.nine_router import is_running as _9r_running
+    if _9r_running():
+        from backend.apps.common.model_registry import resolve_model_id
+        resolved = resolve_model_id(model)
+        return f"cc/{resolved}" if not resolved.startswith("cc/") else resolved
+    return model
+
+
 async def quick_llm_call(
     system: str,
     user_content: str,
@@ -32,9 +44,11 @@ async def quick_llm_call(
     from backend.apps.settings.credentials import get_anthropic_client
     from backend.apps.settings.settings import load_settings
 
-    client = get_anthropic_client(load_settings())
+    settings = load_settings()
+    client = get_anthropic_client(settings)
+    resolved_model = _resolve_model(model, settings)
     resp = await client.messages.create(
-        model=model,
+        model=resolved_model,
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": user_content}],
