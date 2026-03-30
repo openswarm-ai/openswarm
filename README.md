@@ -85,7 +85,7 @@ Download the latest release for macOS from [GitHub Releases](https://github.com/
 ```bash
 git clone https://github.com/openswarm-ai/openswarm.git
 cd openswarm
-bash run.sh
+bash run/local.sh
 ```
 
 This starts the backend (port 8324), frontend (port 3000), and Electron shell together. Once running, set your Anthropic API key in the in-app Settings page.
@@ -197,9 +197,12 @@ electron/
   main.js             Electron main process, auto-updater, Python env management
   scripts/            Build and notarization scripts
 
-scripts/
-  build-app.sh        Desktop app packaging (electron-builder)
-  build-python-env.sh Standalone Python 3.13 environment bundler
+run/
+  utils/
+    build-app.sh        Desktop app packaging (electron-builder)
+    build-python-env.sh Standalone Python 3.13 environment bundler
+  local.sh           Start backend, frontend, and Electron shell
+  publish.sh         Build and deploy to Firebase Hosting
 ```
 
 <br>

@@ -8,10 +8,11 @@ else
 fi
 chmod +x "$PUBLISH_ABSPATH"
 
-PROJECT_ROOT="$(dirname "$PUBLISH_ABSPATH")"
+RUN_DIR_ROOT="$(dirname "$PUBLISH_ABSPATH")"
+PROJECT_ROOT="$(dirname "$RUN_DIR_ROOT")"
 cd "$PROJECT_ROOT"
 
 echo "Building and deploying to Firebase Hosting..."
-bash scripts/build-app.sh --publish
+bash run/utils/build-app.sh --publish
 
 cd -

@@ -8,7 +8,8 @@ else
 fi
 chmod +x "$SCRIPT_ABSPATH"
 
-PROJECT_ROOT="$(dirname "$SCRIPT_ABSPATH")"
+RUN_DIR_ROOT="$(dirname "$SCRIPT_ABSPATH")"
+PROJECT_ROOT="$(dirname "$RUN_DIR_ROOT")"
 
 BLUE='\033[0;34m'
 GREEN='\033[0;32m'
