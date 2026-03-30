@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, type MutableRefObject } from 'react';
 import {
   useExternalStoreRuntime,
   type ThreadMessageLike,
@@ -12,6 +12,28 @@ import {
   type AgentMessage,
   type StreamingMessage,
 } from '@/shared/state/agentsSlice';
+
+export interface ComposerExtras {
+  images?: Array<{ data: string; media_type: string }>;
+  contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>;
+  forcedTools?: string[];
+  attachedSkills?: Array<{ id: string; name: string; content: string }>;
+  selectedBrowserIds?: string[];
+}
+
+export interface DispatchableMessage {
+  prompt: string;
+  images?: Array<{ data: string; media_type: string }>;
+  contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>;
+  forcedTools?: string[];
+  attachedSkills?: Array<{ id: string; name: string; content: string }>;
+  selectedBrowserIds?: string[];
+}
+
+export interface RuntimeOptions {
+  composerExtrasRef?: MutableRefObject<ComposerExtras>;
+  dispatchMessage?: (msg: DispatchableMessage) => void;
+}
 
 type RawMessage = AgentMessage | (StreamingMessage & { _streaming: true });
 
@@ -98,7 +120,10 @@ function extractText(message: AppendMessage): string {
   return '';
 }
 
-export function useOpenSwarmRuntime(sessionId: string | undefined) {
+export function useOpenSwarmRuntime(
+  sessionId: string | undefined,
+  options?: RuntimeOptions,
+) {
   const dispatch = useAppDispatch();
   const session = useAppSelector((state) =>
     sessionId ? state.agents.sessions[sessionId] : undefined,
@@ -120,9 +145,18 @@ export function useOpenSwarmRuntime(sessionId: string | undefined) {
       if (!sessionId) return;
       const text = extractText(message);
       if (!text) return;
-      dispatch(sendMessageThunk({ sessionId, prompt: text }));
+
+      if (options?.dispatchMessage) {
+        const extras = options.composerExtrasRef?.current ?? {};
+        if (options.composerExtrasRef) {
+          options.composerExtrasRef.current = {};
+        }
+        options.dispatchMessage({ prompt: text, ...extras });
+      } else {
+        dispatch(sendMessageThunk({ sessionId, prompt: text }));
+      }
     },
-    [sessionId, dispatch],
+    [sessionId, dispatch, options],
   );
 
   const onEdit = useCallback(

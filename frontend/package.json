@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@assistant-ui/react": "^0.12.21",
+    "@assistant-ui/react-lexical": "^0.0.3",
     "@assistant-ui/react-markdown": "^0.12.7",
     "@codemirror/lang-html": "^6.4.11",
     "@codemirror/lang-json": "^6.0.2",
