@@ -60,17 +60,3 @@ async def update_template(template_id: str, body: PromptTemplateUpdate):
 async def delete_template(template_id: str):
     _delete(template_id)
     return {"ok": True}
-
-@templates.router.post("/render")
-async def render_template(body: dict):
-    template_id = body.get("template_id", "")
-    values = body.get("values", {})
-    template = _load(template_id)
-    rendered = template.template
-    for field in template.fields:
-        placeholder = "{{" + field.name + "}}"
-        value = values.get(field.name, field.default or "")
-        rendered = rendered.replace(placeholder, str(value))
-    from backend.apps.analytics.collector import record as _analytics
-    _analytics("feature.used", {"feature": "template.used"})
-    return {"rendered": rendered}

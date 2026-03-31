@@ -15,6 +15,7 @@ from checks.structural import check_file_lines, check_folder_items, check_nested
 from checks.vulture import run_vulture
 from checks.eslint import run_eslint
 from checks.knip import run_knip
+from checks.endpoints import run_endpoint_check
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = SCRIPT_DIR / "config" / "config.json"
@@ -25,7 +26,7 @@ def load_config() -> dict[str, Any]:
         return json.load(f)
 
 
-def run_checks(root: Path) -> tuple[list[str], list[str], list[str], list[str]]:
+def run_checks(root: Path) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
     config = load_config()
     enabled: dict[str, bool] = config.get("enabled", {})
     rules: dict[str, int] = config["rules"]
@@ -80,8 +81,10 @@ def run_checks(root: Path) -> tuple[list[str], list[str], list[str], list[str]]:
 
     eslint_errors = run_eslint(root) if enabled.get("eslint", True) else []
     knip_errors = run_knip(root) if enabled.get("knip", True) else []
+    endpoint_ignore_routes: list[str] = rules.get("endpoint-ignore-routes", [])
+    endpoint_errors = run_endpoint_check(root, exceptions, endpoint_ignore_routes) if enabled.get("endpoints", True) else []
 
-    return sorted(structural_errors), sorted(vulture_errors), sorted(eslint_errors), sorted(knip_errors)
+    return sorted(structural_errors), sorted(vulture_errors), sorted(eslint_errors), sorted(knip_errors), sorted(endpoint_errors)
 
 
 def _print_section(name: str, errors: list[str]) -> None:
@@ -94,11 +97,13 @@ def _print_section(name: str, errors: list[str]) -> None:
 def print_results(
     structural_errors: list[str], vulture_errors: list[str],
     eslint_errors: list[str], knip_errors: list[str],
+    endpoint_errors: list[str],
 ) -> None:
     _print_section("structural", structural_errors)
     _print_section("vulture", vulture_errors)
     _print_section("eslint", eslint_errors)
     _print_section("knip", knip_errors)
+    _print_section("endpoints", endpoint_errors)
 
 
 def watch_loop(root: Path) -> None:

@@ -95,40 +95,6 @@ async def subscriptions_poll(body: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@subscriptions.router.post("/exchange")
-async def subscriptions_exchange(body: dict):
-    """Exchange OAuth code for tokens via 9Router."""
-    from backend.apps.nine_router import exchange_oauth
-    provider = body.get("provider", "")
-    code = body.get("code", "")
-    redirect_uri = body.get("redirect_uri", "")
-    code_verifier = body.get("code_verifier", "")
-    state = body.get("state", "")
-
-    if not provider or not code:
-        raise HTTPException(status_code=400, detail="provider and code required")
-
-    try:
-        result = await exchange_oauth(provider, code, redirect_uri, code_verifier, state)
-        if result.get("success"):
-            from backend.apps.analytics.collector import record as _analytics
-            _analytics("subscription.connected", {"provider": provider})
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@subscriptions.router.get("/models")
-async def subscriptions_models():
-    """List all models available through connected subscriptions."""
-    from backend.apps.nine_router import is_running, get_models
-    if not is_running():
-        return {"models": []}
-    models = await get_models()
-    return {"models": models}
-
-
 @subscriptions.router.post("/disconnect")
 async def subscriptions_disconnect(body: dict):
     """Disconnect a subscription provider via 9Router."""

@@ -123,16 +123,6 @@ async def update_session(session_id: str, body: dict):
     await agent_manager.update_session(session_id, **body)
     return {"ok": True}
 
-@agents.router.get("/sessions/{session_id}/branches")
-async def get_branches(session_id: str):
-    session = agent_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return {
-        "branches": {k: v.model_dump(mode="json") for k, v in session.branches.items()},
-        "active_branch_id": session.active_branch_id,
-    }
-
 @agents.router.post("/sessions/{session_id}/duplicate")
 async def duplicate_session(session_id: str, body: dict = {}):
     try:

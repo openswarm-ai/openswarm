@@ -34,6 +34,8 @@ def run_vulture(
     cmd.extend([
         "--min-confidence", str(min_confidence),
         "--exclude", ".venv,__pycache__,data,uv-bin",
+        "--ignore-decorators", "@*.router.*",
+        "--ignore-names", "cls",
     ])
 
     try:

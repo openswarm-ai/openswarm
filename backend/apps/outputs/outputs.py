@@ -230,7 +230,6 @@ async def execute_output(body: OutputExecute):
 
 
 # -- AI generation routes --
-outputs.router.add_api_route("/vibe-code", ai_generation.vibe_code, methods=["POST"])
 outputs.router.add_api_route("/auto-run", ai_generation.auto_run_output, methods=["POST"])
 outputs.router.add_api_route("/auto-run-agent", ai_generation.auto_run_agent, methods=["POST"])
 outputs.router.add_api_route("/auto-run-agent/{session_id}", ai_generation.cleanup_auto_run_agent, methods=["DELETE"])

@@ -91,11 +91,6 @@ async def update_settings(body: AppSettings):
     return {"ok": True, "settings": body.model_dump()}
 
 
-@settings.router.get("/default-system-prompt")
-async def get_default_system_prompt():
-    return {"default_system_prompt": DEFAULT_SYSTEM_PROMPT}
-
-
 @settings.router.post("/reset-system-prompt")
 async def reset_system_prompt():
     current = load_settings()

@@ -5,14 +5,16 @@
     "no-nested-imports": false,
     "vulture": true,
     "eslint": false,
-    "knip": false
+    "knip": false,
+    "endpoints": true
   },
   "rules": {
     "max-file-lines": 250,
     "max-folder-items": 7,
     "vulture-min-confidence": 1,
     "vulture-error-threshold": 1,
-    "no-nested-imports": true
+    "no-nested-imports": true,
+    "endpoint-ignore-routes": ["*/callback", "*/callback/*"]
   },
   "include_extensions": [".py", ".ts", ".tsx", ".js", ".jsx"],
   "exclude": [
@@ -38,6 +40,7 @@
       "backend"
     ],
     "no-nested-imports": ["linter/lint.py"],
-    "vulture": []
+    "vulture": [],
+    "endpoints": ["backend/apps/health/*"]
   }
 }
