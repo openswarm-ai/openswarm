@@ -5,6 +5,7 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DifferenceIcon from '@mui/icons-material/Difference';
+import { CodeDiff } from '@/components/tool-ui/code-diff';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { API_BASE } from '@/shared/config';
 
@@ -102,31 +103,13 @@ const DiffViewer: React.FC<Props> = ({ sessionId }) => {
         {loading ? (
           <Typography sx={{ color: c.text.ghost, fontSize: '0.8rem' }}>Loading...</Typography>
         ) : diff ? (
-          <pre
-            style={{
-              margin: 0,
-              fontSize: '0.72rem',
-              fontFamily: c.font.mono,
-              lineHeight: 1.6,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
-            {diff.split('\n').map((line, i) => {
-              let color = c.text.muted;
-              if (line.startsWith('+') && !line.startsWith('+++')) color = c.status.success;
-              else if (line.startsWith('-') && !line.startsWith('---')) color = c.status.error;
-              else if (line.startsWith('@@')) color = c.accent.primary;
-              else if (line.startsWith('diff ') || line.startsWith('index ')) color = c.text.tertiary;
-
-              return (
-                <span key={i} style={{ color }}>
-                  {line}
-                  {'\n'}
-                </span>
-              );
-            })}
-          </pre>
+          <CodeDiff
+            id={`diff-${sessionId}`}
+            patch={diff}
+            language="diff"
+            diffStyle="unified"
+            lineNumbers="visible"
+          />
         ) : (
           <Typography sx={{ color: c.text.ghost, fontSize: '0.8rem' }}>
             No changes detected in the worktree.

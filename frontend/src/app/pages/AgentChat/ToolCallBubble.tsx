@@ -12,10 +12,9 @@ import BlockIcon from '@mui/icons-material/Block';
 import SearchIcon from '@mui/icons-material/Search';
 import GoogleServiceIcon from '@/app/components/GoogleServiceIcon';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import BrowserAgentInlineFeed from './BrowserAgentInlineFeed';
 import { useTermColors, colorizeInput, colorizeOutput } from './toolCallColors';
 import { ElapsedTimer } from './ElapsedTimer';
-import { McpResultCard } from './McpServiceCards';
+import { BrowserFeedTracker, renderParsedMcpData } from './toolkit/mcp-tools';
 import { InvokeAgentBubble, CreateAgentBubble } from './AgentToolBubble';
 import {
   ToolCallBubbleProps, ensureToolCallKeyframes, getToolData, parseMcpToolName,
@@ -88,9 +87,9 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
           </Box>
           <Collapse in={showBody}>
             <Box sx={{ bgcolor: tc.TERM_BG, maxHeight: '60vh', overflowY: 'auto', overflowX: 'hidden', '&::-webkit-scrollbar': { width: 5 }, '&::-webkit-scrollbar-track': { background: 'transparent' }, '&::-webkit-scrollbar-thumb': { background: tc.SCROLLBAR_THUMB, borderRadius: 3 } }}>
-              {isBrowserAgent && sessionId && <BrowserAgentInlineFeed parentSessionId={sessionId} browserId={input?.browser_id} />}
+              {isBrowserAgent && sessionId && <BrowserFeedTracker parentSessionId={sessionId} browserId={input?.browser_id} />}
               {parsedResult && parsedResult.type === 'mcp' ? (
-                <McpResultCard parsed={parsedResult} compact />
+                renderParsedMcpData(parsedResult.service, parsedResult.action, parsedResult.data, call.id)
               ) : parsedResult ? (
                 <pre style={{ margin: 0, padding: '8px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: c.font.mono, fontSize: '0.73rem', lineHeight: 1.5, color: tc.OUTPUT_COLOR }}>{parsedResult.type === 'text' ? parsedResult.content : ''}</pre>
               ) : null}
@@ -142,9 +141,9 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
                 {isStreaming ? <span style={{ color: tc.CMD_COLOR }}>{call.content?.input ?? ''}</span> : colorizeInput(toolName, formattedInput, tc)}
                 {isStreaming && <span style={{ display: 'inline-block', width: 2, height: '1em', background: c.accent.primary, marginLeft: 2, verticalAlign: 'text-bottom', animation: 'blink-cursor 0.8s step-end infinite' }} />}
               </pre>
-              {isBrowserAgent && sessionId && <BrowserAgentInlineFeed parentSessionId={sessionId} browserId={input?.browser_id} />}
+              {isBrowserAgent && sessionId && <BrowserFeedTracker parentSessionId={sessionId} browserId={input?.browser_id} />}
               {parsedResult && parsedResult.type === 'mcp' ? (
-                <McpResultCard parsed={parsedResult} />
+                renderParsedMcpData(parsedResult.service, parsedResult.action, parsedResult.data, call.id)
               ) : parsedResult ? (
                 <pre style={{ margin: 0, padding: '4px 12px 8px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: c.font.mono, fontSize: '0.73rem', lineHeight: 1.5 }}>
                   {parsedResult.type === 'bash' ? (

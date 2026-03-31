@@ -18,6 +18,7 @@ Register Tool UI components for MCP service results (`MessageDraft` for Gmail, `
 ## Key Files to Read First
 
 Understand what you're replacing:
+
 - `frontend/src/app/pages/AgentChat/McpServiceCards.tsx` — dispatches to Gmail/Calendar/Drive/Generic cards (158 lines)
 - `frontend/src/app/pages/AgentChat/GmailCard.tsx` — email list/detail rendering (136 lines)
 - `frontend/src/app/pages/AgentChat/BrowserAgentInlineFeed.tsx` — browser automation feed (164 lines)
@@ -26,19 +27,22 @@ Understand what you're replacing:
 - `frontend/src/app/pages/AgentChat/DiffViewer.tsx` — git diff panel (140 lines)
 
 Understand what you're keeping and wiring:
+
 - `frontend/src/app/pages/AgentChat/AgentToolBubble.tsx` — InvokeAgent/CreateAgent (193 lines) — KEEP
 - `frontend/src/app/pages/AgentChat/ViewBubble.tsx` — iframe app preview (194 lines) — KEEP
 - `frontend/src/app/pages/AgentChat/ViewBubbleParts.tsx` — iframe parts (136 lines) — KEEP
 
 Also read the installed Tool UI schemas:
+
 - `src/components/tool-ui/message-draft/schema.ts`
-- `src/components/tool-ui/data-table/schema.ts`
+- `src/components/tool-ui/data-table/schema.tsdi`
 - `src/components/tool-ui/progress-tracker/schema.ts`
 - `src/components/tool-ui/item-carousel/schema.ts` (if installed)
 
 ## Background: How MCP Tool Results Work
 
 MCP tools have names like `mcp__google-gmail__search`, `mcp__google-calendar__listEvents`, `mcp__google-drive__listFiles`. The existing `parseMcpToolName()` function (in `toolCallUtils.ts`) parses these into:
+
 ```typescript
 {
   isMcp: true,
@@ -50,6 +54,7 @@ MCP tools have names like `mcp__google-gmail__search`, `mcp__google-calendar__li
 ```
 
 The `McpResultCard` component dispatches based on `service`:
+
 - `gmail` → `GmailCard`
 - `calendar` → `CalendarCard`
 - `drive` / `sheets` → `DriveCard`
@@ -60,6 +65,7 @@ The `McpResultCard` component dispatches based on `service`:
 ### 1. Read Tool UI component schemas
 
 Read the installed schemas:
+
 - `src/components/tool-ui/message-draft/schema.ts` — email/message rendering
 - `src/components/tool-ui/data-table/schema.ts` — table rendering
 - `src/components/tool-ui/progress-tracker/schema.ts` — step-by-step progress
@@ -67,10 +73,12 @@ Read the installed schemas:
 ### 2. Implement mcp-tools.tsx — Gmail → MessageDraft
 
 The `GmailCard` renders:
+
 - **Email list**: Multiple email cards with subject, from, date, snippet
 - **Single email**: Subject header, from/to/date fields, labels, body (markdown), attachments
 
 Map to Tool UI's `MessageDraft`:
+
 ```tsx
 import { MessageDraft } from '@/components/tool-ui/message-draft';
 
@@ -91,6 +99,7 @@ function renderGmailResult(data: any, action: string) {
 ```
 
 For **email list results** (search/list), use `DataTable`:
+
 ```tsx
 import { DataTable } from '@/components/tool-ui/data-table';
 
@@ -116,10 +125,12 @@ function renderGmailList(messages: any[]) {
 ### 3. Implement mcp-tools.tsx — Calendar → DataTable
 
 The `CalendarCard` renders:
+
 - **Event list**: Cards with summary + date
 - **Single event**: Summary, start, end, location, description
 
 Map event lists to `DataTable`:
+
 ```tsx
 function renderCalendarList(items: any[]) {
   return (
@@ -146,6 +157,7 @@ function renderCalendarList(items: any[]) {
 ### 4. Implement mcp-tools.tsx — Drive → DataTable
 
 The `DriveCard` renders file lists with name and mimeType. Map to `DataTable`:
+
 ```tsx
 function renderDriveFiles(files: any[]) {
   return (
@@ -176,6 +188,7 @@ The challenge: MCP tool names are dynamic (`mcp__<server>__<action>`). You can't
 **Solution**: Use a catch-all pattern. Check if assistant-ui supports a `ToolFallback` component or a wildcard toolkit entry. Look up `ui/tool-fallback` in the docs.
 
 If the toolkit supports a fallback/default renderer:
+
 ```tsx
 export const mcpToolkit = {
   // Specific MCP tools can be registered by name if desired
@@ -204,6 +217,7 @@ If assistant-ui doesn't support a fallback, register a `ToolFallback` component 
 The `BrowserAgentInlineFeed` renders a compact activity log of browser automation steps (navigate, click, type, screenshot) with status indicators.
 
 Map to `ProgressTracker`:
+
 ```tsx
 import { ProgressTracker } from '@/components/tool-ui/progress-tracker';
 
@@ -240,6 +254,7 @@ import { CodeDiff } from '@/components/tool-ui/code-diff';
 ```
 
 **Note**: DiffViewer is rendered in `ChatHeader`, not as a tool call. It may not fit the toolkit pattern. Two options:
+
 - Replace the rendering logic inside DiffViewer to use `CodeDiff` component but keep the wrapper
 - Or just replace the internals
 
@@ -298,21 +313,25 @@ These utility functions are needed by the MCP toolkit. Port them into `mcp-tools
 
 ## Files Created / Modified
 
-| File | Action | Description |
-|------|--------|-------------|
-| `toolkit/mcp-tools.tsx` | **Fill in** (was stub) | Gmail, Calendar, Drive, Generic MCP, Browser feed, DiffViewer renderers |
-| `toolkit/custom-tools.tsx` | **Fill in** (was stub) | AgentToolBubble, ViewBubble wrappers |
+
+| File                       | Action                 | Description                                                             |
+| -------------------------- | ---------------------- | ----------------------------------------------------------------------- |
+| `toolkit/mcp-tools.tsx`    | **Fill in** (was stub) | Gmail, Calendar, Drive, Generic MCP, Browser feed, DiffViewer renderers |
+| `toolkit/custom-tools.tsx` | **Fill in** (was stub) | AgentToolBubble, ViewBubble wrappers                                    |
+
 
 ## Files Deleted (by this agent)
 
-| File | Lines | Replaced By |
-|------|-------|------------|
-| `GmailCard.tsx` | 136 | MessageDraft + DataTable in `mcp-tools.tsx` |
-| `McpServiceCards.tsx` | 158 | Routing logic in `mcp-tools.tsx` |
-| `BrowserAgentInlineFeed.tsx` | 164 | ProgressTracker in `mcp-tools.tsx` |
-| `BrowserFeedEntryRow.tsx` | 120 | ProgressTracker step rendering |
-| `browserFeedUtils.ts` | 129 | Simplified in `mcp-tools.tsx` |
-| `DiffViewer.tsx` | 140 | CodeDiff (keep thin wrapper if needed for API fetch) |
+
+| File                         | Lines | Replaced By                                          |
+| ---------------------------- | ----- | ---------------------------------------------------- |
+| `GmailCard.tsx`              | 136   | MessageDraft + DataTable in `mcp-tools.tsx`          |
+| `McpServiceCards.tsx`        | 158   | Routing logic in `mcp-tools.tsx`                     |
+| `BrowserAgentInlineFeed.tsx` | 164   | ProgressTracker in `mcp-tools.tsx`                   |
+| `BrowserFeedEntryRow.tsx`    | 120   | ProgressTracker step rendering                       |
+| `browserFeedUtils.ts`        | 129   | Simplified in `mcp-tools.tsx`                        |
+| `DiffViewer.tsx`             | 140   | CodeDiff (keep thin wrapper if needed for API fetch) |
+
 
 **Important**: `DiffViewer` is rendered in `ChatHeader.tsx`, not as a tool call. Before deleting, check how it's used. If it's a side panel that fetches from an API, you may want to keep a thin wrapper that uses `CodeDiff` internally rather than fully deleting it.
 
@@ -320,11 +339,13 @@ These utility functions are needed by the MCP toolkit. Port them into `mcp-tools
 
 ## Files Kept (wired as custom toolkit entries)
 
-| File | Lines | Action |
-|------|-------|--------|
-| `AgentToolBubble.tsx` | 193 | Kept, registered in `custom-tools.tsx` |
-| `ViewBubble.tsx` | 194 | Kept, registered in `custom-tools.tsx` |
-| `ViewBubbleParts.tsx` | 136 | Kept (dependency of ViewBubble) |
+
+| File                  | Lines | Action                                 |
+| --------------------- | ----- | -------------------------------------- |
+| `AgentToolBubble.tsx` | 193   | Kept, registered in `custom-tools.tsx` |
+| `ViewBubble.tsx`      | 194   | Kept, registered in `custom-tools.tsx` |
+| `ViewBubbleParts.tsx` | 136   | Kept (dependency of ViewBubble)        |
+
 
 ## Files NOT Modified
 
@@ -334,14 +355,15 @@ These utility functions are needed by the MCP toolkit. Port them into `mcp-tools
 
 ## Verification Checklist
 
-- [ ] `toolkit/mcp-tools.tsx` exports `mcpToolkit` with MCP tool renderers
-- [ ] Gmail email results render as `MessageDraft` (single) or `DataTable` (list)
-- [ ] Calendar events render as `DataTable`
-- [ ] Drive files render as `DataTable`
-- [ ] Unknown MCP tools render a generic key-value fallback
-- [ ] Browser agent activity renders as `ProgressTracker` steps
-- [ ] `toolkit/custom-tools.tsx` exports `customToolkit` with `InvokeAgent`, `CreateAgent`, `RenderOutput`
-- [ ] `AgentToolBubble` and `ViewBubble` render correctly through the toolkit
-- [ ] DiffViewer rendering uses `CodeDiff` internally
-- [ ] No TypeScript errors
-- [ ] Deleted files don't break other imports
+- `toolkit/mcp-tools.tsx` exports `mcpToolkit` with MCP tool renderers
+- Gmail email results render as `MessageDraft` (single) or `DataTable` (list)
+- Calendar events render as `DataTable`
+- Drive files render as `DataTable`
+- Unknown MCP tools render a generic key-value fallback
+- Browser agent activity renders as `ProgressTracker` steps
+- `toolkit/custom-tools.tsx` exports `customToolkit` with `InvokeAgent`, `CreateAgent`, `RenderOutput`
+- `AgentToolBubble` and `ViewBubble` render correctly through the toolkit
+- DiffViewer rendering uses `CodeDiff` internally
+- No TypeScript errors
+- Deleted files don't break other imports
+
