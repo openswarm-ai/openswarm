@@ -5,7 +5,7 @@ export const SELECT_ID_ATTR = 'data-select-id';
 export const SELECT_META_ATTR = 'data-select-meta';
 
 const DRAG_SELECT_TYPES = ['agent-card', 'view-card', 'browser-card'] as const;
-export const DRAG_SELECTOR = DRAG_SELECT_TYPES.map((t) => `[${SELECT_ATTR}="${t}"]`).join(',');
+const DRAG_SELECTOR = DRAG_SELECT_TYPES.map((t) => `[${SELECT_ATTR}="${t}"]`).join(',');
 
 export interface OverlayState {
   visible: boolean;
@@ -26,6 +26,15 @@ export interface DragRect {
 
 export const EMPTY_OVERLAY: OverlayState = { visible: false, top: 0, left: 0, width: 0, height: 0, label: '' };
 export const EMPTY_DRAG: DragRect = { visible: false, top: 0, left: 0, width: 0, height: 0 };
+
+export interface SelectMeta {
+  name?: string;
+  role?: string;
+  content?: string;
+  label?: string;
+  tool?: string;
+  [key: string]: unknown;
+}
 
 const SEMANTIC_LABELS: Record<string, string> = {
   'agent-card': 'Agent',
@@ -48,7 +57,7 @@ export function findSelectableAncestor(target: Element, excludeId?: string | nul
   return null;
 }
 
-export function buildSemanticLabel(type: string, meta: Record<string, any>): string {
+export function buildSemanticLabel(type: string, meta: SelectMeta): string {
   const prefix = SEMANTIC_LABELS[type] || type;
   if (meta.name) return `${prefix}: ${meta.name}`;
   if (meta.role && meta.content) {
@@ -60,7 +69,7 @@ export function buildSemanticLabel(type: string, meta: Record<string, any>): str
   return prefix;
 }
 
-export function rectsIntersect(
+function rectsIntersect(
   a: { top: number; left: number; bottom: number; right: number },
   b: { top: number; left: number; bottom: number; right: number },
 ): boolean {
@@ -70,8 +79,8 @@ export function rectsIntersect(
 export function buildSelectedElement(el: Element): SelectedElement {
   const type = el.getAttribute(SELECT_ATTR) || '';
   const selectId = el.getAttribute(SELECT_ID_ATTR) || '';
-  let meta: Record<string, any> = {};
-  try { meta = JSON.parse(el.getAttribute(SELECT_META_ATTR) || '{}'); } catch {}
+  let meta: SelectMeta = {};
+  try { meta = JSON.parse(el.getAttribute(SELECT_META_ATTR) || '{}'); } catch { /* malformed JSON defaults to empty object */ }
   const rect = el.getBoundingClientRect();
   const semanticLabel = buildSemanticLabel(type, meta);
 
@@ -123,8 +132,8 @@ export function computeDragPreview(
       if (seen.has(selectId)) return;
       seen.add(selectId);
       const type = el.getAttribute(SELECT_ATTR) || '';
-      let meta: Record<string, any> = {};
-      try { meta = JSON.parse(el.getAttribute(SELECT_META_ATTR) || '{}'); } catch {}
+      let meta: SelectMeta = {};
+      try { meta = JSON.parse(el.getAttribute(SELECT_META_ATTR) || '{}'); } catch { /* malformed JSON defaults to empty object */ }
       preview.push({
         selectId,
         top: rect.top,

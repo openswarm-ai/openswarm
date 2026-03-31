@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useElementSelection } from './ElementSelectionContext';
 import {
-  type OverlayState, type DragRect, type DragPreviewElement, type DomSelectorState,
+  type OverlayState, type DragRect, type DragPreviewElement, type DomSelectorState, type SelectMeta,
   EMPTY_OVERLAY, EMPTY_DRAG, DRAG_THRESHOLD,
   SELECT_ATTR, SELECT_ID_ATTR, SELECT_META_ATTR,
   findSelectableAncestor, buildSemanticLabel, buildSelectedElement,
   computeDragPreview, processDragSelection,
 } from './domSelectorHelpers';
 
-export type { OverlayState, DragRect, DragPreviewElement, DomSelectorState } from './domSelectorHelpers';
+export type { OverlayState, DragRect, DragPreviewElement } from './domSelectorHelpers';
 
 export function useDomElementSelector(): DomSelectorState {
   const ctx = useElementSelection();
@@ -98,8 +98,8 @@ export function useDomElementSelector(): DomSelectorState {
     rafRef.current = requestAnimationFrame(() => {
       const rect = selectable.getBoundingClientRect();
       const type = selectable.getAttribute(SELECT_ATTR) || '';
-      let meta: Record<string, any> = {};
-      try { meta = JSON.parse(selectable.getAttribute(SELECT_META_ATTR) || '{}'); } catch {}
+      let meta: SelectMeta = {};
+      try { meta = JSON.parse(selectable.getAttribute(SELECT_META_ATTR) || '{}'); } catch { /* malformed meta */ }
       const label = buildSemanticLabel(type, meta);
       setOverlay({
         visible: true,
@@ -177,17 +177,7 @@ export function useDomElementSelector(): DomSelectorState {
   }, [ctx]);
 
   useEffect(() => {
-    if (!ctx?.selectMode) {
-      setOverlay(EMPTY_OVERLAY);
-      setDragRect(EMPTY_DRAG);
-      setDragPreview([]);
-      hoveredRef.current = null;
-      dragOriginRef.current = null;
-      dragBoundsRef.current = null;
-      isDraggingRef.current = false;
-      preDragFocusRef.current = null;
-      return;
-    }
+    if (!ctx?.selectMode) return;
 
     const prevUserSelect = document.body.style.userSelect;
     document.body.style.userSelect = 'none';

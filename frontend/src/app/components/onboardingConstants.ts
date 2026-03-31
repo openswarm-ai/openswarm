@@ -17,5 +17,3 @@ export const SUBSCRIPTION_PROVIDERS = [
   { id: 'codex', name: 'ChatGPT', desc: 'GPT-5.4, o3, o4-mini', color: '#74AA9C', preview: true },
   { id: 'github', name: 'GitHub Copilot', desc: 'Claude + GPT models', color: '#8B949E', preview: true },
 ];
-
-export type SubscriptionProvider = typeof SUBSCRIPTION_PROVIDERS[number];

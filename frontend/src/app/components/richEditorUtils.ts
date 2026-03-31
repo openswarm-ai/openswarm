@@ -1,5 +1,5 @@
 export const SKILL_PILL_ATTR = 'data-skill-id';
-export const SKILL_COLOR = '#7B61BD';
+const SKILL_COLOR = '#7B61BD';
 
 export interface AttachedSkill {
   id: string;

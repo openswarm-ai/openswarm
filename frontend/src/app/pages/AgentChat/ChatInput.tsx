@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useEffect, useId, forwardRef, useImperativeHandle } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -16,11 +16,7 @@ import AttachmentChips from './AttachmentChips';
 import ModelModeSelector from './ModelModeSelector';
 import { useChatSubmit } from './hooks/useChatSubmit';
 
-export type { AttachedImage } from './ImageAttachments';
-export type { ForcedToolGroup } from './AttachmentChips';
-export type { AttachedSkill } from '@/app/components/richEditorUtils';
-
-export interface Props {
+interface Props {
   onSend: (message: string, images?: Array<{ data: string; media_type: string }>, contextPaths?: ContextPath[], forcedTools?: string[], attachedSkills?: Array<{ id: string; name: string; content: string }>, selectedBrowserIds?: string[]) => void;
   disabled?: boolean;
   mode: string; onModeChange: (mode: string) => void;
@@ -48,15 +44,15 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({
   const generalFileInputRef = useRef<HTMLInputElement>(null);
   const elementSelection = useElementSelection();
 
-  const fallbackOwnerIdRef = useRef(`input-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`);
-  const ownerId = sessionId || fallbackOwnerIdRef.current;
+  const fallbackOwnerId = useId();
+  const ownerId = sessionId || fallbackOwnerId;
 
   useEffect(() => { if (autoFocus) editorRef.current?.focus(); }, [autoFocus]);
 
   const [hasContent, setHasContent] = useState(false);
   const [attachedSkills, setAttachedSkills] = useState<Record<string, AttachedSkill>>({});
   const attachedSkillsRef = useRef(attachedSkills);
-  attachedSkillsRef.current = attachedSkills;
+  useEffect(() => { attachedSkillsRef.current = attachedSkills; });
   const [picker, setPicker] = useState<TriggerState>(EMPTY_TRIGGER);
   const skills = useAppSelector((state) => state.skills.items);
   const modesMap = useAppSelector((state) => state.modes.items);
