@@ -41,6 +41,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+x = 1
 
 @app.websocket("/ws/agents/{session_id}")
 async def websocket_session(websocket: WebSocket, session_id: str):

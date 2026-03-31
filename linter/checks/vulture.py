@@ -25,7 +25,10 @@ def run_vulture(
         vulture_bin = Path(found)
 
     whitelist = CONFIG_DIR / "vulture_whitelist.py"
-    cmd = [str(vulture_bin), "backend", "debug.py"]
+    targets = ["backend"]
+    if (root / "debug.py").exists():
+        targets.append("debug.py")
+    cmd = [str(vulture_bin), *targets]
     if whitelist.exists():
         cmd.append(str(whitelist))
     cmd.extend([
