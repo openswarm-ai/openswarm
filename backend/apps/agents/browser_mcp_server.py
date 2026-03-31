@@ -36,15 +36,6 @@ def send_response(id_, result=None, error=None):
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
 
-
-def send_notification(method, params=None):
-    msg = {"jsonrpc": "2.0", "method": method}
-    if params is not None:
-        msg["params"] = params
-    sys.stdout.write(json.dumps(msg) + "\n")
-    sys.stdout.flush()
-
-
 def call_backend(action: str, browser_id: str, params: dict | None = None, tab_id: str = "") -> dict:
     payload = json.dumps({
         "action": action,

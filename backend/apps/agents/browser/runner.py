@@ -65,7 +65,7 @@ async def run_browser_agent(
     await ws_manager.emit_message(session_id, user_msg)
 
     try:
-        for turn in range(MAX_TURNS):
+        for _ in range(MAX_TURNS):
             if cancel_event.is_set():
                 break
             response = await client.messages.create(

@@ -9,13 +9,10 @@ Run with:
     cd backend && python -m pytest tests/test_analytics.py -v
 """
 
-import asyncio
 import json
 import os
-import sys
 import tempfile
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest

@@ -62,16 +62,6 @@ def _get_installation_id() -> str:
         _installation_id = uuid4().hex
     return _installation_id
 
-
-def _is_opted_in() -> bool:
-    """Check if user has opted in to analytics."""
-    try:
-        from backend.apps.settings.settings import load_settings
-        return getattr(load_settings(), "analytics_opt_in", True)
-    except Exception:
-        return True
-
-
 def record(
     event_type: str,
     properties: dict | None = None,
@@ -116,8 +106,3 @@ def identify(extra_properties: dict | None = None):
         )
     except Exception as e:
         logger.debug(f"PostHog identify failed (non-critical): {e}")
-
-
-def get_collector():
-    """Backward compat — returns None since we no longer have a local collector."""
-    return None

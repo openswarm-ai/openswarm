@@ -24,7 +24,7 @@ class ModelDef:
 # fmt: off
 ALL_MODELS: list[ModelDef] = [
     # Anthropic
-    ModelDef("sonnet",  "Claude Sonnet 4.6", "claude-sonnet-4-6",  "Anthropic", "anthropic", 1_000_000, 3.0,  15.0),
+    ModelDef("sonnet", label="Claude Sonnet 4.6", model_id="claude-sonnet-4-6",  provider="Anthropic", api="anthropic", context_window=1_000_000, input_cost_per_1m=3.0, output_cost_per_1m=15.0),
     ModelDef("opus",    "Claude Opus 4.6",   "claude-opus-4-6",    "Anthropic", "anthropic", 1_000_000, 5.0,  25.0),
     ModelDef("haiku",   "Claude Haiku 4.5",  "claude-haiku-4-5",   "Anthropic", "anthropic",   200_000, 1.0,   5.0),
     # OpenAI

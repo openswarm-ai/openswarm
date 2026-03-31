@@ -35,5 +35,3 @@ OUTPUTS_WORKSPACE_DIR = os.path.join(DATA_ROOT, "outputs_workspace")
 SKILLS_WORKSPACE_DIR = os.path.join(DATA_ROOT, "skills_workspace")
 DASHBOARD_LAYOUT_DIR = os.path.join(DATA_ROOT, "dashboard_layout")
 BUILTIN_PERMISSIONS_PATH = os.path.join(DATA_ROOT, "builtin_permissions.json")
-
-BACKEND_DIR = _BACKEND_DIR
