@@ -17,7 +17,8 @@ class AppSettings(BaseModel):
     default_mode: str = "agent"
     default_max_turns: Optional[int] = None
     zoom_sensitivity: float = 50.0
-    theme: str = "dark"
+    theme: str = "midnight"  # midnight | obsidian | vapor | aurora | light | sand
+    radius_scale: float = 1.0  # multiplier applied to all theme radius tokens (0.0 = sharp, 2.0 = very round)
     new_agent_shortcut: str = "Meta+l"
     anthropic_api_key: Optional[str] = None
     browser_homepage: str = "https://www.google.com"

@@ -42,7 +42,8 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
 import { setChecking, setUpdateError } from '@/shared/state/updateSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
-import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
+import { useClaudeTokens, useTheme, useThemeMode, scaleRadii } from '@/shared/styles/ThemeContext';
+import { THEMES, ThemeName } from '@/shared/styles/claudeTokens';
 import DirectoryBrowser from '@/app/components/DirectoryBrowser';
 import { CommandsContent } from '@/app/pages/Commands/Commands';
 
@@ -77,6 +78,7 @@ const Settings: React.FC = () => {
   const settings = useAppSelector((s) => s.settings.data);
   const loaded = useAppSelector((s) => s.settings.loaded);
   const modes = useAppSelector((s) => s.modes.items);
+  const { setTheme: setThemeName, setRadiusScale } = useTheme();
   const { setMode: setThemeMode } = useThemeMode();
 
   const modesList = useMemo(() => Object.values(modes), [modes]);
@@ -140,9 +142,8 @@ const Settings: React.FC = () => {
 
   const handleSave = async () => {
     await dispatch(updateSettings(form));
-    if (form.theme !== settings.theme) {
-      setThemeMode(form.theme);
-    }
+    if (form.theme !== settings.theme) setThemeName(form.theme as ThemeName);
+    if (form.radius_scale !== settings.radius_scale) setRadiusScale(form.radius_scale ?? 1);
     setSaved(true);
   };
 
@@ -157,18 +158,20 @@ const Settings: React.FC = () => {
   const handleConfirmDiscard = useCallback(() => {
     setConfirmDiscard(false);
     setForm({ ...settings });
+    // Revert any live previews
+    setThemeName(settings.theme as ThemeName);
+    setRadiusScale(settings.radius_scale ?? 1);
     dispatch(closeSettingsModal());
-  }, [settings, dispatch]);
+  }, [settings, dispatch, setThemeName, setRadiusScale]);
 
   const handleSaveAndClose = useCallback(async () => {
     await dispatch(updateSettings(form));
-    if (form.theme !== settings.theme) {
-      setThemeMode(form.theme);
-    }
+    if (form.theme !== settings.theme) setThemeName(form.theme as ThemeName);
+    if (form.radius_scale !== settings.radius_scale) setRadiusScale(form.radius_scale ?? 1);
     setSaved(true);
     setConfirmDiscard(false);
     dispatch(closeSettingsModal());
-  }, [dispatch, form, settings, setThemeMode]);
+  }, [dispatch, form, settings, setThemeName, setRadiusScale]);
 
   const fieldSx = {
     '& .MuiOutlinedInput-root': {
@@ -437,36 +440,123 @@ const Settings: React.FC = () => {
             <Typography sx={labelSx}>Theme</Typography>
             <Typography sx={descSx}>Application color scheme.</Typography>
           </Box>
-          <ToggleButtonGroup
-            value={form.theme}
-            exclusive
-            onChange={(_, v) => { if (v) setForm({ ...form, theme: v }); }}
-            size="small"
-            sx={{
-              '& .MuiToggleButton-root': {
-                color: c.text.muted,
-                borderColor: c.border.medium,
-                textTransform: 'none',
-                px: 2,
-                py: 0.5,
-                gap: 0.5,
-                fontSize: '0.8rem',
-                '&.Mui-selected': {
-                  bgcolor: `${c.accent.primary}15`,
-                  color: c.accent.primary,
-                  borderColor: c.accent.primary,
-                  '&:hover': { bgcolor: `${c.accent.primary}20` },
-                },
-              },
-            }}
-          >
-            <ToggleButton value="light">
-              <LightModeIcon sx={{ fontSize: 16 }} /> Light
-            </ToggleButton>
-            <ToggleButton value="dark">
-              <DarkModeIcon sx={{ fontSize: 16 }} /> Dark
-            </ToggleButton>
-          </ToggleButtonGroup>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, mt: 0.5 }}>
+            {(Object.entries(THEMES) as [ThemeName, typeof THEMES[ThemeName]][]).map(([key, meta]) => {
+              const selected = form.theme === key;
+              return (
+                <Box
+                  key={key}
+                  onClick={() => setForm({ ...form, theme: key })}
+                  sx={{
+                    cursor: 'pointer',
+                    borderRadius: `${c.radius.md}px`,
+                    border: selected
+                      ? `1.5px solid ${c.accent.primary}`
+                      : `1px solid ${c.border.medium}`,
+                    overflow: 'hidden',
+                    transition: c.transition,
+                    boxShadow: selected ? `0 0 0 3px ${c.accent.primary}28` : 'none',
+                    '&:hover': { borderColor: selected ? c.accent.primary : c.border.strong },
+                  }}
+                >
+                  <Box sx={{
+                    height: 38,
+                    background: meta.preview.bg,
+                    display: 'flex',
+                    alignItems: 'center',
+                    px: 1,
+                    gap: 0.75,
+                  }}>
+                    <Box sx={{ width: 14, height: 14, borderRadius: '50%', background: meta.preview.accent, flexShrink: 0 }} />
+                    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                      <Box sx={{ height: 2.5, borderRadius: 2, background: meta.preview.surface, width: '75%', opacity: 0.85 }} />
+                      <Box sx={{ height: 2.5, borderRadius: 2, background: meta.preview.surface, width: '50%', opacity: 0.5 }} />
+                    </Box>
+                  </Box>
+                  <Box sx={{
+                    px: 1, py: 0.5,
+                    background: c.bg.surface,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}>
+                    <Typography sx={{ fontSize: '0.7rem', fontWeight: 500, color: selected ? c.accent.primary : c.text.secondary }}>
+                      {meta.label}
+                    </Typography>
+                    {selected && <Box sx={{ width: 5, height: 5, borderRadius: '50%', background: c.accent.primary }} />}
+                  </Box>
+                </Box>
+              );
+            })}
+          </Box>
+        </Box>
+
+        {/* ── Rounding ── */}
+        <Box sx={rowSx}>
+          <Typography sx={labelSx}>Rounding</Typography>
+          <Typography sx={{ ...descSx, mb: 1.5 }}>Corner radius for cards, buttons and panels.</Typography>
+
+          {/* Live preview */}
+          <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center' }}>
+            {[0, 0.5, 1, 1.5, 2].map((s) => {
+              const r = scaleRadii(THEMES[(form.theme in THEMES ? form.theme : 'midnight') as ThemeName]?.tokens?.radius ?? THEMES.midnight.tokens.radius, s);
+              const active = Math.abs((form.radius_scale ?? 1) - s) < 0.05;
+              return (
+                <Box
+                  key={s}
+                  onClick={() => setForm({ ...form, radius_scale: s })}
+                  title={['Sharp', 'Subtle', 'Default', 'Rounded', 'Pill'][Math.round(s * 2)]}
+                  sx={{
+                    cursor: 'pointer',
+                    width: 48,
+                    height: 32,
+                    borderRadius: `${r.md}px`,
+                    border: active
+                      ? `1.5px solid ${c.accent.primary}`
+                      : `1px solid ${c.border.medium}`,
+                    background: active ? `${c.accent.primary}18` : c.bg.elevated,
+                    transition: c.transition,
+                    boxShadow: active ? `0 0 0 3px ${c.accent.primary}22` : 'none',
+                    '&:hover': { borderColor: c.accent.hover },
+                  }}
+                />
+              );
+            })}
+            <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, ml: 0.5 }}>
+              {form.radius_scale === 0 ? 'Sharp' :
+               form.radius_scale <= 0.55 ? 'Subtle' :
+               form.radius_scale <= 1.05 ? 'Default' :
+               form.radius_scale <= 1.55 ? 'Rounded' : 'Pill'}
+            </Typography>
+          </Box>
+
+          <Box sx={{ px: 0.5 }}>
+            <Slider
+              value={form.radius_scale ?? 1}
+              onChange={(_, v) => {
+                const s = v as number;
+                setForm({ ...form, radius_scale: s });
+                setRadiusScale(s); // live preview
+              }}
+              min={0}
+              max={2}
+              step={0.05}
+              valueLabelDisplay="auto"
+              valueLabelFormat={(v) => `${v.toFixed(2)}×`}
+              marks={[
+                { value: 0,   label: 'Sharp' },
+                { value: 0.5, label: 'Subtle' },
+                { value: 1,   label: 'Default' },
+                { value: 1.5, label: 'Rounded' },
+                { value: 2,   label: 'Pill' },
+              ]}
+              sx={{
+                color: c.accent.primary,
+                '& .MuiSlider-markLabel': { color: c.text.tertiary, fontSize: '0.7rem' },
+                '& .MuiSlider-valueLabel': { bgcolor: c.accent.primary },
+              }}
+            />
+          </Box>
         </Box>
 
         <Box sx={rowSx}>

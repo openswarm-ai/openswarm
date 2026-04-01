@@ -26,12 +26,18 @@ import json
 main_app = MainApp([health, agents, templates, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, dashboards])
 app = main_app.app
 
+_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "app://.",          # Electron production
+    "file://",          # Electron dev
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
 @app.websocket("/ws/agents/{session_id}")
@@ -44,7 +50,9 @@ async def websocket_session(websocket: WebSocket, session_id: str):
             event = msg.get("event")
             payload = msg.get("data", {})
             
-            if event == "agent:send_message":
+            if event == "ping":
+                await websocket.send_text(json.dumps({"event": "pong"}))
+            elif event == "agent:send_message":
                 from backend.apps.agents.agent_manager import agent_manager
                 await agent_manager.send_message(
                     session_id,
@@ -83,7 +91,9 @@ async def websocket_dashboard(websocket: WebSocket):
             event = msg.get("event")
             payload = msg.get("data", {})
             
-            if event == "agent:approval_response":
+            if event == "ping":
+                await websocket.send_text(json.dumps({"event": "pong"}))
+            elif event == "agent:approval_response":
                 from backend.apps.agents.agent_manager import agent_manager
                 agent_manager.handle_approval(payload.get("request_id"), {
                     "behavior": payload.get("behavior", "deny"),
@@ -135,13 +145,14 @@ async def browser_agent_run(request: Request):
         return JSONResponse({"error": "tasks array is required"}, status_code=400)
 
     settings = load_settings()
-    if not settings.anthropic_api_key:
+    api_key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
         return JSONResponse({"error": "Anthropic API key not configured"}, status_code=400)
 
     results = await run_browser_agents(
         tasks=tasks,
         model=model,
-        api_key=settings.anthropic_api_key,
+        api_key=api_key,
         dashboard_id=dashboard_id or None,
         pre_selected_browser_ids=pre_selected_browser_ids,
         parent_session_id=parent_session_id or None,

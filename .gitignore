@@ -14,3 +14,5 @@ electron/package-lock.json
 
 # Frontend build output
 frontend/dist/
+/backend/.venv
+/node_modules

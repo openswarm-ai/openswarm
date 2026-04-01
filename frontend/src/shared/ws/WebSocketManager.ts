@@ -38,6 +38,8 @@ class WebSocketManager {
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
   private deltaBuffer: Map<string, { sessionId: string; messageId: string; accumulated: string }> = new Map();
   private flushScheduled = false;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly HEARTBEAT_INTERVAL = 30_000;
 
   constructor(url: string, options?: WSManagerOptions) {
     this.url = url;
@@ -72,6 +74,7 @@ class WebSocketManager {
 
     this.ws.onopen = () => {
       this.reconnectDelay = 1000;
+      this.startHeartbeat();
     };
 
     this.ws.onmessage = (event) => {
@@ -84,21 +87,40 @@ class WebSocketManager {
     };
 
     this.ws.onclose = () => {
+      this.stopHeartbeat();
       this.scheduleReconnect();
     };
 
     this.ws.onerror = () => {
+      this.stopHeartbeat();
       this.ws?.close();
     };
   }
 
   disconnect() {
+    this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     this.ws?.close();
     this.ws = null;
+  }
+
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        try { this.ws.send(JSON.stringify({ event: 'ping' })); } catch { /* ignore */ }
+      }
+    }, this.HEARTBEAT_INTERVAL);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
   }
 
   private scheduleReconnect() {

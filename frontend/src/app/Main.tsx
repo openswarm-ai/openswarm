@@ -24,7 +24,7 @@ import Views from './pages/Views/Views';
 import Customization from './pages/Customization/Customization';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
-import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { ThemeProvider, useTheme, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 
 function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
@@ -155,15 +155,18 @@ const ShortcutsProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
 const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const dispatch = useAppDispatch();
-  const { setMode: setThemeMode } = useThemeMode();
+  const { setTheme, setRadiusScale } = useTheme();
   const theme = useAppSelector((s) => s.settings.data.theme);
+  const radiusScale = useAppSelector((s) => s.settings.data.radius_scale);
   const loaded = useAppSelector((s) => s.settings.loaded);
   useEffect(() => {
     dispatch(fetchSettings());
   }, [dispatch]);
   useEffect(() => {
-    if (loaded) setThemeMode(theme as 'light' | 'dark');
-  }, [loaded, theme, setThemeMode]);
+    if (!loaded) return;
+    if (theme) setTheme(theme as any);
+    if (radiusScale != null) setRadiusScale(radiusScale);
+  }, [loaded, theme, radiusScale, setTheme, setRadiusScale]);
   return <>{children}</>;
 };
 

@@ -10,7 +10,8 @@ module.exports = (env, argv) => {
 
     output: {
       path: path.resolve(__dirname, 'dist'),
-      filename: 'bundle.js',
+      filename: isDevelopment ? 'bundle.js' : '[name].[contenthash:8].js',
+      chunkFilename: isDevelopment ? '[name].chunk.js' : '[name].[contenthash:8].chunk.js',
       publicPath: isDevelopment ? '/' : './',
       clean: true
     },
@@ -73,6 +74,41 @@ module.exports = (env, argv) => {
         ],
       }),
     ],
+
+    optimization: isDevelopment ? {} : {
+      // Production only: split vendors into separate cacheable chunks.
+      // In dev this causes filename conflicts and slows rebuilds.
+      splitChunks: {
+        chunks: 'all',
+        cacheGroups: {
+          react: {
+            test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
+            name: 'vendor-react',
+            chunks: 'all',
+            priority: 30,
+          },
+          mui: {
+            test: /[\\/]node_modules[\\/]@mui[\\/]/,
+            name: 'vendor-mui',
+            chunks: 'all',
+            priority: 20,
+          },
+          framer: {
+            test: /[\\/]node_modules[\\/]framer-motion[\\/]/,
+            name: 'vendor-framer',
+            chunks: 'all',
+            priority: 10,
+          },
+          vendors: {
+            test: /[\\/]node_modules[\\/]/,
+            name: 'vendors',
+            chunks: 'all',
+            priority: 5,
+          },
+        },
+      },
+      runtimeChunk: 'single',
+    },
 
     devtool: isDevelopment ? 'source-map' : false,
 

@@ -18,7 +18,8 @@ export interface AppSettings {
   default_mode: string;
   default_max_turns: number | null;
   zoom_sensitivity: number;
-  theme: 'light' | 'dark';
+  theme: string;
+  radius_scale: number;
   new_agent_shortcut: string;
   anthropic_api_key: string | null;
   browser_homepage: string;
@@ -50,7 +51,8 @@ const initialState: SettingsState = {
     default_mode: 'agent',
     default_max_turns: null,
     zoom_sensitivity: 50,
-    theme: 'dark',
+    theme: 'midnight',
+    radius_scale: 1.0,
     new_agent_shortcut: 'Meta+l',
     anthropic_api_key: null,
     browser_homepage: 'https://www.google.com',
