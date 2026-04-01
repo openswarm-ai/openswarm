@@ -11,6 +11,8 @@ import httpx
 
 from backend.ports import NINE_ROUTER_PORT
 
+import subprocess as _sp
+
 logger = logging.getLogger(__name__)
 
 NINE_ROUTER_URL = f"http://localhost:{NINE_ROUTER_PORT}"
@@ -89,7 +91,6 @@ async def ensure_running():
 
     if is_running():
         if not _is_packaged:
-            import subprocess as _sp
             try:
                 result = _sp.run(
                     ["pgrep", "-f", "next-server"],

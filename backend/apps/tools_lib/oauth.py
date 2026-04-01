@@ -18,9 +18,10 @@ from backend.ports import BACKEND_DEV_PORT
 from fastapi import HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-from backend.apps.tools_lib.oauth_providers import (
-    OAuthProvider, OAUTH_PROVIDERS, _resolve_oauth_provider,
-)
+from backend.apps.tools_lib.oauth_providers import _resolve_oauth_provider
+
+from backend.apps.tools_lib.routes import _store
+
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,6 @@ _pending_pkce: dict[str, str] = {}
 
 
 def _get_store():
-    from backend.apps.tools_lib.routes import _store
     return _store
 
 

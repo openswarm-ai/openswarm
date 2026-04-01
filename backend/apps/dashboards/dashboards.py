@@ -12,11 +12,14 @@ from backend.apps.dashboards.models import (
     DashboardCreate,
     DashboardUpdate,
     DashboardLayout,
-    CardPosition,
-    ViewCardPosition,
-    BrowserCardPosition,
 )
-from fastapi import HTTPException
+from backend.apps.analytics.collector import record as _analytics
+from backend.apps.common.llm_helpers import _resolve_model as _rm
+from backend.apps.settings.settings import load_settings
+from backend.apps.settings.credentials import get_anthropic_client
+
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +107,6 @@ async def list_dashboards():
 
 @dashboards.router.post("/create")
 async def create_dashboard(body: DashboardCreate):
-    from backend.apps.analytics.collector import record as _analytics
     dashboard = Dashboard(name=body.name)
     _save(dashboard)
     _analytics("dashboard.created", {}, dashboard_id=dashboard.id)
@@ -113,12 +115,11 @@ async def create_dashboard(body: DashboardCreate):
 
 @dashboards.router.post("/{dashboard_id}/generate-name")
 async def generate_name(dashboard_id: str):
+    from backend.apps.agents.manager.agent_manager import agent_manager
     dashboard = _load(dashboard_id)
 
     if not dashboard.auto_named and dashboard.name != "Untitled Dashboard":
         return {"name": dashboard.name, "auto_named": dashboard.auto_named}
-
-    from backend.apps.agents.agent_manager import agent_manager
 
     prompts = []
     for session in agent_manager.sessions.values():
@@ -134,8 +135,6 @@ async def generate_name(dashboard_id: str):
 
     fallback = prompts[0][:40]
     try:
-        from backend.apps.settings.settings import load_settings
-        from backend.apps.settings.credentials import get_anthropic_client
         global_settings = load_settings()
         client = get_anthropic_client(global_settings)
 
@@ -146,7 +145,6 @@ async def generate_name(dashboard_id: str):
             system = "Generate a concise 2-5 word workspace name that captures the overall theme of these tasks. Return only the name, nothing else."
             user_content = "\n".join(f"- {p}" for p in prompts)
 
-        from backend.apps.common.llm_helpers import _resolve_model as _rm
         resp = await client.messages.create(
             model=_rm("claude-haiku-4-5-20251001", global_settings),
             max_tokens=30,
@@ -189,6 +187,7 @@ async def update_dashboard(dashboard_id: str, body: DashboardUpdate):
 
 @dashboards.router.delete("/{dashboard_id}")
 async def delete_dashboard(dashboard_id: str):
+    from backend.apps.agents.manager.agent_manager import agent_manager
     _load(dashboard_id)
 
     if os.path.exists(SESSIONS_DIR):
@@ -204,7 +203,6 @@ async def delete_dashboard(dashboard_id: str):
             except Exception:
                 logger.warning(f"Failed to read/delete session file {fname}")
 
-    from backend.apps.agents.agent_manager import agent_manager
     to_remove = [
         sid for sid, sess in agent_manager.sessions.items()
         if getattr(sess, "dashboard_id", None) == dashboard_id

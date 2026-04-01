@@ -17,6 +17,13 @@ from backend.apps.tools_lib.mcp_config import (
 )
 from backend.apps.tools_lib.classification import _categorize_tool, _extract_service
 from backend.apps.common.mcp_utils import parse_sse_json as _parse_sse_json
+from mcp.client.sse import sse_client
+from mcp import ClientSession
+from mcp.types import Implementation
+from backend.apps.tools_lib.oauth import refresh_oauth_token
+from backend.apps.tools_lib.routes import _store
+from exceptiongroup import BaseExceptionGroup
+
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +71,6 @@ async def _discover_mcp_tools_http(url: str, headers: dict | None = None) -> lis
 
 
 async def _discover_mcp_tools_sse(url: str, headers: dict | None = None) -> list[dict]:
-    from mcp.client.sse import sse_client
-    from mcp import ClientSession
-    from mcp.types import Implementation
 
     try:
         async with sse_client(url=url, headers=headers, timeout=30, sse_read_timeout=30) as (read_stream, write_stream):
@@ -156,8 +160,6 @@ async def _discover_mcp_tools_stdio(command: str, args: list[str] | None = None,
 
 
 async def discover_tools(tool_id: str):
-    from backend.apps.tools_lib.oauth import refresh_oauth_token
-    from backend.apps.tools_lib.routes import _store
 
     tool = _store.load(tool_id)
 

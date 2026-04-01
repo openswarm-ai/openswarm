@@ -12,6 +12,12 @@ import re
 
 logger = logging.getLogger(__name__)
 
+from backend.apps.nine_router import is_running as _9r_running
+from backend.apps.settings.credentials import get_anthropic_client
+from backend.apps.settings.settings import load_settings
+from backend.apps.common.model_registry import resolve_model_id
+
+
 
 def strip_markdown_fences(text: str) -> str:
     """Remove ```json ... ``` or similar fences from LLM output."""
@@ -26,9 +32,7 @@ def _resolve_model(model: str, settings) -> str:
     """Resolve short aliases and prefix with cc/ when routing through 9Router."""
     if settings.anthropic_api_key or model.startswith("cc/"):
         return model
-    from backend.apps.nine_router import is_running as _9r_running
     if _9r_running():
-        from backend.apps.common.model_registry import resolve_model_id
         resolved = resolve_model_id(model)
         return f"cc/{resolved}" if not resolved.startswith("cc/") else resolved
     return model
@@ -41,8 +45,6 @@ async def quick_llm_call(
     max_tokens: int = 300,
 ) -> str:
     """Make a simple LLM call and return the text response."""
-    from backend.apps.settings.credentials import get_anthropic_client
-    from backend.apps.settings.settings import load_settings
 
     settings = load_settings()
     client = get_anthropic_client(settings)

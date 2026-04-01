@@ -35,11 +35,10 @@ def compose_system_prompt(
     mode_prompt: str | None,
     session_prompt: str | None,
     connected_tools_ctx: str | None = None,
-    outputs_ctx: str | None = None,
     browser_ctx: str | None = None,
 ) -> str | None:
     parts = [p for p in (default_prompt, mode_prompt, session_prompt,
-                         connected_tools_ctx, outputs_ctx, browser_ctx) if p]
+                         connected_tools_ctx, browser_ctx) if p]
     return "\n\n".join(parts) if parts else None
 
 

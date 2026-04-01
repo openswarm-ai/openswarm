@@ -7,12 +7,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import httpx
 from contextlib import asynccontextmanager
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 
 from backend.config.Apps import SubApp
+
+from backend.apps.nine_router import poll_oauth
+from backend.apps.analytics.collector import record as _analytics
+from backend.apps.nine_router import (
+    is_running, ensure_running, get_providers, get_models, start_oauth, exchange_oauth, NINE_ROUTER_API,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +44,6 @@ subscriptions = SubApp("subscriptions", subscriptions_lifespan)
 async def subscriptions_status():
     """Check if 9Router is running and list connected providers."""
     global _ensure_task
-    from backend.apps.nine_router import is_running, ensure_running, get_providers, get_models
     if not is_running():
         if _ensure_task is None or _ensure_task.done():
             _ensure_task = asyncio.create_task(ensure_running())
@@ -50,7 +56,6 @@ async def subscriptions_status():
 @subscriptions.router.post("/connect")
 async def subscriptions_connect(body: dict):
     """Start OAuth flow for a subscription provider."""
-    from backend.apps.nine_router import is_running, ensure_running, start_oauth
     provider = body.get("provider", "")
     if not provider:
         raise HTTPException(status_code=400, detail="provider required")
@@ -76,7 +81,6 @@ async def subscriptions_connect(body: dict):
 @subscriptions.router.post("/poll")
 async def subscriptions_poll(body: dict):
     """Poll for OAuth completion."""
-    from backend.apps.nine_router import poll_oauth
     provider = body.get("provider", "")
     device_code = body.get("device_code", "")
     if not provider or not device_code:
@@ -89,7 +93,6 @@ async def subscriptions_poll(body: dict):
             extra_data=body.get("extra_data"),
         )
         if result.get("success"):
-            from backend.apps.analytics.collector import record as _analytics
             _analytics("subscription.connected", {"provider": provider})
         return result
     except Exception as e:
@@ -98,20 +101,17 @@ async def subscriptions_poll(body: dict):
 @subscriptions.router.post("/disconnect")
 async def subscriptions_disconnect(body: dict):
     """Disconnect a subscription provider via 9Router."""
-    import httpx
     provider = body.get("provider", "")
     if not provider:
         raise HTTPException(status_code=400, detail="provider required")
 
     try:
-        from backend.apps.nine_router import NINE_ROUTER_API, get_providers
         providers_data = await get_providers()
         connections = providers_data.get("connections", []) if isinstance(providers_data, dict) else []
         conn = next((c for c in connections if c.get("provider") == provider), None)
         if conn and conn.get("id"):
             async with httpx.AsyncClient(timeout=10.0) as client:
                 await client.delete(f"{NINE_ROUTER_API}/providers/{conn['id']}")
-            from backend.apps.analytics.collector import record as _analytics
             _analytics("subscription.disconnected", {"provider": provider})
             return {"ok": True}
         return {"ok": False, "error": "Connection not found"}
@@ -148,7 +148,6 @@ async def subscriptions_callback(request: Request):
     if not pending:
         return HTMLResponse('<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif"><div style="text-align:center"><h2>Session expired</h2><p style="color:#888">Please try connecting again.</p></div></body></html>')
 
-    from backend.apps.nine_router import exchange_oauth
     try:
         logger.info(f"OAuth callback: exchanging code for provider={pending['provider']}")
         result = await exchange_oauth(pending["provider"], code, pending["redirect_uri"], pending["code_verifier"], state)
@@ -157,7 +156,6 @@ async def subscriptions_callback(request: Request):
         logger.error(f"OAuth callback: exchange failed for provider={pending['provider']}: {e}")
         return HTMLResponse(f'<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif"><div style="text-align:center"><h2>Connection failed</h2><p style="color:#888">{e}</p></div></body></html>')
 
-    from backend.apps.analytics.collector import record as _analytics
     _analytics("subscription.connected", {"provider": pending["provider"]})
 
     return HTMLResponse(

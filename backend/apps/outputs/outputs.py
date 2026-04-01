@@ -27,6 +27,7 @@ from backend.apps.outputs.helpers import (
 )
 from backend.apps.outputs import ai_generation
 from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR as WORKSPACE_DIR
+from backend.apps.analytics.collector import record as _analytics
 
 
 @asynccontextmanager
@@ -172,7 +173,6 @@ async def create_output(body: OutputCreate):
         created_at=now, updated_at=now,
     )
     _save(output)
-    from backend.apps.analytics.collector import record as _analytics
     _analytics("feature.used", {"feature": "view.created"})
     return {"ok": True, "output": output.model_dump()}
 

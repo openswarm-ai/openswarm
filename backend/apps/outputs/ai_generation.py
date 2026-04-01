@@ -11,13 +11,18 @@ from backend.apps.common.model_registry import resolve_model_id as _resolve_mode
 from backend.apps.outputs.models import (
     AutoRunRequest, AutoRunAgentRequest,
 )
+from backend.apps.settings.credentials import get_anthropic_client
+from backend.apps.settings.settings import load_settings
+from backend.apps.common.llm_helpers import _resolve_model as _resolve_9r
+from backend.apps.settings.settings import load_settings as _ls
+from backend.apps.agents.manager.agent_manager import agent_manager
+from backend.apps.agents.execution.mcp_builder import FULL_TOOLS
+from backend.apps.agents.models import AgentConfig
 
 logger = logging.getLogger(__name__)
 
 
 def _get_anthropic_client():
-    from backend.apps.settings.credentials import get_anthropic_client
-    from backend.apps.settings.settings import load_settings
     return get_anthropic_client(load_settings())
 
 
@@ -30,17 +35,11 @@ Every required field must be present. Use realistic, meaningful data.\
 
 
 async def auto_run_output(body: AutoRunRequest):
-    try:
-        import anthropic
-    except ImportError:
-        return {"error": "anthropic SDK not installed", "input_data": None, "backend_result": None}
 
     schema_str = json.dumps(body.input_schema, indent=2)
     user_message = f"Schema:\n```json\n{schema_str}\n```\n\nGenerate data for: {body.prompt}"
 
     api_model = _resolve_model(body.model)
-    from backend.apps.common.llm_helpers import _resolve_model as _resolve_9r
-    from backend.apps.settings.settings import load_settings as _ls
     api_model = _resolve_9r(api_model, _ls())
     client = _get_anthropic_client()
     try:
@@ -101,11 +100,7 @@ the schema above. If a tool call fails, report the error clearly.\
 
 
 async def auto_run_agent(body: AutoRunAgentRequest):
-    from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.agents.mcp_builder import FULL_TOOLS
-    from backend.apps.agents.models import AgentConfig
     from backend.apps.outputs.outputs import _load
-
     output = _load(body.output_id)
     schema_str = json.dumps(body.input_schema or output.input_schema, indent=2)
 
@@ -134,7 +129,6 @@ async def auto_run_agent(body: AutoRunAgentRequest):
 
 
 async def cleanup_auto_run_agent(session_id: str):
-    from backend.apps.agents.agent_manager import agent_manager
     try:
         await agent_manager.delete_session(session_id)
     except Exception as e:

@@ -12,7 +12,6 @@ import platform
 from uuid import uuid4
 
 from posthog import Posthog
-from backend.apps.settings.settings import load_settings, _save_settings
 
 
 logger = logging.getLogger(__name__)
@@ -48,6 +47,7 @@ def shutdown():
 
 def _get_installation_id() -> str:
     """Get or create a stable anonymous installation ID."""
+    from backend.apps.settings.settings import load_settings, _save_settings
     global _installation_id
     if _installation_id:
         return _installation_id

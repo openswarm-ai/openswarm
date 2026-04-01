@@ -6,11 +6,9 @@ file/directory context, and directory trees.
 
 from __future__ import annotations
 
-import json as _json
 import logging
 import os
 
-from backend.apps.outputs.outputs import _load_all as load_all_outputs
 from backend.apps.common.mcp_utils import sanitize_server_name as _sanitize_server_name
 
 from backend.apps.dashboards.dashboards import _load as load_dashboard
@@ -80,28 +78,6 @@ def build_connected_tools_context(
         "Use them directly when relevant to the user's request.\n\n"
         + "\n\n".join(sections)
         + "\n</connected_mcp_tools>"
-    )
-
-
-def build_outputs_context() -> str | None:
-    all_outputs = load_all_outputs()
-    if not all_outputs:
-        return None
-    sections: list[str] = []
-    for out in all_outputs:
-        lines = [f"- **{out.name}** (id: `{out.id}`)"]
-        if out.description:
-            lines.append(f"  Description: {out.description}")
-        schema_str = _json.dumps(out.input_schema, indent=2)
-        lines.append(f"  Input schema:\n```json\n{schema_str}\n```")
-        sections.append("\n".join(lines))
-    return (
-        "<available_views>\n"
-        "The following reusable View artifacts are available. "
-        "Use the RenderOutput tool to invoke one by providing its output_id "
-        "and the required input_data matching its schema.\n\n"
-        + "\n\n".join(sections)
-        + "\n</available_views>"
     )
 
 

@@ -13,7 +13,7 @@ import sys
 from backend.apps.agents.models import AgentSession
 from backend.apps.agents.execution.prompt_builder import resolve_mode, compose_system_prompt
 from backend.apps.agents.execution.prompt_context import (
-    build_connected_tools_context, build_outputs_context,
+    build_connected_tools_context,
     build_browser_context, get_pre_selected_browser_ids,
 )
 from backend.apps.agents.execution.mcp_builder import (
@@ -60,12 +60,11 @@ async def build_agent_options(
     connected_tools_ctx = build_connected_tools_context(
         session.allowed_tools, load_all_tools, get_all_tool_names, _is_fully_denied, _get_denied_tool_names,
     )
-    outputs_ctx = build_outputs_context()
     browser_ctx = build_browser_context(session.dashboard_id, selected_browser_ids=selected_browser_ids)
     global_settings = load_settings()
     composed_prompt = compose_system_prompt(
         global_settings.default_system_prompt, mode_sys_prompt, session.system_prompt,
-        connected_tools_ctx, outputs_ctx, browser_ctx,
+        connected_tools_ctx, browser_ctx,
     )
 
     if session.mode == "view-builder":

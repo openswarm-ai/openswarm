@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import HTTPException
 from backend.config.Apps import SubApp
 from backend.apps.skills.models import Skill, SkillCreate, SkillUpdate, SkillWorkspaceSeedRequest
+from backend.apps.analytics.collector import record as _analytics
+
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +164,6 @@ async def create_skill(body: SkillCreate):
         file_path=fpath,
         command=body.command or slug,
     )
-    from backend.apps.analytics.collector import record as _analytics
     _analytics("feature.used", {"feature": "skill.created"})
     return {"ok": True, "skill": skill.model_dump()}
 

@@ -10,6 +10,8 @@ from typing import Optional
 
 from backend.config.Apps import SubApp
 from backend.apps.settings.models import AppSettings, DEFAULT_SYSTEM_PROMPT
+from backend.apps.analytics.collector import record as _analytics
+
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +54,6 @@ async def get_settings():
 
 @settings.router.put("")
 async def update_settings(body: AppSettings):
-    from backend.apps.analytics.collector import record as _analytics
-
     old = load_settings()
 
     # Track provider key changes
