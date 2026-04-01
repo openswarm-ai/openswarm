@@ -38,18 +38,37 @@ class ConnectionManager:
         ]
 
     async def send_to_session(self, session_id: str, event: str, data: dict):
-        """Send a message to all connections watching a specific session."""
+        """Send a message to all connections watching a specific session.
+
+        Session-specific connections receive every event.  Global (dashboard)
+        connections only receive structural events — NOT high-frequency stream
+        events — to avoid re-rendering all dashboards on every token.
+        """
+        GLOBAL_EVENTS = {
+            "agent:status", "agent:closed", "agent:name_updated",
+            "agent:cost_update", "agent:branch_created", "agent:branch_switched",
+            "agent:group_meta_updated", "dashboard:browser_card_added",
+        }
         payload = json.dumps({"event": event, "session_id": session_id, "data": data})
-        for ws in self.connections.get(session_id, []):
+        dead_session: list = []
+        for ws in list(self.connections.get(session_id, [])):
             try:
                 await ws.send_text(payload)
             except Exception:
-                pass
-        for ws in self.global_connections:
-            try:
-                await ws.send_text(payload)
-            except Exception:
-                pass
+                dead_session.append(ws)
+        for ws in dead_session:
+            self.connections.get(session_id, []).remove(ws)
+
+        if event in GLOBAL_EVENTS:
+            dead_global: list = []
+            for ws in list(self.global_connections):
+                try:
+                    await ws.send_text(payload)
+                except Exception:
+                    dead_global.append(ws)
+            for ws in dead_global:
+                if ws in self.global_connections:
+                    self.global_connections.remove(ws)
 
     async def broadcast_global(self, event: str, data: dict):
         """Send a message to all global (dashboard) connections."""

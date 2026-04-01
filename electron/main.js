@@ -9,12 +9,23 @@ const getPort = require('get-port');
 const http = require('http');
 
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
-// Prevent macOS Keychain "Chrome Safe Storage" prompts — the app doesn't
-// persist cookies/passwords so it doesn't need OS-level encryption storage.
+// Prevent macOS Keychain "Chrome Safe Storage" prompts.
 app.commandLine.appendSwitch('password-store', 'basic');
+
+// ── GPU acceleration ──────────────────────────────────────────────────────────
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('enable-gpu-compositing');
+app.commandLine.appendSwitch('enable-accelerated-video-decode');
+app.commandLine.appendSwitch('canvas-oop-rasterization');
+app.commandLine.appendSwitch('enable-native-gpu-memory-buffers');
+// macOS: use Metal backend for significantly better GPU throughput on Apple Silicon
+if (process.platform === 'darwin') {
+  app.commandLine.appendSwitch('use-angle', 'metal');
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 let mainWindow = null;
@@ -288,9 +299,13 @@ function setupAutoUpdater() {
     sendToRenderer('update-error', err?.message || String(err));
   });
 
-  autoUpdater.checkForUpdates().catch((err) => {
-    console.log('Update check skipped:', err.message);
-  });
+  // Defer the initial update check so it doesn't compete with window
+  // creation and backend startup on the main process thread.
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.log('Update check skipped:', err.message);
+    });
+  }, 12_000);
 }
 
 function killBackend() {

@@ -891,7 +891,18 @@ class AgentManager:
                 "include_partial_messages": True,
             }
             if global_settings.anthropic_api_key:
-                options_kwargs["env"] = {**os.environ, "ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
+                # Pass a minimal env allowlist — avoid leaking SSH keys, AWS
+                # credentials, DB passwords, etc. stored in the shell environment.
+                _ENV_ALLOWLIST = {
+                    "HOME", "USER", "LOGNAME", "SHELL", "PATH", "LANG",
+                    "LC_ALL", "LC_CTYPE", "TMPDIR", "TEMP", "TMP",
+                    "XDG_RUNTIME_DIR", "TERM", "COLORTERM",
+                    # Let through any existing ANTHROPIC_ vars (model overrides etc.)
+                    *(k for k in os.environ if k.startswith("ANTHROPIC_")),
+                }
+                safe_env = {k: v for k, v in os.environ.items() if k in _ENV_ALLOWLIST}
+                safe_env["ANTHROPIC_API_KEY"] = global_settings.anthropic_api_key
+                options_kwargs["env"] = safe_env
             if mcp_servers:
                 options_kwargs["mcp_servers"] = mcp_servers
             if composed_prompt:
@@ -1057,7 +1068,8 @@ class AgentManager:
                     "session": session.model_dump(mode="json"),
                 })
                 try:
-                    _save_session(session_id, session.model_dump(mode="json"))
+                    doc = session.model_dump(mode="json")
+                    await asyncio.to_thread(_save_session, session_id, doc)
                 except Exception as e:
                     logger.warning(f"Failed to snapshot session {session_id}: {e}")
 
@@ -1282,9 +1294,6 @@ class AgentManager:
             for req in list(session.pending_approvals):
                 ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Agent stopped"})
             session.pending_approvals = []
-
-            if hasattr(session, '_cancel_event'):
-                session._cancel_event.set()
 
             session.status = "stopped"
             await ws_manager.send_to_session(session_id, "agent:status", {
@@ -1603,9 +1612,6 @@ class AgentManager:
         for req in list(session.pending_approvals):
             ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Session closed"})
         session.pending_approvals = []
-
-        if hasattr(session, '_cancel_event'):
-            session._cancel_event.set()
 
         doc_data = session.model_dump(mode="json")
         doc_data["search_text"] = self._build_search_text(session)
