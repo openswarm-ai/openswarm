@@ -5,9 +5,9 @@ from typing import Dict, List, Any
 # TODO: fix this shit cuh
 from backend.apps.agents.browser.executor import execute_browser_tool, _format_tool_result
 
-from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.handlers.utils.temp_sub_utils.model_ids import is_valid_model_id
-from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.handlers.utils.temp_sub_utils.model_ids import get_anthropic_client
-from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.handlers.utils.temp_sub_utils.schemas import BROWSER_TOOLS_SCHEMA, SYSTEM_PROMPT, MAX_TURNS
+from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.temp_sub_utils.model_ids import is_valid_model_id
+from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.temp_sub_utils.model_ids import get_anthropic_client
+from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.temp_sub_utils.schemas import BROWSER_TOOLS_SCHEMA, SYSTEM_PROMPT, MAX_TURNS
 
 async def run_browser_loop(
     task: str,
