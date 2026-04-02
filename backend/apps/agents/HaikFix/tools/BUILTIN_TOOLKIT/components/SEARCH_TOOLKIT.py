@@ -1,4 +1,5 @@
-from backend.apps.agents.HaikFix.tools.Tool import Tool, Toolkit
+from backend.apps.agents.HaikFix.tools.shared_structs.Toolkit import Toolkit
+from backend.apps.agents.HaikFix.tools.shared_structs.Tool import Tool
 
 SEARCH_TOOLKIT = Toolkit(
     name="search",
