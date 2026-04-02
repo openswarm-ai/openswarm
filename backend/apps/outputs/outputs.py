@@ -351,8 +351,6 @@ Return ONLY valid JSON with these keys. No markdown fences, no extra text.\
 @outputs.router.post("/vibe-code")
 async def vibe_code(body: VibeCodeRequest):
     """Use an LLM to generate or iterate on Output code from a natural language prompt."""
-    from backend.apps.analytics.collector import record as _analytics
-    _analytics("feature.used", {"feature": "vibe_code.used"})
     try:
         import anthropic
     except ImportError:
@@ -394,6 +392,8 @@ async def vibe_code(body: VibeCodeRequest):
                 raw = raw[:-3]
 
         result = json.loads(raw)
+        from backend.apps.analytics.collector import record as _analytics
+        _analytics("feature.used", {"feature": "vibe_code.used"})
         return {
             "message": result.get("message", "View updated."),
             "frontend_code": result.get("frontend_code", body.current_frontend_code),

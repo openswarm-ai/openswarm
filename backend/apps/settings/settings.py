@@ -85,6 +85,20 @@ async def update_settings(body: AppSettings):
     if safe_changed:
         _analytics("settings.changed", {"changed_keys": safe_changed})
 
+    # Identify user in PostHog when profile is set/changed
+    if (body.user_email and body.user_email != getattr(old, "user_email", None)) or \
+       (body.user_name and body.user_name != getattr(old, "user_name", None)):
+        from backend.apps.analytics.collector import identify as _identify
+        id_props = {}
+        if body.user_email:
+            id_props["email"] = body.user_email
+        if body.user_name:
+            id_props["name"] = body.user_name
+        if body.user_use_case:
+            id_props["use_case"] = body.user_use_case
+        if id_props:
+            _identify(id_props)
+
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(SETTINGS_FILE, "w") as f:
         json.dump(body.model_dump(), f, indent=2)

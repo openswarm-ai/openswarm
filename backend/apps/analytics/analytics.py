@@ -19,9 +19,33 @@ APP_VERSION = "1.0.19"
 
 _heartbeat_task: asyncio.Task | None = None
 
+# Delta tracking — tracks last-seen 9Router totals to compute increments
+_last_9r_cost: float | None = None
+_last_9r_prompt_tokens: int | None = None
+_last_9r_completion_tokens: int | None = None
+_last_9r_requests: int | None = None
+_RESTART_THRESHOLD = 1.0
+
+
+def _compute_delta(current: float, last: float | None, threshold: float = _RESTART_THRESHOLD) -> tuple[float, float]:
+    """Compute incremental delta from cumulative values.
+
+    Returns (delta, new_last).
+    Handles 9Router restarts (large drops) and float jitter (tiny drops).
+    """
+    if last is None:
+        return 0.0, current
+    if current < last - threshold:
+        return current, current
+    if current < last:
+        return 0.0, last
+    return current - last, current
+
 
 async def _heartbeat_loop():
-    """Send a heartbeat event every 60 seconds for usage-time tracking and cost snapshots."""
+    """Send a heartbeat event every 60 seconds with cost/token deltas."""
+    global _last_9r_cost, _last_9r_prompt_tokens, _last_9r_completion_tokens, _last_9r_requests
+
     while True:
         await asyncio.sleep(60)
         try:
@@ -30,33 +54,42 @@ async def _heartbeat_loop():
                 "active_session_count": len(agent_manager.sessions),
             }
 
-            # Include 9Router cost snapshot if available
+            # Compute cost/token deltas from 9Router
             try:
                 from backend.apps.nine_router import get_usage_stats, is_running as _9r_running
                 if _9r_running():
                     stats = await get_usage_stats()
                     if stats:
-                        props["nine_router_total_cost"] = stats.get("totalCost", 0)
-                        props["nine_router_total_prompt_tokens"] = stats.get("totalPromptTokens", 0)
-                        props["nine_router_total_completion_tokens"] = stats.get("totalCompletionTokens", 0)
-                        props["nine_router_total_requests"] = stats.get("totalRequests", 0)
-                        # Per-model breakdown as flat properties for PostHog
+                        cur_cost = stats.get("totalCost", 0) or 0
+                        cur_prompt = stats.get("totalPromptTokens", 0) or 0
+                        cur_completion = stats.get("totalCompletionTokens", 0) or 0
+                        cur_requests = stats.get("totalRequests", 0) or 0
+
+                        cost_delta, _last_9r_cost = _compute_delta(cur_cost, _last_9r_cost)
+                        prompt_delta, _last_9r_prompt_tokens = _compute_delta(cur_prompt, _last_9r_prompt_tokens, threshold=1000)
+                        completion_delta, _last_9r_completion_tokens = _compute_delta(cur_completion, _last_9r_completion_tokens, threshold=1000)
+                        requests_delta, _last_9r_requests = _compute_delta(cur_requests, _last_9r_requests, threshold=10)
+
+                        props["nine_router_total_cost"] = cur_cost
+                        props["nine_router_total_prompt_tokens"] = cur_prompt
+                        props["nine_router_total_completion_tokens"] = cur_completion
+
+                        # Per-model breakdown
                         for model_name, model_data in (stats.get("byModel") or {}).items():
                             safe_name = model_name.replace(".", "_").replace("-", "_")[:40]
                             props[f"cost_model_{safe_name}"] = model_data.get("cost", 0)
-                            props[f"tokens_model_{safe_name}"] = model_data.get("promptTokens", 0) + model_data.get("completionTokens", 0)
             except Exception:
                 pass
 
             record("app.heartbeat", props)
 
-            # Also fire a dedicated cost snapshot for cleaner dashboards
+            # Fire cost.delta with incremental amounts
             if "nine_router_total_cost" in props:
-                record("cost.snapshot", {
-                    "total_cost_usd": props["nine_router_total_cost"],
-                    "total_prompt_tokens": props.get("nine_router_total_prompt_tokens", 0),
-                    "total_completion_tokens": props.get("nine_router_total_completion_tokens", 0),
-                    "total_requests": props.get("nine_router_total_requests", 0),
+                record("cost.delta", {
+                    "cost_delta_usd": cost_delta,
+                    "prompt_tokens_delta": int(prompt_delta),
+                    "completion_tokens_delta": int(completion_delta),
+                    "requests_delta": int(requests_delta),
                 })
         except Exception:
             pass
@@ -109,11 +142,18 @@ async def analytics_lifespan():
             "app_version": APP_VERSION,
         })
 
-        identify({
+        id_props = {
             "providers_configured": providers,
             "provider_count": len(providers),
             "app_version": APP_VERSION,
-        })
+        }
+        if getattr(settings, "user_email", None):
+            id_props["email"] = settings.user_email
+        if getattr(settings, "user_name", None):
+            id_props["name"] = settings.user_name
+        if getattr(settings, "user_use_case", None):
+            id_props["use_case"] = settings.user_use_case
+        identify(id_props)
     except Exception as e:
         logger.debug(f"Analytics startup event failed (non-critical): {e}")
 

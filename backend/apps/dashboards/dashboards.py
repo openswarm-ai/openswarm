@@ -126,7 +126,7 @@ async def create_dashboard(body: DashboardCreate):
     from backend.apps.analytics.collector import record as _analytics
     dashboard = Dashboard(name=body.name)
     _save(dashboard)
-    _analytics("dashboard.created", {}, dashboard_id=dashboard.id)
+    _analytics("dashboard.created", {"name": dashboard.name}, dashboard_id=dashboard.id)
     return dashboard.model_dump(mode="json")
 
 
@@ -160,14 +160,16 @@ async def generate_name(dashboard_id: str):
 
         if len(prompts) == 1:
             system = (
-                "Generate a concise 2-5 word workspace name for a project based on this task. "
-                "Return only the name, nothing else."
+                "Generate a short, clear 2-4 word workspace name based on this task. "
+                "Use plain language like 'Travel Planning', 'Code Review', 'Sales Dashboard'. "
+                "No quotes, no punctuation, no emojis. Return only the name."
             )
             user_content = prompts[0]
         else:
             system = (
-                "Generate a concise 2-5 word workspace name that captures the overall theme of these tasks. "
-                "Return only the name, nothing else."
+                "Generate a short, clear 2-4 word workspace name that captures the theme of these tasks. "
+                "Use plain language like 'Research & Analysis', 'Content Creation', 'Project Setup'. "
+                "No quotes, no punctuation, no emojis. Return only the name."
             )
             user_content = "\n".join(f"- {p}" for p in prompts)
 

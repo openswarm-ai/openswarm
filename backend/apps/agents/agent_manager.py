@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import time
 from datetime import datetime
@@ -347,11 +348,13 @@ class AgentManager:
         )
         self.sessions[session_id] = session
 
+        from backend.apps.analytics.analytics import APP_VERSION
         _analytics("session.started", {
             "model": session.model,
             "provider": session.provider,
             "mode": session.mode,
             "tool_count": len(tools),
+            "app_version": APP_VERSION,
         }, session_id=session_id, dashboard_id=config.dashboard_id)
 
         await ws_manager.send_to_session(session_id, "agent:status", {
@@ -705,22 +708,31 @@ class AgentManager:
             # Track individual tool execution
             hook_tool_name_early = input_data.get("tool_name", "")
             if hook_tool_name_early:
-                import re as _re_tool
                 _is_mcp = "__" in hook_tool_name_early
                 _mcp_server = ""
                 _tool_short = hook_tool_name_early
                 if _is_mcp:
-                    _mcp_match = _re_tool.match(r"mcp__([^_]+(?:-[^_]+)*)__(.+)", hook_tool_name_early)
+                    _mcp_match = re.match(r"mcp__([^_]+(?:-[^_]+)*)__(.+)", hook_tool_name_early)
                     if _mcp_match:
                         _mcp_server = _mcp_match.group(1)
                         _tool_short = _mcp_match.group(2)
+
+                # Determine tool success
+                _tool_success = True
+                if isinstance(raw_response, str):
+                    _tool_success = not (raw_response.startswith("Error") or raw_response.startswith("Traceback"))
+                elif isinstance(raw_response, dict):
+                    _tool_success = "error" not in raw_response
+                elif isinstance(raw_response, list):
+                    _tool_success = len(raw_response) > 0
+
                 _analytics("tool.executed", {
                     "tool_name": hook_tool_name_early,
                     "tool_short_name": _tool_short,
                     "tool_type": "mcp" if _is_mcp else "builtin",
                     "mcp_server": _mcp_server,
                     "duration_ms": elapsed_ms,
-                    "success": not (isinstance(raw_response, str) and raw_response.startswith("Error")),
+                    "success": _tool_success,
                     "model": session.model,
                     "provider": session.provider,
                 }, session_id=session_id, dashboard_id=session.dashboard_id)
@@ -774,6 +786,8 @@ class AgentManager:
                     if isinstance(usage, dict):
                         sub_tokens["input"] = usage.get("input_tokens", 0) + usage.get("cache_creation_input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
                         sub_tokens["output"] = usage.get("output_tokens", 0)
+                    if raw_response.get("total_cost_usd"):
+                        sub_cost = raw_response["total_cost_usd"]
                     if raw_response.get("model"):
                         sub_model = raw_response["model"]
 
@@ -1579,7 +1593,7 @@ class AgentManager:
             resp = await client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=30,
-                system="Generate a concise 3-6 word title for a chat that starts with this message. Return only the title, nothing else.",
+                system="Generate a clear 3-5 word title for this chat. Use plain language like 'Debug Login Page', 'Weekly Report Draft', 'API Integration Help'. No quotes, no punctuation, no emojis. Return only the title.",
                 messages=[{"role": "user", "content": first_prompt}],
             )
             generated = resp.content[0].text.strip().strip('"\'')

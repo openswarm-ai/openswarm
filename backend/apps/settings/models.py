@@ -49,6 +49,10 @@ class AppSettings(BaseModel):
     copilot_github_token: Optional[str] = None
     copilot_token: Optional[str] = None
     copilot_token_expires: Optional[float] = None
+    # User profile (collected during onboarding)
+    user_name: Optional[str] = None
+    user_email: Optional[str] = None
+    user_use_case: Optional[str] = None
     # Analytics: opted in by default, user can toggle off
     analytics_opt_in: bool = True
     installation_id: Optional[str] = None

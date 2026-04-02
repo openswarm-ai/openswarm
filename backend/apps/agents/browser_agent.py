@@ -371,6 +371,11 @@ async def run_browser_agent(
             if response is None:
                 break
 
+            # Track token usage from browser agent API calls
+            if hasattr(response, 'usage') and response.usage:
+                session.tokens["input"] = session.tokens.get("input", 0) + (response.usage.input_tokens or 0)
+                session.tokens["output"] = session.tokens.get("output", 0) + (response.usage.output_tokens or 0)
+
             assistant_content = []
             text_parts = []
             tool_uses = []
@@ -536,6 +541,7 @@ async def run_browser_agent(
                 pass
 
         session.status = "completed"
+        agent_manager._fire_session_completed(session)
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
             "status": "completed",
