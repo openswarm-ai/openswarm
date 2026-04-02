@@ -1,7 +1,5 @@
 import asyncio
-import logging
 from typing import TypedDict
-from typing_extensions import NotRequired
 from typeguard import typechecked
 
 from backend.apps.agents.HaikFix.Agent.shared_structs.Message.agent_outputs import ToolResponse
@@ -9,26 +7,35 @@ from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.
 from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.handlers.utils.format_browser_result import format_browser_result
 from backend.apps.agents.HaikFix.Agent.Agent import Agent
 
+# NOTE: Legacy dependancy. TODO: fix this shit cuh
+from backend.apps.agents.browser.runner import _create_browser_card
+
 class CreateBrowserAgentInput(TypedDict):
     task: str
-    url: NotRequired[str]
 
 @typechecked
 def make_create_browser_agent_handler(
     parent: Agent,
-    create_browser_card_fn,
 ):
     async def handler(args: CreateBrowserAgentInput) -> ToolResponse:
         task = args["task"]
         url = args.get("url", "")
 
-        browser_id = await create_browser_card_fn(
+        browser_id = await _create_browser_card(
             dashboard_id=parent.config.session_id or "",
             url=url,
             parent_session_id=parent.session_id,
         )
         if not browser_id:
-            return {"content": [{"type": "text", "text": "Error: failed to create browser card"}], "is_error": True}
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Error: failed to create browser agent",
+                    },
+                ],
+                "is_error": True,
+            }
 
         await asyncio.sleep(2.0)
 
