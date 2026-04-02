@@ -77,7 +77,3 @@ class SkillMeta(BaseModel):
     id: str
     name: str
     # NOTE: content is omitted in backend to save space
-
-class ImageMeta(BaseModel):
-    data: str  # base64-encoded
-    media_type: str = "image/png"

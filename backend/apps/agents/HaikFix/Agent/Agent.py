@@ -11,10 +11,10 @@ from typing import List, Literal, Optional
 from typeguard import typechecked
 
 from backend.apps.agents.manager.ws_manager import ws_manager
-from backend.apps.agents.manager.HaikFix.run_agent_loop.run_agent_loop import run_agent_loop
-from backend.apps.agents.manager.HaikFix.shared_structs.Message.Message import Message
-from backend.apps.agents.manager.HaikFix.shared_structs.ApprovalRequest import ApprovalRequest
-from backend.apps.agents.manager.HaikFix.shared_structs.MessageLog import MessageLog
+from backend.apps.agents.HaikFix.Agent.run_agent_loop.run_agent_loop import run_agent_loop
+from backend.apps.agents.HaikFix.Agent.shared_structs.Message.Message import Message
+from backend.apps.agents.HaikFix.Agent.shared_structs.ApprovalRequest import ApprovalRequest
+from backend.apps.agents.HaikFix.Agent.shared_structs.MessageLog import MessageLog
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 
