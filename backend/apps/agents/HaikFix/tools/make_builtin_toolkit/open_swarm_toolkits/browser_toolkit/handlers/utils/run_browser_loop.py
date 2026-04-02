@@ -1,20 +1,18 @@
 import time
 from typing import Dict, List, Any
-from backend.apps.agents.browser.schemas import (
-    BROWSER_TOOLS_SCHEMA, SYSTEM_PROMPT, MAX_TURNS,
-)
+
 # NOTE: Hella dependancies, this baddddddd
 # TODO: fix this shit cuh
 from backend.apps.agents.browser.executor import execute_browser_tool, _format_tool_result
-from backend.apps.settings.settings import load_settings
-from backend.apps.settings.credentials import get_anthropic_client
-from backend.apps.common.model_registry import resolve_model_id
-from backend.apps.common.llm_helpers import _resolve_model as _resolve_9r
+
+from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.handlers.utils.temp_sub_utils.model_ids import is_valid_model_id
+from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.handlers.utils.temp_sub_utils.model_ids import get_anthropic_client
+from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.handlers.utils.temp_sub_utils.schemas import BROWSER_TOOLS_SCHEMA, SYSTEM_PROMPT, MAX_TURNS
 
 async def run_browser_loop(
     task: str,
     browser_id: str,
-    model: str,
+    model_id: str,
     initial_url: str | None = None,
     tab_id: str = "",
 ) -> Dict[str, Any]:
@@ -23,9 +21,10 @@ async def run_browser_loop(
     if initial_url:
         await execute_browser_tool("BrowserNavigate", {"url": initial_url}, browser_id, tab_id)
 
-    settings = load_settings()
-    api_model = _resolve_9r(resolve_model_id(model), settings)
-    client = get_anthropic_client(settings)
+    if not is_valid_model_id(model_id):
+        raise ValueError(f"Invalid model ID: {model_id}")
+
+    client = get_anthropic_client()
 
     messages: List[Dict] = [{"role": "user", "content": task}]
     action_log: List[Dict] = []
@@ -34,7 +33,7 @@ async def run_browser_loop(
 
     for _ in range(MAX_TURNS):
         response = await client.messages.create(
-            model=api_model,
+            model=f"cc/{model_id}",
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             tools=BROWSER_TOOLS_SCHEMA,
