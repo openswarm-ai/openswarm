@@ -402,11 +402,25 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
 
     if config.get("type") == "stdio":
         if config.get("command"):
-            resolved = _resolve_command(config["command"])
-            if resolved:
-                config["command"] = resolved
-            else:
-                logger.warning(f"Command '{config['command']}' not found on PATH or bundled directories")
+            # Check for bundled npm MCP servers — use Electron's Node.js instead of npx
+            if config["command"] in ("npx", "bunx"):
+                pkg_name = next((a for a in (config.get("args") or []) if not a.startswith("-")), None)
+                if pkg_name:
+                    _backend = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                    bundle_path = os.path.join(_backend, "mcp-bundles", f"{pkg_name}.js")
+                    electron_path = os.environ.get("OPENSWARM_ELECTRON_PATH")
+                    if os.path.isfile(bundle_path) and electron_path:
+                        config["command"] = electron_path
+                        config["args"] = [bundle_path]
+                        config.setdefault("env", {})["ELECTRON_RUN_AS_NODE"] = "1"
+                        logger.info(f"Using bundled MCP server for {pkg_name}")
+
+            if not os.path.isabs(config.get("command", "")):
+                resolved = _resolve_command(config["command"])
+                if resolved:
+                    config["command"] = resolved
+                else:
+                    logger.warning(f"Command '{config['command']}' not found on PATH or bundled directories")
         env = config.setdefault("env", {})
         env.setdefault("PATH", _augmented_path())
         env.setdefault("PYTHONPATH", "")

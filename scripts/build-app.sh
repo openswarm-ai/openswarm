@@ -66,6 +66,22 @@ else
 fi
 echo ""
 
+# Step 0b: Bundle npm MCP servers (uses Electron's Node at runtime)
+MCP_BUNDLE_DIR="$PROJECT_ROOT/backend/mcp-bundles"
+mkdir -p "$MCP_BUNDLE_DIR"
+if [[ ! -f "$MCP_BUNDLE_DIR/reddit-mcp-buddy.js" ]]; then
+    echo "[0b] Bundling npm MCP servers..."
+    TMPDIR_MCP=$(mktemp -d)
+    cd "$TMPDIR_MCP"
+    npm install reddit-mcp-buddy --silent 2>/dev/null
+    npx esbuild node_modules/reddit-mcp-buddy/dist/index.js --bundle --platform=node --format=cjs --outfile="$MCP_BUNDLE_DIR/reddit-mcp-buddy.js" 2>/dev/null
+    rm -rf "$TMPDIR_MCP"
+    echo "npm MCP servers bundled."
+else
+    echo "[0b] npm MCP bundles already present."
+fi
+echo ""
+
 # Step 1: Build frontend
 echo "[1/4] Building frontend..."
 cd "$PROJECT_ROOT/frontend"
