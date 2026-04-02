@@ -1,4 +1,4 @@
-from backend.apps.agents.manager.HaikFix.helpers.Message import Message, ToolCallContent
+from backend.apps.agents.manager.HaikFix.shared_structs.Message import Message, ToolCallContent
 from claude_agent_sdk.types import TextBlock, ToolUseBlock, AssistantMessage
 from backend.apps.agents.manager.ws_manager import ws_manager
 from typeguard import typechecked

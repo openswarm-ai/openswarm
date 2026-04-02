@@ -1,12 +1,3 @@
-"""Main agent loop — orchestrates the Claude Agent SDK query loop.
-
-Heavy logic is delegated to sibling modules:
-- agent_mock       – mock-agent fallback, streaming helpers, session analytics
-- agent_hooks      – SDK hook factories (approval, permissions, post-tool)
-- agent_options    – MCP server construction & ClaudeAgentOptions building
-"""
-
-from __future__ import annotations
 import logging
 from typeguard import typechecked
 
@@ -14,14 +5,13 @@ from claude_agent_sdk import (
     query, ClaudeAgentOptions, AssistantMessage,
 )
 from claude_agent_sdk.types import StreamEvent
-from backend.apps.agents.manager.HaikFix.helpers.handle_stream_event import handle_stream_event
-from backend.apps.agents.manager.HaikFix.helpers.handle_assistant_message import handle_assistant_message
+from backend.apps.agents.manager.HaikFix.run_agent_loop.helpers.handle_stream_event import handle_stream_event
+from backend.apps.agents.manager.HaikFix.run_agent_loop.helpers.handle_assistant_message import handle_assistant_message
 
-from backend.apps.agents.manager.HaikFix.PromptChunks import ImageChunk, ImageChunkDict, TextChunk, TextChunkDict
+from backend.apps.agents.manager.HaikFix.shared_structs.PromptChunks import (
+    ImageChunk, ImageChunkDict, TextChunk, TextChunkDict
+)
 from typing import List, Dict, Literal, Union, Optional
-
-logger = logging.getLogger(__name__)
-
 
 @typechecked
 def build_image_prompt_content(prompt: str, images: List[ImageChunk]) -> List[TextChunk | ImageChunk]:
