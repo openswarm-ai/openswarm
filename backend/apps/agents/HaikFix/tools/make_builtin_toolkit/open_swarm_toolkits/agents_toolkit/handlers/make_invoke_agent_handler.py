@@ -1,9 +1,5 @@
-# make_invoke_agent_handler.py
-
 from typing import Dict, TypedDict
 from typeguard import typechecked
-from uuid import uuid4
-import asyncio
 
 from backend.apps.agents.HaikFix.Agent.shared_structs.Message.agent_outputs import ToolResponse
 from backend.apps.agents.HaikFix.Agent.shared_structs.Message.Message import (
@@ -19,6 +15,7 @@ class InvokeAgentInput(TypedDict):
 
 @typechecked
 def make_invoke_agent_handler(agent_registry: Dict[str, Agent]):
+    
     async def handler(args: InvokeAgentInput) -> ToolResponse:
         session_id = args["session_id"]
         message = args["message"]
@@ -52,5 +49,5 @@ def make_invoke_agent_handler(agent_registry: Dict[str, Agent]):
                 }
             ]
         }
-        
+
     return handler

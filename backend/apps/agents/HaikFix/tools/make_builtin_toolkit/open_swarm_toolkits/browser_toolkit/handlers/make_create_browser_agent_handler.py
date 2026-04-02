@@ -5,8 +5,8 @@ from typing_extensions import NotRequired
 from typeguard import typechecked
 
 from backend.apps.agents.HaikFix.Agent.shared_structs.Message.agent_outputs import ToolResponse
-from backend.apps.agents.HaikFix.tools.BUILTIN_TOOLKIT.components.custom_handlers.browser_utils.run_browser_loop import run_browser_loop
-from backend.apps.agents.HaikFix.tools.BUILTIN_TOOLKIT.components.custom_handlers.browser_utils.format_browser_result import format_browser_result
+from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.handlers.utils.run_browser_loop import run_browser_loop
+from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.handlers.utils.format_browser_result import format_browser_result
 from backend.apps.agents.HaikFix.Agent.Agent import Agent
 
 class CreateBrowserAgentInput(TypedDict):

@@ -16,7 +16,7 @@ def format_browser_result(result: Dict[str, Any], browser_id: str) -> ToolRespon
     if result["action_log"]:
         lines.append("")
         lines.append("**Actions taken:**")
-        for i, entry in enumerate(result["action_log"], 1):
+        for i, entry in enumerate[Any](result["action_log"], 1):
             tool = entry["tool"]
             inp = json.dumps(entry.get("input", {}))[:120]
             ms = entry.get("elapsed_ms", 0)
