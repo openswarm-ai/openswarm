@@ -2,9 +2,8 @@ from typing import TypedDict
 from typeguard import typechecked
 
 from backend.apps.agents.HaikFix.Agent.shared_structs.Message.agent_outputs import ToolResponse
-from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.run_browser_loop import run_browser_loop
-from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.format_browser_result import format_browser_result
 from backend.apps.agents.HaikFix.Agent.Agent import Agent
+from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.run_browser_agent import run_browser_agent
 
 
 class InvokeBrowserAgentInput(TypedDict):
@@ -14,16 +13,20 @@ class InvokeBrowserAgentInput(TypedDict):
 
 @typechecked
 def make_invoke_browser_agent_handler(parent: Agent):
+
     async def handler(args: InvokeBrowserAgentInput) -> ToolResponse:
-        browser_id = args["browser_id"]
-        task = args["task"]
+        browser_id: str = args["browser_id"]
+        task: str = args["task"]
 
-        result = await run_browser_loop(
-            task=task,
-            browser_id=browser_id,
-            model=parent.model,
-        )
+        response = await run_browser_agent(parent=parent, browser_id=browser_id, task=task)
 
-        return format_browser_result(result, browser_id)
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"**Browser Agent Result** (browser: {browser_id})\n\n{response}",
+                }
+            ],
+        }
 
     return handler

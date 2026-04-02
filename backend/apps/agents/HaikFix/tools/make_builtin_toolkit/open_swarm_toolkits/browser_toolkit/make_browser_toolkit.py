@@ -1,10 +1,9 @@
 from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.make_browser_actions_toolkit import make_browser_actions_toolkit
 from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.make_browser_delegation_toolkit import make_browser_delegation_toolkit
 from backend.apps.agents.HaikFix.tools.shared_structs.Toolkit import Toolkit
-from backend.apps.agents.HaikFix.tools.shared_structs.MCP_Tool import SDK_MCP_Tool
-from typing import Dict
 from backend.apps.agents.HaikFix.Agent.Agent import Agent
 
+# # NOTE: The minor issue here is that with the current setup, any agent will prly have access to the browser actions toolkit, idk if this bad or good but for now its fine ig
 
 def make_browser_toolkit(
     parent: Agent,

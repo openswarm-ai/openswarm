@@ -18,6 +18,9 @@ from backend.apps.agents.HaikFix.Agent.shared_structs.MessageLog import MessageL
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 
+
+# NOTE and TODO: we shld remove the ws streaming from this class bc it conflicts with the browser agent
+
 class Agent(BaseModel):
     model: str
     mode: str
