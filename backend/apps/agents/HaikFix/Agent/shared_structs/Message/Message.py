@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import uuid4
 
-from backend.apps.agents.manager.HaikFix.shared_structs.Message.sub_types import  (
+from backend.apps.agents.HaikFix.Agent.shared_structs.Message.sub_types import  (
     MessageContent, ContextPath, SkillMeta, ImageChunkDict, TextChunkDict, TextChunk, ImageChunk
 )
 from typeguard import typechecked
