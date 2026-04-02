@@ -56,7 +56,6 @@ class Agent(BaseModel):
                 msg=msg,
                 options=self.config,
                 branch_id=self.branch_id,
-                parent_id=self.parent_id,
             ))
 
     @typechecked

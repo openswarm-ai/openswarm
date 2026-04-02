@@ -37,7 +37,7 @@ class MessageLog(BaseModel):
         """
         for i, m in enumerate[AnyMessage](self.messages):
             if m.id == message_id:
-                return self._messages[:i + 1]
+                return self.messages[:i + 1]
         raise ValueError(f"Message {message_id} not found")
 
     @typechecked

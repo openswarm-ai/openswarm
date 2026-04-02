@@ -24,7 +24,7 @@ class Toolkit(BaseModel):
             tools=tools, 
             nested_toolkits=nested_toolkits
         )
-        self.validate_structure(tools, nested_toolkits)
+        self.validate_structure()
 
     @typechecked
     def validate_structure(self) -> None:
