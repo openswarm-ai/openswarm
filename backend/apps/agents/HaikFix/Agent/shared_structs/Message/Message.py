@@ -1,6 +1,6 @@
 # Message.py
 
-from typing import List, Literal, Dict, ClassVar, Annotated, Union
+from typing import List, Literal, Dict, Annotated, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import uuid4
