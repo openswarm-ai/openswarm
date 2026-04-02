@@ -76,3 +76,4 @@ class AgentSession(BaseModel):
     dashboard_id: Optional[str] = None
     browser_id: Optional[str] = None
     parent_session_id: Optional[str] = None
+    needs_fork: bool = False

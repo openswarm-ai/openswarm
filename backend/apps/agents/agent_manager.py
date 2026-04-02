@@ -460,6 +460,60 @@ class AgentManager:
                 sections.append(f"[Using skill: {name}]\n\n{content}")
         return "\n\n".join(sections)
 
+    @staticmethod
+    def _get_branch_messages(session) -> list:
+        """Return the linear message list for the active branch, walking the branch tree."""
+        branch_id = session.active_branch_id or "main"
+        branch = session.branches.get(branch_id)
+
+        if not branch or not branch.fork_point_message_id:
+            return [m for m in session.messages if m.branch_id == "main" or m.branch_id == branch_id]
+
+        segments = []
+        cur = branch
+        cur_id = branch_id
+        visited = set()
+        while cur and cur.fork_point_message_id:
+            if cur_id in visited:
+                break
+            visited.add(cur_id)
+            segments.insert(0, {"branch_id": cur_id, "up_to": cur.fork_point_message_id})
+            cur_id = cur.parent_branch_id or "main"
+            cur = session.branches.get(cur_id)
+        segments.insert(0, {"branch_id": cur_id, "up_to": None})
+
+        result = []
+        for i, seg in enumerate(segments):
+            fork_msg_id = seg["up_to"]
+            if fork_msg_id:
+                fork_idx = next((j for j, m in enumerate(session.messages) if m.id == fork_msg_id), len(session.messages))
+                result.extend(m for m in session.messages[:fork_idx] if m.branch_id == seg["branch_id"])
+            else:
+                next_fork = segments[i + 1]["up_to"] if i + 1 < len(segments) else None
+                if next_fork:
+                    fork_idx = next((j for j, m in enumerate(session.messages) if m.id == next_fork), len(session.messages))
+                    result.extend(m for m in session.messages[:fork_idx] if m.branch_id == seg["branch_id"])
+                else:
+                    result.extend(m for m in session.messages if m.branch_id == seg["branch_id"])
+
+        if not any(m.branch_id == branch_id for m in result):
+            result.extend(m for m in session.messages if m.branch_id == branch_id)
+        return result
+
+    @staticmethod
+    def _build_history_prefix(messages) -> str:
+        """Format branch messages into a conversation summary for context injection."""
+        lines = []
+        for m in messages:
+            if m.role not in ("user", "assistant") or getattr(m, "hidden", False):
+                continue
+            text = m.content if isinstance(m.content, str) else str(m.content)
+            label = "User" if m.role == "user" else "Assistant"
+            lines.append(f"{label}: {text}")
+        if not lines:
+            return ""
+        return "<prior_conversation>\n" + "\n".join(lines) + "\n</prior_conversation>"
+
     def _build_prompt_content(self, prompt: str, images: list | None = None, context_paths: list | None = None, forced_tools: list[str] | None = None, attached_skills: list | None = None):
         """Build message content with optional image blocks, context, and forced tools for the Claude API."""
         context_text = self._resolve_context_paths(context_paths)
@@ -919,8 +973,17 @@ class AgentManager:
 
             if session.sdk_session_id:
                 options_kwargs["resume"] = session.sdk_session_id
-                if fork_session:
+                if fork_session or session.needs_fork:
                     options_kwargs["fork_session"] = True
+                if session.needs_fork:
+                    session.needs_fork = False
+            elif len(session.messages) > 1:
+                history = self._build_history_prefix(self._get_branch_messages(session))
+                if history:
+                    if isinstance(prompt_content, str):
+                        prompt_content = history + "\n\n" + prompt_content
+                    elif isinstance(prompt_content, list):
+                        prompt_content.insert(0, {"type": "text", "text": history})
 
             logger.info(f"[MCP-DEBUG] Creating ClaudeAgentOptions with model={session.model}")
             options = ClaudeAgentOptions(**options_kwargs)
@@ -1260,7 +1323,13 @@ class AgentManager:
         """Send a follow-up message to an existing session."""
         session = self.sessions.get(session_id)
         if not session:
-            raise ValueError(f"Session {session_id} not found")
+            data = _load_session_data(session_id)
+            if data:
+                session = AgentSession(**data)
+                session.closed_at = None
+                self.sessions[session_id] = session
+            else:
+                raise ValueError(f"Session {session_id} not found")
         
         existing = self.tasks.get(session_id)
         if existing and not existing.done():
@@ -1467,7 +1536,6 @@ class AgentManager:
             "active_branch_id": new_branch_id,
         })
 
-        session.sdk_session_id = None
         session.status = "running"
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
@@ -1481,6 +1549,7 @@ class AgentManager:
             context_paths=target_msg.context_paths,
             forced_tools=target_msg.forced_tools,
             attached_skills=target_msg.attached_skills,
+            fork_session=True,
         ))
         self.tasks[session_id] = task
 
@@ -1932,6 +2001,8 @@ class AgentManager:
             active_branch_id=source.active_branch_id,
             tool_group_meta=dict(source.tool_group_meta),
             dashboard_id=dashboard_id or source.dashboard_id,
+            sdk_session_id=source.sdk_session_id,
+            needs_fork=True,
         )
 
         self.sessions[new_session.id] = new_session
