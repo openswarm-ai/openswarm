@@ -13,13 +13,8 @@ async def run_browser_loop(
     task: str,
     browser_id: str,
     model_id: str,
-    initial_url: str | None = None,
-    tab_id: str = "",
 ) -> Dict[str, Any]:
     """Run the browser agent tool loop against the Anthropic API directly."""
-
-    if initial_url:
-        await execute_browser_tool("BrowserNavigate", {"url": initial_url}, browser_id, tab_id)
 
     if not is_valid_model_id(model_id):
         raise ValueError(f"Invalid model ID: {model_id}")
@@ -63,7 +58,7 @@ async def run_browser_loop(
         tool_results = []
         for tu in tool_uses:
             start = time.time()
-            result = await execute_browser_tool(tu.name, tu.input, browser_id, tab_id)
+            result = await execute_browser_tool(tu.name, tu.input, browser_id,)
             elapsed_ms = int((time.time() - start) * 1000)
             action_log.append({
                 "tool": tu.name,
@@ -83,7 +78,7 @@ async def run_browser_loop(
 
     if not final_screenshot:
         try:
-            ss = await execute_browser_tool("BrowserScreenshot", {}, browser_id, tab_id)
+            ss = await execute_browser_tool("BrowserScreenshot", {}, browser_id)
             if ss.get("image"):
                 final_screenshot = ss["image"]
         except Exception:

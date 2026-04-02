@@ -8,7 +8,7 @@ from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.
 from backend.apps.agents.HaikFix.Agent.Agent import Agent
 
 # NOTE: Legacy dependancy. TODO: fix this shit cuh
-from backend.apps.agents.browser.runner import _create_browser_card
+from backend.apps.agents.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.temp_sub_utils.create_browser_card import create_browser_card
 
 class CreateBrowserAgentInput(TypedDict):
     task: str
@@ -16,15 +16,13 @@ class CreateBrowserAgentInput(TypedDict):
 @typechecked
 def make_create_browser_agent_handler(
     parent: Agent,
+    dashboard_id: str,
 ):
     async def handler(args: CreateBrowserAgentInput) -> ToolResponse:
         task = args["task"]
-        url = args.get("url", "")
 
-        browser_id = await _create_browser_card(
-            dashboard_id=parent.config.session_id or "",
-            url=url,
-            parent_session_id=parent.session_id,
+        browser_id = await create_browser_card(
+            dashboard_id=dashboard_id,
         )
         if not browser_id:
             return {
@@ -43,7 +41,6 @@ def make_create_browser_agent_handler(
             task=task,
             browser_id=browser_id,
             model=parent.model,
-            initial_url=url,
         )
 
         return format_browser_result(result, browser_id)
