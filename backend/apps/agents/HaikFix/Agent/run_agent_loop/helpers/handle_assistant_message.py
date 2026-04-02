@@ -1,5 +1,5 @@
 from backend.apps.agents.HaikFix.Agent.shared_structs.Message.Message import Message
-from backend.apps.agents.HaikFix.Agent.shared_structs.Message.sub_types import ToolCallContent
+from backend.apps.agents.HaikFix.Agent.shared_structs.Message.agent_outputs import ToolCallContent
 from claude_agent_sdk.types import TextBlock, ToolUseBlock, AssistantMessage
 from backend.apps.agents.manager.ws_manager import ws_manager
 from typeguard import typechecked

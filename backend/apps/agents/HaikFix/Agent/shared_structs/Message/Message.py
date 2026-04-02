@@ -1,47 +1,78 @@
-from typing import Optional, Literal, Union, List, Dict
+# Message.py
+
+from typing import List, Literal, Dict, ClassVar, Annotated, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import uuid4
-
-from backend.apps.agents.HaikFix.Agent.shared_structs.Message.sub_types import  (
-    MessageContent, ContextPath, SkillMeta, ImageChunkDict, TextChunkDict, TextChunk, ImageChunk
-)
 from typeguard import typechecked
+
+from backend.apps.agents.HaikFix.Agent.shared_structs.Message.agent_inputs import (
+    PromptBlock, TextPromptBlock, ImagePromptBlock, ImageSource, ContextPath, SkillMeta
+)
+from backend.apps.agents.HaikFix.Agent.shared_structs.Message.agent_outputs import (
+    ToolCallContent, ToolResultContent
+)
+
+class Message(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    timestamp: datetime = Field(default_factory=datetime.now)
+    branch_id: str = "main"
+    hidden: bool = False
+
 
 PromptMsgDict = Dict[
     Literal["type", "message"], 
     Dict[
         Literal["role", "content"], 
-        List[
-            Union[ImageChunkDict, TextChunkDict]
-            ]
+        List[PromptBlock]
         ]
     ]
 
-class Message(BaseModel):
-    id: str = Field(default_factory=lambda: uuid4().hex)
-    role: Literal["user", "assistant", "tool_call", "tool_result", "system"]
-    content: MessageContent
-    timestamp: datetime = Field(default_factory=datetime.now)
-    branch_id: str = "main"
-    parent_id: Optional[str] = None
-    context_paths: Optional[List[ContextPath]] = None
-    attached_skills: Optional[List[SkillMeta]] = None
-    forced_tools: Optional[List[str]] = None
-    images: Optional[List[ImageChunk]] = None
-    hidden: bool = False
+class UserMessage(Message):
+    role: Literal["user"] = "user"
+    content: str
+    images: List[str] = Field(default_factory=list)       # base64 strings
+    image_media_types: List[str] = Field(default_factory=list)
+    context_paths: List[ContextPath] = Field(default_factory=list)
+    attached_skills: List[SkillMeta] = Field(default_factory=list)
+    forced_tools: List[str] = Field(default_factory=list)
 
     @typechecked
     def to_prompt(self) -> PromptMsgDict:
-        assert isinstance(self.content, str), "Content must be a string"
-        prompt: str = self.content
-        content: List[Union[ImageChunkDict, TextChunkDict]] = [TextChunk(text=prompt).to_dict()]
-        for img in self.images:
-            content.append(img.to_dict())
+        blocks: List[PromptBlock] = [TextPromptBlock(type="text", text=self.content)]
+        for data, media_type in zip[tuple[str, str]](self.images, self.image_media_types):
+            blocks.append(ImagePromptBlock(
+                type="image",
+                source=ImageSource(type="base64", media_type=media_type, data=data),
+            ))
         return {
-            "type": "user", 
+            "type": self.role, 
             "message": {
-                "role": "user", 
-                "content": content
+                "role": self.role, 
+                "content": blocks
             }
         }
+
+class AssistantMessage(Message):
+    role: Literal["assistant"] = "assistant"
+    content: str
+
+
+class ToolCallMessage(Message):
+    role: Literal["tool_call"] = "tool_call"
+    content: ToolCallContent
+
+
+class ToolResultMessage(Message):
+    role: Literal["tool_result"] = "tool_result"
+    content: ToolResultContent
+
+
+class SystemMessage(Message):
+    role: Literal["system"] = "system"
+    content: str
+
+AnyMessage = Annotated[
+    Union[UserMessage, AssistantMessage, ToolCallMessage, ToolResultMessage, SystemMessage],
+    Field(discriminator="role"),
+]
