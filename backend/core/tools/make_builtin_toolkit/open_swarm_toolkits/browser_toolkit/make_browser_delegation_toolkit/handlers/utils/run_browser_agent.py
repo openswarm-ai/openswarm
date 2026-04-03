@@ -10,6 +10,7 @@ from backend.core.shared_structs.agent.Message.Message import (
 )
 from backend.core.tools.shared_structs.MCP_Tool import SDK_MCP_Tool
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.make_browser_actions_toolkit import make_browser_actions_toolkit
+from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.make_browser_action_handler import BrowserCommandFn
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.constants import BROWSER_AGENT_SYSTEM_PROMPT
 
 
@@ -18,11 +19,12 @@ async def run_browser_agent(
     parent: Agent,
     browser_id: str,
     task: str,
+    send_command: BrowserCommandFn,
     tab_id: str = "",
 ) -> str:
     """Spin up a child Agent with browser action tools, run a task, return the response text."""
 
-    actions_toolkit = make_browser_actions_toolkit(browser_id=browser_id, tab_id=tab_id)
+    actions_toolkit = make_browser_actions_toolkit(browser_id=browser_id, send_command=send_command, tab_id=tab_id)
 
     mcp_servers: Dict[str, McpServerConfig] = {}
     tool_names: List[str] = []

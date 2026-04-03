@@ -6,6 +6,7 @@ from backend.core.shared_structs.agent.Message.agent_outputs import ToolResponse
 from backend.core.Agent.Agent import Agent
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.run_browser_agent import run_browser_agent
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.create_browser_card import create_browser_card
+from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.make_browser_action_handler import BrowserCommandFn
 
 
 class CreateBrowserAgentInput(TypedDict):
@@ -13,7 +14,7 @@ class CreateBrowserAgentInput(TypedDict):
 
 
 @typechecked
-def make_create_browser_agent_handler(parent: Agent, dashboard_id: str):
+def make_create_browser_agent_handler(parent: Agent, send_command: BrowserCommandFn, dashboard_id: str = ""):
 
     async def handler(args: CreateBrowserAgentInput) -> ToolResponse:
         task: str = args["task"]
@@ -27,7 +28,7 @@ def make_create_browser_agent_handler(parent: Agent, dashboard_id: str):
 
         await asyncio.sleep(2.0)
 
-        response = await run_browser_agent(parent=parent, browser_id=browser_id, task=task)
+        response = await run_browser_agent(parent=parent, browser_id=browser_id, task=task, send_command=send_command)
 
         return {
             "content": [

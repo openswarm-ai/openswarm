@@ -46,6 +46,26 @@ def p_make_session_emitter(session_id: str) -> EventCallback:
         await ws.send_to_session(session_id, event.event, event.model_dump(mode="json"))
     return emit
 
+
+async def p_send_browser_command(
+    action: str, browser_id: str, tab_id: str, params: dict,
+) -> dict:
+    """BrowserCommandFn implementation that routes through the browser FutureBridge."""
+    request_id = uuid4().hex
+    if not ws.has_global_connections():
+        return {"error": "No dashboard connected. Open the dashboard to use browser tools."}
+    return await ws.BROWSER_BRIDGE.request(
+        request_id=request_id,
+        send_fn=lambda: ws.broadcast_global("browser:command", {
+            "request_id": request_id,
+            "action": action,
+            "browser_id": browser_id,
+            "tab_id": tab_id,
+            "params": params,
+        }),
+        timeout=30.0,
+    )
+
 def get_agent(session_id: str) -> Agent:
     agent: Optional[Agent] = SESSIONS.get(session_id)
     if not agent:

@@ -8,10 +8,11 @@ from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit
     make_invoke_browser_agent_handler, InvokeBrowserAgentInput,
 )
 from backend.core.Agent.Agent import Agent
+from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.make_browser_action_handler import BrowserCommandFn
 
 
 @typechecked
-def make_browser_delegation_toolkit(parent: Agent) -> Toolkit:
+def make_browser_delegation_toolkit(parent: Agent, send_command: BrowserCommandFn) -> Toolkit:
     return Toolkit(
         name="browser",
         description="Tools for browser automation",
@@ -26,7 +27,7 @@ def make_browser_delegation_toolkit(parent: Agent) -> Toolkit:
                 permission="allow",
                 server_name="openswarm-browser",
                 input_schema=CreateBrowserAgentInput,
-                handler=make_create_browser_agent_handler(parent),
+                handler=make_create_browser_agent_handler(parent, send_command),
             ),
             SDK_MCP_Tool(
                 name="InvokeBrowserAgent",
@@ -38,7 +39,7 @@ def make_browser_delegation_toolkit(parent: Agent) -> Toolkit:
                 permission="allow",
                 server_name="openswarm-browser",
                 input_schema=InvokeBrowserAgentInput,
-                handler=make_invoke_browser_agent_handler(parent),
+                handler=make_invoke_browser_agent_handler(parent, send_command),
             ),
         ],
     )
