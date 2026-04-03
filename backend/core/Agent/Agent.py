@@ -2,11 +2,11 @@ import asyncio
 import logging
 import os
 from copy import deepcopy
+from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
 from claude_agent_sdk import ClaudeAgentOptions
 from pydantic import BaseModel, Field, InstanceOf
-from typing import List, Literal, Optional
 from typeguard import typechecked
 
 from backend.core.Agent.run_agent_loop.run_agent_loop import run_agent_loop
@@ -15,8 +15,9 @@ from backend.core.shared_structs.agent.ApprovalRequest import ApprovalRequest
 from backend.core.shared_structs.agent.MessageLog import MessageLog
 from backend.core.events.events import (
     AgentSnapshot, AgentStatusEvent, AgentMessageEvent,
-    EventCallback, AnyEvent,
+    ApprovalRequestEvent, EventCallback, AnyEvent,
 )
+from backend.core.tools.shared_structs.Toolkit import Toolkit
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 
@@ -39,6 +40,7 @@ class Agent(BaseModel):
     sub_branches: List["Agent"] = Field(default_factory=list)
     parent_id: Optional[str] = None
 
+    toolkit: Optional[Toolkit] = Field(default=None, exclude=True)
     on_event: Optional[EventCallback] = Field(default=None, exclude=True)
 
     task: Optional[asyncio.Task] = None
@@ -69,6 +71,55 @@ class Agent(BaseModel):
             self.status = event.status  # type: ignore[assignment]
         if self.on_event:
             await self.on_event(event)
+
+    @typechecked
+    async def request_approval(
+        self, tool_name: str, tool_input: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """HITL approval flow: pause the agent, ask the user, resume.
+
+        Emits an ApprovalRequestEvent through on_event. The transport layer
+        resolves the embedded future with the user's decision.
+        Returns {"behavior": "allow"|"deny", ...}.
+        """
+        if not self.on_event:
+            return {"behavior": "allow"}
+
+        request: ApprovalRequest = ApprovalRequest(
+            session_id=self.session_id,
+            tool_name=tool_name,
+            tool_input=tool_input,
+        )
+        self.pending_approvals.append(request)
+        self.status = "waiting_approval"
+        await self.emit(AgentStatusEvent(
+            session_id=self.session_id, status="waiting_approval",
+        ))
+
+        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        try:
+            await self.emit(ApprovalRequestEvent(
+                session_id=self.session_id,
+                request_id=request.id,
+                tool_name=tool_name,
+                tool_input=tool_input,
+                future=future,
+            ))
+            decision: Dict[str, Any] = await future
+        except asyncio.TimeoutError:
+            decision = {"behavior": "deny", "message": "Approval timed out"}
+        except asyncio.CancelledError:
+            decision = {"behavior": "deny", "message": "Agent stopped"}
+            raise
+
+        self.pending_approvals = [
+            a for a in self.pending_approvals if a.id != request.id
+        ]
+        self.status = "running"
+        await self.emit(AgentStatusEvent(
+            session_id=self.session_id, status="running",
+        ))
+        return decision
 
     @typechecked
     async def send_message(self, msg: Message) -> None:
@@ -126,6 +177,7 @@ class Agent(BaseModel):
             "messages": MessageLog(messages=branched_messages),
             "sub_agents": [],
             "pending_approvals": [],
+            "toolkit": self.toolkit,
             "on_event": self.on_event,
             "task": None,
             "lock": asyncio.Lock(),

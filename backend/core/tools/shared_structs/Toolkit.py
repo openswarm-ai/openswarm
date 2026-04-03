@@ -89,3 +89,21 @@ class Toolkit(BaseModel):
                 allowed.extend(a)
                 disallowed.extend(d)
         return allowed, disallowed
+
+    @typechecked
+    def resolve_permission(self, sdk_name: str) -> Optional[TOOL_PERMISSIONS]:
+        """Look up the permission for a single tool by its SDK-format name.
+
+        Returns the tool's permission if found, or None if the tool
+        doesn't exist in this toolkit tree.
+        """
+        if self.tools is not None:
+            for tool in self.tools:
+                if tool.to_sdk_args() == sdk_name:
+                    return tool.permission
+        if self.nested_toolkits is not None:
+            for toolkit in self.nested_toolkits:
+                found: Optional[TOOL_PERMISSIONS] = toolkit.resolve_permission(sdk_name)
+                if found is not None:
+                    return found
+        return None

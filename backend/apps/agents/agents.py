@@ -15,14 +15,14 @@ import asyncio
 
 from fastapi import HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from backend.config.Apps import SubApp
 from backend.core.Agent.Agent import Agent
 from backend.core.shared_structs.agent.Message.Message import UserMessage
 from backend.core.events.events import (
     AnyEvent, AgentStatusEvent, AgentClosedEvent, BranchSwitchedEvent,
-    EventCallback,
+    ApprovalRequestEvent, EventCallback,
 )
 from backend.apps.agents.session_store import (
     load_all,
@@ -36,15 +36,42 @@ from backend.apps.agents.session_store import (
 from backend.apps.agents import ws
 from backend.apps.agents.compose_system_prompt import compose_system_prompt
 from backend.core.tools.make_builtin_toolkit.make_builtin_toolkit import make_builtin_toolkit
+from backend.apps.agents.create_sdk_hooks import create_sdk_hooks
 from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk.types import HookMatcher
+from backend.core.tools.shared_structs.Toolkit import Toolkit
+from claude_agent_sdk.types import McpServerConfig
 
 SESSIONS: dict[str, Agent] = {}
 
 
 @typechecked
 def p_make_session_emitter(session_id: str) -> EventCallback:
-    """Create an event callback that routes typed events to the WS connection pool."""
+    """Create an event callback that routes typed events to the WS connection pool.
+
+    ApprovalRequestEvents are special-cased: instead of just broadcasting,
+    the emitter routes through the APPROVAL_BRIDGE and resolves the
+    embedded future with the user's decision.
+    """
     async def emit(event: AnyEvent) -> None:
+        if isinstance(event, ApprovalRequestEvent):
+            if not ws.has_global_connections():
+                if not event.future.done():
+                    event.future.set_result({"behavior": "deny", "message": "No dashboard connected for approval."})
+                return
+            result = await ws.APPROVAL_BRIDGE.request(
+                request_id=event.request_id,
+                send_fn=lambda: ws.send_to_session(session_id, event.event, {
+                    "request_id": event.request_id,
+                    "session_id": event.session_id,
+                    "tool_name": event.tool_name,
+                    "tool_input": event.tool_input,
+                }),
+                timeout=600.0,
+            )
+            if not event.future.done():
+                event.future.set_result(result)
+            return
         await ws.send_to_session(session_id, event.event, event.model_dump(mode="json"))
     return emit
 
@@ -67,6 +94,7 @@ async def p_send_browser_command(
         }),
         timeout=30.0,
     )
+
 
 def get_agent(session_id: str) -> Agent:
     agent: Optional[Agent] = SESSIONS.get(session_id)
@@ -91,6 +119,8 @@ async def agents_lifespan():
             agent: Agent = Agent(**data)
             agent.status = "stopped"
             agent.on_event = p_make_session_emitter(agent.session_id)
+            toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, p_send_browser_command)
+            agent.toolkit = toolkit
             SESSIONS[agent.session_id] = agent
             delete(sid)
         except Exception as e:
@@ -135,7 +165,6 @@ async def launch(body: LaunchBody) -> dict:
     system_prompt = compose_system_prompt(
         session_prompt=body.system_prompt or None,
     )
-    # Placeholder config — replaced below once the toolkit is built
     agent: Agent = Agent(
         model=body.model,
         mode=body.mode,
@@ -145,9 +174,12 @@ async def launch(body: LaunchBody) -> dict:
     agent.on_event = p_make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
 
-    toolkit = make_builtin_toolkit(agent, SESSIONS, p_send_browser_command)
-    mcp_servers = toolkit.collect_mcp_servers()
+    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, p_send_browser_command)
+    agent.toolkit = toolkit
+    mcp_servers: Dict[str, McpServerConfig] = toolkit.collect_mcp_servers()
     allowed_tools, disallowed_tools = toolkit.collect_tool_permissions()
+
+    can_use_tool, pre_tool_hook, post_tool_hook = create_sdk_hooks(agent)
 
     agent.config = ClaudeAgentOptions(
         system_prompt=system_prompt,
@@ -155,6 +187,12 @@ async def launch(body: LaunchBody) -> dict:
         mcp_servers=mcp_servers if mcp_servers else None,
         allowed_tools=allowed_tools,
         disallowed_tools=disallowed_tools,
+        permission_mode="default",
+        can_use_tool=can_use_tool,
+        hooks={
+            "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_hook])],
+            "PostToolUse": [HookMatcher(matcher=None, hooks=[post_tool_hook])],
+        },
     )
 
     await agent.emit(AgentStatusEvent(
@@ -317,6 +355,8 @@ async def resume_session(session_id: str) -> dict:
     agent: Agent = Agent(**data)
     agent.status = "stopped"
     agent.on_event = p_make_session_emitter(agent.session_id)
+    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, p_send_browser_command)
+    agent.toolkit = toolkit
     SESSIONS[agent.session_id] = agent
     delete(session_id)
     await agent.emit(AgentStatusEvent(
@@ -345,6 +385,8 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
     clone.pending_approvals = []
     clone.sub_agents = []
     clone.on_event = p_make_session_emitter(clone.session_id)
+    toolkit: Toolkit = make_builtin_toolkit(clone, SESSIONS, p_send_browser_command)
+    clone.toolkit = toolkit
     SESSIONS[clone.session_id] = clone
     await clone.emit(AgentStatusEvent(
         session_id=clone.session_id, status=clone.status,

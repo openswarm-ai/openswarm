@@ -1,5 +1,7 @@
+import asyncio
+
 from pydantic import BaseModel, Field
-from typing import Annotated, List, Literal, Optional, Union, Callable, Awaitable
+from typing import Annotated, Any, Dict, Literal, Optional, Union, Callable, Awaitable
 
 from backend.core.shared_structs.agent.Message.Message import AnyMessage
 from backend.core.shared_structs.agent.AgentSnapshot import AgentSnapshot
@@ -62,12 +64,25 @@ class BrowserCardAddedEvent(BaseModel):
     browser_card: BrowserCardPosition
 
 
+class ApprovalRequestEvent(BaseModel):
+    """Emitted when the agent needs human approval for a tool call.
+
+    The transport layer resolves `future` with the user's decision dict.
+    """
+    event: Literal["agent:approval_request"] = "agent:approval_request"
+    session_id: str
+    request_id: str
+    tool_name: str
+    tool_input: Dict[str, Any]
+    future: asyncio.Future = Field(exclude=True)
+
+
 AnyEvent = Annotated[
     Union[
         AgentStatusEvent, AgentMessageEvent,
         StreamStartEvent, StreamDeltaEvent, StreamEndEvent,
         BranchSwitchedEvent, AgentClosedEvent,
-        BrowserCardAddedEvent,
+        BrowserCardAddedEvent, ApprovalRequestEvent,
     ],
     Field(discriminator="event"),
 ]
