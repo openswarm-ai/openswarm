@@ -14,7 +14,7 @@ from backend.core.Agent.shared_structs.ApprovalRequest import ApprovalRequest
 from backend.core.Agent.shared_structs.MessageLog import MessageLog
 from backend.core.events.events import (
     AgentSnapshot, AgentStatusEvent, AgentMessageEvent,
-    EventCallback,
+    EventCallback, AnyEvent,
 )
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")

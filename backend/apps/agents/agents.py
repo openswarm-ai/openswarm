@@ -3,8 +3,8 @@
 Endpoints operate directly on a module-level sessions dict and the Agent class.
 No manager layer — Agent already encapsulates its own runtime state.
 
-ws_manager is used ONLY in this file — the Agent class and its internals
-communicate via the on_event callback, never importing ws_manager directly.
+The ws module is used ONLY in this file — the Agent class and its internals
+communicate via the on_event callback, never importing ws directly.
 """
 
 from contextlib import asynccontextmanager
@@ -33,7 +33,7 @@ from backend.apps.agents.session_store import (
     reconcile_on_startup,
     load,
 )
-from backend.OLDapps.agents.manager.ws_manager import ws_manager
+from backend.apps.agents import ws
 from claude_agent_sdk import ClaudeAgentOptions
 
 SESSIONS: dict[str, Agent] = {}
@@ -41,9 +41,9 @@ SESSIONS: dict[str, Agent] = {}
 
 @typechecked
 def p_make_session_emitter(session_id: str) -> EventCallback:
-    """Create an event callback that routes typed events to ws_manager for a session."""
+    """Create an event callback that routes typed events to the WS connection pool."""
     async def emit(event: AnyEvent) -> None:
-        await ws_manager.send_to_session(session_id, event.event, event.model_dump(mode="json"))
+        await ws.send_to_session(session_id, event.event, event.model_dump(mode="json"))
     return emit
 
 def get_agent(session_id: str) -> Agent:
@@ -211,7 +211,7 @@ class ApprovalBody(BaseModel):
 
 @agents.router.post("/approval")
 async def handle_approval(body: ApprovalBody) -> dict:
-    ws_manager.resolve_approval(body.request_id, {
+    ws.APPROVAL_BRIDGE.resolve(body.request_id, {
         "behavior": body.behavior,
         "message": body.message,
         "updated_input": body.updated_input,
