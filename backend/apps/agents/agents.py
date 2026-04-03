@@ -34,6 +34,7 @@ from backend.apps.agents.session_store import (
     load,
 )
 from backend.apps.agents import ws
+from backend.apps.agents.compose_system_prompt import compose_system_prompt
 from claude_agent_sdk import ClaudeAgentOptions
 
 SESSIONS: dict[str, Agent] = {}
@@ -51,7 +52,7 @@ async def p_send_browser_command(
     action: str, browser_id: str, tab_id: str, params: dict,
 ) -> dict:
     """BrowserCommandFn implementation that routes through the browser FutureBridge."""
-    request_id = uuid4().hex
+    request_id: str = uuid4().hex
     if not ws.has_global_connections():
         return {"error": "No dashboard connected. Open the dashboard to use browser tools."}
     return await ws.BROWSER_BRIDGE.request(
@@ -133,20 +134,22 @@ class LaunchBody(BaseModel):
 
 @agents.router.post("/launch")
 async def launch(body: LaunchBody) -> dict:
-    # TODO: build ClaudeAgentOptions from body once prompt/options builder exists
+    system_prompt = compose_system_prompt(
+        session_prompt=body.system_prompt or None,
+    )
     agent: Agent = Agent(
         model=body.model,
         mode=body.mode,
-        status="running",
+        status="stopped",
         config=ClaudeAgentOptions(
-            system_prompt=body.system_prompt,
+            system_prompt=system_prompt,
             max_turns=body.max_turns,
         ),
     )
     agent.on_event = p_make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
-    await agent._emit(AgentStatusEvent(
-        session_id=agent.session_id, status="running",
+    await agent.emit(AgentStatusEvent(
+        session_id=agent.session_id, status="stopped",
         session=agent.snapshot(),
     ))
     return {"session_id": agent.session_id, "session": agent.snapshot().model_dump(mode="json")}
@@ -163,7 +166,7 @@ async def update_session(session_id: str, body: UpdateBody) -> dict:
         agent.name = body.name
     if body.system_prompt is not None:
         agent.config.system_prompt = body.system_prompt
-    await agent._emit(AgentStatusEvent(
+    await agent.emit(AgentStatusEvent(
         session_id=session_id, status=agent.status,
         session=agent.snapshot(),
     ))
@@ -254,7 +257,7 @@ async def edit_message(session_id: str, body: EditMessageBody) -> dict:
     fork: Agent = agent.branch(body.message_id)
     SESSIONS[fork.session_id] = fork
 
-    edited_msg = UserMessage(content=body.content, branch_id=fork.branch_id)
+    edited_msg: UserMessage = UserMessage(content=body.content, branch_id=fork.branch_id)
     await fork.send_message(edited_msg)
     return {"ok": True, "branch_id": fork.branch_id, "session_id": fork.session_id}
 

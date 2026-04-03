@@ -12,6 +12,9 @@ from backend.core.shared_structs.agent.Message.agent_inputs import (
 from backend.core.shared_structs.agent.Message.agent_outputs import (
     ToolCallContent, ToolResultContent
 )
+from backend.core.shared_structs.agent.Message.prompt_utils import (
+    resolve_context_paths, resolve_forced_tools, resolve_attached_skills,
+)
 
 class Message(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
@@ -39,7 +42,15 @@ class UserMessage(Message):
 
     @typechecked
     def to_prompt(self) -> PromptMsgDict:
-        blocks: List[PromptBlock] = [TextPromptBlock(type="text", text=self.content)]
+        parts: List[str] = [
+            resolve_forced_tools(self.forced_tools),
+            resolve_context_paths(self.context_paths),
+            resolve_attached_skills(self.attached_skills),
+            self.content,
+        ]
+        full_text: str = "\n\n".join(p for p in parts if p)
+
+        blocks: List[PromptBlock] = [TextPromptBlock(type="text", text=full_text)]
         for data, media_type in zip[tuple[str, str]](self.images, self.image_media_types):
             blocks.append(ImagePromptBlock(
                 type="image",

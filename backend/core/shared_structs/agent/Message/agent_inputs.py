@@ -31,3 +31,4 @@ class ContextPath(BaseModel):
 class SkillMeta(BaseModel):
     id: str
     name: str
+    content: str = ""
