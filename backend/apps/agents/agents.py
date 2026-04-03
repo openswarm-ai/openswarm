@@ -18,16 +18,23 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from backend.config.Apps import SubApp
-from backend.apps.HaikFix.Agent.Agent import Agent
-from backend.apps.HaikFix.Agent.shared_structs.Message.Message import UserMessage
-from backend.apps.HaikFix.Agent.shared_structs.events import (
+from backend.core.Agent.Agent import Agent
+from backend.core.Agent.shared_structs.Message.Message import UserMessage
+from backend.core.events.events import (
     AnyEvent, AgentStatusEvent, AgentClosedEvent, BranchSwitchedEvent,
     EventCallback,
 )
-from backend.apps.HaikFix import session_store
-from backend.apps.agents.manager.ws_manager import ws_manager
+from backend.apps.agents.session_store import (
+    load_all,
+    save,
+    delete,
+    build_search_text,
+    get_history,
+    reconcile_on_startup,
+    load,
+)
+from backend.OLDapps.agents.manager.ws_manager import ws_manager
 from claude_agent_sdk import ClaudeAgentOptions
-
 
 SESSIONS: dict[str, Agent] = {}
 
@@ -52,8 +59,8 @@ def get_agent(session_id: str) -> Agent:
 
 @asynccontextmanager
 async def agents_lifespan():
-    await session_store.reconcile_on_startup()
-    for sid, data in session_store.load_all():
+    await reconcile_on_startup()
+    for sid, data in load_all():
         if data.get("closed_at") is not None:
             continue
         try:
@@ -63,15 +70,15 @@ async def agents_lifespan():
             agent.status = "stopped"
             agent.on_event = p_make_session_emitter(agent.session_id)
             SESSIONS[agent.session_id] = agent
-            session_store.delete(sid)
+            delete(sid)
         except Exception as e:
             print(f"[agents lifespan] Skipping corrupt session {sid}: {e}")
     yield
     for agent in list[Agent](SESSIONS.values()):
         await agent.stop_agent()
         data: dict = agent.model_dump(mode="json")
-        data["search_text"] = session_store.build_search_text(data)
-        session_store.save(agent.session_id, data)
+        data["search_text"] = build_search_text(data)
+        save(agent.session_id, data)
     SESSIONS.clear()
 
 
@@ -148,7 +155,7 @@ async def delete_session(session_id: str) -> dict:
     agent: Optional[Agent] = SESSIONS.pop(session_id, None)
     if agent is not None:
         await agent.stop_agent()
-    session_store.delete(session_id)
+    delete(session_id)
     return {"ok": True}
 
 
@@ -257,9 +264,9 @@ async def close_session(session_id: str) -> dict:
     await agent.stop_agent()
     closed_at: str = datetime.now().isoformat()
     data: dict = agent.model_dump(mode="json")
-    data["search_text"] = session_store.build_search_text(data)
+    data["search_text"] = build_search_text(data)
     data["closed_at"] = closed_at
-    session_store.save(session_id, data)
+    save(session_id, data)
     await agent.emit(AgentClosedEvent(
         session_id=session_id, status=agent.status,
         closed_at=closed_at,
@@ -271,7 +278,7 @@ async def close_session(session_id: str) -> dict:
 async def resume_session(session_id: str) -> dict:
     if session_id in SESSIONS:
         return {"session": SESSIONS[session_id].model_dump(mode="json")}
-    data: Optional[dict] = session_store.load(session_id)
+    data: Optional[dict] = load(session_id)
     if not data:
         raise HTTPException(status_code=404, detail="Session not found in history")
     data.pop("task", None)
@@ -282,7 +289,7 @@ async def resume_session(session_id: str) -> dict:
     agent.status = "stopped"
     agent.on_event = p_make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
-    session_store.delete(session_id)
+    delete(session_id)
     await agent.emit(AgentStatusEvent(
         session_id=session_id, status=agent.status,
         session=agent.snapshot(),
@@ -294,7 +301,7 @@ async def resume_session(session_id: str) -> dict:
 async def duplicate_session(session_id: str, body: dict = {}) -> dict:
     source: Optional[Agent] = SESSIONS.get(session_id)
     if source is None:
-        data: Optional[dict] = session_store.load(session_id)
+        data: Optional[dict] = load(session_id)
         if not data:
             raise HTTPException(status_code=404, detail="Session not found")
         data.pop("task", None)
@@ -319,7 +326,7 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
 
 @agents.router.get("/history")
 async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_id: str = "") -> dict:
-    return session_store.get_history(
+    return get_history(
         q=q, limit=limit, offset=offset,
         dashboard_id=dashboard_id or None,
     )
