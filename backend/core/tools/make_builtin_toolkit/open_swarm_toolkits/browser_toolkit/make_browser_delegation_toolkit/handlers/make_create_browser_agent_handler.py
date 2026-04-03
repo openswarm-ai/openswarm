@@ -6,8 +6,7 @@ from backend.core.shared_structs.agent.Message.agent_outputs import ToolResponse
 from backend.core.Agent.Agent import Agent
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.run_browser_agent import run_browser_agent
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.create_browser_card import create_browser_card
-from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.make_browser_action_handler import BrowserCommandFn
-
+from backend.core.shared_structs.browser.BrowserCommandFn import BrowserCommandFn
 
 class CreateBrowserAgentInput(TypedDict):
     task: str

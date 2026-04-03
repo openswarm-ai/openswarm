@@ -8,8 +8,7 @@ from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit
     make_invoke_browser_agent_handler, InvokeBrowserAgentInput,
 )
 from backend.core.Agent.Agent import Agent
-from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.make_browser_action_handler import BrowserCommandFn
-
+from backend.core.shared_structs.browser.BrowserCommandFn import BrowserCommandFn
 
 @typechecked
 def make_browser_delegation_toolkit(parent: Agent, send_command: BrowserCommandFn) -> Toolkit:

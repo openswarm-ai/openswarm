@@ -13,8 +13,9 @@ from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit
     BrowserWaitInput,
 )
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.make_browser_action_handler import (
-    make_browser_action_handler, BrowserCommandFn,
+    make_browser_action_handler
 )
+from backend.core.shared_structs.browser.BrowserCommandFn import BrowserCommandFn
 
 SERVER_NAME = "openswarm-browser-actions"
 

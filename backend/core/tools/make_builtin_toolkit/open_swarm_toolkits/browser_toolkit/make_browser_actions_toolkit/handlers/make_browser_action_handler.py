@@ -1,10 +1,9 @@
 import json
-from typing import Dict, Any, Callable, Awaitable
+from typing import Dict, Any
 from typeguard import typechecked
 
 from backend.core.shared_structs.agent.Message.agent_outputs import ToolResponse
-
-BrowserCommandFn = Callable[[str, str, str, Dict[str, Any]], Awaitable[dict]]
+from backend.core.shared_structs.browser.BrowserCommandFn import BrowserCommandFn
 
 ACTION_MAP: Dict[str, str] = {
     "BrowserScreenshot": "screenshot",

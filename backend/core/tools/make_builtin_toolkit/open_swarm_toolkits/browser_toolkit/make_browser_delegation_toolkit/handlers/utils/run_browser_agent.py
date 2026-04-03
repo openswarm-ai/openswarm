@@ -10,9 +10,9 @@ from backend.core.shared_structs.agent.Message.Message import (
 )
 from backend.core.tools.shared_structs.MCP_Tool import SDK_MCP_Tool
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.make_browser_actions_toolkit import make_browser_actions_toolkit
-from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.make_browser_action_handler import BrowserCommandFn
-from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.constants import BROWSER_AGENT_SYSTEM_PROMPT
 
+from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.constants import BROWSER_AGENT_SYSTEM_PROMPT
+from backend.core.shared_structs.browser.BrowserCommandFn import BrowserCommandFn
 
 @typechecked
 async def run_browser_agent(

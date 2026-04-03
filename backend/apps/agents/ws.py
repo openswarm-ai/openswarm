@@ -9,15 +9,11 @@ Three concerns, one module:
 
 import asyncio
 import json
-import logging
 from typing import Callable, Awaitable
 
 from fastapi import WebSocket
 
 from pydantic import BaseModel, Field
-
-logger = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # 1. Connection pool
@@ -44,6 +40,10 @@ def disconnect_session(session_id: str, ws: WebSocket) -> None:
     conns[:] = [c for c in conns if c is not ws]
     if not conns:
         del P_SESSION_CONNECTIONS[session_id]
+
+
+def has_global_connections() -> bool:
+    return len(P_GLOBAL_CONNECTIONS) > 0
 
 
 def disconnect_global(ws: WebSocket) -> None:
@@ -98,7 +98,7 @@ class FutureBridge(BaseModel):
         try:
             return await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError:
-            logger.warning("FutureBridge request %s timed out after %ss", request_id, timeout)
+            print(f"[FutureBridge.request] Request {request_id} timed out after {timeout}s")
             return {"error": "Timed out"}
         finally:
             self.p_pending.pop(request_id, None)
