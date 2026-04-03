@@ -2,14 +2,17 @@ from datetime import datetime
 from uuid import uuid4
 
 from typeguard import typechecked
+from typing import Optional
 
-# NOTE: Legacy dependancy. TODO: fix this shit cuh
-from backend.apps.agents.manager.ws_manager import ws_manager
 from backend.apps.dashboards.dashboards import _load, _save
 from backend.apps.dashboards.models import BrowserCardPosition, BrowserTab
+from backend.apps.HaikFix.Agent.shared_structs.events import EventCallback, BrowserCardAddedEvent
 
 @typechecked
-async def create_browser_card(dashboard_id: str) -> str:
+async def create_browser_card(
+    dashboard_id: str,
+    emit: Optional[EventCallback] = None,
+) -> str:
     dashboard = _load(dashboard_id)
     browser_id = f"browser-{uuid4().hex[:8]}"
     tab_id = f"tab-{uuid4().hex[:8]}"
@@ -21,8 +24,9 @@ async def create_browser_card(dashboard_id: str) -> str:
     dashboard.layout.browser_cards[browser_id] = card
     dashboard.updated_at = datetime.now()
     _save(dashboard)
-    await ws_manager.broadcast_global("dashboard:browser_card_added", {
-        "dashboard_id": dashboard_id,
-        "browser_card": card.model_dump(mode="json"),
-    })
+    if emit:
+        await emit(BrowserCardAddedEvent(
+            dashboard_id=dashboard_id,
+            browser_card=card,
+        ))
     return browser_id

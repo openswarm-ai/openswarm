@@ -2,10 +2,14 @@
 
 Endpoints operate directly on a module-level sessions dict and the Agent class.
 No manager layer — Agent already encapsulates its own runtime state.
+
+ws_manager is used ONLY in this file — the Agent class and its internals
+communicate via the on_event callback, never importing ws_manager directly.
 """
 
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typeguard import typechecked
 from uuid import uuid4
 import asyncio
 
@@ -16,12 +20,24 @@ from typing import Optional, List
 from backend.config.Apps import SubApp
 from backend.apps.HaikFix.Agent.Agent import Agent
 from backend.apps.HaikFix.Agent.shared_structs.Message.Message import UserMessage
+from backend.apps.HaikFix.Agent.shared_structs.events import (
+    AnyEvent, AgentStatusEvent, AgentClosedEvent, BranchSwitchedEvent,
+    EventCallback,
+)
 from backend.apps.HaikFix import session_store
-from backend.apps.agents.manager.ws_manager import ws_manager  # TODO: move to HaikFix
+from backend.apps.agents.manager.ws_manager import ws_manager
 from claude_agent_sdk import ClaudeAgentOptions
 
 
 SESSIONS: dict[str, Agent] = {}
+
+
+@typechecked
+def p_make_session_emitter(session_id: str) -> EventCallback:
+    """Create an event callback that routes typed events to ws_manager for a session."""
+    async def emit(event: AnyEvent) -> None:
+        await ws_manager.send_to_session(session_id, event.event, event.model_dump(mode="json"))
+    return emit
 
 def get_agent(session_id: str) -> Agent:
     agent: Optional[Agent] = SESSIONS.get(session_id)
@@ -45,6 +61,7 @@ async def agents_lifespan():
             data.pop("lock", None)
             agent: Agent = Agent(**data)
             agent.status = "stopped"
+            agent.on_event = p_make_session_emitter(agent.session_id)
             SESSIONS[agent.session_id] = agent
             session_store.delete(sid)
         except Exception as e:
@@ -90,7 +107,6 @@ class LaunchBody(BaseModel):
 @agents.router.post("/launch")
 async def launch(body: LaunchBody) -> dict:
     # TODO: build ClaudeAgentOptions from body once prompt/options builder exists
-    # For now this is a placeholder — the config must be constructed here
     agent: Agent = Agent(
         model=body.model,
         mode=body.mode,
@@ -100,9 +116,13 @@ async def launch(body: LaunchBody) -> dict:
             max_turns=body.max_turns,
         ),
     )
+    agent.on_event = p_make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
-    await ws_manager.emit_status(agent.session_id, "running", agent)
-    return {"session_id": agent.session_id, "session": agent.model_dump(mode="json")}
+    await agent._emit(AgentStatusEvent(
+        session_id=agent.session_id, status="running",
+        session=agent.snapshot(),
+    ))
+    return {"session_id": agent.session_id, "session": agent.snapshot().model_dump(mode="json")}
 
 
 class UpdateBody(BaseModel):
@@ -116,7 +136,10 @@ async def update_session(session_id: str, body: UpdateBody) -> dict:
         agent.name = body.name
     if body.system_prompt is not None:
         agent.config.system_prompt = body.system_prompt
-    await ws_manager.emit_status(session_id, agent.status, agent)
+    await agent._emit(AgentStatusEvent(
+        session_id=session_id, status=agent.status,
+        session=agent.snapshot(),
+    ))
     return {"ok": True}
 
 
@@ -216,7 +239,9 @@ class SwitchBranchBody(BaseModel):
 async def switch_branch(session_id: str, body: SwitchBranchBody) -> dict:
     agent: Agent = get_agent(session_id)
     agent.branch_id = body.branch_id
-    await ws_manager.emit_branch_switched(session_id, body.branch_id)
+    await agent.emit(BranchSwitchedEvent(
+        session_id=session_id, active_branch_id=body.branch_id,
+    ))
     return {"ok": True}
 
 
@@ -230,11 +255,15 @@ async def close_session(session_id: str) -> dict:
     if not agent:
         raise HTTPException(status_code=404, detail="Session not found")
     await agent.stop_agent()
+    closed_at: str = datetime.now().isoformat()
     data: dict = agent.model_dump(mode="json")
     data["search_text"] = session_store.build_search_text(data)
-    data["closed_at"] = datetime.now().isoformat()
+    data["closed_at"] = closed_at
     session_store.save(session_id, data)
-    await ws_manager.emit_closed(session_id, agent)
+    await agent.emit(AgentClosedEvent(
+        session_id=session_id, status=agent.status,
+        closed_at=closed_at,
+    ))
     return {"ok": True}
 
 
@@ -251,10 +280,14 @@ async def resume_session(session_id: str) -> dict:
     data.pop("closed_at", None)
     agent: Agent = Agent(**data)
     agent.status = "stopped"
+    agent.on_event = p_make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
     session_store.delete(session_id)
-    await ws_manager.emit_status(session_id, agent.status, agent)
-    return {"session": agent.model_dump(mode="json")}
+    await agent.emit(AgentStatusEvent(
+        session_id=session_id, status=agent.status,
+        session=agent.snapshot(),
+    ))
+    return {"session": agent.snapshot().model_dump(mode="json")}
 
 
 @agents.router.post("/SESSIONS/{session_id}/duplicate")
@@ -266,9 +299,7 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
             raise HTTPException(status_code=404, detail="Session not found")
         data.pop("task", None)
         data.pop("lock", None)
-        new_source: Agent = Agent(**data)
-        source = new_source
-    assert source is not None, "Source agent not found"
+        source = Agent(**data)
 
     clone: Agent = source.model_copy(deep=True)
     clone.session_id = uuid4().hex
@@ -277,9 +308,13 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
     clone.lock = asyncio.Lock()
     clone.pending_approvals = []
     clone.sub_agents = []
+    clone.on_event = p_make_session_emitter(clone.session_id)
     SESSIONS[clone.session_id] = clone
-    await ws_manager.emit_status(clone.session_id, clone.status, clone)
-    return {"session": clone.model_dump(mode="json")}
+    await clone.emit(AgentStatusEvent(
+        session_id=clone.session_id, status=clone.status,
+        session=clone.snapshot(),
+    ))
+    return {"session": clone.snapshot().model_dump(mode="json")}
 
 
 @agents.router.get("/history")

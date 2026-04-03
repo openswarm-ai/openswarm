@@ -5,7 +5,6 @@ The agents subapp calls these functions during close/resume/startup/shutdown.
 """
 
 import json
-import logging
 import os
 from typing import List, Tuple, Optional
 

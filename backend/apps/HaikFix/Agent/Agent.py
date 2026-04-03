@@ -1,5 +1,3 @@
-# TODO: NON HAIK DEPS: ws_manager
-
 from copy import deepcopy
 from uuid import uuid4
 import asyncio
@@ -7,19 +5,19 @@ import os
 
 from claude_agent_sdk import ClaudeAgentOptions
 from pydantic import BaseModel, Field, InstanceOf
-from typing import List, Literal, Optional
+from typing import Awaitable, Callable, List, Literal, Optional
 from typeguard import typechecked
 
-from backend.apps.agents.manager.ws_manager import ws_manager
 from backend.apps.HaikFix.Agent.run_agent_loop.run_agent_loop import run_agent_loop
 from backend.apps.HaikFix.Agent.shared_structs.Message.Message import Message
 from backend.apps.HaikFix.Agent.shared_structs.ApprovalRequest import ApprovalRequest
 from backend.apps.HaikFix.Agent.shared_structs.MessageLog import MessageLog
+from backend.apps.HaikFix.Agent.shared_structs.events import (
+    AnyEvent, AgentSnapshot, AgentStatusEvent, AgentMessageEvent,
+    EventCallback,
+)
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
-
-
-# NOTE and TODO: we shld remove the ws streaming from this class bc it conflicts with the browser agent
 
 class Agent(BaseModel):
     model: str
@@ -37,8 +35,28 @@ class Agent(BaseModel):
     sub_branches: List["Agent"] = Field(default_factory=list)
     parent_id: Optional[str] = None
 
+    on_event: Optional[EventCallback] = Field(default=None, exclude=True)
+
     task: Optional[asyncio.Task] = None
     lock: InstanceOf[asyncio.Lock] = Field(default_factory=asyncio.Lock)
+
+    @typechecked
+    def snapshot(self) -> AgentSnapshot:
+        return AgentSnapshot(
+            session_id=self.session_id,
+            model=self.model,
+            mode=self.mode,
+            status=self.status,
+            branch_id=self.branch_id,
+            parent_id=self.parent_id,
+            messages=self.messages,
+            pending_approvals=self.pending_approvals,
+        )
+
+    @typechecked
+    async def emit(self, event: AnyEvent) -> None:
+        if self.on_event:
+            await self.on_event(event)
 
     @typechecked
     async def send_message(self, msg: Message) -> None:
@@ -47,15 +65,21 @@ class Agent(BaseModel):
                 print("[Agent.send_message] Agent is already running")
                 return
 
-            await ws_manager.emit_message(self.session_id, msg)
+            await self.emit(AgentMessageEvent(
+                session_id=self.session_id,
+                message=msg,
+            ))
             self.status = "running"
-            await ws_manager.emit_status(self.session_id, "running")
+            await self.emit(AgentStatusEvent(
+                session_id=self.session_id, status="running",
+            ))
             self.messages.append(msg)
 
             self.task = asyncio.create_task(run_agent_loop(
                 msg=msg,
                 options=self.config,
                 branch_id=self.branch_id,
+                emit=self.on_event,
             ))
 
     @typechecked
@@ -70,13 +94,12 @@ class Agent(BaseModel):
             except asyncio.CancelledError:
                 pass
 
-        for req in list[ApprovalRequest](self.pending_approvals):
-            ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Agent stopped"})
         self.pending_approvals = []
-       
         self.status = "stopped"
-        await ws_manager.emit_status(self.session_id, "stopped")
-    
+        await self.emit(AgentStatusEvent(
+            session_id=self.session_id, status="stopped",
+        ))
+
     @typechecked
     def branch(self, at_message_id: str) -> "Agent":
         branch_id = uuid4().hex
@@ -89,6 +112,7 @@ class Agent(BaseModel):
             "messages": MessageLog(messages=branched_messages),
             "sub_agents": [],
             "pending_approvals": [],
+            "on_event": self.on_event,
             "task": None,
             "lock": asyncio.Lock(),
         })

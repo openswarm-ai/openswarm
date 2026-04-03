@@ -1,9 +1,9 @@
 from backend.apps.HaikFix.Agent.shared_structs.Message.Message import Message
 from backend.apps.HaikFix.Agent.shared_structs.Message.agent_outputs import ToolCallContent
+from backend.apps.HaikFix.Agent.shared_structs.events import EventCallback, AgentMessageEvent
 from claude_agent_sdk.types import TextBlock, ToolUseBlock, AssistantMessage
-from backend.apps.agents.manager.ws_manager import ws_manager
 from typeguard import typechecked
-from typing import List
+from typing import List, Optional
 from uuid import uuid4
 
 @typechecked
@@ -13,10 +13,13 @@ async def handle_assistant_message(
     message: AssistantMessage, 
     stream_text_msg_id: str,
     stream_tool_ids: List[str],
+    emit: Optional[EventCallback] = None,
 ):
-    """Handle an assistant message from the Claude Agent SDK."""
-    # NOTE: Does not acctually save the message to the session.
-    # TODO: Save the message to the session -Haik
+    """Handle an assistant message from the Claude Agent SDK.
+    
+    NOTE: Does not save the message to the Agent's MessageLog yet.
+    The caller (run_agent_loop / Agent) is responsible for persistence.
+    """
     content_parts: List[str] = []
     tool_uses: List[ToolCallContent] = []
     for block in message.content:
@@ -31,9 +34,17 @@ async def handle_assistant_message(
             role="assistant", content="\n".join(content_parts),
             branch_id=branch_id,
         )
-        await ws_manager.emit_message(session_id, asst_msg)
+        if emit:
+            await emit(AgentMessageEvent(
+                session_id=session_id,
+                message=asst_msg,
+            ))
 
     for i, tu in enumerate[ToolCallContent](tool_uses):
         mid: str = stream_tool_ids[i] if i < len(stream_tool_ids) else uuid4().hex
         tool_msg: Message = Message(id=mid, role="tool_call", content=tu, branch_id=branch_id)
-        await ws_manager.emit_message(session_id, tool_msg)
+        if emit:
+            await emit(AgentMessageEvent(
+                session_id=session_id,
+                message=tool_msg,
+            ))

@@ -1,9 +1,14 @@
-from backend.apps.agents.manager.ws_manager import ws_manager
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 from typeguard import typechecked
 from uuid import uuid4
 
+from backend.apps.HaikFix.Agent.shared_structs.events import (
+    AnyEvent, StreamStartEvent, StreamDeltaEvent, StreamEndEvent,
+)
 
+EventCallback = Callable[[AnyEvent], Awaitable[None]]
+
+# NOTE: if we wanna, we could abstract this into helper functions for each event type
 @typechecked
 async def handle_stream_event(
     session_id: str,
@@ -11,6 +16,7 @@ async def handle_stream_event(
     stream_text_msg_id: Optional[str],
     stream_tool_ids: list[str],
     block_map: dict[int, str],
+    emit: Optional[EventCallback] = None,
 ) -> str | None:
     """Process a single StreamEvent and return the (possibly updated) text msg id."""
     assert "type" in event, "Stream event missing 'type'"
@@ -26,7 +32,10 @@ async def handle_stream_event(
         if block_type == "text":
             if stream_text_msg_id is None:
                 stream_text_msg_id = uuid4().hex
-                await ws_manager.emit_stream_start(session_id, stream_text_msg_id, "assistant")
+                if emit:
+                    await emit(StreamStartEvent(
+                        session_id=session_id, message_id=stream_text_msg_id, role="assistant",
+                    ))
             block_map[index] = stream_text_msg_id
         elif block_type == "tool_use":
             assert "name" in block, "tool_use content_block missing 'name'"
@@ -34,7 +43,11 @@ async def handle_stream_event(
             tool_msg_id: str = uuid4().hex
             stream_tool_ids.append(tool_msg_id)
             block_map[index] = tool_msg_id
-            await ws_manager.emit_stream_start(session_id, tool_msg_id, "tool_call", tool_name=tool_name)
+            if emit:
+                await emit(StreamStartEvent(
+                    session_id=session_id, message_id=tool_msg_id,
+                    role="tool_call", tool_name=tool_name,
+                ))
 
     elif event_type == "content_block_delta":
         assert "index" in event, "content_block_delta missing 'index'"
@@ -48,20 +61,32 @@ async def handle_stream_event(
             if delta_type == "text_delta":
                 assert "text" in delta, "text_delta missing 'text'"
                 text: str = delta["text"]
-                await ws_manager.emit_stream_delta(session_id, msg_id, text)
+                if emit:
+                    await emit(StreamDeltaEvent(
+                        session_id=session_id, message_id=msg_id, delta=text,
+                    ))
             elif delta_type == "input_json_delta":
                 assert "partial_json" in delta, "input_json_delta missing 'partial_json'"
                 partial_json: str = delta["partial_json"]
-                await ws_manager.emit_stream_delta(session_id, msg_id, partial_json)
+                if emit:
+                    await emit(StreamDeltaEvent(
+                        session_id=session_id, message_id=msg_id, delta=partial_json,
+                    ))
 
     elif event_type == "content_block_stop":
         assert "index" in event, "content_block_stop missing 'index'"
         msg_id: Optional[str] = block_map.get(event["index"])
         if msg_id and msg_id != stream_text_msg_id:
-            await ws_manager.emit_stream_end(session_id, msg_id)
+            if emit:
+                await emit(StreamEndEvent(
+                    session_id=session_id, message_id=msg_id,
+                ))
 
     elif event_type == "message_stop":
         if stream_text_msg_id:
-            await ws_manager.emit_stream_end(session_id, stream_text_msg_id)
+            if emit:
+                await emit(StreamEndEvent(
+                    session_id=session_id, message_id=stream_text_msg_id,
+                ))
 
     return stream_text_msg_id
