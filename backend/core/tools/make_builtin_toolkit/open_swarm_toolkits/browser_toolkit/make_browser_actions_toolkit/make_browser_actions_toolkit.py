@@ -35,7 +35,7 @@ def make_browser_actions_toolkit(browser_id: str, send_command: BrowserCommandFn
                 permission="allow",
                 server_name=SERVER_NAME,
                 input_schema=BrowserScreenshotInput,
-                handler=make_browser_action_handler("BrowserScreenshot", browser_id, tab_id, send_command),
+                handler=make_browser_action_handler("screenshot", browser_id, tab_id, send_command),
             ),
             SDK_MCP_Tool(
                 name="BrowserGetText",
@@ -44,7 +44,7 @@ def make_browser_actions_toolkit(browser_id: str, send_command: BrowserCommandFn
                 permission="allow",
                 server_name=SERVER_NAME,
                 input_schema=BrowserGetTextInput,
-                handler=make_browser_action_handler("BrowserGetText", browser_id, tab_id, send_command),
+                handler=make_browser_action_handler("get_text", browser_id, tab_id, send_command),
             ),
             SDK_MCP_Tool(
                 name="BrowserNavigate",
@@ -53,7 +53,7 @@ def make_browser_actions_toolkit(browser_id: str, send_command: BrowserCommandFn
                 permission="allow",
                 server_name=SERVER_NAME,
                 input_schema=BrowserNavigateInput,
-                handler=make_browser_action_handler("BrowserNavigate", browser_id, tab_id, send_command),
+                handler=make_browser_action_handler("navigate", browser_id, tab_id, send_command),
             ),
             SDK_MCP_Tool(
                 name="BrowserClick",
@@ -65,7 +65,7 @@ def make_browser_actions_toolkit(browser_id: str, send_command: BrowserCommandFn
                 permission="allow",
                 server_name=SERVER_NAME,
                 input_schema=BrowserClickInput,
-                handler=make_browser_action_handler("BrowserClick", browser_id, tab_id, send_command),
+                handler=make_browser_action_handler("click", browser_id, tab_id, send_command),
             ),
             SDK_MCP_Tool(
                 name="BrowserType",
@@ -74,7 +74,7 @@ def make_browser_actions_toolkit(browser_id: str, send_command: BrowserCommandFn
                 permission="allow",
                 server_name=SERVER_NAME,
                 input_schema=BrowserTypeInput,
-                handler=make_browser_action_handler("BrowserType", browser_id, tab_id, send_command),
+                handler=make_browser_action_handler("type", browser_id, tab_id, send_command),
             ),
             SDK_MCP_Tool(
                 name="BrowserEvaluate",
@@ -83,7 +83,7 @@ def make_browser_actions_toolkit(browser_id: str, send_command: BrowserCommandFn
                 permission="allow",
                 server_name=SERVER_NAME,
                 input_schema=BrowserEvaluateInput,
-                handler=make_browser_action_handler("BrowserEvaluate", browser_id, tab_id, send_command),
+                handler=make_browser_action_handler("evaluate", browser_id, tab_id, send_command),
             ),
             SDK_MCP_Tool(
                 name="BrowserGetElements",
@@ -95,7 +95,7 @@ def make_browser_actions_toolkit(browser_id: str, send_command: BrowserCommandFn
                 permission="allow",
                 server_name=SERVER_NAME,
                 input_schema=BrowserGetElementsInput,
-                handler=make_browser_action_handler("BrowserGetElements", browser_id, tab_id, send_command),
+                handler=make_browser_action_handler("get_elements", browser_id, tab_id, send_command),
             ),
             SDK_MCP_Tool(
                 name="BrowserScroll",
@@ -107,7 +107,7 @@ def make_browser_actions_toolkit(browser_id: str, send_command: BrowserCommandFn
                 permission="allow",
                 server_name=SERVER_NAME,
                 input_schema=BrowserScrollInput,
-                handler=make_browser_action_handler("BrowserScroll", browser_id, tab_id, send_command),
+                handler=make_browser_action_handler("scroll", browser_id, tab_id, send_command),
             ),
             SDK_MCP_Tool(
                 name="BrowserWait",
@@ -119,7 +119,7 @@ def make_browser_actions_toolkit(browser_id: str, send_command: BrowserCommandFn
                 permission="allow",
                 server_name=SERVER_NAME,
                 input_schema=BrowserWaitInput,
-                handler=make_browser_action_handler("BrowserWait", browser_id, tab_id, send_command),
+                handler=make_browser_action_handler("wait", browser_id, tab_id, send_command),
             ),
         ],
     )
