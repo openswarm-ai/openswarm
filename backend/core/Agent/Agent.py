@@ -1,7 +1,8 @@
+import asyncio
+import logging
+import os
 from copy import deepcopy
 from uuid import uuid4
-import asyncio
-import os
 
 from claude_agent_sdk import ClaudeAgentOptions
 from pydantic import BaseModel, Field, InstanceOf
@@ -18,6 +19,9 @@ from backend.core.events.events import (
 )
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
+
+logger = logging.getLogger(__name__)
+
 
 class Agent(BaseModel):
     model: str
@@ -59,10 +63,18 @@ class Agent(BaseModel):
             await self.on_event(event)
 
     @typechecked
+    async def _handle_event(self, event: AnyEvent) -> None:
+        """Internal event handler that updates Agent state and forwards to on_event."""
+        if isinstance(event, AgentStatusEvent):
+            self.status = event.status  # type: ignore[assignment]
+        if self.on_event:
+            await self.on_event(event)
+
+    @typechecked
     async def send_message(self, msg: Message) -> None:
         async with self.lock:
             if self.task is not None and not self.task.done():
-                print("[Agent.send_message] Agent is already running")
+                logger.warning("[Agent.send_message] Agent %s is already running", self.session_id)
                 return
 
             await self.emit(AgentMessageEvent(
@@ -76,10 +88,12 @@ class Agent(BaseModel):
             self.messages.append(msg)
 
             self.task = asyncio.create_task(run_agent_loop(
-                msg=msg,
+                prompt_msg=msg.to_prompt(),
+                messages=self.messages,
                 options=self.config,
+                session_id=self.session_id,
                 branch_id=self.branch_id,
-                emit=self.on_event,
+                emit=self._handle_event,
             ))
 
     @typechecked

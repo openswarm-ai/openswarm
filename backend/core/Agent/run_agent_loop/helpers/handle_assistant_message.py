@@ -1,27 +1,33 @@
-from backend.core.shared_structs.agent.Message.Message import Message
+from backend.core.shared_structs.agent.Message.Message import (
+    AnyMessage, AssistantMessage as AssistantMsg, ToolCallMessage,
+)
 from backend.core.shared_structs.agent.Message.agent_outputs import ToolCallContent
 from backend.core.events.events import EventCallback, AgentMessageEvent
-from claude_agent_sdk.types import TextBlock, ToolUseBlock, AssistantMessage
+from claude_agent_sdk.types import TextBlock, ToolUseBlock, AssistantMessage as SDKAssistantMessage
 from typeguard import typechecked
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from uuid import uuid4
+
+HandleAssistantResult = Tuple[Optional[str], List[str], dict, List[AnyMessage]]
 
 @typechecked
 async def handle_assistant_message(
     session_id: str, 
     branch_id: str,
-    message: AssistantMessage, 
-    stream_text_msg_id: str,
+    message: SDKAssistantMessage, 
+    stream_text_msg_id: Optional[str],
     stream_tool_ids: List[str],
     emit: Optional[EventCallback] = None,
-):
+) -> HandleAssistantResult:
     """Handle an assistant message from the Claude Agent SDK.
-    
-    NOTE: Does not save the message to the Agent's MessageLog yet.
-    The caller (run_agent_loop / Agent) is responsible for persistence.
+
+    Returns (reset stream_text_msg_id, reset stream_tool_ids, reset block_map,
+    list of Message objects created during this turn).
     """
     content_parts: List[str] = []
     tool_uses: List[ToolCallContent] = []
+    created: List[AnyMessage] = []
+
     for block in message.content:
         if isinstance(block, TextBlock):
             content_parts.append(block.text)
@@ -29,22 +35,20 @@ async def handle_assistant_message(
             tool_uses.append(ToolCallContent(id=block.id, tool=block.name, input=block.input))
 
     if content_parts:
-        asst_msg: Message = Message(
+        asst_msg = AssistantMsg(
             id=stream_text_msg_id or uuid4().hex,
-            role="assistant", content="\n".join(content_parts),
+            content="\n".join(content_parts),
             branch_id=branch_id,
         )
+        created.append(asst_msg)
         if emit:
-            await emit(AgentMessageEvent(
-                session_id=session_id,
-                message=asst_msg,
-            ))
+            await emit(AgentMessageEvent(session_id=session_id, message=asst_msg))
 
-    for i, tu in enumerate[ToolCallContent](tool_uses):
+    for i, tu in enumerate(tool_uses):
         mid: str = stream_tool_ids[i] if i < len(stream_tool_ids) else uuid4().hex
-        tool_msg: Message = Message(id=mid, role="tool_call", content=tu, branch_id=branch_id)
+        tool_msg = ToolCallMessage(id=mid, content=tu, branch_id=branch_id)
+        created.append(tool_msg)
         if emit:
-            await emit(AgentMessageEvent(
-                session_id=session_id,
-                message=tool_msg,
-            ))
+            await emit(AgentMessageEvent(session_id=session_id, message=tool_msg))
+
+    return None, [], {}, created

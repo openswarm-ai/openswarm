@@ -66,7 +66,8 @@ AnyEvent = Annotated[
     Union[
         AgentStatusEvent, AgentMessageEvent,
         StreamStartEvent, StreamDeltaEvent, StreamEndEvent,
-        BranchSwitchedEvent, AgentClosedEvent, BrowserCardAddedEvent,
+        BranchSwitchedEvent, AgentClosedEvent,
+        BrowserCardAddedEvent,
     ],
     Field(discriminator="event"),
 ]
