@@ -5,7 +5,7 @@ from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import McpServerConfig
 
 from backend.core.Agent.Agent import Agent
-from backend.core.Agent.shared_structs.Message.Message import (
+from backend.core.shared_structs.agent.Message.Message import (
     UserMessage, AssistantMessage, AnyMessage,
 )
 from backend.core.tools.shared_structs.MCP_Tool import SDK_MCP_Tool

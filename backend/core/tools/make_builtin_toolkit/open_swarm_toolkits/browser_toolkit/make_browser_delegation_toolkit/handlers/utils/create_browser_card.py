@@ -5,8 +5,9 @@ from typeguard import typechecked
 from typing import Optional
 
 from backend.OLDapps.dashboards.dashboards import _load, _save
-from backend.OLDapps.dashboards.models import BrowserCardPosition, BrowserTab
 from backend.core.events.events import EventCallback, BrowserCardAddedEvent
+from backend.core.shared_structs.browser.BrowserCardPosition import BrowserCardPosition
+from backend.core.shared_structs.browser.BrowserTab import BrowserTab
 
 @typechecked
 async def create_browser_card(

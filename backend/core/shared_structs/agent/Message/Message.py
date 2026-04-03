@@ -6,10 +6,10 @@ from datetime import datetime
 from uuid import uuid4
 from typeguard import typechecked
 
-from backend.core.Agent.shared_structs.Message.agent_inputs import (
+from backend.core.shared_structs.agent.Message.agent_inputs import (
     PromptBlock, TextPromptBlock, ImagePromptBlock, ImageSource, ContextPath, SkillMeta
 )
-from backend.core.Agent.shared_structs.Message.agent_outputs import (
+from backend.core.shared_structs.agent.Message.agent_outputs import (
     ToolCallContent, ToolResultContent
 )
 

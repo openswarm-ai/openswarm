@@ -2,7 +2,7 @@ from typeguard import typechecked
 from pydantic import BaseModel, Field
 from typing import List
 
-from backend.core.Agent.shared_structs.Message.Message import AnyMessage
+from backend.core.shared_structs.agent.Message.Message import AnyMessage
 
 
 class MessageLog(BaseModel):

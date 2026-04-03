@@ -1,7 +1,7 @@
 from typing import TypedDict
 from typeguard import typechecked
 
-from backend.core.Agent.shared_structs.Message.agent_outputs import ToolResponse
+from backend.core.shared_structs.agent.Message.agent_outputs import ToolResponse
 from backend.core.Agent.Agent import Agent
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.run_browser_agent import run_browser_agent
 

@@ -1,25 +1,13 @@
 from pydantic import BaseModel, Field
 from typing import Annotated, List, Literal, Optional, Union, Callable, Awaitable
 
-from backend.core.Agent.shared_structs.Message.Message import AnyMessage
-from backend.core.Agent.shared_structs.MessageLog import MessageLog
-from backend.core.Agent.shared_structs.ApprovalRequest import ApprovalRequest
-from backend.OLDapps.dashboards.models import BrowserCardPosition
+from backend.core.shared_structs.agent.Message.Message import AnyMessage
+from backend.core.shared_structs.agent.AgentSnapshot import AgentSnapshot
+from backend.core.shared_structs.browser.BrowserCardPosition import BrowserCardPosition
 
-
-class AgentSnapshot(BaseModel):
-    """Wire-format representation of an Agent — no runtime fields (task, lock, on_event)."""
-    session_id: str
-    model: str
-    mode: str
-    status: str
-    branch_id: str = "main"
-    parent_id: Optional[str] = None
-    messages: MessageLog = Field(default_factory=MessageLog)
-    pending_approvals: List[ApprovalRequest] = Field(default_factory=list)
-    sub_agents: list = Field(default_factory=list)
-    sub_branches: list = Field(default_factory=list)
-
+#############################################
+# Event structs
+#############################################
 
 class AgentStatusEvent(BaseModel):
     event: Literal["agent:status"] = "agent:status"

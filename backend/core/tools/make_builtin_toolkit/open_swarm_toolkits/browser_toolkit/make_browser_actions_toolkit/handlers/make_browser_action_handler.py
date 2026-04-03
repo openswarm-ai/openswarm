@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from typeguard import typechecked
-from backend.core.Agent.shared_structs.Message.agent_outputs import ToolResponse
+from backend.core.shared_structs.agent.Message.agent_outputs import ToolResponse
 from backend.OLDapps.agents.browser.executor import execute_browser_tool, _format_tool_result
 
 @typechecked

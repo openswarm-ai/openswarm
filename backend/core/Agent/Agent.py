@@ -9,9 +9,9 @@ from typing import List, Literal, Optional
 from typeguard import typechecked
 
 from backend.core.Agent.run_agent_loop.run_agent_loop import run_agent_loop
-from backend.core.Agent.shared_structs.Message.Message import Message
-from backend.core.Agent.shared_structs.ApprovalRequest import ApprovalRequest
-from backend.core.Agent.shared_structs.MessageLog import MessageLog
+from backend.core.shared_structs.agent.Message.Message import Message
+from backend.core.shared_structs.agent.ApprovalRequest import ApprovalRequest
+from backend.core.shared_structs.agent.MessageLog import MessageLog
 from backend.core.events.events import (
     AgentSnapshot, AgentStatusEvent, AgentMessageEvent,
     EventCallback, AnyEvent,

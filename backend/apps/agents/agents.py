@@ -19,7 +19,7 @@ from typing import Optional, List
 
 from backend.config.Apps import SubApp
 from backend.core.Agent.Agent import Agent
-from backend.core.Agent.shared_structs.Message.Message import UserMessage
+from backend.core.shared_structs.agent.Message.Message import UserMessage
 from backend.core.events.events import (
     AnyEvent, AgentStatusEvent, AgentClosedEvent, BranchSwitchedEvent,
     EventCallback,
