@@ -29,7 +29,7 @@ from backend.apps.agents.session_store import (
     save,
     delete,
     build_search_text,
-    get_history,
+    get_history as session_store_get_history,
     reconcile_on_startup,
     load,
 )
@@ -125,13 +125,10 @@ async def get_session(session_id: str) -> dict:
 
 
 class LaunchBody(BaseModel):
-    name: str = "New Agent"
     model: str = "sonnet"
     mode: str = "agent"
     system_prompt: str = ""
     max_turns: int = 200
-    target_directory: Optional[str] = None
-    dashboard_id: Optional[str] = None
 
 @agents.router.post("/launch")
 async def launch(body: LaunchBody) -> dict:
@@ -168,14 +165,11 @@ async def launch(body: LaunchBody) -> dict:
 
 
 class UpdateBody(BaseModel):
-    name: Optional[str] = None
     system_prompt: Optional[str] = None
 
 @agents.router.patch("/SESSIONS/{session_id}")
 async def update_session(session_id: str, body: UpdateBody) -> dict:
     agent: Agent = get_agent(session_id)
-    if body.name is not None:
-        agent.name = body.name
     if body.system_prompt is not None:
         agent.config.system_prompt = body.system_prompt
     await agent.emit(AgentStatusEvent(
@@ -361,7 +355,7 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
 
 @agents.router.get("/history")
 async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_id: str = "") -> dict:
-    return get_history(
+    return session_store_get_history(
         q=q, limit=limit, offset=offset,
         dashboard_id=dashboard_id or None,
     )

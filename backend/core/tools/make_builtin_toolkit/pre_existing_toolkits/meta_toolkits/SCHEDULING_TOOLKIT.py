@@ -8,6 +8,5 @@ SCHEDULING_TOOLKIT = Toolkit(
         Tool(name="CronCreate", deferred=False, permission="allow"),
         Tool(name="CronList", deferred=False, permission="allow"),
         Tool(name="CronDelete", deferred=False, permission="allow"),
-        Tool(name="ExitPlanMode", deferred=False, permission="allow"),
     ]
 )
