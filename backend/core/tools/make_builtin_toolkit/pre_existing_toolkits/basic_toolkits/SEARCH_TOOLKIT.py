@@ -1,5 +1,5 @@
-from backend.apps.HaikFix.tools.shared_structs.Toolkit import Toolkit
-from backend.apps.HaikFix.tools.shared_structs.Tool import Tool
+from backend.core.tools.shared_structs.Toolkit import Toolkit
+from backend.core.tools.shared_structs.Tool import Tool
 
 SEARCH_TOOLKIT = Toolkit(
     name="search",

@@ -1,13 +1,13 @@
 from typeguard import typechecked
-from backend.apps.HaikFix.tools.shared_structs.Toolkit import Toolkit
-from backend.apps.HaikFix.tools.shared_structs.MCP_Tool import SDK_MCP_Tool
-from backend.apps.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.make_create_browser_agent_handler import (
+from backend.core.tools.shared_structs.Toolkit import Toolkit
+from backend.core.tools.shared_structs.MCP_Tool import SDK_MCP_Tool
+from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.make_create_browser_agent_handler import (
     make_create_browser_agent_handler, CreateBrowserAgentInput,
 )
-from backend.apps.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.make_invoke_browser_agent_handler import (
+from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.make_invoke_browser_agent_handler import (
     make_invoke_browser_agent_handler, InvokeBrowserAgentInput,
 )
-from backend.apps.HaikFix.Agent.Agent import Agent
+from backend.core.Agent.Agent import Agent
 
 
 @typechecked

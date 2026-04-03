@@ -1,7 +1,7 @@
 from typeguard import typechecked
-from backend.apps.HaikFix.tools.shared_structs.Toolkit import Toolkit
-from backend.apps.HaikFix.tools.shared_structs.MCP_Tool import SDK_MCP_Tool
-from backend.apps.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.browser_action_input_schemas import (
+from backend.core.tools.shared_structs.Toolkit import Toolkit
+from backend.core.tools.shared_structs.MCP_Tool import SDK_MCP_Tool
+from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.browser_action_input_schemas import (
     BrowserScreenshotInput,
     BrowserGetTextInput,
     BrowserNavigateInput,
@@ -12,7 +12,7 @@ from backend.apps.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser
     BrowserScrollInput,
     BrowserWaitInput,
 )
-from backend.apps.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.make_browser_action_handler import make_browser_action_handler
+from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.handlers.make_browser_action_handler import make_browser_action_handler
 
 SERVER_NAME = "openswarm-browser-actions"
 

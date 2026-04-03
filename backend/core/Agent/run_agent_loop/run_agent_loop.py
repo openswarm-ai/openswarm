@@ -4,10 +4,10 @@ from claude_agent_sdk import (
     query, ClaudeAgentOptions, AssistantMessage,
 )
 from claude_agent_sdk.types import StreamEvent
-from backend.apps.HaikFix.Agent.run_agent_loop.helpers.handle_stream_event import handle_stream_event
-from backend.apps.HaikFix.Agent.run_agent_loop.helpers.handle_assistant_message import handle_assistant_message
-from backend.apps.HaikFix.Agent.shared_structs.Message.Message import Message, PromptMsgDict
-from backend.apps.HaikFix.Agent.shared_structs.events import EventCallback
+from backend.core.Agent.run_agent_loop.helpers.handle_stream_event import handle_stream_event
+from backend.core.Agent.run_agent_loop.helpers.handle_assistant_message import handle_assistant_message
+from backend.core.Agent.shared_structs.Message.Message import Message, PromptMsgDict
+from backend.core.events.events import EventCallback
 from typing import List, Dict, Optional
 
 @typechecked

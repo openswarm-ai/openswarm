@@ -5,15 +5,15 @@ import os
 
 from claude_agent_sdk import ClaudeAgentOptions
 from pydantic import BaseModel, Field, InstanceOf
-from typing import Awaitable, Callable, List, Literal, Optional
+from typing import List, Literal, Optional
 from typeguard import typechecked
 
-from backend.apps.HaikFix.Agent.run_agent_loop.run_agent_loop import run_agent_loop
-from backend.apps.HaikFix.Agent.shared_structs.Message.Message import Message
-from backend.apps.HaikFix.Agent.shared_structs.ApprovalRequest import ApprovalRequest
-from backend.apps.HaikFix.Agent.shared_structs.MessageLog import MessageLog
-from backend.apps.HaikFix.Agent.shared_structs.events import (
-    AnyEvent, AgentSnapshot, AgentStatusEvent, AgentMessageEvent,
+from backend.core.Agent.run_agent_loop.run_agent_loop import run_agent_loop
+from backend.core.Agent.shared_structs.Message.Message import Message
+from backend.core.Agent.shared_structs.ApprovalRequest import ApprovalRequest
+from backend.core.Agent.shared_structs.MessageLog import MessageLog
+from backend.core.events.events import (
+    AgentSnapshot, AgentStatusEvent, AgentMessageEvent,
     EventCallback,
 )
 

@@ -12,7 +12,7 @@ from claude_agent_sdk.types import (
     McpServerConfig
 )
 from typeguard import typechecked
-from backend.apps.HaikFix.tools.shared_structs.Tool import Tool
+from backend.core.tools.shared_structs.Tool import Tool
 
 class MCP_Tool(Tool):
     server_name: str

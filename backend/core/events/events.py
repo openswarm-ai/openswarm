@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field
 from typing import Annotated, List, Literal, Optional, Union, Callable, Awaitable
 
-from backend.apps.HaikFix.Agent.shared_structs.Message.Message import AnyMessage
-from backend.apps.HaikFix.Agent.shared_structs.MessageLog import MessageLog
-from backend.apps.HaikFix.Agent.shared_structs.ApprovalRequest import ApprovalRequest
-from backend.apps.dashboards.models import BrowserCardPosition
+from backend.core.Agent.shared_structs.Message.Message import AnyMessage
+from backend.core.Agent.shared_structs.MessageLog import MessageLog
+from backend.core.Agent.shared_structs.ApprovalRequest import ApprovalRequest
+from backend.OLDapps.dashboards.models import BrowserCardPosition
 
 
 class AgentSnapshot(BaseModel):

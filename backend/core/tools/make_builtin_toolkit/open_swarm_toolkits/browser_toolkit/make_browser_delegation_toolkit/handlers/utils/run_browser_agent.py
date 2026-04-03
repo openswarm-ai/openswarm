@@ -4,13 +4,13 @@ from typeguard import typechecked
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import McpServerConfig
 
-from backend.apps.HaikFix.Agent.Agent import Agent
-from backend.apps.HaikFix.Agent.shared_structs.Message.Message import (
+from backend.core.Agent.Agent import Agent
+from backend.core.Agent.shared_structs.Message.Message import (
     UserMessage, AssistantMessage, AnyMessage,
 )
-from backend.apps.HaikFix.tools.shared_structs.MCP_Tool import SDK_MCP_Tool
-from backend.apps.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.make_browser_actions_toolkit import make_browser_actions_toolkit
-from backend.apps.HaikFix.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.constants import BROWSER_AGENT_SYSTEM_PROMPT
+from backend.core.tools.shared_structs.MCP_Tool import SDK_MCP_Tool
+from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_actions_toolkit.make_browser_actions_toolkit import make_browser_actions_toolkit
+from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.constants import BROWSER_AGENT_SYSTEM_PROMPT
 
 
 @typechecked

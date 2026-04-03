@@ -1,12 +1,10 @@
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 from typeguard import typechecked
 from uuid import uuid4
 
-from backend.apps.HaikFix.Agent.shared_structs.events import (
-    AnyEvent, StreamStartEvent, StreamDeltaEvent, StreamEndEvent,
+from backend.core.events.events import (
+    EventCallback, StreamStartEvent, StreamDeltaEvent, StreamEndEvent,
 )
-
-EventCallback = Callable[[AnyEvent], Awaitable[None]]
 
 # NOTE: if we wanna, we could abstract this into helper functions for each event type
 @typechecked

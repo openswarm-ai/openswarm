@@ -1,6 +1,6 @@
-from backend.apps.HaikFix.Agent.shared_structs.Message.Message import Message
-from backend.apps.HaikFix.Agent.shared_structs.Message.agent_outputs import ToolCallContent
-from backend.apps.HaikFix.Agent.shared_structs.events import EventCallback, AgentMessageEvent
+from backend.core.Agent.shared_structs.Message.Message import Message
+from backend.core.Agent.shared_structs.Message.agent_outputs import ToolCallContent
+from backend.core.events.events import EventCallback, AgentMessageEvent
 from claude_agent_sdk.types import TextBlock, ToolUseBlock, AssistantMessage
 from typeguard import typechecked
 from typing import List, Optional

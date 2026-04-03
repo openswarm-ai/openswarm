@@ -4,9 +4,9 @@ from uuid import uuid4
 from typeguard import typechecked
 from typing import Optional
 
-from backend.apps.dashboards.dashboards import _load, _save
-from backend.apps.dashboards.models import BrowserCardPosition, BrowserTab
-from backend.apps.HaikFix.Agent.shared_structs.events import EventCallback, BrowserCardAddedEvent
+from backend.OLDapps.dashboards.dashboards import _load, _save
+from backend.OLDapps.dashboards.models import BrowserCardPosition, BrowserTab
+from backend.core.events.events import EventCallback, BrowserCardAddedEvent
 
 @typechecked
 async def create_browser_card(

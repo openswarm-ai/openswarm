@@ -1,11 +1,11 @@
 from typing import Dict, TypedDict
 from typeguard import typechecked
 
-from backend.apps.HaikFix.Agent.shared_structs.Message.agent_outputs import ToolResponse
-from backend.apps.HaikFix.Agent.shared_structs.Message.Message import (
+from backend.core.Agent.shared_structs.Message.agent_outputs import ToolResponse
+from backend.core.Agent.shared_structs.Message.Message import (
     AnyMessage, UserMessage, AssistantMessage,
 )
-from backend.apps.HaikFix.Agent.Agent import Agent
+from backend.core.Agent.Agent import Agent
 
 
 class InvokeAgentInput(TypedDict):
