@@ -1,7 +1,9 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Tuple
 from pydantic import BaseModel
 from backend.core.tools.shared_structs.Tool import Tool
 from backend.core.tools.shared_structs.TOOL_PERMISSIONS import TOOL_PERMISSIONS
+from backend.core.tools.shared_structs.MCP_Tool import MCP_Tool
+from claude_agent_sdk.types import McpServerConfig
 from typeguard import typechecked
 
 class Toolkit(BaseModel):
@@ -40,3 +42,50 @@ class Toolkit(BaseModel):
         if self.nested_toolkits is not None:
             for toolkit in self.nested_toolkits:
                 toolkit.set_permission(permission)
+
+    @typechecked
+    def collect_mcp_servers(self) -> Dict[str, McpServerConfig]:
+        """Walk the toolkit tree and collect MCP server configs from every MCP_Tool.
+
+        Returns a dict mapping server_name -> McpServerConfig, ready to pass
+        to ClaudeAgentOptions(mcp_servers=...).
+        """
+        servers: Dict[str, McpServerConfig] = {}
+        if self.tools is not None:
+            for tool in self.tools:
+                if isinstance(tool, MCP_Tool):
+                    tool_config: Dict[str, McpServerConfig] = tool.to_mcp_server_config()
+                    for key, value in tool_config.items():
+                        servers[key] = value
+        if self.nested_toolkits is not None:
+            for toolkit in self.nested_toolkits:
+                toolkit_config: Dict[str, McpServerConfig] = toolkit.collect_mcp_servers()
+                for key, value in toolkit_config.items():
+                    servers[key] = value
+        return servers
+
+    @typechecked
+    def collect_tool_permissions(self) -> Tuple[List[str], List[str]]:
+        """Walk the toolkit tree and partition tools by permission.
+
+        Returns (allowed_tools, disallowed_tools) — lists of SDK-format
+        tool names.  Tools with permission "ask" appear in neither list;
+        they are gated at runtime by the can_use_tool hook.
+        """
+        allowed: List[str] = []
+        disallowed: List[str] = []
+        if self.tools is not None:
+            for tool in self.tools:
+                sdk_name: str = tool.to_sdk_args()
+                if tool.permission == "allow":
+                    allowed.append(sdk_name)
+                elif tool.permission == "deny":
+                    disallowed.append(sdk_name)
+        if self.nested_toolkits is not None:
+            for toolkit in self.nested_toolkits:
+                a: List[str]
+                d: List[str]
+                a, d = toolkit.collect_tool_permissions()
+                allowed.extend(a)
+                disallowed.extend(d)
+        return allowed, disallowed

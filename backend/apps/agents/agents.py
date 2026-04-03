@@ -35,6 +35,7 @@ from backend.apps.agents.session_store import (
 )
 from backend.apps.agents import ws
 from backend.apps.agents.compose_system_prompt import compose_system_prompt
+from backend.core.tools.make_builtin_toolkit.make_builtin_toolkit import make_builtin_toolkit
 from claude_agent_sdk import ClaudeAgentOptions
 
 SESSIONS: dict[str, Agent] = {}
@@ -137,17 +138,28 @@ async def launch(body: LaunchBody) -> dict:
     system_prompt = compose_system_prompt(
         session_prompt=body.system_prompt or None,
     )
+    # Placeholder config — replaced below once the toolkit is built
     agent: Agent = Agent(
         model=body.model,
         mode=body.mode,
         status="stopped",
-        config=ClaudeAgentOptions(
-            system_prompt=system_prompt,
-            max_turns=body.max_turns,
-        ),
+        config=ClaudeAgentOptions(max_turns=body.max_turns),
     )
     agent.on_event = p_make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
+
+    toolkit = make_builtin_toolkit(agent, SESSIONS, p_send_browser_command)
+    mcp_servers = toolkit.collect_mcp_servers()
+    allowed_tools, disallowed_tools = toolkit.collect_tool_permissions()
+
+    agent.config = ClaudeAgentOptions(
+        system_prompt=system_prompt,
+        max_turns=body.max_turns,
+        mcp_servers=mcp_servers if mcp_servers else None,
+        allowed_tools=allowed_tools,
+        disallowed_tools=disallowed_tools,
+    )
+
     await agent.emit(AgentStatusEvent(
         session_id=agent.session_id, status="stopped",
         session=agent.snapshot(),
