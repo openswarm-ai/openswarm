@@ -46,22 +46,25 @@ interface Props {
   cardWidth: number;
   cardHeight: number;
   zoom?: number;
+  panX?: number;
+  panY?: number;
   cmdHeld?: boolean;
   isSelected?: boolean;
   isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
   onCardSelect?: (id: string, type: 'agent' | 'view', shiftKey: boolean) => void;
   onDragStart?: (id: string, type: 'agent' | 'view') => void;
-  onDragMove?: (dx: number, dy: number) => void;
+  onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
   cardZOrder?: number;
+  onDoubleClick?: (id: string, type: 'agent' | 'view' | 'browser') => void;
   onBringToFront?: (id: string, type: 'agent' | 'view' | 'browser') => void;
 }
 
 const DashboardViewCard: React.FC<Props> = ({
-  output, cardX, cardY, cardWidth, cardHeight, zoom = 1, cmdHeld = false,
+  output, cardX, cardY, cardWidth, cardHeight, zoom = 1, panX = 0, panY = 0, cmdHeld = false,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
-  cardZOrder = 0, onBringToFront,
+  cardZOrder = 0, onDoubleClick, onBringToFront,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -76,22 +79,48 @@ const DashboardViewCard: React.FC<Props> = ({
 
   // ---- Drag via header ----
   const DRAG_THRESHOLD = 3;
-  const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; startPanX: number; startPanY: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [localDragPos, setLocalDragPos] = useState<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
   const justDraggedRef = useRef(false);
+  const lastPointerRef = useRef<{ clientX: number; clientY: number }>({ clientX: 0, clientY: 0 });
+
+  const panRef = useRef({ panX, panY });
+  panRef.current = { panX, panY };
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
 
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY };
+    dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY, startPanX: panRef.current.panX, startPanY: panRef.current.panY };
+    lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
     didDrag.current = false;
     setIsDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     onDragStart?.(output.id, 'view');
   }, [cardX, cardY, onDragStart, output.id]);
+
+  const recomputeDragPos = useCallback(() => {
+    const ds = dragState.current;
+    if (!ds || !didDrag.current) return;
+    const { clientX, clientY } = lastPointerRef.current;
+    const rawDx = clientX - ds.startX;
+    const rawDy = clientY - ds.startY;
+    const z = zoomRef.current;
+    const panDx = (panRef.current.panX - ds.startPanX) / z;
+    const panDy = (panRef.current.panY - ds.startPanY) / z;
+    const dx = rawDx / z - panDx;
+    const dy = rawDy / z - panDy;
+    setLocalDragPos({ x: ds.origX + dx, y: ds.origY + dy });
+    onDragMove?.(dx, dy, clientX, clientY);
+  }, [onDragMove]);
+
+  useEffect(() => {
+    if (isDragging && didDrag.current) recomputeDragPos();
+  }, [panX, panY, isDragging, recomputeDragPos]);
 
   const handleDragPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
@@ -99,24 +128,29 @@ const DashboardViewCard: React.FC<Props> = ({
     const rawDy = e.clientY - dragState.current.startY;
     if (!didDrag.current && Math.sqrt(rawDx * rawDx + rawDy * rawDy) < DRAG_THRESHOLD) return;
     didDrag.current = true;
-    const dx = rawDx / zoom;
-    const dy = rawDy / zoom;
-    setLocalDragPos({
-      x: dragState.current.origX + dx,
-      y: dragState.current.origY + dy,
-    });
-    onDragMove?.(dx, dy);
-  }, [zoom, onDragMove]);
+    lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
+    recomputeDragPos();
+  }, [recomputeDragPos]);
 
   const handleDragPointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
-    const dx = (e.clientX - dragState.current.startX) / zoom;
-    const dy = (e.clientY - dragState.current.startY) / zoom;
+    const z = zoomRef.current;
+    const panDx = (panRef.current.panX - dragState.current.startPanX) / z;
+    const panDy = (panRef.current.panY - dragState.current.startPanY) / z;
+    const dx = (e.clientX - dragState.current.startX) / z - panDx;
+    const dy = (e.clientY - dragState.current.startY) / z - panDy;
     if (didDrag.current) {
+      let finalX = dragState.current.origX + dx;
+      let finalY = dragState.current.origY + dy;
+      // Snap to 24px grid (hold Shift to bypass)
+      if (!e.shiftKey) {
+        finalX = Math.round(finalX / 24) * 24;
+        finalY = Math.round(finalY / 24) * 24;
+      }
       dispatch(setViewCardPosition({
         outputId: output.id,
-        x: dragState.current.origX + dx,
-        y: dragState.current.origY + dy,
+        x: finalX,
+        y: finalY,
       }));
       justDraggedRef.current = true;
       requestAnimationFrame(() => { justDraggedRef.current = false; });
@@ -127,7 +161,7 @@ const DashboardViewCard: React.FC<Props> = ({
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [zoom, dispatch, output.id, onDragEnd]);
+  }, [dispatch, output.id, onDragEnd]);
 
   // ---- Resize ----
   const resizeRef = useRef<{
@@ -266,6 +300,10 @@ const DashboardViewCard: React.FC<Props> = ({
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
         onCardSelect?.(output.id, 'view', e.shiftKey);
+      }}
+      onDoubleClick={(e: React.MouseEvent) => {
+        e.stopPropagation();
+        onDoubleClick?.(output.id, 'view');
       }}
       sx={{
         position: 'absolute',

@@ -15,7 +15,6 @@ import { motion } from 'framer-motion';
 import {
   AgentSession,
   handleApproval,
-  toggleExpandSession,
   collapseSession,
   closeSession,
 } from '@/shared/state/agentsSlice';
@@ -175,6 +174,8 @@ interface Props {
   cardWidth: number;
   cardHeight: number;
   zoom?: number;
+  panX?: number;
+  panY?: number;
   spawnFrom?: { x: number; y: number; type?: 'branch' };
   exitTarget?: { x: number; y: number };
   isSelected?: boolean;
@@ -182,14 +183,16 @@ interface Props {
   multiDragDelta?: { dx: number; dy: number } | null;
   onCardSelect?: (id: string, type: 'agent' | 'view', shiftKey: boolean) => void;
   onDragStart?: (id: string, type: 'agent' | 'view') => void;
-  onDragMove?: (dx: number, dy: number) => void;
+  onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
   onBranch?: (sourceSessionId: string, newSessionId: string) => void;
   onMeasuredHeight?: (sessionId: string, height: number) => void;
   snapColumn?: { x: number; width: number };
   autoFocusInput?: boolean;
   cardZOrder?: number;
+  onDoubleClick?: (id: string, type: 'agent' | 'view' | 'browser') => void;
   onBringToFront?: (id: string, type: 'agent' | 'view' | 'browser') => void;
+  shakeDirection?: 'left' | 'right' | 'up' | 'down' | null;
 }
 
 const MIN_W = 480;
@@ -204,9 +207,10 @@ const GLOW_FADE_MS = 2500;
 const SNAP_THRESHOLD = 60;
 
 const AgentCard: React.FC<Props> = ({
-  session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, spawnFrom, exitTarget,
+  session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, panX = 0, panY = 0, spawnFrom, exitTarget,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
-  onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onBringToFront,
+  onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onDoubleClick, onBringToFront,
+  shakeDirection,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -261,22 +265,53 @@ const AgentCard: React.FC<Props> = ({
 
   // ---- Drag via header (pointer events) ----
   const DRAG_THRESHOLD = 3;
-  const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; startPanX: number; startPanY: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [localDragPos, setLocalDragPos] = useState<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
   const justDraggedRef = useRef(false);
+  const lastPointerRef = useRef<{ clientX: number; clientY: number }>({ clientX: 0, clientY: 0 });
+
+  // Use refs for pan so drag callbacks don't recreate on every pan frame
+  const panRef = useRef({ panX, panY });
+  panRef.current = { panX, panY };
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
 
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY };
+    dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY, startPanX: panRef.current.panX, startPanY: panRef.current.panY };
+    lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
     didDrag.current = false;
     setIsDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     onDragStart?.(session.id, 'agent');
   }, [cardX, cardY, onDragStart, session.id]);
+
+  // Recompute localDragPos from latest pointer + pan (shared by move handler and pan-change effect)
+  const recomputeDragPos = useCallback(() => {
+    const ds = dragState.current;
+    if (!ds || !didDrag.current) return;
+    const { clientX, clientY } = lastPointerRef.current;
+    const rawDx = clientX - ds.startX;
+    const rawDy = clientY - ds.startY;
+    const z = zoomRef.current;
+    const panDx = (panRef.current.panX - ds.startPanX) / z;
+    const panDy = (panRef.current.panY - ds.startPanY) / z;
+    const dx = rawDx / z - panDx;
+    const dy = rawDy / z - panDy;
+    setLocalDragPos({ x: ds.origX + dx, y: ds.origY + dy });
+    onDragMove?.(dx, dy, clientX, clientY);
+  }, [onDragMove]);
+
+  // When pan changes during an active drag, recompute position so card tracks cursor
+  useEffect(() => {
+    if (isDragging && didDrag.current) {
+      recomputeDragPos();
+    }
+  }, [panX, panY, isDragging, recomputeDragPos]);
 
   const handleDragPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
@@ -284,26 +319,30 @@ const AgentCard: React.FC<Props> = ({
     const rawDy = e.clientY - dragState.current.startY;
     if (!didDrag.current && Math.sqrt(rawDx * rawDx + rawDy * rawDy) < DRAG_THRESHOLD) return;
     didDrag.current = true;
-    const dx = rawDx / zoom;
-    const dy = rawDy / zoom;
-    setLocalDragPos({
-      x: dragState.current.origX + dx,
-      y: dragState.current.origY + dy,
-    });
-    onDragMove?.(dx, dy);
-  }, [zoom, onDragMove]);
+    lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
+    recomputeDragPos();
+  }, [recomputeDragPos]);
 
   const handleDragPointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
-    const dx = (e.clientX - dragState.current.startX) / zoom;
-    const dy = (e.clientY - dragState.current.startY) / zoom;
+    const z = zoomRef.current;
+    const panDx = (panRef.current.panX - dragState.current.startPanX) / z;
+    const panDy = (panRef.current.panY - dragState.current.startPanY) / z;
+    const dx = (e.clientX - dragState.current.startX) / z - panDx;
+    const dy = (e.clientY - dragState.current.startY) / z - panDy;
     if (didDrag.current) {
       let finalX = dragState.current.origX + dx;
-      const finalY = dragState.current.origY + dy;
+      let finalY = dragState.current.origY + dy;
 
       if (snapColumn && Math.abs(finalX - snapColumn.x) < SNAP_THRESHOLD) {
         finalX = snapColumn.x;
         dispatch(setCardSize({ sessionId: session.id, width: snapColumn.width, height: cardHeight }));
+      }
+
+      // Snap to 24px grid (hold Shift to bypass)
+      if (!e.shiftKey) {
+        finalX = Math.round(finalX / 24) * 24;
+        finalY = Math.round(finalY / 24) * 24;
       }
 
       dispatch(setCardPosition({ sessionId: session.id, x: finalX, y: finalY }));
@@ -316,7 +355,7 @@ const AgentCard: React.FC<Props> = ({
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [zoom, dispatch, session.id, onDragEnd, snapColumn, cardHeight]);
+  }, [dispatch, session.id, onDragEnd, snapColumn, cardHeight]);
 
   // ---- Unified edge / corner resize ----
   const resizeRef = useRef<{
@@ -484,10 +523,11 @@ const AgentCard: React.FC<Props> = ({
       
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
-        if (!isSelected && !e.shiftKey) {
-          dispatch(toggleExpandSession(session.id));
-        }
         onCardSelect?.(session.id, 'agent', e.shiftKey);
+      }}
+      onDoubleClick={(e: React.MouseEvent) => {
+        e.stopPropagation();
+        onDoubleClick?.(session.id, 'agent');
       }}
       sx={{
         position: 'relative',
@@ -527,6 +567,31 @@ const AgentCard: React.FC<Props> = ({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        ...(shakeDirection && {
+          animation: `card-shake-${shakeDirection} 0.3s ease 2`,
+          border: `2px solid ${c.status.error}90`,
+          boxShadow: `0 0 0 2px ${c.status.error}30, ${c.shadow.md}`,
+          '@keyframes card-shake-left': {
+            '0%,100%': { transform: 'translateX(0)' },
+            '25%': { transform: 'translateX(-6px)' },
+            '75%': { transform: 'translateX(4px)' },
+          },
+          '@keyframes card-shake-right': {
+            '0%,100%': { transform: 'translateX(0)' },
+            '25%': { transform: 'translateX(6px)' },
+            '75%': { transform: 'translateX(-4px)' },
+          },
+          '@keyframes card-shake-up': {
+            '0%,100%': { transform: 'translateY(0)' },
+            '25%': { transform: 'translateY(-6px)' },
+            '75%': { transform: 'translateY(4px)' },
+          },
+          '@keyframes card-shake-down': {
+            '0%,100%': { transform: 'translateY(0)' },
+            '25%': { transform: 'translateY(6px)' },
+            '75%': { transform: 'translateY(-4px)' },
+          },
+        }),
         ...(isHighlighted && {
           animation: 'card-highlight-pulse 2s ease-out forwards',
           '@keyframes card-highlight-pulse': {

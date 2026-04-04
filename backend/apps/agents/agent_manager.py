@@ -1591,9 +1591,9 @@ class AgentManager:
             global_settings = load_settings()
             client = get_anthropic_client(global_settings)
             resp = await client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=30,
-                system="Generate a 2-4 word title for what the user wants. Be terse. No filler words. No quotes, no punctuation. Return only the title.",
+                model="claude-haiku-4-5-20251001",
+                max_tokens=20,
+                system="Generate a short 2-4 word title summarizing the user's request. Examples: 'Travel Planning', 'Code Review', 'Simple Greeting'. No quotes, no punctuation, no explanation. Return ONLY the title.",
                 messages=[{"role": "user", "content": first_prompt}],
             )
             generated = resp.content[0].text.strip().strip('"\'')

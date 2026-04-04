@@ -160,22 +160,22 @@ async def generate_name(dashboard_id: str):
 
         if len(prompts) == 1:
             system = (
-                "Generate a short, clear 2-4 word workspace name based on this task. "
-                "Use plain language like 'Travel Planning', 'Code Review', 'Sales Dashboard'. "
-                "No quotes, no punctuation, no emojis. Return only the name."
+                "Generate a short 2-4 word workspace name summarizing this task. "
+                "Examples: 'Travel Planning', 'Code Review', 'Sales Dashboard'. "
+                "No quotes, no punctuation, no emojis, no explanation. Return ONLY the name."
             )
             user_content = prompts[0]
         else:
             system = (
-                "Generate a short, clear 2-4 word workspace name that captures the theme of these tasks. "
-                "Use plain language like 'Research & Analysis', 'Content Creation', 'Project Setup'. "
-                "No quotes, no punctuation, no emojis. Return only the name."
+                "Generate a short 2-4 word workspace name capturing the theme of these tasks. "
+                "Examples: 'Research & Analysis', 'Content Creation', 'Project Setup'. "
+                "No quotes, no punctuation, no emojis, no explanation. Return ONLY the name."
             )
             user_content = "\n".join(f"- {p}" for p in prompts)
 
         resp = await client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=30,
+            max_tokens=20,
             system=system,
             messages=[{"role": "user", "content": user_content}],
         )

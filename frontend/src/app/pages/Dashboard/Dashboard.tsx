@@ -10,6 +10,7 @@ import {
   fetchSessions,
   fetchHistory,
   collapseSession,
+  collapseAllSessions,
   closeSession,
   duplicateSession,
   expandSession,
@@ -53,6 +54,8 @@ import AgentCard from './AgentCard';
 import DashboardViewCard from './DashboardViewCard';
 import BrowserCard from './BrowserCard';
 import CanvasControls from './CanvasControls';
+import CardSearchPalette from './CardSearchPalette';
+import DirectionHints from './DirectionHints';
 import DashboardToolbar from './DashboardToolbar';
 import { captureDashboardThumbnail } from './captureDashboardThumbnail';
 import { useCanvasControls } from './useCanvasControls';
@@ -107,7 +110,24 @@ const DashboardInner: React.FC = () => {
   const glowingBrowserCards = useAppSelector((state) => state.dashboardLayout.glowingBrowserCards);
   const sessionList = Object.values(sessions);
 
-  const canvas = useCanvasControls(zoomSensitivity);
+  const contentBounds = useMemo(() => {
+    const allRects = [
+      ...Object.values(cards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
+      ...Object.values(viewCards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
+      ...Object.values(browserCards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
+    ];
+    if (allRects.length === 0) return undefined;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const r of allRects) {
+      minX = Math.min(minX, r.x);
+      minY = Math.min(minY, r.y);
+      maxX = Math.max(maxX, r.x + r.w);
+      maxY = Math.max(maxY, r.y + r.h);
+    }
+    return { minX, minY, maxX, maxY };
+  }, [cards, viewCards, browserCards]);
+
+  const canvas = useCanvasControls(zoomSensitivity, contentBounds);
   const selection = useDashboardSelection(
     { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom, viewportRef: canvas.viewportRef },
     cards,
@@ -117,10 +137,12 @@ const DashboardInner: React.FC = () => {
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const [toolbarOpen, setToolbarOpen] = useState(false);
+  const [searchPaletteOpen, setSearchPaletteOpen] = useState(false);
   const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoFocusSessionId, setAutoFocusSessionId] = useState<string | null>(null);
   const [pendingSelectSessionId, setPendingSelectSessionId] = useState<string | null>(null);
+  const [focusedCardId, setFocusedCardId] = useState<string | null>(null);
 
   const handleHighlightCard = useCallback((cardId: string) => {
     if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
@@ -165,14 +187,63 @@ const DashboardInner: React.FC = () => {
   const canvasStateRef = useRef({ panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom });
   canvasStateRef.current = { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom };
 
+  // ---- Edge panning during card drag ----
+  const EDGE_ZONE = 60;
+  const EDGE_MAX_SPEED = 8;
+  const edgePanFrameRef = useRef<number | null>(null);
+  const lastMousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Track pan at drag start so cards can compensate for edge-pan offset
+  const dragStartPanRef = useRef<{ panX: number; panY: number }>({ panX: 0, panY: 0 });
+
+  const stopEdgePan = useCallback(() => {
+    if (edgePanFrameRef.current) {
+      cancelAnimationFrame(edgePanFrameRef.current);
+      edgePanFrameRef.current = null;
+    }
+  }, []);
+
+  const tickEdgePan = useCallback(() => {
+    const vp = canvas.viewportRef.current;
+    if (!vp) return;
+    const rect = vp.getBoundingClientRect();
+    const { x: mx, y: my } = lastMousePosRef.current;
+
+    let dx = 0;
+    let dy = 0;
+
+    if (mx < rect.left + EDGE_ZONE) {
+      dx = EDGE_MAX_SPEED * ((rect.left + EDGE_ZONE - mx) / EDGE_ZONE);
+    } else if (mx > rect.right - EDGE_ZONE) {
+      dx = -EDGE_MAX_SPEED * ((mx - (rect.right - EDGE_ZONE)) / EDGE_ZONE);
+    }
+    if (my < rect.top + EDGE_ZONE) {
+      dy = EDGE_MAX_SPEED * ((rect.top + EDGE_ZONE - my) / EDGE_ZONE);
+    } else if (my > rect.bottom - EDGE_ZONE) {
+      dy = -EDGE_MAX_SPEED * ((my - (rect.bottom - EDGE_ZONE)) / EDGE_ZONE);
+    }
+
+    if (dx !== 0 || dy !== 0) {
+      canvas.actions.setState((prev: { panX: number; panY: number; zoom: number }) => ({
+        ...prev,
+        panX: prev.panX + dx,
+        panY: prev.panY + dy,
+      }));
+    }
+
+    edgePanFrameRef.current = requestAnimationFrame(tickEdgePan);
+  }, [canvas.viewportRef, canvas.actions]);
+
   // ---- Multi-drag coordination ----
   const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number } | null>(null);
   const [liveDragInfo, setLiveDragInfo] = useState<{ cardId: string; dx: number; dy: number } | null>(null);
   const activeDragCardRef = useRef<string | null>(null);
   const isMultiDragRef = useRef(false);
 
+  const edgePanStartedRef = useRef(false);
+
   const handleCardDragStart = useCallback((id: string, _type: CardType) => {
     activeDragCardRef.current = id;
+    edgePanStartedRef.current = false;
     if (selection.isSelected(id)) {
       isMultiDragRef.current = true;
     } else {
@@ -181,16 +252,25 @@ const DashboardInner: React.FC = () => {
     }
   }, [selection]);
 
-  const handleCardDragMove = useCallback((dx: number, dy: number) => {
+  const handleCardDragMove = useCallback((dx: number, dy: number, mouseX?: number, mouseY?: number) => {
+    if (mouseX !== undefined && mouseY !== undefined) {
+      lastMousePosRef.current = { x: mouseX, y: mouseY };
+    }
+    // Start edge panning only once actual dragging begins
+    if (!edgePanStartedRef.current) {
+      edgePanStartedRef.current = true;
+      edgePanFrameRef.current = requestAnimationFrame(tickEdgePan);
+    }
     if (isMultiDragRef.current) {
       setMultiDragDelta({ dx, dy });
     }
     if (activeDragCardRef.current) {
       setLiveDragInfo({ cardId: activeDragCardRef.current, dx, dy });
     }
-  }, []);
+  }, [tickEdgePan]);
 
   const handleCardDragEnd = useCallback((dx: number, dy: number, didDrag: boolean) => {
+    stopEdgePan();
     if (isMultiDragRef.current && didDrag) {
       const items = selection.selectedArray()
         .filter((s) => s.id !== activeDragCardRef.current);
@@ -202,11 +282,62 @@ const DashboardInner: React.FC = () => {
     isMultiDragRef.current = false;
     setMultiDragDelta(null);
     setLiveDragInfo(null);
-  }, [selection, dispatch]);
+  }, [selection, dispatch, stopEdgePan]);
+
+  // Helper: get a card's rect from Redux state (uses collapsed height for zoom calculation)
+  const getCardRect = useCallback((id: string, type: CardType) => {
+    const layoutState = store.getState().dashboardLayout;
+    if (type === 'agent') {
+      const card = layoutState.cards[id];
+      if (!card) return undefined;
+      return { x: card.x, y: card.y, width: card.width, height: card.height };
+    } else if (type === 'view') {
+      const vc = layoutState.viewCards[id];
+      if (!vc) return undefined;
+      return { x: vc.x, y: vc.y, width: vc.width, height: vc.height };
+    } else if (type === 'browser') {
+      const bc = layoutState.browserCards[id];
+      if (!bc) return undefined;
+      return { x: bc.x, y: bc.y, width: bc.width, height: bc.height };
+    }
+    return undefined;
+  }, []);
+
+  // Delay single-click collapse so double-click can override
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleCardSelect = useCallback((id: string, type: CardType, shiftKey: boolean) => {
-    selection.selectCard(id, type, shiftKey);
-  }, [selection]);
+    if (shiftKey) {
+      selection.selectCard(id, type, true);
+      return;
+    }
+
+    selection.selectCard(id, type, false);
+
+    const alreadyExpanded = type === 'agent' && expandedSessionIds.includes(id);
+    if (alreadyExpanded) {
+      // Delay collapse so double-click can cancel it
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = setTimeout(() => {
+        dispatch(collapseSession(id));
+        setFocusedCardId(null);
+        clickTimerRef.current = null;
+      }, 250);
+    } else {
+      // Expand + center + zoom + bring to front
+      if (type === 'agent') {
+        dispatch(expandSession(id));
+      }
+      dispatch(bringToFront({ id, type }));
+      setFocusedCardId(id);
+      setTimeout(() => {
+        const rect = getCardRect(id, type);
+        if (rect) canvas.actions.fitToCards([rect], 1.15, true);
+        // Blur after expansion settles so arrow keys work for navigation
+        setTimeout(() => (document.activeElement as HTMLElement)?.blur?.(), 150);
+      }, 100);
+    }
+  }, [selection, getCardRect, canvas.actions, dispatch, expandedSessionIds]);
 
   const handleBringToFront = useCallback((id: string, type: CardType) => {
     dispatch(bringToFront({ id, type }));
@@ -252,6 +383,31 @@ const DashboardInner: React.FC = () => {
     canvas.handlers.onMouseUp();
     selection.handleCanvasMouseUp(e.nativeEvent);
   }, [canvas.handlers, selection]);
+
+  // Double-click empty canvas → fit all cards
+  const handleViewportDoubleClick = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    if (isCardTarget(e.target, e.currentTarget)) return;
+    canvas.actions.fitToView();
+  }, [canvas.actions]);
+
+  // Double-click a card → always expand + center + zoom (cancels pending collapse from single-click)
+  const handleCardDoubleClick = useCallback((id: string, type: CardType) => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+    if (type === 'agent') {
+      dispatch(expandSession(id));
+    }
+    dispatch(bringToFront({ id, type }));
+    setFocusedCardId(id);
+    setTimeout(() => {
+      const rect = getCardRect(id, type);
+      if (rect) canvas.actions.fitToCards([rect], 1.15, true);
+      setTimeout(() => (document.activeElement as HTMLElement)?.blur?.(), 150);
+    }, 100);
+  }, [getCardRect, canvas.actions, dispatch]);
 
   useEffect(() => {
     if (!dashboardId) return;
@@ -342,7 +498,7 @@ const DashboardInner: React.FC = () => {
     setTimeout(() => {
       const card = store.getState().dashboardLayout.cards[agentId];
       if (card) {
-        canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.0, true);
+        canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true);
         handleHighlightCard(agentId);
       }
     }, 350);
@@ -353,6 +509,19 @@ const DashboardInner: React.FC = () => {
     restoredExpandedRef.current = true;
     dispatch(setExpandedSessionIds(persistedExpandedSessionIds));
   }, [layoutInitialized, persistedExpandedSessionIds, dispatch]);
+
+  // Auto-collapse all expanded sessions when zooming out
+  const prevZoomRef = useRef(canvas.zoom);
+  useEffect(() => {
+    const wasZoomedIn = prevZoomRef.current >= 0.9;
+    const isZoomedOut = canvas.zoom < 0.9;
+    prevZoomRef.current = canvas.zoom;
+
+    if (wasZoomedIn && isZoomedOut && expandedSessionIds.length > 0) {
+      dispatch(collapseAllSessions());
+      setFocusedCardId(null);
+    }
+  }, [canvas.zoom, expandedSessionIds.length, dispatch]);
 
   const prevSessionIdsRef = useRef<string>('');
 
@@ -553,6 +722,19 @@ const DashboardInner: React.FC = () => {
     return () => window.removeEventListener('keydown', handleDelete);
   }, [selection, dispatch]);
 
+  // Cmd+F to open card search palette
+  useEffect(() => {
+    const handleSearch = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'f') return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      e.preventDefault();
+      setSearchPaletteOpen(true);
+    };
+    window.addEventListener('keydown', handleSearch);
+    return () => window.removeEventListener('keydown', handleSearch);
+  }, []);
+
   useEffect(() => {
     const handleCopy = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'c') return;
@@ -655,6 +837,127 @@ const DashboardInner: React.FC = () => {
     window.addEventListener('keydown', handlePaste);
     return () => window.removeEventListener('keydown', handlePaste);
   }, [dispatch, dashboardId, expandedSessionIds, selection]);
+
+  // ---- Arrow key card navigation (when zoomed in on a card) ----
+  const findNearestCard = useCallback((
+    currentId: string,
+    direction: 'left' | 'right' | 'up' | 'down',
+  ): { id: string; type: CardType } | null => {
+    const allCardEntries: Array<{ id: string; type: CardType; cx: number; cy: number }> = [];
+    for (const card of Object.values(cards)) {
+      allCardEntries.push({ id: card.session_id, type: 'agent', cx: card.x + card.width / 2, cy: card.y + card.height / 2 });
+    }
+    for (const vc of Object.values(viewCards)) {
+      allCardEntries.push({ id: vc.output_id, type: 'view', cx: vc.x + vc.width / 2, cy: vc.y + vc.height / 2 });
+    }
+    for (const bc of Object.values(browserCards)) {
+      allCardEntries.push({ id: bc.browser_id, type: 'browser', cx: bc.x + bc.width / 2, cy: bc.y + bc.height / 2 });
+    }
+
+    const current = allCardEntries.find((c) => c.id === currentId);
+    if (!current) return null;
+
+    let best: typeof allCardEntries[0] | null = null;
+    let bestScore = Infinity;
+
+    for (const card of allCardEntries) {
+      if (card.id === currentId) continue;
+      const dx = card.cx - current.cx;
+      const dy = card.cy - current.cy;
+
+      // Filter to the correct half-plane
+      let inDirection = false;
+      let primary = 0;
+      let secondary = 0;
+      switch (direction) {
+        case 'right': inDirection = dx > 20; primary = dx; secondary = Math.abs(dy); break;
+        case 'left':  inDirection = dx < -20; primary = -dx; secondary = Math.abs(dy); break;
+        case 'down':  inDirection = dy > 20; primary = dy; secondary = Math.abs(dx); break;
+        case 'up':    inDirection = dy < -20; primary = -dy; secondary = Math.abs(dx); break;
+      }
+      if (!inDirection) continue;
+
+      const score = primary + secondary * 0.3;
+      if (score < bestScore) {
+        bestScore = score;
+        best = card;
+      }
+    }
+
+    return best ? { id: best.id, type: best.type } : null;
+  }, [cards, viewCards, browserCards]);
+
+  // Compute which directions have neighbors from the focused card
+  const neighborDirections = useMemo(() => {
+    if (!focusedCardId || canvas.zoom < 0.9) return { left: false, right: false, up: false, down: false };
+    return {
+      left: !!findNearestCard(focusedCardId, 'left'),
+      right: !!findNearestCard(focusedCardId, 'right'),
+      up: !!findNearestCard(focusedCardId, 'up'),
+      down: !!findNearestCard(focusedCardId, 'down'),
+    };
+  }, [focusedCardId, canvas.zoom, findNearestCard]);
+
+  // Shake animation state: direction + timer
+  const [shakeDirection, setShakeDirection] = useState<'left' | 'right' | 'up' | 'down' | null>(null);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Use refs for values read inside the keydown handler to avoid stale closures
+  const focusedCardIdRef = useRef(focusedCardId);
+  focusedCardIdRef.current = focusedCardId;
+  const canvasZoomRef = useRef(canvas.zoom);
+  canvasZoomRef.current = canvas.zoom;
+
+  useEffect(() => {
+    const handleArrowNav = (e: KeyboardEvent) => {
+      const currentFocused = focusedCardIdRef.current;
+      if (!currentFocused || canvasZoomRef.current < 0.9) return;
+
+      // Skip if typing in an input
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+
+      let direction: 'left' | 'right' | 'up' | 'down' | null = null;
+      switch (e.key) {
+        case 'ArrowLeft': direction = 'left'; break;
+        case 'ArrowRight': direction = 'right'; break;
+        case 'ArrowUp': direction = 'up'; break;
+        case 'ArrowDown': direction = 'down'; break;
+        default: return;
+      }
+
+      e.preventDefault();
+      const target = findNearestCard(currentFocused, direction);
+
+      if (!target) {
+        // No card in that direction — shake
+        if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+        setShakeDirection(direction);
+        shakeTimerRef.current = setTimeout(() => {
+          setShakeDirection(null);
+          shakeTimerRef.current = null;
+        }, 400);
+        return;
+      }
+
+      // Collapse current, expand + navigate to target + bring to front
+      dispatch(collapseSession(currentFocused));
+      if (target.type === 'agent') {
+        dispatch(expandSession(target.id));
+      }
+      dispatch(bringToFront({ id: target.id, type: target.type }));
+      setFocusedCardId(target.id);
+
+      setTimeout(() => {
+        const rect = getCardRect(target.id, target.type);
+        if (rect) canvas.actions.fitToCards([rect], 1.15, true);
+        setTimeout(() => (document.activeElement as HTMLElement)?.blur?.(), 150);
+      }, 100);
+    };
+
+    window.addEventListener('keydown', handleArrowNav);
+    return () => window.removeEventListener('keydown', handleArrowNav);
+  }, [findNearestCard, getCardRect, canvas.actions, dispatch]);
 
   const handleBranchFromCard = useCallback(
     (sourceSessionId: string, newSessionId: string) => {
@@ -776,12 +1079,13 @@ const DashboardInner: React.FC = () => {
             setPendingSelectSessionId(realId);
           }
 
+          // Expand the chat so user can see responses
+          dispatch(expandSession(realId));
+
           setTimeout(() => {
             const card = store.getState().dashboardLayout.cards[realId];
             if (card) {
-              const isExp = store.getState().agents.expandedSessionIds.includes(realId);
-              const height = isExp ? Math.max(EXPANDED_CARD_MIN_H, card.height) : card.height;
-              canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height }], 1.0, true);
+              canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true);
               handleHighlightCard(realId);
             }
           }, 200);
@@ -814,7 +1118,7 @@ const DashboardInner: React.FC = () => {
     setTimeout(() => {
       const card = store.getState().dashboardLayout.viewCards[outputId];
       if (card) {
-        canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.0, true);
+        canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true);
         handleHighlightCard(outputId);
       }
     }, 200);
@@ -828,7 +1132,7 @@ const DashboardInner: React.FC = () => {
       const newId = Object.keys(allBrowserCards).find((id) => !prevIds.has(id));
       if (newId) {
         const card = allBrowserCards[newId];
-        canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.0, true);
+        canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true);
         handleHighlightCard(newId);
       }
     }, 200);
@@ -842,13 +1146,26 @@ const DashboardInner: React.FC = () => {
         setTimeout(() => {
           const card = store.getState().dashboardLayout.cards[sessionId];
           if (card) {
-            canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.0, true);
+            canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true);
             handleHighlightCard(sessionId);
           }
         }, 200);
       }
     });
   }, [dispatch, canvas.actions, handleHighlightCard, setAutoFocusSessionId]);
+
+  // Context-aware fit: if a card is selected, zoom to it; otherwise fit all
+  const handleFitToView = useCallback(() => {
+    if (selection.selectedIds.size === 1) {
+      const [[id, type]] = selection.selectedIds;
+      const rect = getCardRect(id, type);
+      if (rect) {
+        canvas.actions.fitToCards([rect], 1.15, true);
+        return;
+      }
+    }
+    canvas.actions.fitToView();
+  }, [selection.selectedIds, getCardRect, canvas.actions]);
 
   const handleTidy = useCallback(() => {
     const currentExpanded = store.getState().agents.expandedSessionIds;
@@ -1136,6 +1453,7 @@ const DashboardInner: React.FC = () => {
         onMouseDown={handleViewportMouseDown}
         onMouseMove={handleViewportMouseMove}
         onMouseUp={handleViewportMouseUp}
+        onDoubleClick={handleViewportDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
         sx={{
           position: 'absolute',
@@ -1364,6 +1682,8 @@ const DashboardInner: React.FC = () => {
                   cardHeight={card.height}
                   cardZOrder={card.zOrder ?? 0}
                   zoom={canvas.zoom}
+                  panX={canvas.panX}
+                  panY={canvas.panY}
                   spawnFrom={origin}
                   exitTarget={exitTarget}
                   isSelected={selection.isSelected(session.id)}
@@ -1377,7 +1697,9 @@ const DashboardInner: React.FC = () => {
                   onMeasuredHeight={handleMeasuredHeight}
                   snapColumn={snapColumn}
                   autoFocusInput={autoFocusSessionId === session.id}
+                  onDoubleClick={handleCardDoubleClick}
                   onBringToFront={handleBringToFront}
+                  shakeDirection={focusedCardId === session.id ? shakeDirection : null}
                 />
               );
             })}
@@ -1395,6 +1717,8 @@ const DashboardInner: React.FC = () => {
                   cardHeight={vc.height}
                   cardZOrder={vc.zOrder ?? 0}
                   zoom={canvas.zoom}
+                  panX={canvas.panX}
+                  panY={canvas.panY}
                   cmdHeld={canvas.cmdHeld}
                   isSelected={selection.isSelected(vc.output_id)}
                   isHighlighted={highlightedCardId === vc.output_id}
@@ -1403,6 +1727,7 @@ const DashboardInner: React.FC = () => {
                   onDragStart={handleCardDragStart}
                   onDragMove={handleCardDragMove}
                   onDragEnd={handleCardDragEnd}
+                  onDoubleClick={handleCardDoubleClick}
                   onBringToFront={handleBringToFront}
                 />
               );
@@ -1419,6 +1744,8 @@ const DashboardInner: React.FC = () => {
                 cardHeight={bc.height}
                 cardZOrder={bc.zOrder ?? 0}
                 zoom={canvas.zoom}
+                panX={canvas.panX}
+                panY={canvas.panY}
                 cmdHeld={canvas.cmdHeld}
                 isSelected={selection.isSelected(bc.browser_id)}
                 isHighlighted={highlightedCardId === bc.browser_id}
@@ -1427,6 +1754,7 @@ const DashboardInner: React.FC = () => {
                 onDragStart={handleCardDragStart}
                 onDragMove={handleCardDragMove}
                 onDragEnd={handleCardDragEnd}
+                onDoubleClick={handleCardDoubleClick}
                 onBringToFront={handleBringToFront}
               />
             ))}
@@ -1466,11 +1794,48 @@ const DashboardInner: React.FC = () => {
         />
       </Box>
 
-      {/* Floating zoom controls */}
+      {/* Arrow navigation hints when zoomed in on a card */}
+      {focusedCardId && canvas.zoom >= 0.9 && (
+        <DirectionHints
+          hasLeft={neighborDirections.left}
+          hasRight={neighborDirections.right}
+          hasUp={neighborDirections.up}
+          hasDown={neighborDirections.down}
+          shakeDirection={shakeDirection}
+        />
+      )}
+
+      {/* Floating zoom controls + minimap */}
       <Box sx={{ position: 'absolute', bottom: 16, right: 16, zIndex: 10 }}>
-        <CanvasControls zoom={canvas.zoom} actions={canvas.actions} onTidy={handleTidy} />
+        <CanvasControls
+          zoom={canvas.zoom}
+          actions={canvas.actions}
+          onFitToView={handleFitToView}
+          onTidy={handleTidy}
+          minimapProps={{
+            panX: canvas.panX,
+            panY: canvas.panY,
+            zoom: canvas.zoom,
+            viewportRef: canvas.viewportRef,
+            cards,
+            viewCards,
+            browserCards,
+          }}
+          onMinimapPan={(px, py) => canvas.actions.setState({ panX: px, panY: py, zoom: canvas.zoom })}
+        />
       </Box>
     </Box>
+
+    {/* Card search palette (Cmd+F) */}
+    <CardSearchPalette
+      open={searchPaletteOpen}
+      onClose={() => setSearchPaletteOpen(false)}
+      onNavigate={(rect) => canvas.actions.fitToCards([rect], 1.15, true)}
+      cards={cards}
+      viewCards={viewCards}
+      browserCards={browserCards}
+      sessions={sessions}
+    />
     </>
   );
 };
