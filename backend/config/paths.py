@@ -9,28 +9,32 @@ data is stored in a platform-appropriate location
 import os
 import sys
 
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+P_BACKEND_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-_is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+p_is_packaged: bool = os.environ.get("OPENSWARM_PACKAGED") == "1"
 
-if _is_packaged:
+DB_ROOT: str = "bruh"
+
+if p_is_packaged:
     if sys.platform == "darwin":
-        _app_support = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "OpenSwarm")
+        p_app_support: str = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "OpenSwarm")
     elif sys.platform == "win32":
-        _app_support = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "OpenSwarm")
+        p_app_support: str = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "OpenSwarm")
     else:
-        _app_support = os.path.join(os.environ.get("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share")), "OpenSwarm")
-    DATA_ROOT = os.path.join(_app_support, "data")
+        p_app_support: str = os.path.join(os.environ.get("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share")), "OpenSwarm")
+    DB_ROOT: str = os.path.join(p_app_support, "data")
 else:
-    DATA_ROOT = os.path.join(_BACKEND_DIR, "data")
+    DB_ROOT: str = os.path.join(P_BACKEND_DIR, "data")
 
-SESSIONS_DIR = os.path.join(DATA_ROOT, "sessions")
-TOOLS_DIR = os.path.join(DATA_ROOT, "tools")
-SETTINGS_DIR = os.path.join(DATA_ROOT, "settings")
-MODES_DIR = os.path.join(DATA_ROOT, "modes")
-DASHBOARDS_DIR = os.path.join(DATA_ROOT, "dashboards")
-OUTPUTS_DIR = os.path.join(DATA_ROOT, "outputs")
-OUTPUTS_WORKSPACE_DIR = os.path.join(DATA_ROOT, "outputs_workspace")
-SKILLS_WORKSPACE_DIR = os.path.join(DATA_ROOT, "skills_workspace")
-DASHBOARD_LAYOUT_DIR = os.path.join(DATA_ROOT, "dashboard_layout")
-BUILTIN_PERMISSIONS_PATH = os.path.join(DATA_ROOT, "builtin_permissions.json")
+assert DB_ROOT != "bruh", "DB_ROOT is not set"
+
+# SESSIONS_DIR = os.path.join(DATA_ROOT, "sessions")
+# TOOLS_DIR = os.path.join(DATA_ROOT, "tools")
+# SETTINGS_DIR = os.path.join(DATA_ROOT, "settings")
+# MODES_DIR = os.path.join(DATA_ROOT, "modes")
+# DASHBOARDS_DIR = os.path.join(DATA_ROOT, "dashboards")
+# OUTPUTS_DIR = os.path.join(DATA_ROOT, "outputs")
+# OUTPUTS_WORKSPACE_DIR = os.path.join(DATA_ROOT, "outputs_workspace")
+# SKILLS_WORKSPACE_DIR = os.path.join(DATA_ROOT, "skills_workspace")
+# DASHBOARD_LAYOUT_DIR = os.path.join(DATA_ROOT, "dashboard_layout")
+# BUILTIN_PERMISSIONS_PATH = os.path.join(DATA_ROOT, "builtin_permissions.json")
