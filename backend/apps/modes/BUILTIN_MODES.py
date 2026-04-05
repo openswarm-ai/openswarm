@@ -6,11 +6,10 @@ Separated from models.py to keep schema classes small and data separate.
 from backend.apps.modes.Mode import Mode
 from typing import List
 from backend.config.paths import DB_ROOT
+from backend.apps.app_builder.app_builder import APP_BUILDER_WORKSPACE_DIR
 import os
 
-# NOTE: When the skills and outputs subapps are implemented, we will need to update these paths to import from the subapps.
 SKILLS_WORKSPACE: str = os.path.join(DB_ROOT, "skills")
-OUTPUTS_WORKSPACE: str = os.path.join(DB_ROOT, "outputs")
 
 BUILTIN_MODES: List[Mode] = [
     Mode(
@@ -76,7 +75,7 @@ BUILTIN_MODES: List[Mode] = [
         is_builtin=True,
         icon="view_quilt",
         color="#f472b6",
-        default_folder=OUTPUTS_WORKSPACE,
+        default_folder=APP_BUILDER_WORKSPACE_DIR,
     ),
     Mode(
         id="skill-builder",
