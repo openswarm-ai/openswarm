@@ -17,7 +17,7 @@ from backend.apps.app_builder.App import (
 )
 from backend.config.paths import DB_ROOT
 from backend.apps.app_builder.executor import execute_backend_code
-from backend.apps.app_builder.templates import APP_BUILDER_SKILL, APP_BUILDER_TEMPLATE_FILES
+from backend.apps.app_builder.templates.templates import APP_BUILDER_SKILL, APP_BUILDER_TEMPLATE_FILES
 from backend.apps.app_builder.helpers import walk_directory
 
 APP_BUILDER_DIR = os.path.join(DB_ROOT, "app_builder")

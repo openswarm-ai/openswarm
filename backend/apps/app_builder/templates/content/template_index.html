@@ -1,13 +1,3 @@
-"""Default template files seeded into new App Builder workspaces."""
-
-import os
-
-_SKILL_PATH = os.path.join(os.path.dirname(__file__), "app_builder_skill.md")
-
-with open(_SKILL_PATH) as _f:
-    APP_BUILDER_SKILL = _f.read()
-
-APP_BUILDER_TEMPLATE_INDEX = """\
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -48,16 +38,3 @@ APP_BUILDER_TEMPLATE_INDEX = """\
   </script>
 </body>
 </html>
-"""
-
-APP_BUILDER_TEMPLATE_META = """\
-{
-  "name": "",
-  "description": ""
-}
-"""
-
-APP_BUILDER_TEMPLATE_FILES = {
-    "index.html": APP_BUILDER_TEMPLATE_INDEX,
-    "meta.json": APP_BUILDER_TEMPLATE_META,
-}
