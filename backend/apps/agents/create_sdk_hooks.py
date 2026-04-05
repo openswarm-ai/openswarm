@@ -98,11 +98,7 @@ def create_sdk_hooks(
 
     @typechecked
     async def post_tool_hook(input_data: dict, tool_use_id: str) -> Dict[str, Any]:
-        elapsed_ms: Optional[int] = None
-        if tool_use_id and tool_use_id in tool_start_times:
-            elapsed_ms = int((time.time() - tool_start_times.pop(tool_use_id)) * 1000)
-
-        raw_response = input_data.get("tool_response", "")
+        raw_response: str = input_data.get("tool_response", "")
 
         if isinstance(raw_response, list) and raw_response:
             text_parts: List[str] = [
