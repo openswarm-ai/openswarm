@@ -37,6 +37,3 @@ class FutureBridge(BaseModel):
         future = self.p_pending.get(request_id)
         if future and not future.done():
             future.set_result(result)
-
-APPROVAL_BRIDGE = FutureBridge()
-BROWSER_BRIDGE = FutureBridge()

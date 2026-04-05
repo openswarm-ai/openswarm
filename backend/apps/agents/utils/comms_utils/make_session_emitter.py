@@ -1,7 +1,6 @@
 from typeguard import typechecked
 from backend.core.events.events import AnyEvent, ApprovalRequestEvent, EventCallback
-from backend.apps.agents.utils.comms.ws import send_to_session, has_global_connections
-from backend.apps.agents.utils.comms.FutureBridge import APPROVAL_BRIDGE
+from backend.apps.agents.utils.comms_utils.singeltons.singeltons import APPROVAL_BRIDGE, FRONTEND_BROADCASTER
 
 @typechecked
 def make_session_emitter(session_id: str) -> EventCallback:
@@ -13,13 +12,13 @@ def make_session_emitter(session_id: str) -> EventCallback:
     """
     async def emit(event: AnyEvent) -> None:
         if isinstance(event, ApprovalRequestEvent):
-            if not has_global_connections():
+            if not FRONTEND_BROADCASTER.has_connections():
                 if not event.future.done():
                     event.future.set_result({"behavior": "deny", "message": "No dashboard connected for approval."})
                 return
             result = await APPROVAL_BRIDGE.request(
                 request_id=event.request_id,
-                send_fn=lambda: send_to_session(session_id, event.event, {
+                send_fn=lambda: FRONTEND_BROADCASTER.send_to_session(session_id, event.event, {
                     "request_id": event.request_id,
                     "session_id": event.session_id,
                     "tool_name": event.tool_name,
@@ -30,5 +29,5 @@ def make_session_emitter(session_id: str) -> EventCallback:
             if not event.future.done():
                 event.future.set_result(result)
             return
-        await send_to_session(session_id, event.event, event.model_dump(mode="json"))
+        await FRONTEND_BROADCASTER.send_to_session(session_id, event.event, event.model_dump(mode="json"))
     return emit

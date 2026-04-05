@@ -1,8 +1,6 @@
 from typeguard import typechecked
-from backend.apps.agents.utils.comms.ws import has_global_connections, broadcast_global
-from backend.apps.agents.utils.comms.FutureBridge import BROWSER_BRIDGE
+from backend.apps.agents.utils.comms_utils.singeltons.singeltons import BROWSER_BRIDGE, FRONTEND_BROADCASTER
 from uuid import uuid4
-
 
 # TODO: add better type specing for the output of this function
 @typechecked
@@ -11,11 +9,11 @@ async def send_browser_command(
 ) -> dict:
     """BrowserCommandFn implementation that routes through the browser FutureBridge."""
     request_id: str = uuid4().hex
-    if not has_global_connections():
+    if not FRONTEND_BROADCASTER.has_connections():
         return {"error": "No dashboard connected. Open the dashboard to use browser tools."}
     return await BROWSER_BRIDGE.request(
         request_id=request_id,
-        send_fn=lambda: broadcast_global("browser:command", {
+        send_fn=lambda: FRONTEND_BROADCASTER.broadcast("browser:command", {
             "request_id": request_id,
             "action": action,
             "browser_id": browser_id,

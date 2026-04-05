@@ -23,7 +23,7 @@ from backend.core.Agent.Agent import Agent
 from backend.core.db.PydanticStore import PydanticStore
 from backend.core.shared_structs.agent.Message.Message import UserMessage
 from backend.core.events.events import AgentStatusEvent, AgentClosedEvent, BranchSwitchedEvent
-from backend.apps.agents.utils.comms.FutureBridge import APPROVAL_BRIDGE
+from backend.apps.agents.utils.comms_utils.resolve_approvals import resolve_approval
 from backend.apps.agents.utils.agent_utils.compose_system_prompt import compose_system_prompt
 from backend.core.tools.make_builtin_toolkit.make_builtin_toolkit import make_builtin_toolkit
 from backend.apps.agents.utils.agent_utils.create_sdk_hooks import create_sdk_hooks
@@ -44,13 +44,11 @@ AGENT_STORE: PydanticStore[Agent] = PydanticStore[Agent](
 
 SESSIONS: dict[str, Agent] = {}
 
-
 def get_agent(session_id: str) -> Agent:
     agent: Optional[Agent] = SESSIONS.get(session_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Session not found")
     return agent
-
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -218,11 +216,12 @@ class ApprovalBody(BaseModel):
 
 @agents.router.post("/approval")
 async def handle_approval(body: ApprovalBody) -> dict:
-    APPROVAL_BRIDGE.resolve(body.request_id, {
-        "behavior": body.behavior,
-        "message": body.message,
-        "updated_input": body.updated_input,
-    })
+    await resolve_approval(
+        request_id=body.request_id,
+        behavior=body.behavior,
+        message=body.message,
+        updated_input=body.updated_input,
+    )
     return {"ok": True}
 
 
