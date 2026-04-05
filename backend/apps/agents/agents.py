@@ -23,13 +23,11 @@ from backend.core.Agent.Agent import Agent
 from backend.core.db.PydanticStore import PydanticStore
 from backend.core.shared_structs.agent.Message.Message import UserMessage
 from backend.core.events.events import AgentStatusEvent, AgentClosedEvent, BranchSwitchedEvent
-from backend.apps.agents.utils.comms_utils.resolve_approvals import resolve_approval
-from backend.apps.agents.utils.agent_utils.compose_system_prompt import compose_system_prompt
+from backend.apps.agents.agent_utils.compose_system_prompt import compose_system_prompt
 from backend.core.tools.make_builtin_toolkit.make_builtin_toolkit import make_builtin_toolkit
-from backend.apps.agents.utils.agent_utils.create_sdk_hooks import create_sdk_hooks
-from backend.apps.agents.utils.comms_utils.make_session_emitter import make_session_emitter
-from backend.apps.agents.utils.comms_utils.send_browser_command import send_browser_command
-from backend.apps.agents.utils.comms_utils.build_search_text import build_search_text
+from backend.apps.agents.agent_utils.create_sdk_hooks import create_sdk_hooks
+from backend.apps.agents.agent_utils.build_search_text import build_search_text
+from backend.apps.agents.COMMS_MANAGER.COMMS_MANAGER import COMMS_MANAGER
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import HookMatcher, McpServerConfig
 from backend.core.tools.shared_structs.Toolkit import Toolkit
@@ -59,8 +57,8 @@ async def agents_lifespan():
     for stored in AGENT_STORE.load_all():
         try:
             stored.status = "stopped"
-            stored.on_event = make_session_emitter(stored.session_id)
-            toolkit: Toolkit = make_builtin_toolkit(stored, SESSIONS, send_browser_command)
+            stored.on_event = COMMS_MANAGER.make_session_emitter(stored.session_id)
+            toolkit: Toolkit = make_builtin_toolkit(stored, SESSIONS, COMMS_MANAGER.send_browser_command)
             stored.toolkit = toolkit
             SESSIONS[stored.session_id] = stored
         except Exception as e:
@@ -109,10 +107,10 @@ async def launch(body: LaunchBody) -> dict:
         status="stopped",
         config=ClaudeAgentOptions(max_turns=body.max_turns),
     )
-    agent.on_event = make_session_emitter(agent.session_id)
+    agent.on_event = COMMS_MANAGER.make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
 
-    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, send_browser_command)
+    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, COMMS_MANAGER.send_browser_command)
     agent.toolkit = toolkit
     mcp_servers: Dict[str, McpServerConfig] = toolkit.collect_mcp_servers()
     allowed_tools, disallowed_tools = toolkit.collect_tool_permissions()
@@ -216,7 +214,7 @@ class ApprovalBody(BaseModel):
 
 @agents.router.post("/approval")
 async def handle_approval(body: ApprovalBody) -> dict:
-    await resolve_approval(
+    await COMMS_MANAGER.resolve_approval(
         request_id=body.request_id,
         behavior=body.behavior,
         message=body.message,
@@ -286,8 +284,8 @@ async def resume_session(session_id: str) -> dict:
     if not agent:
         raise HTTPException(status_code=404, detail="Session not found in history")
     agent.status = "stopped"
-    agent.on_event = make_session_emitter(agent.session_id)
-    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, send_browser_command)
+    agent.on_event = COMMS_MANAGER.make_session_emitter(agent.session_id)
+    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, COMMS_MANAGER.send_browser_command)
     agent.toolkit = toolkit
     SESSIONS[agent.session_id] = agent
     AGENT_STORE.delete(session_id)
@@ -313,8 +311,8 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
     clone.lock = asyncio.Lock()
     clone.pending_approvals = []
     clone.sub_agents = []
-    clone.on_event = make_session_emitter(clone.session_id)
-    toolkit: Toolkit = make_builtin_toolkit(clone, SESSIONS, send_browser_command)
+    clone.on_event = COMMS_MANAGER.make_session_emitter(clone.session_id)
+    toolkit: Toolkit = make_builtin_toolkit(clone, SESSIONS, COMMS_MANAGER.send_browser_command)
     clone.toolkit = toolkit
     SESSIONS[clone.session_id] = clone
     await clone.emit(AgentStatusEvent(
