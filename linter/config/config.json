@@ -39,7 +39,7 @@
     "max-folder-items": [
       "frontend",
       "backend",
-      "backend/apps/tools/oauth/OAUTH_PROVIDERS/providers"
+      "backend/apps/tools/OAuthService/OAUTH_PROVIDERS/providers"
     ],
     "no-nested-imports": ["linter/lint.py"],
     "vulture": [],

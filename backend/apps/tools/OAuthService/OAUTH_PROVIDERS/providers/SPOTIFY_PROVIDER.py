@@ -1,4 +1,4 @@
-from backend.apps.tools.oauth.OAUTH_PROVIDERS.OAuthProvider import OAuthProvider
+from backend.apps.tools.OAuthService.OAUTH_PROVIDERS.OAuthProvider import OAuthProvider
 
 # TODO: why doesn't spotify have any client id or secret?
 

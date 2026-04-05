@@ -20,8 +20,8 @@ from backend.apps.tools.shared_utils.ToolDefinition import ToolDefinition
 from backend.apps.tools.discover_tools.discover_tools import discover_tools
 from backend.apps.tools.discover_tools.DiscoveryError import DiscoveryError, DiscoveryConfigError
 from backend.apps.tools.tool_definition_to_mcp_tool.tool_definition_to_mcp_tool import tool_definition_to_mcp_tool
-from backend.apps.tools.oauth.OAuthService import OAuthService
-from backend.apps.tools.oauth.OAUTH_PROVIDERS.OAUTH_PROVIDERS import OAUTH_PROVIDERS
+from backend.apps.tools.OAuthService.OAuthService import OAuthService
+from backend.apps.tools.OAuthService.OAUTH_PROVIDERS.OAUTH_PROVIDERS import OAUTH_PROVIDERS
 from backend.apps.tools.builtin_tools import BUILTIN_TOOLS
 from backend.core.tools.shared_structs.TOOL_PERMISSIONS import TOOL_PERMISSIONS
 from backend.core.tools.shared_structs.Toolkit import Toolkit

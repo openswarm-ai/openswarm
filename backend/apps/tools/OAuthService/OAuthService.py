@@ -15,8 +15,8 @@ from urllib.parse import urlencode
 import httpx
 from pydantic import BaseModel, Field
 from typing import Dict
-from backend.apps.tools.oauth.OAUTH_PROVIDERS.OAuthProvider import OAuthProvider
-from backend.apps.tools.oauth.OAUTH_PROVIDERS.OAUTH_PROVIDERS import OAUTH_PROVIDERS
+from backend.apps.tools.OAuthService.OAUTH_PROVIDERS.OAuthProvider import OAuthProvider
+from backend.apps.tools.OAuthService.OAUTH_PROVIDERS.OAUTH_PROVIDERS import OAUTH_PROVIDERS
 from backend.apps.tools.shared_utils.ToolDefinition import ToolDefinition
 from backend.core.db.PydanticStore import PydanticStore
 from typeguard import typechecked
@@ -250,7 +250,7 @@ class OAuthService(BaseModel):
     ) -> Optional[str]:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers={"Authorization": f"Bearer {access_token}"})
+                resp: httpx.Response = await client.get(url, headers={"Authorization": f"Bearer {access_token}"})
             if resp.status_code == 200:
                 return resp.json().get(field)
         except Exception as e:

@@ -1,4 +1,4 @@
-from backend.apps.tools.oauth.OAUTH_PROVIDERS.OAuthProvider import OAuthProvider
+from backend.apps.tools.OAuthService.OAUTH_PROVIDERS.OAuthProvider import OAuthProvider
 import os
 
 # TODO: wtf is this, bruh we gotta remove this shit asap r u fr rn. Unacceptable.
