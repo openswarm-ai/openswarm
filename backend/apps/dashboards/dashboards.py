@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from uuid import uuid4
+from pydantic import BaseModel
 
 from backend.config.Apps import SubApp
 # from backend.apps.common.json_store import JsonStore
@@ -12,73 +13,31 @@ from backend.apps.dashboards.Dashboard import (
     Dashboard,
     DashboardLayout,
 )
-from backend.apps.common.llm_helpers import _resolve_model as _rm
+from backend.apps.agents.agents import list_sessions, delete_session
 from backend.apps.settings.settings import load_settings
-from backend.apps.settings.credentials import get_anthropic_client
+from backend.core.llm.quick_llm_call import quick_llm_call
+from backend.ports import NINE_ROUTER_PORT
+from typing import Optional
 
 
 
 
 logger = logging.getLogger(__name__)
 
-from backend.config.paths import DASHBOARDS_DIR as DATA_DIR, SESSIONS_DIR, DASHBOARD_LAYOUT_DIR as OLD_LAYOUT_DIR
+# from backend.config.paths import DASHBOARDS_DIR as DATA_DIR, SESSIONS_DIR
+from backend.config.paths import DB_ROOT
 
-OLD_LAYOUT_FILE = os.path.join(OLD_LAYOUT_DIR, "layout.json")
 
-
-_store = JsonStore(
-    Dashboard, DATA_DIR, dump_mode="json", not_found_detail="Dashboard not found",
+DASHBOARD_STORE: PydanticStore[Dashboard] = PydanticStore[Dashboard](
+    model_cls=Dashboard,
+    data_dir=os.path.join(DB_ROOT, "dashboards"),
+    id_field="id",
+    dump_mode="json",
+    not_found_detail="Dashboard not found",
 )
-
-_load_all = _store.load_all
-_save = _store.save
-_load = _store.load
-_delete = _store.delete
-
-
-def _migrate_if_needed():
-    """One-time migration: if no dashboards exist, create 'Dashboard 1' from old layout."""
-    existing = _load_all()
-    if existing:
-        return
-
-    logger.info("No dashboards found — running one-time migration")
-
-    layout = DashboardLayout()
-    if os.path.exists(OLD_LAYOUT_FILE):
-        try:
-            with open(OLD_LAYOUT_FILE) as f:
-                data = json.load(f)
-            if "cards" in data:
-                layout = DashboardLayout(**data)
-                logger.info("Migrated layout from old layout.json")
-        except Exception:
-            logger.exception("Failed to read old layout.json, using empty layout")
-
-    dashboard = Dashboard(name="Dashboard 1", layout=layout)
-    _save(dashboard)
-    logger.info(f"Created default dashboard: {dashboard.id}")
-
-    if os.path.exists(SESSIONS_DIR):
-        count = 0
-        for fname in os.listdir(SESSIONS_DIR):
-            if not fname.endswith(".json"):
-                continue
-            fpath = os.path.join(SESSIONS_DIR, fname)
-            with open(fpath) as f:
-                session_data = json.load(f)
-            session_data["dashboard_id"] = dashboard.id
-            with open(fpath, "w") as f:
-                json.dump(session_data, f, indent=2)
-            count += 1
-        if count:
-            logger.info(f"Tagged {count} existing chat sessions with dashboard_id={dashboard.id}")
-
 
 @asynccontextmanager
 async def dashboards_lifespan():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    _migrate_if_needed()
     yield
 
 
@@ -87,7 +46,7 @@ dashboards = SubApp("dashboards", dashboards_lifespan)
 
 @dashboards.router.get("/list")
 async def list_dashboards():
-    all_dashboards = _load_all()
+    all_dashboards = DASHBOARD_STORE.load_all()
     all_dashboards.sort(key=lambda d: d.updated_at or d.created_at, reverse=True)
     items = []
     for d in all_dashboards:
@@ -103,29 +62,33 @@ async def list_dashboards():
     return {"dashboards": items}
 
 
+class DashboardCreate(BaseModel):
+    name: str = "Untitled Dashboard"
+
 @dashboards.router.post("/create")
 async def create_dashboard(body: DashboardCreate):
     dashboard = Dashboard(name=body.name)
-    _save(dashboard)
-    _analytics("dashboard.created", {}, dashboard_id=dashboard.id)
+    DASHBOARD_STORE.save(dashboard)
     return dashboard.model_dump(mode="json")
 
 
+# TODO: Maybe parse the output of list_sessions into actual Agent objects?
 @dashboards.router.post("/{dashboard_id}/generate-name")
 async def generate_name(dashboard_id: str):
-    from backend.apps.agents.manager.agent_manager import agent_manager
-    dashboard = _load(dashboard_id)
+
+    dashboard = DASHBOARD_STORE.load(dashboard_id)
 
     if not dashboard.auto_named and dashboard.name != "Untitled Dashboard":
         return {"name": dashboard.name, "auto_named": dashboard.auto_named}
 
+    sessions_resp = await list_sessions(dashboard_id=dashboard_id)
+    sessions = sessions_resp.get("SESSIONS", [])
+
     prompts = []
-    for session in agent_manager.sessions.values():
-        if getattr(session, "dashboard_id", None) != dashboard_id:
-            continue
-        for msg in session.messages:
-            if msg.role == "user" and isinstance(msg.content, str) and msg.content.strip():
-                prompts.append(msg.content.strip()[:200])
+    for session in sessions:
+        for msg in session.get("messages", {}).get("messages", []):
+            if msg.get("role") == "user" and isinstance(msg.get("content"), str) and msg["content"].strip():
+                prompts.append(msg["content"].strip()[:200])
                 break
 
     if not prompts:
@@ -133,9 +96,6 @@ async def generate_name(dashboard_id: str):
 
     fallback = prompts[0][:40]
     try:
-        global_settings = load_settings()
-        client = get_anthropic_client(global_settings)
-
         if len(prompts) == 1:
             system = "Generate a concise 2-5 word workspace name for a project based on this task. Return only the name, nothing else."
             user_content = prompts[0]
@@ -143,13 +103,20 @@ async def generate_name(dashboard_id: str):
             system = "Generate a concise 2-5 word workspace name that captures the overall theme of these tasks. Return only the name, nothing else."
             user_content = "\n".join(f"- {p}" for p in prompts)
 
-        resp = await client.messages.create(
-            model=_rm("claude-haiku-4-5-20251001", global_settings),
+        settings = load_settings()
+        llm_kwargs = {}
+        if settings.anthropic_api_key:
+            llm_kwargs["api_key"] = settings.anthropic_api_key
+        else:
+            llm_kwargs["nine_router_port"] = NINE_ROUTER_PORT
+
+        generated = await quick_llm_call(
+            system, user_content,
+            model="claude-haiku-4-5-20251001",
             max_tokens=30,
-            system=system,
-            messages=[{"role": "user", "content": user_content}],
+            **llm_kwargs,
         )
-        generated = resp.content[0].text.strip().strip('"\'')
+        generated = generated.strip('"\'')
         if generated:
             fallback = generated
     except Exception as e:
@@ -158,19 +125,26 @@ async def generate_name(dashboard_id: str):
     dashboard.name = fallback
     dashboard.auto_named = True
     dashboard.updated_at = datetime.now()
-    _save(dashboard)
+    DASHBOARD_STORE.save(dashboard)
     return {"name": dashboard.name, "auto_named": True}
 
 
 @dashboards.router.get("/{dashboard_id}")
 async def get_dashboard(dashboard_id: str):
-    dashboard = _load(dashboard_id)
+    dashboard = DASHBOARD_STORE.load(dashboard_id)
     return dashboard.model_dump(mode="json")
 
 
+
+
+class DashboardUpdate(BaseModel):
+    name: Optional[str] = None
+    layout: Optional[DashboardLayout] = None
+    thumbnail: Optional[str] = None
+
 @dashboards.router.put("/{dashboard_id}")
 async def update_dashboard(dashboard_id: str, body: DashboardUpdate):
-    dashboard = _load(dashboard_id)
+    dashboard = DASHBOARD_STORE.load(dashboard_id)
     if body.name is not None:
         dashboard.name = body.name
         dashboard.auto_named = False
@@ -179,45 +153,28 @@ async def update_dashboard(dashboard_id: str, body: DashboardUpdate):
     if body.thumbnail is not None:
         dashboard.thumbnail = body.thumbnail
     dashboard.updated_at = datetime.now()
-    _save(dashboard)
+    DASHBOARD_STORE.save(dashboard)
     return dashboard.model_dump(mode="json")
 
 
 @dashboards.router.delete("/{dashboard_id}")
 async def delete_dashboard(dashboard_id: str):
-    from backend.apps.agents.manager.agent_manager import agent_manager
-    _load(dashboard_id)
+    DASHBOARD_STORE.load(dashboard_id)  # confirm it exists (raises 404 if not)
 
-    if os.path.exists(SESSIONS_DIR):
-        for fname in os.listdir(SESSIONS_DIR):
-            if not fname.endswith(".json"):
-                continue
-            fpath = os.path.join(SESSIONS_DIR, fname)
-            try:
-                with open(fpath) as f:
-                    data = json.load(f)
-                if data.get("dashboard_id") == dashboard_id:
-                    os.remove(fpath)
-            except Exception:
-                logger.warning(f"Failed to read/delete session file {fname}")
-
-    to_remove = [
-        sid for sid, sess in agent_manager.sessions.items()
-        if getattr(sess, "dashboard_id", None) == dashboard_id
-    ]
-    for sid in to_remove:
+    sessions_resp = await list_sessions(dashboard_id=dashboard_id)
+    for session in sessions_resp.get("SESSIONS", []):
         try:
-            await agent_manager.delete_session(sid)
+            await delete_session(session["session_id"])
         except Exception:
-            logger.warning(f"Failed to delete active session {sid} during dashboard deletion")
+            logger.warning(f"Failed to delete session {session.get('session_id')} during dashboard deletion")
 
-    _delete(dashboard_id)
+    DASHBOARD_STORE.delete(dashboard_id)
     return {"ok": True}
 
 
 @dashboards.router.post("/{dashboard_id}/duplicate")
 async def duplicate_dashboard(dashboard_id: str):
-    source = _load(dashboard_id)
+    source = DASHBOARD_STORE.load(dashboard_id)
     source_data = source.model_dump(mode="json")
     new_id = uuid4().hex
     now = datetime.now().isoformat()
@@ -234,7 +191,7 @@ async def duplicate_dashboard(dashboard_id: str):
             "browser_cards": source_data.get("layout", {}).get("browser_cards", {}),
         },
     }
-    with open(os.path.join(DATA_DIR, f"{new_id}.json"), "w") as f:
+    with open(os.path.join(DB_ROOT, "dashboards", f"{new_id}.json"), "w") as f:
         json.dump(new_dashboard, f, indent=2)
 
     return new_dashboard

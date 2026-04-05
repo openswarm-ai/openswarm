@@ -40,6 +40,7 @@ AGENT_STORE: PydanticStore[Agent] = PydanticStore[Agent](
     not_found_detail="Session not found in history",
 )
 
+# NOTE: Essentially the SESSIONS is a cache for active agents.
 SESSIONS: dict[str, Agent] = {}
 
 def get_agent(session_id: str) -> Agent:
