@@ -16,12 +16,12 @@ class BackendExecResult:
     stderr: str
 
 
-async def execute_backend_code(code: str, input_data: dict) -> BackendExecResult:
+async def execute_backend_code(code: str) -> BackendExecResult:
     """Execute user-provided Python code in a subprocess.
 
-    The code receives ``input_data`` as a global dict and must assign its
-    result to a global ``result`` dict.  User print() calls are captured
-    separately from the result via an in-process StringIO redirect.
+    The code must assign its result to a global ``result`` dict.
+    User print() calls are captured separately from the result via
+    an in-process StringIO redirect.
     """
 
     preamble = (
@@ -29,7 +29,6 @@ async def execute_backend_code(code: str, input_data: dict) -> BackendExecResult
         "_orig_stdout = sys.stdout\n"
         "_capture = io.StringIO()\n"
         "sys.stdout = _capture\n"
-        "input_data = json.loads(sys.stdin.read())\n"
         "result = {}\n"
     )
     postamble = (
@@ -40,14 +39,13 @@ async def execute_backend_code(code: str, input_data: dict) -> BackendExecResult
 
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-c", wrapper,
-        stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
 
     try:
         stdout, stderr = await asyncio.wait_for(
-            proc.communicate(input=json.dumps(input_data).encode()),
+            proc.communicate(),
             timeout=TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:

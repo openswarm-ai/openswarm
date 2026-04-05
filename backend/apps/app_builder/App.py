@@ -9,11 +9,6 @@ class App(BaseModel):
     name: str
     description: str = ""
     icon: str = "view_quilt"
-    input_schema: dict[str, Any] = Field(default_factory=lambda: {
-        "type": "object",
-        "properties": {},
-        "required": [],
-    })
     files: dict[str, str] = Field(default_factory=dict)
     thumbnail: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
@@ -24,11 +19,6 @@ class AppCreate(BaseModel):
     name: str
     description: str = ""
     icon: str = "view_quilt"
-    input_schema: dict[str, Any] = Field(default_factory=lambda: {
-        "type": "object",
-        "properties": {},
-        "required": [],
-    })
     files: dict[str, str] = Field(default_factory=dict)
     thumbnail: Optional[str] = None
 
@@ -37,21 +27,18 @@ class AppUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     icon: Optional[str] = None
-    input_schema: Optional[dict[str, Any]] = None
     files: Optional[dict[str, str]] = None
     thumbnail: Optional[str] = None
 
 
 class AppExecute(BaseModel):
     app_id: str
-    input_data: dict[str, Any] = Field(default_factory=dict)
 
 
 class AppExecuteResult(BaseModel):
     app_id: str
     app_name: str
     frontend_code: str
-    input_data: dict[str, Any]
     backend_result: Optional[dict[str, Any]] = None
     stdout: Optional[str] = None
     stderr: Optional[str] = None

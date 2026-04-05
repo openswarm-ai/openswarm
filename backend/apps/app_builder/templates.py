@@ -45,19 +45,9 @@ APP_BUILDER_TEMPLATE_INDEX = """\
     <p id="desc">Describe what you want to build and the agent will update this app.</p>
   </div>
   <script>
-    const input = window.APP_BUILDER_INPUT || {};
-    const result = window.APP_BUILDER_BACKEND_RESULT || null;
   </script>
 </body>
 </html>
-"""
-
-APP_BUILDER_TEMPLATE_SCHEMA = """\
-{
-  "type": "object",
-  "properties": {},
-  "required": []
-}
 """
 
 APP_BUILDER_TEMPLATE_META = """\
@@ -69,6 +59,5 @@ APP_BUILDER_TEMPLATE_META = """\
 
 APP_BUILDER_TEMPLATE_FILES = {
     "index.html": APP_BUILDER_TEMPLATE_INDEX,
-    "schema.json": APP_BUILDER_TEMPLATE_SCHEMA,
     "meta.json": APP_BUILDER_TEMPLATE_META,
 }

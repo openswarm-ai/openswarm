@@ -18,9 +18,7 @@ from backend.apps.app_builder.App import (
 from backend.config.paths import DB_ROOT
 from backend.apps.app_builder.executor import execute_backend_code
 from backend.apps.app_builder.templates import APP_BUILDER_SKILL, APP_BUILDER_TEMPLATE_FILES
-from backend.apps.app_builder.helpers import (
-    validate_against_schema, inject_data_into_html, decode_data_param, walk_directory,
-)
+from backend.apps.app_builder.helpers import walk_directory
 
 APP_BUILDER_DIR = os.path.join(DB_ROOT, "app_builder")
 APP_BUILDER_WORKSPACE_DIR = os.path.join(APP_BUILDER_DIR, "workspace")
@@ -42,7 +40,7 @@ _store = PydanticStore[App](model_cls=App, data_dir=APP_BUILDER_DIR, not_found_d
 # ---------------------------------------------------------------------------
 
 @app_builder.router.get("/workspace/{workspace_id}/serve/{filepath:path}")
-async def serve_workspace_file(workspace_id: str, filepath: str, _d: str = ""):
+async def serve_workspace_file(workspace_id: str, filepath: str):
     folder = os.path.join(APP_BUILDER_WORKSPACE_DIR, workspace_id)
     full_path = os.path.normpath(os.path.join(folder, filepath))
     if not full_path.startswith(os.path.normpath(folder)):
@@ -51,22 +49,16 @@ async def serve_workspace_file(workspace_id: str, filepath: str, _d: str = ""):
         raise HTTPException(status_code=404, detail="File not found")
     with open(full_path) as f:
         content = f.read()
-    if filepath == "index.html":
-        input_json, result_json = decode_data_param(_d) if _d else ("{}", "null")
-        content = inject_data_into_html(content, input_json, result_json)
     mime, _ = mimetypes.guess_type(filepath)
     return Response(content=content, media_type=mime or "text/plain")
 
 
 @app_builder.router.get("/{app_id}/serve/{filepath:path}")
-async def serve_app_file(app_id: str, filepath: str, _d: str = ""):
+async def serve_app_file(app_id: str, filepath: str):
     app = _store.load(app_id)
     content = app.files.get(filepath)
     if content is None:
         raise HTTPException(status_code=404, detail="File not found in app")
-    if filepath == "index.html":
-        input_json, result_json = decode_data_param(_d) if _d else ("{}", "null")
-        content = inject_data_into_html(content, input_json, result_json)
     mime, _ = mimetypes.guess_type(filepath)
     return Response(content=content, media_type=mime or "text/plain")
 
@@ -168,8 +160,8 @@ async def create_app(body: AppCreate):
     now = datetime.now().isoformat()
     app = App(
         name=body.name, description=body.description, icon=body.icon,
-        input_schema=body.input_schema, files=body.files,
-        thumbnail=body.thumbnail, created_at=now, updated_at=now,
+        files=body.files, thumbnail=body.thumbnail,
+        created_at=now, updated_at=now,
     )
     _store.save(app)
     return {"ok": True, "app": app.model_dump()}
@@ -199,14 +191,6 @@ async def delete_app(app_id: str):
 @app_builder.router.post("/execute")
 async def execute_app(body: AppExecute):
     app = _store.load(body.app_id)
-    validation_err = validate_against_schema(body.input_data, app.input_schema)
-    if validation_err:
-        return AppExecuteResult(
-            app_id=app.id, app_name=app.name,
-            frontend_code=app.files.get("index.html", ""),
-            input_data=body.input_data,
-            backend_result=None, error=validation_err,
-        ).model_dump()
 
     backend_code = app.files.get("backend.py")
     backend_result = None
@@ -215,7 +199,7 @@ async def execute_app(body: AppExecute):
     error = None
     if backend_code:
         try:
-            exec_result = await execute_backend_code(backend_code, body.input_data)
+            exec_result = await execute_backend_code(backend_code)
             backend_result = exec_result.result
             stdout_text = exec_result.stdout
             stderr_text = exec_result.stderr
@@ -225,7 +209,6 @@ async def execute_app(body: AppExecute):
     return AppExecuteResult(
         app_id=app.id, app_name=app.name,
         frontend_code=app.files.get("index.html", ""),
-        input_data=body.input_data,
         backend_result=backend_result, stdout=stdout_text,
         stderr=stderr_text, error=error,
     ).model_dump()

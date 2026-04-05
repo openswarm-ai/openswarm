@@ -12,7 +12,6 @@ here is served directly to the live preview.
 |------|----------|---------|
 | `index.html` | **Yes** | Entry point. Must be a complete HTML document. This is the ONLY file the preview iframe loads — never rename it. |
 | `meta.json` | **Yes** | `{"name":"…","description":"…"}` — displayed in the UI header. Always write this. |
-| `schema.json` | Recommended | JSON Schema defining the input form (the "Test Input" tab). |
 | `backend.py` | Optional | Server-side Python executed before rendering. |
 | Everything else | Optional | JS, CSS, images, subdirectories — referenced from `index.html` via relative paths. |
 
@@ -20,76 +19,23 @@ here is served directly to the live preview.
 
 - Name the main HTML file anything other than `index.html` — the platform
   will not find it and the preview will be blank.
-- Use `document.write()` — it breaks the injected data globals.
 - Assume any external server or API is available unless the user provides one.
-
----
-
-## Injected globals
-
-Before `index.html` loads, the platform injects two globals:
-
-```javascript
-window.APP_BUILDER_INPUT          // Object — structured input from the schema form
-window.APP_BUILDER_BACKEND_RESULT // Object | null — result from backend.py execution
-```
-
-These are available immediately in any `<script>` tag. You can also listen for
-live updates when the user changes input:
-
-```javascript
-window.addEventListener('app-builder-data-ready', () => {
-  const input = window.APP_BUILDER_INPUT;
-  const result = window.APP_BUILDER_BACKEND_RESULT;
-  // re-render with new data
-});
-```
-
----
-
-## schema.json format
-
-Standard JSON Schema. The platform renders a form from this automatically.
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "title":   { "type": "string", "default": "My Dashboard" },
-    "count":   { "type": "number", "default": 10 },
-    "enabled": { "type": "boolean", "default": true },
-    "items":   {
-      "type": "array",
-      "items": { "type": "string" },
-      "default": ["alpha", "beta"]
-    }
-  },
-  "required": ["title"]
-}
-```
-
-Supported types: `string`, `number`, `integer`, `boolean`, `array`, `object`.
-Use `"default"` values so the preview works without manual input.
 
 ---
 
 ## backend.py
 
 Optional server-side Python that runs before the frontend renders.
-It receives a global `input_data` dict (the schema form values) and must
-assign its result to a global `result` dict.
+It must assign its result to a global `result` dict.
 
 ```python
-# input_data is pre-populated from the schema form
 import json
 
 result = {
-    "processed_items": [item.upper() for item in input_data.get("items", [])],
+    "items": ["alpha", "beta", "gamma"],
     "timestamp": "2024-01-01T00:00:00Z",
 }
 ```
-
-The `result` dict becomes `window.APP_BUILDER_BACKEND_RESULT` in the frontend.
 
 ---
 
@@ -102,7 +48,6 @@ workspace root, so relative imports work naturally:
 workspace/
 ├── index.html
 ├── meta.json
-├── schema.json
 ├── styles/
 │   └── main.css
 ├── components/
@@ -146,9 +91,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 function App() {
-  const input = window.APP_BUILDER_INPUT || {};
   return React.createElement('div', null,
-    React.createElement('h1', null, input.title || 'Hello')
+    React.createElement('h1', null, 'Hello')
   );
 }
 
@@ -210,14 +154,9 @@ Other CDN libraries work too — use `https://esm.sh/` or `https://cdn.jsdelivr.
 </head>
 <body>
   <div class="card">
-    <h1 id="title">Loading…</h1>
-    <p id="desc"></p>
+    <h1>Hello</h1>
+    <p>Describe what you want to build and the agent will update this app.</p>
   </div>
-  <script>
-    const input = window.APP_BUILDER_INPUT || {};
-    document.getElementById('title').textContent = input.title || 'Untitled';
-    document.getElementById('desc').textContent = input.description || 'No description provided.';
-  </script>
 </body>
 </html>
 ```
