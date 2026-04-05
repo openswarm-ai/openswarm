@@ -18,9 +18,8 @@ from backend.apps.tools.shared_utils.ToolDefinition import ToolDefinition
 from backend.apps.tools.discover_tools.discover_tools import discover_tools
 from backend.apps.tools.discover_tools.DiscoveryError import DiscoveryError, DiscoveryConfigError
 from backend.apps.tools.tool_definition_to_mcp_tool.tool_definition_to_mcp_tool import tool_definition_to_mcp_tool
-from backend.apps.tools.oauth import oauth
-from backend.apps.tools.oauth.oauth import refresh_oauth_token
-from backend.apps.tools.oauth.oauth_providers import OAUTH_PROVIDERS
+from backend.apps.tools.oauth.oauth import refresh_oauth_token, oauth_callback, oauth_start, oauth_disconnect, set_store
+from backend.apps.tools.oauth.OAUTH_PROVIDERS.OAUTH_PROVIDERS import OAUTH_PROVIDERS
 from backend.apps.tools.builtin_tools import BUILTIN_TOOLS
 from backend.core.tools.shared_structs.TOOL_PERMISSIONS import TOOL_PERMISSIONS
 from backend.core.tools.shared_structs.Toolkit import Toolkit
@@ -44,7 +43,7 @@ TOOL_STORE: PydanticStore[ToolDefinition] = PydanticStore[ToolDefinition](
 @asynccontextmanager
 async def tools_lifespan():
     os.makedirs(TOOLS_DIR, exist_ok=True)
-    oauth.set_store(TOOL_STORE)
+    set_store(TOOL_STORE)
     yield
 
 
@@ -250,6 +249,6 @@ async def load_user_toolkit() -> Optional[Toolkit]:
 # OAuth routes
 # ---------------------------------------------------------------------------
 
-tools.router.add_api_route("/oauth/callback", oauth.oauth_callback, methods=["GET"])
-tools.router.add_api_route("/{tool_id}/oauth/start", oauth.oauth_start, methods=["POST"])
-tools.router.add_api_route("/{tool_id}/oauth/disconnect", oauth.oauth_disconnect, methods=["POST"])
+tools.router.add_api_route("/oauth/callback", oauth_callback, methods=["GET"])
+tools.router.add_api_route("/{tool_id}/oauth/start", oauth_start, methods=["POST"])
+tools.router.add_api_route("/{tool_id}/oauth/disconnect", oauth_disconnect, methods=["POST"])
