@@ -25,6 +25,7 @@ import Views from './pages/Views/Views';
 import Customization from './pages/Customization/Customization';
 import Analytics from './pages/Analytics/Analytics';
 import OnboardingModal from './components/OnboardingModal';
+import { trackEvent, getLastAction, getLastPage, getTimeSpent } from '@/shared/analytics';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -213,6 +214,30 @@ const ThemedApp: React.FC = () => {
   const c = useClaudeTokens();
   const { mode } = useThemeMode();
   const muiTheme = useMemo(() => buildMuiTheme(c, mode), [c, mode]);
+
+  // Track last action before user leaves and uncaught errors
+  useEffect(() => {
+    const handleUnload = () => {
+      trackEvent('app.last_action', {
+        last_page: getLastPage(),
+        last_action: getLastAction(),
+        time_spent_seconds: getTimeSpent(),
+      }, true); // useBeacon for reliable delivery during unload
+    };
+    const handleError = (event: ErrorEvent) => {
+      trackEvent('app.error', {
+        error_message: event.message,
+        error_stack: event.error?.stack?.slice(0, 500),
+        last_page: getLastPage(),
+      });
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('error', handleError);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('error', handleError);
+    };
+  }, []);
 
   return (
     <MuiThemeProvider theme={muiTheme}>

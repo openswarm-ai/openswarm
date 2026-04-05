@@ -3,6 +3,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { trackEvent } from '@/shared/analytics';
 
 export interface WalkthroughStep {
   target: string;                               // data-onboarding="<value>" selector
@@ -104,6 +105,18 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
   const totalSteps = STEPS.length;
   const isLastStep = currentStep === totalSteps - 1;
 
+  // Track walkthrough start on mount
+  useEffect(() => {
+    trackEvent('walkthrough.started');
+  }, []);
+
+  // Track each step viewed
+  useEffect(() => {
+    if (step) {
+      trackEvent('walkthrough.step_viewed', { step: currentStep, step_name: step.target || 'done' });
+    }
+  }, [currentStep, step]);
+
   // Find target element and compute spotlight + tooltip position
   const updatePosition = useCallback(() => {
     if (!step) return;
@@ -198,15 +211,17 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
 
   const handleNext = useCallback(() => {
     if (isLastStep) {
+      trackEvent('walkthrough.completed', { steps_viewed: currentStep + 1 });
       onComplete();
     } else {
       setCurrentStep((s) => s + 1);
     }
-  }, [isLastStep, onComplete]);
+  }, [isLastStep, onComplete, currentStep]);
 
   const handleSkip = useCallback(() => {
+    trackEvent('walkthrough.skipped', { step: currentStep, step_name: step?.target || 'done' });
     onComplete();
-  }, [onComplete]);
+  }, [onComplete, currentStep, step]);
 
   // Allow clicking the spotlight target to advance for action steps
   useEffect(() => {
@@ -219,6 +234,7 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
     if (!el) return;
 
     const handler = () => {
+      trackEvent('walkthrough.step_action', { step: currentStep, step_name: step.target });
       setTimeout(() => handleNext(), 300);
     };
     el.addEventListener('click', handler, { once: true });

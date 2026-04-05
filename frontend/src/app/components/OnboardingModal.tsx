@@ -3,6 +3,7 @@ import { Box, Typography, Modal, Button, CircularProgress, TextField } from '@mu
 import { useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { API_BASE } from '@/shared/config';
+import { trackEvent } from '@/shared/analytics';
 
 const SUBSCRIPTION_PROVIDERS = [
   { id: 'claude', name: 'Claude', desc: 'Sonnet, Opus, Haiku', color: '#E8927A', preview: false },
@@ -81,6 +82,7 @@ const OnboardingModal: React.FC = () => {
     if (nineRouterReady === null) return; // still checking
 
     setOpen(true);
+    trackEvent('onboarding.started', { step: 'profile' });
   }, [nineRouterReady]);
 
   // Cleanup timers on unmount
@@ -109,6 +111,7 @@ const OnboardingModal: React.FC = () => {
         if (dashboard?.id) {
           const seedRes = await fetch(`${API_BASE}/dashboards/${dashboard.id}/seed-demo`, { method: 'POST' });
           if (seedRes.ok) {
+            trackEvent('onboarding.completed', { dashboard_id: dashboard.id });
             localStorage.setItem('openswarm_walkthrough_pending', 'true');
             setOpen(false);
             // Force full page load to ensure dashboard mounts fresh with walkthrough
@@ -142,7 +145,14 @@ const OnboardingModal: React.FC = () => {
         }),
       });
     } catch {}
+    trackEvent('onboarding.profile_submitted', {
+      has_name: !!userName.trim(),
+      has_email: !!userEmail.trim(),
+      use_cases: useCases,
+      use_cases_count: useCases.length,
+    });
     setStep('connect');
+    trackEvent('onboarding.connect_started', { nine_router_ready: nineRouterReady });
   };
 
   // Same connect logic as Settings/SubscriptionCards
@@ -151,6 +161,7 @@ const OnboardingModal: React.FC = () => {
     if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
     if (msgHandlerRef.current) { window.removeEventListener('message', msgHandlerRef.current); msgHandlerRef.current = null; }
     setConnecting(providerId);
+    trackEvent('onboarding.provider_selected', { provider: providerId });
 
     // Delay before calling connect — avoids Claude OAuth rate limit on retries
     await new Promise(r => setTimeout(r, 1000));
@@ -186,6 +197,7 @@ const OnboardingModal: React.FC = () => {
             if (pd.success) {
               clearInterval(timer);
               pollTimerRef.current = null;
+              trackEvent('onboarding.provider_connected', { provider: providerId });
               dismiss();
             }
           } catch {}
@@ -209,6 +221,7 @@ const OnboardingModal: React.FC = () => {
                 window.removeEventListener('message', msgHandlerRef.current);
                 msgHandlerRef.current = null;
               }
+              trackEvent('onboarding.provider_connected', { provider: providerId });
               dismiss();
             }
           } catch {}
@@ -237,6 +250,7 @@ const OnboardingModal: React.FC = () => {
                 }),
               });
             } catch {}
+            trackEvent('onboarding.provider_connected', { provider: providerId });
             dismiss();
           }
         };
@@ -257,8 +271,8 @@ const OnboardingModal: React.FC = () => {
     }
   };
 
-  const handleApiKey = () => dismiss();
-  const handleSkip = () => dismiss();
+  const handleApiKey = () => { trackEvent('onboarding.api_key_chosen'); dismiss(); };
+  const handleSkip = () => { trackEvent(step === 'profile' ? 'onboarding.profile_skipped' : 'onboarding.connect_skipped'); dismiss(); };
 
   if (!open) return null;
 
