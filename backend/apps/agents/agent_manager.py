@@ -1921,6 +1921,7 @@ class AgentManager:
         for session_id, session in list(self.sessions.items()):
             if session.status in ("running", "waiting_approval"):
                 session.status = "stopped"
+            session.closed_at = None
             for req in list(session.pending_approvals):
                 ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Server shutting down"})
             session.pending_approvals = []
