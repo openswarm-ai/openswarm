@@ -38,7 +38,8 @@
     "max-file-lines": ["openswarm_debug.egg-info/**"],
     "max-folder-items": [
       "frontend",
-      "backend"
+      "backend",
+      "backend/apps/tools/oauth/OAUTH_PROVIDERS/providers"
     ],
     "no-nested-imports": ["linter/lint.py"],
     "vulture": [],

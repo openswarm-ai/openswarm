@@ -17,10 +17,11 @@ import httpx
 from fastapi import HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-from backend.apps.tools.oauth.oauth_providers import resolve_oauth_provider
+from backend.apps.tools.oauth.OAUTH_PROVIDERS.OAUTH_PROVIDERS import OAUTH_PROVIDERS
 from backend.core.db.PydanticStore import PydanticStore
 from backend.apps.tools.shared_utils.ToolDefinition import ToolDefinition
 from backend.ports import BACKEND_DEV_PORT
+
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ async def oauth_callback(code: str = Query(...), state: str = Query("")) -> HTML
 
     store = _get_store()
     tool = store.load(tool_id)
-    provider = resolve_oauth_provider(tool.oauth_provider)
+    provider = OAUTH_PROVIDERS[tool.oauth_provider]
 
     client_id = os.environ.get(provider.client_id_env, "")
     client_secret = os.environ.get(provider.client_secret_env, "")
@@ -151,7 +152,7 @@ async def oauth_callback(code: str = Query(...), state: str = Query("")) -> HTML
 async def oauth_start(tool_id: str) -> dict:
     store = _get_store()
     tool = store.load(tool_id)
-    provider = resolve_oauth_provider(tool.oauth_provider)
+    provider = OAUTH_PROVIDERS[tool.oauth_provider]
 
     client_id = os.environ.get(provider.client_id_env, "")
     if not client_id:
@@ -193,7 +194,7 @@ async def oauth_disconnect(tool_id: str) -> dict:
     access_token = tool.oauth_tokens.get("access_token")
 
     if access_token:
-        provider = resolve_oauth_provider(tool.oauth_provider)
+        provider = OAUTH_PROVIDERS[tool.oauth_provider]
         revoke_url = provider.revoke_url or "https://oauth2.googleapis.com/revoke"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -226,7 +227,7 @@ async def refresh_oauth_token(tool: ToolDefinition) -> Optional[str]:
     if time.time() < expiry - 60:
         return tool.oauth_tokens.get("access_token")
 
-    provider = resolve_oauth_provider(tool.oauth_provider)
+    provider = OAUTH_PROVIDERS[tool.oauth_provider]
     client_id = os.environ.get(provider.client_id_env, "")
     client_secret = os.environ.get(provider.client_secret_env, "")
     if not client_id or not client_secret:
