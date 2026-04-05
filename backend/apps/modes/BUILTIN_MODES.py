@@ -3,10 +3,16 @@
 Separated from models.py to keep schema classes small and data separate.
 """
 
-from backend.apps.modes.models import Mode
-from backend.config.paths import OUTPUTS_WORKSPACE_DIR as OUTPUTS_WORKSPACE, SKILLS_WORKSPACE_DIR as SKILLS_WORKSPACE
+from backend.apps.modes.Mode import Mode
+from typing import List
+from backend.config.paths import DB_ROOT
+import os
 
-BUILTIN_MODES: list[Mode] = [
+# NOTE: When the skills and outputs subapps are implemented, we will need to update these paths to import from the subapps.
+SKILLS_WORKSPACE: str = os.path.join(DB_ROOT, "skills")
+OUTPUTS_WORKSPACE: str = os.path.join(DB_ROOT, "outputs")
+
+BUILTIN_MODES: List[Mode] = [
     Mode(
         id="agent",
         name="Agent",
