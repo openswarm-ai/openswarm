@@ -16,7 +16,7 @@ from backend.core.tools.shared_structs.Tool import Tool
 
 class MCP_Tool(Tool):
     server_name: str
-    input_schema: type
+    input_schema: Optional[type] = None
 
     @typechecked
     def to_sdk_args(self) -> str:
@@ -28,7 +28,7 @@ class MCP_Tool(Tool):
 
 
 class SDK_MCP_Tool(MCP_Tool):
-    # sdk transport: in-process handler
+    input_schema: type  # required for SDK tools (overrides Optional on base)
     handler: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
     @typechecked

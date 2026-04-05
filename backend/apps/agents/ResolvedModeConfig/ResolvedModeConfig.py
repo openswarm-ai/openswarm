@@ -1,8 +1,9 @@
-from typing import Optional, Tuple, List
+from typing import Optional, List
 
 from backend.apps.modes.modes import get_mode_by_id
 from backend.apps.modes.Mode import Mode
 from backend.apps.settings.settings import load_settings
+from backend.apps.settings.AppSettings import AppSettings
 from backend.apps.agents.ResolvedModeConfig.compose_system_prompt import compose_system_prompt
 from backend.core.tools.shared_structs.Toolkit import Toolkit
 from typeguard import typechecked
@@ -19,11 +20,11 @@ class ResolvedModeConfig(BaseModel):
     async def create(
         cls,
         mode_id: str,
-        session_prompt: Optional[str],
         toolkit: Toolkit,
+        session_prompt: Optional[str] = None,
     ) -> "ResolvedModeConfig":
 
-        settings = load_settings()
+        settings: AppSettings = load_settings()
         mode_def: Optional[Mode] = await get_mode_by_id(mode_id)
 
         system_prompt: Optional[str] = compose_system_prompt(

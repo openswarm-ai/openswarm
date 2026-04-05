@@ -23,7 +23,6 @@ from backend.core.Agent.Agent import Agent
 from backend.core.db.PydanticStore import PydanticStore
 from backend.core.shared_structs.agent.Message.Message import UserMessage
 from backend.core.events.events import AgentStatusEvent, AgentClosedEvent, BranchSwitchedEvent
-from backend.core.tools.make_builtin_toolkit.make_builtin_toolkit import make_builtin_toolkit
 from backend.apps.agents.agent_utils.create_sdk_hooks import create_sdk_hooks
 from backend.apps.agents.agent_utils.build_search_text import build_search_text
 from backend.apps.agents.ResolvedModeConfig.ResolvedModeConfig import ResolvedModeConfig
@@ -34,6 +33,7 @@ from backend.ports import NINE_ROUTER_PORT
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import HookMatcher, McpServerConfig
 from backend.core.tools.shared_structs.Toolkit import Toolkit
+from backend.apps.agents.agent_utils.build_agent_toolkit import build_agent_toolkit
 
 AGENT_STORE: PydanticStore[Agent] = PydanticStore[Agent](
     model_cls=Agent,
@@ -62,8 +62,11 @@ async def agents_lifespan():
         try:
             stored.status = "stopped"
             stored.on_event = COMMS_MANAGER.make_session_emitter(stored.session_id)
-            toolkit: Toolkit = make_builtin_toolkit(stored, SESSIONS, COMMS_MANAGER.send_browser_command)
-            stored.toolkit = toolkit
+            stored.toolkit = build_agent_toolkit(
+                agent=stored,
+                sessions=SESSIONS,
+                comms_manager=COMMS_MANAGER,
+            )
             SESSIONS[stored.session_id] = stored
         except Exception as e:
             print(f"[agents lifespan] Skipping corrupt session {stored.session_id}: {e}")
@@ -111,7 +114,11 @@ async def launch(body: LaunchBody) -> dict:
     agent.on_event = COMMS_MANAGER.make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
 
-    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, COMMS_MANAGER.send_browser_command)
+    toolkit: Toolkit = build_agent_toolkit(
+        agent=agent,
+        sessions=SESSIONS,
+        comms_manager=COMMS_MANAGER,
+    )
     agent.toolkit = toolkit
     mcp_servers: Dict[str, McpServerConfig] = toolkit.collect_mcp_servers()
 
@@ -316,8 +323,11 @@ async def resume_session(session_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Session not found in history")
     agent.status = "stopped"
     agent.on_event = COMMS_MANAGER.make_session_emitter(agent.session_id)
-    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, COMMS_MANAGER.send_browser_command)
-    agent.toolkit = toolkit
+    agent.toolkit = build_agent_toolkit(
+        agent=agent,
+        sessions=SESSIONS,
+        comms_manager=COMMS_MANAGER,
+    )
     SESSIONS[agent.session_id] = agent
     AGENT_STORE.delete(session_id)
     await agent.emit(AgentStatusEvent(
@@ -343,8 +353,11 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
     clone.pending_approvals = []
     clone.sub_agents = []
     clone.on_event = COMMS_MANAGER.make_session_emitter(clone.session_id)
-    toolkit: Toolkit = make_builtin_toolkit(clone, SESSIONS, COMMS_MANAGER.send_browser_command)
-    clone.toolkit = toolkit
+    clone.toolkit = build_agent_toolkit(
+        agent=clone,
+        sessions=SESSIONS,
+        comms_manager=COMMS_MANAGER,
+    )
     SESSIONS[clone.session_id] = clone
     await clone.emit(AgentStatusEvent(
         session_id=clone.session_id, status=clone.status,

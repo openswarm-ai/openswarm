@@ -12,10 +12,11 @@ from backend.apps.dashboards.dashboards import dashboards
 from backend.apps.health.health import health
 from backend.apps.settings.settings import settings
 from backend.apps.modes.modes import modes
+from backend.apps.tools.tools import tools
 from fastapi.middleware.cors import CORSMiddleware
 
 main_app = MainApp([
-    health, agents, settings, dashboards, modes
+    health, tools, agents, settings, dashboards, modes
 ])
 app = main_app.app
 
