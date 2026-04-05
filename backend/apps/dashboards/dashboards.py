@@ -7,10 +7,8 @@ from pydantic import BaseModel
 
 from backend.config.Apps import SubApp
 from backend.core.db.PydanticStore import PydanticStore
-from backend.apps.dashboards.Dashboard import (
-    Dashboard,
-    DashboardLayout,
-)
+from backend.core.shared_structs.dashboard.Dashboard import Dashboard
+from backend.core.shared_structs.dashboard.DashboardLayout import DashboardLayout
 from backend.apps.agents.agents import list_sessions, delete_session
 from backend.apps.settings.settings import load_settings
 from backend.apps.dashboards.generate_dashboard_name import generate_dashboard_name

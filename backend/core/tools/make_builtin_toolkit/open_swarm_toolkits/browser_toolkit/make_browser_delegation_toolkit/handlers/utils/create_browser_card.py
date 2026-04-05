@@ -1,20 +1,23 @@
 from datetime import datetime
 from uuid import uuid4
+from typing import Optional, Callable
 
 from typeguard import typechecked
-from typing import Optional
 
-from backend.OLDapps.dashboards.dashboards import _load, _save
 from backend.core.events.events import EventCallback, BrowserCardAddedEvent
 from backend.core.shared_structs.browser.BrowserCardPosition import BrowserCardPosition
 from backend.core.shared_structs.browser.BrowserTab import BrowserTab
+from backend.core.shared_structs.dashboard.Dashboard import Dashboard
+
 
 @typechecked
 async def create_browser_card(
     dashboard_id: str,
+    load_dashboard: Callable[[str], Dashboard],
+    save_dashboard: Callable[[Dashboard], None],
     emit: Optional[EventCallback] = None,
 ) -> str:
-    dashboard = _load(dashboard_id)
+    dashboard = load_dashboard(dashboard_id)
     browser_id = f"browser-{uuid4().hex[:8]}"
     tab_id = f"tab-{uuid4().hex[:8]}"
     tab = BrowserTab(id=tab_id, url="https://www.google.com", title="")
@@ -24,7 +27,7 @@ async def create_browser_card(
     )
     dashboard.layout.browser_cards[browser_id] = card
     dashboard.updated_at = datetime.now()
-    _save(dashboard)
+    save_dashboard(dashboard)
     if emit:
         await emit(BrowserCardAddedEvent(
             dashboard_id=dashboard_id,
