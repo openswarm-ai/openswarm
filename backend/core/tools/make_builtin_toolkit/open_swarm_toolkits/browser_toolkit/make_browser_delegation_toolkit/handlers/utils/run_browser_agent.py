@@ -34,6 +34,7 @@ async def run_browser_agent(
         tool_names.append(tool.to_sdk_args())
 
     browser_config = ClaudeAgentOptions(
+        env=parent.config.env,
         model=parent.model,
         system_prompt=BROWSER_AGENT_SYSTEM_PROMPT,
         tools=tool_names,

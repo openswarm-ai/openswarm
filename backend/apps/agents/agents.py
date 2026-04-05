@@ -28,6 +28,9 @@ from backend.core.tools.make_builtin_toolkit.make_builtin_toolkit import make_bu
 from backend.apps.agents.agent_utils.create_sdk_hooks import create_sdk_hooks
 from backend.apps.agents.agent_utils.build_search_text import build_search_text
 from backend.apps.agents.COMMS_MANAGER.COMMS_MANAGER import COMMS_MANAGER
+from backend.apps.settings.settings import load_settings
+from backend.core.llm.resolve_sdk_env import resolve_sdk_env
+from backend.ports import NINE_ROUTER_PORT
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import HookMatcher, McpServerConfig
 from backend.core.tools.shared_structs.Toolkit import Toolkit
@@ -118,7 +121,15 @@ async def launch(body: LaunchBody) -> dict:
 
     can_use_tool, pre_tool_hook, post_tool_hook = create_sdk_hooks(agent)
 
+    settings = load_settings()
+    env = resolve_sdk_env(
+        api_key=settings.anthropic_api_key,
+        nine_router_port=NINE_ROUTER_PORT if not settings.anthropic_api_key else None,
+    )
+
     agent.config = ClaudeAgentOptions(
+        env=env,
+        model=body.model,
         system_prompt=system_prompt,
         max_turns=body.max_turns,
         mcp_servers=mcp_servers if mcp_servers else None,

@@ -1,13 +1,11 @@
 import json
 import os
-import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from uuid import uuid4
 from pydantic import BaseModel
 
 from backend.config.Apps import SubApp
-# from backend.apps.common.json_store import JsonStore
 from backend.core.db.PydanticStore import PydanticStore
 from backend.apps.dashboards.Dashboard import (
     Dashboard,
@@ -15,16 +13,9 @@ from backend.apps.dashboards.Dashboard import (
 )
 from backend.apps.agents.agents import list_sessions, delete_session
 from backend.apps.settings.settings import load_settings
-from backend.core.llm.quick_llm_call import quick_llm_call
+from backend.apps.dashboards.generate_dashboard_name import generate_dashboard_name
 from backend.ports import NINE_ROUTER_PORT
 from typing import Optional
-
-
-
-
-logger = logging.getLogger(__name__)
-
-# from backend.config.paths import DASHBOARDS_DIR as DATA_DIR, SESSIONS_DIR
 from backend.config.paths import DB_ROOT
 
 
@@ -75,7 +66,6 @@ async def create_dashboard(body: DashboardCreate):
 # TODO: Maybe parse the output of list_sessions into actual Agent objects?
 @dashboards.router.post("/{dashboard_id}/generate-name")
 async def generate_name(dashboard_id: str):
-
     dashboard = DASHBOARD_STORE.load(dashboard_id)
 
     if not dashboard.auto_named and dashboard.name != "Untitled Dashboard":
@@ -94,33 +84,18 @@ async def generate_name(dashboard_id: str):
     if not prompts:
         return {"name": dashboard.name, "auto_named": dashboard.auto_named}
 
+    settings = load_settings()
     fallback = prompts[0][:40]
     try:
-        if len(prompts) == 1:
-            system = "Generate a concise 2-5 word workspace name for a project based on this task. Return only the name, nothing else."
-            user_content = prompts[0]
-        else:
-            system = "Generate a concise 2-5 word workspace name that captures the overall theme of these tasks. Return only the name, nothing else."
-            user_content = "\n".join(f"- {p}" for p in prompts)
-
-        settings = load_settings()
-        llm_kwargs = {}
-        if settings.anthropic_api_key:
-            llm_kwargs["api_key"] = settings.anthropic_api_key
-        else:
-            llm_kwargs["nine_router_port"] = NINE_ROUTER_PORT
-
-        generated = await quick_llm_call(
-            system, user_content,
-            model="claude-haiku-4-5-20251001",
-            max_tokens=30,
-            **llm_kwargs,
+        generated = await generate_dashboard_name(
+            prompts=prompts,
+            api_key=settings.anthropic_api_key,
+            nine_router_port=NINE_ROUTER_PORT,
         )
-        generated = generated.strip('"\'')
         if generated:
             fallback = generated
     except Exception as e:
-        logger.warning(f"Dashboard name generation failed, using fallback: {e}")
+        print(f"[dashboards.generate_name] ERROR: Dashboard name generation failed, using fallback: {e}")
 
     dashboard.name = fallback
     dashboard.auto_named = True
@@ -166,7 +141,7 @@ async def delete_dashboard(dashboard_id: str):
         try:
             await delete_session(session["session_id"])
         except Exception:
-            logger.warning(f"Failed to delete session {session.get('session_id')} during dashboard deletion")
+            print(f"[dashboards.delete_dashboard] ERROR: Failed to delete session {session.get('session_id')} during dashboard deletion")
 
     DASHBOARD_STORE.delete(dashboard_id)
     return {"ok": True}

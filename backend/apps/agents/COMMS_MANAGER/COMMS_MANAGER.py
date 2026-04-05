@@ -3,8 +3,8 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 from typeguard import typechecked
 
-from backend.apps.agents.utils.comms_utils.classes.FutureBridge import FutureBridge
-from backend.apps.agents.utils.comms_utils.classes.FrontendBroadcaster import FrontendBroadcaster
+from backend.apps.agents.COMMS_MANAGER.classes.FutureBridge import FutureBridge
+from backend.apps.agents.COMMS_MANAGER.classes.FrontendBroadcaster import FrontendBroadcaster
 from backend.core.events.events import AnyEvent, ApprovalRequestEvent, EventCallback
 
 
