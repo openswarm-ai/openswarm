@@ -1,5 +1,6 @@
 """Tools sub-app — CRUD for user-installed MCP tools, builtin permissions, and discovery."""
 
+from typing_extensions import List
 from claude_agent_sdk.types import McpServerConfig
 from pydantic import BaseModel, Field
 import json
@@ -9,7 +10,8 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Query
+from fastapi.responses import HTMLResponse
 
 from backend.config.Apps import SubApp
 from backend.config.paths import DB_ROOT
@@ -18,13 +20,14 @@ from backend.apps.tools.shared_utils.ToolDefinition import ToolDefinition
 from backend.apps.tools.discover_tools.discover_tools import discover_tools
 from backend.apps.tools.discover_tools.DiscoveryError import DiscoveryError, DiscoveryConfigError
 from backend.apps.tools.tool_definition_to_mcp_tool.tool_definition_to_mcp_tool import tool_definition_to_mcp_tool
-from backend.apps.tools.oauth.oauth import refresh_oauth_token, oauth_callback, oauth_start, oauth_disconnect, set_store
+from backend.apps.tools.oauth.OAuthService import OAuthService
 from backend.apps.tools.oauth.OAUTH_PROVIDERS.OAUTH_PROVIDERS import OAUTH_PROVIDERS
 from backend.apps.tools.builtin_tools import BUILTIN_TOOLS
 from backend.core.tools.shared_structs.TOOL_PERMISSIONS import TOOL_PERMISSIONS
 from backend.core.tools.shared_structs.Toolkit import Toolkit
 from backend.core.tools.shared_structs.Tool import Tool
 from backend.core.tools.shared_structs.MCP_Tool import MCP_Tool
+from typeguard import typechecked
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +42,13 @@ TOOL_STORE: PydanticStore[ToolDefinition] = PydanticStore[ToolDefinition](
     not_found_detail="Tool not found",
 )
 
+OAUTH_SERVICE: Optional[OAuthService] = None
 
 @asynccontextmanager
 async def tools_lifespan():
+    global OAUTH_SERVICE
     os.makedirs(TOOLS_DIR, exist_ok=True)
-    set_store(TOOL_STORE)
+    OAUTH_SERVICE = OAuthService(store=TOOL_STORE)
     yield
 
 
@@ -167,7 +172,8 @@ async def discover(tool_id: str) -> dict:
     tool = TOOL_STORE.load(tool_id)
 
     if tool.auth_type == "oauth2" and tool.auth_status == "connected":
-        refreshed = await refresh_oauth_token(tool)
+        assert OAUTH_SERVICE is not None, "OAuthService not initialized"
+        refreshed = await OAUTH_SERVICE.refresh_token(tool)
         if not refreshed and tool.oauth_tokens.get("access_token"):
             expiry = tool.oauth_tokens.get("token_expiry", 0)
             if isinstance(expiry, (int, float)) and time.time() >= expiry - 60:
@@ -219,7 +225,7 @@ async def load_user_toolkit() -> Optional[Toolkit]:
 
     Returns None if no valid tools could be converted.
     """
-    mcp_tools: list[Tool] = []
+    mcp_tools: List[Tool] = []
     for td in TOOL_STORE.load_all():
         if not td.mcp_config or not td.enabled:
             continue
@@ -246,9 +252,51 @@ async def load_user_toolkit() -> Optional[Toolkit]:
     )
 
 # ---------------------------------------------------------------------------
-# OAuth routes
+# OAuth
 # ---------------------------------------------------------------------------
 
-tools.router.add_api_route("/oauth/callback", oauth_callback, methods=["GET"])
-tools.router.add_api_route("/{tool_id}/oauth/start", oauth_start, methods=["POST"])
-tools.router.add_api_route("/{tool_id}/oauth/disconnect", oauth_disconnect, methods=["POST"])
+@tools.router.get("/oauth/callback")
+async def oauth_callback(code: str = Query(...), state: str = Query("")) -> HTMLResponse:
+    try:
+        assert OAUTH_SERVICE is not None, "OAuthService not initialized"
+        tool_id, _tool = await OAUTH_SERVICE.handle_callback(code, state)
+    except LookupError:
+        return HTMLResponse(
+            "<html><body><h2>Invalid OAuth state</h2></body></html>",
+            status_code=400,
+        )
+    except RuntimeError as e:
+        return HTMLResponse(
+            f"<html><body><h2>Token exchange failed</h2><pre>{e}</pre></body></html>",
+            status_code=400,
+        )
+
+    return HTMLResponse(
+        "<html><body>"
+        '<h2 style="font-family:sans-serif;color:#22c55e">Connected successfully!</h2>'
+        '<p style="font-family:sans-serif;color:#666">You can close this window.</p>'
+        "<script>"
+        "if (window.opener) window.opener.postMessage({type:'oauth_complete', tool_id:'"
+        + tool_id
+        + "'}, '*');"
+        "setTimeout(() => window.close(), 1500);"
+        "</script>"
+        "</body></html>"
+    )
+
+
+@tools.router.post("/{tool_id}/oauth/start")
+async def oauth_start(tool_id: str) -> dict:
+    try:
+        assert OAUTH_SERVICE is not None, "OAuthService not initialized"
+        auth_url = await OAUTH_SERVICE.start_flow(tool_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"auth_url": auth_url}
+
+
+@tools.router.post("/{tool_id}/oauth/disconnect")
+async def oauth_disconnect(tool_id: str) -> dict:
+    assert OAUTH_SERVICE is not None, "OAuthService not initialized"
+    tool = await OAUTH_SERVICE.disconnect(tool_id)
+    return {"ok": True, "tool": tool.model_dump()}
