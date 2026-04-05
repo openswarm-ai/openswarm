@@ -7,14 +7,15 @@ import uvicorn
 from typeguard import typechecked
 from backend.ports import get_backend_port
 from backend.config.Apps import MainApp
-from backend.apps.health.health import health
 from backend.apps.agents.agents import agents
-from backend.apps.settings.settings import settings
 from backend.apps.dashboards.dashboards import dashboards
+from backend.apps.health.health import health
+from backend.apps.settings.settings import settings
+from backend.apps.modes.modes import modes
 from fastapi.middleware.cors import CORSMiddleware
 
 main_app = MainApp([
-    health, agents, settings, dashboards
+    health, agents, settings, dashboards, modes
 ])
 app = main_app.app
 

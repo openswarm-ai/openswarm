@@ -102,3 +102,8 @@ async def delete_mode(mode_id: str):
         raise HTTPException(status_code=403, detail="Cannot delete built-in modes")
     MODE_STORE.delete(mode_id)
     return {"ok": True}
+
+
+@modes.router.post("/get_mode_by_id")
+async def get_mode_by_id(mode_id: str) -> Optional[Mode]:
+    return MODE_STORE.load_or_none(item_id=mode_id)
