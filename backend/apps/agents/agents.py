@@ -14,7 +14,6 @@ from datetime import datetime
 from typing import Optional, List, Dict
 from uuid import uuid4
 
-from typeguard import typechecked
 from fastapi import HTTPException
 from pydantic import BaseModel
 
@@ -23,14 +22,14 @@ from backend.config.paths import DB_ROOT
 from backend.core.Agent.Agent import Agent
 from backend.core.db.PydanticStore import PydanticStore
 from backend.core.shared_structs.agent.Message.Message import UserMessage
-from backend.core.events.events import (
-    AnyEvent, AgentStatusEvent, AgentClosedEvent, BranchSwitchedEvent,
-    ApprovalRequestEvent, EventCallback,
-)
-from backend.apps.agents import ws
-from backend.apps.agents.compose_system_prompt import compose_system_prompt
+from backend.core.events.events import AgentStatusEvent, AgentClosedEvent, BranchSwitchedEvent
+from backend.apps.agents.utils.comms.FutureBridge import APPROVAL_BRIDGE
+from backend.apps.agents.utils.agent_utils.compose_system_prompt import compose_system_prompt
 from backend.core.tools.make_builtin_toolkit.make_builtin_toolkit import make_builtin_toolkit
-from backend.apps.agents.create_sdk_hooks import create_sdk_hooks
+from backend.apps.agents.utils.agent_utils.create_sdk_hooks import create_sdk_hooks
+from backend.apps.agents.utils.comms_utils.make_session_emitter import make_session_emitter
+from backend.apps.agents.utils.comms_utils.send_browser_command import send_browser_command
+from backend.apps.agents.utils.comms_utils.build_search_text import build_search_text
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import HookMatcher, McpServerConfig
 from backend.core.tools.shared_structs.Toolkit import Toolkit
@@ -44,57 +43,6 @@ AGENT_STORE: PydanticStore[Agent] = PydanticStore[Agent](
 )
 
 SESSIONS: dict[str, Agent] = {}
-
-
-@typechecked
-def p_make_session_emitter(session_id: str) -> EventCallback:
-    """Create an event callback that routes typed events to the WS connection pool.
-
-    ApprovalRequestEvents are special-cased: instead of just broadcasting,
-    the emitter routes through the APPROVAL_BRIDGE and resolves the
-    embedded future with the user's decision.
-    """
-    async def emit(event: AnyEvent) -> None:
-        if isinstance(event, ApprovalRequestEvent):
-            if not ws.has_global_connections():
-                if not event.future.done():
-                    event.future.set_result({"behavior": "deny", "message": "No dashboard connected for approval."})
-                return
-            result = await ws.APPROVAL_BRIDGE.request(
-                request_id=event.request_id,
-                send_fn=lambda: ws.send_to_session(session_id, event.event, {
-                    "request_id": event.request_id,
-                    "session_id": event.session_id,
-                    "tool_name": event.tool_name,
-                    "tool_input": event.tool_input,
-                }),
-                timeout=600.0,
-            )
-            if not event.future.done():
-                event.future.set_result(result)
-            return
-        await ws.send_to_session(session_id, event.event, event.model_dump(mode="json"))
-    return emit
-
-
-async def p_send_browser_command(
-    action: str, browser_id: str, tab_id: str, params: dict,
-) -> dict:
-    """BrowserCommandFn implementation that routes through the browser FutureBridge."""
-    request_id: str = uuid4().hex
-    if not ws.has_global_connections():
-        return {"error": "No dashboard connected. Open the dashboard to use browser tools."}
-    return await ws.BROWSER_BRIDGE.request(
-        request_id=request_id,
-        send_fn=lambda: ws.broadcast_global("browser:command", {
-            "request_id": request_id,
-            "action": action,
-            "browser_id": browser_id,
-            "tab_id": tab_id,
-            "params": params,
-        }),
-        timeout=30.0,
-    )
 
 
 def get_agent(session_id: str) -> Agent:
@@ -113,8 +61,8 @@ async def agents_lifespan():
     for stored in AGENT_STORE.load_all():
         try:
             stored.status = "stopped"
-            stored.on_event = p_make_session_emitter(stored.session_id)
-            toolkit: Toolkit = make_builtin_toolkit(stored, SESSIONS, p_send_browser_command)
+            stored.on_event = make_session_emitter(stored.session_id)
+            toolkit: Toolkit = make_builtin_toolkit(stored, SESSIONS, send_browser_command)
             stored.toolkit = toolkit
             SESSIONS[stored.session_id] = stored
         except Exception as e:
@@ -163,10 +111,10 @@ async def launch(body: LaunchBody) -> dict:
         status="stopped",
         config=ClaudeAgentOptions(max_turns=body.max_turns),
     )
-    agent.on_event = p_make_session_emitter(agent.session_id)
+    agent.on_event = make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
 
-    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, p_send_browser_command)
+    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, send_browser_command)
     agent.toolkit = toolkit
     mcp_servers: Dict[str, McpServerConfig] = toolkit.collect_mcp_servers()
     allowed_tools, disallowed_tools = toolkit.collect_tool_permissions()
@@ -270,7 +218,7 @@ class ApprovalBody(BaseModel):
 
 @agents.router.post("/approval")
 async def handle_approval(body: ApprovalBody) -> dict:
-    ws.APPROVAL_BRIDGE.resolve(body.request_id, {
+    APPROVAL_BRIDGE.resolve(body.request_id, {
         "behavior": body.behavior,
         "message": body.message,
         "updated_input": body.updated_input,
@@ -339,8 +287,8 @@ async def resume_session(session_id: str) -> dict:
     if not agent:
         raise HTTPException(status_code=404, detail="Session not found in history")
     agent.status = "stopped"
-    agent.on_event = p_make_session_emitter(agent.session_id)
-    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, p_send_browser_command)
+    agent.on_event = make_session_emitter(agent.session_id)
+    toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, send_browser_command)
     agent.toolkit = toolkit
     SESSIONS[agent.session_id] = agent
     AGENT_STORE.delete(session_id)
@@ -366,8 +314,8 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
     clone.lock = asyncio.Lock()
     clone.pending_approvals = []
     clone.sub_agents = []
-    clone.on_event = p_make_session_emitter(clone.session_id)
-    toolkit: Toolkit = make_builtin_toolkit(clone, SESSIONS, p_send_browser_command)
+    clone.on_event = make_session_emitter(clone.session_id)
+    toolkit: Toolkit = make_builtin_toolkit(clone, SESSIONS, send_browser_command)
     clone.toolkit = toolkit
     SESSIONS[clone.session_id] = clone
     await clone.emit(AgentStatusEvent(
@@ -375,15 +323,6 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
         session=clone.snapshot(),
     ))
     return {"session": clone.snapshot().model_dump(mode="json")}
-
-
-@typechecked
-def p_build_search_text(agent: Agent, max_len: int = 5000) -> str:
-    parts: List[str] = []
-    for msg in agent.messages.messages:
-        if msg.role in ("user", "assistant") and isinstance(msg.content, str):
-            parts.append(msg.content)
-    return " ".join(parts)[:max_len]
 
 
 @agents.router.get("/history")
@@ -398,7 +337,7 @@ async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_i
     history: List[dict] = []
     for agent in all_agents:
         if q_lower:
-            search_text: str = p_build_search_text(agent).lower()
+            search_text: str = build_search_text(agent).lower()
             if q_lower not in search_text:
                 continue
         msgs = agent.messages.messages

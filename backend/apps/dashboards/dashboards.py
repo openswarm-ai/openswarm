@@ -8,10 +8,8 @@ from uuid import uuid4
 from backend.config.Apps import SubApp
 # from backend.apps.common.json_store import JsonStore
 from backend.core.db.PydanticStore import PydanticStore
-from backend.apps.dashboards.models import (
+from backend.apps.dashboards.Dashboard import (
     Dashboard,
-    DashboardCreate,
-    DashboardUpdate,
     DashboardLayout,
 )
 from backend.apps.common.llm_helpers import _resolve_model as _rm
