@@ -7,40 +7,41 @@ The ws module is used ONLY in this file — the Agent class and its internals
 communicate via the on_event callback, never importing ws directly.
 """
 
+import asyncio
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typeguard import typechecked
+from typing import Optional, List, Dict
 from uuid import uuid4
-import asyncio
 
+from typeguard import typechecked
 from fastapi import HTTPException
 from pydantic import BaseModel
-from typing import Optional, List, Dict
 
 from backend.config.Apps import SubApp
+from backend.config.paths import DB_ROOT
 from backend.core.Agent.Agent import Agent
+from backend.core.db.PydanticStore import PydanticStore
 from backend.core.shared_structs.agent.Message.Message import UserMessage
 from backend.core.events.events import (
     AnyEvent, AgentStatusEvent, AgentClosedEvent, BranchSwitchedEvent,
     ApprovalRequestEvent, EventCallback,
-)
-from backend.apps.agents.session_store import (
-    load_all,
-    save,
-    delete,
-    build_search_text,
-    get_history as session_store_get_history,
-    reconcile_on_startup,
-    load,
 )
 from backend.apps.agents import ws
 from backend.apps.agents.compose_system_prompt import compose_system_prompt
 from backend.core.tools.make_builtin_toolkit.make_builtin_toolkit import make_builtin_toolkit
 from backend.apps.agents.create_sdk_hooks import create_sdk_hooks
 from claude_agent_sdk import ClaudeAgentOptions
-from claude_agent_sdk.types import HookMatcher
+from claude_agent_sdk.types import HookMatcher, McpServerConfig
 from backend.core.tools.shared_structs.Toolkit import Toolkit
-from claude_agent_sdk.types import McpServerConfig
+
+AGENT_STORE: PydanticStore[Agent] = PydanticStore[Agent](
+    model_cls=Agent,
+    data_dir=os.path.join(DB_ROOT, "sessions"),
+    id_field="session_id",
+    dump_mode="json",
+    not_found_detail="Session not found in history",
+)
 
 SESSIONS: dict[str, Agent] = {}
 
@@ -109,28 +110,19 @@ def get_agent(session_id: str) -> Agent:
 
 @asynccontextmanager
 async def agents_lifespan():
-    await reconcile_on_startup()
-    for sid, data in load_all():
-        if data.get("closed_at") is not None:
-            continue
+    for stored in AGENT_STORE.load_all():
         try:
-            data.pop("task", None)
-            data.pop("lock", None)
-            agent: Agent = Agent(**data)
-            agent.status = "stopped"
-            agent.on_event = p_make_session_emitter(agent.session_id)
-            toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, p_send_browser_command)
-            agent.toolkit = toolkit
-            SESSIONS[agent.session_id] = agent
-            delete(sid)
+            stored.status = "stopped"
+            stored.on_event = p_make_session_emitter(stored.session_id)
+            toolkit: Toolkit = make_builtin_toolkit(stored, SESSIONS, p_send_browser_command)
+            stored.toolkit = toolkit
+            SESSIONS[stored.session_id] = stored
         except Exception as e:
-            print(f"[agents lifespan] Skipping corrupt session {sid}: {e}")
+            print(f"[agents lifespan] Skipping corrupt session {stored.session_id}: {e}")
     yield
     for agent in list[Agent](SESSIONS.values()):
         await agent.stop_agent()
-        data: dict = agent.model_dump(mode="json")
-        data["search_text"] = build_search_text(data)
-        save(agent.session_id, data)
+        AGENT_STORE.save(agent)
     SESSIONS.clear()
 
 
@@ -222,7 +214,7 @@ async def delete_session(session_id: str) -> dict:
     agent: Optional[Agent] = SESSIONS.pop(session_id, None)
     if agent is not None:
         await agent.stop_agent()
-    delete(session_id)
+    AGENT_STORE.delete(session_id)
     return {"ok": True}
 
 
@@ -329,11 +321,9 @@ async def close_session(session_id: str) -> dict:
     if not agent:
         raise HTTPException(status_code=404, detail="Session not found")
     await agent.stop_agent()
-    closed_at: str = datetime.now().isoformat()
-    data: dict = agent.model_dump(mode="json")
-    data["search_text"] = build_search_text(data)
-    data["closed_at"] = closed_at
-    save(session_id, data)
+    AGENT_STORE.save(agent)
+    msgs = agent.messages.messages
+    closed_at: str = msgs[-1].timestamp.isoformat() if msgs else datetime.now().isoformat()
     await agent.emit(AgentClosedEvent(
         session_id=session_id, status=agent.status,
         closed_at=closed_at,
@@ -345,20 +335,15 @@ async def close_session(session_id: str) -> dict:
 async def resume_session(session_id: str) -> dict:
     if session_id in SESSIONS:
         return {"session": SESSIONS[session_id].model_dump(mode="json")}
-    data: Optional[dict] = load(session_id)
-    if not data:
+    agent: Optional[Agent] = AGENT_STORE.load_or_none(session_id)
+    if not agent:
         raise HTTPException(status_code=404, detail="Session not found in history")
-    data.pop("task", None)
-    data.pop("lock", None)
-    data.pop("search_text", None)
-    data.pop("closed_at", None)
-    agent: Agent = Agent(**data)
     agent.status = "stopped"
     agent.on_event = p_make_session_emitter(agent.session_id)
     toolkit: Toolkit = make_builtin_toolkit(agent, SESSIONS, p_send_browser_command)
     agent.toolkit = toolkit
     SESSIONS[agent.session_id] = agent
-    delete(session_id)
+    AGENT_STORE.delete(session_id)
     await agent.emit(AgentStatusEvent(
         session_id=session_id, status=agent.status,
         session=agent.snapshot(),
@@ -370,12 +355,9 @@ async def resume_session(session_id: str) -> dict:
 async def duplicate_session(session_id: str, body: dict = {}) -> dict:
     source: Optional[Agent] = SESSIONS.get(session_id)
     if source is None:
-        data: Optional[dict] = load(session_id)
-        if not data:
+        source = AGENT_STORE.load_or_none(session_id)
+        if not source:
             raise HTTPException(status_code=404, detail="Session not found")
-        data.pop("task", None)
-        data.pop("lock", None)
-        source = Agent(**data)
 
     clone: Agent = source.model_copy(deep=True)
     clone.session_id = uuid4().hex
@@ -395,9 +377,40 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
     return {"session": clone.snapshot().model_dump(mode="json")}
 
 
+@typechecked
+def p_build_search_text(agent: Agent, max_len: int = 5000) -> str:
+    parts: List[str] = []
+    for msg in agent.messages.messages:
+        if msg.role in ("user", "assistant") and isinstance(msg.content, str):
+            parts.append(msg.content)
+    return " ".join(parts)[:max_len]
+
+
 @agents.router.get("/history")
 async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_id: str = "") -> dict:
-    return session_store_get_history(
-        q=q, limit=limit, offset=offset,
-        dashboard_id=dashboard_id or None,
+    all_agents: List[Agent] = AGENT_STORE.load_all()
+    all_agents.sort(
+        key=lambda a: a.messages.messages[-1].timestamp if a.messages.messages else datetime.min,
+        reverse=True,
     )
+
+    q_lower: str = q.strip().lower()
+    history: List[dict] = []
+    for agent in all_agents:
+        if q_lower:
+            search_text: str = p_build_search_text(agent).lower()
+            if q_lower not in search_text:
+                continue
+        msgs = agent.messages.messages
+        closed_at: str = msgs[-1].timestamp.isoformat() if msgs else ""
+        history.append({
+            "id": agent.session_id,
+            "status": agent.status,
+            "model": agent.model,
+            "mode": agent.mode,
+            "closed_at": closed_at,
+        })
+
+    total: int = len(history)
+    page: List[dict] = history[offset : offset + limit]
+    return {"sessions": page, "total": total, "has_more": offset + limit < total}
