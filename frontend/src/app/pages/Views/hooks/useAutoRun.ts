@@ -5,7 +5,6 @@ import {
   executeOutput, autoRunOutput, autoRunAgentOutput,
   cleanupAutoRunAgent, AutoRunConfig,
 } from '@/shared/state/outputsSlice';
-import { createSessionWs } from '@/shared/ws/WebSocketManager';
 import { ChatInputHandle } from '../../AgentChat/ChatInput';
 import { getDefault } from '../InputSchemaForm';
 import type { ConsoleEntry } from '../ConsolePanel';
@@ -43,7 +42,6 @@ export function useAutoRun(
   const autoRunInitialized = useRef(false);
 
   const [autoRunSessionId, setAutoRunSessionId] = useState<string | null>(null);
-  const autoRunWsRef = useRef<ReturnType<typeof createSessionWs> | null>(null);
   const autoRunLogEndRef = useRef<HTMLDivElement>(null);
 
   const autoRunSession = useAppSelector((state) =>
@@ -108,9 +106,6 @@ export function useAutoRun(
           context_paths: config.contextPaths.map((cp) => ({ path: cp.path, type: cp.type })),
         })).unwrap();
         setAutoRunSessionId(res.session_id);
-        const ws = createSessionWs(res.session_id);
-        ws.connect();
-        autoRunWsRef.current = ws;
       } catch { setAutoRunning(false); }
     } else {
       try {
@@ -173,7 +168,6 @@ export function useAutoRun(
       }
     }
     setAutoRunning(false);
-    if (autoRunWsRef.current) { autoRunWsRef.current.disconnect(); autoRunWsRef.current = null; }
     cleanupAutoRunAgent(autoRunSessionId).catch(() => {});
     setTimeout(() => setAutoRunSessionId(null), 300);
   }, [autoRunSessionId, autoRunSessionStatus]);
@@ -184,7 +178,6 @@ export function useAutoRun(
 
   useEffect(() => {
     return () => {
-      if (autoRunWsRef.current) { autoRunWsRef.current.disconnect(); autoRunWsRef.current = null; }
       if (autoRunSessionId) cleanupAutoRunAgent(autoRunSessionId).catch(() => {});
     };
   }, [autoRunSessionId]);

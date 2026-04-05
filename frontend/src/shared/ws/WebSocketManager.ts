@@ -2,14 +2,9 @@ import { store } from '../state/store';
 import { streamDelta } from '../state/agentsSlice';
 import { type WSEvent, dispatchWsEvent } from './wsEventHandlers';
 
-interface WSManagerOptions {
-  skipStreamEvents?: boolean;
-}
-
 class WebSocketManager {
   private ws: WebSocket | null = null;
   private url: string;
-  private skipStreamEvents: boolean;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
   private maxReconnectDelay = 30000;
@@ -17,9 +12,8 @@ class WebSocketManager {
   private deltaBuffer: Map<string, { sessionId: string; messageId: string; accumulated: string }> = new Map();
   private flushScheduled = false;
 
-  constructor(url: string, options?: WSManagerOptions) {
+  constructor(url: string) {
     this.url = url;
-    this.skipStreamEvents = options?.skipStreamEvents ?? false;
   }
 
   private bufferDelta(sessionId: string, messageId: string, delta: string) {
@@ -91,12 +85,6 @@ class WebSocketManager {
   private handleMessage(msg: WSEvent) {
     const { event, session_id, data } = msg;
 
-    if (this.skipStreamEvents) {
-      if (event === 'agent:stream_start' || event === 'agent:stream_delta' || event === 'agent:stream_end') {
-        return;
-      }
-    }
-
     dispatchWsEvent(msg, {
       bufferDelta: (sid, mid, d) => this.bufferDelta(sid, mid, d),
       flushDeltas: () => this.flushDeltas(),
@@ -114,30 +102,6 @@ class WebSocketManager {
     this.ws.send(JSON.stringify({ event, data }));
   }
 
-  sendMessage(
-    sessionId: string,
-    prompt: string,
-    opts?: { mode?: string; model?: string; provider?: string; images?: Array<{ data: string; media_type: string }> },
-  ) {
-    this.send('agent:send_message', {
-      session_id: sessionId,
-      prompt,
-      ...opts,
-    });
-  }
-
-  sendApproval(requestId: string, behavior: 'allow' | 'deny', message?: string) {
-    this.send('agent:approval_response', {
-      request_id: requestId,
-      behavior,
-      message,
-    });
-  }
-
-  stopAgent(sessionId: string) {
-    this.send('agent:stop', { session_id: sessionId });
-  }
-
   on(event: string, handler: (data: any) => void) {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
@@ -153,8 +117,4 @@ class WebSocketManager {
 
 import { WS_BASE } from '@/shared/config';
 
-export const dashboardWs = new WebSocketManager(`${WS_BASE}/ws/dashboard`, { skipStreamEvents: true });
-
-export function createSessionWs(sessionId: string): WebSocketManager {
-  return new WebSocketManager(`${WS_BASE}/ws/agents/${sessionId}`);
-}
+export const dashboardWs = new WebSocketManager(`${WS_BASE}/ws/dashboard`);

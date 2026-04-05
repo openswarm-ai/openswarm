@@ -13,7 +13,6 @@ import {
   fetchSession,
 } from '@/shared/state/agentsSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
-import { createSessionWs } from '@/shared/ws/WebSocketManager';
 import { setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards } from '@/shared/state/dashboardLayoutSlice';
 
 export interface QueuedMessage {
@@ -39,7 +38,6 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
   const [awaitingResponse, setAwaitingResponse] = useState(false);
   const [mode, setMode] = useState('agent');
   const [model, setModel] = useState('sonnet');
-  const wsRef = useRef<ReturnType<typeof createSessionWs> | null>(null);
   const messageQueueRef = useRef<QueuedMessage[]>([]);
   const [queueLength, setQueueLength] = useState(0);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -48,11 +46,7 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
 
   useEffect(() => {
     if (!id || isDraft) return;
-    const ws = createSessionWs(id);
-    ws.connect();
-    wsRef.current = ws;
     dispatch(fetchSession(id));
-    return () => { ws.disconnect(); wsRef.current = null; };
   }, [id, isDraft, dispatch]);
 
   useEffect(() => { if (session) setMode(session.mode); }, [session?.mode]);
