@@ -1,20 +1,19 @@
-"""App Builder SubApp — CRUD, workspace management, file serving, and execution."""
+"""OpenSwarmApp Builder SubOpenSwarmApp — CRUD, workspace management, file serving, and execution."""
 
 import json
 import mimetypes
 import os
 from datetime import datetime
 from contextlib import asynccontextmanager
+from typing import Optional, Any
+from pydantic import BaseModel, Field
 
 from fastapi import HTTPException
 from fastapi.responses import Response
 
 from backend.config.Apps import SubApp
 from backend.core.db.PydanticStore import PydanticStore
-from backend.apps.app_builder.App import (
-    App, AppCreate, AppUpdate, AppExecute, AppExecuteResult,
-    WorkspaceSeedRequest,
-)
+from backend.apps.app_builder.OpenSwarmApp import OpenSwarmApp
 from backend.config.paths import DB_ROOT
 from backend.apps.app_builder.templates.templates import APP_BUILDER_SKILL, APP_BUILDER_TEMPLATE_FILES
 from backend.apps.app_builder.utils.execute_backend_code import execute_backend_code, BackendExecResult
@@ -32,7 +31,7 @@ async def app_builder_lifespan():
 
 app_builder = SubApp("app_builder", app_builder_lifespan)
 
-_store = PydanticStore[App](model_cls=App, data_dir=APP_BUILDER_DIR, not_found_detail="App not found")
+_store = PydanticStore[OpenSwarmApp](model_cls=OpenSwarmApp, data_dir=APP_BUILDER_DIR, not_found_detail="OpenSwarmApp not found")
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +81,13 @@ async def read_workspace(workspace_id: str):
     return {"files": files, "meta": meta}
 
 
+class OpenSwarmAppWorkspaceSeedRequest(BaseModel):
+    workspace_id: str
+    files: Optional[dict[str, str]] = None
+    meta: Optional[dict[str, Any]] = None
+
 @app_builder.router.post("/workspace/seed")
-async def seed_workspace(body: WorkspaceSeedRequest):
+async def seed_workspace(body: OpenSwarmAppWorkspaceSeedRequest):
     folder = os.path.join(APP_BUILDER_WORKSPACE_DIR, body.workspace_id)
     os.makedirs(folder, exist_ok=True)
     if body.files:
@@ -142,7 +146,7 @@ async def delete_workspace_file(workspace_id: str, filepath: str):
 
 
 # ---------------------------------------------------------------------------
-# App CRUD
+# OpenSwarmApp CRUD
 # ---------------------------------------------------------------------------
 
 @app_builder.router.get("/list")
@@ -155,10 +159,17 @@ async def get_app(app_id: str):
     return _store.load(app_id).model_dump()
 
 
+class OpenSwarmAppCreate(BaseModel):
+    name: str
+    description: str = ""
+    icon: str = "view_quilt"
+    files: dict[str, str] = Field(default_factory=dict)
+    thumbnail: Optional[str] = None
+
 @app_builder.router.post("/create")
-async def create_app(body: AppCreate):
+async def create_app(body: OpenSwarmAppCreate):
     now = datetime.now().isoformat()
-    app = App(
+    app = OpenSwarmApp(
         name=body.name, description=body.description, icon=body.icon,
         files=body.files, thumbnail=body.thumbnail,
         created_at=now, updated_at=now,
@@ -167,8 +178,15 @@ async def create_app(body: AppCreate):
     return {"ok": True, "app": app.model_dump()}
 
 
+class OpenSwarmAppUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    files: Optional[dict[str, str]] = None
+    thumbnail: Optional[str] = None
+
 @app_builder.router.put("/{app_id}")
-async def update_app(app_id: str, body: AppUpdate):
+async def update_app(app_id: str, body: OpenSwarmAppUpdate):
     app = _store.load(app_id)
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(app, k, v)
@@ -188,8 +206,20 @@ async def delete_app(app_id: str):
 # Execution
 # ---------------------------------------------------------------------------
 
+class OpenSwarmAppExecute(BaseModel):
+    app_id: str
+
+class OpenSwarmAppExecuteResult(BaseModel):
+    app_id: str
+    app_name: str
+    frontend_code: str
+    backend_result: Optional[dict[str, Any]] = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
+    error: Optional[str] = None
+
 @app_builder.router.post("/execute")
-async def execute_app(body: AppExecute):
+async def execute_app(body: OpenSwarmAppExecute):
     app = _store.load(body.app_id)
 
     backend_code = app.files.get("backend.py")
@@ -206,7 +236,7 @@ async def execute_app(body: AppExecute):
         except Exception as e:
             error = str(e)
 
-    return AppExecuteResult(
+    return OpenSwarmAppExecuteResult(
         app_id=app.id, app_name=app.name,
         frontend_code=app.files.get("index.html", ""),
         backend_result=backend_result, stdout=stdout_text,
