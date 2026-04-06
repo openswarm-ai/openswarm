@@ -1,5 +1,5 @@
 import json
-from backend.apps.skills.Skill import Skill
+from backend.apps.skills.SkillStore.Skill import Skill
 from typeguard import typechecked
 from pydantic import BaseModel
 import os

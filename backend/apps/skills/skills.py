@@ -11,9 +11,9 @@ from pydantic import BaseModel
 
 from backend.config.Apps import SubApp
 from backend.config.paths import DB_ROOT
-from backend.apps.skills.SkillStore import SkillStore
+from backend.apps.skills.SkillStore.SkillStore import SkillStore
 from backend.apps.skills.parse_frontmatter import parse_frontmatter
-from backend.apps.skills.registry_refresh_loop.RegistryRefreshLoop import RegistryRefreshLoop
+from backend.apps.skills.RegistryRefreshLoop.RegistryRefreshLoop import RegistryRefreshLoop
 
 logger = logging.getLogger(__name__)
 

@@ -5,8 +5,8 @@
 import asyncio
 import httpx
 from typeguard import typechecked
-from backend.apps.skills.registry_refresh_loop.fetch_all_registry_skills.utils.fetch_skill_paths import fetch_skill_paths
-from backend.apps.skills.registry_refresh_loop.fetch_all_registry_skills.utils.fetch_one_skill import fetch_one_skill
+from backend.apps.skills.RegistryRefreshLoop.fetch_all_registry_skills.utils.fetch_skill_paths import fetch_skill_paths
+from backend.apps.skills.RegistryRefreshLoop.fetch_all_registry_skills.utils.fetch_one_skill import fetch_one_skill
 
 
 @typechecked

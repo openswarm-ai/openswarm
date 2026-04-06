@@ -5,7 +5,7 @@ from typing import Optional
 from typeguard import typechecked
 from pydantic import BaseModel, Field, InstanceOf
 
-from backend.apps.skills.registry_refresh_loop.fetch_all_registry_skills.fetch_all_registry_skills import fetch_all_registry_skills
+from backend.apps.skills.RegistryRefreshLoop.fetch_all_registry_skills.fetch_all_registry_skills import fetch_all_registry_skills
 
 
 class RegistryRefreshLoop(BaseModel):
