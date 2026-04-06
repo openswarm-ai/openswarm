@@ -4,28 +4,28 @@ import asyncio
 import json
 import logging
 import os
-import re
-import time
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-import httpx
 from fastapi import HTTPException, Query
 from pydantic import BaseModel
 
 from backend.config.Apps import SubApp
 from backend.config.paths import DB_ROOT
-from backend.apps.skills.Skill import Skill
+from backend.apps.skills.SkillStore import SkillStore
+from backend.apps.skills.parse_frontmatter import parse_frontmatter
+from backend.apps.skills.registry_refresh_loop.registry_refresh_loop import registry_refresh_loop
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Paths
+# Paths & singleton store
 # ---------------------------------------------------------------------------
 
 SKILLS_DIR = os.path.expanduser("~/.claude/skills")
-INDEX_PATH = os.path.join(SKILLS_DIR, ".skills_index.json")
 SKILLS_WORKSPACE_DIR = os.path.join(DB_ROOT, "skills_workspace")
+
+SKILL_STORE = SkillStore(skills_dir=SKILLS_DIR)
 
 # ---------------------------------------------------------------------------
 # Registry constants
@@ -50,9 +50,15 @@ _refresh_task: Optional[asyncio.Task] = None
 @asynccontextmanager
 async def skills_lifespan():
     global _refresh_task
-    os.makedirs(SKILLS_DIR, exist_ok=True)
     os.makedirs(SKILLS_WORKSPACE_DIR, exist_ok=True)
-    _refresh_task = asyncio.create_task(_registry_refresh_loop())
+    _refresh_task = asyncio.create_task(registry_refresh_loop(
+        refresh_interval_s=_REFRESH_INTERVAL_S,
+        registry_cache=_registry_cache,
+        registry_updated_at=_registry_updated_at,
+        num_concurrent_fetches=_CONCURRENT_FETCHES,
+        manifest_url=_MANIFEST_URL,
+        raw_base=_RAW_BASE,
+    ))
     yield
     if _refresh_task:
         _refresh_task.cancel()
@@ -66,76 +72,13 @@ skills = SubApp("skills", skills_lifespan)
 
 
 # ===========================================================================
-# Local skill helpers
-# ===========================================================================
-
-
-def _load_index() -> dict[str, dict]:
-    if os.path.exists(INDEX_PATH):
-        with open(INDEX_PATH) as f:
-            return json.load(f)
-    return {}
-
-
-def _save_index(index: dict[str, dict]) -> None:
-    with open(INDEX_PATH, "w") as f:
-        json.dump(index, f, indent=2)
-
-
-def _slug(name: str) -> str:
-    return name.lower().replace(" ", "-")
-
-
-def _sync_skills() -> list[Skill]:
-    """Scan ~/.claude/skills/ for .md files and reconcile with the sidecar index."""
-    index = _load_index()
-    result: list[Skill] = []
-    if not os.path.exists(SKILLS_DIR):
-        return result
-    for fname in os.listdir(SKILLS_DIR):
-        if not fname.endswith(".md"):
-            continue
-        fpath = os.path.join(SKILLS_DIR, fname)
-        with open(fpath) as f:
-            content = f.read()
-        skill_id = fname.removesuffix(".md")
-        meta = index.get(skill_id, {})
-        result.append(Skill(
-            id=skill_id,
-            name=meta.get("name", skill_id.replace("-", " ").replace("_", " ").title()),
-            description=meta.get("description", ""),
-            content=content,
-            file_path=fpath,
-            command=meta.get("command", skill_id),
-        ))
-    return result
-
-
-def _parse_frontmatter(raw: str) -> tuple[dict, str]:
-    """Split YAML frontmatter from markdown body."""
-    if not raw.startswith("---"):
-        return {}, raw
-    end = raw.find("---", 3)
-    if end == -1:
-        return {}, raw
-    fm_block = raw[3:end].strip()
-    body = raw[end + 3:].strip()
-    meta: dict = {}
-    for line in fm_block.splitlines():
-        m = re.match(r"^(\w[\w_-]*)\s*:\s*(.+)$", line)
-        if m:
-            meta[m.group(1).strip()] = m.group(2).strip().strip('"').strip("'")
-    return meta, body
-
-
-# ===========================================================================
 # Local skill routes
 # ===========================================================================
 
 
 @skills.router.get("/list")
 async def list_skills():
-    return {"skills": [s.model_dump() for s in _sync_skills()]}
+    return {"skills": [s.model_dump() for s in SKILL_STORE.list_all()]}
 
 
 @skills.router.get("/workspace/{workspace_id}")
@@ -159,7 +102,7 @@ async def read_skill_workspace(workspace_id: str):
         except json.JSONDecodeError:
             pass
 
-    frontmatter, _ = _parse_frontmatter(skill_content) if skill_content else ({}, "")
+    frontmatter, _ = parse_frontmatter(skill_content) if skill_content else ({}, "")
 
     return {"skill_content": skill_content, "meta": meta, "frontmatter": frontmatter}
 
@@ -185,10 +128,10 @@ async def seed_skill_workspace(body: _WorkspaceSeedBody):
 
 @skills.router.get("/detail/{skill_id}")
 async def get_skill(skill_id: str):
-    for s in _sync_skills():
-        if s.id == skill_id:
-            return s.model_dump()
-    raise HTTPException(status_code=404, detail="Skill not found")
+    s = SKILL_STORE.get(skill_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return s.model_dump()
 
 
 class _SkillCreateBody(BaseModel):
@@ -200,19 +143,7 @@ class _SkillCreateBody(BaseModel):
 
 @skills.router.post("/create")
 async def create_skill(body: _SkillCreateBody):
-    slug = _slug(body.name)
-    fpath = os.path.join(SKILLS_DIR, f"{slug}.md")
-    with open(fpath, "w") as f:
-        f.write(body.content)
-
-    index = _load_index()
-    index[slug] = {"name": body.name, "description": body.description, "command": body.command or slug}
-    _save_index(index)
-
-    skill = Skill(
-        id=slug, name=body.name, description=body.description,
-        content=body.content, file_path=fpath, command=body.command or slug,
-    )
+    skill = SKILL_STORE.create(body.name, body.description, body.content, body.command)
     return {"ok": True, "skill": skill.model_dump()}
 
 
@@ -225,126 +156,20 @@ class _SkillUpdateBody(BaseModel):
 
 @skills.router.put("/{skill_id}")
 async def update_skill(skill_id: str, body: _SkillUpdateBody):
-    fpath = os.path.join(SKILLS_DIR, f"{skill_id}.md")
-    if not os.path.exists(fpath):
+    try:
+        skill = SKILL_STORE.update(
+            skill_id, name=body.name, description=body.description,
+            content=body.content, command=body.command,
+        )
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Skill not found")
-
-    if body.content is not None:
-        with open(fpath, "w") as f:
-            f.write(body.content)
-
-    index = _load_index()
-    meta = index.get(skill_id, {})
-    if body.name is not None:
-        meta["name"] = body.name
-    if body.description is not None:
-        meta["description"] = body.description
-    if body.command is not None:
-        meta["command"] = body.command
-    index[skill_id] = meta
-    _save_index(index)
-
-    with open(fpath) as f:
-        content = f.read()
-
-    skill = Skill(
-        id=skill_id, name=meta.get("name", skill_id),
-        description=meta.get("description", ""),
-        content=content, file_path=fpath, command=meta.get("command", skill_id),
-    )
     return {"ok": True, "skill": skill.model_dump()}
 
 
 @skills.router.delete("/{skill_id}")
 async def delete_skill(skill_id: str):
-    fpath = os.path.join(SKILLS_DIR, f"{skill_id}.md")
-    if os.path.exists(fpath):
-        os.remove(fpath)
-    index = _load_index()
-    index.pop(skill_id, None)
-    _save_index(index)
+    SKILL_STORE.delete(skill_id)
     return {"ok": True}
-
-
-# ===========================================================================
-# Registry helpers
-# ===========================================================================
-
-
-async def _fetch_skill_paths(client: httpx.AsyncClient) -> list[tuple[str, str]]:
-    """Fetch marketplace.json and return (folder, plugin_name) pairs."""
-    resp = await client.get(_MANIFEST_URL)
-    resp.raise_for_status()
-    manifest = resp.json()
-    paths: list[tuple[str, str]] = []
-    for plugin in manifest.get("plugins", []):
-        plugin_name = plugin.get("name", "")
-        for skill_ref in plugin.get("skills", []):
-            paths.append((skill_ref.lstrip("./"), plugin_name))
-    return paths
-
-
-async def _fetch_one_skill(
-    client: httpx.AsyncClient,
-    sem: asyncio.Semaphore,
-    folder: str,
-    plugin_name: str,
-) -> Optional[dict]:
-    async with sem:
-        try:
-            resp = await client.get(f"{_RAW_BASE}/{folder}/SKILL.md")
-            if resp.status_code != 200:
-                return None
-            raw = resp.text
-        except Exception as exc:
-            logger.debug("Failed to fetch %s/SKILL.md: %s", folder, exc)
-            return None
-
-    meta, body = _parse_frontmatter(raw)
-    name = meta.get("name", "")
-    if not name:
-        name = folder.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
-
-    return {
-        "name": name,
-        "description": meta.get("description", ""),
-        "content": body,
-        "folder": folder,
-        "category": plugin_name.replace("-", " ").replace("_", " ").title(),
-        "repositoryUrl": f"https://github.com/{_REPO}/tree/{_BRANCH}/{folder}",
-    }
-
-
-async def _fetch_all_registry_skills() -> dict[str, dict]:
-    result: dict[str, dict] = {}
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            paths = await _fetch_skill_paths(client)
-        except Exception as e:
-            logger.warning("Skill registry manifest fetch failed: %s", e)
-            return result
-        logger.info("Skill registry: found %d skills in manifest, fetching...", len(paths))
-        sem = asyncio.Semaphore(_CONCURRENT_FETCHES)
-        records = await asyncio.gather(
-            *[_fetch_one_skill(client, sem, folder, plugin) for folder, plugin in paths]
-        )
-        for rec in records:
-            if rec:
-                result[rec["name"]] = rec
-    logger.info("Skill registry cache refreshed: %d skills", len(result))
-    return result
-
-
-async def _registry_refresh_loop() -> None:
-    global _registry_cache, _registry_updated_at
-    while True:
-        try:
-            _registry_cache = await _fetch_all_registry_skills()
-            _registry_updated_at = time.time()
-        except Exception as e:
-            logger.exception("Skill registry refresh error: %s", e)
-        await asyncio.sleep(_REFRESH_INTERVAL_S)
-
 
 # ===========================================================================
 # Registry routes
