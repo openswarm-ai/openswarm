@@ -15,7 +15,7 @@ from backend.apps.analytics.collector import init as init_collector, shutdown as
 
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "1.0.20"
+APP_VERSION = "1.0.21"
 
 _heartbeat_task: asyncio.Task | None = None
 
