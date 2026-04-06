@@ -5,28 +5,17 @@ for the frontend to connect/disconnect subscription providers
 (Claude, ChatGPT, Gemini, etc.) via OAuth.
 """
 
-import asyncio
-
-import httpx
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Dict, Optional
 
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from backend.config.Apps import SubApp
-from backend.apps.subscriptions.NineRouter.NineRouterProcess.NineRouterProcess import (
-    is_running, ensure_running, stop,
-)
-from backend.apps.subscriptions.NineRouter.NineRouterClient import (
-    get_providers, get_models, start_oauth, poll_oauth, exchange_oauth,
-    NINE_ROUTER_API,
-)
+from backend.apps.subscriptions.NineRouter.NineRouter import NineRouter
 from backend.apps.subscriptions.html_constants import SUCCESS_HTML, ERROR_STYLE
-from typing import Dict
 
 P_PENDING_OAUTH: Dict[str, dict] = {}
-P_ENSURE_TASK: Optional[asyncio.Task] = None
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -34,16 +23,15 @@ P_ENSURE_TASK: Optional[asyncio.Task] = None
 
 @asynccontextmanager
 async def subscriptions_lifespan():
+    router: NineRouter = NineRouter.get()
     try:
-        await ensure_running()
+        await router.ensure_running()
     except Exception as e:
         print(f"9Router auto-start failed: {e}")
     yield
-    global P_ENSURE_TASK
-    if P_ENSURE_TASK and not P_ENSURE_TASK.done():
-        P_ENSURE_TASK.cancel()
+    router.cancel_ensure_task()
     try:
-        stop()
+        router.stop()
     except Exception:
         pass
 
@@ -57,13 +45,12 @@ subscriptions = SubApp("subscriptions", subscriptions_lifespan)
 
 @subscriptions.router.get("/status")
 async def subscriptions_status() -> dict:
-    global P_ENSURE_TASK
-    if not is_running():
-        if P_ENSURE_TASK is None or P_ENSURE_TASK.done():
-            P_ENSURE_TASK = asyncio.create_task(ensure_running())
+    router: NineRouter = NineRouter.get()
+    if not router.is_running():
+        await router.ensure_running_background()
         return {"running": False, "providers": [], "models": []}
-    providers = await get_providers()
-    models = await get_models()
+    providers = await router.get_providers()
+    models = await router.get_models()
     return {"running": True, "providers": providers, "models": models}
 
 
@@ -73,13 +60,14 @@ async def subscriptions_connect(body: dict) -> dict:
     if not provider:
         raise HTTPException(status_code=400, detail="provider required")
 
-    if not is_running():
-        await ensure_running()
-        if not is_running():
+    router: NineRouter = NineRouter.get()
+    if not router.is_running():
+        await router.ensure_running()
+        if not router.is_running():
             raise HTTPException(status_code=503, detail="9Router not available. Please install Node.js.")
 
     try:
-        result: dict = await start_oauth(provider)
+        result: dict = await router.start_oauth(provider)
         if result.get("flow") == "authorization_code" and result.get("state"):
             P_PENDING_OAUTH[result["state"]] = {
                 "provider": provider,
@@ -99,7 +87,7 @@ async def subscriptions_poll(body: dict) -> dict:
         raise HTTPException(status_code=400, detail="provider and device_code required")
 
     try:
-        result: dict = await poll_oauth(
+        result: dict = await NineRouter.get().poll_oauth(
             provider, device_code,
             code_verifier=body.get("code_verifier"),
             extra_data=body.get("extra_data"),
@@ -115,13 +103,13 @@ async def subscriptions_disconnect(body: dict) -> dict:
     if not provider:
         raise HTTPException(status_code=400, detail="provider required")
 
+    router: NineRouter = NineRouter.get()
     try:
-        providers_data = await get_providers()
+        providers_data = await router.get_providers()
         connections: list = providers_data.get("connections", []) if isinstance(providers_data, dict) else []
         conn = next((c for c in connections if c.get("provider") == provider), None)
         if conn and conn.get("id"):
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                await client.delete(f"{NINE_ROUTER_API}/providers/{conn['id']}")
+            await router.disconnect_provider(conn["id"])
             return {"ok": True}
         return {"ok": False, "error": "Connection not found"}
     except Exception as e:
@@ -164,7 +152,7 @@ async def subscriptions_callback(request: Request):
         )
 
     try:
-        await exchange_oauth(
+        await NineRouter.get().exchange_oauth(
             pending["provider"], code,
             pending["redirect_uri"], pending["code_verifier"], state,
         )

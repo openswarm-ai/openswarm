@@ -118,3 +118,10 @@ async def get_models() -> list[dict]:
     except Exception as e:
         print(f"9Router models fetch failed: {e}")
     return []
+
+
+@typechecked
+async def disconnect_provider(provider_id: str) -> bool:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.delete(f"{NINE_ROUTER_API}/providers/{provider_id}")
+        return r.status_code == 200
