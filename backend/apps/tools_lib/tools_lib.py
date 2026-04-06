@@ -1,8 +1,10 @@
 import asyncio
+import hashlib
 import json
 import os
 import re
 import logging
+import secrets
 import shutil
 import time
 from contextlib import asynccontextmanager
@@ -53,8 +55,18 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/contacts.readonly",
 ]
 
+AIRTABLE_AUTH_URL = "https://airtable.com/oauth2/v1/authorize"
+AIRTABLE_TOKEN_URL = "https://airtable.com/oauth2/v1/token"
+AIRTABLE_SCOPES = [
+    "data.records:read", "data.records:write",
+    "data.recordComments:read", "data.recordComments:write",
+    "schema.bases:read", "schema.bases:write",
+    "user.email:read",
+]
 
-_pending_oauth: dict[str, str] = {}
+
+# Maps state -> {tool_id, code_verifier (for PKCE flows)}
+_pending_oauth: dict[str, dict] = {}
 
 
 def _load_all() -> list[ToolDefinition]:
@@ -123,15 +135,50 @@ async def list_tools():
 
 @tools_lib.router.get("/oauth/callback")
 async def oauth_callback(code: str = Query(...), state: str = Query("")):
-    tool_id = _pending_oauth.pop(state, None)
-    if not tool_id:
+    pending = _pending_oauth.pop(state, None)
+    if not pending:
         return HTMLResponse("<html><body><h2>Invalid OAuth state</h2></body></html>", status_code=400)
+
+    tool_id = pending if isinstance(pending, str) else pending["tool_id"]
+    code_verifier = pending.get("code_verifier") if isinstance(pending, dict) else None
 
     tool = _load(tool_id)
     _port = os.environ.get("OPENSWARM_PORT", "8324")
     redirect_uri = f"http://localhost:{_port}/api/tools/oauth/callback"
 
-    if tool.name.lower() == "notion":
+    if tool.name.lower() == "airtable":
+        # Airtable OAuth: PKCE flow
+        client_id = os.environ.get("AIRTABLE_OAUTH_CLIENT_ID", "")
+        client_secret = os.environ.get("AIRTABLE_OAUTH_CLIENT_SECRET", "")
+        import base64
+        credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(AIRTABLE_TOKEN_URL, data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "code_verifier": code_verifier or "",
+                "client_id": client_id,
+            }, headers={
+                "Authorization": f"Basic {credentials}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            })
+
+        if resp.status_code != 200:
+            logger.warning(f"Airtable OAuth token exchange failed: {resp.text}")
+            return HTMLResponse(f"<html><body><h2>Token exchange failed</h2><pre>{resp.text}</pre></body></html>", status_code=400)
+
+        tokens = resp.json()
+        tool.oauth_tokens = {
+            "access_token": tokens.get("access_token", ""),
+            "refresh_token": tokens.get("refresh_token", ""),
+            "token_expiry": time.time() + tokens.get("expires_in", 7200),
+        }
+        tool.auth_type = "oauth2"
+        tool.auth_status = "connected"
+        tool.connected_account_email = "Airtable account"
+
+    elif tool.name.lower() == "notion":
         # Notion OAuth: Basic auth with client_id:secret
         notion_client_id = os.environ.get("NOTION_OAUTH_CLIENT_ID", "")
         notion_client_secret = os.environ.get("NOTION_OAUTH_CLIENT_SECRET", "")
@@ -751,25 +798,17 @@ async def discover_tools(tool_id: str):
     tool = _load(tool_id)
 
     if tool.auth_type == "oauth2" and tool.auth_status == "connected":
-        # Only attempt Google token refresh for tools that use Google OAuth
-        # (identified by having a refresh_token — Notion and other non-Google
-        # OAuth providers don't use refresh tokens through our flow).
         if tool.oauth_tokens.get("refresh_token"):
-            refreshed = await refresh_google_token(tool)
+            if tool.name.lower() == "airtable":
+                refreshed = await refresh_airtable_token(tool)
+            else:
+                refreshed = await refresh_google_token(tool)
             if not refreshed and tool.oauth_tokens.get("access_token"):
                 expiry = tool.oauth_tokens.get("token_expiry", 0)
                 if time.time() >= expiry - 60:
-                    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-                    if not client_id:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="OAuth token expired and GOOGLE_OAUTH_CLIENT_ID is not set. "
-                                   "In the packaged app, create ~/.openswarm.env or "
-                                   "~/Library/Application Support/OpenSwarm/.env with your Google OAuth credentials.",
-                        )
                     raise HTTPException(
                         status_code=502,
-                        detail="OAuth token expired and refresh failed. Try reconnecting Google.",
+                        detail=f"OAuth token expired and refresh failed. Try reconnecting {tool.name}.",
                     )
 
     config = derive_mcp_config(tool)
@@ -1039,9 +1078,29 @@ async def oauth_start(tool_id: str):
     _port = os.environ.get("OPENSWARM_PORT", "8324")
     redirect_uri = f"http://localhost:{_port}/api/tools/oauth/callback"
     state = tool_id
-    _pending_oauth[state] = tool_id
 
-    if tool.name.lower() == "notion":
+    if tool.name.lower() == "airtable":
+        client_id = os.environ.get("AIRTABLE_OAUTH_CLIENT_ID", "")
+        if not client_id:
+            raise HTTPException(status_code=400, detail="AIRTABLE_OAUTH_CLIENT_ID not set in backend .env")
+        # PKCE: generate code_verifier and code_challenge
+        code_verifier = secrets.token_urlsafe(96)
+        code_challenge = hashlib.sha256(code_verifier.encode()).digest()
+        import base64
+        code_challenge_b64 = base64.urlsafe_b64encode(code_challenge).rstrip(b"=").decode()
+        _pending_oauth[state] = {"tool_id": tool_id, "code_verifier": code_verifier}
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(AIRTABLE_SCOPES),
+            "state": state,
+            "code_challenge": code_challenge_b64,
+            "code_challenge_method": "S256",
+        }
+        auth_url = f"{AIRTABLE_AUTH_URL}?{urlencode(params)}"
+    elif tool.name.lower() == "notion":
+        _pending_oauth[state] = {"tool_id": tool_id}
         client_id = os.environ.get("NOTION_OAUTH_CLIENT_ID", "")
         if not client_id:
             raise HTTPException(status_code=400, detail="NOTION_OAUTH_CLIENT_ID not set in backend .env")
@@ -1054,6 +1113,7 @@ async def oauth_start(tool_id: str):
         }
         auth_url = f"https://api.notion.com/v1/oauth/authorize?{urlencode(params)}"
     else:
+        _pending_oauth[state] = {"tool_id": tool_id}
         client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
         if not client_id:
             raise HTTPException(status_code=400, detail="GOOGLE_OAUTH_CLIENT_ID not set in backend .env")
@@ -1119,4 +1179,45 @@ async def refresh_google_token(tool: ToolDefinition) -> Optional[str]:
             return new_token
     except Exception as e:
         logger.warning(f"Google token refresh failed for tool {tool.id}: {e}")
+    return None
+
+
+async def refresh_airtable_token(tool: ToolDefinition) -> Optional[str]:
+    """Refresh an expired Airtable OAuth token. Returns the fresh access_token or None."""
+    if tool.auth_type != "oauth2":
+        return None
+    refresh_token = tool.oauth_tokens.get("refresh_token")
+    if not refresh_token:
+        return None
+    expiry = tool.oauth_tokens.get("token_expiry", 0)
+    if time.time() < expiry - 60:
+        return tool.oauth_tokens.get("access_token")
+
+    client_id = os.environ.get("AIRTABLE_OAUTH_CLIENT_ID", "")
+    client_secret = os.environ.get("AIRTABLE_OAUTH_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        return None
+
+    try:
+        import base64
+        credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(AIRTABLE_TOKEN_URL, data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+            }, headers={
+                "Authorization": f"Basic {credentials}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            })
+        if resp.status_code == 200:
+            data = resp.json()
+            tool.oauth_tokens["access_token"] = data["access_token"]
+            tool.oauth_tokens["token_expiry"] = time.time() + data.get("expires_in", 7200)
+            if data.get("refresh_token"):
+                tool.oauth_tokens["refresh_token"] = data["refresh_token"]
+            _save(tool)
+            return data["access_token"]
+    except Exception as e:
+        logger.warning(f"Airtable token refresh failed for tool {tool.id}: {e}")
     return None

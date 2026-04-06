@@ -202,6 +202,23 @@ const INTEGRATIONS: Integration[] = [
     ),
     authType: 'oauth2',
   },
+  {
+    id: 'airtable',
+    name: 'Airtable',
+    description: 'Read and write records, manage bases, tables, and fields in Airtable.',
+    mcp_config: { type: 'http', url: 'https://mcp.airtable.com/mcp' },
+    color: '#18BFFF',
+    website: 'https://airtable.com/developers/web/api/introduction',
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <path d="M11.52 1.28L2.1 5.13c-.28.12-.28.52 0 .64l9.5 3.9c.25.1.53.1.78 0l9.5-3.9c.28-.12.28-.52 0-.64l-9.5-3.85c-.25-.1-.53-.1-.78 0z" fill="#FCB400"/>
+        <path d="M12.76 11.24v9.47c0 .3.32.5.58.38l9.3-4.32c.16-.07.26-.23.26-.4V6.9c0-.3-.32-.5-.58-.38l-9.3 4.32c-.16.07-.26.23-.26.4z" fill="#18BFFF"/>
+        <path d="M11.24 11.24v9.47c0 .3-.32.5-.58.38L1.1 16.77c-.16-.07-.26-.23-.26-.4V6.9c0-.3.32-.5.58-.38l9.56 4.32c.16.07.26.23.26.4z" fill="#F82B60"/>
+        <path d="M11.24 11.12L1.66 6.78l-.56.26 9.56 4.32c.16.07.34.07.5.02l.08-.26z" fill="#751AFF" opacity=".25"/>
+      </svg>
+    ),
+    authType: 'oauth2',
+  },
 ];
 
 const CATEGORY_ORDER = ['filesystem', 'system', 'search', 'interaction', 'agents', 'planning', 'scheduling'];
@@ -849,7 +866,7 @@ const Tools: React.FC = () => {
         }
       }, 1000);
     } else {
-      setSnackbar({ open: true, message: 'OAuth failed — make sure GOOGLE_OAUTH_CLIENT_ID is set in backend .env', severity: 'error' });
+      setSnackbar({ open: true, message: 'OAuth failed — check that OAuth credentials are set in backend .env', severity: 'error' });
     }
   };
 

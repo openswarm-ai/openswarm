@@ -21,6 +21,7 @@ from backend.apps.tools_lib.tools_lib import (
     _sanitize_server_name,
     derive_mcp_config,
     load_builtin_permissions,
+    refresh_airtable_token,
     refresh_google_token,
 )
 from backend.config.paths import SESSIONS_DIR
@@ -150,7 +151,10 @@ class AgentManager:
                 continue
 
             if tool.auth_type == "oauth2" and tool.auth_status == "connected":
-                refreshed = await refresh_google_token(tool)
+                if tool.name.lower() == "airtable":
+                    refreshed = await refresh_airtable_token(tool)
+                else:
+                    refreshed = await refresh_google_token(tool)
                 logger.info(f"[MCP-DEBUG] {tool.name} token refresh: {'OK' if refreshed else 'FAILED'}")
 
             config = derive_mcp_config(tool)
