@@ -2,7 +2,7 @@
 
 All interaction with 9Router from the subscriptions subapp goes through
 NineRouter.get() so that mutable state (subprocess handle, background
-ensure-task) lives in one place.
+ensure-task, HTTP client) lives in one place.
 """
 
 import asyncio
@@ -10,25 +10,16 @@ from typing import ClassVar, Optional
 
 from typeguard import typechecked
 
-from backend.apps.subscriptions.NineRouter.NineRouterProcess.NineRouterProcess import (
-    is_running as _is_running,
-    ensure_running as _ensure_running,
-    stop as _stop,
-)
-from backend.apps.subscriptions.NineRouter.NineRouterClient import (
-    get_providers as _get_providers,
-    get_models as _get_models,
-    start_oauth as _start_oauth,
-    poll_oauth as _poll_oauth,
-    exchange_oauth as _exchange_oauth,
-    disconnect_provider as _disconnect_provider,
-)
+from backend.apps.subscriptions.NineRouter.NineRouterProcess.NineRouterProcess import NineRouterProcess
+from backend.apps.subscriptions.NineRouter.NineRouterClient import NineRouterClient
 
 
 class NineRouter:
     _instance: ClassVar[Optional["NineRouter"]] = None
 
     def __init__(self) -> None:
+        self._process: NineRouterProcess = NineRouterProcess()
+        self._client: NineRouterClient = NineRouterClient()
         self._ensure_task: Optional[asyncio.Task] = None
 
     @classmethod
@@ -41,21 +32,23 @@ class NineRouter:
 
     @typechecked
     def is_running(self) -> bool:
-        return _is_running()
+        return self._process.is_running()
 
     @typechecked
     async def ensure_running(self) -> None:
-        await _ensure_running()
+        await self._process.ensure_running()
 
     @typechecked
-    def stop(self) -> None:
-        _stop()
+    async def stop(self) -> None:
+        self.cancel_ensure_task()
+        await self._client.aclose()
+        self._process.stop()
 
     @typechecked
     async def ensure_running_background(self) -> None:
         """Kick off ensure_running as a background task if not already in flight."""
         if self._ensure_task is None or self._ensure_task.done():
-            self._ensure_task = asyncio.create_task(_ensure_running())
+            self._ensure_task = asyncio.create_task(self._process.ensure_running())
 
     @typechecked
     def cancel_ensure_task(self) -> None:
@@ -66,15 +59,15 @@ class NineRouter:
 
     @typechecked
     async def get_providers(self) -> list[dict] | dict:
-        return await _get_providers()
+        return await self._client.get_providers()
 
     @typechecked
     async def get_models(self) -> list[dict]:
-        return await _get_models()
+        return await self._client.get_models()
 
     @typechecked
     async def start_oauth(self, provider: str) -> dict:
-        return await _start_oauth(provider)
+        return await self._client.start_oauth(provider)
 
     @typechecked
     async def poll_oauth(
@@ -84,7 +77,7 @@ class NineRouter:
         code_verifier: str | None = None,
         extra_data: dict | None = None,
     ) -> dict:
-        return await _poll_oauth(provider, device_code, code_verifier=code_verifier, extra_data=extra_data)
+        return await self._client.poll_oauth(provider, device_code, code_verifier=code_verifier, extra_data=extra_data)
 
     @typechecked
     async def exchange_oauth(
@@ -95,8 +88,8 @@ class NineRouter:
         code_verifier: str,
         state: str = "",
     ) -> dict:
-        return await _exchange_oauth(provider, code, redirect_uri, code_verifier, state)
+        return await self._client.exchange_oauth(provider, code, redirect_uri, code_verifier, state)
 
     @typechecked
     async def disconnect_provider(self, provider_id: str) -> bool:
-        return await _disconnect_provider(provider_id)
+        return await self._client.disconnect_provider(provider_id)

@@ -6,28 +6,33 @@ from typeguard import typechecked
 from backend.apps.subscriptions.NineRouter.constants import NINE_ROUTER_API, NINE_ROUTER_V1
 from backend.ports import NINE_ROUTER_PORT
 
-@typechecked
-async def get_providers() -> list[dict] | dict:
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{NINE_ROUTER_API}/providers")
+
+class NineRouterClient:
+    def __init__(self) -> None:
+        self._http: httpx.AsyncClient = httpx.AsyncClient(timeout=15.0)
+
+    async def aclose(self) -> None:
+        await self._http.aclose()
+
+    @typechecked
+    async def get_providers(self) -> list[dict] | dict:
+        try:
+            r = await self._http.get(f"{NINE_ROUTER_API}/providers", timeout=5.0)
             if r.status_code == 200:
                 return r.json()
-    except Exception as e:
-        print(f"9Router providers fetch failed: {e}")
-    return []
+        except Exception as e:
+            print(f"9Router providers fetch failed: {e}")
+        return []
 
+    @typechecked
+    async def start_oauth(self, provider: str) -> dict:
+        """Start OAuth flow for a provider.
 
-@typechecked
-async def start_oauth(provider: str) -> dict:
-    """Start OAuth flow for a provider.
-
-    device_code providers: returns {user_code, verification_uri, device_code}
-    authorization_code providers: returns {authUrl, codeVerifier, state}
-    """
-    async with httpx.AsyncClient(timeout=15.0) as client:
+        device_code providers: returns {user_code, verification_uri, device_code}
+        authorization_code providers: returns {authUrl, codeVerifier, state}
+        """
         try:
-            r = await client.get(f"{NINE_ROUTER_API}/oauth/{provider}/device-code")
+            r = await self._http.get(f"{NINE_ROUTER_API}/oauth/{provider}/device-code")
             if r.status_code == 200:
                 data: dict = r.json()
                 return {
@@ -42,7 +47,7 @@ async def start_oauth(provider: str) -> dict:
             pass
 
         callback_url: str = f"http://localhost:{NINE_ROUTER_PORT}/callback"
-        r = await client.get(
+        r = await self._http.get(
             f"{NINE_ROUTER_API}/oauth/{provider}/authorize",
             params={"redirect_uri": callback_url},
         )
@@ -56,53 +61,49 @@ async def start_oauth(provider: str) -> dict:
             "redirect_uri": callback_url,
         }
 
+    @typechecked
+    async def poll_oauth(
+        self,
+        provider: str,
+        device_code: str,
+        code_verifier: str | None = None,
+        extra_data: dict | None = None,
+    ) -> dict:
+        body: dict = {"deviceCode": device_code}
+        if code_verifier:
+            body["codeVerifier"] = code_verifier
+        if extra_data:
+            body["extraData"] = extra_data
 
-@typechecked
-async def poll_oauth(
-    provider: str,
-    device_code: str,
-    code_verifier: str | None = None,
-    extra_data: dict | None = None,
-) -> dict:
-    body: dict = {"deviceCode": device_code}
-    if code_verifier:
-        body["codeVerifier"] = code_verifier
-    if extra_data:
-        body["extraData"] = extra_data
-
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        r = await client.post(f"{NINE_ROUTER_API}/oauth/{provider}/poll", json=body)
+        r = await self._http.post(f"{NINE_ROUTER_API}/oauth/{provider}/poll", json=body)
         r.raise_for_status()
         return r.json()
 
-
-@typechecked
-async def exchange_oauth(
-    provider: str,
-    code: str,
-    redirect_uri: str,
-    code_verifier: str,
-    state: str = "",
-) -> dict:
-    payload: dict = {
-        "code": code,
-        "redirectUri": redirect_uri,
-        "codeVerifier": code_verifier,
-        "state": state,
-    }
-    print(f"exchange_oauth: provider={provider} redirect_uri={redirect_uri}")
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        r = await client.post(f"{NINE_ROUTER_API}/oauth/{provider}/exchange", json=payload)
+    @typechecked
+    async def exchange_oauth(
+        self,
+        provider: str,
+        code: str,
+        redirect_uri: str,
+        code_verifier: str,
+        state: str = "",
+    ) -> dict:
+        payload: dict = {
+            "code": code,
+            "redirectUri": redirect_uri,
+            "codeVerifier": code_verifier,
+            "state": state,
+        }
+        print(f"exchange_oauth: provider={provider} redirect_uri={redirect_uri}")
+        r = await self._http.post(f"{NINE_ROUTER_API}/oauth/{provider}/exchange", json=payload)
         print(f"exchange_oauth: status={r.status_code}")
         r.raise_for_status()
         return r.json()
 
-
-@typechecked
-async def get_models() -> list[dict]:
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{NINE_ROUTER_V1}/models")
+    @typechecked
+    async def get_models(self) -> list[dict]:
+        try:
+            r = await self._http.get(f"{NINE_ROUTER_V1}/models", timeout=5.0)
             if r.status_code == 200:
                 data: dict = r.json()
                 models: list = data.get("data", [])
@@ -115,13 +116,11 @@ async def get_models() -> list[dict]:
                     }
                     for m in models
                 ]
-    except Exception as e:
-        print(f"9Router models fetch failed: {e}")
-    return []
+        except Exception as e:
+            print(f"9Router models fetch failed: {e}")
+        return []
 
-
-@typechecked
-async def disconnect_provider(provider_id: str) -> bool:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.delete(f"{NINE_ROUTER_API}/providers/{provider_id}")
+    @typechecked
+    async def disconnect_provider(self, provider_id: str) -> bool:
+        r = await self._http.delete(f"{NINE_ROUTER_API}/providers/{provider_id}", timeout=10.0)
         return r.status_code == 200

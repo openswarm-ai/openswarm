@@ -29,9 +29,8 @@ async def subscriptions_lifespan():
     except Exception as e:
         print(f"9Router auto-start failed: {e}")
     yield
-    router.cancel_ensure_task()
     try:
-        router.stop()
+        await router.stop()
     except Exception:
         pass
 
