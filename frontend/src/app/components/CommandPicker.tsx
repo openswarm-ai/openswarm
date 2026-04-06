@@ -18,6 +18,8 @@ import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
+import { fetchSkills } from '@/shared/state/skillsSlice';
+import { fetchTemplates } from '@/shared/state/templatesSlice';
 
 const XLogoIcon: React.FC<{ sx?: object }> = ({ sx }) => (
   <SvgIcon sx={sx} viewBox="0 0 24 24">
@@ -110,12 +112,16 @@ const CommandPicker: React.FC<Props> = ({ trigger, filter, onSelect, onClose, vi
   const toolsLoaded = useAppSelector((s) => s.tools.loaded);
   const builtinLoaded = useAppSelector((s) => s.tools.builtinLoaded);
   const outputsLoaded = useAppSelector((s) => s.outputs.loaded);
+  const skillsLoaded = useAppSelector((s) => s.skills.loaded);
+  const templatesLoaded = useAppSelector((s) => s.templates.loaded);
 
   useEffect(() => {
     if (!builtinLoaded) dispatch(fetchBuiltinTools());
     if (!toolsLoaded) dispatch(fetchTools());
     if (!outputsLoaded) dispatch(fetchOutputs());
-  }, [dispatch, builtinLoaded, toolsLoaded, outputsLoaded]);
+    if (!skillsLoaded) dispatch(fetchSkills());
+    if (!templatesLoaded) dispatch(fetchTemplates());
+  }, [dispatch, builtinLoaded, toolsLoaded, outputsLoaded, skillsLoaded, templatesLoaded]);
 
   const items: CommandPickerItem[] = useMemo(() => {
     let all: CommandPickerItem[] = [];
