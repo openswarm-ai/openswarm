@@ -11,7 +11,6 @@ import {
   fetchSessions,
   fetchHistory,
   collapseSession,
-  collapseAllSessions,
   closeSession,
   duplicateSession,
   expandSession,
@@ -330,29 +329,17 @@ const DashboardInner: React.FC = () => {
 
     selection.selectCard(id, type, false);
 
-    const alreadyExpanded = type === 'agent' && expandedSessionIds.includes(id);
-    if (alreadyExpanded) {
-      // Delay collapse so double-click can cancel it
-      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = setTimeout(() => {
-        dispatch(collapseSession(id));
-        setFocusedCardId(null);
-        clickTimerRef.current = null;
-      }, 250);
-    } else {
-      // Expand + center + zoom + bring to front
-      if (type === 'agent') {
-        dispatch(expandSession(id));
-      }
-      dispatch(bringToFront({ id, type }));
-      setFocusedCardId(id);
-      setTimeout(() => {
-        const rect = getCardRect(id, type);
-        if (rect) canvas.actions.fitToCards([rect], 1.15, true);
-        // Blur after expansion settles so arrow keys work for navigation
-        setTimeout(() => (document.activeElement as HTMLElement)?.blur?.(), 150);
-      }, 100);
+    // Expand (if not already) + center + zoom + bring to front
+    if (type === 'agent' && !expandedSessionIds.includes(id)) {
+      dispatch(expandSession(id));
     }
+    dispatch(bringToFront({ id, type }));
+    setFocusedCardId(id);
+    setTimeout(() => {
+      const rect = getCardRect(id, type);
+      if (rect) canvas.actions.fitToCards([rect], 1.15, true);
+      setTimeout(() => (document.activeElement as HTMLElement)?.blur?.(), 150);
+    }, 100);
   }, [selection, getCardRect, canvas.actions, dispatch, expandedSessionIds]);
 
   const handleBringToFront = useCallback((id: string, type: CardType) => {
@@ -540,19 +527,6 @@ const DashboardInner: React.FC = () => {
     restoredExpandedRef.current = true;
     dispatch(setExpandedSessionIds(persistedExpandedSessionIds));
   }, [layoutInitialized, persistedExpandedSessionIds, dispatch]);
-
-  // Auto-collapse all expanded sessions when zooming out
-  const prevZoomRef = useRef(canvas.zoom);
-  useEffect(() => {
-    const wasZoomedIn = prevZoomRef.current >= 0.9;
-    const isZoomedOut = canvas.zoom < 0.9;
-    prevZoomRef.current = canvas.zoom;
-
-    if (wasZoomedIn && isZoomedOut && expandedSessionIds.length > 0) {
-      dispatch(collapseAllSessions());
-      setFocusedCardId(null);
-    }
-  }, [canvas.zoom, expandedSessionIds.length, dispatch]);
 
   const prevSessionIdsRef = useRef<string>('');
 
@@ -972,9 +946,8 @@ const DashboardInner: React.FC = () => {
         return;
       }
 
-      // Collapse current, expand + navigate to target + bring to front
+      // Expand + navigate to target + bring to front
       trackEvent('dashboard.arrow_navigated', { direction, from_card: currentFocused, to_card: target.id });
-      dispatch(collapseSession(currentFocused));
       if (target.type === 'agent') {
         dispatch(expandSession(target.id));
       }
