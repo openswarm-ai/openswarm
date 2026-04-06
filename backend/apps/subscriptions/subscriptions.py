@@ -6,7 +6,6 @@ for the frontend to connect/disconnect subscription providers
 """
 
 import asyncio
-import logging
 
 import httpx
 from contextlib import asynccontextmanager
@@ -23,12 +22,11 @@ from backend.apps.subscriptions.NineRouter.NineRouterClient import (
     get_providers, get_models, start_oauth, poll_oauth, exchange_oauth,
     NINE_ROUTER_API,
 )
+from backend.apps.subscriptions.html_constants import SUCCESS_HTML, ERROR_STYLE
+from typing import Dict
 
-logger = logging.getLogger(__name__)
-
-_pending_oauth: dict[str, dict] = {}
-_ensure_task: Optional[asyncio.Task] = None
-
+P_PENDING_OAUTH: Dict[str, dict] = {}
+P_ENSURE_TASK: Optional[asyncio.Task] = None
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -39,11 +37,11 @@ async def subscriptions_lifespan():
     try:
         await ensure_running()
     except Exception as e:
-        logger.warning(f"9Router auto-start failed: {e}")
+        print(f"9Router auto-start failed: {e}")
     yield
-    global _ensure_task
-    if _ensure_task and not _ensure_task.done():
-        _ensure_task.cancel()
+    global P_ENSURE_TASK
+    if P_ENSURE_TASK and not P_ENSURE_TASK.done():
+        P_ENSURE_TASK.cancel()
     try:
         stop()
     except Exception:
@@ -59,10 +57,10 @@ subscriptions = SubApp("subscriptions", subscriptions_lifespan)
 
 @subscriptions.router.get("/status")
 async def subscriptions_status() -> dict:
-    global _ensure_task
+    global P_ENSURE_TASK
     if not is_running():
-        if _ensure_task is None or _ensure_task.done():
-            _ensure_task = asyncio.create_task(ensure_running())
+        if P_ENSURE_TASK is None or P_ENSURE_TASK.done():
+            P_ENSURE_TASK = asyncio.create_task(ensure_running())
         return {"running": False, "providers": [], "models": []}
     providers = await get_providers()
     models = await get_models()
@@ -83,7 +81,7 @@ async def subscriptions_connect(body: dict) -> dict:
     try:
         result: dict = await start_oauth(provider)
         if result.get("flow") == "authorization_code" and result.get("state"):
-            _pending_oauth[result["state"]] = {
+            P_PENDING_OAUTH[result["state"]] = {
                 "provider": provider,
                 "code_verifier": result.get("code_verifier", ""),
                 "redirect_uri": result.get("redirect_uri", ""),
@@ -132,7 +130,7 @@ async def subscriptions_disconnect(body: dict) -> dict:
 
 @subscriptions.router.get("/pending/{state}")
 async def subscriptions_pending(state: str):
-    pending: Optional[dict] = _pending_oauth.get(state)
+    pending: Optional[dict] = P_PENDING_OAUTH.get(state)
     if not pending:
         return JSONResponse(
             {"error": "not found"}, status_code=404,
@@ -145,28 +143,6 @@ async def subscriptions_pending(state: str):
     }, headers={"Access-Control-Allow-Origin": "*"})
 
 
-_SUCCESS_HTML: str = (
-    '<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;'
-    'justify-content:center;height:100vh;font-family:sans-serif">'
-    '<div style="text-align:center">'
-    '<div style="width:64px;height:64px;border-radius:50%;background:#22c55e20;'
-    'display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px">&#10003;</div>'
-    '<h2 style="margin:0 0 8px">Connected!</h2>'
-    '<p style="color:#888;margin:0">You can close this window</p>'
-    '</div>'
-    '<script>'
-    'try{if(window.opener)window.opener.postMessage({type:"oauth_callback",data:{connected:true}},"*")}catch(e){}'
-    'setTimeout(()=>window.close(),1500)'
-    '</script>'
-    '</body></html>'
-)
-
-_ERROR_STYLE: str = (
-    'style="background:#1a1a1a;color:#fff;display:flex;align-items:center;'
-    'justify-content:center;height:100vh;font-family:sans-serif"'
-)
-
-
 @subscriptions.router.get("/callback")
 async def subscriptions_callback(request: Request):
     code: str = request.query_params.get("code", "")
@@ -176,14 +152,14 @@ async def subscriptions_callback(request: Request):
     if error:
         desc: str = request.query_params.get("error_description", error)
         return HTMLResponse(
-            f'<html><body {_ERROR_STYLE}><div style="text-align:center">'
+            f'<html><body {ERROR_STYLE}><div style="text-align:center">'
             f'<h2>Authorization failed</h2><p style="color:#888">{desc}</p></div></body></html>'
         )
 
-    pending: Optional[dict] = _pending_oauth.pop(state, None)
+    pending: Optional[dict] = P_PENDING_OAUTH.pop(state, None)
     if not pending:
         return HTMLResponse(
-            f'<html><body {_ERROR_STYLE}><div style="text-align:center">'
+            f'<html><body {ERROR_STYLE}><div style="text-align:center">'
             f'<h2>Session expired</h2><p style="color:#888">Please try connecting again.</p></div></body></html>'
         )
 
@@ -193,10 +169,10 @@ async def subscriptions_callback(request: Request):
             pending["redirect_uri"], pending["code_verifier"], state,
         )
     except Exception as e:
-        logger.error(f"OAuth callback: exchange failed for provider={pending['provider']}: {e}")
+        print(f"OAuth callback: exchange failed for provider={pending['provider']}: {e}")
         return HTMLResponse(
-            f'<html><body {_ERROR_STYLE}><div style="text-align:center">'
+            f'<html><body {ERROR_STYLE}><div style="text-align:center">'
             f'<h2>Connection failed</h2><p style="color:#888">{e}</p></div></body></html>'
         )
 
-    return HTMLResponse(_SUCCESS_HTML)
+    return HTMLResponse(SUCCESS_HTML)

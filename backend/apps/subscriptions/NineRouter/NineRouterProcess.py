@@ -5,7 +5,6 @@ Claude/ChatGPT/Gemini subscriptions to OpenSwarm without API keys.
 """
 
 import asyncio
-import logging
 import os
 import shutil
 import subprocess
@@ -15,14 +14,10 @@ import httpx
 from typeguard import typechecked
 
 from backend.ports import NINE_ROUTER_PORT
+from backend.apps.subscriptions.NineRouter.constants import NINE_ROUTER_V1, NINE_ROUTER_URL
 
-logger = logging.getLogger(__name__)
-
-NINE_ROUTER_URL: str = f"http://localhost:{NINE_ROUTER_PORT}"
-NINE_ROUTER_V1: str = f"{NINE_ROUTER_URL}/v1"
-
-_process: subprocess.Popen | None = None
-_THIS_DIR: str = os.path.dirname(os.path.abspath(__file__))
+P_PROCESS: subprocess.Popen | None = None
+P_THIS_DIR: str = os.path.dirname(os.path.abspath(__file__))
 
 
 def _forward_output(pipe) -> None:
@@ -55,12 +50,12 @@ def _find_9router_dir() -> str | None:
     _is_packaged: bool = os.environ.get("OPENSWARM_PACKAGED") == "1"
 
     if _is_packaged:
-        _resources: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR))))
+        _resources: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(P_THIS_DIR))))
         _candidate: str = os.path.join(_resources, "9router")
         if os.path.isdir(_candidate):
             return _candidate
     else:
-        _backend_dir: str = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR)))
+        _backend_dir: str = os.path.dirname(os.path.dirname(os.path.dirname(P_THIS_DIR)))
         _project_root: str = os.path.dirname(_backend_dir)
         _candidate = os.path.join(_project_root, "9router")
         if os.path.isdir(_candidate):
@@ -83,7 +78,7 @@ def _find_node() -> str | None:
 @typechecked
 async def ensure_running() -> None:
     """Start 9Router if not already running."""
-    global _process
+    global P_PROCESS
     _is_packaged: bool = os.environ.get("OPENSWARM_PACKAGED") == "1"
 
     if is_running():
@@ -173,14 +168,14 @@ async def ensure_running() -> None:
         }
 
     try:
-        _process = subprocess.Popen(
+        P_PROCESS = subprocess.Popen(
             cmd, cwd=cwd,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             env=env,
         )
-        threading.Thread(target=_forward_output, args=(_process.stdout,), daemon=True).start()
+        threading.Thread(target=_forward_output, args=(P_PROCESS.stdout,), daemon=True).start()
 
         timeout: int = 20 if _is_packaged else 30
         for _ in range(timeout * 2):
@@ -196,15 +191,15 @@ async def ensure_running() -> None:
 
 @typechecked
 def stop() -> None:
-    global _process
-    if _process:
+    global P_PROCESS
+    if P_PROCESS:
         try:
-            _process.terminate()
-            _process.wait(timeout=5)
+            P_PROCESS.terminate()
+            P_PROCESS.wait(timeout=5)
         except Exception:
             try:
-                _process.kill()
+                P_PROCESS.kill()
             except Exception:
                 pass
-        _process = None
-        logger.info("9Router stopped")
+        P_PROCESS = None
+        print("9Router stopped")

@@ -1,30 +1,10 @@
 """HTTP client for 9Router's REST API."""
 
-import logging
-
 import httpx
 from typeguard import typechecked
 
+from backend.apps.subscriptions.NineRouter.constants import NINE_ROUTER_API, NINE_ROUTER_V1
 from backend.ports import NINE_ROUTER_PORT
-
-logger = logging.getLogger(__name__)
-
-NINE_ROUTER_URL: str = f"http://localhost:{NINE_ROUTER_PORT}"
-NINE_ROUTER_API: str = f"{NINE_ROUTER_URL}/api"
-NINE_ROUTER_V1: str = f"{NINE_ROUTER_URL}/v1"
-
-
-@typechecked
-async def get_usage_stats(period: str = "all") -> dict | None:
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{NINE_ROUTER_API}/usage/stats", params={"period": period})
-            if r.status_code == 200:
-                return r.json()
-    except Exception as e:
-        logger.debug(f"9Router usage stats fetch failed: {e}")
-    return None
-
 
 @typechecked
 async def get_providers() -> list[dict] | dict:
@@ -34,7 +14,7 @@ async def get_providers() -> list[dict] | dict:
             if r.status_code == 200:
                 return r.json()
     except Exception as e:
-        logger.debug(f"9Router providers fetch failed: {e}")
+        print(f"9Router providers fetch failed: {e}")
     return []
 
 
@@ -110,10 +90,10 @@ async def exchange_oauth(
         "codeVerifier": code_verifier,
         "state": state,
     }
-    logger.info(f"exchange_oauth: provider={provider} redirect_uri={redirect_uri}")
+    print(f"exchange_oauth: provider={provider} redirect_uri={redirect_uri}")
     async with httpx.AsyncClient(timeout=15.0) as client:
         r = await client.post(f"{NINE_ROUTER_API}/oauth/{provider}/exchange", json=payload)
-        logger.info(f"exchange_oauth: status={r.status_code}")
+        print(f"exchange_oauth: status={r.status_code}")
         r.raise_for_status()
         return r.json()
 
@@ -136,5 +116,5 @@ async def get_models() -> list[dict]:
                     for m in models
                 ]
     except Exception as e:
-        logger.debug(f"9Router models fetch failed: {e}")
+        print(f"9Router models fetch failed: {e}")
     return []
