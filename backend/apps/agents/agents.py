@@ -14,7 +14,8 @@ from datetime import datetime
 from typing import Optional, List, Dict
 from uuid import uuid4
 
-from fastapi import HTTPException
+from fastapi import HTTPException, WebSocket, WebSocketDisconnect
+import json
 from pydantic import BaseModel
 
 from backend.config.Apps import SubApp
@@ -79,6 +80,34 @@ async def agents_lifespan():
 
 agents = SubApp("agents", agents_lifespan)
 
+# ---------------------------------------------------------------------------
+# WebSocket
+# ---------------------------------------------------------------------------
+# TODO: type spec this more
+@agents.router.websocket("/ws/dashboard")
+async def websocket_dashboard(websocket: WebSocket):
+    await COMMS_MANAGER.broadcaster.connect(websocket)
+    try:
+        while True:
+            raw: str = await websocket.receive_text()
+            msg: dict = json.loads(raw)
+            event: str = msg.get("event", "")
+            payload: dict = msg.get("data", {})
+
+            if event == "agent:approval_response":
+                await COMMS_MANAGER.resolve_approval(
+                    request_id=payload.get("request_id", ""),
+                    behavior=payload.get("behavior", "deny"),
+                    message=payload.get("message"),
+                    updated_input=payload.get("updated_input"),
+                )
+            elif event == "browser:result":
+                COMMS_MANAGER.browser_bridge.resolve(
+                    payload.get("request_id", ""),
+                    payload,
+                )
+    except WebSocketDisconnect:
+        COMMS_MANAGER.broadcaster.disconnect(websocket)
 
 # ---------------------------------------------------------------------------
 # Session CRUD
@@ -98,7 +127,7 @@ async def get_session(session_id: str) -> dict:
 
 
 class LaunchBody(BaseModel):
-    model: str = "sonnet"
+    model: str = "claude-sonnet-4-6"
     mode: str = "agent"
     system_prompt: str = ""
     max_turns: int = 200
