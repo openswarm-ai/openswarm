@@ -32,7 +32,7 @@ async def app_builder_lifespan():
 
 app_builder = SubApp("app_builder", app_builder_lifespan)
 
-_store = PydanticStore[OpenSwarmApp](model_cls=OpenSwarmApp, data_dir=APP_BUILDER_METADATA_DIR, not_found_detail="OpenSwarmApp not found")
+P_APP_METADATA_STORE = PydanticStore[OpenSwarmApp](model_cls=OpenSwarmApp, data_dir=APP_BUILDER_METADATA_DIR, not_found_detail="OpenSwarmApp not found")
 
 
 # ---------------------------------------------------------------------------
@@ -156,12 +156,12 @@ async def delete_app_file(app_id: str, filepath: str):
 
 @app_builder.router.get("/list")
 async def list_apps():
-    return {"apps": [o.model_dump() for o in _store.load_all()]}
+    return {"apps": [o.model_dump() for o in P_APP_METADATA_STORE.load_all()]}
 
 
 @app_builder.router.get("/{app_id}")
 async def get_app(app_id: str):
-    return _store.load(app_id).model_dump()
+    return P_APP_METADATA_STORE.load(app_id).model_dump()
 
 
 class OpenSwarmAppCreate(BaseModel):
@@ -190,7 +190,7 @@ async def create_app(body: OpenSwarmAppCreate):
             f.write(content)
     with open(os.path.join(folder, "SKILL.md"), "w") as f:
         f.write(APP_BUILDER_SKILL)
-    _store.save(app)
+    P_APP_METADATA_STORE.save(app)
     return {"ok": True, "app": app.model_dump()}
 
 
@@ -202,11 +202,11 @@ class OpenSwarmAppUpdate(BaseModel):
 
 @app_builder.router.put("/{app_id}")
 async def update_app(app_id: str, body: OpenSwarmAppUpdate):
-    app = _store.load(app_id)
+    app = P_APP_METADATA_STORE.load(app_id)
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(app, k, v)
     app.updated_at = datetime.now().isoformat()
-    _store.save(app)
+    P_APP_METADATA_STORE.save(app)
     return {"ok": True, "app": app.model_dump()}
 
 
@@ -215,7 +215,7 @@ async def delete_app(app_id: str):
     folder = os.path.join(APP_BUILDER_CONTENT_DIR, app_id)
     if os.path.isdir(folder):
         shutil.rmtree(folder)
-    _store.delete(app_id)
+    P_APP_METADATA_STORE.delete(app_id)
     return {"ok": True}
 
 
