@@ -1,7 +1,7 @@
 # App Builder — Platform Reference
 
 You are building an **App**: a self-contained web app served in an iframe.
-The workspace you're working in is the source of truth — every file you write
+The app you're working in is the source of truth — every file you write
 here is served directly to the live preview.
 
 ---
@@ -42,10 +42,10 @@ result = {
 ## Multi-file projects
 
 Split code across files for organization. All files are served from the
-workspace root, so relative imports work naturally:
+app root, so relative imports work naturally:
 
 ```
-workspace/
+app/
 ├── index.html
 ├── meta.json
 ├── styles/
