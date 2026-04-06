@@ -1,12 +1,10 @@
-"""Pure helpers for the app builder."""
-
-from __future__ import annotations
-
 import os
+from typing import Dict
+from typeguard import typechecked
 
-
-def walk_directory(folder: str) -> dict[str, str]:
-    files: dict[str, str] = {}
+@typechecked
+def walk_directory(folder: str) -> Dict[str, str]:
+    files: Dict[str, str] = {}
     if not os.path.isdir(folder):
         return files
     for root, _dirs, filenames in os.walk(folder):

@@ -16,9 +16,9 @@ from backend.apps.app_builder.App import (
     WorkspaceSeedRequest,
 )
 from backend.config.paths import DB_ROOT
-from backend.apps.app_builder.executor import execute_backend_code
 from backend.apps.app_builder.templates.templates import APP_BUILDER_SKILL, APP_BUILDER_TEMPLATE_FILES
-from backend.apps.app_builder.helpers import walk_directory
+from backend.apps.app_builder.utils.execute_backend_code import execute_backend_code, BackendExecResult
+from backend.apps.app_builder.utils.walk_directory import walk_directory
 
 APP_BUILDER_DIR = os.path.join(DB_ROOT, "app_builder")
 APP_BUILDER_WORKSPACE_DIR = os.path.join(APP_BUILDER_DIR, "workspace")
@@ -199,7 +199,7 @@ async def execute_app(body: AppExecute):
     error = None
     if backend_code:
         try:
-            exec_result = await execute_backend_code(backend_code)
+            exec_result: BackendExecResult = await execute_backend_code(backend_code)
             backend_result = exec_result.result
             stdout_text = exec_result.stdout
             stderr_text = exec_result.stderr
