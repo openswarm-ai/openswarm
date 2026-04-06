@@ -3,7 +3,7 @@
 import httpx
 from typeguard import typechecked
 
-from backend.apps.subscriptions.NineRouter.constants import NINE_ROUTER_API, NINE_ROUTER_V1
+from backend.apps.subscriptions.NineRouter.helpers.constants import NINE_ROUTER_API, NINE_ROUTER_V1
 from backend.ports import NINE_ROUTER_PORT
 
 

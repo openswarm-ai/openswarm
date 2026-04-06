@@ -15,10 +15,10 @@ import httpx
 from typeguard import typechecked
 
 from backend.ports import NINE_ROUTER_PORT
-from backend.apps.subscriptions.NineRouter.constants import NINE_ROUTER_V1, NINE_ROUTER_URL
-from backend.apps.subscriptions.NineRouter.NineRouterProcess.helpers.forward_output import forward_output
-from backend.apps.subscriptions.NineRouter.NineRouterProcess.helpers.find_9router_dir import find_9router_dir
-from backend.apps.subscriptions.NineRouter.NineRouterProcess.helpers.find_node import find_node
+from backend.apps.subscriptions.NineRouter.helpers.constants import NINE_ROUTER_V1, NINE_ROUTER_URL
+from backend.apps.subscriptions.NineRouter.helpers.NineRouterProcess.helpers.forward_output import forward_output
+from backend.apps.subscriptions.NineRouter.helpers.NineRouterProcess.helpers.find_9router_dir import find_9router_dir
+from backend.apps.subscriptions.NineRouter.helpers.NineRouterProcess.helpers.find_node import find_node
 
 _THIS_DIR: str = os.path.dirname(os.path.abspath(__file__))
 

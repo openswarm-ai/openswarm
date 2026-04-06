@@ -10,8 +10,8 @@ from typing import ClassVar, Optional
 
 from typeguard import typechecked
 
-from backend.apps.subscriptions.NineRouter.NineRouterProcess.NineRouterProcess import NineRouterProcess
-from backend.apps.subscriptions.NineRouter.NineRouterClient import NineRouterClient
+from backend.apps.subscriptions.NineRouter.helpers.NineRouterProcess.NineRouterProcess import NineRouterProcess
+from backend.apps.subscriptions.NineRouter.helpers.NineRouterClient.NineRouterClient import NineRouterClient
 
 
 class NineRouter:
