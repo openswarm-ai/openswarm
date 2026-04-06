@@ -135,11 +135,25 @@ const INTEGRATIONS: Integration[] = [
     description: 'Browse subreddits, search posts, get post details, analyze users. No API keys required.',
     mcp_config: { type: 'stdio', command: 'npx', args: ['-y', 'reddit-mcp-buddy'] },
     color: '#FF4500',
-    website: 'https://github.com/karanb192/reddit-mcp-buddy',
+    website: 'https://www.npmjs.com/package/reddit-mcp-buddy',
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22">
         <circle cx="12" cy="12" r="12" fill="#FF4500"/>
         <path d="M19.5 12c0-.6-.5-1.1-1.1-1.1-.3 0-.6.1-.8.3-1-.7-2.3-1.1-3.7-1.1l.6-3 2.1.5c0 .6.5 1.1 1.1 1.1.6 0 1.1-.5 1.1-1.1 0-.6-.5-1.1-1.1-1.1-.4 0-.8.3-1 .6l-2.3-.5c-.1 0-.2 0-.2.1l-.7 3.3c-1.4 0-2.7.4-3.7 1.1-.2-.2-.5-.3-.8-.3-.6 0-1.1.5-1.1 1.1 0 .4.2.8.6 1-.1.3-.1.6-.1.9 0 2.3 2.6 4.1 5.8 4.1s5.8-1.8 5.8-4.1c0-.3 0-.6-.1-.9.4-.2.6-.6.6-1zm-9.8 1.1c0-.6.5-1.1 1.1-1.1.6 0 1.1.5 1.1 1.1 0 .6-.5 1.1-1.1 1.1-.6 0-1.1-.5-1.1-1.1zm6.2 2.9c-.8.8-2 .9-2.9.9s-2.1-.1-2.9-.9c-.1-.1-.1-.3 0-.4.1-.1.3-.1.4 0 .6.6 1.6.8 2.5.8s1.9-.2 2.5-.8c.1-.1.3-.1.4 0 .1.1.1.3 0 .4zm-.2-1.8c-.6 0-1.1-.5-1.1-1.1 0-.6.5-1.1 1.1-1.1.6 0 1.1.5 1.1 1.1 0 .6-.5 1.1-1.1 1.1z" fill="#fff"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'youtube',
+    name: 'YouTube',
+    description: 'Get video transcripts, details, comments, search videos, and channel stats. Transcripts work with no API key.',
+    mcp_config: { type: 'stdio', command: 'npx', args: ['-y', '@kirbah/mcp-youtube'] },
+    color: '#FF0000',
+    website: 'https://www.npmjs.com/package/@kirbah/mcp-youtube',
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z" fill="#FF0000"/>
+        <path d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z" fill="#fff"/>
       </svg>
     ),
   },
@@ -166,7 +180,7 @@ const INTEGRATIONS: Integration[] = [
     description: 'Outlook email, Calendar, OneDrive, Excel, OneNote, Tasks, Contacts, Teams, and SharePoint.',
     mcp_config: { type: 'stdio', command: 'npx', args: ['-y', '@softeria/ms-365-mcp-server'] },
     color: '#0078D4',
-    website: 'https://github.com/softeria/ms-365-mcp-server',
+    website: 'https://www.npmjs.com/package/@softeria/ms-365-mcp-server',
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22">
         <path d="M11.4 24H0V12.6L11.4 24zM24 24H12.6V12.6L24 24zM11.4 11.4H0V0l11.4 11.4zM24 11.4H12.6V0L24 11.4z" fill="#0078D4"/>
@@ -180,7 +194,7 @@ const INTEGRATIONS: Integration[] = [
     description: 'Create, read, and update pages, databases, and blocks in Notion workspaces.',
     mcp_config: { type: 'stdio', command: 'npx', args: ['-y', '@notionhq/notion-mcp-server'] },
     color: '#000000',
-    website: 'https://www.notion.so',
+    website: 'https://www.npmjs.com/package/@notionhq/notion-mcp-server',
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22">
         <path d="M4.46 2.95c.53.43.73.4 1.73.33l9.4-.57c.2 0 .03-.2-.03-.23l-1.57-1.13c-.3-.23-.7-.5-1.47-.43L3.3 1.78c-.5.07-.6.33-.4.53l1.56 1.13v.51zM5.03 6.15v9.93c0 .53.27.73.87.7l10.33-.6c.6-.03.67-.4.67-.83V5.52c0-.43-.17-.63-.53-.6l-10.8.63c-.4.03-.54.2-.54.6zM14.93 6.63c.07.3 0 .6-.3.63l-.5.1v7.33c-.43.23-.83.37-1.17.37-.53 0-.67-.17-1.07-.67l-3.27-5.13v4.97l1.03.23s0 .6-.83.6l-2.3.13c-.07-.13 0-.47.23-.53l.6-.17V8.33l-.83-.07c-.07-.3.1-.73.57-.77l2.47-.17 3.4 5.2V8.6l-.87-.1c-.07-.37.2-.63.53-.67l2.3-.2zM2.57 1.28L11.93.28c1.17-.1 1.47-.03 2.2.5l3.03 2.13c.5.37.67.47.67.87v15.27c0 .63-.23 1-.87 1.07l-10.7.63c-.5.03-.73-.07-.97-.37L2.73 17.3c-.27-.33-.4-.6-.4-1.03V2.15c0-.53.23-.83.83-.87h-.59z" fill="#000"/>

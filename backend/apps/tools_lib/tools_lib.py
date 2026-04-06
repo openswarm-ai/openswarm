@@ -529,6 +529,11 @@ _SERVICE_RULES: list[tuple[list[str], str, str]] = [
     (["contact"], "Contacts", "Google"),
     (["script", "deployment", "version", "trigger"], "Apps Script", "Google"),
     (["search_custom", "search_engine"], "Search", "Google"),
+    # YouTube
+    (["transcript", "caption"], "Transcripts", "YouTube"),
+    (["video_detail", "video_comment", "video_categor", "video_engagement"], "Videos", "YouTube"),
+    (["search_video", "trending_video"], "Search", "YouTube"),
+    (["channel_stat", "channel_top"], "Channels", "YouTube"),
     # Reddit (before Twitter so "search_reddit" etc. don't mis-match)
     (["subreddit"], "Subreddits", "Reddit"),
     (["search_reddit"], "Search", "Reddit"),

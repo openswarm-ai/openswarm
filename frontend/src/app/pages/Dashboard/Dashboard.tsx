@@ -438,7 +438,7 @@ const DashboardInner: React.FC = () => {
     dispatch(fetchOutputs());
     dashboardWs.connect();
     const cleanupBrowserHandler = initBrowserCommandHandler();
-    return () => { cleanupBrowserHandler(); dashboardWs.disconnect(); };
+    return () => { dispatch(resetLayout()); cleanupBrowserHandler(); dashboardWs.disconnect(); };
   }, [dispatch, dashboardId]);
 
   const pendingBrowserUrl = useAppSelector((state) => state.tempState.pendingBrowserUrl);
