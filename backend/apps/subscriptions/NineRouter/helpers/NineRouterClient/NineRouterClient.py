@@ -1,23 +1,23 @@
 """HTTP client for 9Router's REST API."""
 
 import httpx
+from pydantic import Field, BaseModel
 from typeguard import typechecked
 
 from backend.apps.subscriptions.NineRouter.helpers.constants import NINE_ROUTER_API, NINE_ROUTER_V1
 from backend.ports import NINE_ROUTER_PORT
 
 
-class NineRouterClient:
-    def __init__(self) -> None:
-        self._http: httpx.AsyncClient = httpx.AsyncClient(timeout=15.0)
+class NineRouterClient(BaseModel):
+    p_http: httpx.AsyncClient = Field(default_factory=httpx.AsyncClient(timeout=15.0))
 
     async def aclose(self) -> None:
-        await self._http.aclose()
+        await self.p_http.aclose()
 
     @typechecked
     async def get_providers(self) -> list[dict] | dict:
         try:
-            r = await self._http.get(f"{NINE_ROUTER_API}/providers", timeout=5.0)
+            r = await self.p_http.get(f"{NINE_ROUTER_API}/providers", timeout=5.0)
             if r.status_code == 200:
                 return r.json()
         except Exception as e:
@@ -32,7 +32,7 @@ class NineRouterClient:
         authorization_code providers: returns {authUrl, codeVerifier, state}
         """
         try:
-            r = await self._http.get(f"{NINE_ROUTER_API}/oauth/{provider}/device-code")
+            r = await self.p_http.get(f"{NINE_ROUTER_API}/oauth/{provider}/device-code")
             if r.status_code == 200:
                 data: dict = r.json()
                 return {
@@ -47,7 +47,7 @@ class NineRouterClient:
             pass
 
         callback_url: str = f"http://localhost:{NINE_ROUTER_PORT}/callback"
-        r = await self._http.get(
+        r = await self.p_http.get(
             f"{NINE_ROUTER_API}/oauth/{provider}/authorize",
             params={"redirect_uri": callback_url},
         )
@@ -75,7 +75,7 @@ class NineRouterClient:
         if extra_data:
             body["extraData"] = extra_data
 
-        r = await self._http.post(f"{NINE_ROUTER_API}/oauth/{provider}/poll", json=body)
+        r = await self.p_http.post(f"{NINE_ROUTER_API}/oauth/{provider}/poll", json=body)
         r.raise_for_status()
         return r.json()
 
@@ -95,7 +95,7 @@ class NineRouterClient:
             "state": state,
         }
         print(f"exchange_oauth: provider={provider} redirect_uri={redirect_uri}")
-        r = await self._http.post(f"{NINE_ROUTER_API}/oauth/{provider}/exchange", json=payload)
+        r = await self.p_http.post(f"{NINE_ROUTER_API}/oauth/{provider}/exchange", json=payload)
         print(f"exchange_oauth: status={r.status_code}")
         r.raise_for_status()
         return r.json()
@@ -103,7 +103,7 @@ class NineRouterClient:
     @typechecked
     async def get_models(self) -> list[dict]:
         try:
-            r = await self._http.get(f"{NINE_ROUTER_V1}/models", timeout=5.0)
+            r = await self.p_http.get(f"{NINE_ROUTER_V1}/models", timeout=5.0)
             if r.status_code == 200:
                 data: dict = r.json()
                 models: list = data.get("data", [])
@@ -122,5 +122,5 @@ class NineRouterClient:
 
     @typechecked
     async def disconnect_provider(self, provider_id: str) -> bool:
-        r = await self._http.delete(f"{NINE_ROUTER_API}/providers/{provider_id}", timeout=10.0)
+        r = await self.p_http.delete(f"{NINE_ROUTER_API}/providers/{provider_id}", timeout=10.0)
         return r.status_code == 200
