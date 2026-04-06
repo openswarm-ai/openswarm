@@ -15,10 +15,12 @@ from backend.apps.modes.modes import modes
 from backend.apps.tools.tools import tools
 from backend.apps.app_builder.app_builder import app_builder
 from backend.apps.skills.skills import skills
+from backend.apps.subscriptions.subscriptions import subscriptions
 from fastapi.middleware.cors import CORSMiddleware
 
 main_app = MainApp([
-    health, tools, agents, settings, dashboards, modes, app_builder, skills
+    health, tools, agents, settings, dashboards, modes, app_builder, skills,
+    subscriptions,
 ])
 app = main_app.app
 
