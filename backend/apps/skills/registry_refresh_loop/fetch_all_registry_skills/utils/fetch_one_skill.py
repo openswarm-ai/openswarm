@@ -10,13 +10,13 @@ async def fetch_one_skill(
     sem: asyncio.Semaphore,
     folder: str,
     plugin_name: str,
-    raw_base: str,
-    repo: str,
-    branch: str,
+    github_base_url: str,
+    github_repo: str,
+    github_branch: str,
 ) -> Optional[dict]:
     async with sem:
         try:
-            resp = await client.get(f"{raw_base}/{folder}/SKILL.md")
+            resp = await client.get(f"{github_base_url}/{github_repo}/{github_branch}/{folder}/SKILL.md")
             if resp.status_code != 200:
                 return None
             raw = resp.text
@@ -35,5 +35,5 @@ async def fetch_one_skill(
         "content": body,
         "folder": folder,
         "category": plugin_name.replace("-", " ").replace("_", " ").title(),
-        "repositoryUrl": f"https://github.com/{repo}/tree/{branch}/{folder}",
+        "repositoryUrl": f"https://github.com/{github_repo}/tree/{github_branch}/{folder}",
     }

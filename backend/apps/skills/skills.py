@@ -1,6 +1,5 @@
 """Skills SubApp — local skill CRUD, workspace management, and remote registry."""
 
-import asyncio
 import json
 import logging
 import os
@@ -14,12 +13,12 @@ from backend.config.Apps import SubApp
 from backend.config.paths import DB_ROOT
 from backend.apps.skills.SkillStore import SkillStore
 from backend.apps.skills.parse_frontmatter import parse_frontmatter
-from backend.apps.skills.registry_refresh_loop.registry_refresh_loop import registry_refresh_loop
+from backend.apps.skills.registry_refresh_loop.RegistryRefreshLoop import RegistryRefreshLoop
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Paths & singleton store
+# Paths & singletons
 # ---------------------------------------------------------------------------
 
 SKILLS_DIR = os.path.expanduser("~/.claude/skills")
@@ -27,20 +26,14 @@ SKILLS_WORKSPACE_DIR = os.path.join(DB_ROOT, "skills_workspace")
 
 SKILL_STORE = SkillStore(skills_dir=SKILLS_DIR)
 
-# ---------------------------------------------------------------------------
-# Registry constants
-# ---------------------------------------------------------------------------
-
-_REPO = "anthropics/skills"
-_BRANCH = "main"
-_RAW_BASE = f"https://raw.githubusercontent.com/{_REPO}/{_BRANCH}"
-_MANIFEST_URL = f"{_RAW_BASE}/.claude-plugin/marketplace.json"
-_REFRESH_INTERVAL_S = 3600
-_CONCURRENT_FETCHES = 15
-
-_registry_cache: dict[str, dict] = {}
-_registry_updated_at: float = 0
-_refresh_task: Optional[asyncio.Task] = None
+REGISTRY = RegistryRefreshLoop(
+    refresh_interval_s=3600,
+    num_concurrent_fetches=15,
+    github_base_url="https://raw.githubusercontent.com/",
+    github_repo="anthropics/skills",
+    github_branch="main",
+    manifest_extension=".claude-plugin/marketplace.json",
+)
 
 # ---------------------------------------------------------------------------
 # SubApp
@@ -49,23 +42,10 @@ _refresh_task: Optional[asyncio.Task] = None
 
 @asynccontextmanager
 async def skills_lifespan():
-    global _refresh_task
     os.makedirs(SKILLS_WORKSPACE_DIR, exist_ok=True)
-    _refresh_task = asyncio.create_task(registry_refresh_loop(
-        refresh_interval_s=_REFRESH_INTERVAL_S,
-        registry_cache=_registry_cache,
-        registry_updated_at=_registry_updated_at,
-        num_concurrent_fetches=_CONCURRENT_FETCHES,
-        manifest_url=_MANIFEST_URL,
-        raw_base=_RAW_BASE,
-    ))
+    await REGISTRY.start()
     yield
-    if _refresh_task:
-        _refresh_task.cancel()
-        try:
-            await _refresh_task
-        except asyncio.CancelledError:
-            pass
+    await REGISTRY.stop()
 
 
 skills = SubApp("skills", skills_lifespan)
@@ -134,7 +114,7 @@ async def get_skill(skill_id: str):
     return s.model_dump()
 
 
-class _SkillCreateBody(BaseModel):
+class SkillCreateBody(BaseModel):
     name: str
     description: str = ""
     content: str
@@ -142,12 +122,12 @@ class _SkillCreateBody(BaseModel):
 
 
 @skills.router.post("/create")
-async def create_skill(body: _SkillCreateBody):
+async def create_skill(body: SkillCreateBody):
     skill = SKILL_STORE.create(body.name, body.description, body.content, body.command)
     return {"ok": True, "skill": skill.model_dump()}
 
 
-class _SkillUpdateBody(BaseModel):
+class SkillUpdateBody(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     content: Optional[str] = None
@@ -155,7 +135,7 @@ class _SkillUpdateBody(BaseModel):
 
 
 @skills.router.put("/{skill_id}")
-async def update_skill(skill_id: str, body: _SkillUpdateBody):
+async def update_skill(skill_id: str, body: SkillUpdateBody):
     try:
         skill = SKILL_STORE.update(
             skill_id, name=body.name, description=body.description,
@@ -179,10 +159,10 @@ async def delete_skill(skill_id: str):
 @skills.router.get("/registry/stats")
 async def registry_stats():
     categories: dict[str, int] = {}
-    for s in _registry_cache.values():
+    for s in REGISTRY.cache.values():
         cat = s.get("category", "General")
         categories[cat] = categories.get(cat, 0) + 1
-    return {"total": len(_registry_cache), "categories": categories, "lastUpdated": _registry_updated_at}
+    return {"total": len(REGISTRY.cache), "categories": categories, "lastUpdated": REGISTRY.updated_at}
 
 
 @skills.router.get("/registry/search")
@@ -193,7 +173,7 @@ async def registry_search(
     sort: str = Query("name", description="Sort field"),
     category: str = Query("", description="Filter by category"),
 ):
-    pool = list(_registry_cache.values())
+    pool = list[dict](REGISTRY.cache.values())
 
     if category:
         cat_lower = category.lower()
@@ -225,7 +205,7 @@ async def registry_search(
 
 @skills.router.get("/registry/detail/{skill_name:path}")
 async def registry_detail(skill_name: str):
-    sk = _registry_cache.get(skill_name)
+    sk = REGISTRY.cache.get(skill_name)
     if not sk:
         raise HTTPException(status_code=404, detail="Registry skill not found")
     return {"skill": sk}

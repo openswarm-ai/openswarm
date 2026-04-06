@@ -12,17 +12,17 @@ from backend.apps.skills.registry_refresh_loop.fetch_all_registry_skills.utils.f
 @typechecked
 async def fetch_all_registry_skills(
     num_concurrent_fetches: int,
-    manifest_url: str,
-    raw_base: str,
-    repo: str,
-    branch: str,
+    github_base_url: str,
+    github_repo: str,
+    github_branch: str,
+    manifest_extension: str,
 ) -> dict[str, dict]:
     result: dict[str, dict] = {}
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             paths = await fetch_skill_paths(
                 client=client, 
-                manifest_url=manifest_url
+                manifest_url=f"{github_base_url}/{github_repo}/{github_branch}{manifest_extension}"
             )
         except Exception as e:
             print(f"[fetch_all_registry_skills] Skill registry manifest fetch failed: {e}")
@@ -35,9 +35,9 @@ async def fetch_all_registry_skills(
                 sem=sem, 
                 folder=folder, 
                 plugin_name=plugin,
-                raw_base=raw_base,
-                repo=repo,
-                branch=branch
+                github_base_url=github_base_url,
+                github_repo=github_repo,
+                github_branch=github_branch,
             ) for folder, plugin in paths]
         )
         for rec in records:
