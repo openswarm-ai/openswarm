@@ -9,30 +9,20 @@ import os
 import shutil
 import subprocess
 import threading
+from typing import Optional
 
 import httpx
 from typeguard import typechecked
 
 from backend.ports import NINE_ROUTER_PORT
 from backend.apps.subscriptions.NineRouter.constants import NINE_ROUTER_V1, NINE_ROUTER_URL
+from backend.apps.subscriptions.NineRouter.NineRouterProcess.helpers.forward_output import forward_output
+from backend.apps.subscriptions.NineRouter.NineRouterProcess.helpers.find_9router_dir import find_9router_dir
+from backend.apps.subscriptions.NineRouter.NineRouterProcess.helpers.find_node import find_node
 
 P_PROCESS: subprocess.Popen | None = None
 P_THIS_DIR: str = os.path.dirname(os.path.abspath(__file__))
 
-
-def _forward_output(pipe) -> None:
-    try:
-        for line in iter(pipe.readline, b""):
-            text = line.decode("utf-8", errors="replace").rstrip()
-            if text:
-                print(f"[9router] {text}", flush=True)
-    except Exception:
-        pass
-    finally:
-        try:
-            pipe.close()
-        except Exception:
-            pass
 
 
 @typechecked
@@ -42,37 +32,6 @@ def is_running() -> bool:
         return r.status_code == 200
     except Exception:
         return False
-
-
-@typechecked
-def _find_9router_dir() -> str | None:
-    """Locate the bundled 9Router directory (dev or packaged)."""
-    _is_packaged: bool = os.environ.get("OPENSWARM_PACKAGED") == "1"
-
-    if _is_packaged:
-        _resources: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(P_THIS_DIR))))
-        _candidate: str = os.path.join(_resources, "9router")
-        if os.path.isdir(_candidate):
-            return _candidate
-    else:
-        _backend_dir: str = os.path.dirname(os.path.dirname(os.path.dirname(P_THIS_DIR)))
-        _project_root: str = os.path.dirname(_backend_dir)
-        _candidate = os.path.join(_project_root, "9router")
-        if os.path.isdir(_candidate):
-            return _candidate
-
-    return None
-
-
-@typechecked
-def _find_node() -> str | None:
-    node: str | None = shutil.which("node")
-    if node:
-        return node
-    electron_path: str | None = os.environ.get("OPENSWARM_ELECTRON_PATH")
-    if electron_path and os.path.exists(electron_path):
-        return electron_path
-    return None
 
 
 @typechecked
@@ -99,7 +58,7 @@ async def ensure_running() -> None:
         else:
             return
 
-    _9router_dir: str | None = _find_9router_dir()
+    _9router_dir: Optional[str] = find_9router_dir(P_THIS_DIR)
     cmd: list[str]
     cwd: str | None
     env: dict[str, str]
@@ -112,7 +71,7 @@ async def ensure_running() -> None:
             print("9Router: standalone build not found in", _9router_dir, flush=True)
             return
 
-        node: str | None = _find_node()
+        node: Optional[str] = find_node()
         if not node:
             print("9Router: Node.js not found, cannot start in packaged mode", flush=True)
             return
@@ -175,7 +134,7 @@ async def ensure_running() -> None:
             stderr=subprocess.STDOUT,
             env=env,
         )
-        threading.Thread(target=_forward_output, args=(P_PROCESS.stdout,), daemon=True).start()
+        threading.Thread(target=forward_output, args=(P_PROCESS.stdout,), daemon=True).start()
 
         timeout: int = 20 if _is_packaged else 30
         for _ in range(timeout * 2):

@@ -15,7 +15,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from backend.config.Apps import SubApp
-from backend.apps.subscriptions.NineRouter.NineRouterProcess import (
+from backend.apps.subscriptions.NineRouter.NineRouterProcess.NineRouterProcess import (
     is_running, ensure_running, stop,
 )
 from backend.apps.subscriptions.NineRouter.NineRouterClient import (
