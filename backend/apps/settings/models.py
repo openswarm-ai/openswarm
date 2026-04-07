@@ -52,6 +52,7 @@ class AppSettings(BaseModel):
     user_name: Optional[str] = None
     user_email: Optional[str] = None
     user_use_case: Optional[str] = None
+    user_referral_source: Optional[str] = None
     # Analytics: opted in by default, user can toggle off
     analytics_opt_in: bool = True
     installation_id: Optional[str] = None

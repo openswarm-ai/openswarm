@@ -161,12 +161,13 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
     const gap = 16;
     let tp = { top: 0, left: 0 };
 
-    // If target is in the bottom 30% of the screen, place tooltip in the center-upper area
-    const isBottomTarget = sr.top > window.innerHeight * 0.6;
+    // If target is in the lower half of the screen, anchor the tooltip at a
+    // fixed center-upper position so it doesn't shift between toolbar steps.
+    const isBottomTarget = sr.top > window.innerHeight * 0.5;
     if (isBottomTarget) {
       tp = {
-        top: Math.min(sr.top - tooltipH - gap * 2, window.innerHeight * 0.35),
-        left: window.innerWidth / 2 - tooltipW / 2,
+        top: Math.round(window.innerHeight * 0.35),
+        left: Math.round(window.innerWidth / 2 - tooltipW / 2),
       };
     } else {
       switch (step.placement) {
@@ -194,8 +195,11 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
   }, [step, currentStep, totalSteps]);
 
   useEffect(() => {
-    setVisible(false);
-    const timer = setTimeout(updatePosition, 150); // small delay for DOM updates
+    // Don't toggle visibility between steps — that fades the dark overlay out
+    // and back in, briefly showing the bright dashboard underneath (the "white
+    // flash"). Just update positions and let the existing CSS transitions
+    // smoothly animate the spotlight and tooltip to their new locations.
+    const timer = setTimeout(updatePosition, 0);
     return () => {
       clearTimeout(timer);
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
@@ -217,6 +221,10 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
       setCurrentStep((s) => s + 1);
     }
   }, [isLastStep, onComplete, currentStep]);
+
+  const handleBack = useCallback(() => {
+    setCurrentStep((s) => Math.max(0, s - 1));
+  }, []);
 
   const handleSkip = useCallback(() => {
     trackEvent('walkthrough.skipped', { step: currentStep, step_name: step?.target || 'done' });
@@ -370,7 +378,25 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
         )}
 
         {/* Buttons */}
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Button
+            onClick={handleBack}
+            disabled={currentStep === 0}
+            sx={{
+              textTransform: 'none',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              color: c.text.tertiary,
+              borderRadius: `${c.radius.md}px`,
+              px: 2,
+              py: 0.75,
+              fontFamily: c.font.sans,
+              visibility: currentStep === 0 || step.target === 'new-agent-button' ? 'hidden' : 'visible',
+              '&:hover': { bgcolor: c.bg.hover || 'rgba(255,255,255,0.05)' },
+            }}
+          >
+            Back
+          </Button>
           <Button
             onClick={handleNext}
             sx={{

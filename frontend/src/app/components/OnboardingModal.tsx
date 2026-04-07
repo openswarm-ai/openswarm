@@ -27,6 +27,20 @@ const USE_CASES = [
   'Other',
 ];
 
+const REFERRAL_SOURCES = [
+  'Twitter / X',
+  'LinkedIn',
+  'YouTube',
+  'TikTok',
+  'Reddit',
+  'Hacker News',
+  'GitHub',
+  'Friend / Word of mouth',
+  'Search engine',
+  'Blog / Article',
+  'Other',
+];
+
 const OnboardingModal: React.FC = () => {
   const c = useClaudeTokens();
   const settings = useAppSelector((s) => s.settings);
@@ -35,6 +49,9 @@ const OnboardingModal: React.FC = () => {
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [useCases, setUseCases] = useState<string[]>([]);
+  const [useCaseOther, setUseCaseOther] = useState<string>('');
+  const [referralSource, setReferralSource] = useState<string>('');
+  const [referralSourceOther, setReferralSourceOther] = useState<string>('');
   const [connecting, setConnecting] = useState<string | null>(null);
   const [nineRouterReady, setNineRouterReady] = useState<boolean | null>(null);
   const pollTimerRef = useRef<any>(null);
@@ -134,6 +151,14 @@ const OnboardingModal: React.FC = () => {
     try {
       const r = await fetch(`${API_BASE}/settings`);
       const currentSettings = await r.json();
+      // If "Other" is selected, replace it with the user's custom text
+      const resolvedUseCases = useCases.map((u) =>
+        u === 'Other' && useCaseOther.trim() ? `Other: ${useCaseOther.trim()}` : u
+      );
+      const resolvedReferralSource =
+        referralSource === 'Other' && referralSourceOther.trim()
+          ? `Other: ${referralSourceOther.trim()}`
+          : referralSource;
       await fetch(`${API_BASE}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -141,7 +166,8 @@ const OnboardingModal: React.FC = () => {
           ...currentSettings,
           user_name: userName.trim() || null,
           user_email: userEmail.trim() || null,
-          user_use_case: useCases.length > 0 ? useCases.join(', ') : null,
+          user_use_case: resolvedUseCases.length > 0 ? resolvedUseCases.join(', ') : null,
+          user_referral_source: resolvedReferralSource || null,
         }),
       });
     } catch {}
@@ -150,6 +176,9 @@ const OnboardingModal: React.FC = () => {
       has_email: !!userEmail.trim(),
       use_cases: useCases,
       use_cases_count: useCases.length,
+      use_case_other: useCases.includes('Other') ? useCaseOther.trim() : '',
+      referral_source: referralSource,
+      referral_source_other: referralSource === 'Other' ? referralSourceOther.trim() : '',
     });
     setStep('connect');
     trackEvent('onboarding.connect_started', { nine_router_ready: nineRouterReady });
@@ -358,6 +387,75 @@ const OnboardingModal: React.FC = () => {
                   </Box>
                 ))}
               </Box>
+              {useCases.includes('Other') && (
+                <TextField
+                  placeholder="Tell us what else..."
+                  value={useCaseOther}
+                  onChange={(e) => setUseCaseOther(e.target.value)}
+                  size="small"
+                  fullWidth
+                  sx={{
+                    mt: 0.5,
+                    '& .MuiOutlinedInput-root': {
+                      fontSize: '0.82rem',
+                      color: c.text.primary,
+                      bgcolor: c.bg.input,
+                      borderRadius: `${c.radius.md}px`,
+                      '& fieldset': { borderColor: c.border.subtle },
+                      '&:hover fieldset': { borderColor: c.border.medium },
+                      '&.Mui-focused fieldset': { borderColor: c.accent.primary },
+                    },
+                    '& .MuiOutlinedInput-input::placeholder': { color: c.text.ghost, opacity: 1 },
+                  }}
+                />
+              )}
+
+              <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mt: 0.5 }}>
+                How did you hear about OpenSwarm?
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                {REFERRAL_SOURCES.map((src) => (
+                  <Box
+                    key={src}
+                    onClick={() => setReferralSource(prev => prev === src ? '' : src)}
+                    sx={{
+                      px: 1.5, py: 0.6,
+                      borderRadius: `${c.radius.md}px`,
+                      border: `1px solid ${referralSource === src ? c.accent.primary : c.border.subtle}`,
+                      bgcolor: referralSource === src ? `${c.accent.primary}15` : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                      '&:hover': { borderColor: c.border.medium },
+                    }}
+                  >
+                    <Typography sx={{ fontSize: '0.72rem', color: referralSource === src ? c.accent.primary : c.text.secondary }}>
+                      {src}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+              {referralSource === 'Other' && (
+                <TextField
+                  placeholder="Where did you hear about us?"
+                  value={referralSourceOther}
+                  onChange={(e) => setReferralSourceOther(e.target.value)}
+                  size="small"
+                  fullWidth
+                  sx={{
+                    mt: 0.5,
+                    '& .MuiOutlinedInput-root': {
+                      fontSize: '0.82rem',
+                      color: c.text.primary,
+                      bgcolor: c.bg.input,
+                      borderRadius: `${c.radius.md}px`,
+                      '& fieldset': { borderColor: c.border.subtle },
+                      '&:hover fieldset': { borderColor: c.border.medium },
+                      '&.Mui-focused fieldset': { borderColor: c.accent.primary },
+                    },
+                    '& .MuiOutlinedInput-input::placeholder': { color: c.text.ghost, opacity: 1 },
+                  }}
+                />
+              )}
             </Box>
 
             <Button
