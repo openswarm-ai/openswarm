@@ -255,6 +255,20 @@ const INTEGRATIONS: Integration[] = [
       { key: 'SLACK_MCP_XOXD_TOKEN', label: 'Slack Cookie (xoxd-...)', placeholder: 'Auto-detected via Sign in, or paste xoxd- cookie' },
     ],
   },
+  {
+    id: 'discord',
+    name: 'Discord',
+    description: 'Read messages, send messages, manage channels, and interact with Discord servers via the OpenSwarm bot.',
+    mcp_config: { type: 'stdio', command: 'npx', args: ['-y', 'mcp-discord'] },
+    color: '#5865F2',
+    website: 'https://github.com/barryyip0625/mcp-discord',
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <path d="M19.27 5.33C17.94 4.71 16.5 4.26 15 4a.09.09 0 0 0-.07.03c-.18.33-.39.76-.53 1.09a16.09 16.09 0 0 0-4.8 0c-.14-.34-.35-.76-.54-1.09a.09.09 0 0 0-.07-.03c-1.5.26-2.93.71-4.27 1.33a.07.07 0 0 0-.03.03c-2.72 4.07-3.47 8.03-3.1 11.95a.1.1 0 0 0 .04.07c1.83 1.34 3.6 2.16 5.34 2.7a.09.09 0 0 0 .1-.03c.41-.56.78-1.15 1.09-1.77a.09.09 0 0 0-.05-.13c-.58-.22-1.13-.49-1.66-.79a.09.09 0 0 1-.01-.16c.11-.08.22-.17.33-.25a.09.09 0 0 1 .09-.01c3.49 1.59 7.27 1.59 10.72 0a.09.09 0 0 1 .09.01c.11.09.22.17.33.26a.09.09 0 0 1-.01.16c-.53.31-1.08.57-1.66.79a.09.09 0 0 0-.05.13c.32.62.69 1.21 1.09 1.77a.09.09 0 0 0 .1.04c1.74-.54 3.51-1.36 5.34-2.7a.1.1 0 0 0 .04-.07c.44-4.53-.74-8.46-3.13-11.95a.07.07 0 0 0-.04-.04zM8.52 14.91c-1.04 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12 0 1.17-.84 2.12-1.89 2.12zm6.97 0c-1.04 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12 0 1.17-.83 2.12-1.89 2.12z" fill="#5865F2"/>
+      </svg>
+    ),
+    authType: 'oauth2',
+  },
 ];
 
 const CATEGORY_ORDER = ['filesystem', 'system', 'search', 'interaction', 'agents', 'planning', 'scheduling'];
@@ -1603,7 +1617,7 @@ const Tools: React.FC = () => {
                           </Box>
                           {tool.description && <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>{tool.description}</Typography>}
                         </Box>
-                        {!isDisabled && (tool.auth_type === 'oauth2' || ig?.authType === 'oauth2') && tool.auth_status !== 'connected' && (
+                        {!isDisabled && (tool.auth_type === 'oauth2' || ig?.authType === 'oauth2') && (tool.auth_status !== 'connected' || ig?.id === 'discord') && (
                           <Button
                             size="small"
                             variant="outlined"
@@ -1611,7 +1625,7 @@ const Tools: React.FC = () => {
                             onClick={(e) => { e.stopPropagation(); handleOAuthConnect(tool.id); }}
                             sx={{ borderColor: `${c.status.info}40`, color: c.status.info, '&:hover': { borderColor: c.status.info, bgcolor: `${c.status.info}10` }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
                           >
-                            Connect {tool.name}
+                            {ig?.id === 'discord' && tool.auth_status === 'connected' ? 'Add server' : `Connect ${tool.name}`}
                           </Button>
                         )}
                         {!isDisabled && ig?.authType === 'device_code' && tool.auth_status !== 'connected' && (

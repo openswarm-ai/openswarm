@@ -67,6 +67,9 @@ AIRTABLE_SCOPES = [
 HUBSPOT_AUTH_URL = "https://mcp-na2.hubspot.com/oauth/authorize/user"
 HUBSPOT_TOKEN_URL = "https://api.hubapi.com/oauth/v1/token"
 
+DISCORD_AUTH_URL = "https://discord.com/oauth2/authorize"
+DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
+
 
 # Maps state -> {tool_id, code_verifier (for PKCE flows)}
 _pending_oauth: dict[str, dict] = {}
@@ -210,6 +213,45 @@ async def oauth_callback(code: str = Query(...), state: str = Query("")):
         tool.auth_type = "oauth2"
         tool.auth_status = "connected"
         tool.connected_account_email = "HubSpot account"
+
+    elif tool.name.lower() == "discord":
+        # Discord bot install OAuth: exchange code, capture guild_id of the
+        # server the user added the bot to. Multiple connect calls APPEND
+        # additional guild_ids so users can authorize multiple servers.
+        client_id = os.environ.get("DISCORD_OAUTH_CLIENT_ID", "")
+        client_secret = os.environ.get("DISCORD_OAUTH_CLIENT_SECRET", "")
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(DISCORD_TOKEN_URL, data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }, headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+            })
+
+        if resp.status_code != 200:
+            logger.warning(f"Discord OAuth token exchange failed: {resp.text}")
+            return HTMLResponse(f"<html><body><h2>Token exchange failed</h2><pre>{resp.text}</pre></body></html>", status_code=400)
+
+        tokens = resp.json()
+        guild = tokens.get("guild") or {}
+        new_guild_id = guild.get("id", "")
+        new_guild_name = guild.get("name", "")
+        existing = tool.oauth_tokens.get("guilds") or []
+        # Append unless this guild was already authorized
+        if new_guild_id and not any(g.get("id") == new_guild_id for g in existing):
+            existing.append({"id": new_guild_id, "name": new_guild_name})
+        tool.oauth_tokens = {
+            # Bot token lives in .env, NEVER stored on the tool. We only
+            # track the list of authorized guilds for scope enforcement.
+            "guilds": existing,
+        }
+        tool.auth_type = "oauth2"
+        tool.auth_status = "connected"
+        names = ", ".join(g.get("name", "") for g in existing if g.get("name"))
+        tool.connected_account_email = f"{len(existing)} server{'s' if len(existing) != 1 else ''}" + (f" · {names}" if names else "")
 
     elif tool.name.lower() == "notion":
         # Notion OAuth: Basic auth with client_id:secret
@@ -514,6 +556,16 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
                 env["GOOGLE_WORKSPACE_CLIENT_ID"] = client_id
             if client_secret:
                 env["GOOGLE_WORKSPACE_CLIENT_SECRET"] = client_secret
+
+    # Discord: bot token is loaded from .env at MCP launch time. It is NEVER
+    # stored on the tool definition or exposed to the frontend. The tool only
+    # tracks the list of authorized guild IDs (in oauth_tokens.guilds) which
+    # are used by the agent system prompt to scope what the agent may access.
+    if tool.name.lower() == "discord" and config.get("type") == "stdio":
+        bot_token = os.environ.get("DISCORD_BOT_TOKEN", "")
+        if bot_token:
+            env = config.setdefault("env", {})
+            env["DISCORD_TOKEN"] = bot_token
 
     # Microsoft 365 MCP: use a stable token cache path shared across process spawns
     if tool.name.lower() == "microsoft 365" and config.get("type") == "stdio":
@@ -1153,6 +1205,21 @@ async def oauth_start(tool_id: str):
             "state": state,
         }
         auth_url = f"{HUBSPOT_AUTH_URL}?{urlencode(params)}"
+    elif tool.name.lower() == "discord":
+        client_id = os.environ.get("DISCORD_OAUTH_CLIENT_ID", "")
+        if not client_id:
+            raise HTTPException(status_code=400, detail="DISCORD_OAUTH_CLIENT_ID not set in backend .env")
+        permissions = os.environ.get("DISCORD_BOT_PERMISSIONS", "0")
+        _pending_oauth[state] = {"tool_id": tool_id}
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "bot identify",
+            "permissions": permissions,
+            "state": state,
+        }
+        auth_url = f"{DISCORD_AUTH_URL}?{urlencode(params)}"
     elif tool.name.lower() == "notion":
         _pending_oauth[state] = {"tool_id": tool_id}
         client_id = os.environ.get("NOTION_OAUTH_CLIENT_ID", "")

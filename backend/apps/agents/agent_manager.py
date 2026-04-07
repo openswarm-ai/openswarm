@@ -152,7 +152,10 @@ class AgentManager:
                 continue
 
             if tool.auth_type == "oauth2" and tool.auth_status == "connected":
-                if tool.name.lower() == "airtable":
+                if tool.name.lower() == "discord":
+                    # Discord uses a shared bot token from .env, not user OAuth tokens.
+                    refreshed = True
+                elif tool.name.lower() == "airtable":
                     refreshed = await refresh_airtable_token(tool)
                 elif tool.name.lower() == "hubspot":
                     refreshed = await refresh_hubspot_token(tool)
@@ -208,6 +211,33 @@ class AgentManager:
                     f"parameter (e.g. user_google_email, user_email), always use "
                     f"\"{tool.connected_account_email}\" automatically — do NOT ask the user."
                 )
+
+            # Discord guild scoping — hard restriction. The bot may technically
+            # be in other servers (across other OpenSwarm users), but this
+            # specific user only authorized these guild IDs.
+            if tool.name.lower() == "discord":
+                guilds = tool.oauth_tokens.get("guilds") or []
+                if guilds:
+                    guild_descriptions = ", ".join(
+                        f"{g.get('name', 'Unknown')} ({g.get('id', '')})" for g in guilds
+                    )
+                    allowed_ids = [g.get("id", "") for g in guilds if g.get("id")]
+                    lines.append(
+                        f"  AUTHORIZED DISCORD SERVERS (guild_ids): {guild_descriptions}"
+                    )
+                    lines.append(
+                        f"  HARD RESTRICTION: You MUST only call Discord tools that operate on "
+                        f"these guild_ids: {allowed_ids}. NEVER call Discord tools on any other "
+                        f"guild_id even if the bot has access to it. NEVER list, search, or "
+                        f"enumerate servers outside this list. If a user asks about a server "
+                        f"not in this list, refuse and tell them to authorize it via the Connect "
+                        f"Discord button. This is a security boundary, not a preference."
+                    )
+                else:
+                    lines.append(
+                        f"  No Discord servers authorized yet. Tell the user to click "
+                        f"'Connect Discord' to add a server before attempting any Discord actions."
+                    )
 
             tool_names = list(tool_descs.keys())
             if tool_names:
