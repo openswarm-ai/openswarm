@@ -15,7 +15,6 @@ import {
   setUpdateError,
 } from '@/shared/state/updateSlice';
 import AppShell from './components/Layout/AppShell';
-import Dashboard from './pages/Dashboard/Dashboard';
 import DashboardSelection from './pages/DashboardSelection/DashboardSelection';
 import Templates from './pages/Templates/Templates';
 import Skills from './pages/Skills/Skills';
@@ -249,7 +248,10 @@ const ThemedApp: React.FC = () => {
               <Routes>
                 <Route element={<AppShell />}>
                   <Route path="/" element={<DashboardSelection />} />
-                  <Route path="/dashboard/:id" element={<Dashboard />} />
+                  {/* Dashboard route is a no-op stub — the actual <Dashboard /> is rendered
+                      persistently inside AppShell so its webviews survive navigation between
+                      routes. This route exists only so React Router matches the URL. */}
+                  <Route path="/dashboard/:id" element={null} />
                   <Route path="/customization" element={<Customization />} />
                   <Route path="/templates" element={<Templates />} />
                   <Route path="/skills" element={<Skills />} />

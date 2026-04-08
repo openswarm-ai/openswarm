@@ -425,6 +425,35 @@ app.on('web-contents-created', (_event, contents) => {
       }
     });
 
+    // -----------------------------------------------------------------
+    // CDP debugger auto-attach for browser sub-agent accessibility tree
+    // -----------------------------------------------------------------
+    // The browser sub-agent uses Chrome DevTools Protocol (specifically
+    // Accessibility.getFullAXTree, DOM.resolveNode, Input.dispatchMouseEvent)
+    // to perceive and act on hostile sites where CSS selectors fail. CDP
+    // commands require webContents.debugger.attach() which is only callable
+    // from the main process. We attach lazily on first use rather than at
+    // creation time — that avoids the "Another debugger is already attached"
+    // race when DevTools is opened on the webview.
+    try {
+      contents.debugger.on('detach', (_e, reason) => {
+        console.log(`[cdp] detach on wcId ${contents.id}: ${reason}`);
+        cdpAxIndexCache.delete(contents.id);
+      });
+    } catch (e) {
+      // Older Electron may not have the listener API; non-fatal.
+    }
+
+    contents.on('destroyed', () => {
+      cdpAxIndexCache.delete(contents.id);
+      cdpQueueByWcId.delete(contents.id);
+    });
+
+    contents.on('render-process-gone', () => {
+      cdpAxIndexCache.delete(contents.id);
+      cdpQueueByWcId.delete(contents.id);
+    });
+
     contents.on('dom-ready', () => {
       const url = contents.getURL();
       if (url.includes('spotify')) {
@@ -528,6 +557,86 @@ ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && /^https?:\/\//.test(url)) {
     shell.openExternal(url);
   }
+});
+
+// ---------------------------------------------------------------------------
+// CDP debugger bridge for the browser sub-agent
+// ---------------------------------------------------------------------------
+// Maintains a per-webContents AX index cache (numeric index → backendNodeId)
+// and serializes CDP commands per target so concurrent calls don't interleave.
+// The renderer calls window.openswarm.sendCdpCommand(wcId, method, params),
+// which routes through this handler to webContents.debugger.sendCommand().
+
+const cdpAxIndexCache = new Map(); // wcId -> Map<index, backendNodeId>
+const cdpQueueByWcId = new Map();  // wcId -> Promise (serialization tail)
+
+function getWebContentsById(wcId) {
+  // webContents is exposed as a top-level Electron API
+  const { webContents } = require('electron');
+  return webContents.fromId(wcId);
+}
+
+async function ensureDebuggerAttached(wc) {
+  if (!wc || wc.isDestroyed()) {
+    throw new Error('webContents is destroyed');
+  }
+  if (wc.debugger.isAttached()) return;
+  try {
+    wc.debugger.attach('1.3');
+  } catch (err) {
+    // Re-raise as a clean error string for the renderer.
+    throw new Error(`debugger.attach failed: ${err.message || err}`);
+  }
+}
+
+async function sendCdpCommandSerialized(wcId, method, params) {
+  // Chain on the per-wcId queue so concurrent renderer calls run in order.
+  const prev = cdpQueueByWcId.get(wcId) || Promise.resolve();
+  const next = prev
+    .catch(() => {}) // never let a previous failure poison the chain
+    .then(async () => {
+      const wc = getWebContentsById(wcId);
+      if (!wc || wc.isDestroyed()) {
+        throw new Error(`webContents ${wcId} not found or destroyed`);
+      }
+      await ensureDebuggerAttached(wc);
+      return await wc.debugger.sendCommand(method, params || {});
+    });
+  cdpQueueByWcId.set(wcId, next);
+  try {
+    return await next;
+  } finally {
+    // If we're still the tail of the queue, clear it so the map doesn't grow.
+    if (cdpQueueByWcId.get(wcId) === next) {
+      cdpQueueByWcId.delete(wcId);
+    }
+  }
+}
+
+ipcMain.handle('send-cdp-command', async (_event, wcId, method, params) => {
+  try {
+    const result = await sendCdpCommandSerialized(wcId, method, params);
+    return { ok: true, result };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
+
+// Renderer-side AX index cache helpers — the renderer stores its own copy
+// keyed by (browser_id, tab_id). The main process only stores per-wcId for
+// invalidation purposes.
+ipcMain.handle('cdp-cache-set', (_event, wcId, indexMap) => {
+  cdpAxIndexCache.set(wcId, indexMap || {});
+  return { ok: true };
+});
+
+ipcMain.handle('cdp-cache-get', (_event, wcId) => {
+  return cdpAxIndexCache.get(wcId) || null;
+});
+
+ipcMain.handle('cdp-cache-clear', (_event, wcId) => {
+  cdpAxIndexCache.delete(wcId);
+  return { ok: true };
 });
 
 ipcMain.handle('connect-slack', async () => {

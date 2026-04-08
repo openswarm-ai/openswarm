@@ -4,7 +4,7 @@ import { resolveInput } from './resolveUrl';
 
 let initialized = false;
 
-export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait';
+export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'batch';
 
 export interface BrowserActivity {
   action: BrowserAction;
@@ -45,6 +45,10 @@ const ACTION_LABELS: Record<string, string> = {
   get_elements: 'Inspecting...',
   scroll: 'Scrolling...',
   wait: 'Waiting...',
+  press_key: 'Pressing key...',
+  list_interactives: 'Reading page structure...',
+  click_index: 'Clicking element...',
+  batch: 'Running batch...',
 };
 
 export function getActionLabel(action: string): string {
@@ -128,9 +132,317 @@ async function handleType(wv: BrowserWebview, params: Record<string, any>): Prom
     return {
       text: 'Typed into: ' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
     };
-  })()`; 
+  })()`;
   const result = await wv.executeJavaScript(code);
   return result;
+}
+
+// Map common JS KeyboardEvent.key values to Electron's accelerator keyCodes.
+// Electron's sendInputEvent expects: 'Up', 'Down', 'Left', 'Right', 'Enter',
+// 'Escape', 'Tab', 'Backspace', 'Delete', 'Space', or single char letters.
+const KEY_NAME_MAP: Record<string, string> = {
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
+  ' ': 'Space',
+  Spacebar: 'Space',
+  Esc: 'Escape',
+  Del: 'Delete',
+};
+
+async function handlePressKey(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
+  const rawKey = (params.key as string) || '';
+  if (!rawKey) return { error: 'key parameter is required' };
+  const keyCode = KEY_NAME_MAP[rawKey] || rawKey;
+  // Focus the page first so the key event has a sensible target.
+  await wv.executeJavaScript('document.body && document.body.focus && document.body.focus(); true');
+  // Native OS-level key events — these have event.isTrusted === true so site
+  // keyboard handlers (Tinder, Slack, Notion, etc.) actually respect them.
+  wv.sendInputEvent({ type: 'keyDown', keyCode });
+  wv.sendInputEvent({ type: 'char', keyCode });
+  wv.sendInputEvent({ type: 'keyUp', keyCode });
+  return { text: `Pressed ${rawKey}` };
+}
+
+// ---------------------------------------------------------------------------
+// CDP accessibility-tree element indexing
+// ---------------------------------------------------------------------------
+// list_interactives uses Chrome DevTools Protocol's Accessibility.getFullAXTree
+// to get the *computed* accessibility tree, not the raw DOM. This sees roles,
+// names, and labels even on hostile sites (Tinder, Instagram) where the raw
+// HTML is just unlabeled <div>s with click handlers — because Chromium computes
+// accessible names for screen readers from icons, surrounding text, etc.
+//
+// Each interactive element is assigned a numeric index. The index → backendNodeId
+// map is cached server-side per webContents and used by click_index. This is
+// orders of magnitude more reliable than CSS-selector-based clicking on sites
+// that don't expose semantic markup.
+
+const INTERACTIVE_ROLES = new Set([
+  'button', 'link', 'textbox', 'combobox', 'checkbox', 'menuitem',
+  'tab', 'switch', 'searchbox', 'slider', 'listbox', 'option',
+  'radio', 'menuitemcheckbox', 'menuitemradio', 'spinbutton', 'treeitem',
+]);
+
+interface InteractiveElement {
+  index: number;
+  role: string;
+  name: string;
+  backendNodeId: number;
+}
+
+function extractAxValue(prop: any): string {
+  if (!prop) return '';
+  if (typeof prop === 'string') return prop;
+  if (prop.value !== undefined) {
+    if (typeof prop.value === 'string') return prop.value;
+    if (typeof prop.value === 'object' && prop.value && 'value' in prop.value) {
+      return String(prop.value.value || '');
+    }
+  }
+  return '';
+}
+
+interface CdpResult { ok: boolean; result?: any; error?: string }
+
+async function sendCdp(wv: BrowserWebview, method: string, params?: Record<string, any>): Promise<any> {
+  const wcId = wv.getWebContentsId();
+  const bridge = (window as any).openswarm?.sendCdpCommand as
+    | ((id: number, m: string, p?: any) => Promise<CdpResult>)
+    | undefined;
+  if (!bridge) throw new Error('CDP bridge not available — restart the app');
+  const resp = await bridge(wcId, method, params);
+  if (!resp || !resp.ok) {
+    throw new Error(resp?.error || `CDP ${method} failed`);
+  }
+  return resp.result;
+}
+
+async function handleListInteractives(wv: BrowserWebview): Promise<Record<string, any>> {
+  let axResult;
+  try {
+    axResult = await sendCdp(wv, 'Accessibility.getFullAXTree', {});
+  } catch (err: any) {
+    return { error: `getFullAXTree failed: ${err.message || String(err)}` };
+  }
+
+  const nodes: any[] = axResult?.nodes || [];
+  const interactives: InteractiveElement[] = [];
+  let index = 1;
+
+  for (const node of nodes) {
+    if (node.ignored) continue;
+    const role = extractAxValue(node.role);
+    if (!INTERACTIVE_ROLES.has(role)) continue;
+    const name = extractAxValue(node.name);
+    if (!name && role !== 'textbox' && role !== 'searchbox' && role !== 'combobox') {
+      // Skip nameless elements unless they're inputs (which can be empty)
+      continue;
+    }
+    const backendNodeId = node.backendDOMNodeId;
+    if (backendNodeId == null) continue;
+    interactives.push({ index, role, name: name.slice(0, 80), backendNodeId });
+    index++;
+  }
+
+  // Cache the index map in main-process storage so click_index can resolve it
+  // even across separate WebSocket commands.
+  const indexMap: Record<number, number> = {};
+  for (const el of interactives) {
+    indexMap[el.index] = el.backendNodeId;
+  }
+  try {
+    const cacheBridge = (window as any).openswarm?.cdpCacheSet;
+    if (cacheBridge) await cacheBridge(wv.getWebContentsId(), indexMap);
+  } catch {
+    // Cache is best-effort; click_index will fall back to re-listing.
+  }
+
+  // Build the model-friendly text representation: [1]<button "Like">
+  const lines = interactives.map(
+    (el) => `[${el.index}]<${el.role} "${el.name}">`,
+  );
+  const text = lines.length
+    ? `${lines.length} interactive elements:\n${lines.join('\n')}`
+    : 'No interactive elements found on this page.';
+
+  return {
+    text,
+    elements: interactives.map((el) => ({ index: el.index, role: el.role, name: el.name })),
+    url: wv.getURL(),
+  };
+}
+
+async function handleClickIndex(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
+  const idx = Number(params.index);
+  if (!Number.isFinite(idx) || idx < 1) {
+    return { error: 'index parameter is required and must be a positive integer' };
+  }
+
+  // Look up the cached index → backendNodeId mapping.
+  let backendNodeId: number | undefined;
+  try {
+    const cacheBridge = (window as any).openswarm?.cdpCacheGet;
+    if (cacheBridge) {
+      const cached = await cacheBridge(wv.getWebContentsId());
+      if (cached && cached[idx] != null) {
+        backendNodeId = Number(cached[idx]);
+      }
+    }
+  } catch {
+    // fall through to error path below
+  }
+
+  if (backendNodeId == null) {
+    return {
+      error: `Index ${idx} is not in the cached element map. Call BrowserListInteractives first to refresh the index, then try again.`,
+    };
+  }
+
+  // Cheap revalidation: resolve the backend node ID to a runtime object.
+  // If the page has mutated and the node is gone, this fails fast with a
+  // clear error message instead of clicking the wrong element.
+  try {
+    await sendCdp(wv, 'DOM.resolveNode', { backendNodeId });
+  } catch (err: any) {
+    return {
+      error: `Index ${idx} is no longer valid (${err.message || 'node not found'}). The page may have changed. Call BrowserListInteractives again.`,
+    };
+  }
+
+  // Get the element's bounding box for clicking via Input.dispatchMouseEvent
+  // (more reliable than Element.click() on hostile sites — bypasses any
+  // synthetic-event filtering since these are real OS-level mouse events).
+  let boxModel;
+  try {
+    boxModel = await sendCdp(wv, 'DOM.getBoxModel', { backendNodeId });
+  } catch (err: any) {
+    return {
+      error: `Index ${idx} has no box model (likely off-screen or hidden). Try scrolling first or call BrowserListInteractives again.`,
+    };
+  }
+
+  const content = boxModel?.model?.content;
+  if (!Array.isArray(content) || content.length < 8) {
+    return { error: `Index ${idx} has no valid bounding rect.` };
+  }
+  // content is [x1,y1, x2,y2, x3,y3, x4,y4] — compute center
+  const x = (content[0] + content[4]) / 2;
+  const y = (content[1] + content[5]) / 2;
+
+  try {
+    await sendCdp(wv, 'Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      x, y,
+      button: 'left',
+      clickCount: 1,
+    });
+    await sendCdp(wv, 'Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x, y,
+      button: 'left',
+      clickCount: 1,
+    });
+  } catch (err: any) {
+    return { error: `Click failed: ${err.message || String(err)}` };
+  }
+
+  return {
+    text: `Clicked index ${idx} at (${Math.round(x)}, ${Math.round(y)})`,
+    clickX: x / wv.clientWidth * 100,
+    clickY: y / wv.clientHeight * 100,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Batched actions
+// ---------------------------------------------------------------------------
+// handleBatch executes a list of sub-actions sequentially on the same webview,
+// capturing the URL before/after each one and aborting the rest of the batch
+// if the URL changes mid-batch (page navigated → indices and selectors are
+// stale). This lets the model emit "[click_index 7, wait 500, type 'eric',
+// press_key Enter]" in a single tool call instead of round-tripping for each
+// action.
+
+const MAX_BATCH_ACTIONS = 5;
+
+type SubActionType =
+  | 'click_index' | 'press_key' | 'type' | 'wait'
+  | 'scroll' | 'navigate' | 'click';
+
+const BATCH_DISPATCH: Record<SubActionType, (wv: BrowserWebview, p: Record<string, any>) => Promise<Record<string, any>>> = {
+  click_index: handleClickIndex,
+  press_key: handlePressKey,
+  type: handleType,
+  wait: handleWait,
+  scroll: handleScroll,
+  navigate: handleNavigate,
+  click: handleClick,
+};
+
+async function handleBatch(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
+  const actions: any[] = Array.isArray(params.actions) ? params.actions : [];
+  if (actions.length === 0) {
+    return { error: 'actions parameter must be a non-empty array' };
+  }
+  if (actions.length > MAX_BATCH_ACTIONS) {
+    return {
+      error: `Batch too large: ${actions.length} actions (max ${MAX_BATCH_ACTIONS}). Split into smaller batches.`,
+    };
+  }
+
+  const results: Array<Record<string, any>> = [];
+  let aborted_at: number | null = null;
+  let abort_reason: string | null = null;
+
+  for (let i = 0; i < actions.length; i++) {
+    const action = actions[i];
+    const subType = action?.type as SubActionType;
+    const subParams = action?.params || {};
+
+    if (!subType || !(subType in BATCH_DISPATCH)) {
+      results.push({ index: i, type: subType, error: `Unknown sub-action type: ${subType}` });
+      // Continue with the rest — per-action failures don't abort the batch.
+      continue;
+    }
+
+    const urlBefore = wv.getURL();
+    let subResult: Record<string, any>;
+    try {
+      subResult = await BATCH_DISPATCH[subType](wv, subParams);
+    } catch (err: any) {
+      subResult = { error: `Sub-action failed: ${err?.message || String(err)}` };
+    }
+    results.push({ index: i, type: subType, ...subResult });
+
+    // If the URL changed, abort the rest — selectors and indices are stale
+    // and any subsequent actions would be operating on a half-loaded page.
+    const urlAfter = wv.getURL();
+    if (urlAfter !== urlBefore && i < actions.length - 1) {
+      aborted_at = i + 1;
+      abort_reason = `URL changed mid-batch from ${urlBefore} to ${urlAfter}; remaining ${actions.length - i - 1} action(s) skipped`;
+      break;
+    }
+  }
+
+  const summary_lines = results.map((r, i) => {
+    const status = r.error ? `FAIL (${r.error})` : 'OK';
+    return `  ${i + 1}. ${r.type}: ${status}`;
+  });
+  const text = [
+    `Batch executed ${results.length}/${actions.length} actions`,
+    ...summary_lines,
+    aborted_at !== null ? `\nABORTED at action ${aborted_at}: ${abort_reason}` : '',
+  ].filter(Boolean).join('\n');
+
+  return {
+    text,
+    results,
+    aborted_at,
+    abort_reason,
+    url: wv.getURL(),
+  };
 }
 
 async function handleScroll(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
@@ -349,6 +661,25 @@ async function handleBrowserCommand(data: Record<string, any>) {
         break;
       case 'wait':
         result = await handleWait(wv, params);
+        break;
+      case 'press_key':
+        result = await handlePressKey(wv, params);
+        break;
+      case 'list_interactives':
+        result = await handleListInteractives(wv);
+        break;
+      case 'click_index':
+        result = await handleClickIndex(wv, params);
+        if (result.clickX != null && result.clickY != null) {
+          setActivity(browser_id, {
+            action: 'click_index',
+            detail,
+            coords: { xPercent: result.clickX, yPercent: result.clickY },
+          });
+        }
+        break;
+      case 'batch':
+        result = await handleBatch(wv, params);
         break;
       default:
         result = { error: `Unknown browser action: ${action}` };

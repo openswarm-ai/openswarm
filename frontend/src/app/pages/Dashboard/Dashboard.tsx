@@ -1,6 +1,5 @@
 import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import DashboardHeader from './DashboardHeader';
@@ -85,10 +84,14 @@ function isCardTarget(target: EventTarget | null, boundary: EventTarget | null):
   return false;
 }
 
-const DashboardInner: React.FC = () => {
+interface DashboardProps {
+  dashboardId: string;
+  isActive?: boolean;
+}
+
+const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
-  const { id: dashboardId } = useParams<{ id: string }>();
   const elementSelectionCtx = useElementSelection();
   const isElementSelectMode = elementSelectionCtx?.selectMode ?? false;
   const dashboardName = useAppSelector((state) =>
@@ -128,7 +131,7 @@ const DashboardInner: React.FC = () => {
     return { minX, minY, maxX, maxY };
   }, [cards, viewCards, browserCards]);
 
-  const canvas = useCanvasControls(zoomSensitivity, contentBounds);
+  const canvas = useCanvasControls(zoomSensitivity, contentBounds, isActive);
   const selection = useDashboardSelection(
     { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom, viewportRef: canvas.viewportRef },
     cards,
@@ -438,7 +441,12 @@ const DashboardInner: React.FC = () => {
     dispatch(fetchOutputs());
     dashboardWs.connect();
     const cleanupBrowserHandler = initBrowserCommandHandler();
-    return () => { dispatch(resetLayout()); cleanupBrowserHandler(); dashboardWs.disconnect(); };
+    // Note: cleanup runs only on dashboardId change (explicit dashboard switch)
+    // or full unmount. With the hide-don't-unmount pattern in AppShell, route
+    // navigation no longer triggers this cleanup. We deliberately do NOT call
+    // resetLayout() here — switching dashboards already calls it via the next
+    // effect run, and calling it from cleanup would race with the new layout fetch.
+    return () => { cleanupBrowserHandler(); dashboardWs.disconnect(); };
   }, [dispatch, dashboardId]);
 
   const pendingBrowserUrl = useAppSelector((state) => state.tempState.pendingBrowserUrl);
@@ -481,11 +489,12 @@ const DashboardInner: React.FC = () => {
   }, [canvas.viewportRef, canvas.contentRef]);
 
   useEffect(() => {
+    if (!isActive) return;  // Skip thumbnail capture when dashboard is hidden
     if (!dashboardId || !layoutInitialized) return;
     if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
     captureTimerRef.current = setTimeout(captureNow, 2000);
     return () => { if (captureTimerRef.current) clearTimeout(captureTimerRef.current); };
-  }, [dashboardId, layoutInitialized, captureNow]);
+  }, [isActive, dashboardId, layoutInitialized, captureNow]);
 
   // On exit, save the captured thumbnail to the backend
   useEffect(() => {
@@ -501,14 +510,16 @@ const DashboardInner: React.FC = () => {
   }, [dashboardId]);
 
   useEffect(() => {
+    if (!isActive) return;  // Don't auto-fit while dashboard is hidden
     if (!layoutInitialized || hasFittedRef.current) return;
     if (pendingFocusAgentId) return;
     hasFittedRef.current = true;
     const timer = setTimeout(() => canvas.actions.fitToView(), 150);
     return () => clearTimeout(timer);
-  }, [layoutInitialized, canvas.actions, pendingFocusAgentId]);
+  }, [isActive, layoutInitialized, canvas.actions, pendingFocusAgentId]);
 
   useEffect(() => {
+    if (!isActive) return;  // Defer focus animation until dashboard is visible
     if (!pendingFocusAgentId || !layoutInitialized) return;
     const agentId = pendingFocusAgentId;
     dispatch(clearPendingFocusAgentId());
@@ -520,7 +531,7 @@ const DashboardInner: React.FC = () => {
         handleHighlightCard(agentId);
       }
     }, 350);
-  }, [pendingFocusAgentId, layoutInitialized, dispatch, canvas.actions, handleHighlightCard]);
+  }, [isActive, pendingFocusAgentId, layoutInitialized, dispatch, canvas.actions, handleHighlightCard]);
 
   useEffect(() => {
     if (!layoutInitialized || restoredExpandedRef.current) return;
@@ -547,6 +558,7 @@ const DashboardInner: React.FC = () => {
   const prevParentStatusRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
+    if (!isActive) return;  // Heavy logic — pause when dashboard is hidden
     if (!layoutInitialized || !autoRevealSubAgents) return;
 
     const subSessions = Object.values(sessions).filter(
@@ -633,13 +645,14 @@ const DashboardInner: React.FC = () => {
       if (parent) newParentStatuses[pid] = parent.status;
     }
     prevParentStatusRef.current = newParentStatuses;
-  }, [sessions, cards, layoutInitialized, autoRevealSubAgents, dispatch]);
+  }, [isActive, sessions, cards, layoutInitialized, autoRevealSubAgents, dispatch]);
 
   const skipInitialSave = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef<Parameters<typeof saveLayout>[0] | null>(null);
 
   useEffect(() => {
+    if (!isActive) return;  // Don't persist layout while dashboard is hidden — save buffers in pendingSaveRef and flushes on resume
     if (!layoutInitialized || !dashboardId) return;
     if (skipInitialSave.current) {
       skipInitialSave.current = false;
@@ -654,7 +667,7 @@ const DashboardInner: React.FC = () => {
       saveTimerRef.current = null;
       captureNow();
     }, 500);
-  }, [cards, viewCards, browserCards, expandedSessionIds, layoutInitialized, dashboardId, dispatch, captureNow]);
+  }, [isActive, cards, viewCards, browserCards, expandedSessionIds, layoutInitialized, dashboardId, dispatch, captureNow]);
 
   useEffect(() => {
     return () => {
@@ -678,6 +691,7 @@ const DashboardInner: React.FC = () => {
     const needsAlt = parts.includes('alt');
 
     const handleShortcut = (e: KeyboardEvent) => {
+      if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
       if (e.key.toLowerCase() !== key) return;
       if (needsMeta !== e.metaKey) return;
       if (needsCtrl !== e.ctrlKey) return;
@@ -692,6 +706,7 @@ const DashboardInner: React.FC = () => {
 
   useEffect(() => {
     const handleEnter = (e: KeyboardEvent) => {
+      if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
       if (e.key !== 'Enter') return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
@@ -707,6 +722,7 @@ const DashboardInner: React.FC = () => {
 
   useEffect(() => {
     const handleDelete = (e: KeyboardEvent) => {
+      if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
       if (e.key !== 'Backspace' && e.key !== 'Delete') return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
@@ -730,6 +746,7 @@ const DashboardInner: React.FC = () => {
   // Cmd+F to open card search palette
   useEffect(() => {
     const handleSearch = (e: KeyboardEvent) => {
+      if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'f') return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
@@ -743,6 +760,7 @@ const DashboardInner: React.FC = () => {
 
   useEffect(() => {
     const handleCopy = (e: KeyboardEvent) => {
+      if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'c') return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
@@ -796,6 +814,7 @@ const DashboardInner: React.FC = () => {
   useEffect(() => {
     const PASTE_OFFSET = 40;
     const handlePaste = async (e: KeyboardEvent) => {
+      if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'v') return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
@@ -916,6 +935,7 @@ const DashboardInner: React.FC = () => {
 
   useEffect(() => {
     const handleArrowNav = (e: KeyboardEvent) => {
+      if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
       const currentFocused = focusedCardIdRef.current;
       if (!currentFocused || canvasZoomRef.current < 0.9) return;
 
@@ -1193,6 +1213,7 @@ const DashboardInner: React.FC = () => {
   }, [dispatch, canvas.actions]);
 
   useEffect(() => {
+    if (!isActive) return;  // Heavy geometry recalculation — pause when dashboard is hidden
     const DRIFT_THRESHOLD = 60;
 
     // Group tethered sub-agent cards by source, only including those still in the spawn column
@@ -1230,9 +1251,10 @@ const DashboardInner: React.FC = () => {
   // measuredHeightsTick in deps ensures we re-run once ResizeObserver reports
   // the new height after a collapse (avoids stale-height no-ops)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expandedSessionIds, glowingAgentCards, cards, dispatch, measuredHeightsTick]);
+  }, [isActive, expandedSessionIds, glowingAgentCards, cards, dispatch, measuredHeightsTick]);
 
   useEffect(() => {
+    if (!isActive) return;  // Heavy geometry recalculation — pause when dashboard is hidden
     const DRIFT_THRESHOLD = 60;
 
     const sourceToSiblings = new Map<string, string[]>();
@@ -1262,7 +1284,7 @@ const DashboardInner: React.FC = () => {
         cursor += bc.height + GRID_GAP * 2;
       }
     }
-  }, [glowingBrowserCards, browserCards, cards, dispatch]);
+  }, [isActive, glowingBrowserCards, browserCards, cards, dispatch]);
 
   const TETHER_FADE_MS = 2500;
 
@@ -1853,9 +1875,9 @@ const DashboardInner: React.FC = () => {
   );
 };
 
-const Dashboard: React.FC = () => (
+const Dashboard: React.FC<DashboardProps> = ({ dashboardId, isActive = true }) => (
   <ElementSelectionProvider>
-    <DashboardInner />
+    <DashboardInner dashboardId={dashboardId} isActive={isActive} />
   </ElementSelectionProvider>
 );
 

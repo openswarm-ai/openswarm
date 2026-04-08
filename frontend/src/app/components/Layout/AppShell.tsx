@@ -32,6 +32,9 @@ import CloseIcon from '@mui/icons-material/Close';
 import LinearProgress from '@mui/material/LinearProgress';
 import Settings from '@/app/pages/Settings/Settings';
 import DynamicIsland from '@/app/components/DynamicIsland';
+import Dashboard from '@/app/pages/Dashboard/Dashboard';
+import DashboardHost from '@/app/components/Layout/DashboardHost';
+import { useLastDashboardId } from '@/shared/hooks/useLastDashboardId';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchDashboards, createDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
 import { addBrowserCard, addBrowserTab } from '@/shared/state/dashboardLayoutSlice';
@@ -227,11 +230,16 @@ const AppShell: React.FC = () => {
   }, []);
 
   const isDashboardRoute = location.pathname === '/' || location.pathname.startsWith('/dashboard/');
+  const isDashboardViewActive = location.pathname.startsWith('/dashboard/');
   const isAppsRoute = location.pathname === '/apps' || location.pathname.startsWith('/apps/');
   const isCustomizationRoute = location.pathname === '/customization' || CUSTOMIZATION_PATHS.has(location.pathname);
   const activeDashboardId = location.pathname.startsWith('/dashboard/')
     ? location.pathname.split('/dashboard/')[1]
     : null;
+
+  // Sticky last-visited dashboard id — survives navigation away from /dashboard/:id
+  // so the Dashboard component can stay mounted with stable props.
+  const [lastDashboardId, setLastDashboardId] = useLastDashboardId();
   const activeAppId = location.pathname.startsWith('/apps/')
     ? location.pathname.split('/apps/')[1]
     : null;
@@ -924,8 +932,30 @@ const AppShell: React.FC = () => {
       </>
       )}
 
-      <Box sx={{ flex: 1, overflow: 'hidden', bgcolor: c.bg.page }}>
-        <Outlet />
+      <Box sx={{ flex: 1, overflow: 'hidden', bgcolor: c.bg.page, position: 'relative' }}>
+        {/* Non-dashboard routes render here. Hidden when the dashboard view is active
+            so the persistent Dashboard layered above can take over the visible area. */}
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            visibility: isDashboardViewActive ? 'hidden' : 'visible',
+            pointerEvents: isDashboardViewActive ? 'none' : 'auto',
+          }}
+        >
+          <Outlet />
+        </Box>
+
+        {/* Persistent Dashboard layer — always mounted once a dashboard has been visited.
+            Hidden via CSS when on other routes so webviews and dashboard state survive
+            route navigation. The Dashboard component reads its dashboardId from the
+            sticky lastDashboardId hook so its dashboardId useEffect doesn't re-fire on
+            incidental URL changes. */}
+        {lastDashboardId && (
+          <DashboardHost visible={isDashboardViewActive}>
+            <Dashboard dashboardId={lastDashboardId} isActive={isDashboardViewActive} />
+          </DashboardHost>
+        )}
       </Box>
       </Box>
 

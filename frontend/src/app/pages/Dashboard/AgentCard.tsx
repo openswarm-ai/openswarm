@@ -30,6 +30,7 @@ import { QuestionForm } from '@/app/pages/AgentChat/ApprovalBar';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import { parseMcpToolName, getMcpShortAction } from '@/app/pages/AgentChat/ToolCallBubble';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
 import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
 
 // ---------------------------------------------------------------------------
@@ -239,14 +240,23 @@ const AgentCard: React.FC<Props> = ({
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const isDashboardActive = useDashboardActive();
   const hasApiKey = !!useAppSelector((s) => s.settings.data.anthropic_api_key);
   const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
 
   const cardBoxRef = useRef<HTMLDivElement>(null);
+  // Capture isDashboardActive in a ref so the ResizeObserver callback always
+  // sees the latest value without forcing the observer to re-attach when the
+  // active state flips.
+  const isDashboardActiveRef = useRef(isDashboardActive);
+  useEffect(() => { isDashboardActiveRef.current = isDashboardActive; }, [isDashboardActive]);
   useEffect(() => {
     const el = cardBoxRef.current;
     if (!el || !onMeasuredHeight) return;
     const ro = new ResizeObserver((entries) => {
+      // Short-circuit when dashboard is hidden — observer stays attached so
+      // the next resize after returning to the dashboard fires correctly.
+      if (!isDashboardActiveRef.current) return;
       for (const entry of entries) {
         onMeasuredHeight(session.id, entry.contentRect.height);
       }

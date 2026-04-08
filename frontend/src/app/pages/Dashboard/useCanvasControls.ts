@@ -29,7 +29,7 @@ export interface ContentBounds {
   maxY: number;
 }
 
-export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: ContentBounds) {
+export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: ContentBounds, enabled: boolean = true) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -168,7 +168,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
   // Wheel zoom centered on cursor
   useEffect(() => {
     const el = viewportRef.current;
-    if (!el) return;
+    if (!el || !enabled) return;  // Skip wheel listener when canvas is hidden
 
     const onWheel = (e: WheelEvent) => {
       // Pinch-to-zoom on trackpads sets ctrlKey; plain scroll does not
@@ -244,7 +244,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
 
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [enabled]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
