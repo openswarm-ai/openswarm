@@ -188,6 +188,7 @@ interface Props {
   autoFocusInput?: boolean;
   cardZOrder?: number;
   onBringToFront?: (id: string, type: 'agent' | 'view' | 'browser') => void;
+  onEditSchedule?: (scheduleId: string) => void;
 }
 
 const MIN_W = 480;
@@ -204,7 +205,7 @@ const SNAP_THRESHOLD = 60;
 const AgentCard: React.FC<Props> = ({
   session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, spawnFrom, exitTarget,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
-  onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onBringToFront,
+  onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onBringToFront, onEditSchedule,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -752,7 +753,7 @@ const AgentCard: React.FC<Props> = ({
               <Tooltip title="View Schedule">
                 <IconButton
                   size="small"
-                  onClick={() => { window.location.hash = `/schedules?edit=${session.schedule_id}`; }}
+                  onClick={() => onEditSchedule?.(session.schedule_id!)}
                   onMouseDown={(e) => e.stopPropagation()}
                   sx={{
                     color: c.accent.primary,
