@@ -12,6 +12,7 @@ function run(cmd, args) {
     const child = spawn(cmd, args, {
       cwd: __dirname,
       stdio: 'inherit',
+      shell: isWindows,
     });
     child.on('error', reject);
     child.on('exit', (code) => {

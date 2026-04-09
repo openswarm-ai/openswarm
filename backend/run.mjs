@@ -10,29 +10,71 @@ const backendDir = __dirname;
 const isWindows = process.platform === 'win32';
 
 // --- Locate Python ---
+function getPythonVersion(cmd, args = ['--version']) {
+  try {
+    const output = execFileSync(cmd, args, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    // Extract version number from "Python X.Y.Z"
+    const match = output.match(/Python (\d+)\.(\d+)/);
+    if (match) {
+      return { cmd, args: args.length > 1 ? args.slice(0, -1) : [], major: parseInt(match[1]), minor: parseInt(match[2]), output };
+    }
+  } catch {
+    // not found
+  }
+  return null;
+}
+
 function findPython() {
+  const found = [];
+
+  if (isWindows) {
+    // Windows py launcher — try specific compatible versions first
+    for (const ver of ['3.13', '3.12', '3.11']) {
+      const result = getPythonVersion('py', [`-${ver}`, '--version']);
+      if (result) {
+        found.push({ cmd: 'py', args: [`-${ver}`], ...result });
+      }
+    }
+  }
+
+  // Generic commands
   const candidates = isWindows
     ? ['python', 'python3']
     : ['python3', 'python'];
   for (const cmd of candidates) {
-    try {
-      const version = execFileSync(cmd, ['--version'], {
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-      console.log(`Found ${version} (${cmd})`);
-      return cmd;
-    } catch {
-      // not found, try next
+    const result = getPythonVersion(cmd);
+    if (result) {
+      found.push({ cmd, args: [], ...result });
     }
   }
+
+  // Prefer 3.11-3.13 (known compatible), then any 3.11+
+  const compatible = found.filter(p => p.major === 3 && p.minor >= 11 && p.minor <= 13);
+  const selected = compatible[0] || found.find(p => p.major === 3 && p.minor >= 11);
+
+  if (selected) {
+    const fullCmd = selected.args.length ? `${selected.cmd} ${selected.args.join(' ')}` : selected.cmd;
+    console.log(`Found ${selected.output} (${fullCmd})`);
+    return { cmd: selected.cmd, args: selected.args };
+  }
+
+  if (found.length > 0) {
+    const p = found[0];
+    console.warn(`Warning: Found Python ${p.major}.${p.minor} but 3.11-3.13 is recommended.`);
+    console.warn('Some dependencies may not have pre-built wheels for this version.');
+    return { cmd: p.cmd, args: p.args };
+  }
+
   console.error(
-    'Error: Python not found. Install Python 3.11+ and ensure it is on your PATH.'
+    'Error: Python not found. Install Python 3.11-3.13 and ensure it is on your PATH.'
   );
   process.exit(1);
 }
 
-const pythonCmd = findPython();
+const python = findPython();
 
 // --- Venv setup ---
 const venvDir = join(backendDir, '.venv');
@@ -51,6 +93,8 @@ const env = {
   ...process.env,
   PATH: venvBin + delimiter + (process.env.PATH || ''),
   VIRTUAL_ENV: venvDir,
+  // Force UTF-8 on Windows so open() without encoding= matches macOS/Linux behavior
+  ...(isWindows ? { PYTHONUTF8: '1' } : {}),
 };
 
 function run(cmd, args, options = {}) {
@@ -73,7 +117,7 @@ try {
   // --- Create virtual environment if needed ---
   if (!existsSync(venvDir)) {
     console.log('Creating virtual environment...');
-    await run(pythonCmd, ['-m', 'venv', venvDir], { env: process.env });
+    await run(python.cmd, [...python.args, '-m', 'venv', venvDir], { env: process.env });
   }
 
   // --- Install debugger module if not installed ---

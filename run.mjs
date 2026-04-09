@@ -73,6 +73,8 @@ function spawnService(name, color, cmd, args, options = {}) {
     stdio: ['ignore', 'pipe', 'pipe'],
     // On Unix, create a process group so we can kill the whole tree
     detached: !isWindows,
+    // .cmd files on Windows require shell: true
+    shell: isWindows,
     ...options,
   });
   children.push(child);
