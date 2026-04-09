@@ -66,6 +66,7 @@ export interface AgentSession {
   branches: Record<string, MessageBranch>;
   active_branch_id: string;
   streamingMessage: StreamingMessage | null;
+  cwd?: string | null;
   target_directory?: string | null;
   tool_group_meta: Record<string, ToolGroupMeta>;
   dashboard_id?: string;

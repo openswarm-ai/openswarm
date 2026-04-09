@@ -12,6 +12,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import ScheduleIcon from '@mui/icons-material/Schedule';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import { motion } from 'framer-motion';
 import {
   AgentSession,
@@ -72,6 +73,13 @@ const GoogleServiceIcon: React.FC<{ service: string; size?: number }> = ({ servi
   }
   return null;
 };
+
+function truncatePath(p: string): string {
+  const sep = p.includes('\\') ? '\\' : '/';
+  const parts = p.split(sep).filter(Boolean);
+  if (parts.length <= 3) return p;
+  return parts[0] + sep + '...' + sep + parts.slice(-2).join(sep);
+}
 
 function formatDuration(createdAt: string): string {
   const seconds = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
@@ -804,6 +812,18 @@ const AgentCard: React.FC<Props> = ({
             </Typography>
           )}
         </Box>
+
+        {/* Working directory */}
+        {session.cwd && (
+          <Tooltip title={session.cwd}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25, flexShrink: 0, overflow: 'hidden' }}>
+              <FolderOutlinedIcon sx={{ fontSize: 13, color: c.text.ghost, flexShrink: 0 }} />
+              <Typography variant="caption" sx={{ color: c.text.ghost, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.7rem' }}>
+                {truncatePath(session.cwd)}
+              </Typography>
+            </Box>
+          </Tooltip>
+        )}
       </Box>
 
       {/* Expanded: inline chat fills remaining space */}
