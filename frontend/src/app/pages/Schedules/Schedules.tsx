@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
@@ -59,10 +60,22 @@ const Schedules: React.FC = () => {
     (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
   );
 
+  const location = useLocation();
+
   useEffect(() => {
     dispatch(fetchSchedules());
     dispatch(clearUnread());
   }, [dispatch]);
+
+  // Auto-open editor when navigated with ?edit=<schedule_id>
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const editId = params.get('edit');
+    if (editId) {
+      setEditingId(editId);
+      setEditorOpen(true);
+    }
+  }, [location.search]);
 
   const handleEdit = (id: string) => {
     setEditingId(id);

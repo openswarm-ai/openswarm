@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 _scheduler_task: asyncio.Task | None = None
-TICK_INTERVAL = 30
+TICK_INTERVAL = 5
 
 
 async def _tick():
@@ -44,7 +44,9 @@ async def _tick():
                 "error": str(e),
             })
 
-        schedule.next_run_at = _compute_next_run(schedule, now)
+        # Compute next_run_at relative to current time (after execution),
+        # not the stale `now` from tick start, to avoid stacking missed runs
+        schedule.next_run_at = _compute_next_run(schedule, datetime.now())
 
         if schedule.trigger_type == "once":
             schedule.enabled = False

@@ -19,6 +19,7 @@ async def _create_new_session(schedule: Schedule):
     from backend.apps.agents.models import AgentConfig
 
     config_kwargs: dict = {
+        "name": schedule.name,
         "dashboard_id": schedule.dashboard_id,
     }
 
@@ -40,6 +41,7 @@ async def _create_new_session(schedule: Schedule):
 
     config = AgentConfig(**config_kwargs)
     session = await agent_manager.launch_agent(config)
+    session.schedule_id = schedule.id
 
     await agent_manager.send_message(
         session.id,

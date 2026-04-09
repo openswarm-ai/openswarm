@@ -71,6 +71,7 @@ export interface AgentSession {
   dashboard_id?: string;
   browser_id?: string | null;
   parent_session_id?: string | null;
+  schedule_id?: string | null;
 }
 
 export interface AgentConfig {

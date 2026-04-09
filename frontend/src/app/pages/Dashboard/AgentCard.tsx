@@ -11,6 +11,7 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import CloseIcon from '@mui/icons-material/Close';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import ScheduleIcon from '@mui/icons-material/Schedule';
 import { motion } from 'framer-motion';
 import {
   AgentSession,
@@ -747,6 +748,22 @@ const AgentCard: React.FC<Props> = ({
             onPointerDown={(e) => e.stopPropagation()}
             sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, ml: 0.5 }}
           >
+            {session.schedule_id && (
+              <Tooltip title="View Schedule">
+                <IconButton
+                  size="small"
+                  onClick={() => { window.location.hash = `/schedules?edit=${session.schedule_id}`; }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  sx={{
+                    color: c.accent.primary,
+                    p: 0.5,
+                    '&:hover': { bgcolor: `${c.accent.primary}22` },
+                  }}
+                >
+                  <ScheduleIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
               <IconButton
                 size="small"
