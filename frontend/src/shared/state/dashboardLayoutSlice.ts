@@ -63,6 +63,11 @@ export interface DashboardLayoutState {
   nextZOrder: number;
   loading: boolean;
   initialized: boolean;
+  // Transient signal: when a new browser card is created via addBrowserCard
+  // (link click, "+ Browser" button, pending URL flow), the reducer sets this
+  // to the new card's id. Dashboard.tsx watches it and pans/zooms the canvas
+  // to center on the new card, then dispatches clearPendingFocusBrowserId.
+  pendingFocusBrowserId: string | null;
 }
 
 const initialState: DashboardLayoutState = {
@@ -76,6 +81,7 @@ const initialState: DashboardLayoutState = {
   nextZOrder: 1,
   loading: false,
   initialized: false,
+  pendingFocusBrowserId: null,
 };
 
 interface LayoutPayload {
@@ -403,6 +409,12 @@ const dashboardLayoutSlice = createSlice({
         height: DEFAULT_BROWSER_CARD_H,
         zOrder: state.nextZOrder++,
       };
+      // Signal Dashboard.tsx to pan/zoom and highlight this new card.
+      state.pendingFocusBrowserId = id;
+    },
+
+    clearPendingFocusBrowserId(state) {
+      state.pendingFocusBrowserId = null;
     },
 
     addBrowserCardFromBackend(state, action: PayloadAction<BrowserCardPosition>) {
@@ -764,6 +776,7 @@ export const {
   setGlowingAgentCard,
   fadeGlowingAgentCard,
   clearGlowingAgentCard,
+  clearPendingFocusBrowserId,
   resetLayout,
 } = dashboardLayoutSlice.actions;
 

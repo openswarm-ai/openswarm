@@ -39,6 +39,7 @@ import {
   bringToFront,
   setGlowingAgentCard,
   clearGlowingAgentCard,
+  clearPendingFocusBrowserId,
   DEFAULT_CARD_W,
   DEFAULT_CARD_H,
   EXPANDED_CARD_MIN_H,
@@ -451,6 +452,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
 
   const pendingBrowserUrl = useAppSelector((state) => state.tempState.pendingBrowserUrl);
   const pendingFocusAgentId = useAppSelector((state) => state.tempState.pendingFocusAgentId);
+  const pendingFocusBrowserId = useAppSelector((state) => state.dashboardLayout.pendingFocusBrowserId);
 
   useEffect(() => {
     if (!dashboardId) return;
@@ -532,6 +534,38 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       }
     }, 350);
   }, [isActive, pendingFocusAgentId, layoutInitialized, dispatch, canvas.actions, handleHighlightCard]);
+
+  // Auto-focus a newly created browser card. The reducer that handles
+  // addBrowserCard sets pendingFocusBrowserId to the new card's id; this
+  // effect picks it up, pans/zooms the canvas to center on it, briefly
+  // highlights it, then clears the signal. Mirrors the pendingFocusAgentId
+  // pattern above so link clicks (intercepted in AppShell) get the same
+  // auto-focus behavior as the "+ Browser" toolbar button.
+  //
+  // Uses zoom=0.8 (the same value handleCardClick uses for browser cards
+  // at line ~344) instead of letting fitToCards auto-derive a zoom from
+  // padding. Browser cards are large (1280x800), so the auto-derived zoom
+  // would land around ~58% which feels too far back; 0.8 matches the
+  // "click on a browser to focus" experience the user expects.
+  useEffect(() => {
+    if (!isActive) return;
+    if (!pendingFocusBrowserId || !layoutInitialized) return;
+    const browserId = pendingFocusBrowserId;
+    dispatch(clearPendingFocusBrowserId());
+    hasFittedRef.current = true;
+    setTimeout(() => {
+      const card = store.getState().dashboardLayout.browserCards[browserId];
+      if (card) {
+        canvas.actions.fitToCards(
+          [{ x: card.x, y: card.y, width: card.width, height: card.height }],
+          1.15,
+          true,
+          0.8,
+        );
+        handleHighlightCard(browserId);
+      }
+    }, 200);
+  }, [isActive, pendingFocusBrowserId, layoutInitialized, dispatch, canvas.actions, handleHighlightCard]);
 
   useEffect(() => {
     if (!layoutInitialized || restoredExpandedRef.current) return;
