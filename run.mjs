@@ -73,8 +73,6 @@ function spawnService(name, color, cmd, args, options = {}) {
     stdio: ['ignore', 'pipe', 'pipe'],
     // On Unix, create a process group so we can kill the whole tree
     detached: !isWindows,
-    // .cmd files on Windows require shell: true
-    shell: isWindows,
     ...options,
   });
   children.push(child);
@@ -132,7 +130,7 @@ try {
 
   // Wait for backend health
   console.log(`${YELLOW}${BOLD}Waiting for backend (http://localhost:8324) to be ready...${RESET}`);
-  await waitForHealth('http://localhost:8324/', 'Backend', 120000);
+  await waitForHealth('http://localhost:8324/api/health/check', 'Backend', 120000);
   console.log(`${GREEN}${BOLD}Backend is ready!${RESET}`);
 
   // Start frontend
@@ -157,6 +155,7 @@ try {
   const electron = spawnService('electron', MAGENTA, npmCmd, ['run', 'dev'], {
     cwd: join(__dirname, 'electron'),
     env: { ...process.env, ELECTRON_DEV: '1' },
+    shell: isWindows,
   });
 
   electron.on('exit', (code) => {
