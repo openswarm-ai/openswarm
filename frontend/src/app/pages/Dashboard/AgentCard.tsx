@@ -753,7 +753,7 @@ const AgentCard: React.FC<Props> = ({
               <Tooltip title="View Schedule">
                 <IconButton
                   size="small"
-                  onClick={() => onEditSchedule?.(session.schedule_id!)}
+                  onClick={(e) => { e.stopPropagation(); onEditSchedule?.(session.schedule_id!); }}
                   onMouseDown={(e) => e.stopPropagation()}
                   sx={{
                     color: c.accent.primary,
