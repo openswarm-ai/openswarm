@@ -6,7 +6,7 @@
     "build": "webpack --mode=production",
     "build:watch": "webpack --mode=development --watch",
     "dev": "webpack serve --mode=development",
-    "clean": "rm -rf dist"
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
     "@codemirror/lang-html": "^6.4.11",
