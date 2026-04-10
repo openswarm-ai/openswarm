@@ -478,6 +478,7 @@ const DynamicIsland: React.FC = () => {
               request={oldestNonQuestionApproval}
               remainingCount={nonQuestionApprovalCount}
               onApprove={onApprove}
+              onApproveAll={onApproveAllNonQuestion}
               onDeny={onDeny}
               onExpand={() => setUserExpanded(true)}
             />
@@ -613,9 +614,10 @@ const CompactActionablePill: React.FC<{
   request: ApprovalRequest;
   remainingCount: number;
   onApprove: (requestId: string) => void;
+  onApproveAll: () => void;
   onDeny: (requestId: string) => void;
   onExpand: () => void;
-}> = ({ c, request, remainingCount, onApprove, onDeny, onExpand }) => {
+}> = ({ c, request, remainingCount, onApprove, onApproveAll, onDeny, onExpand }) => {
   const parsed = useMemo(() => parseMcpToolName(request.tool_name), [request.tool_name]);
   const meta = useMcpToolMeta(parsed);
 
@@ -704,6 +706,32 @@ const CompactActionablePill: React.FC<{
             <CheckIcon sx={{ fontSize: 11 }} />
           </IconButton>
         </Tooltip>
+        {remainingCount > 1 && !isIntervention && (
+          <Tooltip title={`Approve all ${remainingCount}`} arrow>
+            <Box
+              component="button"
+              onClick={(e: React.MouseEvent) => { e.stopPropagation(); onApproveAll(); }}
+              sx={{
+                all: 'unset',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: 18,
+                px: 0.5,
+                borderRadius: '4px',
+                fontSize: '0.58rem',
+                fontWeight: 700,
+                color: '#fff',
+                bgcolor: c.status.success,
+                '&:hover': { filter: 'brightness(0.85)' },
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ✓&thinsp;All
+            </Box>
+          </Tooltip>
+        )}
         <Tooltip title={isIntervention ? 'Skip' : 'Deny'} arrow>
           <IconButton
             size="small"
