@@ -31,6 +31,7 @@ interface Props {
     prompt: string,
     mode: string,
     model: string,
+    effort: string,
     images?: Array<{ data: string; media_type: string }>,
     contextPaths?: ContextPath[],
     forcedTools?: string[],
@@ -97,6 +98,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const defaultModel = useAppSelector((s) => s.settings.data.default_model);
     const [mode, setMode] = useState(defaultMode || 'agent');
     const [model, setModel] = useState(defaultModel || 'sonnet');
+    const [effort, setEffort] = useState('high');
     const settingsApplied = useRef(false);
     useEffect(() => {
       if (!settingsApplied.current) {
@@ -145,9 +147,9 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         attachedSkills?: Array<{ id: string; name: string; content: string }>,
         selectedBrowserIds?: string[],
       ) => {
-        onSend(message, mode, model, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedFolder || undefined);
+        onSend(message, mode, model, effort, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedFolder || undefined);
       },
-      [onSend, mode, model, selectedFolder],
+      [onSend, mode, model, effort, selectedFolder],
     );
 
     const handleCloseHistory = useCallback(() => {
@@ -368,6 +370,8 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               onModeChange={setMode}
               model={model}
               onModelChange={setModel}
+              effort={effort}
+              onEffortChange={setEffort}
               embedded
               autoFocus
               sessionId={TOOLBAR_OWNER_ID}

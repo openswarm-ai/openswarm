@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 MODEL_MAP = {
     "sonnet": "claude-sonnet-4-20250514",
     "opus": "claude-opus-4-20250514",
-    "opus-1m": "claude-opus-4-6[1m]",
     "haiku": "claude-haiku-4-5-20251001",
 }
 

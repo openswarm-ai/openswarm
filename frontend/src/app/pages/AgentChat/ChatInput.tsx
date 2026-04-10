@@ -67,6 +67,8 @@ interface Props {
   onModeChange: (mode: string) => void;
   model: string;
   onModelChange: (model: string) => void;
+  effort: string;
+  onEffortChange: (effort: string) => void;
   isRunning?: boolean;
   onStop?: () => void;
   autoRunMode?: boolean;
@@ -141,7 +143,7 @@ const ContextRing: React.FC<{ used: number; limit: number; accentColor: string; 
   );
 };
 
-const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0 }, ref) => {
+const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, effort, onEffortChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0 }, ref) => {
   const c = useClaudeTokens();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -200,7 +202,6 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
   const [modeAnchor, setModeAnchor] = useState<HTMLElement | null>(null);
   const [modelAnchor, setModelAnchor] = useState<HTMLElement | null>(null);
   const [effortAnchor, setEffortAnchor] = useState<HTMLElement | null>(null);
-  const [effort, setEffort] = useState('high');
 
   const currentMode = modesMap[mode];
   const FALLBACK_MODE = { ...FALLBACK_MODE_BASE, color: c.accent.primary };
@@ -1055,7 +1056,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
               key={opt.value}
               selected={effort === opt.value}
               onClick={() => {
-                setEffort(opt.value);
+                onEffortChange(opt.value);
                 setEffortAnchor(null);
               }}
             >

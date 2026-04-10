@@ -79,6 +79,7 @@ export interface AgentConfig {
   name?: string;
   model?: string;
   mode?: string;
+  effort?: string;
   system_prompt?: string;
   allowed_tools?: string[];
   max_turns?: number;

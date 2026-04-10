@@ -48,6 +48,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 const CONTEXT_WINDOWS: Record<string, number> = {
   sonnet: 200_000,
   opus: 200_000,
+  'opus-1m': 1_000_000,
   haiku: 200_000,
 };
 
@@ -143,6 +144,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const [awaitingResponse, setAwaitingResponse] = useState(false);
   const [mode, setMode] = useState('agent');
   const [model, setModel] = useState('sonnet');
+  const [effort, setEffort] = useState('high');
 
   const wsRef = useRef<ReturnType<typeof createSessionWs> | null>(null);
   const initialContextApplied = useRef(false);
@@ -1119,6 +1121,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 onModeChange={handleModeChange}
                 model={model}
                 onModelChange={handleModelChange}
+                effort={effort}
+                onEffortChange={setEffort}
                 isRunning={agentBusy}
                 onStop={handleStop}
                 queueLength={queueLength}

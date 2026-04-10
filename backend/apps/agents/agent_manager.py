@@ -325,11 +325,16 @@ class AgentManager:
 
         os.makedirs(effective_cwd, exist_ok=True)
 
+        # "opus-1m" is stored as-is for the frontend; resolved at SDK call time
+        use_1m_beta = config.model == "opus-1m"
+
         session = AgentSession(
             id=session_id,
             name=config.name,
             model=config.model,
             mode=config.mode,
+            effort=config.effort,
+            use_1m_context=use_1m_beta,
             system_prompt=config.system_prompt,
             allowed_tools=tools,
             max_turns=config.max_turns,
@@ -813,8 +818,11 @@ class AgentManager:
                     else:
                         effective_allowed.append(f"mcp__{name}__*")
 
+            # Resolve "opus-1m" to actual SDK model name
+            sdk_model = "opus" if session.model == "opus-1m" else session.model
+
             options_kwargs = {
-                "model": session.model,
+                "model": sdk_model,
                 "max_buffer_size": 5 * 1024 * 1024,
                 "permission_mode": "default",
                 "can_use_tool": can_use_tool,
@@ -837,12 +845,21 @@ class AgentManager:
 
             if session.cwd:
                 options_kwargs["cwd"] = session.cwd
+            if session.effort and session.effort != "auto":
+                options_kwargs["effort"] = session.effort
+            if session.use_1m_context:
+                if global_settings.anthropic_api_key:
+                    options_kwargs["betas"] = ["context-1m-2025-08-07"]
+                else:
+                    # CLI mode: use full model ID the CLI understands
+                    options_kwargs["model"] = "claude-opus-4-6[1m]"
 
             if session.sdk_session_id:
                 options_kwargs["resume"] = session.sdk_session_id
                 if fork_session:
                     options_kwargs["fork_session"] = True
 
+            logger.info(f"Session {session_id} SDK options: model={options_kwargs.get('model')}, effort={options_kwargs.get('effort')}, betas={options_kwargs.get('betas')}")
             options = ClaudeAgentOptions(**options_kwargs)
 
             async def prompt_stream():
@@ -862,6 +879,10 @@ class AgentManager:
                 if isinstance(message, StreamEvent):
                     event = message.event
                     event_type = event.get("type")
+
+                    if event_type == "message_start":
+                        msg_data = event.get("message", {})
+                        logger.info(f"Session {session_id} API response: model={msg_data.get('model')}, usage={msg_data.get('usage')}")
 
                     if event_type == "content_block_start":
                         block = event.get("content_block", {})
@@ -964,6 +985,7 @@ class AgentManager:
                     stream_block_index_map = {}
 
                 elif isinstance(message, ResultMessage):
+                    logger.info(f"Session {session_id} result: cost=${getattr(message, 'total_cost_usd', None)}, turns={getattr(message, 'num_turns', None)}, usage={getattr(message, 'usage', None)}, model_usage={getattr(message, 'model_usage', None)}")
                     session.sdk_session_id = getattr(message, "session_id", None)
                     cost = getattr(message, "total_cost_usd", None)
                     if cost is not None:
@@ -1150,6 +1172,10 @@ class AgentManager:
             return
 
         session_changed = False
+        if model == "opus-1m":
+            session.use_1m_context = True
+        elif model and model != "opus-1m":
+            session.use_1m_context = False
         if model and model != session.model:
             session.model = model
             session_changed = True

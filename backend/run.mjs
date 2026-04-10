@@ -143,6 +143,7 @@ try {
       '-m', 'uvicorn', 'backend.main:app',
       '--host', '0.0.0.0',
       '--port', '8324',
+      '--log-level', 'info',
       '--reload',
       // On Windows, uvicorn's default loop factory picks SelectorEventLoop when
       // --reload is active, which cannot spawn subprocesses (needed by claude_agent_sdk).

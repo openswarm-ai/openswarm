@@ -712,6 +712,7 @@ const DashboardInner: React.FC = () => {
       prompt: string,
       mode: string,
       model: string,
+      effort: string,
       images?: Array<{ data: string; media_type: string }>,
       contextPaths?: ContextPath[],
       forcedTools?: string[],
@@ -737,7 +738,7 @@ const DashboardInner: React.FC = () => {
         };
       }
 
-      const config: AgentConfig = { name: 'New chat', model, mode, dashboard_id: dashboardId, target_directory: targetDirectory };
+      const config: AgentConfig = { name: 'New chat', model, mode, effort, dashboard_id: dashboardId, target_directory: targetDirectory };
 
       dispatch(
         launchAndSendFirstMessage({
