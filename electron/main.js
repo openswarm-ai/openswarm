@@ -8,6 +8,22 @@ const fs = require('fs');
 const getPort = require('get-port');
 const http = require('http');
 
+// Prevent duplicate instances. Without this, double-clicking the app icon
+// (or macOS auto-launch + manual launch overlapping) spawns two independent
+// processes — each with its own backend on a different port — resulting in
+// one populated window and one empty window.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
