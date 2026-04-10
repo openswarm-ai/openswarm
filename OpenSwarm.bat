@@ -1,3 +1,3 @@
 @echo off
-cd /d "C:\Users\fireb\openswarm"
+cd /d "%~dp0"
 node run.mjs
