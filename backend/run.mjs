@@ -144,6 +144,11 @@ try {
       '--host', '0.0.0.0',
       '--port', '8324',
       '--reload',
+      // On Windows, uvicorn's default loop factory picks SelectorEventLoop when
+      // --reload is active, which cannot spawn subprocesses (needed by claude_agent_sdk).
+      // '--loop none' tells uvicorn to skip its factory and use Python's default event
+      // loop (ProactorEventLoop on Windows), which supports subprocesses.
+      ...(isWindows ? ['--loop', 'none'] : []),
       '--reload-dir', backendDir,
       '--reload-exclude', '*.pyc',
     ],
