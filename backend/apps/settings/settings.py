@@ -123,3 +123,64 @@ async def browse_directories(path: str = Query(default="")) -> BrowseResponse:
     parent = os.path.dirname(target) if target != "/" else None
 
     return BrowseResponse(current=target, parent=parent, directories=directories, files=files)
+
+
+@settings.router.get("/git-info")
+async def git_info(path: str = Query(default="")):
+    import subprocess
+
+    target = path.strip() if path.strip() else os.path.expanduser("~")
+    target = os.path.abspath(os.path.expanduser(target))
+
+    if not os.path.isdir(target):
+        raise HTTPException(status_code=400, detail="Not a directory")
+
+    def _run(args: list[str]) -> Optional[str]:
+        try:
+            r = subprocess.run(args, cwd=target, capture_output=True, text=True, timeout=5)
+            return r.stdout.strip() if r.returncode == 0 else None
+        except Exception:
+            return None
+
+    top = _run(["git", "rev-parse", "--show-toplevel"])
+    if not top:
+        return JSONResponse({"is_git": False})
+
+    branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]) or "HEAD"
+    raw_branches = _run(["git", "branch", "--list", "--format=%(refname:short)"]) or ""
+    branches = [b for b in raw_branches.splitlines() if b]
+    remote = _run(["git", "remote", "get-url", "origin"])
+    repo_name = os.path.basename(top)
+
+    return JSONResponse({
+        "is_git": True,
+        "branch": branch,
+        "branches": branches,
+        "remote_url": remote,
+        "repo_name": repo_name,
+    })
+
+
+class GitCheckoutRequest(BaseModel):
+    path: str
+    branch: str
+
+
+@settings.router.post("/git-checkout")
+async def git_checkout(req: GitCheckoutRequest):
+    import subprocess
+
+    target = os.path.abspath(os.path.expanduser(req.path.strip()))
+    if not os.path.isdir(target):
+        raise HTTPException(status_code=400, detail="Not a directory")
+
+    try:
+        r = subprocess.run(
+            ["git", "checkout", req.branch],
+            cwd=target, capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return JSONResponse({"success": False, "error": r.stderr.strip()})
+        return JSONResponse({"success": True})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})

@@ -1,4 +1,4 @@
-const { app, components, BrowserWindow, ipcMain, shell, session } = require('electron');
+const { app, components, BrowserWindow, ipcMain, shell, session, dialog } = require('electron');
 let autoUpdater;
 try { autoUpdater = require('electron-updater').autoUpdater; } catch (_) {}
 const path = require('path');
@@ -536,4 +536,14 @@ ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && /^https?:\/\//.test(url)) {
     shell.openExternal(url);
   }
+});
+
+ipcMain.handle('show-folder-dialog', async (_event, defaultPath) => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win || undefined, {
+    properties: ['openDirectory'],
+    defaultPath: defaultPath || undefined,
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
 });

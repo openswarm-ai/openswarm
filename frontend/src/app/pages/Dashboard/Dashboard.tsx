@@ -717,6 +717,7 @@ const DashboardInner: React.FC = () => {
       forcedTools?: string[],
       attachedSkills?: Array<{ id: string; name: string; content: string }>,
       selectedBrowserIds?: string[],
+      targetDirectory?: string,
     ) => {
       setToolbarOpen(false);
 
@@ -736,7 +737,7 @@ const DashboardInner: React.FC = () => {
         };
       }
 
-      const config: AgentConfig = { name: 'New chat', model, mode, dashboard_id: dashboardId };
+      const config: AgentConfig = { name: 'New chat', model, mode, dashboard_id: dashboardId, target_directory: targetDirectory };
 
       dispatch(
         launchAndSendFirstMessage({
