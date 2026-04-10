@@ -54,6 +54,7 @@ import DashboardViewCard from './DashboardViewCard';
 import BrowserCard from './BrowserCard';
 import CanvasControls from './CanvasControls';
 import DashboardToolbar from './DashboardToolbar';
+import ScheduleEditor from '@/app/pages/Schedules/ScheduleEditor';
 import { captureDashboardThumbnail } from './captureDashboardThumbnail';
 import { useCanvasControls } from './useCanvasControls';
 import { useDashboardSelection } from './useDashboardSelection';
@@ -118,6 +119,7 @@ const DashboardInner: React.FC = () => {
 
   const [toolbarOpen, setToolbarOpen] = useState(false);
   const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoFocusSessionId, setAutoFocusSessionId] = useState<string | null>(null);
   const [pendingSelectSessionId, setPendingSelectSessionId] = useState<string | null>(null);
@@ -1378,6 +1380,7 @@ const DashboardInner: React.FC = () => {
                   snapColumn={snapColumn}
                   autoFocusInput={autoFocusSessionId === session.id}
                   onBringToFront={handleBringToFront}
+                  onEditSchedule={setEditingScheduleId}
                 />
               );
             })}
@@ -1471,6 +1474,11 @@ const DashboardInner: React.FC = () => {
         <CanvasControls zoom={canvas.zoom} actions={canvas.actions} onTidy={handleTidy} />
       </Box>
     </Box>
+    <ScheduleEditor
+      open={editingScheduleId !== null}
+      scheduleId={editingScheduleId}
+      onClose={() => setEditingScheduleId(null)}
+    />
     </>
   );
 };

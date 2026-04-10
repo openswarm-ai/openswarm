@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 MODEL_MAP = {
     "sonnet": "claude-sonnet-4-20250514",
     "opus": "claude-opus-4-20250514",
+    "opus-1m": "claude-opus-4-6[1m]",
     "haiku": "claude-haiku-4-5-20251001",
 }
 
@@ -31,14 +32,10 @@ def _resolve_model(short_name: str) -> str:
     return MODEL_MAP.get(short_name, short_name)
 
 
-def _get_anthropic_client():
-    """Create an AsyncAnthropic client using the API key from app settings."""
-    import anthropic
-
-    settings = load_settings()
-    if not settings.anthropic_api_key:
-        raise ValueError("Anthropic API key not configured. Set it in Settings.")
-    return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+async def _llm_call(system: str, user_message: str, model: str = "sonnet", max_tokens: int = 4000) -> str:
+    """Route view builder LLM calls through API or CLI."""
+    from backend.apps.settings.llm_router import llm_call
+    return await llm_call(system=system, user_message=user_message, model=model, max_tokens=max_tokens)
 
 
 def _validate_against_schema(data: dict, schema: dict) -> str | None:
@@ -378,15 +375,13 @@ async def vibe_code(body: VibeCodeRequest):
     if context_parts:
         user_message = "\n\n".join(context_parts) + "\n\nUser request: " + body.prompt
 
-    client = _get_anthropic_client()
     try:
-        resp = await client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=8000,
+        raw = await _llm_call(
             system=VIBE_CODE_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
+            user_message=user_message,
+            model="sonnet",
+            max_tokens=8000,
         )
-        raw = resp.content[0].text.strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
             if raw.endswith("```"):
@@ -429,24 +424,16 @@ Every required field must be present. Use realistic, meaningful data.\
 @outputs.router.post("/auto-run")
 async def auto_run_output(body: AutoRunRequest):
     """Use an LLM to generate input data matching the schema, then optionally execute backend code."""
-    try:
-        import anthropic
-    except ImportError:
-        return {"error": "anthropic SDK not installed", "input_data": None, "backend_result": None}
-
     schema_str = json.dumps(body.input_schema, indent=2)
     user_message = f"Schema:\n```json\n{schema_str}\n```\n\nGenerate data for: {body.prompt}"
 
-    api_model = _resolve_model(body.model)
-    client = _get_anthropic_client()
     try:
-        resp = await client.messages.create(
-            model=api_model,
-            max_tokens=4000,
+        raw = await _llm_call(
             system=AUTO_RUN_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
+            user_message=user_message,
+            model=body.model,
+            max_tokens=4000,
         )
-        raw = resp.content[0].text.strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
             if raw.endswith("```"):

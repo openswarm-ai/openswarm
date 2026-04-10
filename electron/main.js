@@ -90,12 +90,12 @@ function getShellPath() {
 
   const seen = new Set();
   const dirs = [];
-  for (const d of [...fallbackDirs, ...systemPaths, ...(process.env.PATH || '').split(':')]) {
+  for (const d of [...fallbackDirs, ...systemPaths, ...(process.env.PATH || '').split(path.delimiter)]) {
     if (!d || seen.has(d)) continue;
     seen.add(d);
     try { if (fs.statSync(d).isDirectory()) dirs.push(d); } catch { /* skip */ }
   }
-  return dirs.join(':');
+  return dirs.join(path.delimiter);
 }
 
 function getResourcePath(...segments) {
@@ -108,10 +108,13 @@ function getResourcePath(...segments) {
 function getPythonPath() {
   if (isPackaged) {
     const envPath = path.join(process.resourcesPath, 'python-env');
-    return path.join(envPath, 'bin', 'python3');
+    return process.platform === 'win32'
+      ? path.join(envPath, 'Scripts', 'python.exe')
+      : path.join(envPath, 'bin', 'python3');
   }
-  const venvPython = path.join(__dirname, '..', 'backend', '.venv', 'bin', 'python3');
-  return venvPython;
+  return process.platform === 'win32'
+    ? path.join(__dirname, '..', 'backend', '.venv', 'Scripts', 'python.exe')
+    : path.join(__dirname, '..', 'backend', '.venv', 'bin', 'python3');
 }
 
 function waitForBackend(port, timeoutMs = 60000) {
@@ -161,7 +164,7 @@ async function startBackend() {
       'python3.13', 'site-packages'
     );
     const debuggerDir = getResourcePath('debugger');
-    env.PYTHONPATH = [projectRoot, debuggerDir, pythonEnvSitePackages].join(':');
+    env.PYTHONPATH = [projectRoot, debuggerDir, pythonEnvSitePackages].join(path.delimiter);
   }
 
   console.log(`Starting backend: ${pythonPath} on port ${backendPort}`);
@@ -289,12 +292,18 @@ function setupAutoUpdater() {
 function killBackend() {
   if (backendProcess) {
     console.log('Killing backend process...');
-    backendProcess.kill('SIGTERM');
-    setTimeout(() => {
-      if (backendProcess && !backendProcess.killed) {
-        backendProcess.kill('SIGKILL');
-      }
-    }, 3000);
+    if (process.platform === 'win32') {
+      try {
+        execFileSync('taskkill', ['/T', '/F', '/PID', String(backendProcess.pid)]);
+      } catch { /* already exited */ }
+    } else {
+      backendProcess.kill('SIGTERM');
+      setTimeout(() => {
+        if (backendProcess && !backendProcess.killed) {
+          backendProcess.kill('SIGKILL');
+        }
+      }, 3000);
+    }
     backendProcess = null;
   }
 }
