@@ -826,9 +826,8 @@ class AgentManager:
                 "disallowed_tools": effective_disallowed,
                 "include_partial_messages": True,
             }
-            if not global_settings.anthropic_api_key:
-                raise ValueError("Anthropic API key not configured. Set it in Settings.")
-            options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
+            if global_settings.anthropic_api_key:
+                options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
             if mcp_servers:
                 options_kwargs["mcp_servers"] = mcp_servers
             if composed_prompt:

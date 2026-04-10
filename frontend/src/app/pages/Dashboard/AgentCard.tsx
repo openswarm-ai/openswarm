@@ -11,6 +11,8 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import CloseIcon from '@mui/icons-material/Close';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import { motion } from 'framer-motion';
 import {
   AgentSession,
@@ -71,6 +73,13 @@ const GoogleServiceIcon: React.FC<{ service: string; size?: number }> = ({ servi
   }
   return null;
 };
+
+function truncatePath(p: string): string {
+  const sep = p.includes('\\') ? '\\' : '/';
+  const parts = p.split(sep).filter(Boolean);
+  if (parts.length <= 3) return p;
+  return parts[0] + sep + '...' + sep + parts.slice(-2).join(sep);
+}
 
 function formatDuration(createdAt: string): string {
   const seconds = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
@@ -187,6 +196,7 @@ interface Props {
   autoFocusInput?: boolean;
   cardZOrder?: number;
   onBringToFront?: (id: string, type: 'agent' | 'view' | 'browser') => void;
+  onEditSchedule?: (scheduleId: string) => void;
 }
 
 const MIN_W = 480;
@@ -203,7 +213,7 @@ const SNAP_THRESHOLD = 60;
 const AgentCard: React.FC<Props> = ({
   session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, spawnFrom, exitTarget,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
-  onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onBringToFront,
+  onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onBringToFront, onEditSchedule,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -747,6 +757,22 @@ const AgentCard: React.FC<Props> = ({
             onPointerDown={(e) => e.stopPropagation()}
             sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, ml: 0.5 }}
           >
+            {session.schedule_id && (
+              <Tooltip title="View Schedule">
+                <IconButton
+                  size="small"
+                  onClick={(e) => { e.stopPropagation(); onEditSchedule?.(session.schedule_id!); }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  sx={{
+                    color: c.accent.primary,
+                    p: 0.5,
+                    '&:hover': { bgcolor: `${c.accent.primary}22` },
+                  }}
+                >
+                  <ScheduleIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
               <IconButton
                 size="small"
@@ -786,6 +812,18 @@ const AgentCard: React.FC<Props> = ({
             </Typography>
           )}
         </Box>
+
+        {/* Working directory */}
+        {session.cwd && (
+          <Tooltip title={session.cwd}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25, flexShrink: 0, overflow: 'hidden' }}>
+              <FolderOutlinedIcon sx={{ fontSize: 13, color: c.text.ghost, flexShrink: 0 }} />
+              <Typography variant="caption" sx={{ color: c.text.ghost, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.7rem' }}>
+                {truncatePath(session.cwd)}
+              </Typography>
+            </Box>
+          </Tooltip>
+        )}
       </Box>
 
       {/* Expanded: inline chat fills remaining space */}
