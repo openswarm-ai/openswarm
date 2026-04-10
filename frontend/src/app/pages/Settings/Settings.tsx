@@ -718,8 +718,17 @@ const Settings: React.FC = () => {
   const updateError = useAppSelector((s) => s.update.error);
   const installing = useAppSelector((s) => s.update.installing);
 
+  const initialTab = useAppSelector((s) => s.settings.initialTab);
   const [activeTab, setActiveTab] = useState<'general' | 'models' | 'usage' | 'commands'>('general');
   const [form, setForm] = useState<AppSettings>({ ...settings });
+
+  // When the modal opens with a requested tab (e.g., from the warning
+  // banner's "Configure models" link), switch to it.
+  useEffect(() => {
+    if (initialTab && ['general', 'models', 'usage', 'commands'].includes(initialTab)) {
+      setActiveTab(initialTab as typeof activeTab);
+    }
+  }, [initialTab]);
   const [showApiKey, setShowApiKey] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [saved, setSaved] = useState(false);

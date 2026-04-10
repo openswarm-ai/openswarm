@@ -36,6 +36,7 @@ import Dashboard from '@/app/pages/Dashboard/Dashboard';
 import DashboardHost from '@/app/components/Layout/DashboardHost';
 import { useLastDashboardId } from '@/shared/hooks/useLastDashboardId';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { API_BASE } from '@/shared/config';
 import { fetchDashboards, createDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
 import { addBrowserCard, addBrowserTab } from '@/shared/state/dashboardLayoutSlice';
 import { setPendingBrowserUrl } from '@/shared/state/tempStateSlice';
@@ -59,6 +60,30 @@ const CUSTOMIZATION_ITEMS = [
 const CUSTOMIZATION_PATHS = new Set(CUSTOMIZATION_ITEMS.map((i) => i.path));
 
 
+
+/** Cute slime with × eyes and a red error badge — warning banner icon. */
+const ErrorSlime: React.FC<{ size?: number }> = ({ size = 22 }) => (
+  <svg width={size} height={size} viewBox="0 0 28 28" fill="none" style={{ flexShrink: 0 }}>
+    {/* Body — smooth dome blob sitting on a wobbly base */}
+    <path
+      d="M4 20 Q4 7 14 7 Q24 7 24 20 Q22 22 19 21.5 Q16 23 14 22 Q12 23 9 21.5 Q6 22 4 20Z"
+      fill="#E8927A"
+    />
+    {/* Subtle highlight on top of the dome */}
+    <ellipse cx="11" cy="11" rx="3.5" ry="2" fill="#F0A68E" opacity="0.6" />
+    {/* × left eye */}
+    <line x1="9.5" y1="13" x2="11.5" y2="15.5" stroke="#4a2020" strokeWidth="1.4" strokeLinecap="round" />
+    <line x1="11.5" y1="13" x2="9.5" y2="15.5" stroke="#4a2020" strokeWidth="1.4" strokeLinecap="round" />
+    {/* × right eye */}
+    <line x1="16.5" y1="13" x2="18.5" y2="15.5" stroke="#4a2020" strokeWidth="1.4" strokeLinecap="round" />
+    <line x1="18.5" y1="13" x2="16.5" y2="15.5" stroke="#4a2020" strokeWidth="1.4" strokeLinecap="round" />
+    {/* Small frown */}
+    <path d="M12 18.5 Q14 17.5 16 18.5" stroke="#4a2020" strokeWidth="1" strokeLinecap="round" fill="none" />
+    {/* Red error badge — top right */}
+    <circle cx="22" cy="5" r="4" fill="#ef4444" stroke="rgba(0,0,0,0.15)" strokeWidth="0.5" />
+    <text x="22" y="6.8" textAnchor="middle" fontSize="5.5" fill="white" fontWeight="bold" fontFamily="sans-serif">!</text>
+  </svg>
+);
 
 const AppShell: React.FC = () => {
   const c = useClaudeTokens();
@@ -92,6 +117,50 @@ const AppShell: React.FC = () => {
     try { return localStorage.getItem(UPDATE_DISMISS_KEY); } catch { return null; }
   });
   const [snackbarDismissed, setSnackbarDismissed] = useState(false);
+
+  // ---- Warning banner: no internet / no model connected ----
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean | null>(null); // null = still checking
+  // Narrow selectors — only re-render when an API key field actually changes,
+  // not on every settings update (theme toggle, system prompt edit, etc.).
+  const anthropicKey = useAppSelector((s) => s.settings.data.anthropic_api_key);
+  const openaiKey = useAppSelector((s) => s.settings.data.openai_api_key);
+  const googleKey = useAppSelector((s) => s.settings.data.google_api_key);
+  const openrouterKey = useAppSelector((s) => s.settings.data.openrouter_api_key);
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
+  // Check subscription status once on mount (and re-check when an API key changes)
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/agents/subscriptions/status`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const connections = data.providers?.connections || [];
+        setHasActiveSubscription(
+          data.running && connections.some((p: any) => p.isActive),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setHasActiveSubscription(false);
+      });
+    return () => { cancelled = true; };
+  }, [anthropicKey]);
+
+  const hasAnyApiKey = !!(anthropicKey || openaiKey || googleKey || openrouterKey);
+  const hasModelConnected = hasAnyApiKey || hasActiveSubscription === true;
+  // Don't flash the banner while the subscription check is in flight
+  const showWarningBanner = !isOnline || (hasActiveSubscription !== null && !hasModelConnected);
 
   const bannerDismissedForVersion = availableVersion != null && dismissedVersion === availableVersion;
   const isUpdateActionable = updateStatus === 'available' || updateStatus === 'downloaded' || updateStatus === 'downloading';
@@ -393,6 +462,52 @@ const AppShell: React.FC = () => {
           </Typography>
         </Box>
       </Box>
+
+      {/* Warning banner: no internet or no model connected */}
+      <Collapse in={showWarningBanner} timeout={350} unmountOnExit>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            px: 2,
+            py: 0.6,
+            bgcolor: 'rgba(239, 68, 68, 0.08)',
+            borderBottom: '1px solid rgba(239, 68, 68, 0.18)',
+            flexShrink: 0,
+            animation: showWarningBanner ? 'warning-fade-in 0.4s ease-out' : undefined,
+            '@keyframes warning-fade-in': {
+              from: { opacity: 0 },
+              to: { opacity: 1 },
+            },
+          }}
+        >
+          <ErrorSlime size={22} />
+          <Typography sx={{ fontSize: '0.78rem', color: '#ef4444', flex: 1, fontWeight: 500, letterSpacing: '0.01em' }}>
+            {!isOnline
+              ? 'No internet connection — agents cannot reach AI models or external services'
+              : (
+                <>
+                  No AI model connected —{' '}
+                  <Box
+                    component="span"
+                    onClick={() => dispatch(openSettingsModal('models'))}
+                    sx={{
+                      textDecoration: 'underline',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      '&:hover': { opacity: 0.8 },
+                      transition: 'opacity 0.15s',
+                    }}
+                  >
+                    Configure models
+                  </Box>
+                  {' '}to get started
+                </>
+              )}
+          </Typography>
+        </Box>
+      </Collapse>
 
       {showUpdateBanner && (
         <Box

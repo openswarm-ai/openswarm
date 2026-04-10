@@ -1,4 +1,4 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { API_BASE } from '@/shared/config';
 
 const SETTINGS_API = `${API_BASE}/settings`;
@@ -60,6 +60,8 @@ interface SettingsState {
   loading: boolean;
   loaded: boolean;
   modalOpen: boolean;
+  /** When non-null, Settings opens to this tab instead of 'general'. */
+  initialTab: string | null;
 }
 
 const initialState: SettingsState = {
@@ -82,6 +84,7 @@ const initialState: SettingsState = {
   loading: false,
   loaded: false,
   modalOpen: false,
+  initialTab: null,
 };
 
 export const fetchSettings = createAsyncThunk('settings/fetch', async () => {
@@ -124,11 +127,13 @@ const settingsSlice = createSlice({
   name: 'settings',
   initialState,
   reducers: {
-    openSettingsModal(state) {
+    openSettingsModal(state, action: PayloadAction<string | undefined>) {
       state.modalOpen = true;
+      state.initialTab = action.payload ?? null;
     },
     closeSettingsModal(state) {
       state.modalOpen = false;
+      state.initialTab = null;
     },
   },
   extraReducers: (builder) => {
