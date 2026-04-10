@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import sys
 import logging
 import shutil
 import time
@@ -235,7 +236,8 @@ def _sync_external_config(tool: ToolDefinition):
             config["ct0"] = ct0
             with open(_XBIRD_CONFIG_PATH, "w") as f:
                 json.dump(config, f, indent=2)
-            os.chmod(_XBIRD_CONFIG_PATH, 0o600)
+            if sys.platform != "win32":
+                os.chmod(_XBIRD_CONFIG_PATH, 0o600)
             logger.info("Synced xbird credentials to %s", _XBIRD_CONFIG_PATH)
     elif tool.name == "xbird" and not tool.credentials:
         if os.path.exists(_XBIRD_CONFIG_PATH):
@@ -290,6 +292,24 @@ def _sanitize_server_name(name: str) -> str:
 def _extra_bin_dirs() -> list[str]:
     """Well-known user-local bin directories that may not be on PATH in packaged apps."""
     home = os.path.expanduser("~")
+
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", os.path.join(home, "AppData", "Roaming"))
+        localappdata = os.environ.get("LOCALAPPDATA", os.path.join(home, "AppData", "Local"))
+        dirs = [
+            os.path.join(appdata, "npm"),
+            os.path.join(home, ".cargo", "bin"),
+            os.path.join(localappdata, "Programs", "Python"),
+            os.path.join(home, "scoop", "shims"),
+            os.path.join(home, ".bun", "bin"),
+            os.path.join(home, ".volta", "bin"),
+        ]
+        # nvm-windows
+        nvm_home = os.environ.get("NVM_HOME", "")
+        if nvm_home and os.path.isdir(nvm_home):
+            dirs.insert(0, os.environ.get("NVM_SYMLINK", nvm_home))
+        return dirs
+
     dirs = [
         os.path.join(home, ".bun", "bin"),
         os.path.join(home, ".cargo", "bin"),
