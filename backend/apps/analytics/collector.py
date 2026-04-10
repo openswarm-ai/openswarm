@@ -101,13 +101,13 @@ def record(
 
 
 def identify(extra_properties: dict | None = None):
-    """Identify the current installation with properties."""
+    """Set person properties on the current installation's PostHog profile."""
     if not _posthog:
         return
 
     try:
-        _posthog.identify(
-            _get_installation_id(),
+        _posthog.set(
+            distinct_id=_get_installation_id(),
             properties={
                 "os": platform.system(),
                 "platform": platform.platform(),

@@ -153,6 +153,8 @@ async def analytics_lifespan():
             id_props["name"] = settings.user_name
         if getattr(settings, "user_use_case", None):
             id_props["use_case"] = settings.user_use_case
+        if getattr(settings, "user_referral_source", None):
+            id_props["referral_source"] = settings.user_referral_source
         identify(id_props)
     except Exception as e:
         logger.debug(f"Analytics startup event failed (non-critical): {e}")

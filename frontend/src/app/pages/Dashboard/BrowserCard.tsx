@@ -726,6 +726,7 @@ const BrowserCard: React.FC<Props> = ({
                 onPointerDown={handleTabPointerDown}
                 onPointerMove={handleTabPointerMove}
                 onPointerUp={handleTabPointerUp}
+                onClick={(e: React.MouseEvent) => e.stopPropagation()}
                 sx={{
                   display: 'flex',
                   alignItems: 'center',

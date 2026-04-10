@@ -96,6 +96,8 @@ async def update_settings(body: AppSettings):
             id_props["name"] = body.user_name
         if body.user_use_case:
             id_props["use_case"] = body.user_use_case
+        if body.user_referral_source:
+            id_props["referral_source"] = body.user_referral_source
         if id_props:
             _identify(id_props)
 
