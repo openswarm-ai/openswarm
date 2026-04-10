@@ -538,6 +538,42 @@ ipcMain.handle('open-external', (_event, url) => {
   }
 });
 
+ipcMain.handle('open-in-cli', async (_event, sessionId, cwd) => {
+  if (!sessionId || typeof sessionId !== 'string') return { ok: false, error: 'Missing session ID' };
+  const args = ['--resume', sessionId];
+  const spawnOpts = { detached: true, stdio: 'ignore' };
+  if (cwd) spawnOpts.cwd = cwd;
+  try {
+    if (process.platform === 'win32') {
+      // Open Windows Terminal (or cmd fallback) with claude --resume
+      spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', 'claude', ...args], spawnOpts).unref();
+    } else if (process.platform === 'darwin') {
+      // macOS: open Terminal.app
+      const script = `tell application "Terminal" to do script "cd ${(cwd || '~').replace(/"/g, '\\"')} && claude ${args.join(' ')}"`;
+      spawn('osascript', ['-e', script], spawnOpts).unref();
+    } else {
+      // Linux: try common terminal emulators
+      const terminals = ['x-terminal-emulator', 'gnome-terminal', 'konsole', 'xterm'];
+      let launched = false;
+      for (const term of terminals) {
+        try {
+          if (term === 'gnome-terminal') {
+            spawn(term, ['--', 'claude', ...args], spawnOpts).unref();
+          } else {
+            spawn(term, ['-e', `claude ${args.join(' ')}`], spawnOpts).unref();
+          }
+          launched = true;
+          break;
+        } catch { /* try next */ }
+      }
+      if (!launched) return { ok: false, error: 'No terminal emulator found' };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.handle('show-folder-dialog', async (_event, defaultPath) => {
   const win = BrowserWindow.getFocusedWindow();
   const result = await dialog.showOpenDialog(win || undefined, {

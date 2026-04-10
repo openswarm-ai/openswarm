@@ -7,6 +7,9 @@ from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
 import json
 import logging
+import subprocess
+import sys
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +172,46 @@ async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_i
 async def get_browser_agent_children(session_id: str):
     children = agent_manager.get_browser_agent_children(session_id)
     return {"sessions": children}
+
+@agents.router.post("/sessions/{session_id}/open-in-cli")
+async def open_in_cli(session_id: str):
+    session = agent_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not session.sdk_session_id:
+        raise HTTPException(status_code=400, detail="Session has no CLI session ID (agent may not have run yet)")
+
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        raise HTTPException(status_code=500, detail="Claude CLI not found on PATH")
+
+    args = [claude_path, "--resume", session.sdk_session_id]
+    cwd = session.cwd or None
+
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(
+                ["cmd.exe", "/c", "start", "cmd.exe", "/k"] + args,
+                cwd=cwd, creationflags=subprocess.DETACHED_PROCESS,
+            )
+        elif sys.platform == "darwin":
+            script = f'tell application "Terminal" to do script "cd {cwd or "~"} && {claude_path} --resume {session.sdk_session_id}"'
+            subprocess.Popen(["osascript", "-e", script])
+        else:
+            for term in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"]:
+                term_path = shutil.which(term)
+                if term_path:
+                    if "gnome-terminal" in term:
+                        subprocess.Popen([term_path, "--"] + args, cwd=cwd)
+                    else:
+                        subprocess.Popen([term_path, "-e", " ".join(args)], cwd=cwd)
+                    break
+            else:
+                raise HTTPException(status_code=500, detail="No terminal emulator found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"ok": True, "sdk_session_id": session.sdk_session_id}
 
 @agents.router.post("/sessions/{session_id}/resume")
 async def resume_session(session_id: str):
