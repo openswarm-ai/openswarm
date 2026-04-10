@@ -542,7 +542,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
               {message.images && message.images.length > 0 && (
                 <MessageImageThumbnails images={message.images} c={c} />
               )}
-              <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', lineHeight: 1.6, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+              <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', lineHeight: 1.6, overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
                 {renderUserTextWithPills(displayText, c)}
               </Typography>
               <AttachedContextSection elements={selectedElements} message={message} c={c} />
