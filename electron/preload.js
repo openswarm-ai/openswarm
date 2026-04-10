@@ -14,6 +14,7 @@ const { contextBridge, ipcRenderer } = require('electron');
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     capturePage: (rect) => ipcRenderer.invoke('capture-page', rect),
     showFolderDialog: (defaultPath) => ipcRenderer.invoke('show-folder-dialog', defaultPath),
+    openInCli: (sessionId, cwd) => ipcRenderer.invoke('open-in-cli', sessionId, cwd),
     getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
     downloadUpdate: () => ipcRenderer.invoke('download-update'),
