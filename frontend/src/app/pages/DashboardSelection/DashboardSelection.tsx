@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -17,6 +17,8 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EditIcon from '@mui/icons-material/Edit';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import SearchIcon from '@mui/icons-material/Search';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import FileUploadIcon from '@mui/icons-material/FileUpload';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   fetchDashboards,
@@ -24,6 +26,8 @@ import {
   deleteDashboard,
   duplicateDashboard,
   renameDashboard,
+  exportDashboard,
+  importDashboard,
   Dashboard,
 } from '@/shared/state/dashboardsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -52,6 +56,7 @@ const DashboardSelection: React.FC = () => {
   const [menuDashboard, setMenuDashboard] = useState<Dashboard | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     dispatch(fetchDashboards());
@@ -113,6 +118,26 @@ const DashboardSelection: React.FC = () => {
     setRenamingId(null);
   };
 
+  const handleExport = () => {
+    if (menuDashboard) dispatch(exportDashboard(menuDashboard.id));
+    handleCloseMenu();
+  };
+
+  const handleImport = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const result = await dispatch(importDashboard(file));
+    if (importDashboard.fulfilled.match(result)) {
+      navigate(`/dashboard/${result.payload.id}`);
+    }
+    // Reset input so the same file can be re-imported
+    e.target.value = '';
+  };
+
   return (
     <Box sx={{ height: '100%', overflow: 'auto', p: 4 }}>
       <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
@@ -132,21 +157,46 @@ const DashboardSelection: React.FC = () => {
               Monitor and manage your agents from a single workspace.
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={handleCreate}
-            sx={{
-              bgcolor: c.accent.primary,
-              borderRadius: 2,
-              textTransform: 'none',
-              fontWeight: 500,
-              px: 2.5,
-              '&:hover': { bgcolor: c.accent.hover },
-            }}
-          >
-            New dashboard
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".swarm"
+              style={{ display: 'none' }}
+              onChange={handleFileSelected}
+            />
+            <Button
+              variant="outlined"
+              startIcon={<FileUploadIcon />}
+              onClick={handleImport}
+              sx={{
+                borderColor: c.border.medium,
+                color: c.text.secondary,
+                borderRadius: 2,
+                textTransform: 'none',
+                fontWeight: 500,
+                px: 2.5,
+                '&:hover': { borderColor: c.accent.primary, color: c.accent.primary },
+              }}
+            >
+              Import .swarm
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={handleCreate}
+              sx={{
+                bgcolor: c.accent.primary,
+                borderRadius: 2,
+                textTransform: 'none',
+                fontWeight: 500,
+                px: 2.5,
+                '&:hover': { bgcolor: c.accent.hover },
+              }}
+            >
+              New dashboard
+            </Button>
+          </Box>
         </Box>
 
         <Box sx={{ mb: 3 }}>
@@ -340,6 +390,10 @@ const DashboardSelection: React.FC = () => {
         <MenuItem onClick={handleDuplicate}>
           <ListItemIcon><ContentCopyIcon sx={{ fontSize: 18 }} /></ListItemIcon>
           <ListItemText>Duplicate</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={handleExport}>
+          <ListItemIcon><FileDownloadIcon sx={{ fontSize: 18 }} /></ListItemIcon>
+          <ListItemText>Export as .swarm</ListItemText>
         </MenuItem>
         <MenuItem onClick={handleDelete} sx={{ color: c.status.error }}>
           <ListItemIcon><DeleteOutlineIcon sx={{ fontSize: 18, color: c.status.error }} /></ListItemIcon>

@@ -82,6 +82,43 @@ export const updateDashboardThumbnail = createAsyncThunk(
   },
 );
 
+export const exportDashboard = createAsyncThunk(
+  'dashboards/export',
+  async (id: string) => {
+    const res = await fetch(`${DASHBOARDS_API}/${id}/export`);
+    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+    const data = await res.json();
+    const name = data.dashboard?.name || 'dashboard';
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name}.swarm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return id;
+  },
+);
+
+export const importDashboard = createAsyncThunk(
+  'dashboards/import',
+  async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${DASHBOARDS_API}/import`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Import failed' }));
+      throw new Error(err.detail || `Import failed: ${res.status}`);
+    }
+    return (await res.json()) as Dashboard;
+  },
+);
+
 export const generateDashboardName = createAsyncThunk(
   'dashboards/generateName',
   async (dashboardId: string) => {
@@ -139,6 +176,9 @@ const dashboardsSlice = createSlice({
           state.items[id].name = name;
           state.items[id].auto_named = auto_named;
         }
+      })
+      .addCase(importDashboard.fulfilled, (state, action) => {
+        state.items[action.payload.id] = action.payload;
       })
       .addCase(updateDashboardThumbnail.fulfilled, (state, action) => {
         const { id, thumbnail, updated_at } = action.payload;
