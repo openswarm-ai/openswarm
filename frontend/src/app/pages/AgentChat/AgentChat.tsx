@@ -15,6 +15,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckIcon from '@mui/icons-material/Check';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import TerminalIcon from '@mui/icons-material/Terminal';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   sendMessage as sendMessageThunk,
@@ -44,10 +45,12 @@ import { ContextPath } from '@/app/components/DirectoryBrowser';
 import DiffViewer from './DiffViewer';
 import { setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards } from '@/shared/state/dashboardLayoutSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { API_BASE } from '@/shared/config';
 
 const CONTEXT_WINDOWS: Record<string, number> = {
   sonnet: 200_000,
   opus: 200_000,
+  'opus-1m': 1_000_000,
   haiku: 200_000,
 };
 
@@ -143,6 +146,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const [awaitingResponse, setAwaitingResponse] = useState(false);
   const [mode, setMode] = useState('agent');
   const [model, setModel] = useState('sonnet');
+  const [effort, setEffort] = useState('high');
 
   const wsRef = useRef<ReturnType<typeof createSessionWs> | null>(null);
   const initialContextApplied = useRef(false);
@@ -695,6 +699,25 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               )}
             </Box>
             {!isDraft && id && <DiffViewer sessionId={id} />}
+            {!isDraft && session.sdk_session_id && (
+              <Tooltip title="Open in CLI">
+                <IconButton
+                  size="small"
+                  sx={{ color: c.text.tertiary, '&:hover': { color: c.text.primary } }}
+                  onClick={async () => {
+                    const openswarm = (window as any).openswarm;
+                    if (openswarm?.openInCli) {
+                      const result = await openswarm.openInCli(session.sdk_session_id, session.cwd);
+                      if (result && !result.ok) console.error('Open in CLI failed:', result.error);
+                    } else {
+                      await fetch(`${API_BASE}/agents/sessions/${id}/open-in-cli`, { method: 'POST' });
+                    }
+                  }}
+                >
+                  <TerminalIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
             {onClose && (
               <IconButton onClick={onClose} size="small" sx={{ color: c.text.tertiary, '&:hover': { color: c.text.primary } }}>
                 <CloseIcon fontSize="small" />
@@ -1119,6 +1142,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 onModeChange={handleModeChange}
                 model={model}
                 onModelChange={handleModelChange}
+                effort={effort}
+                onEffortChange={setEffort}
                 isRunning={agentBusy}
                 onStop={handleStop}
                 queueLength={queueLength}

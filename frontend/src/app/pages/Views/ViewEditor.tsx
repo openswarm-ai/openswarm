@@ -1539,6 +1539,8 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
                       onModeChange={setAutoRunMode}
                       model={autoRunModel}
                       onModelChange={setAutoRunModel}
+                      effort="high"
+                      onEffortChange={() => {}}
                     />
                     <Button
                       variant="contained"

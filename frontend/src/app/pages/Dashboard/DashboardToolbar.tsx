@@ -21,6 +21,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { searchHistory, clearHistorySearch } from '@/shared/state/agentsSlice';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import type { Output } from '@/shared/state/outputsSlice';
+import ToolbarStatusBar, { loadLastFolder } from './ToolbarStatusBar';
 
 interface Props {
   inputOpen: boolean;
@@ -30,11 +31,13 @@ interface Props {
     prompt: string,
     mode: string,
     model: string,
+    effort: string,
     images?: Array<{ data: string; media_type: string }>,
     contextPaths?: ContextPath[],
     forcedTools?: string[],
     attachedSkills?: Array<{ id: string; name: string; content: string }>,
     selectedBrowserIds?: string[],
+    targetDirectory?: string,
   ) => void;
   onAddView: (outputId: string) => void;
   onHistoryResume: (sessionId: string) => void;
@@ -95,6 +98,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const defaultModel = useAppSelector((s) => s.settings.data.default_model);
     const [mode, setMode] = useState(defaultMode || 'agent');
     const [model, setModel] = useState(defaultModel || 'sonnet');
+    const [effort, setEffort] = useState('high');
     const settingsApplied = useRef(false);
     useEffect(() => {
       if (!settingsApplied.current) {
@@ -103,6 +107,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         settingsApplied.current = true;
       }
     }, [defaultMode, defaultModel]);
+    const [selectedFolder, setSelectedFolder] = useState<string | null>(() => loadLastFolder());
     const [viewPickerOpen, setViewPickerOpen] = useState(false);
     const [viewSearch, setViewSearch] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
@@ -142,9 +147,9 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         attachedSkills?: Array<{ id: string; name: string; content: string }>,
         selectedBrowserIds?: string[],
       ) => {
-        onSend(message, mode, model, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds);
+        onSend(message, mode, model, effort, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedFolder || undefined);
       },
-      [onSend, mode, model],
+      [onSend, mode, model, effort, selectedFolder],
     );
 
     const handleCloseHistory = useCallback(() => {
@@ -354,7 +359,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           padding: isExpanded ? '4px' : '6px',
           userSelect: 'none' as const,
           overflow: inputOpen ? 'visible' : 'hidden',
-          width: viewPickerOpen ? 480 : isExpanded ? 360 : undefined,
+          width: viewPickerOpen ? 480 : inputOpen ? 520 : isExpanded ? 360 : undefined,
         }}
       >
         {inputOpen ? (
@@ -365,10 +370,13 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               onModeChange={setMode}
               model={model}
               onModelChange={setModel}
+              effort={effort}
+              onEffortChange={setEffort}
               embedded
               autoFocus
               sessionId={TOOLBAR_OWNER_ID}
             />
+            <ToolbarStatusBar folder={selectedFolder} onFolderChange={setSelectedFolder} />
           </div>
         ) : historyOpen ? (
           <div style={{ width: '100%' }}>

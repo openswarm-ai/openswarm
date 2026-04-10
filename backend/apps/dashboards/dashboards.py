@@ -151,13 +151,7 @@ async def generate_name(dashboard_id: str):
 
     fallback = prompts[0][:40]
     try:
-        import anthropic
-        from backend.apps.settings.settings import load_settings
-        global_settings = load_settings()
-        if not global_settings.anthropic_api_key:
-            raise ValueError("API key not configured")
-
-        client = anthropic.AsyncAnthropic(api_key=global_settings.anthropic_api_key)
+        from backend.apps.settings.llm_router import llm_call
 
         if len(prompts) == 1:
             system = (
@@ -172,17 +166,17 @@ async def generate_name(dashboard_id: str):
             )
             user_content = "\n".join(f"- {p}" for p in prompts)
 
-        resp = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=30,
+        generated = await llm_call(
             system=system,
-            messages=[{"role": "user", "content": user_content}],
+            user_message=user_content,
+            model="haiku",
+            max_tokens=30,
         )
-        generated = resp.content[0].text.strip().strip('"\'')
+        generated = generated.strip('"\'')
         if generated:
             fallback = generated
     except Exception as e:
-        logger.warning(f"Dashboard name generation failed, using fallback: {e}")
+        logger.debug(f"Dashboard name generation failed, using fallback: {e}")
 
     dashboard.name = fallback
     dashboard.auto_named = True
@@ -215,6 +209,10 @@ async def update_dashboard(dashboard_id: str, body: DashboardUpdate):
 @dashboards.router.delete("/{dashboard_id}")
 async def delete_dashboard(dashboard_id: str):
     _load(dashboard_id)
+
+    # Delete schedules tied to this dashboard
+    from backend.apps.schedules.schedules import delete_schedules_for_dashboard
+    delete_schedules_for_dashboard(dashboard_id)
 
     if os.path.exists(SESSIONS_DIR):
         for fname in os.listdir(SESSIONS_DIR):
