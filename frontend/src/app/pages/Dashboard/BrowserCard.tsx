@@ -6,6 +6,8 @@ import Tooltip from '@mui/material/Tooltip';
 import InputBase from '@mui/material/InputBase';
 import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
+import Button from '@mui/material/Button';
+import Fade from '@mui/material/Fade';
 import LanguageIcon from '@mui/icons-material/Language';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
@@ -29,6 +31,7 @@ import {
   type BrowserTab,
 } from '@/shared/state/dashboardLayoutSlice';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { handleApproval } from '@/shared/state/agentsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import {
   registerWebview,
@@ -125,9 +128,9 @@ const BrowserCard: React.FC<Props> = ({
     const sessions = state.agents.sessions;
     const matches = Object.values(sessions).filter(
       (s) => s.browser_id === browserId && s.mode === 'browser-agent'
-        && (s.status === 'running' || s.status === 'completed' || s.status === 'error' || s.status === 'stopped'),
+        && (s.status === 'running' || s.status === 'waiting_approval' || s.status === 'completed' || s.status === 'error' || s.status === 'stopped'),
     );
-    return matches.find((s) => s.status === 'running') ?? matches[matches.length - 1] ?? null;
+    return matches.find((s) => s.status === 'running' || s.status === 'waiting_approval') ?? matches[matches.length - 1] ?? null;
   });
 
   const activity = useBrowserActivity(browserId);

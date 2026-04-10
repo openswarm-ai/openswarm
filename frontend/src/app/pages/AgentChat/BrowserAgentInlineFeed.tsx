@@ -1,6 +1,12 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
+import CheckIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
+import PanToolOutlinedIcon from '@mui/icons-material/PanToolOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
@@ -15,7 +21,7 @@ import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import { createSelector } from '@reduxjs/toolkit';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
-import { AgentMessage, AgentSession, fetchBrowserAgentChildren } from '@/shared/state/agentsSlice';
+import { AgentMessage, AgentSession, fetchBrowserAgentChildren, handleApproval } from '@/shared/state/agentsSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import type { RootState } from '@/shared/state/store';
 
@@ -197,8 +203,20 @@ const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId })
     0,
   );
 
+  // Sticky-to-bottom: auto-scroll to the latest content unless the user
+  // has manually scrolled up. Re-enable auto-scroll when the user scrolls
+  // back to the bottom (within a small threshold).
+  const isStuckToBottom = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // "At bottom" = within 30px of the bottom edge
+    isStuckToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+  }, []);
+
   useEffect(() => {
-    if (scrollRef.current) {
+    if (isStuckToBottom.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [totalMessages]);
@@ -211,6 +229,19 @@ const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId })
   return (
     <Box
       ref={scrollRef}
+      onScroll={handleScroll}
+      onWheel={(e) => {
+        // Capture wheel events so the feed scrolls on hover without
+        // needing to click/focus first. Without this, the parent chat
+        // scroll container eats the wheel events.
+        const el = scrollRef.current;
+        if (!el) return;
+        const atTop = el.scrollTop <= 0 && e.deltaY < 0;
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 1 && e.deltaY > 0;
+        // Only stop propagation when the feed has room to scroll in this
+        // direction. At boundaries, let the parent scroll naturally.
+        if (!atTop && !atBottom) e.stopPropagation();
+      }}
       sx={{
         maxHeight: 300,
         overflowY: 'auto',
@@ -265,6 +296,79 @@ const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId })
           {entries.map((entry, i) => (
             <EntryRow key={i} entry={entry} accentColor={accentColor} fc={fc} />
           ))}
+
+          {/* Inline RequestHumanIntervention — matches the DynamicIsland
+              and BrowserAgentOverlay style (amber, hand icon, compact pill).
+              Same request_id → whichever surface the user responds from
+              first resolves the approval; the others auto-dismiss. */}
+          {session.pending_approvals?.filter(
+            (a) => a.tool_name === 'RequestHumanIntervention',
+          ).map((intervention) => {
+            const problem = (intervention.tool_input as any)?.problem || 'Browser agent needs help';
+            return (
+              <Box
+                key={intervention.id}
+                sx={{
+                  mt: 0.75,
+                  mb: 0.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.75,
+                  px: 1,
+                  py: 0.5,
+                  borderRadius: '8px',
+                  bgcolor: 'rgba(245,158,11,0.10)',
+                  border: '1px solid rgba(245,158,11,0.25)',
+                }}
+              >
+                <PanToolOutlinedIcon sx={{ fontSize: 12, color: '#f59e0b', flexShrink: 0, mt: '2px' }} />
+                <Typography
+                  sx={{
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    color: '#f59e0b',
+                    flex: 1,
+                    minWidth: 0,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {problem}
+                </Typography>
+                <Tooltip title="Done — continue" arrow>
+                  <IconButton
+                    size="small"
+                    onClick={() => dispatch(handleApproval({ requestId: intervention.id, behavior: 'allow' }))}
+                    sx={{
+                      p: 0,
+                      width: 18,
+                      height: 18,
+                      color: '#fff',
+                      bgcolor: '#f59e0b',
+                      '&:hover': { bgcolor: '#d97706' },
+                    }}
+                  >
+                    <CheckIcon sx={{ fontSize: 11 }} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Skip" arrow>
+                  <IconButton
+                    size="small"
+                    onClick={() => dispatch(handleApproval({ requestId: intervention.id, behavior: 'deny', message: 'User declined to help' }))}
+                    sx={{
+                      p: 0,
+                      width: 18,
+                      height: 18,
+                      color: '#f59e0b',
+                      border: '1px solid rgba(245,158,11,0.4)',
+                      '&:hover': { bgcolor: 'rgba(245,158,11,0.1)' },
+                    }}
+                  >
+                    <CloseIcon sx={{ fontSize: 11 }} />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            );
+          })}
 
           {!showLabels && session.status === 'running' && entries.length > 0 && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25 }}>

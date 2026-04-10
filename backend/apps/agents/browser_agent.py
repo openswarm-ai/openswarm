@@ -588,11 +588,17 @@ BROWSER_TOOLS_SCHEMA = [
             "properties": {
                 "problem": {
                     "type": "string",
-                    "description": "What obstacle was encountered.",
+                    "description": (
+                        "One short sentence describing the obstacle. Keep it under "
+                        "15 words. Example: 'Login required — please sign in to X/Twitter.'"
+                    ),
                 },
                 "instruction": {
                     "type": "string",
-                    "description": "What the user should do to resolve it.",
+                    "description": (
+                        "One short sentence telling the user what to do. Keep it under "
+                        "15 words. Example: 'Log in with your credentials, then click Done.'"
+                    ),
                 },
             },
             "required": ["problem", "instruction"],
@@ -1078,7 +1084,14 @@ async def run_browser_agent(
                     decision = await _request_browser_approval(
                         session, tu.name, {"problem": problem, "instruction": instruction},
                     )
-                    result_text = "User resolved the issue." if decision.get("behavior") != "deny" else "User declined to help."
+                    if decision.get("behavior") != "deny":
+                        result_text = "User resolved the issue. Continue with the task."
+                    else:
+                        user_message = decision.get("message", "").strip()
+                        if user_message and user_message != "Skipped by user":
+                            result_text = f"User skipped this intervention and said: \"{user_message}\"\nAddress what the user said and adapt your approach accordingly."
+                        else:
+                            result_text = "User skipped this intervention. Try a different approach or move on."
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tu.id,

@@ -10,6 +10,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import CheckIcon from '@mui/icons-material/Check';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import PanToolOutlinedIcon from '@mui/icons-material/PanToolOutlined';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -618,9 +619,16 @@ const CompactActionablePill: React.FC<{
   const parsed = useMemo(() => parseMcpToolName(request.tool_name), [request.tool_name]);
   const meta = useMcpToolMeta(parsed);
 
-  const icon = parsed.isMcp
-    ? (meta.integration?.icon || null)
-    : getToolIcon(request.tool_name);
+  const isIntervention = request.tool_name === 'RequestHumanIntervention';
+  const interventionProblem = isIntervention
+    ? ((request.tool_input as any)?.problem || 'Browser agent needs help')
+    : '';
+
+  const icon = isIntervention
+    ? <PanToolOutlinedIcon />
+    : parsed.isMcp
+      ? (meta.integration?.icon || null)
+      : getToolIcon(request.tool_name);
 
   return (
     <motion.div
@@ -648,7 +656,7 @@ const CompactActionablePill: React.FC<{
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            color: c.text.tertiary,
+            color: isIntervention ? '#f59e0b' : c.text.tertiary,
             '& svg': { width: 12, height: 12 },
           }}
         >
@@ -658,7 +666,7 @@ const CompactActionablePill: React.FC<{
           sx={{
             fontSize: '0.68rem',
             fontWeight: 600,
-            color: c.text.secondary,
+            color: isIntervention ? '#f59e0b' : c.text.secondary,
             flex: 1,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -666,7 +674,7 @@ const CompactActionablePill: React.FC<{
             minWidth: 0,
           }}
         >
-          {parsed.displayName}
+          {isIntervention ? interventionProblem : parsed.displayName}
         </Typography>
         {remainingCount > 1 && (
           <Typography
@@ -680,7 +688,7 @@ const CompactActionablePill: React.FC<{
             +{remainingCount - 1}
           </Typography>
         )}
-        <Tooltip title="Approve" arrow>
+        <Tooltip title={isIntervention ? 'Done — continue' : 'Approve'} arrow>
           <IconButton
             size="small"
             onClick={(e) => { e.stopPropagation(); onApprove(request.id); }}
@@ -689,14 +697,14 @@ const CompactActionablePill: React.FC<{
               width: 18,
               height: 18,
               color: '#fff',
-              bgcolor: c.status.success,
-              '&:hover': { bgcolor: c.status.success, filter: 'brightness(0.85)' },
+              bgcolor: isIntervention ? '#f59e0b' : c.status.success,
+              '&:hover': { bgcolor: isIntervention ? '#d97706' : c.status.success, filter: isIntervention ? undefined : 'brightness(0.85)' },
             }}
           >
             <CheckIcon sx={{ fontSize: 11 }} />
           </IconButton>
         </Tooltip>
-        <Tooltip title="Deny" arrow>
+        <Tooltip title={isIntervention ? 'Skip' : 'Deny'} arrow>
           <IconButton
             size="small"
             onClick={(e) => { e.stopPropagation(); onDeny(request.id); }}
