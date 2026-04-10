@@ -38,6 +38,8 @@ async def _create_new_session(schedule: Schedule):
         config_kwargs["mode"] = schedule.mode
     if schedule.system_prompt:
         config_kwargs["system_prompt"] = schedule.system_prompt
+    if schedule.target_directory:
+        config_kwargs["target_directory"] = schedule.target_directory
 
     config = AgentConfig(**config_kwargs)
     session = await agent_manager.launch_agent(config)

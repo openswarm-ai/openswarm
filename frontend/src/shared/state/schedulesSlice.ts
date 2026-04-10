@@ -19,6 +19,7 @@ export interface Schedule {
   model: string | null;
   mode: string | null;
   system_prompt: string | null;
+  target_directory: string | null;
   last_run_at: string | null;
   next_run_at: string | null;
   run_count: number;

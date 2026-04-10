@@ -8,6 +8,9 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import InputAdornment from '@mui/material/InputAdornment';
+import IconButton from '@mui/material/IconButton';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { createSchedule, updateSchedule, fetchSchedules } from '@/shared/state/schedulesSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -51,6 +54,7 @@ const ScheduleEditor: React.FC<Props> = ({ open, scheduleId, onClose }) => {
   const [model, setModel] = useState('sonnet');
   const [mode, setMode] = useState('agent');
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [targetDirectory, setTargetDirectory] = useState('');
   const [configSource, setConfigSource] = useState<'template' | 'inline'>('inline');
 
   useEffect(() => {
@@ -68,6 +72,7 @@ const ScheduleEditor: React.FC<Props> = ({ open, scheduleId, onClose }) => {
       setModel(existing.model || 'sonnet');
       setMode(existing.mode || 'agent');
       setSystemPrompt(existing.system_prompt || '');
+      setTargetDirectory(existing.target_directory || '');
       setConfigSource(existing.template_id ? 'template' : 'inline');
     } else {
       setName('');
@@ -83,6 +88,7 @@ const ScheduleEditor: React.FC<Props> = ({ open, scheduleId, onClose }) => {
       setModel('sonnet');
       setMode('agent');
       setSystemPrompt('');
+      setTargetDirectory('');
       setConfigSource('inline');
     }
   }, [existing, open]);
@@ -120,6 +126,8 @@ const ScheduleEditor: React.FC<Props> = ({ open, scheduleId, onClose }) => {
       body.mode = mode;
       if (systemPrompt) body.system_prompt = systemPrompt;
     }
+
+    if (targetDirectory) body.target_directory = targetDirectory;
 
     if (scheduleId) {
       await dispatch(updateSchedule({ id: scheduleId, ...body }));
@@ -207,6 +215,37 @@ const ScheduleEditor: React.FC<Props> = ({ open, scheduleId, onClose }) => {
           />
         )}
 
+        <TextField
+          label="Working Directory"
+          value={targetDirectory}
+          onChange={(e) => setTargetDirectory(e.target.value)}
+          fullWidth
+          size="small"
+          sx={inputSx}
+          placeholder="Leave empty for default"
+          slotProps={{
+            input: {
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    size="small"
+                    onClick={async () => {
+                      const openswarm = (window as any).openswarm;
+                      if (openswarm?.showFolderDialog) {
+                        const picked = await openswarm.showFolderDialog(targetDirectory || undefined);
+                        if (picked) setTargetDirectory(picked);
+                      }
+                    }}
+                    sx={{ color: c.text.muted }}
+                  >
+                    <FolderOpenIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
+
         {actionType === 'new_session' && (
           <>
             <Typography variant="subtitle2" sx={{ color: c.text.secondary, mt: 1 }}>Agent Config</Typography>
@@ -236,9 +275,10 @@ const ScheduleEditor: React.FC<Props> = ({ open, scheduleId, onClose }) => {
                   onChange={(e) => setModel(e.target.value)} fullWidth size="small" sx={inputSx}
                   SelectProps={{ MenuProps: { PaperProps: { sx: { bgcolor: c.bg.surface } } } }}
                 >
-                  <MenuItem value="sonnet">Sonnet</MenuItem>
-                  <MenuItem value="haiku">Haiku</MenuItem>
-                  <MenuItem value="opus">Opus</MenuItem>
+                  <MenuItem value="sonnet">Sonnet 4.6</MenuItem>
+                  <MenuItem value="opus">Opus 4.6</MenuItem>
+                  <MenuItem value="opus-1m">Opus 4.6 1M</MenuItem>
+                  <MenuItem value="haiku">Haiku 3.5</MenuItem>
                 </TextField>
 
                 <TextField

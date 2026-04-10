@@ -26,6 +26,7 @@ class Schedule(BaseModel):
     model: Optional[str] = None
     mode: Optional[str] = None
     system_prompt: Optional[str] = None
+    target_directory: Optional[str] = None
 
     # State
     last_run_at: Optional[datetime] = None
@@ -51,6 +52,7 @@ class ScheduleCreate(BaseModel):
     model: Optional[str] = None
     mode: Optional[str] = None
     system_prompt: Optional[str] = None
+    target_directory: Optional[str] = None
 
 
 class ScheduleUpdate(BaseModel):
@@ -68,3 +70,4 @@ class ScheduleUpdate(BaseModel):
     model: Optional[str] = None
     mode: Optional[str] = None
     system_prompt: Optional[str] = None
+    target_directory: Optional[str] = None
