@@ -15,11 +15,12 @@ from backend.apps.dashboards.models import (
     ViewCardPosition,
     BrowserCardPosition,
 )
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile, File
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
-from backend.config.paths import DASHBOARDS_DIR as DATA_DIR, SESSIONS_DIR, DASHBOARD_LAYOUT_DIR as OLD_LAYOUT_DIR
+from backend.config.paths import DASHBOARDS_DIR as DATA_DIR, SESSIONS_DIR, OUTPUTS_DIR, DASHBOARD_LAYOUT_DIR as OLD_LAYOUT_DIR
 
 OLD_LAYOUT_FILE = os.path.join(OLD_LAYOUT_DIR, "layout.json")
 
@@ -267,3 +268,110 @@ async def duplicate_dashboard(dashboard_id: str):
         json.dump(new_dashboard, f, indent=2)
 
     return new_dashboard
+
+
+SWARM_FORMAT_VERSION = 1
+
+
+@dashboards.router.get("/{dashboard_id}/export")
+async def export_dashboard(dashboard_id: str):
+    """Export a dashboard as a .swarm file (JSON with layout + referenced outputs)."""
+    dashboard = _load(dashboard_id)
+    data = dashboard.model_dump(mode="json")
+
+    # Collect referenced outputs for view cards
+    outputs = {}
+    view_cards = data.get("layout", {}).get("view_cards", {})
+    for vc in view_cards.values():
+        output_id = vc.get("output_id")
+        if output_id:
+            output_path = os.path.join(OUTPUTS_DIR, f"{output_id}.json")
+            if os.path.exists(output_path):
+                with open(output_path) as f:
+                    output_data = json.load(f)
+                # Strip thumbnails to keep file size down
+                output_data.pop("thumbnail", None)
+                outputs[output_id] = output_data
+
+    swarm = {
+        "swarm_version": SWARM_FORMAT_VERSION,
+        "dashboard": {
+            "name": data["name"],
+            "layout": data["layout"],
+        },
+        "outputs": outputs,
+    }
+
+    # Strip thumbnails from dashboard too
+    swarm["dashboard"].pop("thumbnail", None)
+
+    return JSONResponse(
+        content=swarm,
+        headers={
+            "Content-Disposition": f'attachment; filename="{data["name"]}.swarm"',
+        },
+    )
+
+
+@dashboards.router.post("/import")
+async def import_dashboard(file: UploadFile = File(...)):
+    """Import a .swarm file and create a new dashboard with remapped IDs."""
+    content = await file.read()
+    try:
+        swarm = json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid .swarm file: not valid JSON")
+
+    version = swarm.get("swarm_version")
+    if not version or version > SWARM_FORMAT_VERSION:
+        raise HTTPException(status_code=400, detail="Unsupported .swarm file version")
+
+    dash_data = swarm.get("dashboard")
+    if not dash_data:
+        raise HTTPException(status_code=400, detail="Invalid .swarm file: missing dashboard data")
+
+    # Remap output IDs so imports don't collide with existing outputs
+    output_id_map = {}  # old_id -> new_id
+    imported_outputs = swarm.get("outputs", {})
+    os.makedirs(OUTPUTS_DIR, exist_ok=True)
+    for old_id, output_data in imported_outputs.items():
+        new_id = uuid4().hex
+        output_id_map[old_id] = new_id
+        output_data["id"] = new_id
+        now = datetime.now().isoformat()
+        output_data["created_at"] = now
+        output_data["updated_at"] = now
+        with open(os.path.join(OUTPUTS_DIR, f"{new_id}.json"), "w") as f:
+            json.dump(output_data, f, indent=2)
+
+    # Rebuild layout with remapped IDs
+    layout_data = dash_data.get("layout", {})
+
+    # Remap view_cards output IDs
+    new_view_cards = {}
+    for key, vc in layout_data.get("view_cards", {}).items():
+        old_output_id = vc.get("output_id", "")
+        new_output_id = output_id_map.get(old_output_id, old_output_id)
+        vc["output_id"] = new_output_id
+        new_view_cards[new_output_id] = vc
+    layout_data["view_cards"] = new_view_cards
+
+    # Clear agent cards (sessions are not portable)
+    layout_data["cards"] = {}
+    layout_data["expanded_session_ids"] = []
+
+    # Remap browser card IDs
+    new_browser_cards = {}
+    for _key, bc in layout_data.get("browser_cards", {}).items():
+        new_browser_id = uuid4().hex
+        bc["browser_id"] = new_browser_id
+        new_browser_cards[new_browser_id] = bc
+    layout_data["browser_cards"] = new_browser_cards
+
+    dashboard = Dashboard(
+        name=f"{dash_data.get('name', 'Imported Dashboard')} (imported)",
+        layout=DashboardLayout(**layout_data),
+    )
+    _save(dashboard)
+
+    return dashboard.model_dump(mode="json")
