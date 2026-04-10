@@ -389,6 +389,7 @@ const Settings: React.FC = () => {
             >
               <MenuItem value="sonnet">Sonnet 4.6</MenuItem>
               <MenuItem value="opus">Opus 4.6</MenuItem>
+              <MenuItem value="opus-1m">Opus 4.6 1M</MenuItem>
               <MenuItem value="haiku">Haiku 3.5</MenuItem>
             </Select>
           </FormControl>
