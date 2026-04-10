@@ -1334,22 +1334,18 @@ class AgentManager:
 
         title = first_prompt[:40].strip()
         try:
-            import anthropic
-            global_settings = load_settings()
-            if not global_settings.anthropic_api_key:
-                raise ValueError("API key not configured")
-            client = anthropic.AsyncAnthropic(api_key=global_settings.anthropic_api_key)
-            resp = await client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=30,
+            from backend.apps.settings.llm_router import llm_call
+            generated = await llm_call(
                 system="Generate a concise 3-6 word title for a chat that starts with this message. Return only the title, nothing else.",
-                messages=[{"role": "user", "content": first_prompt}],
+                user_message=first_prompt,
+                model="haiku",
+                max_tokens=30,
             )
-            generated = resp.content[0].text.strip().strip('"\'')
+            generated = generated.strip('"\'')
             if generated:
                 title = generated
         except Exception as e:
-            logger.warning(f"Title generation failed, using fallback: {e}")
+            logger.debug(f"Title generation failed, using fallback: {e}")
 
         session.name = title
         await ws_manager.send_to_session(session_id, "agent:name_updated", {
@@ -1378,11 +1374,8 @@ class AgentManager:
         svg = ""
 
         try:
-            import anthropic, json as _json
-            global_settings = load_settings()
-            if not global_settings.anthropic_api_key:
-                raise ValueError("API key not configured")
-            client = anthropic.AsyncAnthropic(api_key=global_settings.anthropic_api_key)
+            import json as _json
+            from backend.apps.settings.llm_router import llm_call
 
             tool_desc = "\n".join(
                 f"- {tc.get('tool', '?')}: {tc.get('input_summary', '')}" for tc in tool_calls
@@ -1406,14 +1399,12 @@ class AgentManager:
                 "- Max 400 characters for the svg string"
             )
 
-            resp = await client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=300,
+            raw = await llm_call(
                 system=system,
-                messages=[{"role": "user", "content": user_content}],
+                user_message=user_content,
+                model="haiku",
+                max_tokens=300,
             )
-
-            raw = resp.content[0].text.strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
             parsed = _json.loads(raw)
@@ -1422,7 +1413,7 @@ class AgentManager:
             if parsed.get("svg"):
                 svg = parsed["svg"].strip()
         except Exception as e:
-            logger.warning(f"Group meta generation failed, using fallback: {e}")
+            logger.debug(f"Group meta generation failed, using fallback: {e}")
 
         meta = ToolGroupMeta(id=group_id, name=name, svg=svg, is_refined=is_refinement)
         session.tool_group_meta[group_id] = meta
