@@ -332,12 +332,24 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     }
 
     selection.selectCard(id, type, false);
+    dispatch(bringToFront({ id, type }));
+
+    const alreadyExpanded = type === 'agent' && expandedSessionIds.includes(id);
+
+    if (alreadyExpanded) {
+      // Delay single-click collapse so double-click can override.
+      // Double-click handler (handleCardDoubleClick) clears clickTimerRef.
+      clickTimerRef.current = setTimeout(() => {
+        clickTimerRef.current = null;
+        dispatch(collapseSession(id));
+      }, 250);
+      return;
+    }
 
     // Expand (if not already) + center + zoom + bring to front
-    if (type === 'agent' && !expandedSessionIds.includes(id)) {
+    if (type === 'agent') {
       dispatch(expandSession(id));
     }
-    dispatch(bringToFront({ id, type }));
     setFocusedCardId(id);
     setTimeout(() => {
       const rect = getCardRect(id, type);

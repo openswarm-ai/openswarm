@@ -82,6 +82,11 @@ export interface ChatInputHandle {
   setContent: (prompt: string, contextPaths?: ContextPath[], forcedTools?: ForcedToolGroup[]) => void;
 }
 
+// Module-level draft store — survives component unmount/remount. Keyed by
+// sessionId (or a fallback owner id). Stores the raw innerHTML of the
+// contentEditable div so skill pills, formatting, etc. are preserved.
+const _draftStore = new Map<string, string>();
+
 const ICON_MAP: Record<string, React.ReactNode> = {
   smart_toy: <SmartToyOutlinedIcon sx={{ fontSize: 14 }} />,
   question_answer: <QuestionAnswerOutlinedIcon sx={{ fontSize: 14 }} />,
@@ -147,7 +152,25 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     if (autoFocus) editorRef.current?.focus();
   }, [autoFocus]);
 
-  const [hasContent, setHasContent] = useState(false);
+  // Restore draft from the module-level store on mount.
+  useEffect(() => {
+    const saved = _draftStore.get(ownerId);
+    const editor = editorRef.current;
+    if (saved && editor && !editor.textContent?.trim()) {
+      editor.innerHTML = saved;
+      // Move cursor to end
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+  // Only on mount — ownerId is stable for the component's lifetime
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [hasContent, setHasContent] = useState(() => !!_draftStore.get(ownerId));
   const [attachedSkills, setAttachedSkills] = useState<Record<string, AttachedSkill>>({});
   const attachedSkillsRef = useRef(attachedSkills);
   attachedSkillsRef.current = attachedSkills;
@@ -378,6 +401,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
       browserIds.length > 0 ? browserIds : undefined,
     );
     editor.innerHTML = '';
+    _draftStore.delete(ownerId);
     setImages([]);
     setContextPaths([]);
     setForcedTools([]);
@@ -399,7 +423,17 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     updateHasContent();
     detectTrigger();
     syncAttachedSkills();
-  }, [updateHasContent, detectTrigger, syncAttachedSkills]);
+    // Persist draft so it survives unmount/remount (card collapse, navigation)
+    const editor = editorRef.current;
+    if (editor) {
+      const html = editor.innerHTML;
+      if (html && html !== '<br>') {
+        _draftStore.set(ownerId, html);
+      } else {
+        _draftStore.delete(ownerId);
+      }
+    }
+  }, [updateHasContent, detectTrigger, syncAttachedSkills, ownerId]);
 
   const handleEditorClick = useCallback(() => {
     detectTrigger();

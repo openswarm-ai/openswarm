@@ -342,6 +342,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
 
   const handleSend = (prompt: string, images?: Array<{ data: string; media_type: string }>, contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>, forcedTools?: string[], attachedSkills?: Array<{ id: string; name: string; content: string }>, selectedBrowserIds?: string[]) => {
     if (!id) return;
+    // Sending a message is a clear intent signal: the user wants to see
+    // the response. Force-scroll to bottom regardless of isAtBottomRef.
+    scrollToBottom();
     const msg: QueuedMessage = { prompt, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds };
     if (agentBusy) {
       messageQueueRef.current.push(msg);
