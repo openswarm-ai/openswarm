@@ -7,14 +7,13 @@ import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import LanguageIcon from '@mui/icons-material/Language';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import type { AgentSession } from '@/shared/state/agentsSlice';
+import { useAppSelector } from '@/shared/hooks';
 import type { CardPosition, ViewCardPosition, BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
 import type { Output } from '@/shared/state/outputsSlice';
 import type { CanvasActions } from './useCanvasControls';
 
 interface DashboardHeaderProps {
   dashboardName: string | undefined;
-  sessions: Record<string, AgentSession>;
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
@@ -35,7 +34,6 @@ const STATUS_DOT: Record<string, string> = {
 
 const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   dashboardName,
-  sessions,
   cards,
   viewCards,
   browserCards,
@@ -48,13 +46,20 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   const [expanded, setExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const agentItems = Object.values(cards)
-    .map((card) => {
-      const session = sessions[card.session_id];
-      if (!session || session.status === 'draft') return null;
-      return { id: card.session_id, name: session.name, status: session.status, model: session.model, card };
-    })
-    .filter(Boolean) as Array<{ id: string; name: string; status: string; model: string; card: CardPosition }>;
+  // Stable selector: only re-renders when agent name/status/model changes, not on stream deltas
+  const agentItems = useAppSelector((state) => {
+    const sessions = state.agents.sessions;
+    return Object.values(cards)
+      .map((card) => {
+        const session = sessions[card.session_id];
+        if (!session || session.status === 'draft') return null;
+        return { id: card.session_id, name: session.name, status: session.status, model: session.model, card };
+      })
+      .filter(Boolean) as Array<{ id: string; name: string; status: string; model: string; card: CardPosition }>;
+  }, (a, b) => {
+    if (a.length !== b.length) return false;
+    return a.every((item, i) => item.id === b[i].id && item.name === b[i].name && item.status === b[i].status && item.model === b[i].model);
+  });
 
   const viewItems = Object.values(viewCards)
     .map((vc) => {

@@ -288,12 +288,29 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     setShowScrollButton(false);
   }, []);
 
+  // Scroll on new messages — synchronous for instant positioning
   useLayoutEffect(() => {
     if (isAtBottomRef.current) {
       const el = scrollContainerRef.current;
       if (el) el.scrollTop = el.scrollHeight;
     }
-  }, [session?.messages.length, session?.streamingMessage?.content]);
+  }, [session?.messages.length]);
+
+  // Scroll during streaming — async RAF loop (no forced reflows per delta)
+  const isStreaming = !!session?.streamingMessage;
+  useEffect(() => {
+    if (!isStreaming) return;
+    let rafId: number;
+    const tick = () => {
+      if (isAtBottomRef.current) {
+        const el = scrollContainerRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [isStreaming]);
 
   const handleSend = (prompt: string, images?: Array<{ data: string; media_type: string }>, contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>, forcedTools?: string[], attachedSkills?: Array<{ id: string; name: string; content: string }>, selectedBrowserIds?: string[]) => {
     if (!id) return;
@@ -433,19 +450,22 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     }
   }, [id, dispatch, onBranch, session?.dashboard_id]);
 
+  // Base char count: stable during streaming (messages array doesn't change mid-stream)
+  const baseChars = useMemo(() => {
+    let total = 0;
+    if (session?.system_prompt) total += session.system_prompt.length;
+    for (const msg of activeBranchMessages) {
+      total += stringifyContent(msg.content).length;
+    }
+    return total;
+  }, [activeBranchMessages, session?.system_prompt]);
+
   const contextEstimate = useMemo(() => {
     const limit = CONTEXT_WINDOWS[model] || 200_000;
-    let totalChars = 0;
-    if (session?.system_prompt) totalChars += session.system_prompt.length;
-    for (const msg of activeBranchMessages) {
-      totalChars += stringifyContent(msg.content).length;
-    }
-    if (session?.streamingMessage) {
-      totalChars += (session.streamingMessage.content || '').length;
-    }
-    const used = Math.round(totalChars / 4);
+    const streamChars = session?.streamingMessage ? (session.streamingMessage.content || '').length : 0;
+    const used = Math.round((baseChars + streamChars) / 4);
     return { used, limit };
-  }, [activeBranchMessages, session?.system_prompt, session?.streamingMessage?.content, model]);
+  }, [baseChars, session?.streamingMessage?.content, model]);
 
   const sessionRunning = session?.status === 'running' || session?.status === 'waiting_approval';
 

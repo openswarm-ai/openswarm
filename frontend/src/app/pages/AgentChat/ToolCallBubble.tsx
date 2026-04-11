@@ -21,6 +21,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AgentMessage, expandSession, collapseSession, fetchSession } from '@/shared/state/agentsSlice';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { store } from '@/shared/state/store';
 import { placeCard, removeCard, setGlowingAgentCard, clearGlowingAgentCard, DEFAULT_CARD_W, DEFAULT_CARD_H, EXPANDED_CARD_MIN_H, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import BrowserAgentInlineFeed from './BrowserAgentInlineFeed';
@@ -96,21 +97,24 @@ function ensureToolCallKeyframes() {
   document.head.appendChild(style);
 }
 
-const ElapsedTimer: React.FC<{ startTime: string }> = ({ startTime }) => {
+/** DOM-direct timer — ticks internally, never re-renders parent. */
+const ElapsedTimer: React.FC<{ startTime: string }> = React.memo(({ startTime }) => {
   const c = useClaudeTokens();
-  const [elapsed, setElapsed] = useState(0);
+  const textRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     const start = new Date(startTime).getTime();
-    const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
+    const fmt = () => {
+      const s = Math.floor((Date.now() - start) / 1000);
+      const m = Math.floor(s / 60);
+      return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
+    };
+    if (textRef.current) textRef.current.textContent = fmt();
+    const id = setInterval(() => {
+      if (textRef.current) textRef.current.textContent = fmt();
+    }, 1000);
+    return () => clearInterval(id);
   }, [startTime]);
-
-  const mins = Math.floor(elapsed / 60);
-  const secs = elapsed % 60;
-  const display = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -124,6 +128,8 @@ const ElapsedTimer: React.FC<{ startTime: string }> = ({ startTime }) => {
         }}
       />
       <Typography
+        ref={textRef}
+        component="span"
         sx={{
           fontSize: '0.7rem',
           fontFamily: c.font.mono,
@@ -131,12 +137,10 @@ const ElapsedTimer: React.FC<{ startTime: string }> = ({ startTime }) => {
           minWidth: 28,
           textAlign: 'right',
         }}
-      >
-        {display}
-      </Typography>
+      />
     </Box>
   );
-};
+});
 
 function formatElapsed(ms: number): string {
   if (ms >= 60000) return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
@@ -1251,7 +1255,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
     const c = useClaudeTokens();
     const tc = useTermColors();
     const dispatch = useAppDispatch();
-    const cards = useAppSelector((s) => s.dashboardLayout.cards);
     const [expanded, setExpanded] = useState(false);
     const bubbleRef = useRef<HTMLDivElement>(null);
 
@@ -1285,7 +1288,10 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
       () => (result ? parseToolResult(toolName, resultRawText) : null),
       [result, toolName, resultRawText],
     );
-    const resultSummary = result ? getResultSummary(toolName, resultRawText) : null;
+    const resultSummary = useMemo(
+      () => (result ? getResultSummary(toolName, resultRawText) : null),
+      [result, toolName, resultRawText],
+    );
     const isError =
       resultSummary?.startsWith('✗') ||
       (parsedResult?.type === 'bash' && parsedResult.exitCode !== null && parsedResult.exitCode !== 0) ||
@@ -1313,12 +1319,13 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
 
     const revealTargetSessionId = invokedSessionId || createAgentSessionId;
 
-    const sessions = useAppSelector((s) => s.agents.sessions);
-
     const handleRevealAgent = useCallback(
       (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!revealTargetSessionId || !sessionId) return;
+
+        const cards = store.getState().dashboardLayout.cards;
+        const sessions = store.getState().agents.sessions;
 
         if (cards[revealTargetSessionId]) {
           dispatch(collapseSession(revealTargetSessionId));
@@ -1343,13 +1350,14 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
         }
 
         const doPlace = () => {
-          const parentCard = cards[sessionId];
+          const currentCards = store.getState().dashboardLayout.cards;
+          const parentCard = currentCards[sessionId];
           const targetX = parentCard
             ? parentCard.x + parentCard.width + GRID_GAP * 12
             : 40;
           let targetY = parentCard ? parentCard.y : 100;
           if (parentCard) {
-            const columnCards = Object.values(cards).filter(
+            const columnCards = Object.values(currentCards).filter(
               (c) => Math.abs(c.x - targetX) < 50 && c.session_id !== revealTargetSessionId,
             );
             if (columnCards.length > 0) {
@@ -1377,7 +1385,7 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
           doPlace();
         }
       },
-      [revealTargetSessionId, sessionId, cards, sessions, dispatch],
+      [revealTargetSessionId, sessionId, dispatch, isCreateAgent, isInvokeAgent],
     );
 
     const toggle = useCallback(() => {
