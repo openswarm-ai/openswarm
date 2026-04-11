@@ -2,6 +2,12 @@ import logging
 import os
 from uuid import uuid4
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 logger = logging.getLogger(__name__)
 
 from fastapi.responses import JSONResponse
@@ -19,11 +25,12 @@ from backend.apps.mcp_registry.mcp_registry import mcp_registry
 from backend.apps.skill_registry.skill_registry import skill_registry
 from backend.apps.outputs.outputs import outputs
 from backend.apps.dashboards.dashboards import dashboards
+from backend.apps.schedules.schedules import schedules
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 import json
 
-main_app = MainApp([health, agents, templates, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, dashboards])
+main_app = MainApp([health, agents, templates, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, dashboards, schedules])
 app = main_app.app
 
 app.add_middleware(
@@ -135,13 +142,11 @@ async def browser_agent_run(request: Request):
         return JSONResponse({"error": "tasks array is required"}, status_code=400)
 
     settings = load_settings()
-    if not settings.anthropic_api_key:
-        return JSONResponse({"error": "Anthropic API key not configured"}, status_code=400)
 
     results = await run_browser_agents(
         tasks=tasks,
         model=model,
-        api_key=settings.anthropic_api_key,
+        api_key=settings.anthropic_api_key or None,
         dashboard_id=dashboard_id or None,
         pre_selected_browser_ids=pre_selected_browser_ids,
         parent_session_id=parent_session_id or None,

@@ -1,4 +1,4 @@
-const { app, components, BrowserWindow, ipcMain, shell, session } = require('electron');
+const { app, components, BrowserWindow, ipcMain, shell, session, dialog } = require('electron');
 let autoUpdater;
 try { autoUpdater = require('electron-updater').autoUpdater; } catch (_) {}
 const path = require('path');
@@ -90,12 +90,12 @@ function getShellPath() {
 
   const seen = new Set();
   const dirs = [];
-  for (const d of [...fallbackDirs, ...systemPaths, ...(process.env.PATH || '').split(':')]) {
+  for (const d of [...fallbackDirs, ...systemPaths, ...(process.env.PATH || '').split(path.delimiter)]) {
     if (!d || seen.has(d)) continue;
     seen.add(d);
     try { if (fs.statSync(d).isDirectory()) dirs.push(d); } catch { /* skip */ }
   }
-  return dirs.join(':');
+  return dirs.join(path.delimiter);
 }
 
 function getResourcePath(...segments) {
@@ -108,10 +108,13 @@ function getResourcePath(...segments) {
 function getPythonPath() {
   if (isPackaged) {
     const envPath = path.join(process.resourcesPath, 'python-env');
-    return path.join(envPath, 'bin', 'python3');
+    return process.platform === 'win32'
+      ? path.join(envPath, 'Scripts', 'python.exe')
+      : path.join(envPath, 'bin', 'python3');
   }
-  const venvPython = path.join(__dirname, '..', 'backend', '.venv', 'bin', 'python3');
-  return venvPython;
+  return process.platform === 'win32'
+    ? path.join(__dirname, '..', 'backend', '.venv', 'Scripts', 'python.exe')
+    : path.join(__dirname, '..', 'backend', '.venv', 'bin', 'python3');
 }
 
 function waitForBackend(port, timeoutMs = 60000) {
@@ -161,7 +164,7 @@ async function startBackend() {
       'python3.13', 'site-packages'
     );
     const debuggerDir = getResourcePath('debugger');
-    env.PYTHONPATH = [projectRoot, debuggerDir, pythonEnvSitePackages].join(':');
+    env.PYTHONPATH = [projectRoot, debuggerDir, pythonEnvSitePackages].join(path.delimiter);
   }
 
   console.log(`Starting backend: ${pythonPath} on port ${backendPort}`);
@@ -289,12 +292,18 @@ function setupAutoUpdater() {
 function killBackend() {
   if (backendProcess) {
     console.log('Killing backend process...');
-    backendProcess.kill('SIGTERM');
-    setTimeout(() => {
-      if (backendProcess && !backendProcess.killed) {
-        backendProcess.kill('SIGKILL');
-      }
-    }, 3000);
+    if (process.platform === 'win32') {
+      try {
+        execFileSync('taskkill', ['/T', '/F', '/PID', String(backendProcess.pid)]);
+      } catch { /* already exited */ }
+    } else {
+      backendProcess.kill('SIGTERM');
+      setTimeout(() => {
+        if (backendProcess && !backendProcess.killed) {
+          backendProcess.kill('SIGKILL');
+        }
+      }, 3000);
+    }
     backendProcess = null;
   }
 }
@@ -527,4 +536,50 @@ ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && /^https?:\/\//.test(url)) {
     shell.openExternal(url);
   }
+});
+
+ipcMain.handle('open-in-cli', async (_event, sessionId, cwd) => {
+  if (!sessionId || typeof sessionId !== 'string') return { ok: false, error: 'Missing session ID' };
+  const args = ['--resume', sessionId];
+  const spawnOpts = { detached: true, stdio: 'ignore' };
+  if (cwd) spawnOpts.cwd = cwd;
+  try {
+    if (process.platform === 'win32') {
+      // Open Windows Terminal (or cmd fallback) with claude --resume
+      spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', 'claude', ...args], spawnOpts).unref();
+    } else if (process.platform === 'darwin') {
+      // macOS: open Terminal.app
+      const script = `tell application "Terminal" to do script "cd ${(cwd || '~').replace(/"/g, '\\"')} && claude ${args.join(' ')}"`;
+      spawn('osascript', ['-e', script], spawnOpts).unref();
+    } else {
+      // Linux: try common terminal emulators
+      const terminals = ['x-terminal-emulator', 'gnome-terminal', 'konsole', 'xterm'];
+      let launched = false;
+      for (const term of terminals) {
+        try {
+          if (term === 'gnome-terminal') {
+            spawn(term, ['--', 'claude', ...args], spawnOpts).unref();
+          } else {
+            spawn(term, ['-e', `claude ${args.join(' ')}`], spawnOpts).unref();
+          }
+          launched = true;
+          break;
+        } catch { /* try next */ }
+      }
+      if (!launched) return { ok: false, error: 'No terminal emulator found' };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('show-folder-dialog', async (_event, defaultPath) => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win || undefined, {
+    properties: ['openDirectory'],
+    defaultPath: defaultPath || undefined,
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
 });

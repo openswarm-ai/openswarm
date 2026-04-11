@@ -66,17 +66,20 @@ export interface AgentSession {
   branches: Record<string, MessageBranch>;
   active_branch_id: string;
   streamingMessage: StreamingMessage | null;
+  cwd?: string | null;
   target_directory?: string | null;
   tool_group_meta: Record<string, ToolGroupMeta>;
   dashboard_id?: string;
   browser_id?: string | null;
   parent_session_id?: string | null;
+  schedule_id?: string | null;
 }
 
 export interface AgentConfig {
   name?: string;
   model?: string;
   mode?: string;
+  effort?: string;
   system_prompt?: string;
   allowed_tools?: string[];
   max_turns?: number;

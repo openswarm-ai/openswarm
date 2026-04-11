@@ -54,6 +54,7 @@ import DashboardViewCard from './DashboardViewCard';
 import BrowserCard from './BrowserCard';
 import CanvasControls from './CanvasControls';
 import DashboardToolbar from './DashboardToolbar';
+import ScheduleEditor from '@/app/pages/Schedules/ScheduleEditor';
 import { captureDashboardThumbnail } from './captureDashboardThumbnail';
 import { useCanvasControls } from './useCanvasControls';
 import { useDashboardSelection } from './useDashboardSelection';
@@ -90,7 +91,17 @@ const DashboardInner: React.FC = () => {
   const dashboardName = useAppSelector((state) =>
     dashboardId ? state.dashboards.items[dashboardId]?.name : undefined,
   );
-  const sessions = useAppSelector((state) => state.agents.sessions);
+  // Stable digest: only re-renders Dashboard when sessions are added/removed
+  // or metadata (status, mode, name, dashboard_id, parent_session_id) changes.
+  // Streaming content deltas do NOT change this → no re-render during streaming.
+  const sessionsDigest = useAppSelector((state) => {
+    const s = state.agents.sessions;
+    return Object.keys(s)
+      .map((id) => `${id}\t${s[id].status}\t${s[id].mode}\t${s[id].name}\t${s[id].dashboard_id ?? ''}\t${s[id].parent_session_id ?? ''}\t${s[id].model}\t${s[id].cost_usd ?? 0}`)
+      .sort()
+      .join('\n');
+  });
+  const hasAnySessions = sessionsDigest !== '';
   const expandedSessionIds = useAppSelector((state) => state.agents.expandedSessionIds);
   const cards = useAppSelector((state) => state.dashboardLayout.cards);
   const viewCards = useAppSelector((state) => state.dashboardLayout.viewCards);
@@ -105,11 +116,14 @@ const DashboardInner: React.FC = () => {
   const outputs = useAppSelector((state) => state.outputs.items);
   const glowingAgentCards = useAppSelector((state) => state.dashboardLayout.glowingAgentCards);
   const glowingBrowserCards = useAppSelector((state) => state.dashboardLayout.glowingBrowserCards);
-  const sessionList = Object.values(sessions);
 
   const canvas = useCanvasControls(zoomSensitivity);
+  const canvasForSelection = useMemo(
+    () => ({ panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom, viewportRef: canvas.viewportRef }),
+    [canvas.panX, canvas.panY, canvas.zoom, canvas.viewportRef],
+  );
   const selection = useDashboardSelection(
-    { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom, viewportRef: canvas.viewportRef },
+    canvasForSelection,
     cards,
     viewCards,
     browserCards,
@@ -118,6 +132,7 @@ const DashboardInner: React.FC = () => {
 
   const [toolbarOpen, setToolbarOpen] = useState(false);
   const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoFocusSessionId, setAutoFocusSessionId] = useState<string | null>(null);
   const [pendingSelectSessionId, setPendingSelectSessionId] = useState<string | null>(null);
@@ -162,8 +177,14 @@ const DashboardInner: React.FC = () => {
   }, [cards]);
   const hasFittedRef = useRef(false);
   const restoredExpandedRef = useRef(false);
-  const canvasStateRef = useRef({ panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom });
-  canvasStateRef.current = { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom };
+  const canvasStateRef = canvas.transformRef;
+
+  // Sync transform to content div when React state updates (discrete actions like fitToCards)
+  useEffect(() => {
+    if (canvas.contentRef.current) {
+      canvas.contentRef.current.style.transform = `translate(${canvas.panX}px, ${canvas.panY}px) scale(${canvas.zoom})`;
+    }
+  }, [canvas.panX, canvas.panY, canvas.zoom, canvas.contentRef]);
 
   // ---- Multi-drag coordination ----
   const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number } | null>(null);
@@ -358,6 +379,7 @@ const DashboardInner: React.FC = () => {
 
   useEffect(() => {
     if (!layoutInitialized) return;
+    const sessions = store.getState().agents.sessions;
     const dashboardSessionIds = Object.values(sessions)
       .filter((s) => s.dashboard_id === dashboardId && s.mode !== 'browser-agent' && s.mode !== 'invoked-agent' && s.mode !== 'sub-agent')
       .map((s) => s.id);
@@ -365,7 +387,7 @@ const DashboardInner: React.FC = () => {
     if (liveIds === prevSessionIdsRef.current) return;
     prevSessionIdsRef.current = liveIds;
     dispatch(reconcileSessions({ sessionIds: dashboardSessionIds, expandedSessionIds }));
-  }, [sessions, layoutInitialized, dispatch, dashboardId, expandedSessionIds]);
+  }, [sessionsDigest, layoutInitialized, dispatch, dashboardId, expandedSessionIds]);
 
   // ---- Auto-reveal / collapse / unreveal sub-agent cards ----
   const autoRevealedRef = useRef(new Set<string>());
@@ -374,6 +396,7 @@ const DashboardInner: React.FC = () => {
 
   useEffect(() => {
     if (!layoutInitialized || !autoRevealSubAgents) return;
+    const sessions = store.getState().agents.sessions;
 
     const subSessions = Object.values(sessions).filter(
       (s) => (s.mode === 'sub-agent' || s.mode === 'invoked-agent') && s.parent_session_id,
@@ -459,7 +482,7 @@ const DashboardInner: React.FC = () => {
       if (parent) newParentStatuses[pid] = parent.status;
     }
     prevParentStatusRef.current = newParentStatuses;
-  }, [sessions, cards, layoutInitialized, autoRevealSubAgents, dispatch]);
+  }, [sessionsDigest, cards, layoutInitialized, autoRevealSubAgents, dispatch]);
 
   const skipInitialSave = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -563,9 +586,10 @@ const DashboardInner: React.FC = () => {
       e.preventDefault();
       const copied: ClipboardCard[] = [];
       const names: string[] = [];
+      const currentSessions = store.getState().agents.sessions;
       for (const [id, type] of selection.selectedIds) {
         if (type === 'agent') {
-          const session = sessions[id];
+          const session = currentSessions[id];
           const card = cards[id];
           if (!session || !card) continue;
           copied.push({
@@ -603,7 +627,7 @@ const DashboardInner: React.FC = () => {
     };
     window.addEventListener('keydown', handleCopy);
     return () => window.removeEventListener('keydown', handleCopy);
-  }, [selection.selectedIds, sessions, cards, viewCards, browserCards, outputs, expandedSessionIds]);
+  }, [selection.selectedIds, sessionsDigest, cards, viewCards, browserCards, outputs, expandedSessionIds]);
 
   useEffect(() => {
     const PASTE_OFFSET = 40;
@@ -710,11 +734,13 @@ const DashboardInner: React.FC = () => {
       prompt: string,
       mode: string,
       model: string,
+      effort: string,
       images?: Array<{ data: string; media_type: string }>,
       contextPaths?: ContextPath[],
       forcedTools?: string[],
       attachedSkills?: Array<{ id: string; name: string; content: string }>,
       selectedBrowserIds?: string[],
+      targetDirectory?: string,
     ) => {
       setToolbarOpen(false);
 
@@ -734,7 +760,7 @@ const DashboardInner: React.FC = () => {
         };
       }
 
-      const config: AgentConfig = { name: 'New chat', model, mode, dashboard_id: dashboardId };
+      const config: AgentConfig = { name: 'New chat', model, mode, effort, dashboard_id: dashboardId, target_directory: targetDirectory };
 
       dispatch(
         launchAndSendFirstMessage({
@@ -1094,8 +1120,9 @@ const DashboardInner: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, expandedSessionIds, liveDragInfo, measuredHeightsTick]);
 
-  const dotSize = Math.max(1, 1.5 * canvas.zoom);
-  const dotSpacing = 24 * canvas.zoom;
+  // Initial dot-grid values — updated directly by useCanvasControls via applyTransform
+  const initialDotSize = Math.max(1, 1.5 * canvas.zoom);
+  const initialDotSpacing = 24 * canvas.zoom;
 
   return (
     <>
@@ -1118,7 +1145,6 @@ const DashboardInner: React.FC = () => {
         <Box sx={{ display: 'flex', alignItems: 'center', pointerEvents: 'auto' }}>
           <DashboardHeader
             dashboardName={dashboardName}
-            sessions={sessions}
             cards={cards}
             viewCards={viewCards}
             browserCards={browserCards}
@@ -1138,9 +1164,13 @@ const DashboardInner: React.FC = () => {
         onMouseUp={handleViewportMouseUp}
         onContextMenu={(e) => e.preventDefault()}
         sx={{
+          '--dot-color': c.border.medium,
           position: 'absolute',
           inset: 0,
           overflow: 'hidden',
+          backgroundImage: `radial-gradient(circle, ${c.border.medium} ${initialDotSize}px, transparent ${initialDotSize}px)`,
+          backgroundSize: `${initialDotSpacing}px ${initialDotSpacing}px`,
+          backgroundPosition: `${canvas.panX % initialDotSpacing}px ${canvas.panY % initialDotSpacing}px`,
           cursor: canvas.isPanning
             ? 'grabbing'
             : (canvas.spaceHeld || canvas.cmdHeld)
@@ -1150,19 +1180,8 @@ const DashboardInner: React.FC = () => {
                 : 'default',
         }}
       >
-        {/* Dot grid background */}
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            pointerEvents: 'none',
-            backgroundImage: `radial-gradient(circle, ${c.border.medium} ${dotSize}px, transparent ${dotSize}px)`,
-            backgroundSize: `${dotSpacing}px ${dotSpacing}px`,
-            backgroundPosition: `${canvas.panX % dotSpacing}px ${canvas.panY % dotSpacing}px`,
-          }}
-        />
 
-        {sessionList.length === 0 && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0 ? (
+        {!hasAnySessions && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0 ? (
           <Box
             sx={{
               position: 'absolute',
@@ -1185,7 +1204,6 @@ const DashboardInner: React.FC = () => {
           <div
             ref={canvas.contentRef}
             style={{
-              transform: `translate(${canvas.panX}px, ${canvas.panY}px) scale(${canvas.zoom})`,
               transformOrigin: '0 0',
               willChange: 'transform',
               position: 'relative',
@@ -1301,16 +1319,15 @@ const DashboardInner: React.FC = () => {
             )}
             <AnimatePresence>
             {Object.values(cards).map((card) => {
-              const session = sessions[card.session_id];
-              if (!session) return null;
+              const sid = card.session_id;
 
-              let origin = spawnOriginsRef.current[session.id];
+              let origin = spawnOriginsRef.current[sid];
               if (origin) {
-                delete spawnOriginsRef.current[session.id];
+                delete spawnOriginsRef.current[sid];
               } else {
-                const glow = glowingAgentCards[session.id];
-                if (glow && !revealSpawnedRef.current.has(session.id)) {
-                  revealSpawnedRef.current.add(session.id);
+                const glow = glowingAgentCards[sid];
+                if (glow && !revealSpawnedRef.current.has(sid)) {
+                  revealSpawnedRef.current.add(sid);
                   const srcCard = cards[glow.sourceId];
                   if (srcCard) {
                     const srcH = measuredHeightsRef.current[glow.sourceId]
@@ -1327,7 +1344,7 @@ const DashboardInner: React.FC = () => {
               }
 
               let exitTarget: { x: number; y: number } | undefined;
-              const glow = glowingAgentCards[session.id];
+              const glow = glowingAgentCards[sid];
               if (glow) {
                 const srcCard = cards[glow.sourceId];
                 if (srcCard) {
@@ -1355,19 +1372,19 @@ const DashboardInner: React.FC = () => {
 
               return (
                 <AgentCard
-                  key={session.id}
-                  session={session}
-                  expanded={expandedSessionIds.includes(session.id)}
+                  key={sid}
+                  sessionId={sid}
+                  expanded={expandedSessionIds.includes(sid)}
                   cardX={card.x}
                   cardY={card.y}
                   cardWidth={card.width}
                   cardHeight={card.height}
                   cardZOrder={card.zOrder ?? 0}
-                  zoom={canvas.zoom}
+                  zoomRef={canvas.transformRef}
                   spawnFrom={origin}
                   exitTarget={exitTarget}
-                  isSelected={selection.isSelected(session.id)}
-                  isHighlighted={highlightedCardId === session.id}
+                  isSelected={selection.isSelected(sid)}
+                  isHighlighted={highlightedCardId === sid}
                   multiDragDelta={multiDragDelta}
                   onCardSelect={handleCardSelect}
                   onDragStart={handleCardDragStart}
@@ -1376,8 +1393,9 @@ const DashboardInner: React.FC = () => {
                   onBranch={handleBranchFromCard}
                   onMeasuredHeight={handleMeasuredHeight}
                   snapColumn={snapColumn}
-                  autoFocusInput={autoFocusSessionId === session.id}
+                  autoFocusInput={autoFocusSessionId === sid}
                   onBringToFront={handleBringToFront}
+                  onEditSchedule={setEditingScheduleId}
                 />
               );
             })}
@@ -1471,6 +1489,11 @@ const DashboardInner: React.FC = () => {
         <CanvasControls zoom={canvas.zoom} actions={canvas.actions} onTidy={handleTidy} />
       </Box>
     </Box>
+    <ScheduleEditor
+      open={editingScheduleId !== null}
+      scheduleId={editingScheduleId}
+      onClose={() => setEditingScheduleId(null)}
+    />
     </>
   );
 };

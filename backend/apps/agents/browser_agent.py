@@ -274,25 +274,17 @@ async def _request_browser_approval(
     return decision
 
 
-async def run_browser_agent(
+async def _setup_browser_session(
     task: str,
     browser_id: str,
     model: str,
-    api_key: str,
-    dashboard_id: str | None = None,
-    tab_id: str = "",
-    pre_selected: bool = False,
-    initial_url: str | None = None,
-    parent_session_id: str | None = None,
-) -> dict:
-    """Run a browser sub-agent loop for a single browser card.
-
-    Creates a visible AgentSession, streams progress via WebSocket,
-    and returns the full action log + summary + final screenshot.
-    """
+    dashboard_id: str | None,
+    tab_id: str,
+    initial_url: str | None,
+    parent_session_id: str | None,
+) -> tuple:
+    """Common setup for browser agent sessions (API and CLI paths)."""
     from backend.apps.agents.agent_manager import agent_manager
-
-    _browser_perms = load_builtin_permissions()
 
     session_id = uuid4().hex
     cancel_event = asyncio.Event()
@@ -322,13 +314,6 @@ async def run_browser_agent(
         )
         logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
 
-    api_model = MODEL_MAP.get(model, model)
-    client = anthropic.AsyncAnthropic(api_key=api_key)
-
-    messages: list[dict] = [{"role": "user", "content": task}]
-    action_log: list[dict] = []
-    final_screenshot: str | None = None
-
     user_msg = Message(role="user", content=task)
     session.messages.append(user_msg)
     await ws_manager.send_to_session(session_id, "agent:message", {
@@ -336,74 +321,154 @@ async def run_browser_agent(
         "message": user_msg.model_dump(mode="json"),
     })
 
-    try:
-        for turn in range(MAX_TURNS):
-            if cancel_event.is_set():
-                break
+    return session_id, session, cancel_event
 
-            response = await client.messages.create(
-                model=api_model,
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                tools=BROWSER_TOOLS_SCHEMA,
-                messages=messages,
+
+async def _finalize_browser_session(
+    session_id: str,
+    session: AgentSession,
+    browser_id: str,
+    tab_id: str,
+    summary: str,
+    action_log: list[dict],
+    final_screenshot: str | None,
+    status: str = "completed",
+) -> dict:
+    """Common finalization for browser agent sessions."""
+    if not final_screenshot and status == "completed":
+        try:
+            ss_result = await execute_browser_tool(
+                "BrowserScreenshot", {}, browser_id, tab_id,
             )
+            if ss_result.get("image"):
+                final_screenshot = ss_result["image"]
+        except Exception:
+            pass
 
-            assistant_content = []
-            text_parts = []
-            tool_uses = []
+    session.status = status
+    await ws_manager.send_to_session(session_id, "agent:status", {
+        "session_id": session_id,
+        "status": status,
+        "session": session.model_dump(mode="json"),
+    })
 
-            for block in response.content:
-                if block.type == "text":
-                    text_parts.append(block.text)
-                    assistant_content.append({"type": "text", "text": block.text})
-                elif block.type == "tool_use":
-                    tool_uses.append(block)
-                    assistant_content.append({
-                        "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input,
-                    })
+    return {
+        "session_id": session_id,
+        "browser_id": browser_id,
+        "summary": summary,
+        "action_log": action_log,
+        "final_screenshot": final_screenshot,
+    }
 
-            if text_parts:
-                asst_msg = Message(
-                    role="assistant",
-                    content="\n".join(text_parts),
-                )
-                session.messages.append(asst_msg)
-                await ws_manager.send_to_session(session_id, "agent:message", {
-                    "session_id": session_id,
-                    "message": asst_msg.model_dump(mode="json"),
+
+async def _run_browser_agent_api(
+    task: str,
+    session_id: str,
+    session: AgentSession,
+    cancel_event: asyncio.Event,
+    browser_id: str,
+    model: str,
+    api_key: str,
+    tab_id: str,
+) -> dict:
+    """Run browser agent using direct Anthropic API (when API key is available)."""
+    _browser_perms = load_builtin_permissions()
+    api_model = MODEL_MAP.get(model, model)
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+
+    messages: list[dict] = [{"role": "user", "content": task}]
+    action_log: list[dict] = []
+    final_screenshot: str | None = None
+
+    for turn in range(MAX_TURNS):
+        if cancel_event.is_set():
+            break
+
+        response = await client.messages.create(
+            model=api_model,
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            tools=BROWSER_TOOLS_SCHEMA,
+            messages=messages,
+        )
+
+        assistant_content = []
+        text_parts = []
+        tool_uses = []
+
+        for block in response.content:
+            if block.type == "text":
+                text_parts.append(block.text)
+                assistant_content.append({"type": "text", "text": block.text})
+            elif block.type == "tool_use":
+                tool_uses.append(block)
+                assistant_content.append({
+                    "type": "tool_use",
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
                 })
 
-            for tu in tool_uses:
-                tool_msg = Message(
-                    role="tool_call",
-                    content={"id": tu.id, "tool": tu.name, "input": tu.input},
-                )
-                session.messages.append(tool_msg)
-                await ws_manager.send_to_session(session_id, "agent:message", {
-                    "session_id": session_id,
-                    "message": tool_msg.model_dump(mode="json"),
-                })
+        if text_parts:
+            asst_msg = Message(
+                role="assistant",
+                content="\n".join(text_parts),
+            )
+            session.messages.append(asst_msg)
+            await ws_manager.send_to_session(session_id, "agent:message", {
+                "session_id": session_id,
+                "message": asst_msg.model_dump(mode="json"),
+            })
 
-            messages.append({"role": "assistant", "content": assistant_content})
+        for tu in tool_uses:
+            tool_msg = Message(
+                role="tool_call",
+                content={"id": tu.id, "tool": tu.name, "input": tu.input},
+            )
+            session.messages.append(tool_msg)
+            await ws_manager.send_to_session(session_id, "agent:message", {
+                "session_id": session_id,
+                "message": tool_msg.model_dump(mode="json"),
+            })
 
-            if response.stop_reason != "tool_use":
+        messages.append({"role": "assistant", "content": assistant_content})
+
+        if response.stop_reason != "tool_use":
+            break
+
+        tool_results = []
+        cancelled = False
+        for tu in tool_uses:
+            if cancel_event.is_set():
+                cancelled = True
                 break
 
-            tool_results = []
-            cancelled = False
-            for tu in tool_uses:
-                if cancel_event.is_set():
-                    cancelled = True
-                    break
+            policy = _browser_perms.get(tu.name, "always_allow")
 
-                policy = _browser_perms.get(tu.name, "always_allow")
+            if policy == "deny":
+                denied_text = f"Tool {tu.name} is denied by permission policy."
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tu.id,
+                    "content": [{"type": "text", "text": denied_text}],
+                })
+                result_msg = Message(
+                    role="tool_result",
+                    content={"text": denied_text, "tool_name": tu.name, "elapsed_ms": 0},
+                )
+                session.messages.append(result_msg)
+                await ws_manager.send_to_session(session_id, "agent:message", {
+                    "session_id": session_id,
+                    "message": result_msg.model_dump(mode="json"),
+                })
+                continue
 
-                if policy == "deny":
-                    denied_text = f"Tool {tu.name} is denied by permission policy."
+            if policy == "ask":
+                decision = await _request_browser_approval(
+                    session, tu.name, tu.input,
+                )
+                if decision.get("behavior") == "deny":
+                    denied_text = decision.get("message") or f"Tool {tu.name} denied by user."
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tu.id,
@@ -420,110 +485,185 @@ async def run_browser_agent(
                     })
                     continue
 
-                if policy == "ask":
-                    decision = await _request_browser_approval(
-                        session, tu.name, tu.input,
-                    )
-                    if decision.get("behavior") == "deny":
-                        denied_text = decision.get("message") or f"Tool {tu.name} denied by user."
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tu.id,
-                            "content": [{"type": "text", "text": denied_text}],
-                        })
-                        result_msg = Message(
-                            role="tool_result",
-                            content={"text": denied_text, "tool_name": tu.name, "elapsed_ms": 0},
-                        )
-                        session.messages.append(result_msg)
-                        await ws_manager.send_to_session(session_id, "agent:message", {
-                            "session_id": session_id,
-                            "message": result_msg.model_dump(mode="json"),
-                        })
-                        continue
+            start = time.time()
+            result = await execute_browser_tool(
+                tu.name, tu.input, browser_id, tab_id,
+            )
+            elapsed_ms = int((time.time() - start) * 1000)
 
-                start = time.time()
-                result = await execute_browser_tool(
-                    tu.name, tu.input, browser_id, tab_id,
-                )
-                elapsed_ms = int((time.time() - start) * 1000)
-
-                action_log.append({
-                    "tool": tu.name,
-                    "input": tu.input,
-                    "result_summary": result.get("text", result.get("error", ""))[:200],
-                    "elapsed_ms": elapsed_ms,
-                })
-
-                if tu.name == "BrowserScreenshot" and result.get("image"):
-                    final_screenshot = result["image"]
-
-                content_blocks = _format_tool_result(result, tu.name)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tu.id,
-                    "content": content_blocks,
-                })
-
-                result_text = result.get("text", result.get("error", ""))
-                result_msg = Message(
-                    role="tool_result",
-                    content={"text": result_text, "tool_name": tu.name, "elapsed_ms": elapsed_ms},
-                )
-                session.messages.append(result_msg)
-                await ws_manager.send_to_session(session_id, "agent:message", {
-                    "session_id": session_id,
-                    "message": result_msg.model_dump(mode="json"),
-                })
-
-            messages.append({"role": "user", "content": tool_results})
-
-            if cancelled:
-                break
-
-        if cancel_event.is_set():
-            session.status = "stopped"
-            await ws_manager.send_to_session(session_id, "agent:status", {
-                "session_id": session_id,
-                "status": "stopped",
-                "session": session.model_dump(mode="json"),
+            action_log.append({
+                "tool": tu.name,
+                "input": tu.input,
+                "result_summary": result.get("text", result.get("error", ""))[:200],
+                "elapsed_ms": elapsed_ms,
             })
-            return {
+
+            if tu.name == "BrowserScreenshot" and result.get("image"):
+                final_screenshot = result["image"]
+
+            content_blocks = _format_tool_result(result, tu.name)
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tu.id,
+                "content": content_blocks,
+            })
+
+            result_text = result.get("text", result.get("error", ""))
+            result_msg = Message(
+                role="tool_result",
+                content={"text": result_text, "tool_name": tu.name, "elapsed_ms": elapsed_ms},
+            )
+            session.messages.append(result_msg)
+            await ws_manager.send_to_session(session_id, "agent:message", {
                 "session_id": session_id,
-                "browser_id": browser_id,
-                "summary": "Agent was stopped.",
-                "action_log": action_log,
-                "final_screenshot": final_screenshot,
-            }
+                "message": result_msg.model_dump(mode="json"),
+            })
 
-        summary_parts = text_parts if text_parts else ["Task completed."]
-        summary = "\n".join(summary_parts)
+        messages.append({"role": "user", "content": tool_results})
 
-        if not final_screenshot:
-            try:
-                ss_result = await execute_browser_tool(
-                    "BrowserScreenshot", {}, browser_id, tab_id,
-                )
-                if ss_result.get("image"):
-                    final_screenshot = ss_result["image"]
-            except Exception:
-                pass
+        if cancelled:
+            break
 
-        session.status = "completed"
-        await ws_manager.send_to_session(session_id, "agent:status", {
-            "session_id": session_id,
-            "status": "completed",
-            "session": session.model_dump(mode="json"),
-        })
+    if cancel_event.is_set():
+        return await _finalize_browser_session(
+            session_id, session, browser_id, tab_id,
+            "Agent was stopped.", action_log, final_screenshot, "stopped",
+        )
 
-        return {
-            "session_id": session_id,
-            "browser_id": browser_id,
-            "summary": summary,
-            "action_log": action_log,
-            "final_screenshot": final_screenshot,
-        }
+    summary = "\n".join(text_parts) if text_parts else "Task completed."
+    return await _finalize_browser_session(
+        session_id, session, browser_id, tab_id,
+        summary, action_log, final_screenshot,
+    )
 
+
+async def _run_browser_agent_cli(
+    task: str,
+    session_id: str,
+    session: AgentSession,
+    cancel_event: asyncio.Event,
+    browser_id: str,
+    model: str,
+    tab_id: str,
+) -> dict:
+    """Run browser agent using Claude Code CLI (when no API key is available)."""
+    import os as _os
+    import sys as _sys
+    from claude_agent_sdk import query, ClaudeAgentOptions
+    from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
+
+    action_log: list[dict] = []
+    final_screenshot: str | None = None
+    text_parts: list[str] = []
+
+    browser_tools_server = _os.path.join(
+        _os.path.dirname(__file__), "browser_tools_mcp_server.py",
+    )
+    backend_port = _os.environ.get("OPENSWARM_PORT", "8324")
+
+    options = ClaudeAgentOptions(
+        model=model,
+        system_prompt=SYSTEM_PROMPT,
+        max_turns=MAX_TURNS,
+        permission_mode="bypassPermissions",
+        mcp_servers={
+            "browser-tools": {
+                "command": _sys.executable,
+                "args": [browser_tools_server],
+                "env": {
+                    "OPENSWARM_PORT": backend_port,
+                    "OPENSWARM_BROWSER_ID": browser_id,
+                },
+                "type": "stdio",
+            },
+        },
+        stderr=lambda line: None,
+    )
+
+    async for message in query(prompt=task, options=options):
+        if cancel_event.is_set():
+            break
+
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    text_parts.append(block.text)
+                    asst_msg = Message(role="assistant", content=block.text)
+                    session.messages.append(asst_msg)
+                    await ws_manager.send_to_session(session_id, "agent:message", {
+                        "session_id": session_id,
+                        "message": asst_msg.model_dump(mode="json"),
+                    })
+                elif isinstance(block, ToolUseBlock):
+                    tool_name = block.name
+                    # Strip MCP prefix if present (e.g. mcp__browser-tools__BrowserClick → BrowserClick)
+                    if "__" in tool_name:
+                        tool_name = tool_name.split("__")[-1]
+
+                    tool_msg = Message(
+                        role="tool_call",
+                        content={"id": block.id, "tool": tool_name, "input": block.input},
+                    )
+                    session.messages.append(tool_msg)
+                    await ws_manager.send_to_session(session_id, "agent:message", {
+                        "session_id": session_id,
+                        "message": tool_msg.model_dump(mode="json"),
+                    })
+
+                    action_log.append({
+                        "tool": tool_name,
+                        "input": block.input,
+                        "result_summary": "",
+                        "elapsed_ms": 0,
+                    })
+
+    if cancel_event.is_set():
+        return await _finalize_browser_session(
+            session_id, session, browser_id, tab_id,
+            "Agent was stopped.", action_log, final_screenshot, "stopped",
+        )
+
+    summary = "\n".join(text_parts) if text_parts else "Task completed."
+    return await _finalize_browser_session(
+        session_id, session, browser_id, tab_id,
+        summary, action_log, final_screenshot,
+    )
+
+
+async def run_browser_agent(
+    task: str,
+    browser_id: str,
+    model: str,
+    api_key: str | None = None,
+    dashboard_id: str | None = None,
+    tab_id: str = "",
+    pre_selected: bool = False,
+    initial_url: str | None = None,
+    parent_session_id: str | None = None,
+) -> dict:
+    """Run a browser sub-agent loop for a single browser card.
+
+    Creates a visible AgentSession, streams progress via WebSocket,
+    and returns the full action log + summary + final screenshot.
+
+    Routes through direct Anthropic API when api_key is provided,
+    or through Claude Code CLI when it's not.
+    """
+    session_id, session, cancel_event = await _setup_browser_session(
+        task, browser_id, model, dashboard_id, tab_id, initial_url, parent_session_id,
+    )
+
+    try:
+        if api_key:
+            return await _run_browser_agent_api(
+                task, session_id, session, cancel_event,
+                browser_id, model, api_key, tab_id,
+            )
+        else:
+            return await _run_browser_agent_cli(
+                task, session_id, session, cancel_event,
+                browser_id, model, tab_id,
+            )
     except Exception as e:
         logger.exception(f"Browser agent {session_id} error: {e}")
         session.status = "error"
@@ -543,7 +683,7 @@ async def run_browser_agent(
             "session_id": session_id,
             "browser_id": browser_id,
             "summary": f"Error: {str(e)}",
-            "action_log": action_log,
+            "action_log": [],
             "final_screenshot": None,
         }
 
@@ -582,7 +722,7 @@ async def _create_browser_card(dashboard_id: str, url: str, parent_session_id: s
 async def run_browser_agents(
     tasks: list[dict],
     model: str,
-    api_key: str,
+    api_key: str | None = None,
     dashboard_id: str | None = None,
     pre_selected_browser_ids: list[str] | None = None,
     parent_session_id: str | None = None,
@@ -591,6 +731,7 @@ async def run_browser_agents(
 
     Each task dict has: { browser_id (optional), task, url (optional) }
     Returns a list of result dicts, one per task.
+    Uses direct API when api_key is provided, CLI otherwise.
     """
     pre_selected = set(pre_selected_browser_ids or [])
 

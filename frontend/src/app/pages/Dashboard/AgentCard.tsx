@@ -11,6 +11,8 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import CloseIcon from '@mui/icons-material/Close';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import { motion } from 'framer-motion';
 import {
   AgentSession,
@@ -72,6 +74,13 @@ const GoogleServiceIcon: React.FC<{ service: string; size?: number }> = ({ servi
   return null;
 };
 
+function truncatePath(p: string): string {
+  const sep = p.includes('\\') ? '\\' : '/';
+  const parts = p.split(sep).filter(Boolean);
+  if (parts.length <= 3) return p;
+  return parts[0] + sep + '...' + sep + parts.slice(-2).join(sep);
+}
+
 function formatDuration(createdAt: string): string {
   const seconds = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
   if (seconds < 60) return `${seconds}s`;
@@ -80,6 +89,21 @@ function formatDuration(createdAt: string): string {
   const hours = Math.floor(minutes / 60);
   return `${hours}h ${minutes % 60}m`;
 }
+
+/** Self-updating duration label — ticks internally, never re-renders parent. */
+const LiveDuration: React.FC<{ createdAt: string; isActive: boolean; sx?: object }> = React.memo(({ createdAt, isActive, sx }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.textContent = formatDuration(createdAt);
+    if (!isActive) return;
+    const id = setInterval(() => {
+      if (ref.current) ref.current.textContent = formatDuration(createdAt);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [createdAt, isActive]);
+  return <Typography variant="caption" component="span" ref={ref} sx={sx} />;
+});
 
 function summarizeToolInput(toolName: string, toolInput: Record<string, any>): string {
   const mcp = parseMcpToolName(toolName);
@@ -165,13 +189,14 @@ const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
 // ---------------------------------------------------------------------------
 
 interface Props {
-  session: AgentSession;
+  sessionId: string;
   expanded: boolean;
   cardX: number;
   cardY: number;
   cardWidth: number;
   cardHeight: number;
   zoom?: number;
+  zoomRef?: React.RefObject<{ panX: number; panY: number; zoom: number }>;
   spawnFrom?: { x: number; y: number; type?: 'branch' };
   exitTarget?: { x: number; y: number };
   isSelected?: boolean;
@@ -187,6 +212,7 @@ interface Props {
   autoFocusInput?: boolean;
   cardZOrder?: number;
   onBringToFront?: (id: string, type: 'agent' | 'view' | 'browser') => void;
+  onEditSchedule?: (scheduleId: string) => void;
 }
 
 const MIN_W = 480;
@@ -201,25 +227,36 @@ const GLOW_FADE_MS = 2500;
 const SNAP_THRESHOLD = 60;
 
 const AgentCard: React.FC<Props> = ({
-  session, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, spawnFrom, exitTarget,
+  sessionId, expanded, cardX, cardY, cardWidth, cardHeight, zoom = 1, zoomRef, spawnFrom, exitTarget,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
-  onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onBringToFront,
+  onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onBringToFront, onEditSchedule,
 }) => {
+  const getZoom = useCallback(() => zoomRef?.current?.zoom ?? zoom, [zoomRef, zoom]);
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const session = useAppSelector((state) => state.agents.sessions[sessionId]);
+  if (!session) return null;
   const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
 
   const cardBoxRef = useRef<HTMLDivElement>(null);
+  const lastReportedHeight = useRef(0);
   useEffect(() => {
     const el = cardBoxRef.current;
     if (!el || !onMeasuredHeight) return;
+    let rafId: number | null = null;
     const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        onMeasuredHeight(session.id, entry.contentRect.height);
-      }
+      const h = entries[0]?.contentRect.height ?? 0;
+      // Only dispatch if height changed by >=2px — prevents sub-pixel churn
+      if (Math.abs(h - lastReportedHeight.current) < 2) return;
+      lastReportedHeight.current = h;
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        onMeasuredHeight(session.id, h);
+      });
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => { ro.disconnect(); if (rafId) cancelAnimationFrame(rafId); };
   }, [session.id, onMeasuredHeight]);
 
   // ---- Glow state (for branched cards) ----
@@ -252,7 +289,7 @@ const AgentCard: React.FC<Props> = ({
     draft: { color: c.accent.primary, bg: c.bg.secondary },
   };
 
-  const [, setTick] = useState(0);
+  const isActive = session.status === 'running' || session.status === 'waiting_approval';
   const isDraft = session.status === 'draft';
 
   // ---- Drag via header (pointer events) ----
@@ -280,19 +317,21 @@ const AgentCard: React.FC<Props> = ({
     const rawDy = e.clientY - dragState.current.startY;
     if (!didDrag.current && Math.sqrt(rawDx * rawDx + rawDy * rawDy) < DRAG_THRESHOLD) return;
     didDrag.current = true;
-    const dx = rawDx / zoom;
-    const dy = rawDy / zoom;
+    const z = getZoom();
+    const dx = rawDx / z;
+    const dy = rawDy / z;
     setLocalDragPos({
       x: dragState.current.origX + dx,
       y: dragState.current.origY + dy,
     });
     onDragMove?.(dx, dy);
-  }, [zoom, onDragMove]);
+  }, [getZoom, onDragMove]);
 
   const handleDragPointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
-    const dx = (e.clientX - dragState.current.startX) / zoom;
-    const dy = (e.clientY - dragState.current.startY) / zoom;
+    const z = getZoom();
+    const dx = (e.clientX - dragState.current.startX) / z;
+    const dy = (e.clientY - dragState.current.startY) / z;
     if (didDrag.current) {
       let finalX = dragState.current.origX + dx;
       const finalY = dragState.current.origY + dy;
@@ -312,7 +351,7 @@ const AgentCard: React.FC<Props> = ({
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [zoom, dispatch, session.id, onDragEnd, snapColumn, cardHeight]);
+  }, [getZoom, dispatch, session.id, onDragEnd, snapColumn, cardHeight]);
 
   // ---- Unified edge / corner resize ----
   const resizeRef = useRef<{
@@ -353,8 +392,9 @@ const AgentCard: React.FC<Props> = ({
     (e: React.PointerEvent) => {
       if (!resizeRef.current) return null;
       const { dir, startX, startY, origX, origY, origW, origH } = resizeRef.current;
-      const dx = (e.clientX - startX) / zoom;
-      const dy = (e.clientY - startY) / zoom;
+      const z = getZoom();
+      const dx = (e.clientX - startX) / z;
+      const dy = (e.clientY - startY) / z;
 
       let newX = origX, newY = origY, newW = origW, newH = origH;
 
@@ -368,7 +408,7 @@ const AgentCard: React.FC<Props> = ({
 
       return { x: newX, y: newY, w: newW, h: newH };
     },
-    [zoom],
+    [getZoom],
   );
 
   const handleResizeMove = useCallback(
@@ -407,12 +447,7 @@ const AgentCard: React.FC<Props> = ({
   };
 
 
-  useEffect(() => {
-    if (session.status === 'running' || session.status === 'waiting_approval') {
-      const interval = setInterval(() => setTick((t) => t + 1), 1000);
-      return () => clearInterval(interval);
-    }
-  }, [session.status]);
+  // Duration ticking moved to <LiveDuration> — no parent re-renders.
 
   const lastMessage = session.messages[session.messages.length - 1];
   const isStreaming = !!session.streamingMessage;
@@ -487,6 +522,7 @@ const AgentCard: React.FC<Props> = ({
       }}
       sx={{
         position: 'relative',
+        contain: expanded ? 'layout paint style' : 'none',
         width: localResize ? activeW : Math.max(cardWidth, MIN_W),
         height: localResize ? activeH : (expanded ? Math.max(EXPANDED_OVERLAY_H, cardHeight) : 'auto'),
         bgcolor: c.bg.surface,
@@ -747,6 +783,22 @@ const AgentCard: React.FC<Props> = ({
             onPointerDown={(e) => e.stopPropagation()}
             sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, ml: 0.5 }}
           >
+            {session.schedule_id && (
+              <Tooltip title="View Schedule">
+                <IconButton
+                  size="small"
+                  onClick={(e) => { e.stopPropagation(); onEditSchedule?.(session.schedule_id!); }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  sx={{
+                    color: c.accent.primary,
+                    p: 0.5,
+                    '&:hover': { bgcolor: `${c.accent.primary}22` },
+                  }}
+                >
+                  <ScheduleIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
               <IconButton
                 size="small"
@@ -777,15 +829,25 @@ const AgentCard: React.FC<Props> = ({
           <Typography variant="caption" sx={{ color: c.text.tertiary }}>
             {session.mode}
           </Typography>
-          <Typography variant="caption" sx={{ color: c.text.tertiary }}>
-            {formatDuration(session.created_at)}
-          </Typography>
+          <LiveDuration createdAt={session.created_at} isActive={isActive} sx={{ color: c.text.tertiary }} />
           {session.cost_usd > 0 && (
             <Typography variant="caption" sx={{ color: c.accent.primary }}>
               ${session.cost_usd.toFixed(4)}
             </Typography>
           )}
         </Box>
+
+        {/* Working directory */}
+        {session.cwd && (
+          <Tooltip title={session.cwd}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25, flexShrink: 0, overflow: 'hidden' }}>
+              <FolderOutlinedIcon sx={{ fontSize: 13, color: c.text.ghost, flexShrink: 0 }} />
+              <Typography variant="caption" sx={{ color: c.text.ghost, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.7rem' }}>
+                {truncatePath(session.cwd)}
+              </Typography>
+            </Box>
+          </Tooltip>
+        )}
       </Box>
 
       {/* Expanded: inline chat fills remaining space */}
