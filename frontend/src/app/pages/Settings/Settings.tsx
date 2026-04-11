@@ -389,6 +389,7 @@ const Settings: React.FC = () => {
             >
               <MenuItem value="sonnet">Sonnet 4.6</MenuItem>
               <MenuItem value="opus">Opus 4.6</MenuItem>
+              <MenuItem value="opus-1m">Opus 4.6 1M</MenuItem>
               <MenuItem value="haiku">Haiku 3.5</MenuItem>
             </Select>
           </FormControl>
@@ -597,6 +598,34 @@ const Settings: React.FC = () => {
               '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
             }}
           />
+        </Box>
+
+        <Box sx={inlineRowSx}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>Simple tool group names</Typography>
+            <Typography sx={descSx}>Derive tool group labels from tool names instead of AI-generating them with a token turn.</Typography>
+          </Box>
+          <Select
+            size="small"
+            value={form.simple_tool_group_names}
+            onChange={(e) => setForm({ ...form, simple_tool_group_names: e.target.value as 'off' | 'cli-only' | 'all' })}
+            sx={{
+              minWidth: 130,
+              fontSize: '0.82rem',
+              fontFamily: c.font.sans,
+              color: c.text.primary,
+              bgcolor: c.bg.elevated,
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: c.border.subtle },
+              '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: c.border.medium },
+              '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: c.accent.primary },
+              '& .MuiSvgIcon-root': { color: c.text.muted },
+            }}
+            MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.elevated, color: c.text.primary } } }}
+          >
+            <MenuItem value="off">Off</MenuItem>
+            <MenuItem value="cli-only">CLI sessions</MenuItem>
+            <MenuItem value="all">All sessions</MenuItem>
+          </Select>
         </Box>
 
         {/* ── Browser ── */}

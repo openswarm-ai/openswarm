@@ -7,11 +7,13 @@ class AgentConfig(BaseModel):
     name: str = Field(default_factory=lambda: f"Agent-{uuid4().hex[:6]}")
     model: str = "sonnet"
     mode: str = "agent"
+    effort: Optional[str] = None
     system_prompt: Optional[str] = None
     allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion"])
     max_turns: Optional[int] = None
     target_directory: Optional[str] = None  # if None, uses repo root
     dashboard_id: Optional[str] = None
+    resume_cli_session_id: Optional[str] = None
 
 class ApprovalRequest(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
@@ -57,6 +59,8 @@ class AgentSession(BaseModel):
     status: Literal["running", "waiting_approval", "completed", "error", "stopped"] = "running"
     model: str = "sonnet"
     mode: str = "agent"
+    effort: Optional[str] = None
+    use_1m_context: bool = False
     sdk_session_id: Optional[str] = None
     system_prompt: Optional[str] = None
     allowed_tools: list[str] = Field(default_factory=list)
@@ -74,3 +78,4 @@ class AgentSession(BaseModel):
     dashboard_id: Optional[str] = None
     browser_id: Optional[str] = None
     parent_session_id: Optional[str] = None
+    schedule_id: Optional[str] = None

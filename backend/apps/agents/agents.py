@@ -1,5 +1,5 @@
 from backend.config.Apps import SubApp
-from backend.apps.agents.agent_manager import agent_manager
+from backend.apps.agents.agent_manager import agent_manager, _load_all_session_data
 from backend.apps.agents.ws_manager import ws_manager
 from backend.apps.agents.models import AgentConfig, ApprovalResponse
 from contextlib import asynccontextmanager
@@ -7,6 +7,11 @@ from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
 import json
 import logging
+import os
+import subprocess
+import sys
+import shutil
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -165,10 +170,141 @@ async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_i
         dashboard_id=dashboard_id or None,
     )
 
+@agents.router.get("/cli-sessions")
+async def list_cli_sessions(cwd: str = "", q: str = "", limit: int = 50):
+    """List Claude CLI sessions for a given working directory."""
+    claude_dir = Path.home() / ".claude" / "projects"
+    if not claude_dir.exists():
+        return {"sessions": []}
+
+    # Build the project dir name: C:\Users\fireb\openswarm → C--Users-fireb-openswarm
+    # Claude CLI replaces : with - and path separators with -
+    target_cwd = cwd or os.getcwd()
+    dir_name = target_cwd.replace(":", "-").replace("\\", "-").replace("/", "-")
+
+    project_dir = claude_dir / dir_name
+    if not project_dir.exists():
+        return {"sessions": []}
+
+    # Also collect OpenSwarm sdk_session_ids so we can mark which ones are already imported
+    known_sdk_ids = set()
+    for s in agent_manager.get_all_sessions():
+        if s.sdk_session_id:
+            known_sdk_ids.add(s.sdk_session_id)
+    for _, data in _load_all_session_data():
+        sid = data.get("sdk_session_id")
+        if sid:
+            known_sdk_ids.add(sid)
+
+    sessions = []
+    for jsonl_path in sorted(project_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True):
+        session_id = jsonl_path.stem
+        if not session_id or session_id.startswith("."):
+            continue
+        try:
+            first_user_msg = None
+            first_ts = None
+            last_ts = None
+            user_count = 0
+            asst_count = 0
+            with open(jsonl_path, encoding="utf-8") as f:
+                for line in f:
+                    data = json.loads(line)
+                    t = data.get("type", "")
+                    ts = data.get("timestamp")
+                    if ts and not first_ts:
+                        first_ts = ts
+                    if ts:
+                        last_ts = ts
+                    if t == "user":
+                        user_count += 1
+                        if not first_user_msg:
+                            msg = data.get("message", {})
+                            content = msg.get("content", "")
+                            if isinstance(content, str):
+                                first_user_msg = content[:200]
+                            elif isinstance(content, list):
+                                for b in content:
+                                    if isinstance(b, dict) and b.get("type") == "text":
+                                        first_user_msg = b["text"][:200]
+                                        break
+                    elif t == "assistant":
+                        asst_count += 1
+            # Search filter
+            if q and q.lower() not in (first_user_msg or "").lower():
+                continue
+            sessions.append({
+                "id": session_id,
+                "first_message": first_user_msg or "",
+                "created_at": first_ts,
+                "last_activity": last_ts,
+                "user_messages": user_count,
+                "assistant_messages": asst_count,
+                "total_messages": user_count + asst_count,
+                "in_openswarm": session_id in known_sdk_ids,
+                "cwd": target_cwd,
+            })
+        except Exception as e:
+            logger.warning(f"Error parsing CLI session {session_id}: {e}")
+            continue
+
+    return {"sessions": sessions[:limit]}
+
 @agents.router.get("/sessions/{session_id}/browser-agents")
 async def get_browser_agent_children(session_id: str):
     children = agent_manager.get_browser_agent_children(session_id)
     return {"sessions": children}
+
+@agents.router.post("/open-in-cli")
+async def open_in_cli(body: dict):
+    """Open a Claude CLI session in a terminal. Accepts either an OpenSwarm session_id or a raw cli_session_id."""
+    cli_session_id = body.get("cli_session_id")
+    cwd = body.get("cwd")
+
+    # If an OpenSwarm session ID is provided, resolve the CLI session ID from it
+    openswarm_id = body.get("session_id")
+    if openswarm_id and not cli_session_id:
+        session = agent_manager.get_session(openswarm_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if not session.sdk_session_id:
+            raise HTTPException(status_code=400, detail="Session has no CLI session ID")
+        cli_session_id = session.sdk_session_id
+        cwd = cwd or session.cwd
+
+    if not cli_session_id:
+        raise HTTPException(status_code=400, detail="cli_session_id or session_id required")
+
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        raise HTTPException(status_code=500, detail="Claude CLI not found on PATH")
+
+    args = [claude_path, "--resume", cli_session_id]
+
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(
+                ["cmd.exe", "/c", "start", "cmd.exe", "/k"] + args,
+                cwd=cwd, creationflags=subprocess.DETACHED_PROCESS,
+            )
+        elif sys.platform == "darwin":
+            script = f'tell application "Terminal" to do script "cd {cwd or "~"} && {claude_path} --resume {cli_session_id}"'
+            subprocess.Popen(["osascript", "-e", script])
+        else:
+            for term in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"]:
+                term_path = shutil.which(term)
+                if term_path:
+                    if "gnome-terminal" in term:
+                        subprocess.Popen([term_path, "--"] + args, cwd=cwd)
+                    else:
+                        subprocess.Popen([term_path, "-e", " ".join(args)], cwd=cwd)
+                    break
+            else:
+                raise HTTPException(status_code=500, detail="No terminal emulator found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"ok": True, "cli_session_id": cli_session_id}
 
 @agents.router.post("/sessions/{session_id}/resume")
 async def resume_session(session_id: str):
@@ -177,4 +313,5 @@ async def resume_session(session_id: str):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"session": session.model_dump(mode="json")}
+
 

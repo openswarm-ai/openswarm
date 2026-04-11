@@ -17,6 +17,7 @@ import {
   trackAgentNotification,
 } from '../state/agentsSlice';
 import { addBrowserCardFromBackend, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
+import { incrementUnread } from '../state/schedulesSlice';
 
 type WSEvent = {
   event: string;
@@ -266,6 +267,14 @@ class WebSocketManager {
             }
           }
         }
+        break;
+
+      case 'schedule:run_complete':
+        store.dispatch(incrementUnread());
+        break;
+
+      case 'schedule:run_failed':
+        store.dispatch(incrementUnread());
         break;
     }
 

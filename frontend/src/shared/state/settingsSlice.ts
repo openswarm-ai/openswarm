@@ -25,6 +25,7 @@ export interface AppSettings {
   auto_select_mode_on_new_agent: boolean;
   expand_new_chats_in_dashboard: boolean;
   auto_reveal_sub_agents: boolean;
+  simple_tool_group_names: 'off' | 'cli-only' | 'all';
   dev_mode: boolean;
 }
 
@@ -57,6 +58,7 @@ const initialState: SettingsState = {
     auto_select_mode_on_new_agent: false,
     expand_new_chats_in_dashboard: false,
     auto_reveal_sub_agents: true,
+    simple_tool_group_names: 'cli-only',
     dev_mode: false,
   },
   loading: false,

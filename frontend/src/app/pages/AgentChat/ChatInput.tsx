@@ -67,6 +67,8 @@ interface Props {
   onModeChange: (mode: string) => void;
   model: string;
   onModelChange: (model: string) => void;
+  effort: string;
+  onEffortChange: (effort: string) => void;
   isRunning?: boolean;
   onStop?: () => void;
   autoRunMode?: boolean;
@@ -95,7 +97,16 @@ const FALLBACK_MODE_BASE = { label: 'Agent', icon: ICON_MAP.smart_toy };
 const MODEL_OPTIONS = [
   { value: 'sonnet', label: 'Sonnet', version: '4.6' },
   { value: 'opus', label: 'Opus', version: '4.6' },
+  { value: 'opus-1m', label: 'Opus', version: '4.6 1M' },
   { value: 'haiku', label: 'Haiku', version: '3.5' },
+];
+
+const EFFORT_OPTIONS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'max', label: 'Max' },
 ];
 
 function formatTokenCount(n: number): string {
@@ -132,7 +143,7 @@ const ContextRing: React.FC<{ used: number; limit: number; accentColor: string; 
   );
 };
 
-const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0 }, ref) => {
+const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, effort, onEffortChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0 }, ref) => {
   const c = useClaudeTokens();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -190,6 +201,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
 
   const [modeAnchor, setModeAnchor] = useState<HTMLElement | null>(null);
   const [modelAnchor, setModelAnchor] = useState<HTMLElement | null>(null);
+  const [effortAnchor, setEffortAnchor] = useState<HTMLElement | null>(null);
 
   const currentMode = modesMap[mode];
   const FALLBACK_MODE = { ...FALLBACK_MODE_BASE, color: c.accent.primary };
@@ -1004,6 +1016,53 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
               <ListItemText
                 primary={`${opt.label} ${opt.version}`}
                 slotProps={{ primary: { sx: { fontSize: '0.8rem', color: model === opt.value ? c.text.primary : c.text.muted } } }}
+              />
+            </MenuItem>
+          ))}
+        </Menu>
+
+        <Box
+          onClick={(e) => setEffortAnchor(e.currentTarget)}
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 0.25,
+            px: 0.75,
+            py: 0.25,
+            borderRadius: '6px',
+            cursor: 'pointer',
+            userSelect: 'none',
+            color: c.text.muted,
+            '&:hover': { bgcolor: 'rgba(0,0,0,0.04)' },
+            transition: 'background 0.15s',
+          }}
+        >
+          <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
+            {effort.charAt(0).toUpperCase() + effort.slice(1)}
+          </Typography>
+          <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
+        </Box>
+
+        <Menu
+          anchorEl={effortAnchor}
+          open={Boolean(effortAnchor)}
+          onClose={() => setEffortAnchor(null)}
+          anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+          transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+          slotProps={{ paper: menuPaperProps }}
+        >
+          {EFFORT_OPTIONS.map((opt) => (
+            <MenuItem
+              key={opt.value}
+              selected={effort === opt.value}
+              onClick={() => {
+                onEffortChange(opt.value);
+                setEffortAnchor(null);
+              }}
+            >
+              <ListItemText
+                primary={opt.label}
+                slotProps={{ primary: { sx: { fontSize: '0.8rem', color: effort === opt.value ? c.text.primary : c.text.muted } } }}
               />
             </MenuItem>
           ))}

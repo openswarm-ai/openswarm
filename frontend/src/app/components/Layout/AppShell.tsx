@@ -29,6 +29,8 @@ import ArrowForwardOutlinedIcon from '@mui/icons-material/ArrowForwardOutlined';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import CloseIcon from '@mui/icons-material/Close';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import Badge from '@mui/material/Badge';
 import LinearProgress from '@mui/material/LinearProgress';
 import Settings from '@/app/pages/Settings/Settings';
 import DynamicIsland from '@/app/components/DynamicIsland';
@@ -39,6 +41,7 @@ import { setPendingBrowserUrl } from '@/shared/state/tempStateSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { findBrowserByWebContentsId } from '@/shared/browserRegistry';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { dashboardWs } from '@/shared/ws/WebSocketManager';
 
 const SIDEBAR_MIN = 160;
 const SIDEBAR_MAX = 400;
@@ -51,6 +54,7 @@ const CUSTOMIZATION_ITEMS = [
   { label: 'Skills', path: '/skills', icon: <PsychologyIcon /> },
   { label: 'Actions', path: '/actions', icon: <BuildIcon /> },
   { label: 'Modes', path: '/modes', icon: <TuneIcon /> },
+  { label: 'Schedules', path: '/schedules', icon: <ScheduleIcon /> },
 ];
 
 const CUSTOMIZATION_PATHS = new Set(CUSTOMIZATION_ITEMS.map((i) => i.path));
@@ -83,11 +87,13 @@ const AppShell: React.FC = () => {
   const updateStatus = useAppSelector((state) => state.update.status);
   const availableVersion = useAppSelector((state) => state.update.availableVersion);
   const downloadPercent = useAppSelector((state) => state.update.downloadPercent);
+  const scheduleUnread = useAppSelector((s) => s.schedules.unreadCount);
 
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(() => {
     try { return localStorage.getItem(UPDATE_DISMISS_KEY); } catch { return null; }
   });
   const [snackbarDismissed, setSnackbarDismissed] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const bannerDismissedForVersion = availableVersion != null && dismissedVersion === availableVersion;
   const isUpdateActionable = updateStatus === 'available' || updateStatus === 'downloaded' || updateStatus === 'downloading';
@@ -109,6 +115,13 @@ const AppShell: React.FC = () => {
 
   const handleInstallUpdate = useCallback(() => {
     (window as any).openswarm?.installUpdate();
+  }, []);
+
+  useEffect(() => {
+    const unsub = dashboardWs.on('schedule:run_failed', (data: any) => {
+      setScheduleError(`Schedule "${data.name}" failed: ${data.error}`);
+    });
+    return unsub;
   }, []);
 
   const dashboardItems = useAppSelector((state) => state.dashboards.items);
@@ -705,20 +718,39 @@ const AppShell: React.FC = () => {
                           transition: 'background-color 0.12s, border-color 0.12s',
                         }}
                       >
-                        <Typography
-                          sx={{
-                            color: isActive ? c.text.secondary : c.text.ghost,
-                            fontSize: '0.78rem',
-                            fontWeight: isActive ? 500 : 400,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            flex: 1,
-                            minWidth: 0,
-                          }}
-                        >
-                          {item.label}
-                        </Typography>
+                        {item.label === 'Schedules' ? (
+                          <Badge badgeContent={scheduleUnread} color="error" max={99} sx={{ flex: 1, minWidth: 0, '& .MuiBadge-badge': { right: -8, top: 6 } }}>
+                            <Typography
+                              sx={{
+                                color: isActive ? c.text.secondary : c.text.ghost,
+                                fontSize: '0.78rem',
+                                fontWeight: isActive ? 500 : 400,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                flex: 1,
+                                minWidth: 0,
+                              }}
+                            >
+                              {item.label}
+                            </Typography>
+                          </Badge>
+                        ) : (
+                          <Typography
+                            sx={{
+                              color: isActive ? c.text.secondary : c.text.ghost,
+                              fontSize: '0.78rem',
+                              fontWeight: isActive ? 500 : 400,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              flex: 1,
+                              minWidth: 0,
+                            }}
+                          >
+                            {item.label}
+                          </Typography>
+                        )}
                       </Box>
                     )}
                   </NavLink>
@@ -997,6 +1029,15 @@ const AppShell: React.FC = () => {
           {updateStatus === 'available' && `OpenSwarm ${availableVersion} is available`}
           {updateStatus === 'downloaded' && `OpenSwarm ${availableVersion} downloaded — restart to update`}
         </Alert>
+      </Snackbar>
+
+      <Snackbar
+        open={!!scheduleError}
+        autoHideDuration={6000}
+        onClose={() => setScheduleError(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert severity="error" onClose={() => setScheduleError(null)}>{scheduleError}</Alert>
       </Snackbar>
     </Box>
   );

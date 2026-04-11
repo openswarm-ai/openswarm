@@ -13,6 +13,7 @@ import {
   closeSession,
   duplicateSession,
   expandSession,
+  launchAgent,
   launchAndSendFirstMessage,
   generateTitle,
   resumeSession,
@@ -54,6 +55,7 @@ import DashboardViewCard from './DashboardViewCard';
 import BrowserCard from './BrowserCard';
 import CanvasControls from './CanvasControls';
 import DashboardToolbar from './DashboardToolbar';
+import ScheduleEditor from '@/app/pages/Schedules/ScheduleEditor';
 import { captureDashboardThumbnail } from './captureDashboardThumbnail';
 import { useCanvasControls } from './useCanvasControls';
 import { useDashboardSelection } from './useDashboardSelection';
@@ -118,6 +120,7 @@ const DashboardInner: React.FC = () => {
 
   const [toolbarOpen, setToolbarOpen] = useState(false);
   const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoFocusSessionId, setAutoFocusSessionId] = useState<string | null>(null);
   const [pendingSelectSessionId, setPendingSelectSessionId] = useState<string | null>(null);
@@ -710,11 +713,13 @@ const DashboardInner: React.FC = () => {
       prompt: string,
       mode: string,
       model: string,
+      effort: string,
       images?: Array<{ data: string; media_type: string }>,
       contextPaths?: ContextPath[],
       forcedTools?: string[],
       attachedSkills?: Array<{ id: string; name: string; content: string }>,
       selectedBrowserIds?: string[],
+      targetDirectory?: string,
     ) => {
       setToolbarOpen(false);
 
@@ -734,7 +739,7 @@ const DashboardInner: React.FC = () => {
         };
       }
 
-      const config: AgentConfig = { name: 'New chat', model, mode, dashboard_id: dashboardId };
+      const config: AgentConfig = { name: 'New chat', model, mode, effort, dashboard_id: dashboardId, target_directory: targetDirectory };
 
       dispatch(
         launchAndSendFirstMessage({
@@ -849,6 +854,31 @@ const DashboardInner: React.FC = () => {
       }
     });
   }, [dispatch, canvas.actions, handleHighlightCard, setAutoFocusSessionId]);
+
+  const handleResumeCliSession = useCallback((cliSessionId: string, cwd: string, name: string) => {
+    const config: AgentConfig = {
+      name: name || `CLI ${cliSessionId.slice(0, 8)}`,
+      model: 'sonnet',
+      mode: 'agent',
+      dashboard_id: dashboardId,
+      target_directory: cwd || undefined,
+      resume_cli_session_id: cliSessionId,
+    };
+    dispatch(launchAgent(config)).then((action) => {
+      if (launchAgent.fulfilled.match(action)) {
+        const session = action.payload;
+        dispatch(expandSession(session.id));
+        setAutoFocusSessionId(session.id);
+        setTimeout(() => {
+          const card = store.getState().dashboardLayout.cards[session.id];
+          if (card) {
+            canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.0, true);
+            handleHighlightCard(session.id);
+          }
+        }, 200);
+      }
+    });
+  }, [dispatch, dashboardId, canvas.actions, handleHighlightCard, setAutoFocusSessionId]);
 
   const handleTidy = useCallback(() => {
     const currentExpanded = store.getState().agents.expandedSessionIds;
@@ -1378,6 +1408,7 @@ const DashboardInner: React.FC = () => {
                   snapColumn={snapColumn}
                   autoFocusInput={autoFocusSessionId === session.id}
                   onBringToFront={handleBringToFront}
+                  onEditSchedule={setEditingScheduleId}
                 />
               );
             })}
@@ -1461,6 +1492,7 @@ const DashboardInner: React.FC = () => {
           onSend={handleToolbarSend}
           onAddView={handleAddView}
           onHistoryResume={handleHistoryResume}
+          onResumeCliSession={handleResumeCliSession}
           onAddBrowser={handleAddBrowser}
           dashboardId={dashboardId}
         />
@@ -1471,6 +1503,11 @@ const DashboardInner: React.FC = () => {
         <CanvasControls zoom={canvas.zoom} actions={canvas.actions} onTidy={handleTidy} />
       </Box>
     </Box>
+    <ScheduleEditor
+      open={editingScheduleId !== null}
+      scheduleId={editingScheduleId}
+      onClose={() => setEditingScheduleId(null)}
+    />
     </>
   );
 };
