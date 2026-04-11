@@ -710,7 +710,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                       const result = await openswarm.openInCli(session.sdk_session_id, session.cwd);
                       if (result && !result.ok) console.error('Open in CLI failed:', result.error);
                     } else {
-                      await fetch(`${API_BASE}/agents/sessions/${id}/open-in-cli`, { method: 'POST' });
+                      await fetch(`${API_BASE}/agents/open-in-cli`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: id }) });
                     }
                   }}
                 >

@@ -34,6 +34,7 @@ import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import { parseMcpToolName, getMcpShortAction } from '@/app/pages/AgentChat/ToolCallBubble';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
+import { API_BASE } from '@/shared/config';
 
 // ---------------------------------------------------------------------------
 // Helper components & functions (unchanged)
@@ -770,6 +771,30 @@ const AgentCard: React.FC<Props> = ({
                   }}
                 >
                   <ScheduleIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {!isDraft && session.sdk_session_id && (
+              <Tooltip title="Open in CLI">
+                <IconButton
+                  size="small"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const openswarm = (window as any).openswarm;
+                    if (openswarm?.openInCli) {
+                      await openswarm.openInCli(session.sdk_session_id, session.cwd);
+                    } else {
+                      await fetch(`${API_BASE}/agents/open-in-cli`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: session.id }) });
+                    }
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  sx={{
+                    color: c.text.ghost,
+                    p: '3px',
+                    '&:hover': { color: c.text.secondary },
+                  }}
+                >
+                  <TerminalIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Tooltip>
             )}

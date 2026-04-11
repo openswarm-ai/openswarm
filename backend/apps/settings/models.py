@@ -24,4 +24,5 @@ class AppSettings(BaseModel):
     auto_select_mode_on_new_agent: bool = False
     expand_new_chats_in_dashboard: bool = False
     auto_reveal_sub_agents: bool = True
+    simple_tool_group_names: str = "cli-only"  # "off", "cli-only", "all"
     dev_mode: bool = False

@@ -335,21 +335,224 @@ class AgentManager:
             mode=config.mode,
             effort=config.effort,
             use_1m_context=use_1m_beta,
+            sdk_session_id=config.resume_cli_session_id,
             system_prompt=config.system_prompt,
             allowed_tools=tools,
             max_turns=config.max_turns,
             cwd=effective_cwd,
             dashboard_id=config.dashboard_id,
         )
+
+        # If resuming a CLI session, load its message history
+        if config.resume_cli_session_id:
+            session.status = "stopped"
+            self._load_cli_history(session, config.resume_cli_session_id, effective_cwd)
+
         self.sessions[session_id] = session
-        
+
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
-            "status": "running",
+            "status": session.status,
             "session": session.model_dump(mode="json"),
         })
-        
+
         return session
+
+    @staticmethod
+    def _parse_cli_internal(text: str, ts: datetime, last_cmd: str) -> list[Message] | str | None:
+        """Parse CLI internal XML messages into tool_call/tool_result pairs.
+        Returns list of Messages, 'skip' to drop, or None for normal user message."""
+        import re
+        stripped = text.strip()
+        if not stripped.startswith("<"):
+            return None
+
+        # <local-command-caveat> — noise wrapper, skip
+        if stripped.startswith("<local-command-caveat>"):
+            return "skip"
+
+        # <command-name>/foo</command-name> — slash command
+        cmd_match = re.search(r"<command-name>(/?\w[\w-]*)</command-name>", stripped)
+        if cmd_match:
+            cmd = cmd_match.group(1)
+            args_match = re.search(r"<command-args>(.*?)</command-args>", stripped, re.DOTALL)
+            args = args_match.group(1).strip() if args_match else ""
+            tool_id = f"cli-cmd-{uuid4().hex[:8]}"
+            return [
+                Message(role="tool_call", content={"id": tool_id, "tool": f"CLI: {cmd}", "input": {"args": args} if args else {}}, timestamp=ts),
+                Message(role="tool_result", content={"text": "", "tool_name": f"CLI: {cmd}"}, timestamp=ts),
+            ]
+
+        # <local-command-stdout> — output of previous command
+        stdout_match = re.search(r"<local-command-stdout>(.*?)</local-command-stdout>", stripped, re.DOTALL)
+        if stdout_match:
+            output = stdout_match.group(1).strip()
+            # Strip ANSI escape codes
+            output = re.sub(r"\x1b\[[0-9;]*m", "", output)
+            tool_name = f"CLI: {last_cmd}" if last_cmd else "CLI output"
+            tool_id = f"cli-out-{uuid4().hex[:8]}"
+            return [
+                Message(role="tool_call", content={"id": tool_id, "tool": tool_name, "input": {"output": True}}, timestamp=ts),
+                Message(role="tool_result", content={"text": output, "tool_name": tool_name}, timestamp=ts),
+            ]
+
+        # <system-reminder> — system context injection
+        if stripped.startswith("<system-reminder>"):
+            reminder = re.sub(r"</?system-reminder>", "", stripped).strip()
+            tool_id = f"cli-sys-{uuid4().hex[:8]}"
+            preview = reminder[:100] + "..." if len(reminder) > 100 else reminder
+            return [
+                Message(role="tool_call", content={"id": tool_id, "tool": "System Reminder", "input": {"preview": preview}}, timestamp=ts),
+                Message(role="tool_result", content={"text": reminder, "tool_name": "System Reminder"}, timestamp=ts),
+            ]
+
+        # <task-notification> — background task update
+        if stripped.startswith("<task-notification>"):
+            task_match = re.search(r"<task-id>(.*?)</task-id>", stripped)
+            task_id = task_match.group(1) if task_match else "unknown"
+            status_match = re.search(r"<status>(.*?)</status>", stripped)
+            status = status_match.group(1) if status_match else ""
+            tool_id = f"cli-task-{uuid4().hex[:8]}"
+            return [
+                Message(role="tool_call", content={"id": tool_id, "tool": "Task Notification", "input": {"task_id": task_id}}, timestamp=ts),
+                Message(role="tool_result", content={"text": status or stripped[:200], "tool_name": "Task Notification"}, timestamp=ts),
+            ]
+
+        # Other XML-looking content we don't recognize — pass through as-is
+        return None
+
+    def _load_cli_history(self, session: AgentSession, cli_session_id: str, cwd: str):
+        """Load message history from a Claude CLI session JSONL file into session."""
+        from pathlib import Path
+        dir_name = cwd.replace(":", "-").replace("\\", "-").replace("/", "-")
+        jsonl_path = Path.home() / ".claude" / "projects" / dir_name / f"{cli_session_id}.jsonl"
+        if not jsonl_path.exists():
+            logger.warning(f"CLI session file not found: {jsonl_path}")
+            return
+        try:
+            pending_tool_uses: dict[str, dict] = {}  # id -> {tool, input}
+            last_cli_command = ""
+
+            for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+                data = json.loads(line)
+                msg_type = data.get("type", "")
+                if msg_type not in ("user", "assistant"):
+                    continue
+                msg_data = data.get("message", {})
+                raw_content = msg_data.get("content", "")
+                ts_str = data.get("timestamp")
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")) if ts_str else datetime.now()
+
+                if msg_type == "user":
+                    if isinstance(raw_content, str):
+                        cli_msg = self._parse_cli_internal(raw_content, ts, last_cli_command)
+                        if cli_msg is not None:
+                            if cli_msg == "skip":
+                                continue
+                            session.messages.extend(cli_msg)
+                            # Track last command for stdout pairing
+                            for m in cli_msg:
+                                if m.role == "tool_call" and isinstance(m.content, dict):
+                                    last_cli_command = m.content.get("tool", "")
+                            continue
+                        session.messages.append(Message(role="user", content=raw_content, timestamp=ts))
+                    elif isinstance(raw_content, list):
+                        # User messages can contain tool_result blocks
+                        for block in raw_content:
+                            if not isinstance(block, dict):
+                                continue
+                            btype = block.get("type", "")
+                            if btype == "text":
+                                text = block.get("text", "")
+                                cli_msg = self._parse_cli_internal(text, ts, last_cli_command)
+                                if cli_msg is not None:
+                                    if cli_msg == "skip":
+                                        continue
+                                    session.messages.extend(cli_msg)
+                                    for m in cli_msg:
+                                        if m.role == "tool_call" and isinstance(m.content, dict):
+                                            last_cli_command = m.content.get("tool", "")
+                                    continue
+                                session.messages.append(Message(role="user", content=text, timestamp=ts))
+                            elif btype == "tool_result":
+                                tool_use_id = block.get("tool_use_id", "")
+                                tool_info = pending_tool_uses.pop(tool_use_id, {})
+                                result_content = block.get("content", "")
+                                if isinstance(result_content, list):
+                                    texts = [b.get("text", "") for b in result_content if isinstance(b, dict) and b.get("type") == "text"]
+                                    result_text = "\n".join(texts) if texts else ""
+                                elif isinstance(result_content, str):
+                                    result_text = result_content
+                                else:
+                                    result_text = str(result_content)
+                                session.messages.append(Message(
+                                    role="tool_result",
+                                    content={
+                                        "text": result_text,
+                                        "tool_name": tool_info.get("tool", ""),
+                                        "is_error": block.get("is_error", False),
+                                    },
+                                    timestamp=ts,
+                                ))
+
+                elif msg_type == "assistant":
+                    if isinstance(raw_content, list):
+                        text_parts = []
+                        for block in raw_content:
+                            if not isinstance(block, dict):
+                                continue
+                            btype = block.get("type", "")
+                            if btype == "text":
+                                text_parts.append(block.get("text", ""))
+                            elif btype == "tool_use":
+                                # Flush accumulated text first
+                                if text_parts:
+                                    session.messages.append(Message(role="assistant", content="\n".join(text_parts), timestamp=ts))
+                                    text_parts = []
+                                tool_id = block.get("id", "")
+                                tool_name = block.get("name", "")
+                                tool_input = block.get("input", {})
+                                pending_tool_uses[tool_id] = {"tool": tool_name, "input": tool_input}
+                                session.messages.append(Message(
+                                    role="tool_call",
+                                    content={"id": tool_id, "tool": tool_name, "input": tool_input},
+                                    timestamp=ts,
+                                ))
+                        # Flush remaining text
+                        if text_parts:
+                            session.messages.append(Message(role="assistant", content="\n".join(text_parts), timestamp=ts))
+                    elif isinstance(raw_content, str) and raw_content:
+                        session.messages.append(Message(role="assistant", content=raw_content, timestamp=ts))
+
+            # Pre-compute tool group meta from loaded messages
+            self._precompute_tool_group_meta(session)
+
+            logger.info(f"Loaded {len(session.messages)} messages from CLI session {cli_session_id}")
+        except Exception as e:
+            logger.warning(f"Error loading CLI session history: {e}")
+
+    def _precompute_tool_group_meta(self, session: AgentSession):
+        """Pre-populate tool_group_meta for all tool groups in a session's messages."""
+        msgs = session.messages
+        i = 0
+        while i < len(msgs):
+            if msgs[i].role in ("tool_call", "tool_result"):
+                group_start = i
+                while i < len(msgs) and msgs[i].role in ("tool_call", "tool_result"):
+                    i += 1
+                # Extract tool_call messages in this group
+                calls = [m for m in msgs[group_start:i] if m.role == "tool_call"]
+                if not calls:
+                    continue
+                group_id = f"group-{calls[0].id}"
+                tool_dicts = []
+                for c in calls:
+                    content = c.content if isinstance(c.content, dict) else {}
+                    tool_dicts.append({"tool": content.get("tool", ""), "input": content.get("input", {})})
+                name = self._derive_tool_group_name(tool_dicts)
+                session.tool_group_meta[group_id] = ToolGroupMeta(id=group_id, name=name, is_refined=True)
+            else:
+                i += 1
 
     def _resolve_context_paths(self, context_paths: list | None) -> str:
         """Read file contents / directory trees for attached context paths."""
@@ -1380,6 +1583,52 @@ class AgentManager:
         })
         return title
 
+    @staticmethod
+    def _derive_tool_group_name(tool_calls: list[dict]) -> str:
+        """Derive a tool group label from tool names and inputs, no LLM needed."""
+        if not tool_calls:
+            return "Tool calls"
+        first = tool_calls[0]
+        tool_name = first.get("tool", "Tool calls")
+        tool_input = first.get("input", {})
+
+        # Agent tool → use description field
+        if tool_name == "Agent" and isinstance(tool_input, dict):
+            desc = tool_input.get("description", "")
+            if desc:
+                return desc
+
+        # MCP tools → extract server and method
+        if "__" in tool_name:
+            parts = tool_name.split("__")
+            if len(parts) >= 3:
+                method = parts[-1].replace("_", " ").title()
+                if len(tool_calls) == 1:
+                    return method
+                return f"{method} x{len(tool_calls)}" if len(set(tc.get("tool") for tc in tool_calls)) == 1 else f"{len(tool_calls)} MCP calls"
+
+        # Standard tools
+        unique_tools = set(tc.get("tool", "") for tc in tool_calls)
+        if len(unique_tools) == 1:
+            clean = tool_name.replace("_", " ").title()
+            if len(tool_calls) > 1:
+                return f"{clean} x{len(tool_calls)}"
+            # Add context from input for single calls
+            if tool_name in ("Read", "Write", "Edit", "Glob", "Grep") and isinstance(tool_input, dict):
+                path = tool_input.get("file_path", tool_input.get("path", ""))
+                if path:
+                    filename = path.replace("\\", "/").split("/")[-1]
+                    return f"{clean}: {filename}"
+                pattern = tool_input.get("pattern", "")
+                if pattern:
+                    return f"{clean}: {pattern[:30]}"
+            if tool_name == "Bash" and isinstance(tool_input, dict):
+                cmd = tool_input.get("command", tool_input.get("description", ""))
+                if cmd:
+                    return f"Bash: {cmd[:40]}"
+            return clean
+        return f"{len(tool_calls)} tool calls"
+
     async def generate_group_meta(
         self,
         session_id: str,
@@ -1393,53 +1642,52 @@ class AgentManager:
         if not session:
             raise ValueError(f"Session {session_id} not found")
 
-        fallback_name = tool_calls[0].get("tool", "Tool calls") if tool_calls else "Tool calls"
-        fallback_name = fallback_name.split("__")[-1].replace("_", " ").title() if "__" in fallback_name else fallback_name
-
-        name = fallback_name
+        name = self._derive_tool_group_name(tool_calls)
         svg = ""
 
-        try:
-            import json as _json
-            from backend.apps.settings.llm_router import llm_call
+        global_settings = load_settings()
+        if global_settings.simple_tool_group_names != "all":
+            try:
+                import json as _json
+                from backend.apps.settings.llm_router import llm_call
 
-            tool_desc = "\n".join(
-                f"- {tc.get('tool', '?')}: {tc.get('input_summary', '')}" for tc in tool_calls
-            )
-            user_content = f"Tool actions:\n{tool_desc}"
-            if results_summary:
-                user_content += f"\n\nResults:\n" + "\n".join(f"- {r}" for r in results_summary)
+                tool_desc = "\n".join(
+                    f"- {tc.get('tool', '?')}: {tc.get('input_summary', '')}" for tc in tool_calls
+                )
+                user_content = f"Tool actions:\n{tool_desc}"
+                if results_summary:
+                    user_content += f"\n\nResults:\n" + "\n".join(f"- {r}" for r in results_summary)
 
-            system = (
-                "Generate a concise 2-5 word name and a minimal SVG icon for a group of tool actions.\n\n"
-                "Return ONLY valid JSON: {\"name\": \"...\", \"svg\": \"...\"}\n\n"
-                "Name rules:\n"
-                "- 2-5 words, title case, describes the action (e.g. \"Email Inbox Search\", \"Reading Project Files\")\n\n"
-                "SVG rules:\n"
-                "- 24x24 viewBox\n"
-                "- Use currentColor for all stroke/fill values\n"
-                "- Simple geometric shapes only (line, circle, rect, path, polyline)\n"
-                "- No text elements, no embedded images, no gradients, no filters\n"
-                "- Minimal: 1-3 shapes, stroke-width=\"1.5\", fill=\"none\" unless intentional\n"
-                "- Return ONLY the inner SVG elements (no outer <svg> tag)\n"
-                "- Max 400 characters for the svg string"
-            )
+                system = (
+                    "Generate a concise 2-5 word name and a minimal SVG icon for a group of tool actions.\n\n"
+                    "Return ONLY valid JSON: {\"name\": \"...\", \"svg\": \"...\"}\n\n"
+                    "Name rules:\n"
+                    "- 2-5 words, title case, describes the action (e.g. \"Email Inbox Search\", \"Reading Project Files\")\n\n"
+                    "SVG rules:\n"
+                    "- 24x24 viewBox\n"
+                    "- Use currentColor for all stroke/fill values\n"
+                    "- Simple geometric shapes only (line, circle, rect, path, polyline)\n"
+                    "- No text elements, no embedded images, no gradients, no filters\n"
+                    "- Minimal: 1-3 shapes, stroke-width=\"1.5\", fill=\"none\" unless intentional\n"
+                    "- Return ONLY the inner SVG elements (no outer <svg> tag)\n"
+                    "- Max 400 characters for the svg string"
+                )
 
-            raw = await llm_call(
-                system=system,
-                user_message=user_content,
-                model="haiku",
-                max_tokens=300,
-            )
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-            parsed = _json.loads(raw)
-            if parsed.get("name"):
-                name = parsed["name"].strip().strip("\"'")
-            if parsed.get("svg"):
-                svg = parsed["svg"].strip()
-        except Exception as e:
-            logger.debug(f"Group meta generation failed, using fallback: {e}")
+                raw = await llm_call(
+                    system=system,
+                    user_message=user_content,
+                    model="haiku",
+                    max_tokens=300,
+                )
+                if raw.startswith("```"):
+                    raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                parsed = _json.loads(raw)
+                if parsed.get("name"):
+                    name = parsed["name"].strip().strip("\"'")
+                if parsed.get("svg"):
+                    svg = parsed["svg"].strip()
+            except Exception as e:
+                logger.debug(f"Group meta generation failed, using fallback: {e}")
 
         meta = ToolGroupMeta(id=group_id, name=name, svg=svg, is_refined=is_refinement)
         session.tool_group_meta[group_id] = meta

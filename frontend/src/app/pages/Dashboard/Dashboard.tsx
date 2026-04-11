@@ -13,6 +13,7 @@ import {
   closeSession,
   duplicateSession,
   expandSession,
+  launchAgent,
   launchAndSendFirstMessage,
   generateTitle,
   resumeSession,
@@ -854,6 +855,31 @@ const DashboardInner: React.FC = () => {
     });
   }, [dispatch, canvas.actions, handleHighlightCard, setAutoFocusSessionId]);
 
+  const handleResumeCliSession = useCallback((cliSessionId: string, cwd: string, name: string) => {
+    const config: AgentConfig = {
+      name: name || `CLI ${cliSessionId.slice(0, 8)}`,
+      model: 'sonnet',
+      mode: 'agent',
+      dashboard_id: dashboardId,
+      target_directory: cwd || undefined,
+      resume_cli_session_id: cliSessionId,
+    };
+    dispatch(launchAgent(config)).then((action) => {
+      if (launchAgent.fulfilled.match(action)) {
+        const session = action.payload;
+        dispatch(expandSession(session.id));
+        setAutoFocusSessionId(session.id);
+        setTimeout(() => {
+          const card = store.getState().dashboardLayout.cards[session.id];
+          if (card) {
+            canvas.actions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.0, true);
+            handleHighlightCard(session.id);
+          }
+        }, 200);
+      }
+    });
+  }, [dispatch, dashboardId, canvas.actions, handleHighlightCard, setAutoFocusSessionId]);
+
   const handleTidy = useCallback(() => {
     const currentExpanded = store.getState().agents.expandedSessionIds;
     dispatch(tidyLayout({ expandedSessionIds: currentExpanded }));
@@ -1466,6 +1492,7 @@ const DashboardInner: React.FC = () => {
           onSend={handleToolbarSend}
           onAddView={handleAddView}
           onHistoryResume={handleHistoryResume}
+          onResumeCliSession={handleResumeCliSession}
           onAddBrowser={handleAddBrowser}
           dashboardId={dashboardId}
         />

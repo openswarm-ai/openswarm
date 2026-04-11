@@ -13,6 +13,7 @@ class AgentConfig(BaseModel):
     max_turns: Optional[int] = None
     target_directory: Optional[str] = None  # if None, uses repo root
     dashboard_id: Optional[str] = None
+    resume_cli_session_id: Optional[str] = None
 
 class ApprovalRequest(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)

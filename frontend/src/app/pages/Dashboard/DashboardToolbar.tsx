@@ -12,6 +12,9 @@ import StickyNote2OutlinedIcon from '@mui/icons-material/StickyNote2Outlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import LanguageIcon from '@mui/icons-material/Language';
 import SearchIcon from '@mui/icons-material/Search';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import { motion } from 'framer-motion';
 import ChatInput from '@/app/pages/AgentChat/ChatInput';
 import type { ContextPath } from '@/app/components/DirectoryBrowser';
@@ -22,6 +25,7 @@ import { searchHistory, clearHistorySearch } from '@/shared/state/agentsSlice';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import type { Output } from '@/shared/state/outputsSlice';
 import ToolbarStatusBar, { loadLastFolder } from './ToolbarStatusBar';
+import { API_BASE } from '@/shared/config';
 
 interface Props {
   inputOpen: boolean;
@@ -41,6 +45,7 @@ interface Props {
   ) => void;
   onAddView: (outputId: string) => void;
   onHistoryResume: (sessionId: string) => void;
+  onResumeCliSession: (cliSessionId: string, cwd: string, name: string) => void;
   onAddBrowser: () => void;
   dashboardId?: string;
 }
@@ -86,7 +91,7 @@ function formatRelativeTime(dateStr: string | null): string {
 }
 
 const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
-  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, dashboardId }, ref) => {
+  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onResumeCliSession, onAddBrowser, dashboardId }, ref) => {
     const c = useClaudeTokens();
     const dispatch = useAppDispatch();
     const elementSelection = useElementSelection();
@@ -112,6 +117,9 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const [viewSearch, setViewSearch] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
     const [historyQuery, setHistoryQuery] = useState('');
+    const [showCliSessions, setShowCliSessions] = useState(false);
+    const [cliSessions, setCliSessions] = useState<any[]>([]);
+    const [cliLoading, setCliLoading] = useState(false);
     const shortcut = useAppSelector((s) => s.settings.data.new_agent_shortcut);
     const outputs = useAppSelector((s) => s.outputs.items);
     const historySearch = useAppSelector((s) => s.agents.historySearch);
@@ -155,6 +163,8 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const handleCloseHistory = useCallback(() => {
       setHistoryOpen(false);
       setHistoryQuery('');
+      setShowCliSessions(false);
+      setCliSessions([]);
       dispatch(clearHistorySearch());
     }, [dispatch]);
 
@@ -332,6 +342,19 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       return () => clearTimeout(timer);
     }, [historyQuery, historyOpen, dispatch, dashboardId]);
 
+    useEffect(() => {
+      if (!showCliSessions || !historyOpen) { setCliSessions([]); return; }
+      setCliLoading(true);
+      const cwd = selectedFolder || '';
+      const params = new URLSearchParams({ cwd, limit: '50' });
+      if (historyQuery) params.set('q', historyQuery);
+      fetch(`${API_BASE}/agents/cli-sessions?${params}`)
+        .then((r) => r.json())
+        .then((data) => setCliSessions(data.sessions || []))
+        .catch(() => setCliSessions([]))
+        .finally(() => setCliLoading(false));
+    }, [showCliSessions, historyOpen, historyQuery, selectedFolder]);
+
     const handleHistoryScroll = useCallback(() => {
       const el = historyListRef.current;
       if (!el) return;
@@ -401,7 +424,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
             </Box>
             <Box
               ref={historyListRef}
-              onScroll={handleHistoryScroll}
+              onScroll={showCliSessions ? undefined : handleHistoryScroll}
               sx={{
                 maxHeight: 320,
                 overflow: 'auto',
@@ -413,23 +436,30 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 scrollbarColor: `${c.border.medium} transparent`,
               }}
             >
-              {historySearch.results.length === 0 && !historySearch.loading ? (
-                <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
-                  <Typography sx={{ fontSize: '0.82rem', color: c.text.muted }}>
-                    {historyQuery ? 'No matching chats' : 'No chat history yet'}
-                  </Typography>
-                </Box>
-              ) : (
-                <>
-                  {historySearch.results.map((entry) => (
+              {showCliSessions ? (
+                /* ── CLI sessions ── */
+                cliLoading ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                    <CircularProgress size={16} sx={{ color: c.text.muted }} />
+                  </Box>
+                ) : cliSessions.length === 0 ? (
+                  <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
+                    <Typography sx={{ fontSize: '0.82rem', color: c.text.muted }}>
+                      {historyQuery ? 'No matching CLI sessions' : 'No CLI sessions found'}
+                    </Typography>
+                  </Box>
+                ) : (
+                  cliSessions.map((entry) => (
                     <Box
                       key={entry.id}
-                      onClick={() => handleHistorySelect(entry.id)}
+                      onClick={() => {
+                        onResumeCliSession(entry.id, entry.cwd || selectedFolder || '', entry.first_message || entry.id.slice(0, 8));
+                        handleCloseHistory();
+                      }}
                       sx={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 1.5,
+                        gap: 1,
                         px: 1.5,
                         py: 0.9,
                         cursor: 'pointer',
@@ -437,6 +467,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                         '&:hover': { bgcolor: c.bg.elevated },
                       }}
                     >
+                      <TerminalIcon sx={{ fontSize: 14, color: c.text.ghost, flexShrink: 0 }} />
                       <Typography
                         sx={{
                           fontSize: '0.82rem',
@@ -449,27 +480,126 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                           minWidth: 0,
                         }}
                       >
-                        {entry.name}
+                        {entry.first_message || entry.id.slice(0, 8)}
                       </Typography>
-                      <Typography
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+                        <Tooltip title="Open in CLI" placement="top">
+                          <Box
+                            component="span"
+                            onClick={async (e: React.MouseEvent) => {
+                              e.stopPropagation();
+                              const openswarm = (window as any).openswarm;
+                              if (openswarm?.openInCli) {
+                                await openswarm.openInCli(entry.id, entry.cwd);
+                              } else {
+                                await fetch(`${API_BASE}/agents/open-in-cli`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ cli_session_id: entry.id, cwd: entry.cwd }),
+                                });
+                              }
+                            }}
+                            sx={{
+                              display: 'inline-flex',
+                              cursor: 'pointer',
+                              borderRadius: '4px',
+                              p: '2px',
+                              '&:hover': { bgcolor: c.border.subtle },
+                            }}
+                          >
+                            <TerminalIcon sx={{ fontSize: 13, color: c.text.ghost }} />
+                          </Box>
+                        </Tooltip>
+                        <Typography sx={{ fontSize: '0.68rem', color: c.text.ghost }}>
+                          {entry.total_messages} msgs
+                        </Typography>
+                        {entry.in_openswarm && (
+                          <Typography sx={{ fontSize: '0.62rem', color: c.accent.primary, fontWeight: 600 }}>
+                            OS
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
+                  ))
+                )
+              ) : (
+                /* ── OpenSwarm history ── */
+                historySearch.results.length === 0 && !historySearch.loading ? (
+                  <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
+                    <Typography sx={{ fontSize: '0.82rem', color: c.text.muted }}>
+                      {historyQuery ? 'No matching chats' : 'No chat history yet'}
+                    </Typography>
+                  </Box>
+                ) : (
+                  <>
+                    {historySearch.results.map((entry) => (
+                      <Box
+                        key={entry.id}
+                        onClick={() => handleHistorySelect(entry.id)}
                         sx={{
-                          fontSize: '0.7rem',
-                          color: c.text.ghost,
-                          flexShrink: 0,
-                          whiteSpace: 'nowrap',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1.5,
+                          px: 1.5,
+                          py: 0.9,
+                          cursor: 'pointer',
+                          transition: 'background-color 0.1s',
+                          '&:hover': { bgcolor: c.bg.elevated },
                         }}
                       >
-                        {formatRelativeTime(entry.closed_at)}
-                      </Typography>
-                    </Box>
-                  ))}
-                  {historySearch.loading && historySearch.results.length > 0 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
-                      <CircularProgress size={16} sx={{ color: c.text.muted }} />
-                    </Box>
-                  )}
-                </>
+                        <Typography
+                          sx={{
+                            fontSize: '0.82rem',
+                            fontWeight: 500,
+                            color: c.text.primary,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                        >
+                          {entry.name}
+                        </Typography>
+                        <Typography
+                          sx={{
+                            fontSize: '0.7rem',
+                            color: c.text.ghost,
+                            flexShrink: 0,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {formatRelativeTime(entry.closed_at)}
+                        </Typography>
+                      </Box>
+                    ))}
+                    {historySearch.loading && historySearch.results.length > 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
+                        <CircularProgress size={16} sx={{ color: c.text.muted }} />
+                      </Box>
+                    )}
+                  </>
+                )
               )}
+            </Box>
+            <Box sx={{ borderTop: `1px solid ${c.border.subtle}`, px: 1.5, py: 0.5 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={showCliSessions}
+                    onChange={(e) => setShowCliSessions(e.target.checked)}
+                    sx={{ p: 0.5, '& .MuiSvgIcon-root': { fontSize: 16 } }}
+                  />
+                }
+                label={
+                  <Typography sx={{ fontSize: '0.75rem', color: c.text.muted }}>
+                    Show CLI sessions {selectedFolder ? `in ${selectedFolder.split(/[\\/]/).pop()}` : ''}
+                  </Typography>
+                }
+                sx={{ mx: 0 }}
+              />
             </Box>
           </div>
         ) : viewPickerOpen ? (

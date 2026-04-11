@@ -85,6 +85,7 @@ export interface AgentConfig {
   max_turns?: number;
   target_directory?: string;
   dashboard_id?: string;
+  resume_cli_session_id?: string;
 }
 
 export interface HistorySession {
