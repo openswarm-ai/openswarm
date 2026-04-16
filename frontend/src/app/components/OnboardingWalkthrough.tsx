@@ -12,7 +12,6 @@ export interface WalkthroughStep {
   placement: 'top' | 'bottom' | 'left' | 'right';
   actionHint?: string;                          // e.g. "Click the + button"
   waitForTarget?: boolean;                      // pause until target appears in DOM
-  centerOverlay?: boolean;                      // no spotlight, show card in center
 }
 
 const STEPS: WalkthroughStep[] = [
@@ -66,31 +65,6 @@ const STEPS: WalkthroughStep[] = [
     description: 'Create simple apps powered by AI \u2014 dashboards, forms, data tools. Just describe what you want.',
     placement: 'right',
   },
-  {
-    target: '',
-    title: 'Try your first task',
-    description: "OpenSwarm is most useful when you give it something real. Open a new chat and try one of these:",
-    placement: 'bottom',
-    centerOverlay: true,
-  },
-];
-
-const EXAMPLE_PROMPTS: { emoji: string; label: string; prompt: string }[] = [
-  {
-    emoji: '🔎',
-    label: 'Research a topic',
-    prompt: 'Research the latest developments in AI agents and give me a short briefing',
-  },
-  {
-    emoji: '🛠️',
-    label: 'Build a mini app',
-    prompt: 'Build me a simple habit tracker with a clean UI',
-  },
-  {
-    emoji: '📄',
-    label: 'Summarize a webpage',
-    prompt: 'Browse https://news.ycombinator.com and summarize the top 5 stories',
-  },
 ];
 
 interface Props {
@@ -132,19 +106,6 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
   // Find target element and compute spotlight + tooltip position
   const updatePosition = useCallback(() => {
     if (!step) return;
-
-    if (step.centerOverlay) {
-      setSpotlightRect(null);
-      const isAnnouncement = currentStep === STEPS.length - 1;
-      const w = isAnnouncement ? 600 : 320;
-      const h = isAnnouncement ? 640 : 200;
-      setTooltipPos({
-        top: Math.max(24, window.innerHeight / 2 - h / 2),
-        left: Math.max(24, window.innerWidth / 2 - w / 2),
-      });
-      setVisible(true);
-      return;
-    }
 
     const el = (
       document.querySelector(`[data-onboarding="${step.target}"]`) ||
@@ -244,34 +205,9 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
     setCurrentStep((s) => Math.max(0, s - 1));
   }, []);
 
-  const handleSkip = useCallback(() => {
-    trackEvent('walkthrough.skipped', { step: currentStep, step_name: step?.target || 'done' });
-    onComplete();
-  }, [onComplete, currentStep, step]);
-
-  const handleStartFirstChat = useCallback((example?: { label: string; prompt: string }) => {
-    trackEvent('walkthrough.first_chat_started', { example: example?.label || 'cta' });
-    if (example?.prompt) {
-      try {
-        sessionStorage.setItem('openswarm_first_prompt', example.prompt);
-      } catch {}
-    } else {
-      try {
-        sessionStorage.removeItem('openswarm_first_prompt');
-      } catch {}
-    }
-    onComplete();
-    setTimeout(() => {
-      const btn = document.querySelector(
-        '[data-onboarding="new-agent-button"]',
-      ) as HTMLElement | null;
-      btn?.click();
-    }, 150);
-  }, [onComplete]);
-
   // Allow clicking the spotlight target to advance for action steps
   useEffect(() => {
-    if (!step?.actionHint || step.centerOverlay) return;
+    if (!step?.actionHint) return;
 
     const el = (
       document.querySelector(`[data-onboarding="${step.target}"]`) ||
@@ -349,12 +285,12 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
           position: 'absolute',
           top: tooltipPos.top,
           left: tooltipPos.left,
-          width: isLastStep ? 600 : 320,
+          width: 320,
           bgcolor: c.bg.surface,
           border: `1px solid ${c.border.medium}`,
           borderRadius: `${c.radius.xl}px`,
           boxShadow: '0 16px 48px rgba(0,0,0,0.35)',
-          p: isLastStep ? 0 : 2.5,
+          p: 2.5,
           overflow: 'hidden',
           transition: 'top 0.4s cubic-bezier(0.4, 0, 0.2, 1), left 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s',
           opacity: visible ? 1 : 0,
@@ -362,175 +298,6 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
           zIndex: 10000,
         }}
       >
-        {isLastStep ? (
-          <>
-            {/* Hero image area — soft pastel multi-color blob */}
-            <Box
-              sx={{
-                position: 'relative',
-                width: '100%',
-                height: 320,
-                background: `
-                  radial-gradient(circle at 18% 78%, #F5A574 0%, rgba(245,165,116,0) 48%),
-                  radial-gradient(circle at 58% 55%, #E9A5D0 0%, rgba(233,165,208,0) 52%),
-                  radial-gradient(circle at 82% 22%, #B9C9F4 0%, rgba(185,201,244,0) 58%),
-                  linear-gradient(135deg, #C4D0F2 0%, #EDB3CC 50%, #F5B088 100%)
-                `,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-              }}
-            >
-              <Typography
-                sx={{
-                  position: 'relative',
-                  zIndex: 2,
-                  fontSize: 72,
-                  color: '#fff',
-                  filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.18))',
-                  lineHeight: 1,
-                }}
-              >
-                ✦
-              </Typography>
-            </Box>
-
-            <Box sx={{ p: 2.25 }}>
-              {/* Step counter dots */}
-              <Box sx={{ display: 'flex', gap: 0.5, mb: 1.25, justifyContent: 'center' }}>
-                {STEPS.map((_, i) => (
-                  <Box
-                    key={i}
-                    sx={{
-                      width: i === currentStep ? 14 : 4,
-                      height: 4,
-                      borderRadius: 3,
-                      bgcolor: i === currentStep ? c.accent.primary : i < currentStep ? c.accent.primary + '60' : c.border.medium,
-                      transition: 'all 0.3s',
-                    }}
-                  />
-                ))}
-              </Box>
-
-              <Box
-                sx={{
-                  display: 'inline-block',
-                  fontSize: '0.58rem',
-                  fontWeight: 700,
-                  color: c.accent.primary,
-                  bgcolor: c.accent.primary + '1f',
-                  px: 0.85,
-                  py: 0.2,
-                  borderRadius: `${c.radius.xs}px`,
-                  letterSpacing: '0.5px',
-                  mb: 0.75,
-                  fontFamily: c.font.sans,
-                }}
-              >
-                READY TO TRY
-              </Box>
-
-              <Typography
-                sx={{
-                  fontSize: '0.92rem',
-                  fontWeight: 700,
-                  color: c.text.primary,
-                  mb: 0.35,
-                  fontFamily: c.font.sans,
-                }}
-              >
-                {step.title}
-              </Typography>
-
-              <Typography
-                sx={{
-                  fontSize: '0.72rem',
-                  color: c.text.secondary,
-                  lineHeight: 1.45,
-                  mb: 1.25,
-                  fontFamily: c.font.sans,
-                }}
-              >
-                {step.description}
-              </Typography>
-
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1.5 }}>
-                {EXAMPLE_PROMPTS.map((ex) => (
-                  <Box
-                    key={ex.label}
-                    onClick={() => handleStartFirstChat(ex)}
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      px: 1,
-                      py: 0.75,
-                      borderRadius: `${c.radius.md}px`,
-                      border: `1px solid ${c.border.subtle}`,
-                      bgcolor: c.bg.elevated || c.bg.surface,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s',
-                      '&:hover': {
-                        borderColor: c.accent.primary,
-                        bgcolor: c.accent.primary + '10',
-                        transform: 'translateX(2px)',
-                      },
-                    }}
-                  >
-                    <Box sx={{ fontSize: '0.95rem', lineHeight: 1 }}>{ex.emoji}</Box>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: c.text.primary, fontFamily: c.font.sans }}>
-                        {ex.label}
-                      </Typography>
-                      <Typography sx={{ fontSize: '0.64rem', color: c.text.tertiary, fontFamily: c.font.sans, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {ex.prompt}
-                      </Typography>
-                    </Box>
-                    <Typography sx={{ fontSize: '0.8rem', color: c.text.tertiary, fontFamily: c.font.sans }}>→</Typography>
-                  </Box>
-                ))}
-              </Box>
-
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Button
-                  onClick={handleSkip}
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: '0.72rem',
-                    fontWeight: 600,
-                    color: c.text.tertiary,
-                    borderRadius: `${c.radius.md}px`,
-                    px: 1.25,
-                    py: 0.5,
-                    fontFamily: c.font.sans,
-                    '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' },
-                  }}
-                >
-                  Not now
-                </Button>
-                <Button
-                  onClick={() => handleStartFirstChat()}
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: '0.72rem',
-                    fontWeight: 600,
-                    bgcolor: c.accent.primary,
-                    color: '#fff',
-                    borderRadius: `${c.radius.md}px`,
-                    px: 2,
-                    py: 0.5,
-                    fontFamily: c.font.sans,
-                    '&:hover': { bgcolor: c.accent.hover || c.accent.primary },
-                  }}
-                >
-                  Start a new chat
-                </Button>
-              </Box>
-            </Box>
-          </>
-        ) : (
-          <>
         {/* Step counter dots */}
         <Box sx={{ display: 'flex', gap: 0.5, mb: 1.5, justifyContent: 'center' }}>
           {STEPS.map((_, i) => (
@@ -623,8 +390,6 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
             {isLastStep ? 'Get Started' : 'Next'}
           </Button>
         </Box>
-          </>
-        )}
       </Box>
     </Box>
   );

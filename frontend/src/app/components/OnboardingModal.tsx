@@ -51,6 +51,44 @@ const SUBSCRIPTION_PROVIDERS = [
   { id: 'codex', name: 'ChatGPT', desc: 'GPT-5.4, GPT-5.4 Mini, GPT-5.3 Codex', color: '#74AA9C', preview: false },
 ];
 
+const EDUCATION_STEPS: { title: string; body: string[] }[] = [
+  {
+    title: 'Launch an Agent',
+    body: [
+      'The core functionality of OpenSwarm revolves around Agents. Click the "+" button in your toolbar to launch a new Agent. Agents can take actions for you, work with files on your computer, and much more.',
+      'Within an Agent\u2019s input, you can choose what AI model powers it, the mode it runs in, and attach context via "@" and "/" commands.',
+    ],
+  },
+  {
+    title: 'Connect your actions',
+    body: [
+      'Actions are how your Agents interact with the outside world \u2014 Gmail, Google Calendar, Notion, Slack, and more. Head to the Connections page to link your accounts and unlock what your Agents can do.',
+      'Once connected, your Agents can read emails, create events, update databases, and take real actions across your tools \u2014 all from a single conversation.',
+    ],
+  },
+  {
+    title: 'Browsers',
+    body: [
+      'OpenSwarm has built-in browsers so you never have to jump between apps. Stay in one place, stay in the zone \u2014 just one seamless workspace for you and your Agents.',
+      "And when you'd rather not do it yourself, let an Agent open & control browsers, navigate sites, fill out forms, and complete tasks end-to-end while you watch it happen in real time.",
+    ],
+  },
+  {
+    title: 'Select and send',
+    body: [
+      "Select any existing browser or agent in your dashboard to let a new agent control it. It's the fastest way to get things done \u2014 just select something on your dashboard and let your Agent handle the rest.",
+      'No copy-pasting, no context-switching. Just select, send, and let your Agent take it from there.',
+    ],
+  },
+  {
+    title: 'Make it yours',
+    body: [
+      'Customize how OpenSwarm works with Skills, Modes, and Apps. Skills teach your Agents reusable workflows. Modes let you switch between different behavior profiles. Apps are standalone applications that run directly in OpenSwarm that Agents build for you.',
+      'Explore the Customization & Apps sections in the sidebar to get started \u2014 or just ask an Agent to help you create your first Skill.',
+    ],
+  },
+];
+
 const USE_CASES = [
   'Software Development',
   'Research & Analysis',
@@ -84,7 +122,8 @@ const OnboardingModal: React.FC = () => {
   const c = useClaudeTokens();
   const settings = useAppSelector((s) => s.settings);
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<'profile' | 'connect'>('profile');
+  const [step, setStep] = useState<'profile' | 'walkthrough' | 'connect'>('profile');
+  const [walkthroughIdx, setWalkthroughIdx] = useState(0);
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [emailBlurred, setEmailBlurred] = useState(false);
@@ -242,8 +281,26 @@ const OnboardingModal: React.FC = () => {
       referral_source: referralSource,
       referral_source_other: referralSource === 'Other' ? referralSourceOther.trim() : '',
     });
-    setStep('connect');
-    trackEvent('onboarding.connect_started', { nine_router_ready: nineRouterReady });
+    setStep('walkthrough');
+    setWalkthroughIdx(0);
+    trackEvent('onboarding.education_started');
+  };
+
+  const advanceWalkthrough = () => {
+    const next = walkthroughIdx + 1;
+    const currentTitle = EDUCATION_STEPS[walkthroughIdx]?.title;
+    if (next >= EDUCATION_STEPS.length) {
+      trackEvent('onboarding.education_completed');
+      setStep('connect');
+      trackEvent('onboarding.connect_started', { nine_router_ready: nineRouterReady });
+      return;
+    }
+    trackEvent('onboarding.education_step_advanced', { from: walkthroughIdx, title: currentTitle });
+    setWalkthroughIdx(next);
+  };
+
+  const backWalkthrough = () => {
+    setWalkthroughIdx((i) => Math.max(0, i - 1));
   };
 
   // Whether all required profile fields are filled in.
@@ -416,20 +473,28 @@ const OnboardingModal: React.FC = () => {
   };
 
   const handleApiKey = () => { trackEvent('onboarding.api_key_chosen'); dismiss(); };
-  const handleSkip = () => { trackEvent(step === 'profile' ? 'onboarding.profile_skipped' : 'onboarding.connect_skipped'); dismiss(); };
+  const handleSkip = () => {
+    trackEvent(step === 'profile' ? 'onboarding.profile_skipped' : 'onboarding.connect_skipped');
+    dismiss();
+  };
 
   if (!open) return null;
 
   return (
     <Modal open={open} onClose={step === 'connect' ? handleSkip : undefined} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <Box sx={{
-        width: 480, maxWidth: '90vw', bgcolor: c.bg.surface, borderRadius: `${c.radius.xl}px`,
-        border: `1px solid ${c.border.subtle}`, p: 3.5, outline: 'none',
+        width: step === 'walkthrough' ? 600 : 480, maxWidth: '90vw',
+        bgcolor: c.bg.surface, borderRadius: `${c.radius.xl}px`,
+        border: `1px solid ${c.border.subtle}`,
+        p: step === 'walkthrough' ? 0 : 3.5, outline: 'none',
+        overflow: 'hidden',
         boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
       }}>
-        <Typography sx={{ fontSize: '1.3rem', fontWeight: 700, color: c.text.primary, mb: 0.5, textAlign: 'center' }}>
-          Welcome to OpenSwarm
-        </Typography>
+        {step !== 'walkthrough' && (
+          <Typography sx={{ fontSize: '1.3rem', fontWeight: 700, color: c.text.primary, mb: 0.5, textAlign: 'center' }}>
+            Welcome to OpenSwarm
+          </Typography>
+        )}
 
         {step === 'profile' ? (
           <>
@@ -626,6 +691,117 @@ const OnboardingModal: React.FC = () => {
             >
               Continue
             </Button>
+          </>
+        ) : step === 'walkthrough' ? (
+          <>
+            {/* Hero image area — soft pastel multi-color blob. Proportionally
+                larger than the content area so it reads as the visual anchor. */}
+            <Box
+              sx={{
+                position: 'relative',
+                width: '100%',
+                height: 400,
+                background: `
+                  radial-gradient(circle at 18% 78%, #F5A574 0%, rgba(245,165,116,0) 48%),
+                  radial-gradient(circle at 58% 55%, #E9A5D0 0%, rgba(233,165,208,0) 52%),
+                  radial-gradient(circle at 82% 22%, #B9C9F4 0%, rgba(185,201,244,0) 58%),
+                  linear-gradient(135deg, #C4D0F2 0%, #EDB3CC 50%, #F5B088 100%)
+                `,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+              }}
+            >
+              <Typography
+                sx={{
+                  position: 'relative',
+                  zIndex: 2,
+                  fontSize: 88,
+                  color: '#fff',
+                  filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.18))',
+                  lineHeight: 1,
+                }}
+              >
+                ✦
+              </Typography>
+            </Box>
+
+            <Box sx={{ px: 3, pt: 2, pb: 2.5 }}>
+              <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center', mb: 1.75 }}>
+                {EDUCATION_STEPS.map((_, i) => (
+                  <Box
+                    key={i}
+                    sx={{
+                      width: i === walkthroughIdx ? 16 : 5,
+                      height: 5,
+                      borderRadius: 3,
+                      bgcolor: i === walkthroughIdx ? c.accent.primary : i < walkthroughIdx ? c.accent.primary + '60' : c.border.medium,
+                      transition: 'all 0.25s',
+                    }}
+                  />
+                ))}
+              </Box>
+
+              <Box
+                sx={{
+                  display: 'inline-block',
+                  fontSize: '0.62rem',
+                  fontWeight: 700,
+                  color: c.accent.primary,
+                  bgcolor: c.accent.primary + '1a',
+                  border: `1px solid ${c.accent.primary}33`,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  px: 1.1,
+                  py: 0.35,
+                  borderRadius: `${c.radius.sm}px`,
+                  mb: 1,
+                  fontFamily: c.font.sans,
+                }}
+              >
+                Step {walkthroughIdx + 1}
+              </Box>
+
+              <Typography sx={{ fontSize: '1.1rem', fontWeight: 700, color: c.text.primary, mb: 1 }}>
+                {EDUCATION_STEPS[walkthroughIdx].title}
+              </Typography>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2.5, minHeight: 130 }}>
+                {EDUCATION_STEPS[walkthroughIdx].body.map((p, i) => (
+                  <Typography key={i} sx={{ fontSize: '0.92rem', color: c.text.secondary, lineHeight: 1.6 }}>
+                    {p}
+                  </Typography>
+                ))}
+              </Box>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Button
+                  onClick={backWalkthrough}
+                  disabled={walkthroughIdx === 0}
+                  sx={{
+                    textTransform: 'none', fontSize: '0.82rem', fontWeight: 600,
+                    color: c.text.tertiary, borderRadius: `${c.radius.md}px`, px: 1.5, py: 0.75,
+                    visibility: walkthroughIdx === 0 ? 'hidden' : 'visible',
+                    '&:hover': { bgcolor: `${c.accent.primary}08` },
+                  }}
+                >
+                  ← Back
+                </Button>
+                <Box sx={{ flex: 1 }} />
+                <Button
+                  onClick={advanceWalkthrough}
+                  sx={{
+                    textTransform: 'none', fontSize: '0.82rem', fontWeight: 600,
+                    bgcolor: c.accent.primary, color: '#fff',
+                    borderRadius: `${c.radius.md}px`, px: 2.25, py: 0.75,
+                    '&:hover': { bgcolor: c.accent.hover },
+                  }}
+                >
+                  {walkthroughIdx === EDUCATION_STEPS.length - 1 ? 'Continue' : 'Next'}
+                </Button>
+              </Box>
+            </Box>
           </>
         ) : (
           <>
