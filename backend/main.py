@@ -54,6 +54,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Chrome's Private Network Access check: a page on https://api.openswarm.com
+# POSTing to http://127.0.0.1:8324 triggers a preflight that requires this
+# header. Without it the request is blocked and the post-checkout activation
+# flow silently fails. Harmless on every other request — it's only read when
+# the browser is crossing from a public origin into a private network.
+@app.middleware("http")
+async def _allow_private_network(request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
+
 @app.websocket("/ws/agents/{session_id}")
 async def websocket_session(websocket: WebSocket, session_id: str):
     await ws_manager.connect_session(session_id, websocket)

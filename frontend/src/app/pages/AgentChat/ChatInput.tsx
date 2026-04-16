@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import Box from '@mui/material/Box';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
@@ -192,6 +192,43 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
   }, []);
 
   const [hasContent, setHasContent] = useState(() => !!_draftStore.get(ownerId));
+
+  // Ghost prompt suggestion from onboarding — typed out animated, click or press Enter to run.
+  const [ghostPrompt, setGhostPrompt] = useState<string | null>(null);
+  const [ghostTyped, setGhostTyped] = useState(0);
+  const ghostOverlayRef = useRef<HTMLDivElement>(null);
+  const [ghostHeight, setGhostHeight] = useState(0);
+  useEffect(() => {
+    let pending: string | null = null;
+    try {
+      pending = sessionStorage.getItem('openswarm_first_prompt');
+      if (pending) sessionStorage.removeItem('openswarm_first_prompt');
+    } catch {}
+    if (!pending) return;
+    if (_draftStore.get(ownerId)) return; // user already has a draft; don't overwrite
+    setGhostPrompt(pending);
+    setGhostTyped(0);
+    let i = 0;
+    const id = window.setInterval(() => {
+      i += 1;
+      setGhostTyped(i);
+      if (i >= pending!.length) window.clearInterval(id);
+    }, 29);
+    return () => window.clearInterval(id);
+  // Only on mount; ownerId is stable.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Measure the ghost overlay so the editor can reserve matching height and
+  // the toolbar row below doesn't get overlapped when the ghost text wraps.
+  useLayoutEffect(() => {
+    if (!ghostPrompt || hasContent) { setGhostHeight(0); return; }
+    const el = ghostOverlayRef.current;
+    if (!el) return;
+    const h = el.offsetHeight;
+    setGhostHeight((prev) => (prev === h ? prev : h));
+  }, [ghostPrompt, ghostTyped, hasContent]);
+
   const [attachedSkills, setAttachedSkills] = useState<Record<string, AttachedSkill>>({});
   const attachedSkillsRef = useRef(attachedSkills);
   attachedSkillsRef.current = attachedSkills;
@@ -227,23 +264,22 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
   const MCP_WARNING_LS_KEY = 'openswarm:nonClaudeMcpWarningDismissed';
   const MCP_WARNING_THRESHOLD = 20;
 
-  // Build flat model list with provider grouping. When in openswarm-pro mode
-  // the Anthropic section is renamed to "OpenSwarm Pro" so the user sees their
-  // paid subscription is powering the Claude models.
+  // Build flat model list with provider grouping. Group names come from the
+  // backend's /agents/models response verbatim — "OpenSwarm Pro" for
+  // proxy-routed Claude, "Anthropic" for direct/subscription-routed Claude,
+  // plus the non-Anthropic providers. Only the pre-load fallback still needs
+  // to pick a label since no models have been fetched yet.
   const allModelOptions = useMemo(() => {
-    const isPro = connectionMode === 'openswarm-pro';
-    const renameAnthropic = (prov: string) => (isPro && prov === 'Anthropic' ? 'OpenSwarm Pro' : prov);
     if (!modelsLoaded || Object.keys(modelsByProvider).length === 0) {
-      const key = renameAnthropic('Anthropic');
+      const key = connectionMode === 'openswarm-pro' ? 'OpenSwarm Pro' : 'Anthropic';
       return { flat: FALLBACK_MODELS.map(m => ({ ...m, provider: key })), grouped: { [key]: FALLBACK_MODELS } };
     }
     const flat: Array<{ value: string; label: string; context_window: number; provider: string; reasoning: boolean }> = [];
     const grouped: Record<string, Array<{ value: string; label: string; context_window: number; reasoning: boolean }>> = {};
     for (const [prov, models] of Object.entries(modelsByProvider)) {
-      const key = renameAnthropic(prov);
-      grouped[key] = models.map(m => ({ value: m.value, label: m.label, context_window: m.context_window ?? 200_000, reasoning: !!m.reasoning }));
+      grouped[prov] = models.map(m => ({ value: m.value, label: m.label, context_window: m.context_window ?? 200_000, reasoning: !!m.reasoning }));
       for (const m of models) {
-        flat.push({ value: m.value, label: m.label, context_window: m.context_window ?? 200_000, provider: key, reasoning: !!m.reasoning });
+        flat.push({ value: m.value, label: m.label, context_window: m.context_window ?? 200_000, provider: prov, reasoning: !!m.reasoning });
       }
     }
     return { flat, grouped };
@@ -472,6 +508,25 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     elementSelection?.clearOwnerElements(ownerId);
   }, [disabled, images, contextPaths, forcedTools, onSend, elementSelection, ownerId]);
 
+  const acceptGhostPrompt = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || !ghostPrompt) return;
+    editor.textContent = ghostPrompt;
+    setGhostPrompt(null);
+    setHasContent(true);
+    _draftStore.set(ownerId, editor.innerHTML);
+    setTimeout(() => {
+      editor.focus();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      handleSend();
+    }, 0);
+  }, [ghostPrompt, ownerId, handleSend]);
+
   const detectTrigger = useCallback(() => {
     const result = detectEditorTrigger();
     if (result) {
@@ -576,6 +631,10 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     }
     if (e.key === 'Enter' && !e.shiftKey && !autoRunMode) {
       e.preventDefault();
+      if (ghostPrompt && !hasContent) {
+        acceptGhostPrompt();
+        return;
+      }
       handleSend();
     }
   };
@@ -967,7 +1026,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
           onPaste={handlePaste}
           style={{
             width: '100%',
-            minHeight: '1.5em',
+            minHeight: ghostPrompt && !hasContent && ghostHeight > 0 ? `${ghostHeight}px` : '1.5em',
             maxHeight: 200,
             overflowY: 'auto',
             background: 'transparent',
@@ -981,7 +1040,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
             whiteSpace: 'pre-wrap',
           }}
         />
-        {!hasContent && (
+        {!hasContent && !ghostPrompt && (
           <div
             style={{
               position: 'absolute',
@@ -998,6 +1057,38 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
             }}
           >
             {disabled ? 'Agent is working...' : autoRunMode ? 'Describe what data to generate…' : isRunning ? (queueLength > 0 ? `${queueLength} queued — type another or wait…` : 'Agent is working — messages will queue…') : `${modeConf.label}, @ for context, / for commands`}
+          </div>
+        )}
+        {!hasContent && ghostPrompt && (
+          <div
+            ref={ghostOverlayRef}
+            onClick={acceptGhostPrompt}
+            title="Press Enter or click to run"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              padding: `${hasAttachments ? 4 : 10}px 12px`,
+              color: c.text.secondary,
+              opacity: 0.55,
+              fontSize: '0.875rem',
+              lineHeight: '1.5',
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
+            {ghostPrompt.slice(0, ghostTyped)}
+            {ghostTyped < ghostPrompt.length && (
+              <span style={{ opacity: 0.8, animation: 'openswarm-ghost-caret 0.9s steps(1) infinite' }}>▍</span>
+            )}
+            {ghostTyped >= ghostPrompt.length && (
+              <span style={{ marginLeft: 8, fontSize: '0.7rem', color: c.text.tertiary, opacity: 0.9 }}>
+                ↵ to run
+              </span>
+            )}
+            <style>{`@keyframes openswarm-ghost-caret { 50% { opacity: 0; } }`}</style>
           </div>
         )}
       </Box>

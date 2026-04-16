@@ -59,7 +59,6 @@ const SUBSCRIPTION_PROVIDERS = [
   { id: 'claude', name: 'Claude Pro / Max', desc: 'Sonnet 4.6, Opus 4.6, Haiku 4.5', color: '#E8927A', preview: false },
   { id: 'gemini-cli', name: 'Gemini Advanced', desc: 'Gemini 3 Pro, 3 Flash, 2.5 Pro, 2.5 Flash', color: '#4285F4', preview: false },
   { id: 'codex', name: 'ChatGPT Plus / Pro', desc: 'GPT-5.4, GPT-5.4 Mini, GPT-5.3 Codex', color: '#74AA9C', preview: false },
-  { id: 'github', name: 'GitHub Copilot', desc: 'Claude, GPT, Gemini, and more', color: '#8B949E', preview: true },
 ];
 
 const SubscriptionCard: React.FC<{ provider: typeof SUBSCRIPTION_PROVIDERS[0]; connected: boolean; onConnect: () => void; onDisconnect: () => void; connecting: boolean; userCode?: string; disconnecting?: boolean }> = ({ provider, connected, onConnect, onDisconnect, connecting, userCode, disconnecting }) => {
@@ -326,15 +325,6 @@ const OpenSwarmProCard: React.FC = () => {
             >
               {busy === 'manage' ? 'Opening…' : 'Manage in Stripe'}
             </Button>
-            <Button
-              onClick={handleDisconnect}
-              disabled={busy !== null}
-              size="small"
-              variant="text"
-              sx={{ textTransform: 'none', fontSize: '0.78rem', color: c.text.muted }}
-            >
-              {busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
-            </Button>
           </Box>
         </>
       ) : (
@@ -365,12 +355,25 @@ const SubscriptionCards: React.FC = () => {
   const [userCode, setUserCode] = useState('');
   const [pollTimer, setPollTimer] = useState<any>(null);
 
-  const fetchStatus = () => {
-    fetch(`${API_BASE}/agents/subscriptions/status`)
-      .then(r => r.json())
-      .then(setStatus)
-      .catch(() => setStatus({ running: false, providers: [], models: [] }));
-  };
+  // `preserveTransient` keeps a previously-seen `running: true` state when a
+  // refresh comes back with `running: false`. The backend's is_running() probe
+  // has a short sync timeout that can be exceeded while 9Router is streaming
+  // inference, producing false negatives that would otherwise flip these
+  // cards into a "Starting subscription service..." spinner mid-session.
+  const fetchStatus = useCallback(async (opts?: { preserveTransient?: boolean }) => {
+    try {
+      const r = await fetch(`${API_BASE}/agents/subscriptions/status`);
+      const data = await r.json();
+      setStatus((prev: any) => {
+        if (opts?.preserveTransient && prev?.running && !data?.running) return prev;
+        return data;
+      });
+      return data;
+    } catch {
+      setStatus((prev: any) => prev ?? { running: false, providers: [], models: [] });
+      return null;
+    }
+  }, []);
 
   // Refresh the chat model picker whenever subscription connection state
   // changes — GET /agents/models intersects BUILTIN_MODELS with 9Router's
@@ -378,7 +381,22 @@ const SubscriptionCards: React.FC = () => {
   // their models in the dropdown immediately.
   const refreshPickerModels = () => { dispatch(fetchModels()); };
 
-  useEffect(() => { fetchStatus(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // Retry initial load — a single transient probe miss on mount would
+      // otherwise wedge the UI on the loading spinner until the user closes
+      // and reopens Settings.
+      for (const delay of [0, 800, 2000]) {
+        if (cancelled) return;
+        if (delay) await new Promise(r => setTimeout(r, delay));
+        const data = await fetchStatus();
+        if (data?.running) break;
+      }
+    })();
+    const interval = setInterval(() => fetchStatus({ preserveTransient: true }), 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [fetchStatus]);
 
   const isConnected = (providerId: string) => {
     if (!status?.providers) return false;

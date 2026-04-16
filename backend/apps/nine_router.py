@@ -12,6 +12,7 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 
 import httpx
 
@@ -24,12 +25,29 @@ NINE_ROUTER_V1 = f"{NINE_ROUTER_URL}/v1"
 
 _process: subprocess.Popen | None = None
 
+# Short TTL cache for positive is_running() results. The probe is a sync
+# httpx.get that blocks the event loop, and under load (9Router busy
+# streaming inference) it can exceed its 2s timeout and return False even
+# though 9Router is fine. Caching a recent True result avoids those false
+# negatives without masking a real crash for more than _IS_RUNNING_TTL seconds.
+# Negative results are NOT cached so startup detection in ensure_running()
+# remains correct.
+_IS_RUNNING_TTL = 10.0
+_is_running_last_ok: float = 0.0
+
 
 def is_running() -> bool:
     """Check if 9Router is running."""
+    global _is_running_last_ok
+    now = time.monotonic()
+    if now - _is_running_last_ok < _IS_RUNNING_TTL:
+        return True
     try:
         r = httpx.get(f"{NINE_ROUTER_V1}/models", timeout=2.0)
-        return r.status_code == 200
+        if r.status_code == 200:
+            _is_running_last_ok = now
+            return True
+        return False
     except Exception:
         return False
 

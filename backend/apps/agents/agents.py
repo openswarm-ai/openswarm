@@ -323,24 +323,57 @@ async def list_models():
         except Exception as e:
             logger.debug(f"Failed to fetch 9Router providers: {e}")
 
+    def _serialize(models: list[dict]) -> list[dict]:
+        return [
+            {
+                "value": m["value"],
+                "label": m["label"],
+                "context_window": m.get("context_window", 128_000),
+                "reasoning": bool(m.get("reasoning", False)),
+            }
+            for m in models
+        ]
+
+    has_api_key = bool(getattr(settings, "anthropic_api_key", None))
+    is_openswarm_pro = (
+        getattr(settings, "connection_mode", "own_key") == "openswarm-pro"
+        and bool(getattr(settings, "openswarm_bearer_token", None))
+    )
+    has_claude_sub = "claude" in connected
+
     result: dict[str, list[dict]] = {}
+
+    # Anthropic models: emit under "OpenSwarm Pro" (proxy-routed, adaptive
+    # values) and/or "Anthropic" (direct API key OR 9Router claude sub). When
+    # both the proxy and the personal claude sub are active we emit both
+    # groups, with the Anthropic group using the pinned "-cc" variants so a
+    # per-call selection actually routes through 9Router instead of the proxy.
+    anthropic_models = BUILTIN_MODELS.get("Anthropic", [])
+    adaptive = [m for m in anthropic_models if m.get("route") != "cc"]
+    cc_variants = [m for m in anthropic_models if m.get("route") == "cc"]
+
+    if is_openswarm_pro and has_claude_sub:
+        result["OpenSwarm Pro"] = _serialize(adaptive)
+        result["Anthropic"] = _serialize(cc_variants)
+    elif is_openswarm_pro:
+        result["OpenSwarm Pro"] = _serialize(adaptive)
+    elif has_api_key or has_claude_sub:
+        result["Anthropic"] = _serialize(adaptive)
+
+    # Non-Anthropic providers (OpenAI, Google, OpenSwarm/Copilot, etc.) —
+    # visibility is gated by 9Router's connected providers set.
     for provider_name, models in BUILTIN_MODELS.items():
+        if provider_name == "Anthropic":
+            continue
         visible = []
         for m in models:
             api = m.get("api", "")
-            # GitHub Copilot is not yet available to end users — hide its models.
             if api == "github-copilot":
+                # Hidden from end users for now — `gh/` path lives in the
+                # registry but the Copilot subscription card is "Coming soon".
                 continue
             if m.get("subscription_only"):
                 if not nine_router_up or api not in connected:
-                    continue
-            elif api == "anthropic":
-                has_key = bool(getattr(settings, "anthropic_api_key", None))
-                is_openswarm_pro = (
-                    getattr(settings, "connection_mode", "own_key") == "openswarm-pro"
-                    and bool(getattr(settings, "openswarm_bearer_token", None))
-                )
-                if not has_key and "claude" not in connected and not is_openswarm_pro:
                     continue
             visible.append({
                 "value": m["value"],

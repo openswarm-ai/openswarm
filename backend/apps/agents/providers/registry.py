@@ -63,12 +63,27 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
     # (Feb 5 2026), Haiku 4.5 (Oct 2025). All three are the current
     # production flagships in their respective size tiers.
     "Anthropic": [
+        # Adaptive entries: route is chosen at call time based on
+        # settings.connection_mode (openswarm-pro → proxy; api_key → direct;
+        # else → 9Router cc/).
         {"value": "sonnet", "label": "Claude Sonnet 4.6", "context_window": 1_000_000,
          "model_id": "claude-sonnet-4-6", "router_model_id": "cc/claude-sonnet-4-6", "api": "anthropic", "reasoning": True},
         {"value": "opus", "label": "Claude Opus 4.6", "context_window": 1_000_000,
          "model_id": "claude-opus-4-6", "router_model_id": "cc/claude-opus-4-6", "api": "anthropic", "reasoning": True},
         {"value": "haiku", "label": "Claude Haiku 4.5", "context_window": 200_000,
          "model_id": "claude-haiku-4-5", "router_model_id": "cc/claude-haiku-4-5-20251001", "api": "anthropic", "reasoning": True},
+        # Pinned-subscription entries: always route via 9Router's `cc/` prefix
+        # (the user's personal Claude Pro/Max subscription), regardless of
+        # connection_mode. Surfaced in list_models only when the user has
+        # BOTH openswarm-pro active AND the 9Router `claude` subscription
+        # connected — so the model picker can offer a per-call choice between
+        # the managed OpenSwarm proxy and their own Claude subscription.
+        {"value": "sonnet-cc", "label": "Claude Sonnet 4.6", "context_window": 1_000_000,
+         "model_id": "claude-sonnet-4-6", "router_model_id": "cc/claude-sonnet-4-6", "api": "anthropic", "reasoning": True, "route": "cc"},
+        {"value": "opus-cc", "label": "Claude Opus 4.6", "context_window": 1_000_000,
+         "model_id": "claude-opus-4-6", "router_model_id": "cc/claude-opus-4-6", "api": "anthropic", "reasoning": True, "route": "cc"},
+        {"value": "haiku-cc", "label": "Claude Haiku 4.5", "context_window": 200_000,
+         "model_id": "claude-haiku-4-5", "router_model_id": "cc/claude-haiku-4-5-20251001", "api": "anthropic", "reasoning": True, "route": "cc"},
     ],
     # OpenAI: ChatGPT Plus/Pro (Codex) subscription. gpt-5.4 is the
     # current flagship — combines GPT-5.3 Codex coding capabilities with
@@ -267,6 +282,12 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     entry = _find_builtin_model(short_name)
     if entry is None:
         return short_name
+    # Pinned-route entries (e.g. "sonnet-cc") always use their router_model_id,
+    # bypassing connection_mode. This is what lets the picker offer a
+    # distinct "Anthropic" group pointing at the user's 9Router Claude
+    # subscription even while openswarm-pro is the default Claude route.
+    if entry.get("route") == "cc":
+        return entry.get("router_model_id", entry.get("model_id", short_name))
     if entry.get("api") == "anthropic":
         if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
             return entry.get("model_id", short_name)

@@ -47,8 +47,8 @@ function isValidEmail(email: string): boolean {
 const SUBSCRIPTION_PROVIDERS = [
   { id: 'openswarm-pro', name: 'OpenSwarm Pro', desc: 'One subscription — no setup, no Claude account needed', color: '#6366F1', preview: false, recommended: true },
   { id: 'claude', name: 'Claude', desc: 'Use your own Claude Pro/Max subscription', color: '#E8927A', preview: false },
-  { id: 'gemini-cli', name: 'Gemini', desc: 'Gemini 2.5 Pro & Flash', color: '#4285F4', preview: true },
-  { id: 'codex', name: 'ChatGPT', desc: 'GPT-5.4, o3, o4-mini', color: '#74AA9C', preview: true },
+  { id: 'gemini-cli', name: 'Gemini', desc: 'Gemini 3 Pro, 3 Flash, 2.5 Pro & Flash', color: '#4285F4', preview: false },
+  { id: 'codex', name: 'ChatGPT', desc: 'GPT-5.4, GPT-5.4 Mini, GPT-5.3 Codex', color: '#74AA9C', preview: false },
 ];
 
 const USE_CASES = [
@@ -150,14 +150,22 @@ const OnboardingModal: React.FC = () => {
     };
   }, []);
 
-  // Auto-dismiss when a subscription activates via deep link while the
-  // modal is open. activateSubscription refetches settings; we watch the
-  // connection_mode field flipping to openswarm-pro.
+  // Auto-dismiss ONLY on the inactive → active transition (i.e. Stripe
+  // checkout deep-link activation while the modal is open). We used to fire
+  // on any settings tick where Pro was active, which meant a returning user
+  // who already had Pro (but cleared onboarding_seen) would see the modal
+  // flash then immediately skip to the dashboard.
+  const initialProActiveRef = useRef<boolean | null>(null);
   useEffect(() => {
-    if (!open) return;
+    if (!open) { initialProActiveRef.current = null; return; }
     const mode = (settings.data as any).connection_mode;
     const bearer = (settings.data as any).openswarm_bearer_token;
-    if (mode === 'openswarm-pro' && bearer) {
+    const isActive = mode === 'openswarm-pro' && !!bearer;
+    if (initialProActiveRef.current === null) {
+      initialProActiveRef.current = isActive;
+      return;
+    }
+    if (!initialProActiveRef.current && isActive) {
       trackEvent('onboarding.openswarm_pro_activated');
       dismiss();
     }

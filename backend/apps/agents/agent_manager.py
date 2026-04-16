@@ -1043,8 +1043,14 @@ class AgentManager:
             }
             # Priority: openswarm-pro mode → Anthropic API key → 9Router.
             # Non-Anthropic api_types always route through 9Router regardless.
+            # A resolved_model carrying a 9Router prefix (cc/cx/gc/gh/) also
+            # forces the 9Router branch — this is what makes pinned-route
+            # Anthropic values ("sonnet-cc" etc.) bypass the OpenSwarm Pro
+            # proxy and land on the user's own Claude subscription even while
+            # connection_mode is openswarm-pro.
             from backend.apps.nine_router import is_running as _9r_running
-            if api_type == "anthropic" and getattr(global_settings, "connection_mode", "own_key") == "openswarm-pro":
+            resolved_is_9router = isinstance(resolved_model, str) and resolved_model.startswith(("cc/", "cx/", "gc/", "gh/"))
+            if api_type == "anthropic" and not resolved_is_9router and getattr(global_settings, "connection_mode", "own_key") == "openswarm-pro":
                 proxy_url = getattr(global_settings, "openswarm_proxy_url", None) or "https://api.openswarm.com"
                 bearer = getattr(global_settings, "openswarm_bearer_token", "") or ""
                 options_kwargs["env"] = {
@@ -1052,7 +1058,7 @@ class AgentManager:
                     "ANTHROPIC_BASE_URL": proxy_url,
                 }
                 logger.info(f"[MCP-DEBUG] Using OpenSwarm Pro proxy at {proxy_url}")
-            elif api_type == "anthropic" and global_settings.anthropic_api_key:
+            elif api_type == "anthropic" and not resolved_is_9router and global_settings.anthropic_api_key:
                 options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
                 logger.info("[MCP-DEBUG] Using direct Anthropic API key")
             elif _9r_running():
