@@ -17,6 +17,10 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EditIcon from '@mui/icons-material/Edit';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import SearchIcon from '@mui/icons-material/Search';
+import DownloadIcon from '@mui/icons-material/Download';
+import UploadIcon from '@mui/icons-material/Upload';
+import { API_BASE } from '@/shared/config';
+import ImportSwarmModal from './ImportSwarmModal';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   fetchDashboards,
@@ -52,6 +56,8 @@ const DashboardSelection: React.FC = () => {
   const [menuDashboard, setMenuDashboard] = useState<Dashboard | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     dispatch(fetchDashboards());
@@ -94,6 +100,35 @@ const DashboardSelection: React.FC = () => {
     handleCloseMenu();
   };
 
+  const handleExport = () => {
+    if (!menuDashboard) return;
+    const id = menuDashboard.id;
+    handleCloseMenu();
+    const url = `${API_BASE}/portable/export/dashboard/${id}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${menuDashboard.name || 'dashboard'}.swarm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handlePickImportFile = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) setImportFile(f);
+    e.target.value = '';
+  };
+
+  const handleImported = (newId: string) => {
+    setImportFile(null);
+    dispatch(fetchDashboards());
+    navigate(`/dashboard/${newId}`);
+  };
+
   const handleStartRename = () => {
     const target = menuDashboard;
     handleCloseMenu();
@@ -132,22 +167,39 @@ const DashboardSelection: React.FC = () => {
               Monitor and manage your agents from a single workspace.
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={handleCreate}
-            sx={{
-              bgcolor: c.accent.primary,
-              borderRadius: 2,
-              textTransform: 'none',
-              fontWeight: 500,
-              px: 2.5,
-              '&:hover': { bgcolor: c.accent.hover },
-            }}
-          >
-            New dashboard
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="outlined"
+              startIcon={<UploadIcon />}
+              onClick={handlePickImportFile}
+              sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 500, px: 2.5 }}
+            >
+              Import .swarm
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={handleCreate}
+              sx={{
+                bgcolor: c.accent.primary,
+                borderRadius: 2,
+                textTransform: 'none',
+                fontWeight: 500,
+                px: 2.5,
+                '&:hover': { bgcolor: c.accent.hover },
+              }}
+            >
+              New dashboard
+            </Button>
+          </Box>
         </Box>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".swarm,application/zip"
+          style={{ display: 'none' }}
+          onChange={handleImportFileChange}
+        />
 
         <Box sx={{ mb: 3 }}>
           <TextField
@@ -341,11 +393,22 @@ const DashboardSelection: React.FC = () => {
           <ListItemIcon><ContentCopyIcon sx={{ fontSize: 18 }} /></ListItemIcon>
           <ListItemText>Duplicate</ListItemText>
         </MenuItem>
+        <MenuItem onClick={handleExport}>
+          <ListItemIcon><DownloadIcon sx={{ fontSize: 18 }} /></ListItemIcon>
+          <ListItemText>Export .swarm</ListItemText>
+        </MenuItem>
         <MenuItem onClick={handleDelete} sx={{ color: c.status.error }}>
           <ListItemIcon><DeleteOutlineIcon sx={{ fontSize: 18, color: c.status.error }} /></ListItemIcon>
           <ListItemText>Delete</ListItemText>
         </MenuItem>
       </Menu>
+
+      <ImportSwarmModal
+        open={importFile !== null}
+        file={importFile}
+        onClose={() => setImportFile(null)}
+        onInstalled={handleImported}
+      />
     </Box>
   );
 };
