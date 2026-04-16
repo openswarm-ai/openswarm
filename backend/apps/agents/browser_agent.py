@@ -878,7 +878,7 @@ async def run_browser_agent(
         logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
 
     from backend.apps.settings.settings import load_settings
-    from backend.apps.settings.credentials import get_anthropic_client
+    from backend.apps.settings.credentials import get_anthropic_client_for_model
     from backend.apps.agents.providers.registry import (
         _find_builtin_model,
         resolve_model_id_for_sdk,
@@ -925,7 +925,13 @@ async def run_browser_agent(
                 "action_log": [],
                 "final_screenshot": None,
             }
-    client = get_anthropic_client(browser_settings)
+    # Route the client based on the resolved model id, not just
+    # connection_mode. Without this, a pinned-route value like "sonnet-cc"
+    # resolves to "cc/claude-sonnet-4-6" but the old get_anthropic_client()
+    # still returned an OpenSwarm-proxy client (because connection_mode was
+    # openswarm-pro), which then rejected the cc/ prefix and surfaced as a
+    # misleading "OpenSwarm servers are busy" error.
+    client = get_anthropic_client_for_model(browser_settings, api_model)
 
     # Resume prior conversation on this browser if we have one cached. This
     # lets the sub-agent skip the "take a screenshot to figure out where I am"
@@ -1372,6 +1378,7 @@ async def _create_browser_card(dashboard_id: str, url: str, parent_session_id: s
         y=100,
         width=1280,
         height=800,
+        spawned_by=parent_session_id,
     )
     dashboard.layout.browser_cards[browser_id] = card
     dashboard.updated_at = datetime.now()

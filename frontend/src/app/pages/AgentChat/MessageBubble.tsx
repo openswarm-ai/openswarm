@@ -67,7 +67,7 @@ interface OpenSwarmErrorInfo {
   title: string;
   detail: string;
   ctaLabel?: string;
-  ctaAction?: 'upgrade' | 'retry' | 'settings';
+  ctaAction?: 'upgrade' | 'retry' | 'settings' | 'waitlist';
 }
 
 // Turn a raw Claude-CLI / cloud error string into a user-friendly card.
@@ -92,10 +92,10 @@ function parseOpenSwarmError(text: string): OpenSwarmErrorInfo | null {
   if (/at capacity|Try again shortly|503|service unavailable/i.test(text)) {
     return {
       kind: 'capacity',
-      title: 'OpenSwarm servers are busy',
-      detail: "We're hitting capacity on our end — please retry in a moment. If this keeps happening, contact support.",
-      ctaLabel: 'Try again',
-      ctaAction: 'retry',
+      title: 'OpenSwarm servers maxed',
+      detail: "We're at full capacity right now. Thanks for your patience — we'll get you back in as soon as we can. Join our Discord and we'll let you know the moment things open up.",
+      ctaLabel: 'Join waitlist',
+      ctaAction: 'waitlist',
     };
   }
   // Auth / subscription problems
@@ -888,6 +888,10 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                         } else if (openswarmError.ctaAction === 'settings') {
                           // Best-effort: dispatch a DOM event the Settings modal listens to
                           window.dispatchEvent(new CustomEvent('openswarm:open-settings', { detail: { tab: 'models' } }));
+                        } else if (openswarmError.ctaAction === 'waitlist') {
+                          const url = 'https://discord.com/channels/1486442924391796896/1486442927554170892';
+                          if (api?.openExternal) api.openExternal(url);
+                          else window.open(url, '_blank');
                         }
                       }}
                       sx={{

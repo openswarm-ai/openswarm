@@ -50,6 +50,10 @@ export interface BrowserCardPosition {
   width: number;
   height: number;
   zOrder: number;
+  // Agent session id that spawned this browser. null/undefined for
+  // user-created. Used to auto-remove the browser when its owner agent
+  // reaches a terminal completed/error state.
+  spawned_by?: string | null;
 }
 
 export interface DashboardLayoutState {

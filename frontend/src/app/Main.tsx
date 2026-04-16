@@ -6,6 +6,7 @@ import { store } from '../shared/state/store';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchSettings } from '@/shared/state/settingsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
+import { API_BASE } from '@/shared/config';
 import {
   setAppVersion,
   setUpdateAvailable,
@@ -169,6 +170,15 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   useEffect(() => {
     dispatch(fetchSettings());
     dispatch(fetchModels());
+    // Reconcile OpenSwarm Pro state with Stripe on every launch so a
+    // missed webhook (cancel, upgrade, renewal) can't leave the user
+    // wedged on stale info. Fire-and-forget; if the cloud is unreachable
+    // we simply keep whatever local state we already had.
+    fetch(`${API_BASE}/subscription/sync`, { method: 'POST' })
+      .then((r) => {
+        if (r.ok) dispatch(fetchSettings());
+      })
+      .catch(() => { /* offline — next launch will reconcile */ });
   }, [dispatch]);
   useEffect(() => {
     if (loaded) setThemeMode(theme as 'light' | 'dark');

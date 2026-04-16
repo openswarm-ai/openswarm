@@ -16,7 +16,7 @@ import {
   closeSessionFromWs,
   trackAgentNotification,
 } from '../state/agentsSlice';
-import { addBrowserCardFromBackend, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
+import { addBrowserCardFromBackend, removeBrowserCard, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
 
 type WSEvent = {
   event: string;
@@ -129,6 +129,20 @@ class WebSocketManager {
         if (data.status === 'running' && session_id) {
           store.dispatch(trackAgentNotification(session_id));
         }
+        // Auto-remove browsers spawned by this agent when it reaches a
+        // terminal state on its own. agent:closed only fires when the user
+        // clicks X to close the session, so without this hook the browser
+        // cards would linger after natural completion or error. 'stopped'
+        // is intentionally skipped to preserve the "inspect after manual
+        // stop" affordance — matching the agent:closed branch below.
+        if (session_id && (data.status === 'completed' || data.status === 'error')) {
+          const browserCards = store.getState().dashboardLayout.browserCards;
+          for (const card of Object.values(browserCards)) {
+            if (card.spawned_by === session_id) {
+              store.dispatch(removeBrowserCard(card.browser_id));
+            }
+          }
+        }
         break;
 
       case 'agent:message':
@@ -222,10 +236,11 @@ class WebSocketManager {
 
       case 'agent:closed':
         if (session_id) {
+          const closedStatus = data.status ?? 'stopped';
           store.dispatch(closeSessionFromWs({
             id: session_id,
             name: data.name ?? 'Untitled',
-            status: data.status ?? 'stopped',
+            status: closedStatus,
             model: data.model ?? '',
             mode: data.mode ?? '',
             created_at: data.created_at ?? new Date().toISOString(),
@@ -233,6 +248,17 @@ class WebSocketManager {
             cost_usd: data.cost_usd ?? 0,
             dashboard_id: data.dashboard_id,
           }));
+          // Auto-delete browsers spawned by this agent when it finishes
+          // normally or errors out. We intentionally skip 'stopped' — the
+          // user may want to inspect the browser after manually stopping.
+          if (closedStatus === 'completed' || closedStatus === 'error') {
+            const browserCards = store.getState().dashboardLayout.browserCards;
+            for (const card of Object.values(browserCards)) {
+              if (card.spawned_by === session_id) {
+                store.dispatch(removeBrowserCard(card.browser_id));
+              }
+            }
+          }
         }
         break;
 

@@ -155,6 +155,22 @@ async def analytics_lifespan():
             id_props["use_case"] = settings.user_use_case
         if getattr(settings, "user_referral_source", None):
             id_props["referral_source"] = settings.user_referral_source
+
+        # Subscription context so every event from this installation can be
+        # sliced by plan / paying-vs-free in PostHog. Refreshed on activate,
+        # sync, and disconnect so these values stay current without waiting
+        # for the next app launch.
+        mode = getattr(settings, "connection_mode", "own_key")
+        plan = getattr(settings, "openswarm_subscription_plan", None)
+        is_paying = mode == "openswarm-pro" and bool(
+            getattr(settings, "openswarm_bearer_token", None)
+        )
+        id_props["connection_mode"] = mode
+        id_props["plan"] = plan if is_paying else "free"
+        id_props["is_paying_customer"] = is_paying
+        if is_paying and getattr(settings, "openswarm_subscription_expires", None):
+            id_props["subscription_expires"] = settings.openswarm_subscription_expires
+
         identify(id_props)
     except Exception as e:
         logger.debug(f"Analytics startup event failed (non-critical): {e}")

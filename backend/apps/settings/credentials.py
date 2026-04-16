@@ -152,3 +152,23 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
         )
 
     raise ValueError("No AI provider configured. Set an API key or connect a subscription.")
+
+
+def get_anthropic_client_for_model(settings: AppSettings, api_model: str) -> anthropic.AsyncAnthropic:
+    """Return a client configured for the given resolved model id.
+
+    When api_model carries a 9Router prefix (cc/, cx/, gc/, gh/), the client
+    targets 9Router directly — even if connection_mode is openswarm-pro. This
+    is what lets pinned-route models like "sonnet-cc" actually reach the
+    user's own subscription instead of getting sent through the managed proxy
+    with an unrecognizable model id.
+    Otherwise delegates to get_anthropic_client() for the default mode-driven
+    routing.
+    """
+    import anthropic
+    if isinstance(api_model, str) and api_model.startswith(("cc/", "cx/", "gc/", "gh/")):
+        return anthropic.AsyncAnthropic(
+            api_key="9router",
+            base_url="http://localhost:20128",
+        )
+    return get_anthropic_client(settings)

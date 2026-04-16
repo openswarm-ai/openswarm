@@ -137,6 +137,12 @@ interface OpenSwarmProStatus {
   plan?: string | null;
   status?: string | null;
   expires?: string | null;
+  // When the cloud reports the bearer as revoked (401) or the sub as past
+  // its grace period (402), backend clears local state and returns
+  // connected=false with a reason + last_plan so the UI can distinguish
+  // "your subscription ended" from "never subscribed."
+  reason?: 'revoked' | 'expired' | null;
+  last_plan?: string | null;
   usage?: {
     // Live utilization from Claude's /api/oauth/usage — 0-100 percent of the
     // shared pool subscription's 5h window consumed. Updated every ~30s.
@@ -256,11 +262,13 @@ const OpenSwarmProCard: React.FC = () => {
             OpenSwarm Pro
           </Typography>
           {isConnected && (
-            <Box sx={{ px: 0.9, py: 0.2, borderRadius: 999, bgcolor: `${c.accent.primary}20` }}>
-              <Typography sx={{ fontSize: '0.7rem', color: c.accent.primary, fontWeight: 600 }}>
-                {planLabel}
-              </Typography>
-            </Box>
+            <Box
+              component="img"
+              src="./logo.png"
+              alt={planLabel}
+              title={planLabel}
+              sx={{ width: 18, height: 18, borderRadius: 0.5 }}
+            />
           )}
           {!isConnected && (
             <Box sx={{ px: 0.9, py: 0.2, borderRadius: 999, bgcolor: `${c.accent.primary}15` }}>
@@ -274,6 +282,20 @@ const OpenSwarmProCard: React.FC = () => {
 
       {isConnected ? (
         <>
+          {/* Canceled-in-grace banner: user canceled in Stripe but still
+              inside the paid period. Show a clear "scheduled to cancel"
+              state so they're not surprised when access stops. */}
+          {status.status === 'canceled' && (
+            <Box sx={{
+              px: 1.2, py: 0.6, mb: 1.2, borderRadius: `${c.radius.sm}px`,
+              bgcolor: `${c.status.warning}15`, border: `1px solid ${c.status.warning}40`,
+            }}>
+              <Typography sx={{ fontSize: '0.72rem', color: c.status.warning, fontWeight: 500 }}>
+                Subscription canceled — you still have access until {expiresLabel || 'the end of the period'}.
+              </Typography>
+            </Box>
+          )}
+
           {/* Usage bar — percentage only, no raw counts */}
           <Box sx={{ mb: 1.2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0.5 }}>
@@ -310,24 +332,69 @@ const OpenSwarmProCard: React.FC = () => {
               </Typography>
             )}
           </Box>
-          {expiresLabel && (
+          {expiresLabel && status.status !== 'canceled' && (
             <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, mb: 1.5 }}>
-              {status.status === 'canceled' ? 'Expires' : 'Renews'} on {expiresLabel}
+              Renews on {expiresLabel}
             </Typography>
           )}
           <Box sx={{ display: 'flex', gap: 1 }}>
+            {status.status === 'canceled' && (
+              <Button
+                onClick={handleSubscribe}
+                disabled={busy !== null}
+                size="small"
+                variant="contained"
+                sx={{ textTransform: 'none', fontSize: '0.78rem', borderRadius: `${c.radius.md}px` }}
+              >
+                Resubscribe
+              </Button>
+            )}
             <Button
               onClick={handleManage}
               disabled={busy !== null}
               size="small"
-              variant="contained"
+              variant={status.status === 'canceled' ? 'outlined' : 'contained'}
               sx={{ textTransform: 'none', fontSize: '0.78rem', borderRadius: `${c.radius.md}px` }}
             >
               {busy === 'manage' ? 'Opening…' : 'Manage in Stripe'}
             </Button>
           </Box>
         </>
+      ) : status.reason === 'expired' && status.last_plan ? (
+        // Truly expired: the bearer's subscription ended past its grace
+        // period. Don't show the new-user "Subscribe" prompt — make it
+        // clear what happened and invite them back.
+        <>
+          <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, mb: 1.5 }}>
+            Your OpenSwarm Pro subscription has ended. Resubscribe to keep using Claude Sonnet, Opus, and Haiku without a Claude account.
+          </Typography>
+          <Button
+            onClick={handleSubscribe}
+            variant="contained"
+            size="small"
+            sx={{ textTransform: 'none', fontSize: '0.82rem', borderRadius: `${c.radius.md}px` }}
+          >
+            Resubscribe
+          </Button>
+        </>
+      ) : status.reason === 'revoked' && status.last_plan ? (
+        // Token revoked but subscription existed — different CTA language
+        // so the user knows this isn't a billing issue.
+        <>
+          <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, mb: 1.5 }}>
+            Your OpenSwarm Pro access token was revoked. Sign back in to reconnect.
+          </Typography>
+          <Button
+            onClick={handleSubscribe}
+            variant="contained"
+            size="small"
+            sx={{ textTransform: 'none', fontSize: '0.82rem', borderRadius: `${c.radius.md}px` }}
+          >
+            Reconnect
+          </Button>
+        </>
       ) : (
+        // Genuine new user — never had a subscription on this machine.
         <>
           <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 1.5 }}>
             One subscription, no Claude account needed. We handle everything behind the scenes.
