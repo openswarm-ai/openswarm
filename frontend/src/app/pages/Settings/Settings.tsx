@@ -39,7 +39,7 @@ import LinearProgress from '@mui/material/LinearProgress';
 import Collapse from '@mui/material/Collapse';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
+import { updateSettings, closeSettingsModal, resetSystemPrompt, disconnectSubscription, AppSettings, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { setChecking, setUpdateError, setInstalling } from '@/shared/state/updateSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
@@ -122,6 +122,236 @@ const SubscriptionCard: React.FC<{ provider: typeof SUBSCRIPTION_PROVIDERS[0]; c
           </Button>
         )}
       </Box>
+    </Box>
+  );
+};
+
+// ── OpenSwarm Pro managed-subscription card ──
+//
+// Renders either a "Subscribe" CTA (when not connected) or a live usage +
+// Manage/Disconnect card (when connection_mode === 'openswarm-pro'). All
+// billing details come from /api/subscription/status at runtime — no
+// pricing is hardcoded in this OSS repo.
+interface OpenSwarmProStatus {
+  connected: boolean;
+  connection_mode?: string;
+  plan?: string | null;
+  status?: string | null;
+  expires?: string | null;
+  usage?: {
+    // Live utilization from Claude's /api/oauth/usage — 0-100 percent of the
+    // shared pool subscription's 5h window consumed. Updated every ~30s.
+    utilization?: number;
+    window_hours?: number;
+    window_ends_at?: number;
+    pool_active_accounts?: number;
+  } | null;
+}
+
+const OpenSwarmProCard: React.FC = () => {
+  const c = useClaudeTokens();
+  const dispatch = useAppDispatch();
+  const [status, setStatus] = useState<OpenSwarmProStatus | null>(null);
+  const [busy, setBusy] = useState<'manage' | 'disconnect' | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = await fetch(`${API_BASE}/subscription/status`);
+      if (r.ok) setStatus(await r.json());
+    } catch {
+      // silently ignore — cloud might be offline
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 30_000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  const handleSubscribe = async () => {
+    try {
+      const r = await fetch('https://api.openswarm.com/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: 'pro', billing_interval: 'monthly' }),
+      });
+      if (r.ok) {
+        const { url } = await r.json();
+        const api = (window as any).openswarm;
+        if (url && api?.openExternal) api.openExternal(url);
+        else if (url) window.open(url, '_blank');
+      }
+    } catch (e) {
+      console.error('Failed to create checkout session:', e);
+    }
+  };
+
+  const handleManage = async () => {
+    setBusy('manage');
+    try {
+      const r = await fetch(`${API_BASE}/subscription/portal`, { method: 'POST' });
+      if (r.ok) {
+        const { url } = await r.json();
+        const api = (window as any).openswarm;
+        if (url && api?.openExternal) api.openExternal(url);
+        else if (url) window.open(url, '_blank');
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setBusy('disconnect');
+    try {
+      await dispatch(disconnectSubscription()).unwrap();
+      await refresh();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Loading state — don't flash a CTA that disappears on first fetch.
+  if (!status) return null;
+
+  const isConnected = !!status.connected;
+  const usage = status.usage;
+  // Pool utilization is live data from Claude's own /api/oauth/usage endpoint
+  // — a 0-100 percentage for the current 5h window of the subscription we're
+  // routing this user through.
+  const pct = Math.max(0, Math.min(100, Math.round(usage?.utilization ?? 0)));
+  const windowEndsAt = usage?.window_ends_at;
+
+  const expiresLabel = (() => {
+    if (!status.expires) return null;
+    try {
+      const d = new Date(status.expires);
+      return d.toLocaleDateString(undefined, {
+        month: 'short', day: 'numeric', year: 'numeric',
+      });
+    } catch {
+      return null;
+    }
+  })();
+
+  const planLabel = (() => {
+    if (!status.plan) return 'Pro';
+    return status.plan
+      .replace(/_/g, '+')
+      .replace(/\b\w/g, (s) => s.toUpperCase());
+  })();
+
+  return (
+    <Box
+      sx={{
+        p: 2.5,
+        borderRadius: `${c.radius.lg}px`,
+        border: `1px solid ${isConnected ? c.accent.primary : c.border.subtle}`,
+        bgcolor: isConnected ? `${c.accent.primary}08` : c.bg.surface,
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: isConnected ? 1.5 : 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: c.text.primary }}>
+            OpenSwarm Pro
+          </Typography>
+          {isConnected && (
+            <Box sx={{ px: 0.9, py: 0.2, borderRadius: 999, bgcolor: `${c.accent.primary}20` }}>
+              <Typography sx={{ fontSize: '0.7rem', color: c.accent.primary, fontWeight: 600 }}>
+                {planLabel}
+              </Typography>
+            </Box>
+          )}
+          {!isConnected && (
+            <Box sx={{ px: 0.9, py: 0.2, borderRadius: 999, bgcolor: `${c.accent.primary}15` }}>
+              <Typography sx={{ fontSize: '0.65rem', color: c.accent.primary, fontWeight: 600 }}>
+                RECOMMENDED
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      </Box>
+
+      {isConnected ? (
+        <>
+          {/* Usage bar — percentage only, no raw counts */}
+          <Box sx={{ mb: 1.2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0.5 }}>
+              <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, fontWeight: 500 }}>
+                Current usage
+              </Typography>
+              <Typography sx={{ fontSize: '0.72rem', color: c.text.muted }}>
+                {pct}% used
+              </Typography>
+            </Box>
+            <LinearProgress
+              variant="determinate"
+              value={pct}
+              sx={{
+                height: 6,
+                borderRadius: 999,
+                bgcolor: `${c.accent.primary}15`,
+                '& .MuiLinearProgress-bar': {
+                  bgcolor: pct >= 90 ? c.status.warning : pct >= 70 ? c.status.info : c.accent.primary,
+                  borderRadius: 999,
+                },
+              }}
+            />
+            {windowEndsAt && (
+              <Typography sx={{ fontSize: '0.68rem', color: c.text.muted, mt: 0.4 }}>
+                Resets {(() => {
+                  const diff = windowEndsAt - Date.now();
+                  if (diff <= 0) return 'soon';
+                  const hrs = Math.floor(diff / 3600000);
+                  const mins = Math.floor((diff % 3600000) / 60000);
+                  if (hrs > 0) return `in ${hrs} hr ${mins} min`;
+                  return `in ${mins} min`;
+                })()}
+              </Typography>
+            )}
+          </Box>
+          {expiresLabel && (
+            <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, mb: 1.5 }}>
+              {status.status === 'canceled' ? 'Expires' : 'Renews'} on {expiresLabel}
+            </Typography>
+          )}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              onClick={handleManage}
+              disabled={busy !== null}
+              size="small"
+              variant="contained"
+              sx={{ textTransform: 'none', fontSize: '0.78rem', borderRadius: `${c.radius.md}px` }}
+            >
+              {busy === 'manage' ? 'Opening…' : 'Manage in Stripe'}
+            </Button>
+            <Button
+              onClick={handleDisconnect}
+              disabled={busy !== null}
+              size="small"
+              variant="text"
+              sx={{ textTransform: 'none', fontSize: '0.78rem', color: c.text.muted }}
+            >
+              {busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
+            </Button>
+          </Box>
+        </>
+      ) : (
+        <>
+          <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 1.5 }}>
+            One subscription, no Claude account needed. We handle everything behind the scenes.
+          </Typography>
+          <Button
+            onClick={handleSubscribe}
+            variant="contained"
+            size="small"
+            sx={{ textTransform: 'none', fontSize: '0.82rem', borderRadius: `${c.radius.md}px` }}
+          >
+            Subscribe to OpenSwarm Pro
+          </Button>
+        </>
+      )}
     </Box>
   );
 };
@@ -1462,9 +1692,20 @@ const Settings: React.FC = () => {
       ) : activeTab === 'models' ? (
       <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, gap: 2.5, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
 
-          {/* ── USE EXISTING SUBSCRIPTIONS ── */}
+          {/* ── OPENSWARM PRO (managed) ── */}
           <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-            Use Your Existing Subscriptions
+            One Subscription, No Setup
+          </Typography>
+
+          <Typography sx={{ ...descSx, mb: 0 }}>
+            Don't have a Claude account? We'll handle it for you. One simple subscription covers Claude Sonnet, Opus, and Haiku.
+          </Typography>
+
+          <OpenSwarmProCard />
+
+          {/* ── USE EXISTING SUBSCRIPTIONS ── */}
+          <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, mt: 1 }}>
+            Or Use Your Existing Subscriptions
           </Typography>
 
           <Typography sx={{ ...descSx, mb: 0 }}>

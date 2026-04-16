@@ -202,6 +202,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
   const modesArr = useMemo(() => Object.values(modesMap), [modesMap]);
   const modelsByProvider = useAppSelector((state) => state.models.byProvider);
   const modelsLoaded = useAppSelector((state) => state.models.loaded);
+  const connectionMode = useAppSelector((state) => state.settings.data.connection_mode);
   const toolItems = useAppSelector((state) => state.tools.items);
 
   // Count the total number of enabled MCP tool permissions (non-deny) across
@@ -226,21 +227,27 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
   const MCP_WARNING_LS_KEY = 'openswarm:nonClaudeMcpWarningDismissed';
   const MCP_WARNING_THRESHOLD = 20;
 
-  // Build flat model list with provider grouping
+  // Build flat model list with provider grouping. When in openswarm-pro mode
+  // the Anthropic section is renamed to "OpenSwarm Pro" so the user sees their
+  // paid subscription is powering the Claude models.
   const allModelOptions = useMemo(() => {
+    const isPro = connectionMode === 'openswarm-pro';
+    const renameAnthropic = (prov: string) => (isPro && prov === 'Anthropic' ? 'OpenSwarm Pro' : prov);
     if (!modelsLoaded || Object.keys(modelsByProvider).length === 0) {
-      return { flat: FALLBACK_MODELS.map(m => ({ ...m, provider: 'Anthropic' })), grouped: { Anthropic: FALLBACK_MODELS } };
+      const key = renameAnthropic('Anthropic');
+      return { flat: FALLBACK_MODELS.map(m => ({ ...m, provider: key })), grouped: { [key]: FALLBACK_MODELS } };
     }
     const flat: Array<{ value: string; label: string; context_window: number; provider: string; reasoning: boolean }> = [];
     const grouped: Record<string, Array<{ value: string; label: string; context_window: number; reasoning: boolean }>> = {};
     for (const [prov, models] of Object.entries(modelsByProvider)) {
-      grouped[prov] = models.map(m => ({ value: m.value, label: m.label, context_window: m.context_window ?? 200_000, reasoning: !!m.reasoning }));
+      const key = renameAnthropic(prov);
+      grouped[key] = models.map(m => ({ value: m.value, label: m.label, context_window: m.context_window ?? 200_000, reasoning: !!m.reasoning }));
       for (const m of models) {
-        flat.push({ value: m.value, label: m.label, context_window: m.context_window ?? 200_000, provider: prov, reasoning: !!m.reasoning });
+        flat.push({ value: m.value, label: m.label, context_window: m.context_window ?? 200_000, provider: key, reasoning: !!m.reasoning });
       }
     }
     return { flat, grouped };
-  }, [modelsByProvider, modelsLoaded]);
+  }, [modelsByProvider, modelsLoaded, connectionMode]);
 
   useEffect(() => {
     if (modesArr.length === 0) dispatch(fetchModes());
@@ -1096,7 +1103,13 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
             // menu layout static avoids the "cursor chases a moving
             // target" problem that happens when items above the cursor
             // appear/disappear.
+            const isOpenSwarmPro = prov === 'OpenSwarm Pro';
             const brandColor = PROVIDER_COLORS[prov.toLowerCase()] ?? c.text.tertiary;
+            // OpenSwarm Pro uses a warm blue→pink→orange gradient to stand
+            // out as the recommended paid tier (distinct from plain provider
+            // brand dots).
+            const OPENSWARM_GRADIENT =
+              'linear-gradient(135deg, #8FB3FF 0%, #E56BC4 45%, #FFA85C 100%)';
             return [
               <MenuItem
                 key={`header-${prov}`}
@@ -1108,8 +1121,10 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
                     width: 6,
                     height: 6,
                     borderRadius: '50%',
-                    bgcolor: brandColor,
-                    boxShadow: `0 0 6px ${brandColor}80`,
+                    background: isOpenSwarmPro ? OPENSWARM_GRADIENT : brandColor,
+                    boxShadow: isOpenSwarmPro
+                      ? '0 0 8px rgba(229, 107, 196, 0.6)'
+                      : `0 0 6px ${brandColor}80`,
                     flexShrink: 0,
                   }} />
                   <Typography sx={{
@@ -1117,7 +1132,14 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
                     fontWeight: 700,
                     letterSpacing: '0.08em',
                     textTransform: 'uppercase',
-                    color: brandColor,
+                    ...(isOpenSwarmPro
+                      ? {
+                          background: OPENSWARM_GRADIENT,
+                          WebkitBackgroundClip: 'text',
+                          WebkitTextFillColor: 'transparent',
+                          backgroundClip: 'text',
+                        }
+                      : { color: brandColor }),
                   }}>
                     {prov}
                   </Typography>
@@ -1133,6 +1155,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
                       const provLower = prov.toLowerCase();
                       const providerMap: Record<string, string> = {
                         anthropic: 'anthropic',
+                        'openswarm pro': 'anthropic',
                         openai: 'openai',
                         google: 'gemini',
                         xai: 'openrouter',
@@ -1144,7 +1167,13 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
                       };
                       onProviderChange(providerMap[provLower] || provLower);
                     }
-                    if (prov.toLowerCase() !== 'anthropic' && enabledMcpToolCount > MCP_WARNING_THRESHOLD) {
+                    // OpenSwarm Pro routes Claude models through our proxy —
+                    // they're still Claude, so they support the deferred tool
+                    // loader. Only warn when the user picks a truly non-Claude
+                    // provider (GPT/Gemini/etc).
+                    const provLowerForWarn = prov.toLowerCase();
+                    const isClaudeProvider = provLowerForWarn === 'anthropic' || provLowerForWarn === 'openswarm pro';
+                    if (!isClaudeProvider && enabledMcpToolCount > MCP_WARNING_THRESHOLD) {
                       try {
                         if (typeof window !== 'undefined' && !window.localStorage.getItem(MCP_WARNING_LS_KEY)) {
                           setMcpWarningOpen(true);

@@ -54,5 +54,13 @@ const { contextBridge, ipcRenderer } = require('electron');
       ipcRenderer.on('webview-new-window', listener);
       return () => ipcRenderer.removeListener('webview-new-window', listener);
     },
+
+    // Deep-link callback: fires when the OS opens the app with an
+    // openswarm://auth?token=... URL (after Stripe-hosted checkout).
+    onAuthUrl: (cb) => {
+      const listener = (_event, url) => cb(url);
+      ipcRenderer.on('openswarm:auth-url', listener);
+      return () => ipcRenderer.removeListener('openswarm:auth-url', listener);
+    },
   });
 })();

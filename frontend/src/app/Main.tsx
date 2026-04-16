@@ -25,6 +25,7 @@ import Analytics from './pages/Analytics/Analytics';
 import OnboardingModal from './components/OnboardingModal';
 import { trackEvent, getLastAction, getLastPage, getTimeSpent } from '@/shared/analytics';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
+import { useDeepLink } from '@/shared/hooks/useDeepLink';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
@@ -155,6 +156,11 @@ const ShortcutsProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   return <>{children}<KeyboardShortcutsHelp /></>;
 };
 
+const DeepLinkListener: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  useDeepLink();
+  return <>{children}</>;
+};
+
 const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const dispatch = useAppDispatch();
   const { setMode: setThemeMode } = useThemeMode();
@@ -244,23 +250,25 @@ const ThemedApp: React.FC = () => {
         <ShortcutsProvider>
           <SettingsLoader>
             <UpdateListener>
-              <Routes>
-                <Route element={<AppShell />}>
-                  <Route path="/" element={<DashboardSelection />} />
-                  {/* Dashboard route is a no-op stub — the actual <Dashboard /> is rendered
-                      persistently inside AppShell so its webviews survive navigation between
-                      routes. This route exists only so React Router matches the URL. */}
-                  <Route path="/dashboard/:id" element={null} />
-                  <Route path="/customization" element={<Customization />} />
-                  <Route path="/skills" element={<Skills />} />
-                  <Route path="/actions" element={<Tools />} />
-                  <Route path="/modes" element={<Modes />} />
-                  <Route path="/apps" element={<Views />} />
-                  <Route path="/apps/:id" element={<Views />} />
-                  <Route path="/analytics" element={<Analytics />} />
-                </Route>
-              </Routes>
-              <OnboardingModal />
+              <DeepLinkListener>
+                <Routes>
+                  <Route element={<AppShell />}>
+                    <Route path="/" element={<DashboardSelection />} />
+                    {/* Dashboard route is a no-op stub — the actual <Dashboard /> is rendered
+                        persistently inside AppShell so its webviews survive navigation between
+                        routes. This route exists only so React Router matches the URL. */}
+                    <Route path="/dashboard/:id" element={null} />
+                    <Route path="/customization" element={<Customization />} />
+                    <Route path="/skills" element={<Skills />} />
+                    <Route path="/actions" element={<Tools />} />
+                    <Route path="/modes" element={<Modes />} />
+                    <Route path="/apps" element={<Views />} />
+                    <Route path="/apps/:id" element={<Views />} />
+                    <Route path="/analytics" element={<Analytics />} />
+                  </Route>
+                </Routes>
+                <OnboardingModal />
+              </DeepLinkListener>
             </UpdateListener>
           </SettingsLoader>
         </ShortcutsProvider>

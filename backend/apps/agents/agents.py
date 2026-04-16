@@ -336,7 +336,11 @@ async def list_models():
                     continue
             elif api == "anthropic":
                 has_key = bool(getattr(settings, "anthropic_api_key", None))
-                if not has_key and "claude" not in connected:
+                is_openswarm_pro = (
+                    getattr(settings, "connection_mode", "own_key") == "openswarm-pro"
+                    and bool(getattr(settings, "openswarm_bearer_token", None))
+                )
+                if not has_key and "claude" not in connected and not is_openswarm_pro:
                     continue
             visible.append({
                 "value": m["value"],

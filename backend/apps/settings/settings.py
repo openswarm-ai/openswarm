@@ -27,11 +27,27 @@ async def settings_lifespan():
 settings = SubApp("settings", settings_lifespan)
 
 
+def _migrate_legacy_fields(raw: dict) -> dict:
+    """Translate deprecated field names/values so they survive into the new schema.
+
+    Pre-launch scaffolding used `connection_mode="managed"` and
+    `openswarm_auth_token`; production names are `"openswarm-pro"` and
+    `openswarm_bearer_token`. Zero known users are affected, but keep the
+    mapping for safety.
+    """
+    if raw.get("connection_mode") == "managed":
+        raw["connection_mode"] = "openswarm-pro"
+    if "openswarm_auth_token" in raw and "openswarm_bearer_token" not in raw:
+        raw["openswarm_bearer_token"] = raw.pop("openswarm_auth_token")
+    return raw
+
+
 def load_settings() -> AppSettings:
     """Load settings from JSON file, returning defaults if not found."""
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE) as f:
-            settings = AppSettings(**json.load(f))
+            raw = _migrate_legacy_fields(json.load(f))
+        settings = AppSettings(**raw)
         if settings.default_system_prompt is None:
             settings.default_system_prompt = DEFAULT_SYSTEM_PROMPT
         return settings

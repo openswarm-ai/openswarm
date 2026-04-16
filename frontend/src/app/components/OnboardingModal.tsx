@@ -45,10 +45,10 @@ function isValidEmail(email: string): boolean {
 }
 
 const SUBSCRIPTION_PROVIDERS = [
-  { id: 'claude', name: 'Claude', desc: 'Sonnet, Opus, Haiku', color: '#E8927A', preview: false },
+  { id: 'openswarm-pro', name: 'OpenSwarm Pro', desc: 'One subscription — no setup, no Claude account needed', color: '#6366F1', preview: false, recommended: true },
+  { id: 'claude', name: 'Claude', desc: 'Use your own Claude Pro/Max subscription', color: '#E8927A', preview: false },
   { id: 'gemini-cli', name: 'Gemini', desc: 'Gemini 2.5 Pro & Flash', color: '#4285F4', preview: true },
   { id: 'codex', name: 'ChatGPT', desc: 'GPT-5.4, o3, o4-mini', color: '#74AA9C', preview: true },
-  { id: 'github', name: 'GitHub Copilot', desc: 'Claude + GPT models', color: '#8B949E', preview: true },
 ];
 
 const USE_CASES = [
@@ -149,6 +149,21 @@ const OnboardingModal: React.FC = () => {
       if (msgHandlerRef.current) window.removeEventListener('message', msgHandlerRef.current);
     };
   }, []);
+
+  // Auto-dismiss when a subscription activates via deep link while the
+  // modal is open. activateSubscription refetches settings; we watch the
+  // connection_mode field flipping to openswarm-pro.
+  useEffect(() => {
+    if (!open) return;
+    const mode = (settings.data as any).connection_mode;
+    const bearer = (settings.data as any).openswarm_bearer_token;
+    if (mode === 'openswarm-pro' && bearer) {
+      trackEvent('onboarding.openswarm_pro_activated');
+      dismiss();
+    }
+    // dismiss is stable enough — don't include in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, settings.data]);
 
   const dismiss = async () => {
     localStorage.setItem('openswarm_onboarding_seen', 'true');
@@ -261,6 +276,28 @@ const OnboardingModal: React.FC = () => {
     if (msgHandlerRef.current) { window.removeEventListener('message', msgHandlerRef.current); msgHandlerRef.current = null; }
     setConnecting(providerId);
     trackEvent('onboarding.provider_selected', { provider: providerId });
+
+    // OpenSwarm Pro: no OAuth — just open the pricing/checkout page in the
+    // system browser. The post-payment openswarm://auth deep link will
+    // dismiss this modal automatically via useDeepLink → fetchSettings.
+    if (providerId === 'openswarm-pro') {
+      try {
+        const r = await fetch('https://api.openswarm.com/api/stripe/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan: 'pro', billing_interval: 'monthly' }),
+        });
+        if (r.ok) {
+          const { url } = await r.json();
+          const api = (window as any).openswarm;
+          if (url && api?.openExternal) api.openExternal(url);
+          else if (url) window.open(url, '_blank');
+        }
+      } catch (e) {
+        console.error('Failed to create checkout session:', e);
+      }
+      return;
+    }
 
     // Delay before calling connect — avoids Claude OAuth rate limit on retries
     await new Promise(r => setTimeout(r, 1000));

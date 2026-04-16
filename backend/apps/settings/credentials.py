@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import anthropic
     from backend.apps.settings.models import AppSettings
 
-OPENSWARM_DEFAULT_PROXY_URL = "https://api.openswarm.ai"
+OPENSWARM_DEFAULT_PROXY_URL = "https://api.openswarm.com"
 
 
 def _check_9router() -> bool:
@@ -42,8 +42,8 @@ def validate_credentials(settings: AppSettings, provider: str = "anthropic") -> 
         return
 
     if p == "anthropic":
-        if getattr(settings, "connection_mode", "own_key") == "managed":
-            if not getattr(settings, "openswarm_auth_token", None):
+        if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
+            if not getattr(settings, "openswarm_bearer_token", None):
                 raise ValueError("Open Swarm account not connected. Sign in via Settings -> API.")
             return
         if settings.anthropic_api_key:
@@ -81,9 +81,9 @@ def get_provider_credentials(settings: AppSettings, provider: str) -> dict[str, 
     validate_credentials(settings, provider)
 
     if p in ("anthropic", "claude"):
-        if getattr(settings, "connection_mode", "own_key") == "managed":
+        if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
             return {
-                "auth_token": getattr(settings, "openswarm_auth_token", "") or "",
+                "auth_token": getattr(settings, "openswarm_bearer_token", "") or "",
                 "base_url": getattr(settings, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL,
             }
         return {"api_key": settings.anthropic_api_key or ""}
@@ -116,10 +116,10 @@ def get_agent_sdk_env(settings: AppSettings) -> dict[str, str]:
     """
     validate_credentials(settings, "anthropic")
 
-    if getattr(settings, "connection_mode", "own_key") == "managed":
+    if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
         proxy_url = getattr(settings, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL
         return {
-            "ANTHROPIC_AUTH_TOKEN": getattr(settings, "openswarm_auth_token", ""),
+            "ANTHROPIC_AUTH_TOKEN": getattr(settings, "openswarm_bearer_token", ""),
             "ANTHROPIC_BASE_URL": proxy_url,
         }
 
@@ -133,10 +133,10 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
     """
     import anthropic
 
-    if getattr(settings, "connection_mode", "own_key") == "managed":
+    if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
         proxy_url = getattr(settings, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL
         return anthropic.AsyncAnthropic(
-            auth_token=getattr(settings, "openswarm_auth_token", None),
+            auth_token=getattr(settings, "openswarm_bearer_token", None),
             base_url=proxy_url,
         )
 

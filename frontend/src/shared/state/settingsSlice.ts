@@ -27,6 +27,13 @@ export interface CustomProvider {
   models: Array<{ value: string; label: string; context_window?: number }>;
 }
 
+export interface SubscriptionUsage {
+  requests_in_window: number;
+  plan_limit: number;
+  window_hours: number;
+  window_ends_at: number;       // unix ms
+}
+
 export interface AppSettings {
   default_system_prompt: string | null;
   default_folder: string | null;
@@ -46,6 +53,20 @@ export interface AppSettings {
   expand_new_chats_in_dashboard: boolean;
   auto_reveal_sub_agents: boolean;
   dev_mode: boolean;
+  // Optional managed-subscription state (surfaces only when user has
+  // subscribed via the cloud). Mirrors AppSettings on the backend.
+  connection_mode?: 'own_key' | 'openswarm-pro';
+  openswarm_bearer_token?: string | null;
+  openswarm_proxy_url?: string | null;
+  openswarm_subscription_plan?: string | null;
+  openswarm_subscription_expires?: string | null;
+  openswarm_usage_cached?: SubscriptionUsage | null;
+}
+
+export interface ActivateSubscriptionPayload {
+  token: string;
+  plan?: string | null;
+  expires?: string | null;
 }
 
 export interface BrowseResult {
@@ -120,6 +141,36 @@ export const browseDirectories = createAsyncThunk(
     const res = await fetch(`${SETTINGS_API}/browse-directories?path=${encodeURIComponent(path)}`);
     if (!res.ok) throw new Error((await res.json()).detail);
     return (await res.json()) as BrowseResult;
+  }
+);
+
+// POST /api/subscription/activate — called after the desktop catches an
+// openswarm://auth?token=... deep link. Validates + persists on the backend,
+// then refreshes settings so the Settings UI flips to "Pro" mode.
+export const activateSubscription = createAsyncThunk(
+  'settings/activateSubscription',
+  async (payload: ActivateSubscriptionPayload, { dispatch }) => {
+    const res = await fetch(`${API_BASE}/subscription/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error((await res.text()) || 'Activation failed');
+    // Pull the fresh settings so UI reflects connection_mode + plan.
+    await dispatch(fetchSettings());
+    return (await res.json()) as { ok: boolean; plan: string };
+  }
+);
+
+// POST /api/subscription/disconnect — clears bearer + reverts to own_key.
+// Doesn't cancel the Stripe subscription (that's the Portal).
+export const disconnectSubscription = createAsyncThunk(
+  'settings/disconnectSubscription',
+  async (_: void, { dispatch }) => {
+    const res = await fetch(`${API_BASE}/subscription/disconnect`, { method: 'POST' });
+    if (!res.ok) throw new Error('Disconnect failed');
+    await dispatch(fetchSettings());
+    return true;
   }
 );
 

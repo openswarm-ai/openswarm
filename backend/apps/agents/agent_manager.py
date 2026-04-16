@@ -1041,11 +1041,18 @@ class AgentManager:
                 "disallowed_tools": effective_disallowed,
                 "include_partial_messages": True,
             }
-            # Priority: Anthropic API key (Anthropic models only) → 9Router.
-            # Non-Anthropic api_types always route through 9Router regardless
-            # of whether an Anthropic API key is set.
+            # Priority: openswarm-pro mode → Anthropic API key → 9Router.
+            # Non-Anthropic api_types always route through 9Router regardless.
             from backend.apps.nine_router import is_running as _9r_running
-            if api_type == "anthropic" and global_settings.anthropic_api_key:
+            if api_type == "anthropic" and getattr(global_settings, "connection_mode", "own_key") == "openswarm-pro":
+                proxy_url = getattr(global_settings, "openswarm_proxy_url", None) or "https://api.openswarm.com"
+                bearer = getattr(global_settings, "openswarm_bearer_token", "") or ""
+                options_kwargs["env"] = {
+                    "ANTHROPIC_AUTH_TOKEN": bearer,
+                    "ANTHROPIC_BASE_URL": proxy_url,
+                }
+                logger.info(f"[MCP-DEBUG] Using OpenSwarm Pro proxy at {proxy_url}")
+            elif api_type == "anthropic" and global_settings.anthropic_api_key:
                 options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
                 logger.info("[MCP-DEBUG] Using direct Anthropic API key")
             elif _9r_running():

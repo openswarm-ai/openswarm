@@ -87,7 +87,7 @@ class Directory:
                         if debug_file.calls_debug_function():
                             parent_dir.add_child(debug_file)
                     else:
-                        raise Exception(f"[build_structure]: Entry is not dir or file: {entry.path}")
+                        continue
         
         construct_project_structure(root_dir, self)        
         # [print(f"[build_structure]: {file}") for file in project_structure]

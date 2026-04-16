@@ -69,6 +69,13 @@ class AppSettings(BaseModel):
     analytics_opt_in: bool = True
     installation_id: Optional[str] = None
     first_opened_at: Optional[str] = None  # ISO timestamp of first app open
+    # OpenSwarm Pro subscription
+    connection_mode: str = "own_key"  # "own_key" | "openswarm-pro"
+    openswarm_bearer_token: Optional[str] = None
+    openswarm_proxy_url: Optional[str] = None  # default resolved in credentials.py
+    openswarm_subscription_plan: Optional[str] = None  # "hobby"|"pro"|"pro_plus"|"ultra"
+    openswarm_subscription_expires: Optional[str] = None  # ISO 8601
+    openswarm_usage_cached: Optional[dict] = None  # {count, limit, window_end_at}
 
 
 class CustomProvider(BaseModel):

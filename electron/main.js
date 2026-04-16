@@ -12,17 +12,59 @@ const http = require('http');
 // (or macOS auto-launch + manual launch overlapping) spawns two independent
 // processes — each with its own backend on a different port — resulting in
 // one populated window and one empty window.
+// Register openswarm:// protocol handler BEFORE any gotLock branching.
+// Must happen synchronously at the top of main.js so the OS knows this
+// binary is the default handler even before whenReady fires.
+if (process.defaultApp) {
+  // Dev run: `electron .` needs the entry-script path to re-launch cleanly.
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('openswarm', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('openswarm');
+}
+
+// Pending deep-link captured before mainWindow exists (cold-launch case).
+// Flushed to renderer once mainWindow is ready.
+let pendingDeepLink = null;
+
+function forwardDeepLinkToRenderer(url) {
+  if (!url) return;
+  if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.send('openswarm:auth-url', url);
+  } else {
+    pendingDeepLink = url;
+  }
+}
+
+function extractOpenswarmUrl(argv) {
+  return argv && argv.find((a) => typeof a === 'string' && a.startsWith('openswarm://'));
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.exit(0);
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    // Windows/Linux: a `openswarm://...` click lands here because the OS
+    // re-launches the app with the URL as an argv. We swallow the second
+    // instance, focus the existing window, and forward the URL to renderer.
+    const url = extractOpenswarmUrl(argv);
+    if (url) forwardDeepLinkToRenderer(url);
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
   });
 }
+
+// macOS-only: clicks on openswarm:// links fire this event (instead of
+// relaunching the process).
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  forwardDeepLinkToRenderer(url);
+  if (mainWindow) mainWindow.focus();
+});
 
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
@@ -253,6 +295,15 @@ function createWindow() {
     mainWindow.webContents.send('webview-new-window', url, mainWindow.webContents.id);
   });
 
+  // Once the renderer has loaded, flush any deep-link URL we captured before
+  // the window existed (cold-launch via openswarm://).
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (pendingDeepLink) {
+      mainWindow.webContents.send('openswarm:auth-url', pendingDeepLink);
+      pendingDeepLink = null;
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -317,6 +368,12 @@ function killBackend() {
 }
 
 app.whenReady().then(async () => {
+  // Cold-launch: if the OS opened us via openswarm:// (Windows/Linux it's
+  // in argv; macOS fires open-url AFTER whenReady which we handle above)
+  // buffer the URL for when mainWindow loads.
+  const initialDeepLink = extractOpenswarmUrl(process.argv);
+  if (initialDeepLink) pendingDeepLink = initialDeepLink;
+
   if (process.platform === 'darwin' && !isPackaged) {
     try { app.dock.setIcon(iconPath); } catch (_) {}
   }

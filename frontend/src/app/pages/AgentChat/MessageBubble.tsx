@@ -62,6 +62,65 @@ const StreamingCursor: React.FC = () => {
 
 const ELEMENT_SEPARATOR = '\n\n---\nSelected UI Elements:\n';
 
+interface OpenSwarmErrorInfo {
+  kind: 'cap' | 'capacity' | 'auth' | 'network';
+  title: string;
+  detail: string;
+  ctaLabel?: string;
+  ctaAction?: 'upgrade' | 'retry' | 'settings';
+}
+
+// Turn a raw Claude-CLI / cloud error string into a user-friendly card.
+// Returns null for things that aren't obviously our errors — those fall
+// through to normal markdown rendering.
+function parseOpenSwarmError(text: string): OpenSwarmErrorInfo | null {
+  if (!text) return null;
+  // Rate-limit cap from our cloud
+  if (/rate_limit_error|reached your OpenSwarm.*plan limit|Usage cap exceeded/i.test(text)) {
+    const reset = text.match(/Resets in ([\dhms\s]+)/)?.[1];
+    return {
+      kind: 'cap',
+      title: "You've hit your plan limit",
+      detail: reset
+        ? `Your usage resets in ${reset}. Upgrade to keep going now, or wait for the window to reset.`
+        : 'Upgrade to keep going now, or wait for your usage window to reset.',
+      ctaLabel: 'Upgrade plan',
+      ctaAction: 'upgrade',
+    };
+  }
+  // Upstream capacity / 503
+  if (/at capacity|Try again shortly|503|service unavailable/i.test(text)) {
+    return {
+      kind: 'capacity',
+      title: 'OpenSwarm servers are busy',
+      detail: "We're hitting capacity on our end — please retry in a moment. If this keeps happening, contact support.",
+      ctaLabel: 'Try again',
+      ctaAction: 'retry',
+    };
+  }
+  // Auth / subscription problems
+  if (/No active subscription|Subscription canceled|Subscription past_due|Invalid.*token|Missing bearer token/i.test(text)) {
+    return {
+      kind: 'auth',
+      title: 'Subscription issue',
+      detail: "We can't find an active OpenSwarm subscription. Check your billing status.",
+      ctaLabel: 'Open Settings',
+      ctaAction: 'settings',
+    };
+  }
+  // Network issues (keep last so it doesn't swallow the specific cases above)
+  if (/ECONNREFUSED|ENETUNREACH|fetch failed|ETIMEDOUT|network|Could not reach/i.test(text)) {
+    return {
+      kind: 'network',
+      title: 'Network issue',
+      detail: "Can't reach the OpenSwarm service. Check your internet connection and try again.",
+      ctaLabel: 'Try again',
+      ctaAction: 'retry',
+    };
+  }
+  return null;
+}
+
 interface ParsedElement {
   label: string;
   selector: string;
@@ -600,6 +659,11 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
     ? parseElementContext(rawText)
     : { userMessage: rawText, elements: [] };
 
+  // Detect friendly OpenSwarm / upstream errors and render a card instead of
+  // raw "API Error: ..." text. Checks both the wrapped format the Claude CLI
+  // uses ("API Error: NNN …") and the raw JSON body.
+  const openswarmError = !isUser ? parseOpenSwarmError(rawText) : null;
+
   React.useEffect(() => {
     if (editing) setEditText(rawText);
   }, [editing, rawText]);
@@ -782,15 +846,77 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
               '& a': { color: c.accent.primary },
             }}
           >
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                a: ({ children, ...props }) => (
-                  <a {...props} style={{ cursor: 'pointer' }}>{children}</a>
-                ),
-              }}
-            >{rawText}</ReactMarkdown>
-            {isStreaming && <StreamingCursor />}
+            {openswarmError ? (
+              <Box
+                sx={{
+                  mt: 0.5,
+                  p: 1.8,
+                  borderRadius: `${c.radius.lg}px`,
+                  border: `1px solid ${c.status.warning}40`,
+                  bgcolor: `${c.status.warning}10`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 0.7,
+                }}
+              >
+                <Typography sx={{ fontSize: '0.92rem', fontWeight: 600, color: c.text.primary }}>
+                  {openswarmError.title}
+                </Typography>
+                <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, lineHeight: 1.5 }}>
+                  {openswarmError.detail}
+                </Typography>
+                {openswarmError.ctaLabel && (
+                  <Box sx={{ mt: 0.4 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        const api = (window as any).openswarm;
+                        if (openswarmError.ctaAction === 'upgrade') {
+                          const url = 'https://api.openswarm.com/api/stripe/checkout';
+                          fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ plan: 'pro_plus', billing_interval: 'monthly' }),
+                          })
+                            .then((r) => r.json())
+                            .then(({ url }) => {
+                              if (url && api?.openExternal) api.openExternal(url);
+                              else if (url) window.open(url, '_blank');
+                            })
+                            .catch(() => {});
+                        } else if (openswarmError.ctaAction === 'settings') {
+                          // Best-effort: dispatch a DOM event the Settings modal listens to
+                          window.dispatchEvent(new CustomEvent('openswarm:open-settings', { detail: { tab: 'models' } }));
+                        }
+                      }}
+                      sx={{
+                        textTransform: 'none',
+                        fontSize: '0.78rem',
+                        borderColor: c.border.medium,
+                        color: c.text.primary,
+                        borderRadius: `${c.radius.md}px`,
+                        '&:hover': { borderColor: c.accent.primary },
+                      }}
+                    >
+                      {openswarmError.ctaLabel}
+                    </Button>
+                  </Box>
+                )}
+              </Box>
+            ) : (
+              <>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({ children, ...props }) => (
+                      <a {...props} style={{ cursor: 'pointer' }}>{children}</a>
+                    ),
+                  }}
+                >{rawText}</ReactMarkdown>
+                {isStreaming && <StreamingCursor />}
+              </>
+            )}
           </Box>
         )}
       </Box>

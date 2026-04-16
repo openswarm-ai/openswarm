@@ -259,6 +259,7 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     """Resolve a short model name into the id string passed to ClaudeAgentOptions.
 
     Priority:
+    - Anthropic model + openswarm-pro mode → bare `model_id` (our cloud proxy)
     - Anthropic model with an API key set → bare `model_id` (real Anthropic API)
     - Everything else → `router_model_id` (9Router with cc/ cx/ gc/ gh/ prefix)
     - Unknown names pass through unchanged
@@ -266,8 +267,11 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     entry = _find_builtin_model(short_name)
     if entry is None:
         return short_name
-    if entry.get("api") == "anthropic" and getattr(settings, "anthropic_api_key", None):
-        return entry.get("model_id", short_name)
+    if entry.get("api") == "anthropic":
+        if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
+            return entry.get("model_id", short_name)
+        if getattr(settings, "anthropic_api_key", None):
+            return entry.get("model_id", short_name)
     return entry.get("router_model_id", entry.get("model_id", short_name))
 
 
@@ -293,6 +297,11 @@ async def resolve_aux_model(settings: AppSettings, preferred_tier: str = "haiku"
     haiku_bare = "claude-haiku-4-5-20251001"
     sonnet_bare = "claude-sonnet-4-20250514"
     bare = haiku_bare if preferred_tier == "haiku" else sonnet_bare
+
+    # OpenSwarm Pro — route through our cloud proxy
+    if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
+        proxy_url = getattr(settings, "openswarm_proxy_url", None) or "https://api.openswarm.com"
+        return (bare, proxy_url)
 
     # Direct API key wins
     if getattr(settings, "anthropic_api_key", None):
@@ -361,10 +370,10 @@ def create_provider(
 
     if api_type == "anthropic":
         from backend.apps.agents.providers.anthropic import AnthropicProvider
-        if getattr(settings, "connection_mode", "own_key") == "managed":
+        if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
             return AnthropicProvider(
-                auth_token=getattr(settings, "openswarm_auth_token", None),
-                base_url=getattr(settings, "openswarm_proxy_url", None) or "https://api.openswarm.ai",
+                auth_token=getattr(settings, "openswarm_bearer_token", None),
+                base_url=getattr(settings, "openswarm_proxy_url", None) or "https://api.openswarm.com",
             )
         # Priority: API key → 9Router subscription
         if settings.anthropic_api_key:
@@ -467,8 +476,8 @@ def _has_credentials(provider_name: str, settings: AppSettings) -> bool:
     api_type = _get_api_type(provider_name)
 
     if api_type == "anthropic":
-        if getattr(settings, "connection_mode", "own_key") == "managed":
-            return bool(getattr(settings, "openswarm_auth_token", None))
+        if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
+            return bool(getattr(settings, "openswarm_bearer_token", None))
         return bool(settings.anthropic_api_key)
     if api_type == "openai":
         return bool(settings.openai_api_key)

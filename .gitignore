@@ -24,3 +24,6 @@ backend/npm-servers/*/node_modules/
 frontend/dist/
 # Bundled uv binaries (downloaded during build)
 backend/uv-bin/
+.account-factory
+openswarm-cloud
+.openswarm-cloud

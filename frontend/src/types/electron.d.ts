@@ -45,6 +45,9 @@ declare global {
     onUpdateDownloaded: (cb: (info: OpenSwarmUpdateInfo) => void) => () => void;
     onUpdateError: (cb: (message: string) => void) => () => void;
     onWebviewNewWindow: (cb: (url: string, webContentsId: number) => void) => () => void;
+    openExternal: (url: string) => Promise<void>;
+    // Deep-link listener — fires when OS opens the app with openswarm://... URL.
+    onAuthUrl?: (cb: (url: string) => void) => () => void;
   }
 
   interface Window {
