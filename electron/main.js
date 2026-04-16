@@ -283,9 +283,21 @@ function createWindow() {
     mainWindow.loadFile(frontendPath);
   }
 
-  mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, _params) => {
+  mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, params) => {
     webPreferences.plugins = true;
     webPreferences.enableBlinkFeatures = 'EncryptedMedia';
+    // Force our webview preload to attach for every <webview>, unconditionally.
+    // The alternative (reading window.openswarm.getWebviewPreloadPath() in
+    // BrowserCard's React code at module-eval time) raced against the
+    // preload's async contextBridge exposure — the resulting attribute on
+    // the <webview> element ended up empty, so no preload ran and our
+    // passkey shim never loaded. Setting webPreferences.preload here runs
+    // on every attach and can't be out-raced. Absolute path (not file://)
+    // is what webPreferences expects.
+    webPreferences.preload = path.join(__dirname, 'webview-preload.js');
+    try {
+      console.log('[openswarm:attach-webview] forced preload=', webPreferences.preload, 'src=', params.src);
+    } catch (_) {}
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
@@ -528,7 +540,9 @@ app.on('web-contents-created', (_event, contents) => {
     contents.on('console-message', (_e, level, message, line, sourceId) => {
       if (message.includes('widevine') || message.includes('drm') ||
           message.includes('license') || message.includes('MediaKeySession') ||
-          message.includes('EME') || message.includes('[drm-diag]') || level >= 2) {
+          message.includes('EME') || message.includes('[drm-diag]') ||
+          message.includes('openswarm') ||
+          level >= 2) {
         const tag = ['LOG', 'INFO', 'WARN', 'ERROR'][level] || 'LOG';
         const src = sourceId ? sourceId.split('/').pop() : '';
         console.log(`[webview:${tag}] ${message}${src ? ` (${src}:${line})` : ''}`);
@@ -564,7 +578,59 @@ app.on('web-contents-created', (_event, contents) => {
       cdpQueueByWcId.delete(contents.id);
     });
 
+    // WebAuthn/passkey shim. Injected on every dom-ready in the main world
+    // via executeJavaScript (which uses V8's direct evaluation path and
+    // bypasses Trusted Types CSP — inline <script> injection from the
+    // webview preload was being blocked on accounts.google.com because of
+    // `require-trusted-types-for 'script'`). The shim overrides
+    // navigator.credentials so passkey calls reject cleanly and post a
+    // tagged message back; webview-preload.js listens and forwards to the
+    // embedder, which surfaces the "Passkeys aren't supported" dialog.
     contents.on('dom-ready', () => {
+      contents.executeJavaScript(`
+        (function() {
+          if (window.__openswarm_passkey_shim__) return;
+          window.__openswarm_passkey_shim__ = true;
+          try {
+            console.warn('[openswarm:shim] main-world shim installing at', location.href);
+            var notify = function(kind) {
+              try { console.warn('[openswarm:shim] passkey intercepted:', kind); } catch (_) {}
+              try { window.postMessage({ __openswarm__: '__openswarm_passkey__' }, '*'); } catch (_) {}
+            };
+            var rejected = function() {
+              return Promise.reject(new DOMException(
+                'OpenSwarm does not support passkeys. Please use another sign-in method.',
+                'NotAllowedError'
+              ));
+            };
+            if (navigator.credentials) {
+              var origGet = navigator.credentials.get && navigator.credentials.get.bind(navigator.credentials);
+              navigator.credentials.get = function(options) {
+                if (options && options.publicKey) {
+                  if (options.mediation !== 'conditional') notify('get:' + (options.mediation || 'default'));
+                  return rejected();
+                }
+                return origGet ? origGet(options) : Promise.reject(new DOMException('Not supported', 'NotSupportedError'));
+              };
+              var origCreate = navigator.credentials.create && navigator.credentials.create.bind(navigator.credentials);
+              navigator.credentials.create = function(options) {
+                if (options && options.publicKey) { notify('create'); return rejected(); }
+                return origCreate ? origCreate(options) : Promise.reject(new DOMException('Not supported', 'NotSupportedError'));
+              };
+              console.warn('[openswarm:shim] navigator.credentials patched');
+            }
+            if (window.PublicKeyCredential) {
+              window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = function() { return Promise.resolve(false); };
+              if (window.PublicKeyCredential.isConditionalMediationAvailable) {
+                window.PublicKeyCredential.isConditionalMediationAvailable = function() { return Promise.resolve(false); };
+              }
+            }
+          } catch (e) {
+            try { console.warn('[openswarm:shim] error:', e && e.message); } catch (_) {}
+          }
+        })();
+      `).catch(() => {});
+
       const url = contents.getURL();
       if (url.includes('spotify')) {
         contents.executeJavaScript(`

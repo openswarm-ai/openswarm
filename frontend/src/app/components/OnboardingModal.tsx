@@ -346,6 +346,11 @@ const OnboardingModal: React.FC = () => {
     // system browser. The post-payment openswarm://auth deep link will
     // dismiss this modal automatically via useDeepLink → fetchSettings.
     if (providerId === 'openswarm-pro') {
+      trackEvent('subscription.subscribe_clicked', {
+        source: 'onboarding',
+        plan: 'pro',
+        billing_interval: 'monthly',
+      });
       try {
         const r = await fetch('https://api.openswarm.com/api/stripe/checkout', {
           method: 'POST',
@@ -354,6 +359,12 @@ const OnboardingModal: React.FC = () => {
         });
         if (r.ok) {
           const { url } = await r.json();
+          if (url) {
+            trackEvent('subscription.checkout_opened', {
+              source: 'onboarding',
+              plan: 'pro',
+            });
+          }
           const api = (window as any).openswarm;
           if (url && api?.openExternal) api.openExternal(url);
           else if (url) window.open(url, '_blank');

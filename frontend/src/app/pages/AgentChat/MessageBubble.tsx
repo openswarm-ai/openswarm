@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { trackEvent } from '@/shared/analytics';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
@@ -663,6 +664,15 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
   // raw "API Error: ..." text. Checks both the wrapped format the Claude CLI
   // uses ("API Error: NNN …") and the raw JSON body.
   const openswarmError = !isUser ? parseOpenSwarmError(rawText) : null;
+
+  // Fire subscription.rate_limit_hit exactly once per rate-limit error
+  // card mount. Dependency on (message.id, kind) ensures we don't re-fire
+  // on re-renders or content edits.
+  React.useEffect(() => {
+    if (openswarmError?.kind === 'cap') {
+      trackEvent('subscription.rate_limit_hit', { message_id: message.id });
+    }
+  }, [message.id, openswarmError?.kind]);
 
   React.useEffect(() => {
     if (editing) setEditText(rawText);

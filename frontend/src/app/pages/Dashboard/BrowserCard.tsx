@@ -7,6 +7,10 @@ import InputBase from '@mui/material/InputBase';
 import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
 import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import Fade from '@mui/material/Fade';
 import LanguageIcon from '@mui/icons-material/Language';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -75,9 +79,19 @@ const chromeUserAgent = navigator.userAgent
   .replace(/\s*Electron\/\S+/, '')
   .replace(/\s*OpenSwarm\/\S+/, '');
 
+// Read from the sync exposure first (set at preload boot, always present
+// by the time modules evaluate). Fall back to the async `openswarm` API
+// for backward compatibility. If you see `<openswarm:webview-preload>`
+// logs in the terminal, this attached; if you don't, it didn't.
 const webviewPreloadPath: string | undefined = isElectron
-  ? (window as any).openswarm?.getWebviewPreloadPath?.()
+  ? ((window as any).__OPENSWARM_WEBVIEW_PRELOAD__
+      || (window as any).openswarm?.getWebviewPreloadPath?.())
   : undefined;
+
+if (isElectron) {
+  // eslint-disable-next-line no-console
+  console.warn('[openswarm:card-module] webviewPreloadPath =', webviewPreloadPath);
+}
 
 type WebviewElement = BrowserWebview;
 
@@ -140,6 +154,11 @@ const BrowserCard: React.FC<Props> = ({
   const lastAction = activity.lastAction;
 
   const [tabLocalStates, setTabLocalStates] = useState<Record<string, TabLocalState>>({});
+  // Electron webviews can't trigger the OS platform authenticator (see
+  // webview-preload.js for the WebAuthn shim). When the preload catches a
+  // passkey call it sends `ipc-message` "passkey-detected"; we surface a
+  // modal so the user knows why the sign-in didn't work.
+  const [passkeyDialogOpen, setPasskeyDialogOpen] = useState(false);
   const updateTabLocal = useCallback((tabId: string, update: Partial<TabLocalState>) => {
     setTabLocalStates((prev) => {
       const existing = prev[tabId] ?? { loading: false, canGoBack: false, canGoForward: false };
@@ -200,6 +219,14 @@ const BrowserCard: React.FC<Props> = ({
         });
       };
 
+      const onIpcMessage = (e: any) => {
+        // eslint-disable-next-line no-console
+        console.warn('[openswarm:card] webview ipc-message:', e?.channel, e?.args);
+        if (e?.channel === 'passkey-detected') {
+          setPasskeyDialogOpen(true);
+        }
+      };
+
       const onTitleUpdate = () => {
         dispatch(updateBrowserTabTitle({ browserId, tabId, title: wv.getTitle() }));
       };
@@ -224,6 +251,7 @@ const BrowserCard: React.FC<Props> = ({
       wv.addEventListener('did-start-loading', onLoadStart);
       wv.addEventListener('did-stop-loading', onLoadStop);
       wv.addEventListener('page-favicon-updated', onFaviconUpdate);
+      wv.addEventListener('ipc-message', onIpcMessage as any);
 
       cleanups.push(() => {
         unregisterWebview(browserId, tabId);
@@ -233,6 +261,7 @@ const BrowserCard: React.FC<Props> = ({
         wv.removeEventListener('did-start-loading', onLoadStart);
         wv.removeEventListener('did-stop-loading', onLoadStop);
         wv.removeEventListener('page-favicon-updated', onFaviconUpdate);
+        wv.removeEventListener('ipc-message', onIpcMessage as any);
       });
     }
 
@@ -1034,7 +1063,47 @@ const BrowserCard: React.FC<Props> = ({
               }}
             />
           ))
-        ) : (
+        ) : null}
+        <Dialog
+          open={passkeyDialogOpen}
+          onClose={() => setPasskeyDialogOpen(false)}
+          PaperProps={{
+            sx: {
+              bgcolor: c.bg.surface,
+              border: `1px solid ${c.border.subtle}`,
+              borderRadius: `${c.radius.lg}px`,
+              maxWidth: 420,
+            },
+          }}
+        >
+          <DialogTitle sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary, pb: 1 }}>
+            Passkeys aren't supported
+          </DialogTitle>
+          <DialogContent sx={{ pb: 1 }}>
+            <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary, lineHeight: 1.5 }}>
+              Sorry — OpenSwarm doesn't support passkeys. Please sign in with a password or another method.
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button
+              onClick={() => setPasskeyDialogOpen(false)}
+              sx={{
+                textTransform: 'none',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                bgcolor: c.accent.primary,
+                color: '#fff',
+                borderRadius: `${c.radius.md}px`,
+                px: 2.25,
+                py: 0.6,
+                '&:hover': { bgcolor: c.accent.hover || c.accent.primary },
+              }}
+            >
+              OK
+            </Button>
+          </DialogActions>
+        </Dialog>
+        {!isElectron && (
           <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
             <iframe
               src={activeUrl}

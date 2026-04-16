@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { trackEvent } from '@/shared/analytics';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -158,6 +159,10 @@ const OpenSwarmProCard: React.FC = () => {
   const dispatch = useAppDispatch();
   const [status, setStatus] = useState<OpenSwarmProStatus | null>(null);
   const [busy, setBusy] = useState<'manage' | 'disconnect' | null>(null);
+  // Track which usage thresholds we've already fired this session so the
+  // event doesn't spam PostHog every 30s while the counter hovers past
+  // the threshold. Reset implicitly on page unmount (settings close).
+  const firedUsageThresholds = useRef<Set<number>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
@@ -175,6 +180,12 @@ const OpenSwarmProCard: React.FC = () => {
   }, [refresh]);
 
   const handleSubscribe = async () => {
+    trackEvent('subscription.subscribe_clicked', {
+      source: 'settings',
+      plan: 'pro',
+      billing_interval: 'monthly',
+      was_subscribed: !!status?.last_plan,
+    });
     try {
       const r = await fetch('https://api.openswarm.com/api/stripe/checkout', {
         method: 'POST',
@@ -183,6 +194,12 @@ const OpenSwarmProCard: React.FC = () => {
       });
       if (r.ok) {
         const { url } = await r.json();
+        if (url) {
+          trackEvent('subscription.checkout_opened', {
+            source: 'settings',
+            plan: 'pro',
+          });
+        }
         const api = (window as any).openswarm;
         if (url && api?.openExternal) api.openExternal(url);
         else if (url) window.open(url, '_blank');
@@ -193,6 +210,10 @@ const OpenSwarmProCard: React.FC = () => {
   };
 
   const handleManage = async () => {
+    trackEvent('subscription.manage_clicked', {
+      plan: status?.plan ?? null,
+      status: status?.status ?? null,
+    });
     setBusy('manage');
     try {
       const r = await fetch(`${API_BASE}/subscription/portal`, { method: 'POST' });
@@ -216,6 +237,25 @@ const OpenSwarmProCard: React.FC = () => {
       setBusy(null);
     }
   };
+
+  // Fire subscription.usage_warning exactly once per threshold per session
+  // when utilization crosses 80% / 90%. Placed before the early return so
+  // the hook chain stays stable.
+  useEffect(() => {
+    if (!status?.connected) return;
+    const rawPct = status.usage?.utilization ?? 0;
+    const current = Math.max(0, Math.min(100, Math.round(rawPct)));
+    for (const threshold of [80, 90] as const) {
+      if (current >= threshold && !firedUsageThresholds.current.has(threshold)) {
+        firedUsageThresholds.current.add(threshold);
+        trackEvent('subscription.usage_warning', {
+          plan: status.plan ?? null,
+          utilization: current,
+          threshold,
+        });
+      }
+    }
+  }, [status]);
 
   // Loading state — don't flash a CTA that disappears on first fetch.
   if (!status) return null;

@@ -6,6 +6,10 @@
 
 'use strict';
 
+// Diagnostic marker so we can confirm the preload actually attached to
+// this webview. Surfaces via main.js's console-message listener.
+try { console.warn('[openswarm:webview-preload] loaded for', window.location.href); } catch (_) {}
+
 // Hide webdriver flag
 Object.defineProperty(navigator, 'webdriver', {
   get: () => false,
@@ -85,3 +89,50 @@ try {
 // Fix console.debug detection (some sites use it as a breakpoint detector)
 const noop = () => {};
 if (!window.console.debug) window.console.debug = noop;
+
+// ---------------------------------------------------------------------------
+// Passkey / WebAuthn handling
+//
+// Electron webviews can't trigger the OS platform authenticator (Touch ID,
+// Windows Hello) — see electron/electron#15404, #24573. Sites that offer
+// "Sign in with passkey" either fail silently or loop (#41472 on LinkedIn).
+//
+// With contextIsolation on (the Electron default), any patches we make to
+// navigator.credentials from this preload only apply in the ISOLATED world;
+// the page's own JS runs in the MAIN world and sees the original API. We
+// have to inject the shim via webFrame.executeJavaScript so it lands in
+// the page's JS context, then bridge the event back out with a DOM
+// CustomEvent that this isolated-world preload listens for and relays via
+// ipcRenderer.sendToHost to the embedding <webview> element.
+//
+// Two-pronged shim (both evaluated in the main world):
+//   1. Probe APIs (isUserVerifyingPlatformAuthenticatorAvailable,
+//      isConditionalMediationAvailable) return false so sites that check
+//      before rendering a passkey button fall back to passwords quietly.
+//   2. credentials.get / credentials.create with publicKey options reject
+//      with a clean NotAllowedError AND dispatch the passkey event so the
+//      embedder can surface a dialog. Conditional mediation (silent
+//      autofill) is intercepted but doesn't fire the dialog — that's
+//      not a user click.
+// ---------------------------------------------------------------------------
+try {
+  const { ipcRenderer } = require('electron');
+
+  // The actual WebAuthn shim is injected by the MAIN process via
+  // contents.executeJavaScript on each 'dom-ready' (see electron/main.js).
+  // That path runs in the page's main world and bypasses Trusted Types
+  // CSP enforcement, which blocks our previous inline-<script> approach
+  // on sites like accounts.google.com.
+  //
+  // Our only job here is to act as the postMessage→IPC bridge: the main-
+  // world shim posts a tagged message, we relay it via sendToHost to the
+  // embedding <webview> element, which shows the "passkeys not supported"
+  // dialog.
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    if (event.data && event.data.__openswarm__ === '__openswarm_passkey__') {
+      console.warn('[openswarm:webview-preload] passkey bridge → sendToHost');
+      try { ipcRenderer.sendToHost('passkey-detected', window.location.href); } catch (_) {}
+    }
+  });
+} catch (_) {}

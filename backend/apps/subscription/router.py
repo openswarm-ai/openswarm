@@ -239,11 +239,16 @@ async def sync():
     No-op when not in openswarm-pro mode. Best-effort: network failures are
     swallowed — the caller still gets a 200 with whatever local state we
     already had."""
+    # Lazy-import the PostHog helper so subscription/router doesn't pay the
+    # cost when analytics are disabled.
+    from backend.apps.analytics.collector import record as _record
+
     settings_obj = load_settings()
     bearer = getattr(settings_obj, "openswarm_bearer_token", None)
     mode = getattr(settings_obj, "connection_mode", "own_key")
 
     if mode != "openswarm-pro" or not bearer:
+        _record("subscription.sync_ran", {"reason": "no_bearer"})
         return {"ok": True, "synced": False, "connection_mode": mode}
 
     try:
@@ -254,6 +259,7 @@ async def sync():
             )
     except httpx.HTTPError as e:
         logger.debug("subscription/sync live fetch failed: %s", e)
+        _record("subscription.sync_ran", {"reason": "network"})
         return {"ok": True, "synced": False, "reason": "network"}
 
     # Same 401/402 handling as /status: if Stripe-side reconciliation proves
@@ -261,15 +267,18 @@ async def sync():
     # reverts to own_key instead of hammering a useless token.
     if r.status_code in (401, 402):
         _clear_subscription(settings_obj)
+        reason = "revoked" if r.status_code == 401 else "expired"
+        _record("subscription.sync_ran", {"reason": reason})
         return {
             "ok": True,
             "synced": False,
             "connected": False,
-            "reason": "revoked" if r.status_code == 401 else "expired",
+            "reason": reason,
         }
 
     if r.status_code != 200:
         logger.debug("subscription/sync got %s from cloud: %s", r.status_code, r.text[:200])
+        _record("subscription.sync_ran", {"reason": "upstream", "status_code": r.status_code})
         return {"ok": True, "synced": False, "reason": "upstream"}
 
     data = r.json()
@@ -287,6 +296,11 @@ async def sync():
         )
     _write_settings(settings_obj)
     _sync_subscription_identity(settings_obj)
+    _record("subscription.sync_ran", {
+        "reason": "ok",
+        "synced": bool(data.get("synced")),
+        "plan": cloud_plan,
+    })
     return {
         "ok": True,
         "synced": bool(data.get("synced")),
