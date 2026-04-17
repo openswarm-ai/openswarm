@@ -22,6 +22,7 @@ import { AgentMessage } from '@/shared/state/agentsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { SKILL_COLOR } from '@/app/components/richEditorUtils';
 import ViewBubble from './ViewBubble';
+import PlanPicker from '@/app/components/PlanPicker';
 
 const streamingCursorKeyframes = `
 @keyframes blink-cursor {
@@ -609,6 +610,7 @@ interface Props {
 const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, onSaveEdit, onCancelEdit, isStreaming }) => {
   const c = useClaudeTokens();
   const [editText, setEditText] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
   const { role, content } = message;
 
   if (role === 'system') {
@@ -883,18 +885,10 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                       onClick={() => {
                         const api = (window as any).openswarm;
                         if (openswarmError.ctaAction === 'upgrade') {
-                          const url = 'https://api.openswarm.com/api/stripe/checkout';
-                          fetch(url, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ plan: 'pro_plus', billing_interval: 'monthly' }),
-                          })
-                            .then((r) => r.json())
-                            .then(({ url }) => {
-                              if (url && api?.openExternal) api.openExternal(url);
-                              else if (url) window.open(url, '_blank');
-                            })
-                            .catch(() => {});
+                          // Open the tier picker in a modal so the user can
+                          // choose Pro / Pro+ / Ultra + monthly/annual instead
+                          // of going directly to a hardcoded pro_plus checkout.
+                          setPickerOpen(true);
                         } else if (openswarmError.ctaAction === 'settings') {
                           // Best-effort: dispatch a DOM event the Settings modal listens to
                           window.dispatchEvent(new CustomEvent('openswarm:open-settings', { detail: { tab: 'models' } }));
@@ -934,6 +928,44 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
           </Box>
         )}
       </Box>
+
+      <Modal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}
+      >
+        <Box sx={{
+          width: 460, maxWidth: '100%',
+          maxHeight: '90vh', overflowY: 'auto',
+          bgcolor: c.bg.surface, borderRadius: `${c.radius.xl}px`,
+          border: `1px solid ${c.border.subtle}`,
+          p: 3, outline: 'none',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+        }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 1.5 }}>
+            <Typography sx={{ fontSize: '1.05rem', fontWeight: 700, color: c.text.primary }}>
+              Upgrade your plan
+            </Typography>
+            <IconButton
+              size="small"
+              onClick={() => setPickerOpen(false)}
+              sx={{ color: c.text.tertiary }}
+              aria-label="Close"
+            >
+              <CloseIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Box>
+          <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mb: 2 }}>
+            Pick a plan to keep going. Cancel anytime from Stripe.
+          </Typography>
+          <PlanPicker
+            source="upgrade_cta"
+            defaultPlan="pro_plus"
+            compact
+            onSubscribed={() => setPickerOpen(false)}
+          />
+        </Box>
+      </Modal>
     </Box>
   );
 });

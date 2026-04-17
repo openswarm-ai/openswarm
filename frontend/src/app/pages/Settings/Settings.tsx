@@ -48,6 +48,8 @@ import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import DirectoryBrowser from '@/app/components/DirectoryBrowser';
 import { CommandsContent } from '@/app/pages/Commands/Commands';
 import { API_BASE } from '@/shared/config';
+import PlanPicker from '@/app/components/PlanPicker';
+import type { OpenSwarmPlan } from '@/shared/subscription/checkout';
 
 // NOTE: a standalone CopilotAuthButton component used to live here, but it
 // referenced `/agents/copilot/{models,start-auth,poll-auth,disconnect}`
@@ -154,6 +156,14 @@ interface OpenSwarmProStatus {
   } | null;
 }
 
+// Clamp an arbitrary plan name from the cloud to one of the three picker
+// tiers. Falls back to pro_plus so the "recommended" default stays selected
+// if the user's prior plan was hobby or an unknown value.
+const clampPickerPlan = (plan: string | null | undefined): OpenSwarmPlan => {
+  if (plan === 'pro' || plan === 'pro_plus' || plan === 'ultra') return plan;
+  return 'pro_plus';
+};
+
 const OpenSwarmProCard: React.FC = () => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -178,36 +188,6 @@ const OpenSwarmProCard: React.FC = () => {
     const id = setInterval(refresh, 30_000);
     return () => clearInterval(id);
   }, [refresh]);
-
-  const handleSubscribe = async () => {
-    trackEvent('subscription.subscribe_clicked', {
-      source: 'settings',
-      plan: 'pro',
-      billing_interval: 'monthly',
-      was_subscribed: !!status?.last_plan,
-    });
-    try {
-      const r = await fetch('https://api.openswarm.com/api/stripe/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: 'pro', billing_interval: 'monthly' }),
-      });
-      if (r.ok) {
-        const { url } = await r.json();
-        if (url) {
-          trackEvent('subscription.checkout_opened', {
-            source: 'settings',
-            plan: 'pro',
-          });
-        }
-        const api = (window as any).openswarm;
-        if (url && api?.openExternal) api.openExternal(url);
-        else if (url) window.open(url, '_blank');
-      }
-    } catch (e) {
-      console.error('Failed to create checkout session:', e);
-    }
-  };
 
   const handleManage = async () => {
     trackEvent('subscription.manage_clicked', {
@@ -378,17 +358,6 @@ const OpenSwarmProCard: React.FC = () => {
             </Typography>
           )}
           <Box sx={{ display: 'flex', gap: 1 }}>
-            {status.status === 'canceled' && (
-              <Button
-                onClick={handleSubscribe}
-                disabled={busy !== null}
-                size="small"
-                variant="contained"
-                sx={{ textTransform: 'none', fontSize: '0.78rem', borderRadius: `${c.radius.md}px` }}
-              >
-                Resubscribe
-              </Button>
-            )}
             <Button
               onClick={handleManage}
               disabled={busy !== null}
@@ -399,39 +368,56 @@ const OpenSwarmProCard: React.FC = () => {
               {busy === 'manage' ? 'Opening…' : 'Manage in Stripe'}
             </Button>
           </Box>
+
+          {/* Canceled-in-grace: show the 3-tier picker inline so users can
+              pick a plan and resubscribe without clicking through a dialog.
+              Active (non-canceled) subscribers don't get the picker —
+              mid-subscription plan changes go through Stripe's Customer
+              Portal via "Manage in Stripe". */}
+          {status.status === 'canceled' && (
+            <>
+              <Box sx={{ mt: 2.5, mb: 1.5, borderTop: `1px solid ${c.border.subtle}`, pt: 2 }}>
+                <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, fontWeight: 500, mb: 0.3 }}>
+                  Resubscribe to keep access past {expiresLabel || 'your end date'}
+                </Typography>
+                <Typography sx={{ fontSize: '0.7rem', color: c.text.muted }}>
+                  Pick any plan below — you can keep your current tier or switch.
+                </Typography>
+              </Box>
+              <PlanPicker
+                source="settings"
+                defaultPlan={clampPickerPlan(status.plan ?? status.last_plan)}
+                currentPlan={clampPickerPlan(status.plan ?? status.last_plan)}
+              />
+            </>
+          )}
         </>
       ) : status.reason === 'expired' && status.last_plan ? (
         // Truly expired: the bearer's subscription ended past its grace
-        // period. Don't show the new-user "Subscribe" prompt — make it
-        // clear what happened and invite them back.
+        // period. Show the 3-tier picker so the user can pick the same plan
+        // or upgrade; their prior plan is preselected visually.
         <>
           <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, mb: 1.5 }}>
-            Your OpenSwarm Pro subscription has ended. Resubscribe to keep using Claude Sonnet, Opus, and Haiku without a Claude account.
+            Your OpenSwarm Pro subscription has ended. Pick a plan to keep using Claude Sonnet, Opus, and Haiku without a Claude account.
           </Typography>
-          <Button
-            onClick={handleSubscribe}
-            variant="contained"
-            size="small"
-            sx={{ textTransform: 'none', fontSize: '0.82rem', borderRadius: `${c.radius.md}px` }}
-          >
-            Resubscribe
-          </Button>
+          <PlanPicker
+            source="settings"
+            defaultPlan={clampPickerPlan(status.last_plan)}
+            currentPlan={clampPickerPlan(status.last_plan)}
+          />
         </>
       ) : status.reason === 'revoked' && status.last_plan ? (
         // Token revoked but subscription existed — different CTA language
         // so the user knows this isn't a billing issue.
         <>
           <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, mb: 1.5 }}>
-            Your OpenSwarm Pro access token was revoked. Sign back in to reconnect.
+            Your OpenSwarm Pro access token was revoked. Pick a plan to reconnect.
           </Typography>
-          <Button
-            onClick={handleSubscribe}
-            variant="contained"
-            size="small"
-            sx={{ textTransform: 'none', fontSize: '0.82rem', borderRadius: `${c.radius.md}px` }}
-          >
-            Reconnect
-          </Button>
+          <PlanPicker
+            source="settings"
+            defaultPlan={clampPickerPlan(status.last_plan)}
+            currentPlan={clampPickerPlan(status.last_plan)}
+          />
         </>
       ) : (
         // Genuine new user — never had a subscription on this machine.
@@ -439,14 +425,7 @@ const OpenSwarmProCard: React.FC = () => {
           <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 1.5 }}>
             One subscription, no Claude account needed. We handle everything behind the scenes.
           </Typography>
-          <Button
-            onClick={handleSubscribe}
-            variant="contained"
-            size="small"
-            sx={{ textTransform: 'none', fontSize: '0.82rem', borderRadius: `${c.radius.md}px` }}
-          >
-            Subscribe to OpenSwarm Pro
-          </Button>
+          <PlanPicker source="settings" defaultPlan="pro_plus" />
         </>
       )}
     </Box>

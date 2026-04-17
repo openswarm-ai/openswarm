@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, Typography, Modal, Button, CircularProgress, TextField, InputAdornment } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { API_BASE } from '@/shared/config';
 import { trackEvent } from '@/shared/analytics';
+import PlanPicker from '@/app/components/PlanPicker';
 
 // Email validation: format check + typo correction for common domains.
 // Real ownership verification is intentionally pushed downstream (mailing list /
@@ -122,7 +124,7 @@ const OnboardingModal: React.FC = () => {
   const c = useClaudeTokens();
   const settings = useAppSelector((s) => s.settings);
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<'profile' | 'walkthrough' | 'connect'>('profile');
+  const [step, setStep] = useState<'profile' | 'walkthrough' | 'connect' | 'pricing'>('profile');
   const [walkthroughIdx, setWalkthroughIdx] = useState(0);
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
@@ -342,36 +344,13 @@ const OnboardingModal: React.FC = () => {
     setConnecting(providerId);
     trackEvent('onboarding.provider_selected', { provider: providerId });
 
-    // OpenSwarm Pro: no OAuth — just open the pricing/checkout page in the
-    // system browser. The post-payment openswarm://auth deep link will
-    // dismiss this modal automatically via useDeepLink → fetchSettings.
+    // OpenSwarm Pro: switch to the dedicated pricing step so the user can
+    // pick a tier + billing interval before heading to Stripe. The
+    // post-payment openswarm://auth deep link will dismiss this modal
+    // automatically via useDeepLink → fetchSettings.
     if (providerId === 'openswarm-pro') {
-      trackEvent('subscription.subscribe_clicked', {
-        source: 'onboarding',
-        plan: 'pro',
-        billing_interval: 'monthly',
-      });
-      try {
-        const r = await fetch('https://api.openswarm.com/api/stripe/checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plan: 'pro', billing_interval: 'monthly' }),
-        });
-        if (r.ok) {
-          const { url } = await r.json();
-          if (url) {
-            trackEvent('subscription.checkout_opened', {
-              source: 'onboarding',
-              plan: 'pro',
-            });
-          }
-          const api = (window as any).openswarm;
-          if (url && api?.openExternal) api.openExternal(url);
-          else if (url) window.open(url, '_blank');
-        }
-      } catch (e) {
-        console.error('Failed to create checkout session:', e);
-      }
+      setConnecting(null);
+      setStep('pricing');
       return;
     }
 
@@ -494,7 +473,7 @@ const OnboardingModal: React.FC = () => {
   return (
     <Modal open={open} onClose={step === 'connect' ? handleSkip : undefined} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <Box sx={{
-        width: step === 'walkthrough' ? 600 : 480, maxWidth: '90vw',
+        width: step === 'walkthrough' ? 600 : step === 'pricing' ? 780 : 480, maxWidth: '90vw',
         bgcolor: c.bg.surface, borderRadius: `${c.radius.xl}px`,
         border: `1px solid ${c.border.subtle}`,
         p: step === 'walkthrough' ? 0 : 3.5, outline: 'none',
@@ -502,14 +481,14 @@ const OnboardingModal: React.FC = () => {
         boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
       }}>
         {step !== 'walkthrough' && (
-          <Typography sx={{ fontSize: '1.3rem', fontWeight: 700, color: c.text.primary, mb: 0.5, textAlign: 'center' }}>
+          <Typography sx={{ fontSize: '1.5rem', fontWeight: 700, color: c.text.primary, mb: 0.5, textAlign: 'center' }}>
             Welcome to OpenSwarm
           </Typography>
         )}
 
         {step === 'profile' ? (
           <>
-            <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 2.5, textAlign: 'center' }}>
+            <Typography sx={{ fontSize: '0.88rem', color: c.text.muted, mb: 2.5, textAlign: 'center' }}>
               Tell us a bit about yourself
             </Typography>
 
@@ -522,7 +501,7 @@ const OnboardingModal: React.FC = () => {
                 fullWidth
                 sx={{
                   '& .MuiOutlinedInput-root': {
-                    fontSize: '0.82rem',
+                    fontSize: '0.92rem',
                     color: c.text.primary,
                     borderRadius: `${c.radius.md}px`,
                     '& fieldset': { borderColor: c.border.subtle },
@@ -557,7 +536,7 @@ const OnboardingModal: React.FC = () => {
                       }}
                       sx={{
                         '& .MuiOutlinedInput-root': {
-                          fontSize: '0.82rem',
+                          fontSize: '0.92rem',
                           color: c.text.primary,
                           borderRadius: `${c.radius.md}px`,
                           '& fieldset': { borderColor: showError ? c.status.error : c.border.subtle },
@@ -568,12 +547,12 @@ const OnboardingModal: React.FC = () => {
                       }}
                     />
                     {showError && (
-                      <Typography sx={{ fontSize: '0.68rem', color: c.status.error, mt: 0.4, ml: 0.5 }}>
+                      <Typography sx={{ fontSize: '0.78rem', color: c.status.error, mt: 0.4, ml: 0.5 }}>
                         That doesn't look like a valid email address
                       </Typography>
                     )}
                     {suggestion && (
-                      <Typography sx={{ fontSize: '0.68rem', color: c.text.muted, mt: 0.4, ml: 0.5 }}>
+                      <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mt: 0.4, ml: 0.5 }}>
                         Did you mean{' '}
                         <Box
                           component="span"
@@ -594,7 +573,7 @@ const OnboardingModal: React.FC = () => {
                 );
               })()}
 
-              <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mt: 0.5 }}>
+              <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mt: 0.5 }}>
                 What will you use OpenSwarm for?
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
@@ -612,7 +591,7 @@ const OnboardingModal: React.FC = () => {
                       '&:hover': { borderColor: c.border.medium },
                     }}
                   >
-                    <Typography sx={{ fontSize: '0.72rem', color: useCases.includes(uc) ? c.accent.primary : c.text.secondary }}>
+                    <Typography sx={{ fontSize: '0.82rem', color: useCases.includes(uc) ? c.accent.primary : c.text.secondary }}>
                       {uc}
                     </Typography>
                   </Box>
@@ -628,7 +607,7 @@ const OnboardingModal: React.FC = () => {
                   sx={{
                     mt: 0.5,
                     '& .MuiOutlinedInput-root': {
-                      fontSize: '0.82rem',
+                      fontSize: '0.92rem',
                       color: c.text.primary,
                       borderRadius: `${c.radius.md}px`,
                       '& fieldset': { borderColor: c.border.subtle },
@@ -640,7 +619,7 @@ const OnboardingModal: React.FC = () => {
                 />
               )}
 
-              <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mt: 0.5 }}>
+              <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mt: 0.5 }}>
                 How did you hear about OpenSwarm?
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
@@ -658,7 +637,7 @@ const OnboardingModal: React.FC = () => {
                       '&:hover': { borderColor: c.border.medium },
                     }}
                   >
-                    <Typography sx={{ fontSize: '0.72rem', color: referralSource === src ? c.accent.primary : c.text.secondary }}>
+                    <Typography sx={{ fontSize: '0.82rem', color: referralSource === src ? c.accent.primary : c.text.secondary }}>
                       {src}
                     </Typography>
                   </Box>
@@ -674,7 +653,7 @@ const OnboardingModal: React.FC = () => {
                   sx={{
                     mt: 0.5,
                     '& .MuiOutlinedInput-root': {
-                      fontSize: '0.82rem',
+                      fontSize: '0.92rem',
                       color: c.text.primary,
                       borderRadius: `${c.radius.md}px`,
                       '& fieldset': { borderColor: c.border.subtle },
@@ -692,7 +671,7 @@ const OnboardingModal: React.FC = () => {
               fullWidth
               disabled={!isProfileComplete}
               sx={{
-                textTransform: 'none', fontSize: '0.82rem', fontWeight: 600,
+                textTransform: 'none', fontSize: '0.92rem', fontWeight: 600,
                 bgcolor: c.accent.primary, color: '#fff',
                 borderRadius: `${c.radius.md}px`, py: 1,
                 '&:hover': { bgcolor: c.accent.hover },
@@ -757,7 +736,7 @@ const OnboardingModal: React.FC = () => {
               <Box
                 sx={{
                   display: 'inline-block',
-                  fontSize: '0.62rem',
+                  fontSize: '0.72rem',
                   fontWeight: 700,
                   color: c.accent.primary,
                   bgcolor: c.accent.primary + '1a',
@@ -774,13 +753,13 @@ const OnboardingModal: React.FC = () => {
                 Step {walkthroughIdx + 1}
               </Box>
 
-              <Typography sx={{ fontSize: '1.1rem', fontWeight: 700, color: c.text.primary, mb: 1 }}>
+              <Typography sx={{ fontSize: '1.25rem', fontWeight: 700, color: c.text.primary, mb: 1 }}>
                 {EDUCATION_STEPS[walkthroughIdx].title}
               </Typography>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2.5, minHeight: 130 }}>
                 {EDUCATION_STEPS[walkthroughIdx].body.map((p, i) => (
-                  <Typography key={i} sx={{ fontSize: '0.92rem', color: c.text.secondary, lineHeight: 1.6 }}>
+                  <Typography key={i} sx={{ fontSize: '1.02rem', color: c.text.secondary, lineHeight: 1.6 }}>
                     {p}
                   </Typography>
                 ))}
@@ -791,7 +770,7 @@ const OnboardingModal: React.FC = () => {
                   onClick={backWalkthrough}
                   disabled={walkthroughIdx === 0}
                   sx={{
-                    textTransform: 'none', fontSize: '0.82rem', fontWeight: 600,
+                    textTransform: 'none', fontSize: '0.92rem', fontWeight: 600,
                     color: c.text.tertiary, borderRadius: `${c.radius.md}px`, px: 1.5, py: 0.75,
                     visibility: walkthroughIdx === 0 ? 'hidden' : 'visible',
                     '&:hover': { bgcolor: `${c.accent.primary}08` },
@@ -803,7 +782,7 @@ const OnboardingModal: React.FC = () => {
                 <Button
                   onClick={advanceWalkthrough}
                   sx={{
-                    textTransform: 'none', fontSize: '0.82rem', fontWeight: 600,
+                    textTransform: 'none', fontSize: '0.92rem', fontWeight: 600,
                     bgcolor: c.accent.primary, color: '#fff',
                     borderRadius: `${c.radius.md}px`, px: 2.25, py: 0.75,
                     '&:hover': { bgcolor: c.accent.hover },
@@ -814,14 +793,41 @@ const OnboardingModal: React.FC = () => {
               </Box>
             </Box>
           </>
+        ) : step === 'pricing' ? (
+          <>
+            <Typography sx={{ fontSize: '0.88rem', color: c.text.muted, mb: 2.5, textAlign: 'center' }}>
+              Pick your OpenSwarm Pro plan
+            </Typography>
+
+            <PlanPicker source="onboarding" defaultPlan="pro_plus" />
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
+              <Button
+                onClick={() => { setStep('connect'); trackEvent('onboarding.pricing_back'); }}
+                startIcon={<ArrowBackIcon sx={{ fontSize: 14 }} />}
+                sx={{
+                  textTransform: 'none', fontSize: '0.85rem', fontWeight: 500,
+                  color: c.text.tertiary, '&:hover': { bgcolor: `${c.accent.primary}08` },
+                }}
+              >
+                Back
+              </Button>
+              <Button
+                onClick={handleSkip}
+                sx={{ textTransform: 'none', fontSize: '0.82rem', color: c.text.ghost, '&:hover': { bgcolor: 'transparent', color: c.text.muted } }}
+              >
+                Skip for now
+              </Button>
+            </Box>
+          </>
         ) : (
           <>
-            <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 3, textAlign: 'center' }}>
+            <Typography sx={{ fontSize: '0.88rem', color: c.text.muted, mb: 3, textAlign: 'center' }}>
               Connect an AI model to get started
             </Typography>
 
             {/* Subscription options */}
-            <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1 }}>
+            <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1 }}>
               Use your existing subscription
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, mb: 2.5 }}>
@@ -839,10 +845,10 @@ const OnboardingModal: React.FC = () => {
                   }}
                 >
                   <Box>
-                    <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: c.text.primary }}>{p.name}</Typography>
-                    <Typography sx={{ fontSize: '0.65rem', color: c.text.muted }}>{p.desc}</Typography>
+                    <Typography sx={{ fontSize: '0.92rem', fontWeight: 600, color: c.text.primary }}>{p.name}</Typography>
+                    <Typography sx={{ fontSize: '0.75rem', color: c.text.muted }}>{p.desc}</Typography>
                   </Box>
-                  <Typography sx={{ fontSize: '0.68rem', color: p.preview ? c.text.ghost : connecting === p.id ? c.accent.primary : !nineRouterReady ? c.text.ghost : c.text.tertiary, fontStyle: p.preview ? 'italic' : 'normal' }}>
+                  <Typography sx={{ fontSize: '0.78rem', color: p.preview ? c.text.ghost : connecting === p.id ? c.accent.primary : !nineRouterReady ? c.text.ghost : c.text.tertiary, fontStyle: p.preview ? 'italic' : 'normal' }}>
                     {p.preview ? 'Coming soon' : connecting === p.id ? 'Connecting...' : !nineRouterReady && nineRouterReady !== false ? 'Starting...' : 'Connect \u2192'}
                   </Typography>
                 </Box>
@@ -850,7 +856,7 @@ const OnboardingModal: React.FC = () => {
             </Box>
 
             {/* API key option */}
-            <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1 }}>
+            <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1 }}>
               Or use an API key
             </Typography>
             <Box
@@ -861,10 +867,10 @@ const OnboardingModal: React.FC = () => {
                 '&:hover': { borderColor: c.border.medium, bgcolor: `${c.accent.primary}05` },
               }}
             >
-              <Typography sx={{ fontSize: '0.78rem', color: c.text.primary }}>
+              <Typography sx={{ fontSize: '0.88rem', color: c.text.primary }}>
                 I have an API key
               </Typography>
-              <Typography sx={{ fontSize: '0.65rem', color: c.text.muted }}>
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.muted }}>
                 Go to Settings &rarr; Models to enter your key
               </Typography>
             </Box>
@@ -873,7 +879,7 @@ const OnboardingModal: React.FC = () => {
             <Button
               onClick={handleSkip}
               fullWidth
-              sx={{ textTransform: 'none', fontSize: '0.72rem', color: c.text.ghost, '&:hover': { bgcolor: 'transparent', color: c.text.muted } }}
+              sx={{ textTransform: 'none', fontSize: '0.82rem', color: c.text.ghost, '&:hover': { bgcolor: 'transparent', color: c.text.muted } }}
             >
               Skip for now
             </Button>
