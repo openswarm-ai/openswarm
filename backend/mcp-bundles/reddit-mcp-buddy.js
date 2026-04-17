@@ -19352,6 +19352,17 @@ var requestPrototype = {
     }
   });
 });
+Object.defineProperty(requestPrototype, /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom"), {
+  value: function(depth, options, inspectFn) {
+    const props = {
+      method: this.method,
+      url: this.url,
+      headers: this.headers,
+      nativeRequest: this[requestCache]
+    };
+    return `Request (lightweight) ${inspectFn(props, { ...options, depth: depth == null ? null : depth - 1 })}`;
+  }
+});
 Object.setPrototypeOf(requestPrototype, Request.prototype);
 var newRequest = (incoming, defaultHostname) => {
   const req = Object.create(requestPrototype);
@@ -19455,6 +19466,17 @@ var Response2 = class _Response {
       return this[getResponseCache]()[k]();
     }
   });
+});
+Object.defineProperty(Response2.prototype, /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom"), {
+  value: function(depth, options, inspectFn) {
+    const props = {
+      status: this.status,
+      headers: this.headers,
+      ok: this.ok,
+      nativeResponse: this[responseCache]
+    };
+    return `Response (lightweight) ${inspectFn(props, { ...options, depth: depth == null ? null : depth - 1 })}`;
+  }
 });
 Object.setPrototypeOf(Response2, GlobalResponse);
 Object.setPrototypeOf(Response2.prototype, GlobalResponse.prototype);

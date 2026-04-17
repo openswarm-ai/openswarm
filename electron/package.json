@@ -1,6 +1,6 @@
 {
   "name": "openswarm",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "description": "OpenSwarm — AI Agent Orchestrator",
   "main": "main.js",
   "scripts": {
@@ -44,7 +44,7 @@
     },
     "dmg": {
       "artifactName": "OpenSwarm-${arch}.${ext}",
-      "title": "OpenSwarm",
+      "title": "OpenSwarm ${version}",
       "contents": [
         {
           "x": 130,

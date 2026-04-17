@@ -86,7 +86,7 @@ echo "Installing backend dependencies..."
 
 # Install the debugger module
 echo "Installing debugger module..."
-"$PYTHON_BIN" -m pip install -e "$PROJECT_ROOT/debugger"
+"$PYTHON_BIN" -m pip install "$PROJECT_ROOT/debugger"
 
 # Verify claude-agent-sdk and its bundled binary
 echo "Verifying claude-agent-sdk..."
