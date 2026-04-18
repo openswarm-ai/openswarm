@@ -22,7 +22,9 @@ import {
   ToolCallBubbleProps, ensureToolCallKeyframes, getToolData, formatElapsed,
   parseToolResult, getResultSummary, parseInvokedSessionId,
   parseInvokeAgentResult, parseCreateAgentResult,
-} from './toolCallUtils';
+} from '@/app/pages/AgentChat/toolCallUtils';
+
+// TODO: split this shit into multiple files
 
 function useRevealAgent(
   revealTargetSessionId: string | null, sessionId: string | undefined,

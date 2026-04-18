@@ -8,12 +8,12 @@ import type { ContextPath } from '@/shared/state/agentsTypes';
 import { type AttachedSkill, type TriggerState, EMPTY_TRIGGER, serializeEditorContent } from '@/app/components/richEditorUtils';
 import { useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import type { AttachedImage } from './ImageAttachments';
-import ImageAttachments from './ImageAttachments';
-import type { ForcedToolGroup } from './AttachmentChips';
-import AttachmentChips from './AttachmentChips';
-import ModelModeSelector from './ModelModeSelector';
-import { useChatSubmit } from './hooks/useChatSubmit';
+import type { AttachedImage } from './components/ImageAttachments';
+import ImageAttachments from './components/ImageAttachments';
+import type { ForcedToolGroup } from './components/AttachmentChips';
+import AttachmentChips from './components/AttachmentChips';
+import ModelModeSelector from '@/app/pages/AgentChat/ModelModeSelector/ModelModeSelector';
+import { useChatSubmit } from './components/useChatSubmit';
 
 interface Props {
   onSend: (message: string, images?: Array<{ data: string; media_type: string }>, contextPaths?: ContextPath[], forcedTools?: string[], attachedSkills?: Array<{ id: string; name: string; content: string }>, selectedBrowserIds?: string[]) => void;

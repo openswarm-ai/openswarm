@@ -8,7 +8,7 @@ import type { ContextPath } from '@/shared/state/agentsTypes';
 import { useOpenSwarmMentionAdapter, type MentionItemMetadata } from './components/OpenSwarmMentionAdapter';
 import { useComposerAttachments } from './components/useComposerAttachments';
 import { MentionSelectOverride, MentionPopover, ComposerAttachmentChips } from './components/ComposerParts';
-import ModelModeSelector from '../ModelModeSelector';
+import ModelModeSelector from '../ModelModeSelector/ModelModeSelector';
 
 interface OpenSwarmComposerProps {
   composerExtrasRef: MutableRefObject<ComposerExtras>;

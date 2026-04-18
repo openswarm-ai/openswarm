@@ -1,8 +1,8 @@
 import React from 'react';
 import type { ReactNode } from 'react';
 import type { Toolkit } from '@assistant-ui/react';
-import { InvokeAgentBubble, CreateAgentBubble } from '../AgentToolBubble';
-import ViewBubble from '../ViewBubble';
+import { InvokeAgentBubble, CreateAgentBubble } from './components/AgentToolBubble';
+import ViewBubble from './components/ViewBubble';
 
 // ---------------------------------------------------------------------------
 // Render-props contract (mirrors native-tools.tsx pattern)

@@ -7,7 +7,7 @@ import DialogContent from '@mui/material/DialogContent';
 import Icon from '@mui/material/Icon';
 import CloseIcon from '@mui/icons-material/Close';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import ViewPreview from '../Views/ViewPreview';
+import ViewPreview from '@/app/pages/Views/ViewPreview';
 
 interface StreamingPlaceholderProps {
   outputColor: string;

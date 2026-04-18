@@ -9,7 +9,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useAppSelector } from '@/shared/hooks';
 import { getAppServeUrl } from '@/shared/backend-bridge/apps/app_builder';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import ViewPreview from '../Views/ViewPreview';
+import ViewPreview from '@/app/pages/Views/ViewPreview';
 import { StreamingPlaceholder, ViewBubbleDialog } from './ViewBubbleParts';
 
 interface Props {

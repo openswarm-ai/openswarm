@@ -1,5 +1,5 @@
 import React from 'react';
-import ChatInput from '@/app/pages/AgentChat/ChatInput';
+import ChatInput from '@/app/pages/AgentChat/ChatInput/ChatInput';
 import type { Props } from './toolbarShared';
 import { MotionBox, TOOLBAR_OWNER_ID } from './toolbarShared';
 import { useDashboardToolbar } from './useDashboardToolbar';
