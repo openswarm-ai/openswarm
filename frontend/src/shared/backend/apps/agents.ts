@@ -65,11 +65,14 @@ export const LAUNCH_AGENT = createAsyncThunk(
 
 
 const update_system_prompt_endpoint: string = `${AGENTS_API}/update_system_prompt`;
-async function update_system_prompt_function(sessionId: string, systemPrompt: string): Promise<string> {
+async function update_system_prompt_function(payload: {
+  sessionId: string;
+  systemPrompt: string;
+}): Promise<string> {
   const res = await fetch(update_system_prompt_endpoint, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, system_prompt: systemPrompt }),
+    body: JSON.stringify({ session_id: payload.sessionId, system_prompt: payload.systemPrompt }),
   });
   const data = await res.json();
   return data.ok as string;
@@ -105,34 +108,34 @@ export const DELETE_SESSION = createAsyncThunk(
 
 
 const send_message_endpoint: string = `${AGENTS_API}/send_message`;
-async function send_message_function(
-  sessionId: string, 
-  prompt: string, 
-  mode: string, 
-  model: string, 
-  provider: string, 
-  images: string[], 
-  contextPaths: string[], 
-  forcedTools: string[], 
-  attachedSkills: string[], 
-  hidden: boolean, 
-  selectedBrowserIds: string[]
-): Promise<AgentSession> {
+async function send_message_function(payload: {
+  sessionId: string;
+  prompt: string;
+  mode: string;
+  model: string;
+  provider: string;
+  images: string[];
+  contextPaths: string[];
+  forcedTools: string[];
+  attachedSkills: string[];
+  hidden: boolean;
+  selectedBrowserIds: string[];
+}): Promise<AgentSession> {
   const res = await fetch(send_message_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
-      session_id: sessionId,
-      prompt: prompt,
-      mode: mode,
-      model: model,
-      provider: provider,
-      images: images,
-      context_paths: contextPaths,
-      forced_tools: forcedTools,
-      attached_skills: attachedSkills,
-      hidden: hidden,
-      selected_browser_ids: selectedBrowserIds,
+      session_id: payload.sessionId,
+      prompt: payload.prompt,
+      mode: payload.mode,
+      model: payload.model,
+      provider: payload.provider,
+      images: payload.images,
+      context_paths: payload.contextPaths,
+      forced_tools: payload.forcedTools,
+      attached_skills: payload.attachedSkills,
+      hidden: payload.hidden,
+      selected_browser_ids: payload.selectedBrowserIds,
     }),
   });
   const data = await res.json();
@@ -163,24 +166,24 @@ export const STOP_AGENT = createAsyncThunk(
 
 
 const handle_approval_endpoint: string = `${AGENTS_API}/handle_approval`;
-async function handle_approval_function(
-  requestId: string, 
-  behavior: 'allow' | 'deny', 
-  message?: string, 
-  updatedInput?: Record<string, unknown>
-): Promise<{ requestId: string; behavior: 'allow' | 'deny' }> {
+async function handle_approval_function(payload: {
+  requestId: string;
+  behavior: 'allow' | 'deny';
+  message?: string;
+  updatedInput?: Record<string, unknown>;
+}): Promise<{ requestId: string; behavior: 'allow' | 'deny' }> {
   const res = await fetch(handle_approval_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
-      request_id: requestId, 
-      behavior: behavior, 
-      message: message, 
-      updated_input: updatedInput,
+      request_id: payload.requestId, 
+      behavior: payload.behavior, 
+      message: payload.message, 
+      updated_input: payload.updatedInput,
     }),
   });
   if (!res.ok) throw new Error(`Approval request failed (${res.status})`);
-  return { requestId, behavior };
+  return { requestId: payload.requestId, behavior: payload.behavior };
 }
 export const HANDLE_APPROVAL = createAsyncThunk(
   handle_approval_endpoint,
@@ -197,14 +200,18 @@ export const HANDLE_APPROVAL = createAsyncThunk(
 
 
 const edit_message_endpoint: string = `${AGENTS_API}/edit_message`;
-async function edit_message_function(sessionId: string, messageId: string, content: string): Promise<AgentSession> {
+async function edit_message_function(payload: {
+  sessionId: string;
+  messageId: string;
+  content: string;
+}): Promise<AgentSession> {
   const res = await fetch(edit_message_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
-      session_id: sessionId, 
-      message_id: messageId, 
-      content: content,
+      session_id: payload.sessionId, 
+      message_id: payload.messageId, 
+      content: payload.content,
     }),
   });
   const data = await res.json();
@@ -217,11 +224,14 @@ export const EDIT_MESSAGE = createAsyncThunk(
 
 
 const switch_branch_endpoint: string = `${AGENTS_API}/switch_branch`;
-async function switch_branch_function(sessionId: string, branchId: string): Promise<AgentSession> {
+async function switch_branch_function(payload: {
+  sessionId: string;
+  branchId: string;
+}): Promise<AgentSession> {
   const res = await fetch(switch_branch_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, branch_id: branchId }),
+    body: JSON.stringify({ session_id: payload.sessionId, branch_id: payload.branchId }),
   });
   const data = await res.json();
   return data.session as AgentSession;
@@ -274,14 +284,18 @@ export const RESUME_SESSION = createAsyncThunk(
 
 
 const duplicate_session_endpoint: string = `${AGENTS_API}/duplicate_session`;
-async function duplicate_session_function(sessionId: string, dashboardId: string, upToMessageId: string): Promise<AgentSession> {
+async function duplicate_session_function(payload: {
+  sessionId: string;
+  dashboardId: string;
+  upToMessageId: string;
+}): Promise<AgentSession> {
   const res = await fetch(duplicate_session_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
-      session_id: sessionId, 
-      dashboard_id: dashboardId, 
-      up_to_message_id: upToMessageId,
+      session_id: payload.sessionId, 
+      dashboard_id: payload.dashboardId, 
+      up_to_message_id: payload.upToMessageId,
     }),
   });
   const data = await res.json();
@@ -295,11 +309,15 @@ export const DUPLICATE_SESSION = createAsyncThunk(
 
 
 const get_history_endpoint: string = `${AGENTS_API}/get_history`;
-async function get_history_function(q: string, limit: number, offset: number): Promise<HistorySession[]> {
+async function get_history_function(payload: {
+  q: string;
+  limit: number;
+  offset: number;
+}): Promise<HistorySession[]> {
   const res = await fetch(get_history_endpoint, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q, limit, offset }),
+    body: JSON.stringify({ q: payload.q, limit: payload.limit, offset: payload.offset }),
   });
   const data = await res.json();
   return data.sessions as HistorySession[];
