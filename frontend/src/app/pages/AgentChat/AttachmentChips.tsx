@@ -7,7 +7,7 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import AdsClickIcon from '@mui/icons-material/AdsClick';
 import { getToolGroupIcon } from '@/app/components/CommandPicker';
 import type { SelectedElement } from '@/app/components/ElementSelectionContext';
-import type { ContextPath } from '@/app/components/DirectoryBrowser';
+import type { ContextPath } from '@/shared/state/agentsTypes';
 
 export interface ForcedToolGroup {
   label: string;

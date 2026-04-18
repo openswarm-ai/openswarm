@@ -1,4 +1,4 @@
-const { app, components, BrowserWindow, ipcMain, shell, session } = require('electron');
+const { app, components, BrowserWindow, ipcMain, shell, session, dialog } = require('electron');
 let autoUpdater;
 try { autoUpdater = require('electron-updater').autoUpdater; } catch (_) {}
 const path = require('path');
@@ -557,4 +557,9 @@ ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && /^https?:\/\//.test(url)) {
     shell.openExternal(url);
   }
+});
+
+ipcMain.handle('show-open-dialog', async (_event, options) => {
+  const win = BrowserWindow.getFocusedWindow();
+  return dialog.showOpenDialog(win || BrowserWindow.getAllWindows()[0], options || {});
 });

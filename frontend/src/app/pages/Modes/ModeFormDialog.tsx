@@ -16,7 +16,6 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RestoreIcon from '@mui/icons-material/Restore';
 import { Mode } from '@/shared/state/modesSlice';
 import RichPromptEditor from '@/app/components/RichPromptEditor';
-import DirectoryBrowser from '@/app/components/DirectoryBrowser';
 import { ModeForm, ICON_MAP, ICON_OPTIONS, COLOR_OPTIONS } from './modesConstants';
 import ToolsSelector from './ToolsSelector';
 
@@ -32,15 +31,14 @@ interface ModeFormDialogProps {
   onReset: () => void;
   otherModes: Mode[];
   mcpToolNames: string[];
-  browseOpen: boolean;
-  setBrowseOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  browseFolder: () => void;
   c: any;
 }
 
 const ModeFormDialog: React.FC<ModeFormDialogProps> = ({
   open, onClose, editingId, editingIsBuiltin, hasDiverged,
   form, setForm, onSave, onReset, otherModes, mcpToolNames,
-  browseOpen, setBrowseOpen, c,
+  browseFolder, c,
 }) => (
   <>
     <Dialog
@@ -122,7 +120,7 @@ const ModeFormDialog: React.FC<ModeFormDialogProps> = ({
             />
             <Button
               variant="outlined"
-              onClick={() => setBrowseOpen(true)}
+              onClick={browseFolder}
               startIcon={<FolderOpenIcon />}
               sx={{
                 color: c.accent.primary,
@@ -220,13 +218,6 @@ const ModeFormDialog: React.FC<ModeFormDialogProps> = ({
         </Box>
       </DialogActions>
     </Dialog>
-
-    <DirectoryBrowser
-      open={browseOpen}
-      onClose={() => setBrowseOpen(false)}
-      onSelect={(item) => setForm({ ...form, default_folder: item.path })}
-      initialPath={form.default_folder || ''}
-    />
   </>
 );
 

@@ -23,7 +23,7 @@ import {
   BrowserCardPosition
 } from '@/shared/state/dashboardLayoutSlice';
 import { GENERATE_DASHBOARD_NAME } from '@/shared/backend-bridge/apps/dashboards';
-import type { ContextPath } from '@/app/components/DirectoryBrowser';
+import type { ContextPath } from '@/shared/state/agentsTypes';
 import type { CanvasActions } from '../useCanvasControls';
 
 interface ToolbarDeps {

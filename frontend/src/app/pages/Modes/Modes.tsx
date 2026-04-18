@@ -15,7 +15,7 @@ const Modes: React.FC = () => {
   const {
     modes, items, loading,
     dialogOpen, setDialogOpen, editingId,
-    form, setForm, browseOpen, setBrowseOpen,
+    form, setForm, browseFolder,
     openCreate, openEdit, handleSave, handleDelete,
     editingIsBuiltin, hasDiverged, handleReset,
     otherModes, mcpToolNames,
@@ -99,8 +99,7 @@ const Modes: React.FC = () => {
         onReset={handleReset}
         otherModes={otherModes}
         mcpToolNames={mcpToolNames}
-        browseOpen={browseOpen}
-        setBrowseOpen={setBrowseOpen}
+        browseFolder={browseFolder}
         c={c}
       />
     </Box>

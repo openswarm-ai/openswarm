@@ -27,7 +27,15 @@ export function useModes() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ModeForm>(emptyForm);
-  const [browseOpen, setBrowseOpen] = useState(false);
+  const browseFolder = async () => {
+    const result = await (window as any).openswarm?.showOpenDialog({
+      properties: ['openDirectory'],
+      defaultPath: form.default_folder || undefined,
+    });
+    if (result && !result.canceled && result.filePaths?.length > 0) {
+      setForm((prev) => ({ ...prev, default_folder: result.filePaths[0] }));
+    }
+  };
 
   useEffect(() => {
     dispatch(LIST_MODES());
@@ -132,8 +140,7 @@ export function useModes() {
     editingId,
     form,
     setForm,
-    browseOpen,
-    setBrowseOpen,
+    browseFolder,
     openCreate,
     openEdit,
     handleSave,

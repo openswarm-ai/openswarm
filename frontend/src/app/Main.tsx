@@ -22,7 +22,6 @@ import Tools from './pages/Tools/Tools';
 import Modes from './pages/Modes/Modes';
 import Views from './pages/Views/Views';
 import Customization from './pages/Customization/Customization';
-import Analytics from './pages/Analytics/Analytics';
 import OnboardingModal from './components/OnboardingModal';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
@@ -109,7 +108,6 @@ const ThemedApp: React.FC = () => {
                   <Route path="/modes" element={<Modes />} />
                   <Route path="/apps" element={<Views />} />
                   <Route path="/apps/:id" element={<Views />} />
-                  <Route path="/analytics" element={<Analytics />} />
                 </Route>
               </Routes>
               <OnboardingModal />

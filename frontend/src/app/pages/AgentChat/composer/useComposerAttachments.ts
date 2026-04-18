@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { API_BASE } from '@/shared/config';
-import type { ContextPath } from '@/app/components/DirectoryBrowser';
+import type { ContextPath } from '@/shared/state/agentsTypes';
 
 interface AttachedImage {
   data: string;

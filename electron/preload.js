@@ -13,6 +13,7 @@ const { contextBridge, ipcRenderer } = require('electron');
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     capturePage: (rect) => ipcRenderer.invoke('capture-page', rect),
+    showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
     getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
     downloadUpdate: () => ipcRenderer.invoke('download-update'),

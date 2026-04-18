@@ -10,7 +10,7 @@ import OpenSwarmComposer from './composer/OpenSwarmComposer';
 import { useAgentChat } from './hooks/useAgentChat';
 import { useOpenSwarmRuntime, type ComposerExtras, type DispatchableMessage } from './runtime/useOpenSwarmRuntime';
 import { toolkit } from './toolkit';
-import type { ContextPath } from '@/app/components/DirectoryBrowser';
+import type { ContextPath } from '@/shared/state/agentsTypes';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 interface AgentChatProps {

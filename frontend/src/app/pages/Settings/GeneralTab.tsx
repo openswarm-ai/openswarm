@@ -17,7 +17,7 @@ import AboutSection from './AboutSection';
 import type { UseSettingsReturn } from './hooks/useSettings';
 
 const GeneralTab: React.FC<{ s: UseSettingsReturn }> = ({ s }) => {
-  const { form, setForm, c, dispatch, modesList, setBrowseOpen,
+  const { form, setForm, c, dispatch, modesList, browseFolder,
           fieldSx, sectionSx, rowSx, rowLastSx, inlineRowSx, inlineRowLastSx, labelSx, descSx } = s;
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
@@ -88,7 +88,7 @@ const GeneralTab: React.FC<{ s: UseSettingsReturn }> = ({ s }) => {
           />
           <Button
             variant="outlined"
-            onClick={() => setBrowseOpen(true)}
+            onClick={browseFolder}
             startIcon={<FolderOpenIcon sx={{ fontSize: 16 }} />}
             sx={{
               color: c.text.tertiary,

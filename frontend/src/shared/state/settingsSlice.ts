@@ -23,13 +23,6 @@ export const DEFAULT_SYSTEM_PROMPT =
   `make reasonable assumptions and act. If you need to ask, use the AskUserQuestion tool.\n` +
   `Do not over-explain what you are about to do. Just do it and show the results.`;
 
-export interface BrowseResult {
-  current: string;
-  parent: string | null;
-  directories: string[];
-  files: string[];
-}
-
 interface SettingsState {
   data: AppSettings;
   loading: boolean;

@@ -5,7 +5,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CommandPicker from '@/app/components/CommandPicker';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
-import type { ContextPath } from '@/app/components/DirectoryBrowser';
+import type { ContextPath } from '@/shared/state/agentsTypes';
 import { type AttachedSkill, type TriggerState, EMPTY_TRIGGER, serializeEditorContent } from '@/app/components/richEditorUtils';
 import { useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';

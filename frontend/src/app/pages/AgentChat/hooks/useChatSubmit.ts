@@ -4,7 +4,7 @@ import { useElementSelection, type SelectedElement } from '@/app/components/Elem
 import { getClipboardCards, clearClipboard } from '@/shared/dashboardClipboard';
 import { getWebview } from '@/shared/browserRegistry';
 import { API_BASE } from '@/shared/config';
-import type { ContextPath } from '@/app/components/DirectoryBrowser';
+import type { ContextPath } from '@/shared/state/agentsTypes';
 import {
   SKILL_PILL_ATTR, type AttachedSkill, createSkillPillElement,
   serializeEditorContent, type TriggerState, detectEditorTrigger,

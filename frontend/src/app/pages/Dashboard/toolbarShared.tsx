@@ -3,7 +3,7 @@ import Tooltip, { tooltipClasses } from '@mui/material/Tooltip';
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
-import type { ContextPath } from '@/app/components/DirectoryBrowser';
+import type { ContextPath } from '@/shared/state/agentsTypes';
 
 export interface Props {
   inputOpen: boolean;

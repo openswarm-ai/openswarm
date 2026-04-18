@@ -13,7 +13,6 @@ import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import SaveIcon from '@mui/icons-material/Save';
 import CloseIcon from '@mui/icons-material/Close';
-import DirectoryBrowser from '@/app/components/DirectoryBrowser';
 import { CommandsContent } from '@/app/pages/Commands/Commands';
 import { useSettings } from './hooks/useSettings';
 import GeneralTab from './GeneralTab';
@@ -24,7 +23,7 @@ const Settings: React.FC = () => {
   const s = useSettings();
   const { c, open, activeTab, setActiveTab, hasChanges, handleSave, handleRequestClose,
           confirmDiscard, setConfirmDiscard, handleConfirmDiscard, handleSaveAndClose,
-          saved, setSaved, browseOpen, setBrowseOpen, form, setForm } = s;
+          saved, setSaved, form, setForm } = s;
   return (
     <>
     <Dialog
@@ -131,12 +130,6 @@ const Settings: React.FC = () => {
         </Button>
       </DialogActions>
       )}
-      <DirectoryBrowser
-        open={browseOpen}
-        onClose={() => setBrowseOpen(false)}
-        onSelect={(item) => setForm({ ...form, default_folder: item.path })}
-        initialPath={form.default_folder ?? ''}
-      />
       <Snackbar
         open={saved}
         autoHideDuration={3000}

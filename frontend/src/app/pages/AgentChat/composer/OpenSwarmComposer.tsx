@@ -4,7 +4,7 @@ import { LexicalComposerInput } from '@assistant-ui/react-lexical';
 import type { Unstable_MentionItem } from '@assistant-ui/core';
 import { useAppSelector } from '@/shared/hooks';
 import type { ComposerExtras } from '../runtime/useOpenSwarmRuntime';
-import type { ContextPath } from '@/app/components/DirectoryBrowser';
+import type { ContextPath } from '@/shared/state/agentsTypes';
 import { useOpenSwarmMentionAdapter, type MentionItemMetadata } from './OpenSwarmMentionAdapter';
 import { useComposerAttachments } from './useComposerAttachments';
 import { MentionSelectOverride, MentionPopover, ComposerAttachmentChips } from './ComposerParts';

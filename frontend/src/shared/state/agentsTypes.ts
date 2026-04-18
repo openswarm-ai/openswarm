@@ -81,6 +81,11 @@ export interface AgentConfig {
   dashboard_id?: string;
 }
 
+export interface ContextPath {
+  path: string;
+  type: 'file' | 'directory';
+}
+
 export interface SendMessagePayload {
   sessionId: string;
   prompt: string;
@@ -88,7 +93,7 @@ export interface SendMessagePayload {
   model?: string;
   provider?: string;
   images?: Array<{ data: string; media_type: string }>;
-  contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>;
+  contextPaths?: Array<ContextPath>;
   forcedTools?: string[];
   attachedSkills?: Array<{ id: string; name: string; content: string }>;
   hidden?: boolean;
@@ -103,7 +108,7 @@ export interface LaunchAndSendPayload {
   model: string;
   provider?: string;
   images?: Array<{ data: string; media_type: string }>;
-  contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>;
+  contextPaths?: Array<ContextPath>;
   forcedTools?: string[];
   attachedSkills?: Array<{ id: string; name: string; content: string }>;
   expand?: boolean;

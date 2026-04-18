@@ -24,7 +24,6 @@ export function useSettings() {
   const [activeTab, setActiveTab] = useState<'general' | 'models' | 'usage' | 'commands'>('general');
   const [form, setForm] = useState<AppSettings>({ ...settings });
   const [showApiKey, setShowApiKey] = useState(false);
-  const [browseOpen, setBrowseOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [recordingShortcut, setRecordingShortcut] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -68,6 +67,15 @@ export function useSettings() {
     try { await (window as any).openswarm?.downloadUpdate(); } catch {}
   };
   const handleInstallUpdate = () => { (window as any).openswarm?.installUpdate(); };
+  const browseFolder = async () => {
+    const result = await (window as any).openswarm?.showOpenDialog({
+      properties: ['openDirectory'],
+      defaultPath: form.default_folder || undefined,
+    });
+    if (result && !result.canceled && result.filePaths?.length > 0) {
+      setForm({ ...form, default_folder: result.filePaths[0] });
+    }
+  };
   const fieldSx = { '& .MuiOutlinedInput-root': { fontSize: '0.85rem' } };
   const sectionSx = { fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: c.text.tertiary, mb: 0.5, mt: 0.5 };
   const rowSx = { py: 2, borderBottom: `1px solid ${c.border.subtle}` };
@@ -79,7 +87,7 @@ export function useSettings() {
   return {
     c, dispatch, open, settings, modesList,
     activeTab, setActiveTab, form, setForm,
-    showApiKey, setShowApiKey, browseOpen, setBrowseOpen,
+    showApiKey, setShowApiKey, browseFolder,
     saved, setSaved, recordingShortcut, setRecordingShortcut,
     confirmDiscard, setConfirmDiscard, showApiHelp, setShowApiHelp,
     hasChanges, handleSave, handleRequestClose, handleConfirmDiscard,
