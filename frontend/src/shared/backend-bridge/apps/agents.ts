@@ -76,14 +76,14 @@ const update_system_prompt_endpoint: string = `${AGENTS_API}/update_system_promp
 async function update_system_prompt_function(payload: {
   sessionId: string;
   systemPrompt: string;
-}): Promise<string> {
+}): Promise<{ sessionId: string; systemPrompt: string }> {
   const res = await fetch(update_system_prompt_endpoint, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: payload.sessionId, system_prompt: payload.systemPrompt }),
   });
-  const data = await res.json();
-  return data.ok as string;
+  await res.json();
+  return { sessionId: payload.sessionId, systemPrompt: payload.systemPrompt };
 }
 export const UPDATE_SYSTEM_PROMPT = createAsyncThunk(
   update_system_prompt_endpoint,
@@ -93,14 +93,14 @@ export const UPDATE_SYSTEM_PROMPT = createAsyncThunk(
 
 
 const delete_session_endpoint: string = `${AGENTS_API}/delete_session`;
-async function delete_session_function(sessionId: string): Promise<{ ok: boolean }> {
+async function delete_session_function(sessionId: string): Promise<string> {
   const res = await fetch(delete_session_endpoint, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionId }),
   });
-  const data = await res.json();
-  return data as { ok: boolean };
+  await res.json();
+  return sessionId;
 }
 export const DELETE_SESSION = createAsyncThunk(
   delete_session_endpoint,
@@ -155,14 +155,14 @@ export const SEND_MESSAGE = createAsyncThunk(
 
 
 const stop_agent_endpoint: string = `${AGENTS_API}/stop_agent`;
-async function stop_agent_function(sessionId: string): Promise<{ ok: boolean }> {
+async function stop_agent_function(sessionId: string): Promise<string> {
   const res = await fetch(stop_agent_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionId }),
   });
-  const data = await res.json();
-  return data as { ok: boolean };
+  await res.json();
+  return sessionId;
 }
 export const STOP_AGENT = createAsyncThunk(
   stop_agent_endpoint,
@@ -233,14 +233,14 @@ const switch_branch_endpoint: string = `${AGENTS_API}/switch_branch`;
 async function switch_branch_function(payload: {
   sessionId: string;
   branchId: string;
-}): Promise<{ ok: boolean }> {
+}): Promise<{ sessionId: string; branchId: string }> {
   const res = await fetch(switch_branch_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: payload.sessionId, branch_id: payload.branchId }),
   });
-  const data = await res.json();
-  return data as { ok: boolean };
+  await res.json();
+  return { sessionId: payload.sessionId, branchId: payload.branchId };
 }
 export const SWITCH_BRANCH = createAsyncThunk(
   switch_branch_endpoint,
@@ -256,14 +256,14 @@ export const SWITCH_BRANCH = createAsyncThunk(
 
 
 const close_session_endpoint: string = `${AGENTS_API}/close_session`;
-async function close_session_function(sessionId: string): Promise<{ ok: boolean }> {
+async function close_session_function(sessionId: string): Promise<string> {
   const res = await fetch(close_session_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionId }),
   });
-  const data = await res.json();
-  return data as { ok: boolean };
+  await res.json();
+  return sessionId;
 }
 export const CLOSE_SESSION = createAsyncThunk(
   close_session_endpoint,
@@ -288,7 +288,7 @@ export const RESUME_SESSION = createAsyncThunk(
 );
 
 
-
+// NOTE: is a duplicate endpoint even needed? Can't we just do this via branch?
 const duplicate_session_endpoint: string = `${AGENTS_API}/duplicate_session`;
 async function duplicate_session_function(sessionId: string): Promise<{ session: AgentSession }> {
   const res = await fetch(duplicate_session_endpoint, {
