@@ -10,9 +10,7 @@ import DashboardToolbar from './components/DashboardToolbar/DashboardToolbar';
 import DashboardHeader from './components/DashboardHeader/DashboardHeader';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { EXPANDED_CARD_MIN_H, DEFAULT_CARD_W, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
-import type { TetherInfo } from '@/app/pages/Dashboard/types/types';
-import type { CardType } from '@/app/pages/Dashboard/types/types';
-import type { CanvasActions } from '@/app/pages/Dashboard/types/types';
+import { type CardType, type CanvasActions, type TetherInfo } from '@/app/pages/Dashboard/_shared/types';
 
 const TETHER_FADE_MS = 2500;
 

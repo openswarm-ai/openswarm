@@ -1,4 +1,5 @@
-import { type SelectedElement } from './ElementSelectionContext';
+import { type SelectedElement } from '@/app/pages/Dashboard/_shared/element_selection/SelectedElement';
+import { type OverlayState, type DragRect, type DragPreviewElement } from '@/app/pages/Dashboard/_shared/types';
 
 export const SELECT_ATTR = 'data-select-type';
 export const SELECT_ID_ATTR = 'data-select-id';
@@ -6,23 +7,6 @@ export const SELECT_META_ATTR = 'data-select-meta';
 
 const DRAG_SELECT_TYPES = ['agent-card', 'view-card', 'browser-card'] as const;
 const DRAG_SELECTOR = DRAG_SELECT_TYPES.map((t) => `[${SELECT_ATTR}="${t}"]`).join(',');
-
-export interface OverlayState {
-  visible: boolean;
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-  label: string;
-}
-
-export interface DragRect {
-  visible: boolean;
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
 
 export const EMPTY_OVERLAY: OverlayState = { visible: false, top: 0, left: 0, width: 0, height: 0, label: '' };
 export const EMPTY_DRAG: DragRect = { visible: false, top: 0, left: 0, width: 0, height: 0 };
@@ -96,16 +80,6 @@ export function buildSelectedElement(el: Element): SelectedElement {
     semanticLabel,
     semanticData: { ...meta, selectId },
   };
-}
-
-export interface DragPreviewElement {
-  selectId: string;
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-  label: string;
-  action: 'add' | 'remove';
 }
 
 export const DRAG_THRESHOLD = 5;

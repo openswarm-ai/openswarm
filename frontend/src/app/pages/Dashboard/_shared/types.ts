@@ -20,3 +20,30 @@ export interface CanvasActions {
     animate?: boolean,
   ) => void;
 }
+
+export interface OverlayState {
+  visible: boolean;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+  label: string;
+}
+
+export interface DragRect {
+  visible: boolean;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+export interface DragPreviewElement {
+  selectId: string;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+  label: string;
+  action: 'add' | 'remove';
+}

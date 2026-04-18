@@ -14,7 +14,7 @@ import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 import { agentsWs } from '@/shared/ws/WebSocketManager';
 import { initBrowserCommandHandler } from '@/shared/browserCommandHandler';
 import { clearPendingBrowserUrl, clearPendingFocusAgentId } from '@/shared/state/tempStateSlice';
-import type { CanvasActions } from '@/app/pages/Dashboard/types/types';
+import { type CanvasActions } from '@/app/pages/Dashboard/_shared/types';
 
 interface InitDeps {
   dashboardId: string | undefined;

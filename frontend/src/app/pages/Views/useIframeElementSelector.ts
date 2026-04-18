@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, RefObject } from 'react';
-import { SelectedElement, useElementSelection } from '@/app/components/ElementSelectionContext';
+import { useElementSelection } from '@/app/pages/Dashboard/_shared/element_selection/useElementSelection';
+import { type SelectedElement } from '@/app/pages/Dashboard/_shared/element_selection/SelectedElement';
 import {
   OVERLAY_ID, LABEL_ID, STYLE_ID,
   HIGHLIGHT_COLOR, HIGHLIGHT_BG, FLASH_COLOR, SELECTED_CLASS,

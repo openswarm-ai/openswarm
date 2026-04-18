@@ -1,4 +1,4 @@
-import type { CardType } from '@/app/pages/Dashboard/types/types';
+import { type CardType } from '@/app/pages/Dashboard/_shared/types';
 
 export interface ClipboardCard {
   type: CardType;

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
 import type { CardPosition, ViewCardPosition, BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
-import type { CardType } from '@/app/pages/Dashboard/types/types';
+import { type CardType } from '@/app/pages/Dashboard/_shared/types';
 
 interface SelectedCard {
   id: string;

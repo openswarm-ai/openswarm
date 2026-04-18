@@ -13,7 +13,7 @@ import {
   placeCard,
 } from '@/shared/state/dashboardLayoutSlice';
 import { setClipboardCards, getClipboardCards, type ClipboardCard } from '@/shared/dashboardClipboard';
-import type { CardType } from '@/app/pages/Dashboard/types/types';
+import { type CardType } from '@/app/pages/Dashboard/_shared/types';
 
 interface KeyboardDeps {
   newAgentShortcut: string;

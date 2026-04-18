@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useElementSelection } from './ElementSelectionContext';
+import { useElementSelection } from '@/app/pages/Dashboard/_shared/element_selection/useElementSelection';
 import {
-  type OverlayState, type DragRect, type DragPreviewElement, type DomSelectorState, type SelectMeta,
+  type SelectMeta,
+  type DomSelectorState,
   EMPTY_OVERLAY, EMPTY_DRAG, DRAG_THRESHOLD,
   SELECT_ATTR, SELECT_ID_ATTR, SELECT_META_ATTR,
   findSelectableAncestor, buildSemanticLabel, buildSelectedElement,
   computeDragPreview, processDragSelection,
 } from './domSelectorHelpers';
-
-export type { OverlayState, DragRect, DragPreviewElement } from './domSelectorHelpers';
+import { type OverlayState, type DragRect, type DragPreviewElement } from '@/app/pages/Dashboard/_shared/types';
 
 export function useDomElementSelector(): DomSelectorState {
   const ctx = useElementSelection();

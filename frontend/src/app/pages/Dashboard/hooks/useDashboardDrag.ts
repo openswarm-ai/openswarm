@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
 import { moveCards, bringToFront } from '@/shared/state/dashboardLayoutSlice';
-import type { CardType } from '@/app/pages/Dashboard/types/types';
+import { type CardType } from '@/app/pages/Dashboard/_shared/types';
 
 interface DragSelection {
   isSelected: (id: string) => boolean;
