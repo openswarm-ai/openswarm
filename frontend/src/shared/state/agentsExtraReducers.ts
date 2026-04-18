@@ -1,12 +1,5 @@
 import type { ActionReducerMapBuilder } from '@reduxjs/toolkit';
 import type { AgentsState, HistorySession } from './agentsTypes';
-// import {
-//   fetchSessions, launchAgent, launchAndSendFirstMessage, generateTitle,
-//   generateGroupMeta, updateSystemPrompt, sendMessage, editMessage,
-//   stopAgent, handleApproval, switchBranch, duplicateSession,
-//   closeSession, deleteSession, fetchHistory, resumeSession,
-//   fetchSession, fetchBrowserAgentChildren, searchHistory,
-// } from './agentsThunks';
 import {
   GET_ALL_SESSIONS,
   LAUNCH_AGENT,
@@ -22,6 +15,7 @@ import {
   GET_HISTORY,
   RESUME_SESSION,
   GET_SESSION,
+  META_LAUNCH_AND_SEND,
 } from '@/shared/backend-bridge/apps/agents';
 
 export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>) {
@@ -70,20 +64,20 @@ export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>
       }
     })
     // TODO: Re-implement this???
-    // .addCase(launchAndSendFirstMessage.fulfilled, (state, action) => {
-    //   const { draftId, session } = action.payload;
-    //   const shouldExpand = action.meta.arg.expand !== false;
-    //   delete state.sessions[draftId];
-    //   state.sessions[session.id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };
-    //   state.activeSessionId = session.id;
-    //   state.expandedSessionIds = state.expandedSessionIds.map((id) => (id === draftId ? session.id : id));
-    //   if (shouldExpand && !state.expandedSessionIds.includes(session.id)) {
-    //     state.expandedSessionIds.push(session.id);
-    //   }
-    //   if (!state.trackedNotificationIds.includes(session.id)) {
-    //     state.trackedNotificationIds.push(session.id);
-    //   }
-    // })
+    .addCase(META_LAUNCH_AND_SEND.fulfilled, (state, action) => {
+      const { draftId, session } = action.payload;
+      const shouldExpand = action.meta.arg.expand !== false;
+      delete state.sessions[draftId];
+      state.sessions[session.id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };
+      state.activeSessionId = session.id;
+      state.expandedSessionIds = state.expandedSessionIds.map((id) => (id === draftId ? session.id : id));
+      if (shouldExpand && !state.expandedSessionIds.includes(session.id)) {
+        state.expandedSessionIds.push(session.id);
+      }
+      if (!state.trackedNotificationIds.includes(session.id)) {
+        state.trackedNotificationIds.push(session.id);
+      }
+    })
     // TODO: Re-implement this???
     // .addCase(generateTitle.fulfilled, (state, action) => {
     //   const session = state.sessions[action.payload.sessionId];
@@ -201,22 +195,27 @@ export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>
         tool_group_meta: session.tool_group_meta ?? existing?.tool_group_meta ?? {},
       };
     })
-    // .addCase(searchHistory.pending, (state) => {
-    //   state.historySearch.loading = true;
-    // })
-    // .addCase(searchHistory.fulfilled, (state, action) => {
-    //   const { sessions, total, hasMore, query, offset } = action.payload;
-    //   if (offset === 0) {
-    //     state.historySearch.results = sessions;
-    //   } else {
-    //     state.historySearch.results = [...state.historySearch.results, ...sessions];
-    //   }
-    //   state.historySearch.total = total;
-    //   state.historySearch.hasMore = hasMore;
-    //   state.historySearch.query = query;
-    //   state.historySearch.loading = false;
-    // })
-    // .addCase(searchHistory.rejected, (state) => {
-    //   state.historySearch.loading = false;
-    // });
+    .addCase(GET_HISTORY.pending, (state) => {
+      state.historySearch.loading = true;
+    })
+    .addCase(GET_HISTORY.fulfilled, (state, action) => {
+      const { sessions, total, has_more } = action.payload;
+      const offset = action.meta.arg.offset ?? 0;
+      if (offset === 0) {
+        state.historySearch.results = sessions;
+      } else {
+        state.historySearch.results = [...state.historySearch.results, ...sessions];
+      }
+      state.historySearch.total = total;
+      state.historySearch.hasMore = has_more;
+      state.historySearch.query = action.meta.arg.q ?? '';
+      state.historySearch.loading = false;
+    
+      const history: Record<string, HistorySession> = {};
+      for (const s of sessions) history[s.id] = s;
+      state.history = offset === 0 ? history : { ...state.history, ...history };
+    })
+    .addCase(GET_HISTORY.rejected, (state) => {
+      state.historySearch.loading = false;
+    })
 }

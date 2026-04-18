@@ -2,7 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 import { initialState } from './dashboardLayoutTypes';
 import { dashboardLayoutReducers } from './dashboardLayoutReducers';
 import { fetchLayout } from './dashboardLayoutThunks';
-import { launchAndSendFirstMessage } from './agentsSlice';
+import { META_LAUNCH_AND_SEND } from '@/shared/backend-bridge/apps/agents';
 
 const dashboardLayoutSlice = createSlice({
   name: 'dashboardLayout',
@@ -40,7 +40,7 @@ const dashboardLayoutSlice = createSlice({
         state.loading = false;
         state.initialized = true;
       })
-      .addCase(launchAndSendFirstMessage.fulfilled, (state, action) => {
+      .addCase(META_LAUNCH_AND_SEND.fulfilled, (state, action) => {
         const { draftId, session } = action.payload;
         const card = state.cards[draftId];
         if (card) {

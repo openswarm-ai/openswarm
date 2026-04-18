@@ -1,7 +1,7 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { API_BASE } from '@/shared/backend-bridge/base_routes';
 import type {
-  AgentSession, HistorySession,
+  AgentSession, HistorySession, LaunchAndSendPayload
 } from '@/shared/state/agentsTypes';
 
 const AGENTS_API: string = `${API_BASE}/agents`;
@@ -327,4 +327,42 @@ async function get_history_function(payload: {
 export const GET_HISTORY = createAsyncThunk(
   get_history_endpoint,
   get_history_function,
+);
+
+
+
+// ---------------------------------------------------------------------------
+// Meta Functions (Not actual endpoints in the backend)
+// ---------------------------------------------------------------------------
+
+
+
+const meta_launch_and_send_endpoint: string = 'agents/meta_launch_and_send';
+async function meta_launch_and_send_function(
+  payload: LaunchAndSendPayload,
+): Promise<{ draftId: string; session: AgentSession }> {
+  const { session } = await launch_agent_function({
+    model: payload.model,
+    mode: payload.mode,
+    system_prompt: payload.config.system_prompt ?? '',
+    max_turns: payload.config.max_turns ?? 100,
+  });
+
+  await send_message_function({
+    sessionId: session.id,
+    prompt: payload.prompt,
+    mode: payload.mode,
+    model: payload.model,
+    images: payload.images?.map((img) => img.data),
+    imageMediaTypes: payload.images?.map((img) => img.media_type),
+    contextPaths: payload.contextPaths,
+    forcedTools: payload.forcedTools,
+    attachedSkills: payload.attachedSkills,
+  });
+
+  return { draftId: payload.draftId, session };
+}
+export const META_LAUNCH_AND_SEND = createAsyncThunk(
+  meta_launch_and_send_endpoint,
+  meta_launch_and_send_function,
 );

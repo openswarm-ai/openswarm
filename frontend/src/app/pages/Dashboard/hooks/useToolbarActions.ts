@@ -2,14 +2,8 @@ import { useCallback } from 'react';
 import type { RefObject, MutableRefObject } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
-// import {
-//   launchAndSendFirstMessage,
-//   generateTitle,
-//   expandSession,
-//   resumeSession,
-// } from '@/shared/state/agentsSlice';
-
-import { RESUME_SESSION } from '@/shared/backend-bridge/apps/agents';
+import type { AgentSession } from '@/shared/state/agentsTypes';
+import { RESUME_SESSION, META_LAUNCH_AND_SEND } from '@/shared/backend-bridge/apps/agents';
 import { expandSession } from '@/shared/state/agentsSlice';
 import type { AgentConfig } from '@/shared/state/agentsSlice';
 import {
@@ -24,13 +18,16 @@ import {
   DEFAULT_CARD_H,
   EXPANDED_CARD_MIN_H,
   GRID_GAP,
+  CardPosition,
+  ViewCardPosition,
+  BrowserCardPosition
 } from '@/shared/state/dashboardLayoutSlice';
 import { generateDashboardName } from '@/shared/state/dashboardsSlice';
 import type { ContextPath } from '@/app/components/DirectoryBrowser';
 import type { CanvasActions } from '../useCanvasControls';
 
 interface ToolbarDeps {
-  cards: Record<string, any>;
+  cards: Record<string, CardPosition>;
   expandedSessionIds: string[];
   viewportRef: RefObject<HTMLDivElement>;
   canvasActions: CanvasActions;
@@ -62,11 +59,11 @@ export function useToolbarActions(deps: ToolbarDeps) {
       const targetX = sourceCard.x + sourceCard.width + GRID_GAP * 12;
       let targetY = sourceCard.y;
       const columnCards = Object.values(cards).filter(
-        (c: any) => Math.abs(c.x - targetX) < 50 && c.session_id !== newSessionId,
+        (c: CardPosition) => Math.abs(c.x - targetX) < 50 && c.session_id !== newSessionId,
       );
       if (columnCards.length > 0) {
         const lowestBottom = Math.max(
-          ...(columnCards as any[]).map((c) => c.y + Math.max(EXPANDED_CARD_MIN_H, c.height)),
+          ...columnCards.map((c) => c.y + Math.max(EXPANDED_CARD_MIN_H, c.height)),
         );
         targetY = lowestBottom + GRID_GAP;
       }
@@ -106,15 +103,16 @@ export function useToolbarActions(deps: ToolbarDeps) {
       }
       const config: AgentConfig = { name: 'New chat', model, mode, dashboard_id: dashboardId };
       dispatch(
-        launchAndSendFirstMessage({
+        META_LAUNCH_AND_SEND({
           draftId, config, prompt, mode, model, images,
           contextPaths: contextPaths?.map((cp) => ({ path: cp.path, type: cp.type })),
           forcedTools, attachedSkills, expand: expandNewChats,
         }),
       ).then((action) => {
-        if (launchAndSendFirstMessage.fulfilled.match(action)) {
+        if (META_LAUNCH_AND_SEND.fulfilled.match(action)) {
           const realId = action.payload.session.id;
-          dispatch(generateTitle({ sessionId: realId, prompt }));
+          // TODO: Implement title generation
+          // dispatch(generateTitle({ sessionId: realId, prompt }));
           if (selectedBrowserIds?.length) {
             dispatch(setGlowingBrowserCards({ browserIds: selectedBrowserIds, sessionId: realId, label: 'Use Browser' }));
             if (selectedBrowserIds.length === 1) {
@@ -144,7 +142,7 @@ export function useToolbarActions(deps: ToolbarDeps) {
           if (dashboardId) {
             const currentSessions = store.getState().agents.sessions;
             const agentCount = Object.values(currentSessions).filter(
-              (s: any) => s.status !== 'draft' && s.dashboard_id === dashboardId,
+              (s: AgentSession) => s.status !== 'draft' && s.dashboard_id === dashboardId,
             ).length;
             const NAME_GEN_TRIGGERS = [1, 3, 6];
             const currentDash = store.getState().dashboards.items[dashboardId];
@@ -212,12 +210,12 @@ export function useToolbarActions(deps: ToolbarDeps) {
     const expandedSet = new Set(currentExpanded);
     const { cards: tidied, viewCards: tidiedViews, browserCards: tidiedBrowsers } = store.getState().dashboardLayout;
     const allRects = [
-      ...Object.values(tidied).map((c: any) => ({
+      ...Object.values(tidied).map((c: CardPosition) => ({
         x: c.x, y: c.y, width: c.width,
         height: expandedSet.has(c.session_id) ? Math.max(EXPANDED_CARD_MIN_H, c.height) : c.height,
       })),
-      ...Object.values(tidiedViews).map((c: any) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
-      ...Object.values(tidiedBrowsers).map((c: any) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
+      ...Object.values(tidiedViews).map((c: ViewCardPosition) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
+      ...Object.values(tidiedBrowsers).map((c: BrowserCardPosition) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
     ];
     canvasActions.fitToCards(allRects);
   }, [dispatch, canvasActions]);

@@ -118,7 +118,7 @@ async def get_all_sessions(dashboard_id: str = Body(default="")) -> dict:
     result: List[Agent] = list[Agent](SESSIONS.values())
     if dashboard_id:
         result: List[Agent] = [a for a in result if getattr(a, "dashboard_id", None) == dashboard_id]
-    return {"SESSIONS": [a.model_dump(mode="json") for a in result]}
+    return {"sessions": [a.model_dump(mode="json") for a in result]}
 
 
 @agents.router.get("/get_session")

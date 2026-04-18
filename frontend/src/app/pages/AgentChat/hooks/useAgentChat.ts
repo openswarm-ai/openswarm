@@ -1,23 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-// import {
-//   sendMessage as sendMessageThunk,
-//   launchAndSendFirstMessage,
-//   generateTitle,
-//   stopAgent,
-//   handleApproval,
-//   editMessage,
-//   updateSessionModel,
-//   updateSessionMode,
-//   fetchSession,
-// } from '@/shared/state/agentsSlice';
+import type { AgentConfig } from '@/shared/state/agentsTypes';
 import {
   SEND_MESSAGE,
   STOP_AGENT,
   HANDLE_APPROVAL,
   EDIT_MESSAGE,
   GET_SESSION,
+  META_LAUNCH_AND_SEND
 } from '@/shared/backend-bridge/apps/agents';
 import { updateSessionMode, updateSessionModel } from '@/shared/state/agentsSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
@@ -67,17 +58,41 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
     setShowResumeBubble(false);
     setAwaitingResponse(true);
     if (isDraft) {
-      const config: Record<string, any> = { model, mode };
+      const config: AgentConfig = { 
+        model: model, 
+        mode: mode,
+        system_prompt: sessionSystemPrompt ?? undefined,
+        target_directory: sessionTargetDirectory ?? undefined,
+      };
       if (sessionSystemPrompt) config.system_prompt = sessionSystemPrompt;
       if (sessionTargetDirectory) config.target_directory = sessionTargetDirectory;
       dispatch(
-        launchAndSendFirstMessage({ draftId: id, config, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds })
+        META_LAUNCH_AND_SEND({ 
+          draftId: id,
+          config,
+          prompt: msg.prompt,
+          mode,
+          model,
+          images: msg.images,
+          contextPaths: msg.contextPaths,
+          forcedTools: msg.forcedTools,
+          attachedSkills: msg.attachedSkills,
+          selectedBrowserIds: msg.selectedBrowserIds
+        })
       ).then((action) => {
-        if (launchAndSendFirstMessage.fulfilled.match(action)) {
+        if (META_LAUNCH_AND_SEND.fulfilled.match(action)) {
           const realId = action.payload.session.id;
-          dispatch(generateTitle({ sessionId: realId, prompt: msg.prompt }));
+          // TODO: Implement title generation
+          // dispatch(generateTitle({ 
+          //   sessionId: realId,
+          //   prompt: msg.prompt 
+          // }));
           if (msg.selectedBrowserIds?.length) {
-            dispatch(setGlowingBrowserCards({ browserIds: msg.selectedBrowserIds, sessionId: realId, label: 'Use Browser' }));
+            dispatch(setGlowingBrowserCards({ 
+              browserIds: msg.selectedBrowserIds,
+              sessionId: realId,
+              label: 'Use Browser' 
+            }));
           }
         }
       });
@@ -85,7 +100,19 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
       if (msg.selectedBrowserIds?.length) {
         dispatch(setGlowingBrowserCards({ browserIds: msg.selectedBrowserIds, sessionId: id, label: 'Use Browser' }));
       }
-      dispatch(SEND_MESSAGE({ sessionId: id, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds }))
+      dispatch(SEND_MESSAGE({ 
+        sessionId: id, 
+        prompt: msg.prompt, 
+        mode: mode, 
+        model: model, 
+        images: msg.images?.map((img) => img.data),
+        imageMediaTypes: msg.images?.map((img) => img.media_type),
+        contextPaths: msg.contextPaths, 
+        forcedTools: msg.forcedTools, 
+        attachedSkills: msg.attachedSkills, 
+        // TODO: Implement the selectedBrowserIds below
+        // selectedBrowserIds: msg.selectedBrowserIds
+      }))
         .then((action) => { if (SEND_MESSAGE.rejected.match(action)) setAwaitingResponse(false); });
     }
   }, [id, isDraft, mode, model, sessionSystemPrompt, sessionTargetDirectory, dispatch]);
@@ -141,7 +168,7 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
     if (id && !isDraft) dispatch(updateSessionModel({ sessionId: id, model: newModel }));
   }, [id, isDraft, dispatch]);
 
-  const handleApprove = (requestId: string, updatedInput?: Record<string, any>) => {
+  const handleApprove = (requestId: string, updatedInput?: Record<string, unknown>) => {
     dispatch(HANDLE_APPROVAL({ requestId, behavior: 'allow', updatedInput }));
   };
   const handleDeny = (requestId: string, message?: string) => {

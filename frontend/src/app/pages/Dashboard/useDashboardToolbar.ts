@@ -3,7 +3,8 @@ import type { ContextPath } from '@/app/components/DirectoryBrowser';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { searchHistory, clearHistorySearch } from '@/shared/state/agentsSlice';
+import { clearHistorySearch } from '@/shared/state/agentsSlice';
+import { GET_HISTORY } from '@/shared/backend-bridge/apps/agents';
 import type { Output } from '@/shared/state/outputsSlice';
 import type { Props } from './toolbarShared';
 import { TOOLBAR_OWNER_ID, HISTORY_PAGE_SIZE } from './toolbarShared';
@@ -22,14 +23,6 @@ export function useDashboardToolbar({
   const defaultModel = useAppSelector((s) => s.settings.data.default_model);
   const [mode, setMode] = useState(defaultMode || 'agent');
   const [model, setModel] = useState(defaultModel || 'sonnet');
-  const settingsApplied = useRef(false);
-  useEffect(() => {
-    if (!settingsApplied.current) {
-      setMode(defaultMode || 'agent');
-      setModel(defaultModel || 'sonnet');
-      settingsApplied.current = true;
-    }
-  }, [defaultMode, defaultModel]);
   const [viewPickerOpen, setViewPickerOpen] = useState(false);
   const [viewSearch, setViewSearch] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -120,8 +113,8 @@ export function useDashboardToolbar({
     setHistoryOpen(true);
     setHistoryQuery('');
     dispatch(clearHistorySearch());
-    dispatch(searchHistory({ q: '', limit: HISTORY_PAGE_SIZE, offset: 0, dashboardId }));
-  }, [historyOpen, dispatch, dashboardId]);
+    dispatch(GET_HISTORY({ q: '', limit: HISTORY_PAGE_SIZE, offset: 0 }));
+  }, [historyOpen, dispatch]);
 
   const handleHistorySelect = useCallback((sessionId: string) => {
     onHistoryResume(sessionId);
@@ -130,13 +123,12 @@ export function useDashboardToolbar({
 
   const handleHistoryLoadMore = useCallback(() => {
     if (historySearchState.loading || !historySearchState.hasMore) return;
-    dispatch(searchHistory({
+    dispatch(GET_HISTORY({
       q: historyQuery,
       limit: HISTORY_PAGE_SIZE,
       offset: historySearchState.results.length,
-      dashboardId,
     }));
-  }, [dispatch, historyQuery, historySearchState.loading, historySearchState.hasMore, historySearchState.results.length, dashboardId]);
+  }, [dispatch, historyQuery, historySearchState.loading, historySearchState.hasMore, historySearchState.results.length]);
 
   const isExpanded = inputOpen || viewPickerOpen || historyOpen;
 
@@ -227,7 +219,7 @@ export function useDashboardToolbar({
   useEffect(() => {
     if (!historyOpen) return;
     const timer = setTimeout(() => {
-      dispatch(searchHistory({ q: historyQuery, limit: HISTORY_PAGE_SIZE, offset: 0, dashboardId }));
+      dispatch(GET_HISTORY({ q: historyQuery, limit: HISTORY_PAGE_SIZE, offset: 0 }));
     }, 300);
     return () => clearTimeout(timer);
   }, [historyQuery, historyOpen, dispatch, dashboardId]);
