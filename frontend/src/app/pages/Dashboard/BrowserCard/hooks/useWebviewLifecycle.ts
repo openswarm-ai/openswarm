@@ -1,8 +1,8 @@
 import { useRef, useEffect } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
 import {
-  registerWebview,
-  unregisterWebview,
+  registerWebview, // only used in this file, maybe an aNr opportunity? -HD
+  unregisterWebview, // only used in this file, maybe an aNr opportunity? -HD
   setActiveTab as setRegistryActiveTab,
   type BrowserWebview,
 } from '@/shared/browserRegistry';
@@ -12,14 +12,9 @@ import {
   updateBrowserTabFavicon,
   type BrowserTab,
 } from '@/shared/state/dashboardLayoutSlice';
+import type { TabLocalState } from '@/app/pages/Dashboard/types/types';
 
 export type WebviewElement = BrowserWebview;
-
-export interface TabLocalState {
-  loading: boolean;
-  canGoBack: boolean;
-  canGoForward: boolean;
-}
 
 export const isElectron = navigator.userAgent.includes('Electron');
 

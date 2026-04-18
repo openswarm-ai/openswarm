@@ -15,13 +15,12 @@ export const AGENTS_WS_API: string = `${API_BASE}/agents/ws`;
 
 const get_all_sessions_endpoint: string = `${AGENTS_API}/get_all_sessions`;
 async function get_all_sessions_function(dashboardId?: string): Promise<AgentSession[]> {
-  const res = await fetch(get_all_sessions_endpoint, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dashboard_id: dashboardId ?? '' }),
-  });
+  const url = dashboardId
+    ? `${get_all_sessions_endpoint}?dashboard_id=${encodeURIComponent(dashboardId)}`
+    : get_all_sessions_endpoint;
+  const res = await fetch(url);
   const data = await res.json();
-  return data.SESSIONS as AgentSession[];
+  return data.sessions as AgentSession[];
 }
 export const GET_ALL_SESSIONS = createAsyncThunk(
   get_all_sessions_endpoint,
@@ -53,6 +52,7 @@ async function launch_agent_function(config: {
   mode: string;
   system_prompt: string;
   max_turns: number;
+  dashboard_id?: string;
 }): Promise<{ session_id: string; session: AgentSession }> {
   const res = await fetch(launch_agent_endpoint, {
     method: 'POST',
@@ -62,6 +62,7 @@ async function launch_agent_function(config: {
       mode: config.mode,
       system_prompt: config.system_prompt,
       max_turns: config.max_turns,
+      dashboard_id: config.dashboard_id,
     }),
   });
   const data = await res.json();
@@ -349,6 +350,7 @@ async function meta_launch_and_send_function(
     mode: payload.mode,
     system_prompt: payload.config.system_prompt ?? '',
     max_turns: payload.config.max_turns ?? 100,
+    dashboard_id: payload.config.dashboard_id,
   });
   console.log(`[FRONTEND] meta_launch_and_send: launched | draftId=${payload.draftId} → realId=${session.session_id} status=${session.status} dashboard_id=${session.dashboard_id ?? 'NONE'}`);
 

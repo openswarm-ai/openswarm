@@ -48,6 +48,14 @@ AGENT_STORE: PydanticStore[Agent] = PydanticStore[Agent](
 # NOTE: Essentially the SESSIONS is a cache for active agents.
 SESSIONS: dict[str, Agent] = {}
 
+def _persist_agent(agent: Agent) -> None:
+    """Called when an agent reaches a terminal state (completed/error)."""
+    debug("auto-saving session %s (status=%s)", agent.session_id, agent.status)
+    try:
+        AGENT_STORE.save(agent)
+    except Exception as e:
+        debug("auto-save failed for session %s: %s", agent.session_id, e)
+
 def get_agent(session_id: str) -> Agent:
     agent: Optional[Agent] = SESSIONS.get(session_id)
     if not agent:
@@ -64,6 +72,7 @@ async def agents_lifespan():
         try:
             stored.status = "stopped"
             stored.on_event = COMMS_MANAGER.make_session_emitter(stored.session_id)
+            stored.on_done = _persist_agent
             stored.toolkit = await build_agent_toolkit(
                 agent=stored,
                 sessions=SESSIONS,
@@ -73,10 +82,15 @@ async def agents_lifespan():
         except Exception as e:
             debug(f"[agents lifespan] Skipping corrupt session {stored.session_id}: {e}")
     yield
+    debug("agents_lifespan: shutting down — %s sessions to save", len(SESSIONS))
     for agent in list[Agent](SESSIONS.values()):
+        debug("agents_lifespan: stopping agent %s", agent.session_id)
         await agent.stop_agent()
+        debug("agents_lifespan: saving agent %s", agent.session_id)
         AGENT_STORE.save(agent)
+        debug("agents_lifespan: saved agent %s", agent.session_id)
     SESSIONS.clear()
+    debug("agents_lifespan: shutdown complete")
 
 
 agents = SubApp("agents", agents_lifespan)
@@ -115,10 +129,10 @@ async def websocket_dashboard(websocket: WebSocket):
 # ---------------------------------------------------------------------------
 
 @agents.router.get("/get_all_sessions")
-async def get_all_sessions(dashboard_id: str = Body(default="")) -> dict:
-    result: List[Agent] = list[Agent](SESSIONS.values())
+async def get_all_sessions(dashboard_id: str = "") -> dict:
+    result: List[Agent] = list(SESSIONS.values())
     if dashboard_id:
-        result: List[Agent] = [a for a in result if getattr(a, "dashboard_id", None) == dashboard_id]
+        result = [a for a in result if a.dashboard_id == dashboard_id]
     return {"sessions": [a.model_dump(mode="json") for a in result]}
 
 
@@ -134,14 +148,17 @@ async def launch_agent(
     mode: str = Body(),
     system_prompt: str = Body(),
     max_turns: int = Body(),
+    dashboard_id: Optional[str] = Body(default=None),
 ) -> dict:
     agent: Agent = Agent(
         model=model,
         mode=mode,
         status="stopped",
+        dashboard_id=dashboard_id,
         config=ClaudeAgentOptions(max_turns=max_turns),
     )
     agent.on_event = COMMS_MANAGER.make_session_emitter(agent.session_id)
+    agent.on_done = _persist_agent
     SESSIONS[agent.session_id] = agent
 
     toolkit: Toolkit = await build_agent_toolkit(
@@ -372,6 +389,7 @@ async def resume_session(session_id: str = Body()) -> dict:
         raise HTTPException(status_code=404, detail="Session not found in history")
     agent.status = "stopped"
     agent.on_event = COMMS_MANAGER.make_session_emitter(agent.session_id)
+    agent.on_done = _persist_agent
     agent.toolkit = await build_agent_toolkit(
         agent=agent,
         sessions=SESSIONS,
@@ -402,6 +420,7 @@ async def duplicate_session(session_id: str = Body()) -> dict:
     clone.pending_approvals = []
     clone.sub_agents = []
     clone.on_event = COMMS_MANAGER.make_session_emitter(clone.session_id)
+    clone.on_done = _persist_agent
     clone.toolkit = await build_agent_toolkit(
         agent=clone,
         sessions=SESSIONS,

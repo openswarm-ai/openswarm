@@ -9,6 +9,7 @@ class AgentSnapshot(BaseModel):
     model: str
     mode: str
     status: str
+    dashboard_id: Optional[str] = None
     branch_id: str = "main"
     parent_id: Optional[str] = None
     messages: MessageLog = Field(default_factory=MessageLog)

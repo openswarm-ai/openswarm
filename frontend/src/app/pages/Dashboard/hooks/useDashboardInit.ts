@@ -101,7 +101,7 @@ export function useDashboardInit(deps: InitDeps) {
     if (!layoutInitialized) return;
     const dashboardSessionIds = Object.values(sessions)
       .filter((s: any) => s.dashboard_id === dashboardId && s.mode !== 'browser-agent' && s.mode !== 'invoked-agent' && s.mode !== 'sub-agent')
-      .map((s: any) => s.id);
+      .map((s: any) => s.session_id);
     const liveIds = dashboardSessionIds.sort().join(',');
     if (liveIds === prevSessionIdsRef.current) return;
     prevSessionIdsRef.current = liveIds;

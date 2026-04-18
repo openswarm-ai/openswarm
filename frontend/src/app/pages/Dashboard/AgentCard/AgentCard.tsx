@@ -13,11 +13,11 @@ import { setCardPosition, setCardSize, fadeGlowingAgentCard, clearGlowingAgentCa
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
-import { type ResizeDir, DRAG_THRESHOLD, CURSOR_MAP, HANDLE_DEFS } from './cardLayoutConstants';
-import CardGlowOverlay from './CardGlowOverlay';
-import AgentCardCollapsed from './AgentCardCollapsed';
-import { formatDuration, getStatusColors, getPreviewContent } from './agentCardUtils';
+import { useOverlayScrollPassthrough } from '@/app/pages/Dashboard/useOverlayScrollPassthrough';
+import { type ResizeDir, DRAG_THRESHOLD, CURSOR_MAP, HANDLE_DEFS } from '@/app/pages/Dashboard/cardLayoutConstants';
+import CardGlowOverlay from './components/CardGlowOverlay';
+import AgentCardCollapsed from './components/AgentCardCollapsed';
+import { formatDuration, getStatusColors, getPreviewContent } from './components/agentCardUtils';
 
 interface Props {
   session: AgentSession; expanded: boolean;

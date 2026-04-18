@@ -40,12 +40,15 @@ cleanup() {
     echo ""
     echo -e "${YELLOW}${BOLD}Gracefully shutting down all services...${RESET}"
 
-    for pid in $ELECTRON_PID $BACKEND_PID $FRONTEND_PID; do
+    # Send SIGTERM to top-level PIDs only (not recursively) so uvicorn
+    # can run its lifespan teardown before child processes are killed.
+    for pid in $ELECTRON_PID $FRONTEND_PID; do
         [[ -n "$pid" ]] && kill_tree "$pid" TERM
     done
+    [[ -n "$BACKEND_PID" ]] && kill -TERM "$BACKEND_PID" 2>/dev/null
 
     local elapsed=0
-    while (( elapsed < 5 )); do
+    while (( elapsed < 10 )); do
         local alive=false
         for pid in $ELECTRON_PID $BACKEND_PID $FRONTEND_PID; do
             [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && alive=true

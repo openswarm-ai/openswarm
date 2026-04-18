@@ -6,14 +6,15 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useBrowserActivity } from '@/shared/useBrowserActivity';
 import { resolveInput, isGoogleSearch } from '@/shared/resolveUrl';
-import BrowserAgentOverlay from './BrowserAgentOverlay';
-import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
+import BrowserAgentOverlay from './components/BrowserAgentOverlay/BrowserAgentOverlay';
+import { useOverlayScrollPassthrough } from '@/app/pages/Dashboard/useOverlayScrollPassthrough';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
-import { type ResizeDir, CURSOR_MAP, HANDLE_DEFS, DRAG_THRESHOLD } from './cardLayoutConstants';
-import { useWebviewLifecycle, isElectron, chromeUserAgent, webviewPreloadPath, type TabLocalState, type WebviewElement } from './hooks/useWebviewLifecycle';
-import BrowserTabBar from './BrowserTabBar';
-import BrowserNavBar from './BrowserNavBar';
-import BrowserActionOverlay from './BrowserActionOverlay';
+import { type ResizeDir, CURSOR_MAP, HANDLE_DEFS, DRAG_THRESHOLD } from '@/app/pages/Dashboard/cardLayoutConstants';
+import { useWebviewLifecycle, isElectron, chromeUserAgent, webviewPreloadPath, type WebviewElement } from './hooks/useWebviewLifecycle';
+import type { TabLocalState } from '@/app/pages/Dashboard/types/types';
+import BrowserTabBar from './components/BrowserTabBar';
+import BrowserNavBar from './components/BrowserNavBar';
+import BrowserActionOverlay from './components/BrowserActionOverlay';
 
 const MIN_W = 400, MIN_H = 300;
 

@@ -6,10 +6,12 @@ inside a data directory.  This module eliminates that copy-paste.
 
 import json
 import os
+import tempfile
 from typing import Generic, List, Optional, TypeVar
 
 from fastapi import HTTPException
 from pydantic import BaseModel
+from swarm_debug import debug
 from typeguard import typechecked
 
 T = TypeVar("T", bound=BaseModel)
@@ -39,19 +41,33 @@ class PydanticStore(BaseModel, Generic[T]):
     def load_all(self) -> list[T]:
         result: List[T] = []
         if not os.path.exists(self.data_dir):
+            debug("load_all: data_dir does not exist: %s", self.data_dir)
             return result
-        for fname in os.listdir(self.data_dir):
-            if fname.endswith(".json"):
-                with open(os.path.join(self.data_dir, fname)) as f:
-                    result.append(self.model_cls(**json.load(f)))
+        fnames = [f for f in os.listdir(self.data_dir) if f.endswith(".json")]
+        debug("load_all: scanning %s — found %s json files", self.data_dir, len(fnames), table=False)
+        for fname in fnames:
+            path = os.path.join(self.data_dir, fname)
+            size = os.path.getsize(path)
+            debug("load_all: loading %s (%s bytes)", fname, size, table=False)
+            with open(path) as f:
+                raw = f.read()
+                debug("load_all: raw content length=%s, first 100 chars: %s", len(raw), raw[:100], table=False)
+                result.append(self.model_cls(**json.loads(raw)))
         return result
 
     @typechecked
     def save(self, item: T) -> None:
         os.makedirs(self.data_dir, exist_ok=True)
         item_id = getattr(item, self.id_field)
-        with open(self.p_path(item_id), "w") as f:
-            json.dump(self.p_dump(item), f, indent=2)
+        path = self.p_path(item_id)
+        debug("save: writing %s to %s", item_id, path, table=False)
+        with tempfile.NamedTemporaryFile(
+            "w", dir=self.data_dir, suffix=".tmp", delete=False
+        ) as tmp:
+            json.dump(self.p_dump(item), tmp, indent=2)
+            tmp_path = tmp.name
+        os.replace(tmp_path, path)
+        debug("save: complete — %s is now %s bytes", path, os.path.getsize(path), table=False)
 
     @typechecked
     def load(self, item_id: str) -> T:

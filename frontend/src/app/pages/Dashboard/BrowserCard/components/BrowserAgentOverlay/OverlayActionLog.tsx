@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { OverlayEntry } from './browserAgentOverlayUtils';
+import { OverlayEntry } from './OverlayEntry';
 
 interface Props {
   entries: OverlayEntry[];

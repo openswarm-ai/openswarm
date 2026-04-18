@@ -32,7 +32,8 @@ class Agent(BaseModel):
     messages: MessageLog = Field(default_factory=MessageLog)
 
     session_id: str = Field(default_factory=lambda: uuid4().hex)
-    config: ClaudeAgentOptions
+    dashboard_id: Optional[str] = None
+    config: ClaudeAgentOptions = Field(default_factory=ClaudeAgentOptions, exclude=True)
 
     branch_id: str = "main"
     sub_agents: List["Agent"] = Field(default_factory=list)
@@ -41,9 +42,10 @@ class Agent(BaseModel):
 
     toolkit: Optional[Toolkit] = Field(default=None, exclude=True)
     on_event: Optional[EventCallback] = Field(default=None, exclude=True)
+    on_done: Optional[Any] = Field(default=None, exclude=True)
 
-    task: Optional[InstanceOf[asyncio.Task]] = None
-    lock: InstanceOf[asyncio.Lock] = Field(default_factory=asyncio.Lock)
+    task: Optional[InstanceOf[asyncio.Task]] = Field(default=None, exclude=True)
+    lock: InstanceOf[asyncio.Lock] = Field(default_factory=asyncio.Lock, exclude=True)
 
     @typechecked
     def snapshot(self) -> AgentSnapshot:
@@ -52,6 +54,7 @@ class Agent(BaseModel):
             model=self.model,
             mode=self.mode,
             status=self.status,
+            dashboard_id=self.dashboard_id,
             branch_id=self.branch_id,
             parent_id=self.parent_id,
             messages=self.messages,
@@ -70,6 +73,9 @@ class Agent(BaseModel):
             self.status = event.status  # type: ignore[assignment]
         if self.on_event:
             await self.on_event(event)
+        if isinstance(event, AgentStatusEvent) and event.status in ("completed", "error"):
+            if self.on_done:
+                self.on_done(self)
 
     @typechecked
     async def request_approval(
