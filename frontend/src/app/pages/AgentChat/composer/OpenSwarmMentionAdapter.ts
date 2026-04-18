@@ -6,7 +6,7 @@ import type {
 } from '@assistant-ui/core';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
-import { fetchOutputs } from '@/shared/state/outputsSlice';
+import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 
 export interface MentionItemMetadata {
   itemType: 'skill' | 'mode' | 'file' | 'tool-group' | 'output';
@@ -44,16 +44,16 @@ export function useOpenSwarmMentionAdapter(): Unstable_MentionAdapter {
   const modesMap = useAppSelector((s) => s.modes.items);
   const builtinTools = useAppSelector((s) => s.tools.builtinTools);
   const customTools = useAppSelector((s) => s.tools.items);
-  const outputItems = useAppSelector((s) => s.outputs.items);
+  const outputItems = useAppSelector((s) => s.apps.items);
 
   const toolsLoaded = useAppSelector((s) => s.tools.loaded);
   const builtinLoaded = useAppSelector((s) => s.tools.builtinLoaded);
-  const outputsLoaded = useAppSelector((s) => s.outputs.loaded);
+  const outputsLoaded = useAppSelector((s) => s.apps.loaded);
 
   useEffect(() => {
     if (!builtinLoaded) dispatch(fetchBuiltinTools());
     if (!toolsLoaded) dispatch(fetchTools());
-    if (!outputsLoaded) dispatch(fetchOutputs());
+    if (!outputsLoaded) dispatch(LIST_APPS());
   }, [dispatch, builtinLoaded, toolsLoaded, outputsLoaded]);
 
   const { categories, itemsByCategory, allItems } = useMemo(() => {

@@ -1,31 +1,29 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { createDraftSession, removeDraftSession } from '@/shared/state/agentsSlice';
-import { Output, SERVE_BASE } from '@/shared/state/outputsSlice';
-import { API_BASE } from '@/shared/config';
+import { SEED_APP, READ_APP, WRITE_APP_FILE, DELETE_APP_FILE, App, getAppServeUrl } from '@/shared/backend-bridge/apps/app_builder';
 import { ViewPreviewHandle } from '../ViewPreview';
 import { buildFileTree } from '../FileTree';
 
-const WORKSPACE_API = `${API_BASE}/outputs/workspace`;
 const POLL_INTERVAL_MS = 2000;
 
 export function useViewWorkspace(
-  output: Output | null,
+  app: App | null,
   previewRef: React.RefObject<ViewPreviewHandle | null>,
 ) {
   const dispatch = useAppDispatch();
 
   const [files, setFiles] = useState<Record<string, string>>(() => {
-    if (!output) return {};
-    const f = { ...output.files };
-    if (!f['schema.json'] && output.input_schema) {
-      f['schema.json'] = JSON.stringify(output.input_schema, null, 2);
+    if (!app) return {};
+    const f = { ...app.files };
+    if (!f['schema.json'] && app.input_schema) {
+      f['schema.json'] = JSON.stringify(app.input_schema, null, 2);
     }
     return f;
   });
   const [fileVersion, setFileVersion] = useState(0);
-  const [name, setName] = useState(output?.name ?? '');
-  const [description, setDescription] = useState(output?.description ?? '');
+  const [name, setName] = useState(app?.name ?? '');
+  const [description, setDescription] = useState(app?.description ?? '');
   const [activeFile, setActiveFile] = useState('index.html');
 
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
@@ -45,25 +43,22 @@ export function useViewWorkspace(
     if (draftCreated.current) return;
     draftCreated.current = true;
     (async () => {
-      const seedBody: Record<string, any> = { workspace_id: stableWorkspaceId };
-      if (output) {
-        const seedFiles: Record<string, string> = { ...output.files };
-        if (output.input_schema && !seedFiles['schema.json']) {
-          seedFiles['schema.json'] = JSON.stringify(output.input_schema, null, 2);
+      const seedBody: { app_id: string; files?: Record<string, string>; meta?: Record<string, unknown> } = {
+        app_id: stableWorkspaceId,
+      };
+      if (app) {
+        const seedFiles: Record<string, string> = { ...app.files };
+        if (app.input_schema && !seedFiles['schema.json']) {
+          seedFiles['schema.json'] = JSON.stringify(app.input_schema, null, 2);
         }
         seedBody.files = seedFiles;
-        seedBody.meta = { name: output.name, description: output.description };
+        seedBody.meta = { name: app.name, description: app.description };
       }
       try {
-        const res = await fetch(`${WORKSPACE_API}/seed`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(seedBody),
-        });
-        const data = await res.json();
-        setWorkspacePath(data.path);
+        const result = await dispatch(SEED_APP(seedBody)).unwrap();
+        setWorkspacePath(result.path);
         const action = dispatch(createDraftSession({
-          mode: 'view-builder', setActive: false, targetDirectory: data.path,
+          mode: 'view-builder', setActive: false, targetDirectory: result.path,
         }));
         setInitialDraftId(action.payload.draftId);
       } catch {
@@ -71,7 +66,7 @@ export function useViewWorkspace(
         setInitialDraftId(action.payload.draftId);
       }
     })();
-  }, [dispatch, output, stableWorkspaceId]);
+  }, [dispatch, app, stableWorkspaceId]);
 
   const effectiveSessionId = useAppSelector((state) => {
     if (!initialDraftId) return null;
@@ -95,22 +90,21 @@ export function useViewWorkspace(
   const pollWorkspace = useCallback(async () => {
     if (!workspaceId) return;
     try {
-      const res = await fetch(`${WORKSPACE_API}/${workspaceId}`);
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await dispatch(READ_APP(workspaceId)).unwrap();
       const fingerprint = JSON.stringify(data);
       if (fingerprint === lastPollRef.current) return;
       lastPollRef.current = fingerprint;
       if (data.files) { setFiles(data.files); setFileVersion(v => v + 1); }
       if (data.meta) {
-        if (data.meta.name && !nameSetByMeta.current) {
+        const meta = data.meta as Record<string, any>;
+        if (meta.name && !nameSetByMeta.current) {
           nameSetByMeta.current = true;
-          setName((prev) => prev || data.meta.name);
+          setName((prev) => prev || meta.name);
         }
-        if (data.meta.description) setDescription((prev) => prev || data.meta.description);
+        if (meta.description) setDescription((prev) => prev || meta.description);
       }
     } catch {}
-  }, [workspaceId]);
+  }, [workspaceId, dispatch]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -130,7 +124,7 @@ export function useViewWorkspace(
   }, [initialDraftId, dispatch]);
 
   const workspaceServeUrl = workspaceId
-    ? `${SERVE_BASE}/workspace/${workspaceId}/serve/index.html`
+    ? getAppServeUrl(workspaceId)
     : undefined;
 
   const filePaths = useMemo(
@@ -147,14 +141,12 @@ export function useViewWorkspace(
       if (existing) clearTimeout(existing);
       wsPushTimers.current.set(path, setTimeout(() => {
         wsPushTimers.current.delete(path);
-        fetch(`${WORKSPACE_API}/${wsId}/file/${encodeURIComponent(path)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content }),
-        }).then(() => previewRef.current?.reload()).catch(() => {});
+        dispatch(WRITE_APP_FILE({ appId: wsId, filepath: path, content }))
+          .then(() => previewRef.current?.reload())
+          .catch(() => {});
       }, 300));
     }
-  }, [previewRef]);
+  }, [previewRef, dispatch]);
 
   const addFile = useCallback((fileName: string) => {
     const trimmed = fileName.trim();
@@ -162,12 +154,9 @@ export function useViewWorkspace(
     setFiles(prev => ({ ...prev, [trimmed]: '' }));
     setActiveFile(trimmed);
     if (workspaceId) {
-      fetch(`${WORKSPACE_API}/${workspaceId}/file/${encodeURIComponent(trimmed)}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: '' }),
-      }).catch(() => {});
+      dispatch(WRITE_APP_FILE({ appId: workspaceId, filepath: trimmed, content: '' }));
     }
-  }, [files, workspaceId]);
+  }, [files, workspaceId, dispatch]);
 
   const deleteFile = useCallback((filePath: string) => {
     setFiles(prev => { const next = { ...prev }; delete next[filePath]; return next; });
@@ -176,11 +165,9 @@ export function useViewWorkspace(
       setActiveFile(remaining[0] ?? 'index.html');
     }
     if (workspaceId) {
-      fetch(`${WORKSPACE_API}/${workspaceId}/file/${encodeURIComponent(filePath)}`, {
-        method: 'DELETE',
-      }).catch(() => {});
+      dispatch(DELETE_APP_FILE({ appId: workspaceId, filepath: filePath }));
     }
-  }, [activeFile, filePaths, workspaceId]);
+  }, [activeFile, filePaths, workspaceId, dispatch]);
 
   useEffect(() => {
     return () => { wsPushTimers.current.forEach(t => clearTimeout(t)); };

@@ -3,15 +3,14 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import Icon from '@mui/material/Icon';
-import { Output } from '@/shared/state/outputsSlice';
+import type { App } from '@/shared/backend-bridge/apps/app_builder';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 interface Props {
-  output: Output;
+  output: App;
   onClick: () => void;
   onDelete: () => void;
   onRun: () => void;

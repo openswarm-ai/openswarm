@@ -47,7 +47,7 @@ const Sidebar: React.FC<SidebarProps> = ({ showUpdateDot }) => {
   const dashboardList = Object.values(dashboardItems).sort(
     (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
   );
-  const appsList = Object.values(useAppSelector((s) => s.outputs.items)).sort(
+  const appsList = Object.values(useAppSelector((s) => s.apps.items)).sort(
     (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
   );
 

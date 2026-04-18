@@ -7,7 +7,7 @@ import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
-import { fetchOutputs } from '@/shared/state/outputsSlice';
+import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 import { CommandPickerItem, MODE_ICON_MAP } from './commandPickerTypes';
 import { getToolGroupIcon } from './CommandPickerIcons';
 
@@ -17,16 +17,16 @@ export function useCommandPickerItems(trigger: '/' | '@', filter: string) {
   const modesMap = useAppSelector((s) => s.modes.items);
   const builtinTools = useAppSelector((s) => s.tools.builtinTools);
   const customTools = useAppSelector((s) => s.tools.items);
-  const outputItems = useAppSelector((s) => s.outputs.items);
+  const outputItems = useAppSelector((s) => s.apps.items);
 
   const toolsLoaded = useAppSelector((s) => s.tools.loaded);
   const builtinLoaded = useAppSelector((s) => s.tools.builtinLoaded);
-  const outputsLoaded = useAppSelector((s) => s.outputs.loaded);
+  const outputsLoaded = useAppSelector((s) => s.apps.loaded);
 
   useEffect(() => {
     if (!builtinLoaded) dispatch(fetchBuiltinTools());
     if (!toolsLoaded) dispatch(fetchTools());
-    if (!outputsLoaded) dispatch(fetchOutputs());
+    if (!outputsLoaded) dispatch(LIST_APPS());
   }, [dispatch, builtinLoaded, toolsLoaded, outputsLoaded]);
 
   const items: CommandPickerItem[] = useMemo(() => {

@@ -5,7 +5,7 @@ import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import AddIcon from '@mui/icons-material/Add';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { fetchOutputs, deleteOutput, Output } from '@/shared/state/outputsSlice';
+import { LIST_APPS, DELETE_APP, App } from '@/shared/backend-bridge/apps/app_builder';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ViewCard from './ViewCard';
 import ViewEditor from './ViewEditor';
@@ -16,32 +16,32 @@ const Views: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { id: routeId } = useParams<{ id: string }>();
-  const items = useAppSelector((state) => state.outputs.items);
-  const loading = useAppSelector((state) => state.outputs.loading);
-  const loaded = useAppSelector((state) => state.outputs.loaded);
-  const outputs = useMemo(() => Object.values(items), [items]);
+  const items = useAppSelector((state) => state.apps.items);
+  const loading = useAppSelector((state) => state.apps.loading);
+  const loaded = useAppSelector((state) => state.apps.loaded);
+  const apps = useMemo(() => Object.values(items), [items]);
 
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editingOutput, setEditingOutput] = useState<Output | null>(null);
-  const [runOutput, setRunOutput] = useState<Output | null>(null);
+  const [editingApp, setEditingApp] = useState<App | null>(null);
+  const [runApp, setRunApp] = useState<App | null>(null);
 
   useEffect(() => {
-    dispatch(fetchOutputs());
+    dispatch(LIST_APPS());
   }, [dispatch]);
 
   useEffect(() => {
     if (!loaded) return;
     if (routeId === 'new') {
-      setEditingOutput(null);
+      setEditingApp(null);
       setEditorOpen(true);
     } else if (routeId && items[routeId]) {
-      setEditingOutput(items[routeId]);
+      setEditingApp(items[routeId]);
       setEditorOpen(true);
     } else if (routeId && routeId !== 'new') {
       navigate('/apps', { replace: true });
     } else if (!routeId) {
       setEditorOpen(false);
-      setEditingOutput(null);
+      setEditingApp(null);
     }
   }, [routeId, loaded, items, navigate]);
 
@@ -49,23 +49,23 @@ const Views: React.FC = () => {
     navigate('/apps/new');
   };
 
-  const handleEditView = (output: Output) => {
-    navigate(`/apps/${output.id}`);
+  const handleEditView = (app: App) => {
+    navigate(`/apps/${app.id}`);
   };
 
   const handleDeleteView = (id: string) => {
-    dispatch(deleteOutput(id));
+    dispatch(DELETE_APP(id));
   };
 
   const handleEditorClose = () => {
     setEditorOpen(false);
-    setEditingOutput(null);
-    dispatch(fetchOutputs());
+    setEditingApp(null);
+    dispatch(LIST_APPS());
     navigate('/apps');
   };
 
   if (editorOpen) {
-    return <ViewEditor key={editingOutput?.id ?? 'new'} output={editingOutput} onClose={handleEditorClose} />;
+    return <ViewEditor key={editingApp?.id ?? 'new'} output={editingApp} onClose={handleEditorClose} />;
   }
 
   return (
@@ -118,7 +118,7 @@ const Views: React.FC = () => {
           <Typography sx={{ color: c.text.muted, textAlign: 'center', py: 8 }}>
             Loading...
           </Typography>
-        ) : outputs.length === 0 ? (
+        ) : apps.length === 0 ? (
           <Box
             sx={{
               textAlign: 'center',
@@ -141,23 +141,23 @@ const Views: React.FC = () => {
               gap: 2.5,
             }}
           >
-            {outputs.map((output) => (
+            {apps.map((app) => (
               <ViewCard
-                key={output.id}
-                output={output}
-                onClick={() => handleEditView(output)}
-                onDelete={() => handleDeleteView(output.id)}
-                onRun={() => setRunOutput(output)}
+                key={app.id}
+                output={app}
+                onClick={() => handleEditView(app)}
+                onDelete={() => handleDeleteView(app.id)}
+                onRun={() => setRunApp(app)}
               />
             ))}
           </Box>
         )}
       </Box>
 
-      {runOutput && (
+      {runApp && (
         <ViewRunDialog
-          output={runOutput}
-          onClose={() => setRunOutput(null)}
+          output={runApp}
+          onClose={() => setRunApp(null)}
         />
       )}
     </Box>

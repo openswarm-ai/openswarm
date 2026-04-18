@@ -51,7 +51,7 @@ const DashboardInner: React.FC = () => {
   const browserHomepage = useAppSelector((s) => s.settings.data.browser_homepage);
   const expandNewChats = useAppSelector((s) => s.settings.data.expand_new_chats_in_dashboard);
   const autoRevealSubAgents = useAppSelector((s) => s.settings.data.auto_reveal_sub_agents);
-  const outputs = useAppSelector((s) => s.outputs.items);
+  const outputs = useAppSelector((s) => s.apps.items);
   const glowingAgentCards = useAppSelector((s) => s.dashboardLayout.glowingAgentCards);
   const glowingBrowserCards = useAppSelector((s) => s.dashboardLayout.glowingBrowserCards);
   const pendingBrowserUrl = useAppSelector((s) => s.tempState.pendingBrowserUrl);

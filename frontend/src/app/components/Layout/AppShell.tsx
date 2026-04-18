@@ -9,7 +9,7 @@ import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import Settings from '@/app/pages/Settings/Settings';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { LIST_DASHBOARDS } from '@/shared/backend-bridge/apps/dashboards';
-import { fetchOutputs } from '@/shared/state/outputsSlice';
+import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useUpdateNotification } from './hooks/useUpdateNotification';
 import { useSidebarResize } from './hooks/useSidebarResize';
@@ -41,7 +41,7 @@ const AppShell: React.FC = () => {
 
   useEffect(() => {
     dispatch(LIST_DASHBOARDS());
-    dispatch(fetchOutputs());
+    dispatch(LIST_APPS());
   }, [dispatch]);
 
   return (

@@ -5,7 +5,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { clearHistorySearch } from '@/shared/state/agentsSlice';
 import { GET_HISTORY } from '@/shared/backend-bridge/apps/agents';
-import type { Output } from '@/shared/state/outputsSlice';
+import type { App } from '@/shared/backend-bridge/apps/app_builder';
 import type { Props } from './toolbarShared';
 import { TOOLBAR_OWNER_ID, HISTORY_PAGE_SIZE } from './toolbarShared';
 
@@ -28,7 +28,7 @@ export function useDashboardToolbar({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState('');
   const shortcut = useAppSelector((s) => s.settings.data.new_agent_shortcut);
-  const outputs = useAppSelector((s) => s.outputs.items);
+  const outputs = useAppSelector((s) => s.apps.items);
   const historySearchState = useAppSelector((s) => s.agents.historySearch);
 
   const outputList = useMemo(() => Object.values(outputs), [outputs]);
@@ -82,7 +82,7 @@ export function useDashboardToolbar({
     }
   }, [historyOpen, viewPickerOpen, onCancel, handleCloseHistory]);
 
-  const handleSelectView = useCallback((output: Output) => {
+  const handleSelectView = useCallback((output: App) => {
     onAddView(output.id);
     setViewPickerOpen(false);
     setViewSearch('');

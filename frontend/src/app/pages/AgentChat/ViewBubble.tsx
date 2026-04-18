@@ -7,7 +7,7 @@ import Icon from '@mui/material/Icon';
 import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useAppSelector } from '@/shared/hooks';
-import { SERVE_BASE } from '@/shared/state/outputsSlice';
+import { getAppServeUrl } from '@/shared/backend-bridge/apps/app_builder';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ViewPreview from '../Views/ViewPreview';
 import { StreamingPlaceholder, ViewBubbleDialog } from './ViewBubbleParts';
@@ -25,7 +25,7 @@ const ViewBubble: React.FC<Props> = ({ toolInput, toolResult, isStreaming }) => 
 
   const outputId = toolInput?.output_id;
   const inputData = toolInput?.input_data || {};
-  const outputsMap = useAppSelector((state) => state.outputs.items);
+  const outputsMap = useAppSelector((state) => state.apps.items);
   const output = outputId ? outputsMap[outputId] : null;
 
   const parsedResult = useMemo(() => {
@@ -40,7 +40,7 @@ const ViewBubble: React.FC<Props> = ({ toolInput, toolResult, isStreaming }) => 
   const outputColor = c.accent.primary;
   const outputIcon = output?.icon || 'view_quilt';
   const hasPreview = !!frontendCode.trim();
-  const serveUrl = outputId ? `${SERVE_BASE}/${outputId}/serve/index.html` : undefined;
+  const serveUrl = outputId ? getAppServeUrl(outputId) : undefined;
   const inputEntries = Object.entries(inputData);
 
   if (isStreaming && !hasPreview) {

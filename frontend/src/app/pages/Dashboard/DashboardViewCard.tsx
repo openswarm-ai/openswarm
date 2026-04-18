@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import Box from '@mui/material/Box';
-import { Output, autoRunOutput, autoRunAgentOutput, executeOutput, getBackendCode, SERVE_BASE } from '@/shared/state/outputsSlice';
+import { EXECUTE_APP, getAppServeUrl } from '@/shared/backend-bridge/apps/app_builder';
 import { removeViewCard } from '@/shared/state/dashboardLayoutSlice';
 import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -24,9 +24,6 @@ const DashboardViewCard: React.FC<ViewCardProps> = ({
 
   const [inputData, setInputData] = useState<Record<string, any>>(() => getDefault(output.input_schema));
   const [backendResult, setBackendResult] = useState<Record<string, any> | null>(null);
-  const [autoRunning, setAutoRunning] = useState(false);
-
-  const hasAutoRun = !!(output.auto_run_config?.enabled && output.auto_run_config?.prompt);
 
   const {
     isDragging, localDragPos, justDraggedRef,
@@ -48,49 +45,12 @@ const DashboardViewCard: React.FC<ViewCardProps> = ({
     previewRef.current?.reload();
   };
 
-  const handleAutoRun = async (e: React.MouseEvent) => {
+  const handleExecute = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!output.auto_run_config?.prompt) return;
-    setAutoRunning(true);
-
-    const config = output.auto_run_config;
-    const forcedToolNames = config.forced_tools?.flatMap((ft) => ft.tools) ?? [];
-
     try {
-      if (forcedToolNames.length > 0) {
-        await dispatch(autoRunAgentOutput({
-          prompt: config.prompt,
-          input_schema: output.input_schema,
-          output_id: output.id,
-          model: config.model,
-          forced_tools: forcedToolNames,
-          context_paths: config.context_paths,
-        })).unwrap();
-
-        const execRes = await dispatch(executeOutput({
-          output_id: output.id,
-          input_data: inputData,
-        })).unwrap();
-        setInputData(execRes.input_data);
-        setBackendResult(execRes.backend_result);
-      } else {
-        const res = await dispatch(autoRunOutput({
-          prompt: config.prompt,
-          input_schema: output.input_schema,
-          backend_code: getBackendCode(output) ?? undefined,
-          context_paths: config.context_paths,
-          forced_tools: forcedToolNames.length > 0 ? forcedToolNames : undefined,
-          model: config.model,
-        })).unwrap();
-        if (res.input_data) {
-          setInputData(res.input_data);
-          setBackendResult(res.backend_result);
-        }
-      }
-    } catch {
-    } finally {
-      setAutoRunning(false);
-    }
+      const res = await dispatch(EXECUTE_APP({ app_id: output.id, input_data: inputData })).unwrap();
+      setBackendResult(res.backend_result as Record<string, any> | null);
+    } catch {}
   };
 
   const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
@@ -169,14 +129,14 @@ const DashboardViewCard: React.FC<ViewCardProps> = ({
 
       <ViewCardHeader
         name={output.name}
-        hasAutoRun={hasAutoRun}
-        autoRunning={autoRunning}
+        hasAutoRun={false}
+        autoRunning={false}
         isDragging={isDragging}
         onDragPointerDown={handleDragPointerDown}
         onDragPointerMove={handleDragPointerMove}
         onDragPointerUp={handleDragPointerUp}
         onRefresh={handleRefresh}
-        onAutoRun={handleAutoRun}
+        onAutoRun={handleExecute}
         onRemove={handleRemove}
       />
 
@@ -186,7 +146,7 @@ const DashboardViewCard: React.FC<ViewCardProps> = ({
         )}
         <ViewPreview
           ref={previewRef}
-          serveUrl={`${SERVE_BASE}/${output.id}/serve/index.html`}
+          serveUrl={getAppServeUrl(output.id)}
           frontendCode={output.files?.['index.html'] ?? ''}
           inputData={inputData}
           backendResult={backendResult}

@@ -1,24 +1,22 @@
 import React, { useState, useRef, useCallback, useEffect, PointerEvent as ReactPointerEvent } from 'react';
-import { Box, Typography, Button, IconButton, TextField, Tabs, Tab, Tooltip, Switch, CircularProgress } from '@mui/material';
-import { Save as SaveIcon, PlayArrow as PlayArrowIcon, Add as AddIcon, Bolt as BoltIcon, Refresh as RefreshIcon, CheckCircleOutline as CheckCircleOutlineIcon, AutoFixHigh as AutoFixHighIcon } from '@mui/icons-material';
+import { Box, Typography, Button, IconButton, TextField, Tabs, Tab, Tooltip, CircularProgress } from '@mui/material';
+import { Save as SaveIcon, PlayArrow as PlayArrowIcon, Add as AddIcon, Refresh as RefreshIcon, CheckCircleOutline as CheckCircleOutlineIcon, AutoFixHigh as AutoFixHighIcon } from '@mui/icons-material';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { Output } from '@/shared/state/outputsSlice';
+import type { App } from '@/shared/backend-bridge/apps/app_builder';
 import AgentChat from '../AgentChat/AgentChat';
-import ChatInput from '../AgentChat/ChatInput';
 import ViewPreview, { ViewPreviewHandle } from './ViewPreview';
 import InputSchemaForm, { getDefault, getStubbed } from './InputSchemaForm';
 import CodeEditor from './CodeEditor';
 import { ElementSelectionProvider } from '@/app/components/ElementSelectionContext';
 import { FileTreeItem, getEditorLanguage } from './FileTree';
-import { AutoRunLog } from './AutoRunLog';
 import { ConsolePanel } from './ConsolePanel';
 import { useViewWorkspace } from './hooks/useViewWorkspace';
 import { useAutoRun } from './hooks/useAutoRun';
 import { useViewSave } from './hooks/useViewSave';
 
-interface Props { output: Output | null; onClose: () => void; }
+interface Props { output: App | null; onClose: () => void; }
 
-const TAB_PREVIEW = 0, TAB_CODE = 1, TAB_TEST_INPUT = 2, TAB_AUTO_RUN = 3, TAB_CONSOLE = 4;
+const TAB_PREVIEW = 0, TAB_CODE = 1, TAB_TEST_INPUT = 2, TAB_CONSOLE = 3;
 const SIDEBAR_MIN = 280, SIDEBAR_MAX = 800;
 
 const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
@@ -42,8 +40,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const ar = useAutoRun(output, createdIdRef, ws.files, ws.name, setActiveTab);
   const save = useViewSave({
     output, name: ws.name, description: ws.description, files: ws.files,
-    testInput: ar.testInput, onClose, previewRef, getAutoRunConfig: ar.getAutoRunConfig,
-    autoRunEnabled: ar.autoRunEnabled, autoRunMode: ar.autoRunMode, autoRunModel: ar.autoRunModel,
+    testInput: ar.testInput, onClose, previewRef,
     createdIdRef, setCreatedId,
   });
 
@@ -86,12 +83,6 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
             sx={{ flex: 1, maxWidth: 220, '& .MuiInput-input': { fontSize: '0.9rem', fontWeight: 600, color: c.text.primary }, '& .MuiInput-underline:before': { borderColor: 'transparent' }, '& .MuiInput-underline:hover:before': { borderColor: c.border.medium } }} />
           <TextField value={ws.description} onChange={(e) => ws.setDescription(e.target.value)} placeholder="Description" variant="standard" size="small"
             sx={{ flex: 2, '& .MuiInput-input': { fontSize: '0.78rem', color: c.text.muted }, '& .MuiInput-underline:before': { borderColor: 'transparent' } }} />
-          {ar.autoRunEnabled && (
-            <Button variant="outlined" startIcon={ar.autoRunning ? <CircularProgress size={14} /> : <BoltIcon sx={{ fontSize: 16 }} />} onClick={ar.handleAutoRun} disabled={ar.autoRunning} size="small"
-              sx={{ borderColor: '#f59e0b40', color: '#f59e0b', textTransform: 'none', fontWeight: 500, fontSize: '0.8rem', px: 1.5, '&:hover': { borderColor: '#f59e0b', bgcolor: '#f59e0b10' } }}>
-              {ar.autoRunning ? 'Running…' : 'Auto Run'}
-            </Button>
-          )}
           {save.saveStatus === 'unsaved' && <Typography sx={{ fontSize: '0.72rem', color: c.text.ghost, fontStyle: 'italic', whiteSpace: 'nowrap' }}>Unsaved changes</Typography>}
           {save.saveStatus === 'saving' && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><CircularProgress size={12} sx={{ color: c.text.ghost }} /><Typography sx={{ fontSize: '0.72rem', color: c.text.ghost, whiteSpace: 'nowrap' }}>Saving…</Typography></Box>}
           {save.saveStatus === 'saved' && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><CheckCircleOutlineIcon sx={{ fontSize: 14, color: c.accent.primary }} /><Typography sx={{ fontSize: '0.72rem', color: c.accent.primary, whiteSpace: 'nowrap' }}>Saved</Typography></Box>}
@@ -107,7 +98,6 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
             <Tab label="Preview" value={TAB_PREVIEW} />
             <Tab label="Code" value={TAB_CODE} />
             <Tab label="Test Input" value={TAB_TEST_INPUT} />
-            <Tab label="Auto Run" value={TAB_AUTO_RUN} />
             {showConsole && <Tab label="Console" value={TAB_CONSOLE} />}
           </Tabs>
           {activeTab === TAB_PREVIEW && (<>
@@ -176,47 +166,6 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
             </Box>
           )}
           {activeTab === TAB_CONSOLE && <ConsolePanel entry={ar.consoleEntry} c={c} />}
-          <Box sx={{ display: activeTab === TAB_AUTO_RUN ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1, borderBottom: `1px solid ${c.border.subtle}`, bgcolor: c.bg.secondary, flexShrink: 0 }}>
-              <Switch checked={ar.autoRunEnabled} onChange={(_, v) => ar.setAutoRunEnabled(v)} size="small"
-                sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#f59e0b' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#f59e0b' } }} />
-              <Typography sx={{ fontSize: '0.82rem', fontWeight: 500, color: ar.autoRunEnabled ? c.text.primary : c.text.muted }}>
-                {ar.autoRunEnabled ? 'Auto Run enabled' : 'Auto Run disabled'}
-              </Typography>
-              <Box sx={{ flex: 1 }} />
-              {ar.autoRunEnabled && (
-                <Button size="small" startIcon={ar.autoRunning ? <CircularProgress size={12} /> : <BoltIcon sx={{ fontSize: 14 }} />} onClick={ar.handleAutoRun} disabled={ar.autoRunning}
-                  sx={{ textTransform: 'none', fontSize: '0.78rem', color: '#f59e0b', fontWeight: 500, '&:hover': { bgcolor: '#f59e0b10' } }}>
-                  {ar.autoRunning ? 'Running…' : 'Run Now'}
-                </Button>
-              )}
-            </Box>
-            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              {ar.autoRunEnabled ? (
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', p: 2, gap: 1.5, overflow: 'hidden' }}>
-                  <Typography sx={{ color: c.text.ghost, fontSize: '0.8rem', lineHeight: 1.6, flexShrink: 0 }}>
-                    Describe what data to generate for this app. When triggered, an LLM will produce input data matching your schema and populate the preview.
-                  </Typography>
-                  <ChatInput ref={ar.autoRunInputRef} autoRunMode onSend={() => {}} mode={ar.autoRunMode} onModeChange={ar.setAutoRunMode} model={ar.autoRunModel} onModelChange={ar.setAutoRunModel} />
-                  <Button variant="contained" startIcon={save.saving ? <CircularProgress size={14} color="inherit" /> : <SaveIcon sx={{ fontSize: 16 }} />} onClick={() => save.handleSave(false)} disabled={save.saving || !ws.name.trim()} size="small"
-                    sx={{ alignSelf: 'flex-start', flexShrink: 0, bgcolor: c.accent.primary, textTransform: 'none', fontWeight: 500, fontSize: '0.8rem', px: 2, '&:hover': { bgcolor: c.accent.hover } }}>
-                    {save.saving ? 'Saving…' : 'Save'}
-                  </Button>
-                  {(ar.autoRunSessionId || ar.autoRunMessages.length > 0) && (
-                    <AutoRunLog messages={ar.autoRunMessages} status={ar.autoRunSessionStatus} logEndRef={ar.autoRunLogEndRef} c={c} />
-                  )}
-                </Box>
-              ) : (
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
-                  <BoltIcon sx={{ fontSize: 40, color: c.text.ghost, opacity: 0.3 }} />
-                  <Typography sx={{ color: c.text.ghost, fontSize: '0.88rem' }}>Enable Auto Run to generate live data for this app</Typography>
-                  <Typography sx={{ color: c.text.ghost, fontSize: '0.78rem', maxWidth: 360, textAlign: 'center', lineHeight: 1.5 }}>
-                    Configure a prompt that describes what data to generate. An LLM will produce input matching your schema and populate the preview automatically.
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-          </Box>
         </Box>
       </Box>
     </Box>

@@ -1,21 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
-import { createOutput, updateOutput, Output, AutoRunConfig } from '@/shared/state/outputsSlice';
+import { CREATE_APP, UPDATE_APP, App } from '@/shared/backend-bridge/apps/app_builder';
 import { ViewPreviewHandle } from '../ViewPreview';
 import { captureViewThumbnail } from '../captureViewThumbnail';
 
 interface UseViewSaveParams {
-  output: Output | null;
+  output: App | null;
   name: string;
   description: string;
   files: Record<string, string>;
   testInput: Record<string, any>;
   onClose: () => void;
   previewRef: React.RefObject<ViewPreviewHandle | null>;
-  getAutoRunConfig: () => AutoRunConfig;
-  autoRunEnabled: boolean;
-  autoRunMode: string;
-  autoRunModel: string;
   createdIdRef: React.MutableRefObject<string | null>;
   setCreatedId: (id: string) => void;
 }
@@ -23,7 +19,6 @@ interface UseViewSaveParams {
 export function useViewSave(params: UseViewSaveParams) {
   const {
     output, name, description, files, testInput, onClose, previewRef,
-    getAutoRunConfig, autoRunEnabled, autoRunMode, autoRunModel,
     createdIdRef, setCreatedId,
   } = params;
   const dispatch = useAppDispatch();
@@ -39,23 +34,22 @@ export function useViewSave(params: UseViewSaveParams) {
   const buildBody = () => {
     let schema: Record<string, any>;
     try { schema = JSON.parse(files['schema.json'] ?? '{}'); } catch { schema = { type: 'object', properties: {} }; }
-    const outputFiles = { ...files };
-    delete outputFiles['meta.json'];
-    delete outputFiles['schema.json'];
-    delete outputFiles['SKILL.md'];
+    const appFiles = { ...files };
+    delete appFiles['meta.json'];
+    delete appFiles['schema.json'];
+    delete appFiles['SKILL.md'];
     return {
       name: name || 'Untitled App',
       description,
       icon: 'view_quilt',
       input_schema: schema,
-      files: outputFiles,
-      auto_run_config: getAutoRunConfig(),
+      files: appFiles,
     };
   };
 
-  const captureThumbnailAsync = (outputId: string) => {
+  const captureThumbnailAsync = (appId: string) => {
     captureViewThumbnail(files['index.html'] ?? '', testInput, files)
-      .then((thumbnail) => { if (thumbnail) dispatch(updateOutput({ id: outputId, thumbnail })); })
+      .then((thumbnail) => { if (thumbnail) dispatch(UPDATE_APP({ appId, thumbnail })); })
       .catch(() => {});
   };
 
@@ -71,10 +65,10 @@ export function useViewSave(params: UseViewSaveParams) {
       const eid = output?.id ?? createdIdRef.current;
       let savedId: string;
       if (eid) {
-        await dispatch(updateOutput({ id: eid, ...body })).unwrap();
+        await dispatch(UPDATE_APP({ appId: eid, ...body })).unwrap();
         savedId = eid;
       } else {
-        const created = await dispatch(createOutput(body)).unwrap();
+        const created = await dispatch(CREATE_APP(body)).unwrap();
         savedId = created.id;
         createdIdRef.current = savedId;
         setCreatedId(savedId);
@@ -108,7 +102,7 @@ export function useViewSave(params: UseViewSaveParams) {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => { performSaveRef.current?.(false); }, 1500);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [files, name, description, autoRunEnabled, autoRunMode, autoRunModel]);
+  }, [files, name, description]);
 
   useEffect(() => {
     return () => {

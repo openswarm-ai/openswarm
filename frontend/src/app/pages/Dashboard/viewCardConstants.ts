@@ -1,4 +1,4 @@
-import type { Output } from '@/shared/state/outputsSlice';
+import type { App } from '@/shared/backend-bridge/apps/app_builder';
 
 export type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -24,7 +24,7 @@ export const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
 ];
 
 export interface ViewCardProps {
-  output: Output;
+  output: App;
   cardX: number;
   cardY: number;
   cardWidth: number;

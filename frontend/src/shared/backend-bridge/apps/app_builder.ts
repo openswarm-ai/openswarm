@@ -3,6 +3,33 @@ import { API_BASE } from '@/shared/backend-bridge/base_routes';
 
 const APP_BUILDER_API: string = `${API_BASE}/app_builder`;
 
+export function getAppServeUrl(appId: string): string {
+  return `${APP_BUILDER_API}/${appId}/serve/index.html`;
+}
+
+export interface App {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  input_schema: Record<string, any>;
+  files: Record<string, string>;
+  permission: string;
+  thumbnail?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppExecuteResult {
+  app_id: string;
+  app_name: string;
+  frontend_code: string;
+  backend_result: Record<string, unknown> | null;
+  stdout: string | null;
+  stderr: string | null;
+  error: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // File serving
 // ---------------------------------------------------------------------------
@@ -126,13 +153,13 @@ export const DELETE_APP_FILE = createAsyncThunk(
 
 
 const list_apps_endpoint: string = `${APP_BUILDER_API}/list`;
-async function list_apps_function(): Promise<{ apps: Record<string, unknown>[] }> {
+async function list_apps_function(): Promise<{ apps: App[] }> {
   const res = await fetch(list_apps_endpoint, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
   });
   const data = await res.json();
-  return data as { apps: Record<string, unknown>[] };
+  return data as { apps: App[] };
 }
 export const LIST_APPS = createAsyncThunk(
   list_apps_endpoint,
@@ -141,13 +168,13 @@ export const LIST_APPS = createAsyncThunk(
 
 
 const get_app_endpoint: string = `${APP_BUILDER_API}/get`;
-async function get_app_function(appId: string): Promise<Record<string, unknown>> {
+async function get_app_function(appId: string): Promise<App> {
   const res = await fetch(`${APP_BUILDER_API}/${appId}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
   });
   const data = await res.json();
-  return data as Record<string, unknown>;
+  return data as App;
 }
 export const GET_APP = createAsyncThunk(
   get_app_endpoint,
@@ -160,16 +187,17 @@ async function create_app_function(body: {
   name: string;
   description?: string;
   icon?: string;
+  input_schema?: Record<string, any>;
   files?: Record<string, string> | null;
   thumbnail?: string | null;
-}): Promise<{ ok: boolean; app: Record<string, unknown> }> {
+}): Promise<App> {
   const res = await fetch(create_app_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   const data = await res.json();
-  return data as { ok: boolean; app: Record<string, unknown> };
+  return data.app as App;
 }
 export const CREATE_APP = createAsyncThunk(
   create_app_endpoint,
@@ -183,8 +211,11 @@ async function update_app_function(payload: {
   name?: string;
   description?: string;
   icon?: string;
+  input_schema?: Record<string, any>;
+  files?: Record<string, string>;
   thumbnail?: string | null;
-}): Promise<{ ok: boolean; app: Record<string, unknown> }> {
+  permission?: string;
+}): Promise<App> {
   const { appId, ...updates } = payload;
   const res = await fetch(`${APP_BUILDER_API}/${appId}`, {
     method: 'PUT',
@@ -192,7 +223,7 @@ async function update_app_function(payload: {
     body: JSON.stringify(updates),
   });
   const data = await res.json();
-  return data as { ok: boolean; app: Record<string, unknown> };
+  return data.app as App;
 }
 export const UPDATE_APP = createAsyncThunk(
   update_app_endpoint,
@@ -201,13 +232,12 @@ export const UPDATE_APP = createAsyncThunk(
 
 
 const delete_app_endpoint: string = `${APP_BUILDER_API}/delete`;
-async function delete_app_function(appId: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${APP_BUILDER_API}/${appId}`, {
+async function delete_app_function(appId: string): Promise<string> {
+  await fetch(`${APP_BUILDER_API}/${appId}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
   });
-  const data = await res.json();
-  return data as { ok: boolean };
+  return appId;
 }
 export const DELETE_APP = createAsyncThunk(
   delete_app_endpoint,
@@ -221,30 +251,17 @@ export const DELETE_APP = createAsyncThunk(
 
 
 const execute_app_endpoint: string = `${APP_BUILDER_API}/execute`;
-async function execute_app_function(appId: string): Promise<{
+async function execute_app_function(payload: {
   app_id: string;
-  app_name: string;
-  frontend_code: string;
-  backend_result: Record<string, unknown> | null;
-  stdout: string | null;
-  stderr: string | null;
-  error: string | null;
-}> {
+  input_data: Record<string, any>;
+}): Promise<AppExecuteResult> {
   const res = await fetch(execute_app_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ app_id: appId }),
+    body: JSON.stringify(payload),
   });
   const data = await res.json();
-  return data as {
-    app_id: string;
-    app_name: string;
-    frontend_code: string;
-    backend_result: Record<string, unknown> | null;
-    stdout: string | null;
-    stderr: string | null;
-    error: string | null;
-  };
+  return data as AppExecuteResult;
 }
 export const EXECUTE_APP = createAsyncThunk(
   execute_app_endpoint,

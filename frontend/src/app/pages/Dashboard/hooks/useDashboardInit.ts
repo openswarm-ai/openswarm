@@ -10,7 +10,7 @@ import {
   addBrowserCard,
   EXPANDED_CARD_MIN_H,
 } from '@/shared/state/dashboardLayoutSlice';
-import { fetchOutputs } from '@/shared/state/outputsSlice';
+import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 import { dashboardWs } from '@/shared/ws/WebSocketManager';
 import { initBrowserCommandHandler } from '@/shared/browserCommandHandler';
 import { clearPendingBrowserUrl, clearPendingFocusAgentId } from '@/shared/state/tempStateSlice';
@@ -52,7 +52,7 @@ export function useDashboardInit(deps: InitDeps) {
     dispatch(GET_ALL_SESSIONS(dashboardId));
     dispatch(GET_HISTORY({}));
     dispatch(fetchLayout(dashboardId));
-    dispatch(fetchOutputs());
+    dispatch(LIST_APPS());
     dashboardWs.connect();
     const cleanupBrowserHandler = initBrowserCommandHandler();
     return () => { cleanupBrowserHandler(); dashboardWs.disconnect(); };

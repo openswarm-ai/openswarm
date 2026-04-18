@@ -5,15 +5,15 @@ import InputBase from '@mui/material/InputBase';
 import Icon from '@mui/material/Icon';
 import SearchIcon from '@mui/icons-material/Search';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
-import type { Output } from '@/shared/state/outputsSlice';
+import type { App } from '@/shared/backend-bridge/apps/app_builder';
 
 interface ViewPickerPanelProps {
   searchInputRef: React.RefObject<HTMLInputElement>;
   viewSearch: string;
   onSearchChange: (q: string) => void;
-  filteredOutputs: Output[];
-  outputList: Output[];
-  onSelect: (output: Output) => void;
+  filteredOutputs: App[];
+  outputList: App[];
+  onSelect: (output: App) => void;
   c: ClaudeTokens;
 }
 

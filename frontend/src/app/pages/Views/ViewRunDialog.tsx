@@ -7,14 +7,14 @@ import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
-import { Output, executeOutput, OutputExecuteResult, getFrontendCode, getBackendCode, buildServeUrl, SERVE_BASE } from '@/shared/state/outputsSlice';
+import { EXECUTE_APP, getAppServeUrl, App, AppExecuteResult } from '@/shared/backend-bridge/apps/app_builder';
 import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import InputSchemaForm, { getDefault } from './InputSchemaForm';
 import ViewPreview from './ViewPreview';
 
 interface Props {
-  output: Output;
+  output: App;
   onClose: () => void;
 }
 
@@ -24,14 +24,14 @@ const ViewRunDialog: React.FC<Props> = ({ output, onClose }) => {
 
   const defaultInput = useMemo(() => getDefault(output.input_schema), [output.input_schema]);
   const [inputData, setInputData] = useState<Record<string, any>>(defaultInput);
-  const [result, setResult] = useState<OutputExecuteResult | null>(null);
+  const [result, setResult] = useState<AppExecuteResult | null>(null);
   const [running, setRunning] = useState(false);
 
   const handleRun = async () => {
     setRunning(true);
     try {
       const res = await dispatch(
-        executeOutput({ output_id: output.id, input_data: inputData })
+        EXECUTE_APP({ app_id: output.id, input_data: inputData })
       ).unwrap();
       setResult(res);
     } finally {
@@ -109,15 +109,15 @@ const ViewRunDialog: React.FC<Props> = ({ output, onClose }) => {
               )}
               {result ? (
                 <ViewPreview
-                  serveUrl={`${SERVE_BASE}/${output.id}/serve/index.html`}
-                  frontendCode={result.frontend_code}
-                  inputData={result.input_data}
-                  backendResult={result.backend_result}
+                  serveUrl={getAppServeUrl(output.id)}
+              frontendCode={result.frontend_code}
+              inputData={inputData}
+              backendResult={result.backend_result as Record<string, any> | null}
                 />
               ) : (
                 <ViewPreview
-                  serveUrl={`${SERVE_BASE}/${output.id}/serve/index.html`}
-                  frontendCode={getFrontendCode(output)}
+                  serveUrl={getAppServeUrl(output.id)}
+                  frontendCode={output.files?.['index.html'] ?? ''}
                   inputData={inputData}
                 />
               )}
@@ -133,7 +133,7 @@ const ViewRunDialog: React.FC<Props> = ({ output, onClose }) => {
           disabled={running}
           sx={{ bgcolor: c.accent.primary, '&:hover': { bgcolor: c.accent.hover } }}
         >
-          {running ? 'Running...' : getBackendCode(output) ? 'Execute & Preview' : 'Preview'}
+          {running ? 'Running...' : output.files?.['backend.py'] ? 'Execute & Preview' : 'Preview'}
         </Button>
       </DialogActions>
     </Dialog>

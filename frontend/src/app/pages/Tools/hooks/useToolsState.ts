@@ -6,17 +6,17 @@ import {
   ToolDefinition, BuiltinTool,
 } from '@/shared/state/toolsSlice';
 import { searchRegistry, fetchRegistryStats, fetchServerDetail, clearDetail, McpServer } from '@/shared/state/mcpRegistrySlice';
-import { fetchOutputs, updateOutput } from '@/shared/state/outputsSlice';
+import { LIST_APPS, UPDATE_APP } from '@/shared/backend-bridge/apps/app_builder';
 import { INTEGRATIONS, Integration, CATEGORY_ORDER } from '../integrations';
 import { ToolForm, emptyForm, serverToToolForm, serverToMcpConfig, groupTools } from '../toolUtils';
-import { API_BASE } from '@/shared/config';
+
 
 export function useToolsState() {
   const dispatch = useAppDispatch();
   const { items, builtinTools, builtinPermissions, loading } = useAppSelector((s) => s.tools);
   const { servers: regServers, total: regTotal, loading: regLoading, stats: regStats, detail: regDetail, detailLoading: regDetailLoading } = useAppSelector((s) => s.mcpRegistry);
   const devMode = useAppSelector((s) => s.settings.data.dev_mode);
-  const outputItems = useAppSelector((s) => s.outputs.items);
+  const outputItems = useAppSelector((s) => s.apps.items);
   const outputs = useMemo(() => Object.values(outputItems), [outputItems]);
   const allTools = Object.values(items);
 
@@ -70,7 +70,7 @@ export function useToolsState() {
   const coreSectionEnabled = useMemo(() => !coreTools.every((t) => builtinPermissions[t.name] === 'deny'), [coreTools, builtinPermissions]); const deferredSectionEnabled = useMemo(() => !deferredTools.every((t) => builtinPermissions[t.name] === 'deny'), [deferredTools, builtinPermissions]);
   const viewsSectionEnabled = useMemo(() => !outputs.every((o) => o.permission === 'deny'), [outputs]); const browserSectionEnabled = useMemo(() => browserTools.length > 0 && !browserTools.every((t) => builtinPermissions[t.name] === 'deny'), [browserTools, builtinPermissions]);
 
-  useEffect(() => { dispatch(fetchTools()); dispatch(fetchBuiltinTools()); dispatch(fetchBuiltinPermissions()); dispatch(fetchOutputs()); }, [dispatch]);
+  useEffect(() => { dispatch(fetchTools()); dispatch(fetchBuiltinTools()); dispatch(fetchBuiltinPermissions()); dispatch(LIST_APPS()); }, [dispatch]);
 
   const handleIntegrationToggle = async (integration: Integration) => {
     const existing = getInstalledIntegration(integration);
@@ -223,10 +223,10 @@ export function useToolsState() {
   const handleEditInstall = (srv: McpServer) => { setRegistryOpen(false); setEditingId(null); setForm(serverToToolForm(srv)); setDialogOpen(true); };
 
   const handleSectionEnabledChange = async (tls: BuiltinTool[], enabled: boolean) => { const perms: Record<string, string> = {}; for (const t of tls) perms[t.name] = enabled ? 'always_allow' : 'deny'; await dispatch(updateBuiltinPermissions(perms)); };
-  const handleViewsSectionEnabledChange = async (enabled: boolean) => { for (const out of outputs) await dispatch(updateOutput({ id: out.id, permission: enabled ? 'ask' : 'deny' })); };
+  const handleViewsSectionEnabledChange = async (enabled: boolean) => { for (const out of outputs) await dispatch(UPDATE_APP({ appId: out.id, permission: enabled ? 'ask' : 'deny' })); };
   const handleBuiltinPermissionChange = async (toolName: string, policy: string) => { await dispatch(updateBuiltinPermissions({ [toolName]: policy })); };
   const handleBuiltinCategoryPermissionChange = async (toolNames: string[], policy: string) => { const perms: Record<string, string> = {}; for (const name of toolNames) perms[name] = policy; await dispatch(updateBuiltinPermissions(perms)); };
-  const handleViewPermissionChange = async (viewId: string, permission: string) => { await dispatch(updateOutput({ id: viewId, permission })); };
+  const handleViewPermissionChange = async (viewId: string, permission: string) => { await dispatch(UPDATE_APP({ appId: viewId, permission })); };
   const toggleCategory = (cat: string) => setCollapsedCategories((p) => ({ ...p, [cat]: !p[cat] })); const toggleBuiltinExpand = (name: string) => setExpandedBuiltin((p) => (p === name ? null : name));
 
   return { items, builtinPermissions, loading, outputs, devMode, regServers, regTotal, regLoading, regStats, regDetail, regDetailLoading, allTools, tools, uninstalledIntegrations, getIntegrationForTool, coreTools, deferredTools, browserTools, browserDelegationTools, browserActionTools, groupedCore, groupedDeferred, coreSectionEnabled, deferredSectionEnabled, viewsSectionEnabled, browserSectionEnabled, dialogOpen, setDialogOpen, editingId, form, setForm, collapsedCategories, toggleCategory, expandedBuiltin, toggleBuiltinExpand, coreSectionOpen, setCoreSectionOpen, deferredSectionOpen, setDeferredSectionOpen, customSectionOpen, setCustomSectionOpen, menuAnchor, handleMenuOpen, handleMenuClose, registryOpen, setRegistryOpen, regQuery, regSort, regSource, expandedServer, snackbar, setSnackbar, mcpConfigOpen, setMcpConfigOpen, mcpConfigServer, mcpAuthType, setMcpAuthType, mcpCredentials, setMcpCredentials, mcpConfigJson, setMcpConfigJson, mcpConfigError, setMcpConfigError, expandedToolId, setExpandedToolId, discovering, integrationLoading, credDialogOpen, setCredDialogOpen, credDialogIntegration, credDialogValues, setCredDialogValues, credDialogSaving, expandedServices, setExpandedServices, expandedSchema, setExpandedSchema, viewsSectionOpen, setViewsSectionOpen, browserSectionOpen, setBrowserSectionOpen, browserCollapsed, setBrowserCollapsed, builtinSectionOpen, setBuiltinSectionOpen, handleIntegrationToggle, handleDirectConnect, handleOAuthConnect, openCredentialsDialog, handleCredentialsSave, handleDisconnectIntegration, handleDiscover, handlePermissionChange, handleGroupPermissionChange, handleBulkReadOnly, handleResetPermissions, handleSave, handleDelete, openEdit, openCreate, openRegistryBrowser, handleRegSearch, handleLoadMore, handleRegSort, handleRegSourceFilter, handleExpandServer, openMcpConfigDialog, handleMcpConfigSave, handleInstall, handleEditInstall, handleSectionEnabledChange, handleViewsSectionEnabledChange, handleBuiltinPermissionChange, handleBuiltinCategoryPermissionChange, handleViewPermissionChange };

@@ -9,7 +9,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 import type { CardPosition, ViewCardPosition, BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
-import type { Output } from '@/shared/state/outputsSlice';
+import type { App } from '@/shared/backend-bridge/apps/app_builder';
 import type { CanvasActions } from './useCanvasControls';
 import { STATUS_DOT, cleanUrl, CategoryGroup, ItemRow } from './DashboardHeaderParts';
 
@@ -19,7 +19,7 @@ interface DashboardHeaderProps {
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
-  outputs: Record<string, Output>;
+  outputs: Record<string, App>;
   dashboardId: string | undefined;
   canvasActions: CanvasActions;
   onHighlightCard?: (cardId: string) => void;

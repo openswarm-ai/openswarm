@@ -6,9 +6,9 @@ import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
 import { getToolGroupIcon } from '@/app/components/CommandPicker';
-import { fetchOutputs } from '@/shared/state/outputsSlice';
+import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 import { fetchSkills } from '@/shared/state/skillsSlice';
-import { fetchModes } from '@/shared/state/modesSlice';
+import { LIST_MODES } from '@/shared/state/modesSlice';
 import { SlashCommand, AtCommand, SHORTCUTS } from '../commandsTypes';
 
 export function useCommands() {
@@ -17,20 +17,20 @@ export function useCommands() {
   const modesMap = useAppSelector((state) => state.modes.items);
   const builtinTools = useAppSelector((state) => state.tools.builtinTools);
   const customTools = useAppSelector((state) => state.tools.items);
-  const outputItems = useAppSelector((state) => state.outputs.items);
+  const outputItems = useAppSelector((state) => state.apps.items);
 
   const skillsLoaded = useAppSelector((state) => state.skills.loaded);
   const modesLoaded = useAppSelector((state) => state.modes.loaded);
   const builtinLoaded = useAppSelector((state) => state.tools.builtinLoaded);
   const toolsLoaded = useAppSelector((state) => state.tools.loaded);
-  const outputsLoaded = useAppSelector((state) => state.outputs.loaded);
+  const outputsLoaded = useAppSelector((state) => state.apps.loaded);
 
   useEffect(() => {
     if (!skillsLoaded) dispatch(fetchSkills());
-    if (!modesLoaded) dispatch(fetchModes());
+    if (!modesLoaded) dispatch(LIST_MODES());
     if (!builtinLoaded) dispatch(fetchBuiltinTools());
     if (!toolsLoaded) dispatch(fetchTools());
-    if (!outputsLoaded) dispatch(fetchOutputs());
+    if (!outputsLoaded) dispatch(LIST_APPS());
   }, [dispatch, skillsLoaded, modesLoaded, builtinLoaded, toolsLoaded, outputsLoaded]);
 
   const slashCommands: SlashCommand[] = useMemo(() => [
