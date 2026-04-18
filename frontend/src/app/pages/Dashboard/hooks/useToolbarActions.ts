@@ -24,7 +24,7 @@ import {
 } from '@/shared/state/dashboardLayoutSlice';
 import { GENERATE_DASHBOARD_NAME } from '@/shared/backend-bridge/apps/dashboards';
 import type { ContextPath } from '@/shared/state/agentsTypes';
-import type { CanvasActions } from '../useCanvasControls';
+import type { CanvasActions } from '@/app/pages/Dashboard/types/types';
 
 interface ToolbarDeps {
   cards: Record<string, CardPosition>;

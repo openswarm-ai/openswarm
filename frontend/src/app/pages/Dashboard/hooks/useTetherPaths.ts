@@ -1,15 +1,7 @@
 import { useMemo } from 'react';
 import type { RefObject } from 'react';
 import { EXPANDED_CARD_MIN_H } from '@/shared/state/dashboardLayoutSlice';
-
-export interface TetherInfo {
-  key: string;
-  path: string;
-  labelX: number;
-  labelY: number;
-  label: string;
-  fading: boolean;
-}
+import type { TetherInfo } from '@/app/pages/Dashboard/types/types';
 
 interface TetherDeps {
   glowingAgentCards: Record<string, { sourceId: string; fading: boolean; sourceYRatio?: number; label?: string }>;

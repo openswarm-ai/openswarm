@@ -8,7 +8,7 @@ import AddIcon from '@mui/icons-material/Add';
 import FitScreenIcon from '@mui/icons-material/FitScreen';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import type { CanvasActions } from './useCanvasControls';
+import type { CanvasActions } from '@/app/pages/Dashboard/types/types';
 
 interface Props {
   zoom: number;

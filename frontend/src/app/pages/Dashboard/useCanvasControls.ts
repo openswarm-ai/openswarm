@@ -170,5 +170,3 @@ export function useCanvasControls(zoomSensitivity: number = 50) {
     actions,
   } as const;
 }
-
-export type CanvasActions = ReturnType<typeof useCanvasControls>['actions'];

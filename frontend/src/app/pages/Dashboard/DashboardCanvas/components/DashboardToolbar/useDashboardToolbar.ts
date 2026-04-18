@@ -6,12 +6,33 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { clearHistorySearch } from '@/shared/state/agentsSlice';
 import { GET_HISTORY } from '@/shared/backend-bridge/apps/agents';
 import type { App } from '@/shared/backend-bridge/apps/app_builder';
-import type { Props } from './toolbarShared';
-import { TOOLBAR_OWNER_ID, HISTORY_PAGE_SIZE } from './toolbarShared';
+
+export interface ToolbarProps {
+  inputOpen: boolean;
+  onNewAgent: () => void;
+  onCancel: () => void;
+  onSend: (
+    prompt: string,
+    mode: string,
+    model: string,
+    images?: Array<{ data: string; media_type: string }>,
+    contextPaths?: ContextPath[],
+    forcedTools?: string[],
+    attachedSkills?: Array<{ id: string; name: string; content: string }>,
+    selectedBrowserIds?: string[],
+  ) => void;
+  onAddView: (outputId: string) => void;
+  onHistoryResume: (sessionId: string) => void;
+  onAddBrowser: () => void;
+  dashboardId?: string;
+}
+
+export const TOOLBAR_OWNER_ID = '__toolbar__';
+const HISTORY_PAGE_SIZE = 20;
 
 export function useDashboardToolbar({
   inputOpen, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, dashboardId,
-}: Omit<Props, 'onNewAgent'>) {
+}: Omit<ToolbarProps, 'onNewAgent'>) {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const elementSelection = useElementSelection();

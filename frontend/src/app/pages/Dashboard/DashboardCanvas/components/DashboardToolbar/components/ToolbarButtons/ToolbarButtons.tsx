@@ -6,7 +6,9 @@ import StickyNote2OutlinedIcon from '@mui/icons-material/StickyNote2Outlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import LanguageIcon from '@mui/icons-material/Language';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
-import { WarmTooltip, BTN } from './toolbarShared';
+import { WarmTooltip } from './WarmTooltip';
+
+const BUTTON_SIZE = 40;
 
 interface ToolbarButtonsProps {
   onNewAgent: () => void;
@@ -36,8 +38,8 @@ export default function ToolbarButtons({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: BTN,
-            height: BTN,
+            width: BUTTON_SIZE,
+            height: BUTTON_SIZE,
             borderRadius: `${c.radius.lg}px`,
             bgcolor: c.accent.primary,
             color: '#fff',
@@ -71,8 +73,8 @@ export default function ToolbarButtons({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: BTN,
-            height: BTN,
+            width: BUTTON_SIZE,
+            height: BUTTON_SIZE,
             borderRadius: `${c.radius.md}px`,
             color: c.text.tertiary,
             cursor: 'pointer',
@@ -104,8 +106,8 @@ export default function ToolbarButtons({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: BTN,
-            height: BTN,
+            width: BUTTON_SIZE,
+            height: BUTTON_SIZE,
             borderRadius: `${c.radius.md}px`,
             color: c.text.tertiary,
             cursor: 'pointer',
@@ -137,8 +139,8 @@ export default function ToolbarButtons({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: BTN,
-            height: BTN,
+            width: BUTTON_SIZE,
+            height: BUTTON_SIZE,
             borderRadius: `${c.radius.md}px`,
             color: c.text.tertiary,
             cursor: 'pointer',
@@ -169,8 +171,8 @@ export default function ToolbarButtons({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: BTN,
-              height: BTN,
+              width: BUTTON_SIZE,
+              height: BUTTON_SIZE,
               borderRadius: `${c.radius.md}px`,
               color: c.text.tertiary,
               opacity: 0.45,

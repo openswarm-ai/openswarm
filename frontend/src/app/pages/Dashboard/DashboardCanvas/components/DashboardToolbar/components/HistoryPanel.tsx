@@ -5,7 +5,7 @@ import InputBase from '@mui/material/InputBase';
 import CircularProgress from '@mui/material/CircularProgress';
 import SearchIcon from '@mui/icons-material/Search';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
-import { formatRelativeTime } from './toolbarShared';
+import { formatRelativeTime } from '@/app/pages/Dashboard/utils/formatRelativeTime';
 
 interface HistoryPanelProps {
   historyInputRef: React.RefObject<HTMLInputElement>;

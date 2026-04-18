@@ -15,7 +15,7 @@ import { useDashboardInit } from './hooks/useDashboardInit';
 import { useSubAgentAutoReveal } from './hooks/useSubAgentAutoReveal';
 import { useTetherPaths } from './hooks/useTetherPaths';
 import { useToolbarActions } from './hooks/useToolbarActions';
-import DashboardCanvas from './DashboardCanvas';
+import DashboardCanvas from './DashboardCanvas/DashboardCanvas';
 
 const SELECT_ATTR = 'data-select-type';
 

@@ -2,17 +2,17 @@ import React from 'react';
 import { AnimatePresence } from 'framer-motion';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import AgentCard from './AgentCard/AgentCard';
-import DashboardViewCard from './DashboardViewCard';
-import BrowserCard from './BrowserCard/BrowserCard';
-import CanvasControls from './CanvasControls';
-import DashboardToolbar from './DashboardToolbar';
-import DashboardHeader from './DashboardHeader';
+import AgentCard from '@/app/pages/Dashboard/AgentCard/AgentCard';
+import DashboardViewCard from './components/DashboardViewCard';
+import BrowserCard from '@/app/pages/Dashboard/BrowserCard/BrowserCard';
+import CanvasControls from './components/CanvasControls';
+import DashboardToolbar from './components/DashboardToolbar/DashboardToolbar';
+import DashboardHeader from './components/DashboardHeader/DashboardHeader';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { EXPANDED_CARD_MIN_H, DEFAULT_CARD_W, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
-import type { TetherInfo } from './hooks/useTetherPaths';
-import type { CardType } from './useDashboardSelection';
-import type { CanvasActions } from './useCanvasControls';
+import type { TetherInfo } from '@/app/pages/Dashboard/types/types';
+import type { CardType } from '@/app/pages/Dashboard/types/types';
+import type { CanvasActions } from '@/app/pages/Dashboard/types/types';
 
 const TETHER_FADE_MS = 2500;
 

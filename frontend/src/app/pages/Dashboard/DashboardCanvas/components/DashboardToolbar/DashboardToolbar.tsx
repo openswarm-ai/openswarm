@@ -1,13 +1,12 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import ChatInput from '@/app/pages/AgentChat/ChatInput/ChatInput';
-import type { Props } from './toolbarShared';
-import { MotionBox, TOOLBAR_OWNER_ID } from './toolbarShared';
-import { useDashboardToolbar } from './useDashboardToolbar';
-import HistoryPanel from './HistoryPanel';
-import ViewPickerPanel from './ViewPickerPanel';
-import ToolbarButtons from './ToolbarButtons';
+import { useDashboardToolbar, TOOLBAR_OWNER_ID, ToolbarProps } from './useDashboardToolbar';
+import HistoryPanel from './components/HistoryPanel';
+import ViewPickerPanel from './components/ViewPickerPanel';
+import ToolbarButtons from './components/ToolbarButtons/ToolbarButtons';
 
-const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
+const DashboardToolbar = React.forwardRef<HTMLDivElement, ToolbarProps>(
   ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, dashboardId }, ref) => {
     const {
       c, containerRef, searchInputRef, historyInputRef, historyListRef,
@@ -26,7 +25,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     React.useImperativeHandle(ref, () => containerRef.current!, []);
 
     return (
-      <MotionBox
+      <motion.div
         ref={containerRef}
         layout
         transition={{ layout: { duration: 0.15, ease: [0.25, 0.1, 0.25, 1] } }}
@@ -87,7 +86,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
             c={c}
           />
         )}
-      </MotionBox>
+      </motion.div>
     );
   },
 );
