@@ -12,10 +12,11 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import { AgentSession } from '@/shared/state/agentsSlice';
 import { HANDLE_APPROVAL } from '@/shared/backend-bridge/apps/agents';
 import { useAppDispatch } from '@/shared/hooks';
-import { ToolQuestion as QuestionForm } from '@/app/pages/AgentChat/toolkit/approval-tools';
+import { ToolQuestion } from '@/app/pages/AgentChat/toolkit/approval-question';
 import { parseMcpToolName } from '@/app/pages/AgentChat/toolkit/approval-utils';
-import GoogleServiceIcon from '@/app/components/GoogleServiceIcon';
-import { summarizeToolInput, getToolDisplayName } from './agentCardUtils';
+import GoogleServiceIcon from './components/GoogleServiceIcon';
+import { summarizeToolInput } from './components/summarizeToolInput';
+import { getToolDisplayName } from './components/getToolDisplayName';
 
 interface AgentCardCollapsedProps {
   session: AgentSession;
@@ -75,7 +76,7 @@ const AgentCardCollapsed: React.FC<AgentCardCollapsedProps> = ({
 
       {hasPending && pendingReq && pendingReq.tool_name === 'AskUserQuestion' ? (
         <Box onClick={(e) => e.stopPropagation()}>
-          <QuestionForm
+          <ToolQuestion
             compact
             request={pendingReq}
             onApprove={(requestId, updatedInput) =>

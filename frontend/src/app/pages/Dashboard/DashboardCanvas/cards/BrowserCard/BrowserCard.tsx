@@ -8,7 +8,7 @@ import { useBrowserActivity } from '@/shared/useBrowserActivity';
 import { resolveInput, isGoogleSearch } from '@/shared/resolveUrl';
 import BrowserAgentOverlay from './components/BrowserAgentOverlay/BrowserAgentOverlay';
 import { useOverlayScrollPassthrough } from '../shared/useOverlayScrollPassthrough';
-import { useElementSelection } from '@/app/components/ElementSelectionContext';
+import { useElementSelection } from '@/app/pages/Dashboard/_shared/element_selection/useElementSelection';
 import { type ResizeDir, CURSOR_MAP, HANDLE_DEFS, DRAG_THRESHOLD } from '../shared/cardLayoutConstants';
 import { useWebviewLifecycle, isElectron, chromeUserAgent, webviewPreloadPath, type WebviewElement } from './hooks/useWebviewLifecycle';
 import type { TabLocalState } from './TabLocalState';

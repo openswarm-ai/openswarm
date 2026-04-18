@@ -17,7 +17,7 @@ import {
   setActiveSession,
 } from '@/shared/state/agentsSlice';
 import { DUPLICATE_SESSION } from '@/shared/backend-bridge/apps/agents';
-import { useSessionId, useBranchChatCallback } from './OpenSwarmThread';
+import { useSessionId, useBranchChatCallback } from '../utils';
 
 export const UserActionBar: FC = () => (
   <ActionBarPrimitive.Root

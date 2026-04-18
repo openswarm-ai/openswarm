@@ -4,7 +4,7 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
 import { motion } from 'framer-motion';
-import { ApprovalRouter as ApprovalBar, BatchApprovalWrapper as BatchApprovalBar } from '@/app/pages/AgentChat/toolkit/approval-tools';
+import { ApprovalRouter, BatchApprovalWrapper } from '@/app/pages/AgentChat/toolkit/approval-tools';
 import { AgentStatusRow } from './AgentStatusRow';
 import { CompletedAgentsList } from './CompletedAgentsList';
 import type { ClaudeTokens, SessionApprovalGroup, TrackedAgent } from './islandTypes';
@@ -144,14 +144,14 @@ export const ExpandedCard: React.FC<{
                   </Typography>
                 )}
                 {group.approvals.length > 1 ? (
-                  <BatchApprovalBar
+                  <BatchApprovalWrapper
                     requests={group.approvals}
                     onApprove={onApprove}
                     onDeny={onDeny}
                   />
                 ) : (
                   group.approvals.map((req) => (
-                    <ApprovalBar
+                    <ApprovalRouter
                       key={req.id}
                       request={req}
                       onApprove={onApprove}

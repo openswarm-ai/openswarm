@@ -5,7 +5,7 @@ import { AssistantRuntimeProvider, useAui, Tools } from '@assistant-ui/react';
 import { ApprovalRouter, BatchApprovalWrapper } from './toolkit/approval-tools';
 import ChatHeader from './ChatHeader';
 import MessageQueue from './MessageQueue';
-import OpenSwarmThread from './thread/OpenSwarmThread';
+import OpenSwarmThread from './OpenSwarmThread/OpenSwarmThread';
 import ChatInput from './ChatInput/ChatInput';
 import { useAgentChat } from './hooks/useAgentChat';
 import { useOpenSwarmRuntime, type ComposerExtras, type DispatchableMessage } from './runtime/useOpenSwarmRuntime';

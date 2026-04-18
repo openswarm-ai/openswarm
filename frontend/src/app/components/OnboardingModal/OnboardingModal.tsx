@@ -1,9 +1,9 @@
 import React from 'react';
 import { Box, Modal } from '@mui/material';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { useOnboarding } from './useOnboarding';
-import ProviderStep from './ProviderStep';
-import ToolsStep from './ToolsStep';
+import { useOnboarding } from './components/useOnboarding';
+import ProviderStep from './components/ProviderStep';
+import ToolsStep from './components/ToolsStep';
 
 const OnboardingModal: React.FC = () => {
   const c = useClaudeTokens();

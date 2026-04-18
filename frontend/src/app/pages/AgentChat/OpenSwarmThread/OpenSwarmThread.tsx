@@ -1,4 +1,4 @@
-import { createContext, useContext, type FC, type ReactNode } from 'react';
+import { type FC, type ReactNode } from 'react';
 import {
   ThreadPrimitive,
   MessagePrimitive,
@@ -9,16 +9,9 @@ import { ArrowDownIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button';
-import { UserMessage } from './UserMessage';
-import { AssistantMessage } from './AssistantMessage';
-
-const SessionIdContext = createContext<string | undefined>(undefined);
-export const useSessionId = () => useContext(SessionIdContext);
-
-const BranchChatContext = createContext<
-  ((newSessionId: string) => void) | undefined
->(undefined);
-export const useBranchChatCallback = () => useContext(BranchChatContext);
+import { UserMessage } from './components/UserMessage';
+import { AssistantMessage } from './components/AssistantMessage';
+import { SessionIdContext, BranchChatContext } from './utils';
 
 interface OpenSwarmThreadProps {
   sessionId?: string;

@@ -7,7 +7,7 @@ import {
 import { UserMessageAttachments } from '@/components/assistant-ui/attachment';
 import { useAppSelector } from '@/shared/hooks';
 import type { AgentMessage } from '@/shared/state/agentsSlice';
-import { useSessionId } from './OpenSwarmThread';
+import { useSessionId } from '../utils';
 import { UserActionBar } from './MessageActions';
 import { BranchPicker } from './BranchPicker';
 

@@ -16,7 +16,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useOverlayScrollPassthrough } from '../shared/useOverlayScrollPassthrough';
 import { type ResizeDir, DRAG_THRESHOLD, CURSOR_MAP, HANDLE_DEFS } from '../shared/cardLayoutConstants';
 import CardGlowOverlay from './components/CardGlowOverlay';
-import AgentCardCollapsed from './components/AgentCardCollapsed';
+import AgentCardCollapsed from './components/AgentCardCollapsed/AgentCardCollapsed';
 import { formatDuration, getStatusColors, getPreviewContent } from './components/agentCardUtils';
 
 interface Props {

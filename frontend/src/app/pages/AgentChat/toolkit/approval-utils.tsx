@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ReactNode } from 'react';
-import type { MetadataItem } from '@/components/tool-ui/approval-card';
+// TODO: what is this even supposed to try and import/use ???
+import type { MetadataItem } from '@/components/tool-ui/ApprovalCard/schema';
 import {
   Terminal, FileText, FilePen, Search,
   MessageCircleQuestion, Wrench,

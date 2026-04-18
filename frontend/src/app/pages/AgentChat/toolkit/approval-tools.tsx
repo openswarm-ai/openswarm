@@ -1,6 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
 import type { Toolkit } from '@assistant-ui/react';
-import { ApprovalCard } from '@/components/tool-ui/approval-card/approval-card';
+import { ApprovalCard } from '@/components/tool-ui/ApprovalCard/ApprovalCard';
 import type { ApprovalRequest } from '@/shared/state/agentsSlice';
 import { useAppSelector } from '@/shared/hooks';
 import type { ToolDefinition } from '@/shared/state/toolsSlice';
@@ -11,13 +11,6 @@ import {
   type ParsedTool, type McpToolMeta,
 } from './approval-utils';
 import { ToolQuestion } from './approval-question';
-
-// Re-exports so external consumers can import everything from this file
-export {
-  parseMcpToolName,
-  getToolIcon,
-} from './approval-utils';
-export { ToolQuestion } from './approval-question';
 
 // ---------------------------------------------------------------------------
 // useMcpToolMeta (React hook — lives here alongside other component code)
