@@ -30,20 +30,14 @@
     "uv-bin",
     "data",
     "public",
-    "readme_assets",
-    "openswarm_debug.egg-info",
-    "frontend/src/assets"
+    "openswarm_debug.egg-info"
   ],
   "exceptions": {
-    "max-file-lines": ["openswarm_debug.egg-info/**"],
-    "max-folder-items": [
-      "frontend",
-      "backend",
-      "backend/apps/tools/OAuthService/OAUTH_PROVIDERS/providers"
-    ],
-    "no-nested-imports": ["linter/lint.py"],
+    "max-file-lines": [],
+    "max-folder-items": [],
+    "no-nested-imports": [],
     "vulture": [],
-    "endpoints": ["backend/apps/health/*"],
+    "endpoints": [],
     "classes": []
   }
 }

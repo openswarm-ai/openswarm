@@ -17,6 +17,7 @@ from checks.eslint import run_eslint
 from checks.knip import run_knip
 from checks.endpoints import run_endpoint_check
 from checks.classes import run_class_check
+from watchfiles import watch, DefaultFilter
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = SCRIPT_DIR / "config" / "config.json"
@@ -125,7 +126,6 @@ def print_results(
 
 
 def watch_loop(root: Path) -> None:
-    from watchfiles import watch, DefaultFilter
 
     config_dir = SCRIPT_DIR / "config"
 
