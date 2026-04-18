@@ -1,9 +1,9 @@
 import { type FC } from 'react';
 import { MessagePrimitive, ErrorPrimitive } from '@assistant-ui/react';
-import { MarkdownText } from '@/components/assistant-ui/markdown-text';
-import { ToolFallback } from '@/components/assistant-ui/tool-fallback';
-import { AssistantActionBar } from './MessageActions';
-import { BranchPicker } from './BranchPicker';
+import { MarkdownText } from './MarkdownText/MarkdownText';
+import { ToolFallback } from './ToolFallback/ToolFallback';
+import { AssistantActionBar } from '../MessageActions';
+import { BranchPicker } from '../BranchPicker';
 
 export const AssistantMessage: FC = () => {
   return (

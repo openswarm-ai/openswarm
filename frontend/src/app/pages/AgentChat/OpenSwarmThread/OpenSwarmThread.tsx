@@ -8,9 +8,9 @@ import {
 import { ArrowDownIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button';
-import { UserMessage } from './components/UserMessage';
-import { AssistantMessage } from './components/AssistantMessage';
+import { TooltipIconButton } from './components/TooltipIconButton';
+import { UserMessage } from './components/UserMessage/UserMessage';
+import { AssistantMessage } from './components/AssistantMessage/AssistantMessage';
 import { SessionIdContext, BranchChatContext } from './utils';
 
 interface OpenSwarmThreadProps {

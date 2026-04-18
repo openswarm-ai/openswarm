@@ -1,7 +1,7 @@
 import { type FC } from 'react';
 import { BranchPickerPrimitive } from '@assistant-ui/react';
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
-import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button';
+import { TooltipIconButton } from './TooltipIconButton';
 import { cn } from '@/lib/utils';
 
 export const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({

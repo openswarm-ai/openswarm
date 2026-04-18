@@ -4,12 +4,12 @@ import {
   useAui,
   useMessagePartText,
 } from '@assistant-ui/react';
-import { UserMessageAttachments } from '@/components/assistant-ui/attachment';
+import { UserMessageAttachments } from './UserMessageAttachments';
 import { useAppSelector } from '@/shared/hooks';
 import type { AgentMessage } from '@/shared/state/agentsSlice';
-import { useSessionId } from '../utils';
-import { UserActionBar } from './MessageActions';
-import { BranchPicker } from './BranchPicker';
+import { useSessionId } from '../../utils';
+import { UserActionBar } from '../MessageActions';
+import { BranchPicker } from '../BranchPicker';
 
 const ELEMENT_SEPARATOR = '\n\n---\nSelected UI Elements:\n';
 const SKILL_PILL_RE = /\{\{skill:([^}]+)\}\}/g;

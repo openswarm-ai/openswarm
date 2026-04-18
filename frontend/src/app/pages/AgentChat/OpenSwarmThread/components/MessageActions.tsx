@@ -11,7 +11,7 @@ import {
   PencilIcon,
   RefreshCwIcon,
 } from 'lucide-react';
-import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button';
+import { TooltipIconButton } from './TooltipIconButton';
 import { useAppDispatch } from '@/shared/hooks';
 import {
   setActiveSession,
