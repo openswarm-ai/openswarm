@@ -72,17 +72,6 @@ export const initialState: DashboardLayoutState = {
   initialized: false,
 };
 
-export interface LayoutPayload {
-  cards: Record<string, CardPosition>;
-  viewCards: Record<string, ViewCardPosition>;
-  browserCards: Record<string, BrowserCardPosition>;
-  expandedSessionIds: string[];
-}
-
-export interface SaveLayoutPayload extends LayoutPayload {
-  dashboardId: string;
-}
-
 export interface Rect {
   x: number;
   y: number;

@@ -3,6 +3,13 @@ import { API_BASE } from '@/shared/backend-bridge/base_routes';
 
 const DASHBOARDS_API: string = `${API_BASE}/dashboards`;
 
+export interface DashboardLayout {
+  cards?: Record<string, unknown>;
+  view_cards?: Record<string, unknown>;
+  browser_cards?: Record<string, unknown>;
+  expanded_session_ids?: string[];
+}
+
 export interface Dashboard {
   id: string;
   name: string;
@@ -10,6 +17,7 @@ export interface Dashboard {
   created_at: string;
   updated_at: string;
   thumbnail?: string | null;
+  layout?: DashboardLayout;
 }
 
 // ---------------------------------------------------------------------------

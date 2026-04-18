@@ -2,7 +2,7 @@ import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { toggleExpandSession } from '@/shared/state/agentsSlice';
-import { saveLayout } from '@/shared/state/dashboardLayoutSlice';
+import { UPDATE_DASHBOARD } from '@/shared/backend-bridge/apps/dashboards';
 import { useCanvasControls } from './useCanvasControls';
 import { useDashboardSelection } from './useDashboardSelection';
 import { ElementSelectionProvider, useElementSelection } from '@/app/components/ElementSelectionContext';
@@ -170,15 +170,23 @@ const DashboardInner: React.FC = () => {
 
   const skipInitialSave = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef<Parameters<typeof saveLayout>[0] | null>(null);
+  const pendingSaveRef = useRef<Parameters<typeof UPDATE_DASHBOARD>[0] | null>(null);
   useEffect(() => {
     if (!layoutInitialized || !dashboardId) return;
     if (skipInitialSave.current) { skipInitialSave.current = false; return; }
-    const payload = { dashboardId, cards, viewCards, browserCards, expandedSessionIds };
+    const payload = {
+      dashboardId,
+      layout: {
+        cards,
+        view_cards: viewCards,
+        browser_cards: browserCards,
+        expanded_session_ids: expandedSessionIds,
+      },
+    };
     pendingSaveRef.current = payload;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      dispatch(saveLayout(payload));
+      dispatch(UPDATE_DASHBOARD(payload));
       pendingSaveRef.current = null;
       saveTimerRef.current = null;
       captureNow();
@@ -188,7 +196,7 @@ const DashboardInner: React.FC = () => {
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
-      if (pendingSaveRef.current) { dispatch(saveLayout(pendingSaveRef.current)); pendingSaveRef.current = null; }
+      if (pendingSaveRef.current) { dispatch(UPDATE_DASHBOARD(pendingSaveRef.current)); pendingSaveRef.current = null; }
     };
   }, [dispatch]);
 

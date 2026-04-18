@@ -3,8 +3,8 @@ import { useAppDispatch } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
 import { setExpandedSessionIds } from '@/shared/state/agentsSlice';
 import { GET_ALL_SESSIONS, GET_HISTORY } from '@/shared/backend-bridge/apps/agents';
+import { GET_DASHBOARD } from '@/shared/backend-bridge/apps/dashboards';
 import {
-  fetchLayout,
   resetLayout,
   reconcileSessions,
   addBrowserCard,
@@ -51,7 +51,7 @@ export function useDashboardInit(deps: InitDeps) {
     dispatch(resetLayout());
     dispatch(GET_ALL_SESSIONS(dashboardId));
     dispatch(GET_HISTORY({}));
-    dispatch(fetchLayout(dashboardId));
+    dispatch(GET_DASHBOARD(dashboardId));
     dispatch(LIST_APPS());
     dashboardWs.connect();
     const cleanupBrowserHandler = initBrowserCommandHandler();

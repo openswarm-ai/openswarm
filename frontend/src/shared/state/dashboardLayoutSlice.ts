@@ -1,7 +1,8 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { initialState } from './dashboardLayoutTypes';
+import { initialState, generateTabId } from './dashboardLayoutTypes';
+import type { CardPosition, ViewCardPosition, BrowserCardPosition } from './dashboardLayoutTypes';
 import { dashboardLayoutReducers } from './dashboardLayoutReducers';
-import { fetchLayout } from './dashboardLayoutThunks';
+import { GET_DASHBOARD } from '@/shared/backend-bridge/apps/dashboards';
 import { META_LAUNCH_AND_SEND } from '@/shared/backend-bridge/apps/agents';
 
 const dashboardLayoutSlice = createSlice({
@@ -10,16 +11,31 @@ const dashboardLayoutSlice = createSlice({
   reducers: dashboardLayoutReducers,
   extraReducers: (builder) => {
     builder
-      .addCase(fetchLayout.pending, (state) => {
+      .addCase(GET_DASHBOARD.pending, (state) => {
         state.loading = true;
       })
-      .addCase(fetchLayout.fulfilled, (state, action) => {
+      .addCase(GET_DASHBOARD.fulfilled, (state, action) => {
         state.loading = false;
         state.initialized = true;
-        state.cards = action.payload.cards;
-        state.viewCards = action.payload.viewCards;
-        state.browserCards = action.payload.browserCards;
-        state.persistedExpandedSessionIds = action.payload.expandedSessionIds;
+        const layout = action.payload.layout ?? {};
+        const browserCards = (layout.browser_cards ?? {}) as Record<string, any>;
+
+        for (const card of Object.values(browserCards)) {
+          if (!card.tabs || card.tabs.length === 0) {
+            const tabId = generateTabId();
+            card.tabs = [{ id: tabId, url: card.url || 'https://www.google.com', title: '' }];
+            card.activeTabId = tabId;
+          }
+          if (!card.url && card.tabs.length > 0) {
+            const active = card.tabs.find((t: any) => t.id === card.activeTabId) || card.tabs[0];
+            card.url = active.url;
+          }
+        }
+
+        state.cards = (layout.cards ?? {}) as Record<string, CardPosition>;
+        state.viewCards = (layout.view_cards ?? {}) as Record<string, ViewCardPosition>;
+        state.browserCards = browserCards as Record<string, BrowserCardPosition>;
+        state.persistedExpandedSessionIds = (layout.expanded_session_ids ?? []) as string[];
 
         let maxZ = 0;
         for (const c of Object.values(state.cards)) {
@@ -36,7 +52,7 @@ const dashboardLayoutSlice = createSlice({
         }
         state.nextZOrder = maxZ + 1;
       })
-      .addCase(fetchLayout.rejected, (state) => {
+      .addCase(GET_DASHBOARD.rejected, (state) => {
         state.loading = false;
         state.initialized = true;
       })
@@ -69,4 +85,3 @@ export const {
 export default dashboardLayoutSlice.reducer;
 
 export * from './dashboardLayoutTypes';
-export * from './dashboardLayoutThunks';

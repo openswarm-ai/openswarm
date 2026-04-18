@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { API_BASE } from '@/shared/config';
 import { useAppDispatch } from '@/shared/hooks';
 import { SUBSCRIPTIONS_STATUS } from '@/shared/backend-bridge/apps/subscriptions';
+import { CREATE_TOOL, OAUTH_START, GET_TOOL, DISCOVER_TOOL } from '@/shared/backend-bridge/apps/tools';
+import type { ToolDefinition } from '@/shared/state/toolsSlice';
 import { ToolIntegration } from './onboardingConstants';
 import { useSubscriptionConnect } from './useSubscriptionConnect';
 
@@ -76,58 +77,55 @@ export function useOnboarding() {
   const handleToolConnect = useCallback(async (integration: ToolIntegration) => {
     setConnecting(integration.name);
     try {
-      const createRes = await fetch(`${API_BASE}/tools/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: integration.name,
-          description: integration.desc,
-          mcp_config: integration.mcp_config,
-          auth_type: 'oauth2',
-          auth_status: 'configured',
-          oauth_provider: integration.oauthProvider,
-        }),
-      });
-      if (!createRes.ok) { setConnecting(null); return; }
-      const { tool } = await createRes.json();
+      const createResult = await dispatch(CREATE_TOOL({
+        name: integration.name,
+        description: integration.desc,
+        mcp_config: integration.mcp_config,
+        auth_type: 'oauth2',
+        auth_status: 'configured',
+        oauth_provider: integration.oauthProvider,
+      }));
+      if (!CREATE_TOOL.fulfilled.match(createResult)) { setConnecting(null); return; }
+      const tool = createResult.payload.tool as unknown as ToolDefinition;
 
-      const oauthRes = await fetch(`${API_BASE}/tools/${tool.id}/oauth/start`, { method: 'POST' });
-      if (!oauthRes.ok) { setConnecting(null); return; }
-      const { auth_url } = await oauthRes.json();
+      const oauthResult = await dispatch(OAUTH_START(tool.id));
+      if (!OAUTH_START.fulfilled.match(oauthResult)) { setConnecting(null); return; }
+      const { auth_url } = oauthResult.payload;
 
       const popup = window.open(auth_url, 'oauth', 'width=500,height=700,left=200,top=100');
+
+      const afterConnect = async () => {
+        const statusResult = await dispatch(GET_TOOL(tool.id));
+        if (
+          GET_TOOL.fulfilled.match(statusResult) &&
+          (statusResult.payload as unknown as ToolDefinition).auth_status === 'connected'
+        ) {
+          setConnectedTools((prev) => new Set(prev).add(integration.name));
+          dispatch(DISCOVER_TOOL(tool.id));
+        }
+        setConnecting(null);
+      };
 
       const onMsg = (event: MessageEvent) => {
         if (event.data?.type === 'oauth_complete' && event.data?.tool_id === tool.id) {
           window.removeEventListener('message', onMsg);
-          setConnectedTools((prev) => new Set(prev).add(integration.name));
-          setConnecting(null);
-          fetch(`${API_BASE}/tools/${tool.id}/discover`, { method: 'POST' }).catch(() => {});
+          afterConnect();
         }
       };
       window.addEventListener('message', onMsg);
 
       const poller = setInterval(() => {
-        if (popup && popup.closed) {
+        if (popup?.closed) {
           clearInterval(poller);
           window.removeEventListener('message', onMsg);
-          fetch(`${API_BASE}/tools/${tool.id}`)
-            .then(r => r.json())
-            .then(data => {
-              if (data.tool?.auth_status === 'connected') {
-                setConnectedTools((prev) => new Set(prev).add(integration.name));
-                fetch(`${API_BASE}/tools/${tool.id}/discover`, { method: 'POST' }).catch(() => {});
-              }
-            })
-            .catch(() => {});
-          setConnecting(null);
+          afterConnect();
         }
       }, 1000);
       setTimeout(() => { clearInterval(poller); setConnecting(null); }, 60000);
     } catch {
       setConnecting(null);
     }
-  }, []);
+  }, [dispatch]);
 
   const handleApiKey = useCallback(() => advanceToTools(), [advanceToTools]);
   const handleSkip = useCallback(() => dismiss(), [dismiss]);

@@ -4,7 +4,6 @@ import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
-import DiffViewer from './DiffViewer';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 interface ChatHeaderProps {
@@ -17,11 +16,10 @@ interface ChatHeaderProps {
     id: string;
   };
   isDraft: boolean;
-  id: string | undefined;
   onClose?: () => void;
 }
 
-const ChatHeader: React.FC<ChatHeaderProps> = ({ session, isDraft, id, onClose }) => {
+const ChatHeader: React.FC<ChatHeaderProps> = ({ session, isDraft, onClose }) => {
   const c = useClaudeTokens();
   const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
     running: { color: c.status.success, bg: c.status.successBg },
@@ -73,7 +71,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ session, isDraft, id, onClose }
           </Box>
         )}
       </Box>
-      {!isDraft && id && <DiffViewer sessionId={id} />}
       {onClose && (
         <IconButton onClick={onClose} size="small" sx={{ color: c.text.tertiary, '&:hover': { color: c.text.primary } }}>
           <CloseIcon fontSize="small" />

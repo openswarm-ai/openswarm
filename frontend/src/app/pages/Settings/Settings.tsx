@@ -17,13 +17,12 @@ import { CommandsContent } from '@/app/pages/Commands/Commands';
 import { useSettings } from './hooks/useSettings';
 import GeneralTab from './GeneralTab';
 import ModelsTab from './ModelsTab';
-import UsageStats from './UsageStats';
 
 const Settings: React.FC = () => {
   const s = useSettings();
   const { c, open, activeTab, setActiveTab, hasChanges, handleSave, handleRequestClose,
           confirmDiscard, setConfirmDiscard, handleConfirmDiscard, handleSaveAndClose,
-          saved, setSaved, form, setForm } = s;
+          saved, setSaved } = s;
   return (
     <>
     <Dialog
@@ -76,7 +75,6 @@ const Settings: React.FC = () => {
         >
           <Tab label="General" value="general" disableRipple />
           <Tab label="Models" value="models" disableRipple />
-          <Tab label="Usage" value="usage" disableRipple />
           <Tab label="Commands" value="commands" disableRipple />
         </Tabs>
       </DialogTitle>
@@ -93,10 +91,6 @@ const Settings: React.FC = () => {
         <GeneralTab s={s} />
       ) : activeTab === 'models' ? (
         <ModelsTab s={s} />
-      ) : activeTab === 'usage' ? (
-      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
-        <UsageStats />
-      </Box>
       ) : (
       <Box sx={{ pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
         <CommandsContent />
