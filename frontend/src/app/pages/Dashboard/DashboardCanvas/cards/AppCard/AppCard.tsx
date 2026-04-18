@@ -6,13 +6,13 @@ import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ViewPreview, { ViewPreviewHandle } from '@/app/pages/Views/ViewPreview';
 import { getDefault } from '@/app/pages/Views/InputSchemaForm';
-import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
+import { useOverlayScrollPassthrough } from '../shared/useOverlayScrollPassthrough';
 import { ViewCardProps, HANDLE_DEFS, CURSOR_MAP } from './viewCardConstants';
 import { useViewCardDrag } from './useViewCardDrag';
 import { useViewCardResize } from './useViewCardResize';
 import ViewCardHeader from './ViewCardHeader';
 
-const DashboardViewCard: React.FC<ViewCardProps> = ({
+const AppCard: React.FC<ViewCardProps> = ({
   output, cardX, cardY, cardWidth, cardHeight, zoom = 1, cmdHeld = false,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
   cardZOrder = 0, onBringToFront,
@@ -173,4 +173,4 @@ const DashboardViewCard: React.FC<ViewCardProps> = ({
   );
 };
 
-export default React.memo(DashboardViewCard);
+export default React.memo(AppCard);

@@ -16,7 +16,8 @@ interface Props {
   onRun: () => void;
 }
 
-const ViewCard: React.FC<Props> = ({ output, onClick, onDelete, onRun }) => {
+// TODO: shld rename this so we can change DashboardViewCard to simply ViewCard
+const AppThumbnail: React.FC<Props> = ({ output, onClick, onDelete, onRun }) => {
   const c = useClaudeTokens();
 
   return (
@@ -148,4 +149,4 @@ const ViewCard: React.FC<Props> = ({ output, onClick, onDelete, onRun }) => {
   );
 };
 
-export default ViewCard;
+export default AppThumbnail;

@@ -2,8 +2,8 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   MIN_ZOOM, MAX_ZOOM, ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR, FIT_PADDING,
   CanvasState, clamp, zoomAroundCenter,
-} from './canvasControlsUtils';
-import { useWheelZoom, useKeyboardControls, useMousePan } from './useCanvasInputs';
+} from './utils/helpers';
+import { useWheelZoom, useKeyboardControls, useMousePan } from './utils/useCanvasInputs';
 
 export function useCanvasControls(zoomSensitivity: number = 50) {
   const viewportRef = useRef<HTMLDivElement>(null);

@@ -2,7 +2,7 @@ import { useEffect, useCallback, useRef } from 'react';
 import type { RefObject } from 'react';
 import { store } from '@/shared/state/store';
 import { UPDATE_DASHBOARD } from '@/shared/backend-bridge/apps/dashboards';
-import { captureDashboardThumbnail } from '../captureDashboardThumbnail';
+import { captureDashboardThumbnail } from './captureDashboardThumbnail';
 
 export function useDashboardThumbnail(
   viewportRef: RefObject<HTMLDivElement>,

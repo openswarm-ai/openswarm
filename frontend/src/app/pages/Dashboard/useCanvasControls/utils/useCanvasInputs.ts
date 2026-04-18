@@ -3,7 +3,7 @@ import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 import {
   MIN_ZOOM, MAX_ZOOM, ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR,
   CanvasState, clamp, sensitivityToMultiplier, zoomAroundCenter,
-} from './canvasControlsUtils';
+} from './helpers';
 
 export function useWheelZoom(
   viewportRef: React.RefObject<HTMLDivElement | null>,

@@ -7,7 +7,7 @@ import AddIcon from '@mui/icons-material/Add';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { LIST_APPS, DELETE_APP, App } from '@/shared/backend-bridge/apps/app_builder';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import ViewCard from './ViewCard';
+import AppThumbnail from './AppThumbnail';
 import ViewEditor from './ViewEditor';
 import ViewRunDialog from './ViewRunDialog';
 
@@ -142,7 +142,7 @@ const Views: React.FC = () => {
             }}
           >
             {apps.map((app) => (
-              <ViewCard
+              <AppThumbnail
                 key={app.id}
                 output={app}
                 onClick={() => handleEditView(app)}

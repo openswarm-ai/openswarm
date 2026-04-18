@@ -2,9 +2,9 @@ import React from 'react';
 import { AnimatePresence } from 'framer-motion';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import AgentCard from '@/app/pages/Dashboard/AgentCard/AgentCard';
-import DashboardViewCard from './components/DashboardViewCard';
-import BrowserCard from '@/app/pages/Dashboard/BrowserCard/BrowserCard';
+import AgentCard from './cards/AgentCard/AgentCard';
+import AppCard from './components/AppCard';
+import BrowserCard from './cards/BrowserCard/BrowserCard';
 import CanvasControls from './components/CanvasControls';
 import DashboardToolbar from './components/DashboardToolbar/DashboardToolbar';
 import DashboardHeader from './components/DashboardHeader/DashboardHeader';
@@ -179,7 +179,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = (p) => {
               const output = p.outputs[vc.output_id];
               if (!output) return null;
               return (
-                <DashboardViewCard key={`view-${vc.output_id}`} output={output}
+                <AppCard key={`view-${vc.output_id}`} output={output}
                   cardX={vc.x} cardY={vc.y} cardWidth={vc.width} cardHeight={vc.height}
                   cardZOrder={vc.z_order ?? 0} zoom={p.zoom} cmdHeld={p.cmdHeld}
                   isSelected={p.isSelected(vc.output_id)} isHighlighted={p.highlightedCardId === vc.output_id}

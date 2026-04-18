@@ -13,8 +13,8 @@ import { setCardPosition, setCardSize, fadeGlowingAgentCard, clearGlowingAgentCa
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { useOverlayScrollPassthrough } from '@/app/pages/Dashboard/useOverlayScrollPassthrough';
-import { type ResizeDir, DRAG_THRESHOLD, CURSOR_MAP, HANDLE_DEFS } from '@/app/pages/Dashboard/cardLayoutConstants';
+import { useOverlayScrollPassthrough } from '../shared/useOverlayScrollPassthrough';
+import { type ResizeDir, DRAG_THRESHOLD, CURSOR_MAP, HANDLE_DEFS } from '../shared/cardLayoutConstants';
 import CardGlowOverlay from './components/CardGlowOverlay';
 import AgentCardCollapsed from './components/AgentCardCollapsed';
 import { formatDuration, getStatusColors, getPreviewContent } from './components/agentCardUtils';
