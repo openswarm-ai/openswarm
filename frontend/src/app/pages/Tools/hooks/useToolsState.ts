@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import type { ToolDefinition, BuiltinTool } from '@/shared/state/toolsSlice';
 import {
-  fetchTools, fetchBuiltinTools, fetchBuiltinPermissions, updateBuiltinPermissions,
-  createTool, updateTool, deleteTool, startOAuth, fetchToolStatus, discoverTools,
-  ToolDefinition, BuiltinTool,
-} from '@/shared/state/toolsSlice';
+  LIST_TOOLS, LIST_BUILTIN_TOOLS, GET_BUILTIN_PERMISSIONS, UPDATE_BUILTIN_PERMISSIONS,
+  CREATE_TOOL, UPDATE_TOOL, DELETE_TOOL, OAUTH_START, GET_TOOL, DISCOVER_TOOL,
+  OAUTH_DISCONNECT,
+} from '@/shared/backend-bridge/apps/tools';
 import { searchRegistry, fetchRegistryStats, fetchServerDetail, clearDetail, McpServer } from '@/shared/state/mcpRegistrySlice';
 import { LIST_APPS, UPDATE_APP } from '@/shared/backend-bridge/apps/app_builder';
 import { INTEGRATIONS, Integration, CATEGORY_ORDER } from '../integrations';
@@ -70,35 +71,35 @@ export function useToolsState() {
   const coreSectionEnabled = useMemo(() => !coreTools.every((t) => builtinPermissions[t.name] === 'deny'), [coreTools, builtinPermissions]); const deferredSectionEnabled = useMemo(() => !deferredTools.every((t) => builtinPermissions[t.name] === 'deny'), [deferredTools, builtinPermissions]);
   const viewsSectionEnabled = useMemo(() => !outputs.every((o) => o.permission === 'deny'), [outputs]); const browserSectionEnabled = useMemo(() => browserTools.length > 0 && !browserTools.every((t) => builtinPermissions[t.name] === 'deny'), [browserTools, builtinPermissions]);
 
-  useEffect(() => { dispatch(fetchTools()); dispatch(fetchBuiltinTools()); dispatch(fetchBuiltinPermissions()); dispatch(LIST_APPS()); }, [dispatch]);
+  useEffect(() => { dispatch(LIST_TOOLS()); dispatch(LIST_BUILTIN_TOOLS()); dispatch(GET_BUILTIN_PERMISSIONS()); dispatch(LIST_APPS()); }, [dispatch]);
 
   const handleIntegrationToggle = async (integration: Integration) => {
     const existing = getInstalledIntegration(integration);
     setIntegrationLoading((p) => ({ ...p, [integration.id]: true }));
     try {
       if (existing && existing.enabled !== false) {
-        await dispatch(updateTool({ id: existing.id, enabled: false }));
+        await dispatch(UPDATE_TOOL({ toolId: existing.id, enabled: false }));
         setSnackbar({ open: true, message: `Disabled ${integration.name}` });
       } else if (existing && existing.enabled === false) {
-        await dispatch(updateTool({ id: existing.id, enabled: true }));
+        await dispatch(UPDATE_TOOL({ toolId: existing.id, enabled: true }));
         if (integration.authType === 'oauth2' && existing.auth_status !== 'connected') {
           setSnackbar({ open: true, message: `Enabled ${integration.name} — connect your account to discover actions` });
         } else {
           setSnackbar({ open: true, message: `Enabled ${integration.name} — re-discovering actions…` });
-          const r = await dispatch(discoverTools(existing.id));
-          if (discoverTools.fulfilled.match(r)) setSnackbar({ open: true, message: `${integration.name} ready — actions discovered` });
+          const r = await dispatch(DISCOVER_TOOL(existing.id));
+          if (DISCOVER_TOOL.fulfilled.match(r)) setSnackbar({ open: true, message: `${integration.name} ready — actions discovered` });
           else setSnackbar({ open: true, message: `${integration.name} enabled but discovery failed`, severity: 'error' });
         }
       } else {
-        const result = await dispatch(createTool({ name: integration.name, description: integration.description, command: '', mcp_config: integration.mcp_config, credentials: {}, auth_type: integration.authType || 'none', auth_status: 'configured', ...(integration.oauthProvider ? { oauth_provider: integration.oauthProvider } : {}) }));
-        if (createTool.fulfilled.match(result)) {
-          const newTool = result.payload;
+        const result = await dispatch(CREATE_TOOL({ name: integration.name, description: integration.description, command: '', mcp_config: integration.mcp_config, credentials: {}, auth_type: integration.authType || 'none', auth_status: 'configured', ...(integration.oauthProvider ? { oauth_provider: integration.oauthProvider } : {}) }));
+        if (CREATE_TOOL.fulfilled.match(result)) {
+          const newTool = result.payload.tool as unknown as ToolDefinition;
           if (integration.authType === 'oauth2') {
             setSnackbar({ open: true, message: `Enabled ${integration.name} — connect your account to discover actions` });
           } else {
             setSnackbar({ open: true, message: `Enabled ${integration.name} — discovering actions…` });
-            const r = await dispatch(discoverTools(newTool.id));
-            if (discoverTools.fulfilled.match(r)) setSnackbar({ open: true, message: `${integration.name} ready — actions discovered` });
+            const r = await dispatch(DISCOVER_TOOL(newTool.id));
+            if (DISCOVER_TOOL.fulfilled.match(r)) setSnackbar({ open: true, message: `${integration.name} ready — actions discovered` });
             else setSnackbar({ open: true, message: `${integration.name} enabled but discovery failed — is ${integration.mcp_config.command || 'the server'} installed?`, severity: 'error' });
           }
         }
@@ -109,24 +110,24 @@ export function useToolsState() {
   const handleDirectConnect = async (integration: Integration) => {
     setIntegrationLoading((p) => ({ ...p, [integration.id]: true }));
     try {
-      const result = await dispatch(createTool({ name: integration.name, description: integration.description, command: '', mcp_config: integration.mcp_config, credentials: {}, auth_type: integration.authType || 'none', auth_status: 'configured', ...(integration.oauthProvider ? { oauth_provider: integration.oauthProvider } : {}) }));
-      if (!createTool.fulfilled.match(result)) return;
-      const newTool = result.payload;
+      const result = await dispatch(CREATE_TOOL({ name: integration.name, description: integration.description, command: '', mcp_config: integration.mcp_config, credentials: {}, auth_type: integration.authType || 'none', auth_status: 'configured', ...(integration.oauthProvider ? { oauth_provider: integration.oauthProvider } : {}) }));
+      if (!CREATE_TOOL.fulfilled.match(result)) return;
+      const newTool = result.payload.tool as unknown as ToolDefinition;
       if (integration.authType === 'oauth2') handleOAuthConnect(newTool.id);
       else if (integration.credentialFields) openCredentialsDialog(newTool.id, integration);
     } finally { setIntegrationLoading((p) => ({ ...p, [integration.id]: false })); }
   };
 
   const handleOAuthConnect = async (toolId: string) => {
-    const result = await dispatch(startOAuth(toolId));
-    if (startOAuth.fulfilled.match(result)) {
+    const result = await dispatch(OAUTH_START(toolId));
+    if (OAUTH_START.fulfilled.match(result)) {
       const { auth_url } = result.payload;
       const popup = window.open(auth_url, 'oauth', 'width=500,height=700,left=200,top=100');
       const afterConnect = async () => {
-        const statusResult = await dispatch(fetchToolStatus(toolId));
-        if (fetchToolStatus.fulfilled.match(statusResult) && statusResult.payload.auth_status === 'connected') {
+        const statusResult = await dispatch(GET_TOOL(toolId));
+        if (GET_TOOL.fulfilled.match(statusResult) && (statusResult.payload as unknown as ToolDefinition).auth_status === 'connected') {
           setSnackbar({ open: true, message: `${allTools.find(t => t.id === toolId)?.name || 'Account'} connected! Discovering actions…` });
-          setExpandedToolId(toolId); dispatch(discoverTools(toolId));
+          setExpandedToolId(toolId); dispatch(DISCOVER_TOOL(toolId));
         } else { setSnackbar({ open: true, message: `${allTools.find(t => t.id === toolId)?.name || 'Account'} connected!` }); }
       };
       const onMessage = (event: MessageEvent) => {
@@ -151,20 +152,19 @@ export function useToolsState() {
     if ((credDialogIntegration.credentialFields || []).some((f) => !f.optional && !credDialogValues[f.key]?.trim())) return;
     setCredDialogSaving(true);
     try {
-      const result = await dispatch(updateTool({ id: credDialogToolId, credentials: credDialogValues, auth_type: 'env_vars', auth_status: 'connected' }));
-      if (updateTool.fulfilled.match(result)) { setCredDialogOpen(false); setSnackbar({ open: true, message: `${credDialogIntegration.name} connected! Re-discovering actions…` }); dispatch(discoverTools(credDialogToolId)); }
+      const result = await dispatch(UPDATE_TOOL({ toolId: credDialogToolId, credentials: credDialogValues, auth_type: 'env_vars', auth_status: 'connected' }));
+      if (UPDATE_TOOL.fulfilled.match(result)) { setCredDialogOpen(false); setSnackbar({ open: true, message: `${credDialogIntegration.name} connected! Re-discovering actions…` }); dispatch(DISCOVER_TOOL(credDialogToolId)); }
       else setSnackbar({ open: true, message: 'Failed to save credentials', severity: 'error' });
     } finally { setCredDialogSaving(false); }
   };
 
   const handleDisconnectIntegration = async (toolId: string, integration: Integration) => {
     if (integration.authType === 'oauth2') {
-      fetch(`${API_BASE}/tools/${toolId}/oauth/disconnect`, { method: 'POST' }).catch(() => {});
-      const result = await dispatch(updateTool({ id: toolId, oauth_tokens: {}, auth_status: 'configured', connected_account_email: '' }));
-      if (updateTool.fulfilled.match(result)) setSnackbar({ open: true, message: `${integration.name} disconnected. You can now connect a different account.` });
+      const result = await dispatch(OAUTH_DISCONNECT(toolId));
+      if (OAUTH_DISCONNECT.fulfilled.match(result)) setSnackbar({ open: true, message: `${integration.name} disconnected. You can now connect a different account.` });
       else setSnackbar({ open: true, message: `Failed to disconnect ${integration.name}`, severity: 'error' });
     } else {
-      await dispatch(updateTool({ id: toolId, credentials: {}, auth_type: 'none', auth_status: 'configured' }));
+      await dispatch(UPDATE_TOOL({ toolId, credentials: {}, auth_type: 'none', auth_status: 'configured' }));
       setSnackbar({ open: true, message: `${integration.name} disconnected` });
     }
   };
@@ -172,23 +172,23 @@ export function useToolsState() {
   const handleDiscover = async (toolId: string) => {
     setDiscovering(true);
     try {
-      const result = await dispatch(discoverTools(toolId));
-      if (discoverTools.fulfilled.match(result)) setSnackbar({ open: true, message: 'Actions discovered successfully' });
+      const result = await dispatch(DISCOVER_TOOL(toolId));
+      if (DISCOVER_TOOL.fulfilled.match(result)) setSnackbar({ open: true, message: 'Actions discovered successfully' });
       else setSnackbar({ open: true, message: (result as any).error?.message || 'Discovery failed — is the MCP server running?', severity: 'error' });
     } finally { setDiscovering(false); }
   };
 
-  const handlePermissionChange = async (toolId: string, toolName: string, policy: string) => { const tool = items[toolId]; if (!tool) return; await dispatch(updateTool({ id: toolId, tool_permissions: { ...tool.tool_permissions, [toolName]: policy } })); };
-  const handleGroupPermissionChange = async (toolId: string, names: string[], policy: string) => { const tool = items[toolId]; if (!tool) return; const updated = { ...tool.tool_permissions }; for (const name of names) updated[name] = policy; await dispatch(updateTool({ id: toolId, tool_permissions: updated })); };
-  const handleBulkReadOnly = async (toolId: string) => { const tool = items[toolId]; if (!tool?.tool_permissions?._categories) return; const readNames: string[] = tool.tool_permissions._categories.read || []; const updated = { ...tool.tool_permissions }; for (const name of readNames) updated[name] = 'always_allow'; await dispatch(updateTool({ id: toolId, tool_permissions: updated })); };
-  const handleResetPermissions = async (toolId: string) => { const tool = items[toolId]; if (!tool?.tool_permissions) return; const updated = { ...tool.tool_permissions }; for (const key of Object.keys(updated)) { if (!key.startsWith('_')) updated[key] = 'ask'; } await dispatch(updateTool({ id: toolId, tool_permissions: updated })); };
+  const handlePermissionChange = async (toolId: string, toolName: string, policy: string) => { const tool = items[toolId]; if (!tool) return; await dispatch(UPDATE_TOOL({ toolId, tool_permissions: { ...tool.tool_permissions, [toolName]: policy } })); };
+  const handleGroupPermissionChange = async (toolId: string, names: string[], policy: string) => { const tool = items[toolId]; if (!tool) return; const updated = { ...tool.tool_permissions }; for (const name of names) updated[name] = policy; await dispatch(UPDATE_TOOL({ toolId, tool_permissions: updated })); };
+  const handleBulkReadOnly = async (toolId: string) => { const tool = items[toolId]; if (!tool?.tool_permissions?._categories) return; const readNames: string[] = tool.tool_permissions._categories.read || []; const updated = { ...tool.tool_permissions }; for (const name of readNames) updated[name] = 'always_allow'; await dispatch(UPDATE_TOOL({ toolId, tool_permissions: updated })); };
+  const handleResetPermissions = async (toolId: string) => { const tool = items[toolId]; if (!tool?.tool_permissions) return; const updated = { ...tool.tool_permissions }; for (const key of Object.keys(updated)) { if (!key.startsWith('_')) updated[key] = 'ask'; } await dispatch(UPDATE_TOOL({ toolId, tool_permissions: updated })); };
 
   const handleSave = async () => {
     const payload = { name: form.name, description: form.description, command: form.command };
-    if (editingId) await dispatch(updateTool({ id: editingId, ...payload })); else await dispatch(createTool(payload));
+    if (editingId) await dispatch(UPDATE_TOOL({ toolId: editingId, ...payload })); else await dispatch(CREATE_TOOL(payload));
     setDialogOpen(false);
   };
-  const handleDelete = async (id: string) => { await dispatch(deleteTool(id)); };
+  const handleDelete = async (id: string) => { await dispatch(DELETE_TOOL(id)); };
   const openEdit = (tool: ToolDefinition) => { setEditingId(tool.id); setForm({ name: tool.name, description: tool.description, command: tool.command }); setDialogOpen(true); };
   const handleMenuOpen = (e: React.MouseEvent<HTMLElement>) => setMenuAnchor(e.currentTarget);
   const handleMenuClose = () => setMenuAnchor(null);
@@ -202,30 +202,30 @@ export function useToolsState() {
   const handleExpandServer = (name: string | null) => { setExpandedServer(name); if (name && devMode) { dispatch(clearDetail()); dispatch(fetchServerDetail(name)); } };
 
   const openMcpConfigDialog = (srv: McpServer) => { setMcpConfigServer(srv); setMcpAuthType('none'); setMcpCredentials({}); const dc = serverToMcpConfig(srv); setMcpConfigJson(JSON.stringify(Object.keys(dc).length > 0 ? dc : {}, null, 2)); setMcpConfigError(''); setMcpConfigOpen(true); };
-  const handleMcpConfigSave = async () => { if (!mcpConfigServer) return; let parsedConfig: Record<string, any> = {}; try { parsedConfig = JSON.parse(mcpConfigJson); } catch { setMcpConfigError('Invalid JSON'); return; } const f = serverToToolForm(mcpConfigServer); await dispatch(createTool({ name: f.name, description: f.description, command: '', mcp_config: parsedConfig, credentials: mcpCredentials, auth_type: mcpAuthType, auth_status: 'configured' })); setMcpConfigOpen(false); setSnackbar({ open: true, message: `Installed "${f.name}" as MCP tool` }); };
+  const handleMcpConfigSave = async () => { if (!mcpConfigServer) return; let parsedConfig: Record<string, any> = {}; try { parsedConfig = JSON.parse(mcpConfigJson); } catch { setMcpConfigError('Invalid JSON'); return; } const f = serverToToolForm(mcpConfigServer); await dispatch(CREATE_TOOL({ name: f.name, description: f.description, command: '', mcp_config: parsedConfig, credentials: mcpCredentials, auth_type: mcpAuthType, auth_status: 'configured' })); setMcpConfigOpen(false); setSnackbar({ open: true, message: `Installed "${f.name}" as MCP tool` }); };
 
   const handleInstall = async (srv: McpServer) => {
     const f = serverToToolForm(srv); const mcpConfig = serverToMcpConfig(srv);
     const hasConfig = Object.keys(mcpConfig).length > 0;
     if (srv.source === 'google' && srv.remoteUrl && hasConfig) {
-      await dispatch(createTool({ name: f.name, description: f.description, command: '', mcp_config: mcpConfig, credentials: {}, auth_type: 'oauth2', auth_status: 'configured' }));
+      await dispatch(CREATE_TOOL({ name: f.name, description: f.description, command: '', mcp_config: mcpConfig, credentials: {}, auth_type: 'oauth2', auth_status: 'configured' }));
       setSnackbar({ open: true, message: `Installed "${f.name}" — click "Connect" to authorize` });
     } else if (hasConfig && mcpConfig.type === 'stdio') {
-      const result = await dispatch(createTool({ name: f.name, description: f.description, command: '', mcp_config: mcpConfig, credentials: {}, auth_type: 'none', auth_status: 'configured' }));
-      if (createTool.fulfilled.match(result)) {
+      const result = await dispatch(CREATE_TOOL({ name: f.name, description: f.description, command: '', mcp_config: mcpConfig, credentials: {}, auth_type: 'none', auth_status: 'configured' }));
+      if (CREATE_TOOL.fulfilled.match(result)) {
         setSnackbar({ open: true, message: `Installed "${f.name}" — discovering actions…` });
-        const r = await dispatch(discoverTools(result.payload.id));
-        if (discoverTools.fulfilled.match(r)) setSnackbar({ open: true, message: `${f.name} ready — actions discovered` });
+        const r = await dispatch(DISCOVER_TOOL((result.payload.tool as unknown as ToolDefinition).id));
+        if (DISCOVER_TOOL.fulfilled.match(r)) setSnackbar({ open: true, message: `${f.name} ready — actions discovered` });
         else setSnackbar({ open: true, message: `${f.name} installed but discovery failed — the MCP server may need setup first`, severity: 'error' });
       }
     } else { openMcpConfigDialog(srv); }
   };
   const handleEditInstall = (srv: McpServer) => { setRegistryOpen(false); setEditingId(null); setForm(serverToToolForm(srv)); setDialogOpen(true); };
 
-  const handleSectionEnabledChange = async (tls: BuiltinTool[], enabled: boolean) => { const perms: Record<string, string> = {}; for (const t of tls) perms[t.name] = enabled ? 'always_allow' : 'deny'; await dispatch(updateBuiltinPermissions(perms)); };
+  const handleSectionEnabledChange = async (tls: BuiltinTool[], enabled: boolean) => { const perms: Record<string, string> = {}; for (const t of tls) perms[t.name] = enabled ? 'always_allow' : 'deny'; await dispatch(UPDATE_BUILTIN_PERMISSIONS(perms)); };
   const handleViewsSectionEnabledChange = async (enabled: boolean) => { for (const out of outputs) await dispatch(UPDATE_APP({ appId: out.id, permission: enabled ? 'ask' : 'deny' })); };
-  const handleBuiltinPermissionChange = async (toolName: string, policy: string) => { await dispatch(updateBuiltinPermissions({ [toolName]: policy })); };
-  const handleBuiltinCategoryPermissionChange = async (toolNames: string[], policy: string) => { const perms: Record<string, string> = {}; for (const name of toolNames) perms[name] = policy; await dispatch(updateBuiltinPermissions(perms)); };
+  const handleBuiltinPermissionChange = async (toolName: string, policy: string) => { await dispatch(UPDATE_BUILTIN_PERMISSIONS({ [toolName]: policy })); };
+  const handleBuiltinCategoryPermissionChange = async (toolNames: string[], policy: string) => { const perms: Record<string, string> = {}; for (const name of toolNames) perms[name] = policy; await dispatch(UPDATE_BUILTIN_PERMISSIONS(perms)); };
   const handleViewPermissionChange = async (viewId: string, permission: string) => { await dispatch(UPDATE_APP({ appId: viewId, permission })); };
   const toggleCategory = (cat: string) => setCollapsedCategories((p) => ({ ...p, [cat]: !p[cat] })); const toggleBuiltinExpand = (name: string) => setExpandedBuiltin((p) => (p === name ? null : name));
 

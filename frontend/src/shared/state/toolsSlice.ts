@@ -1,7 +1,16 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { API_BASE } from '@/shared/config';
-
-const TOOLS_API = `${API_BASE}/tools`;
+import { createSlice } from '@reduxjs/toolkit';
+import {
+  LIST_TOOLS,
+  LIST_BUILTIN_TOOLS,
+  CREATE_TOOL,
+  UPDATE_TOOL,
+  DELETE_TOOL,
+  GET_TOOL,
+  DISCOVER_TOOL,
+  GET_BUILTIN_PERMISSIONS,
+  UPDATE_BUILTIN_PERMISSIONS,
+  OAUTH_DISCONNECT,
+} from '@/shared/backend-bridge/apps/tools';
 
 export interface ToolDefinition {
   id: string;
@@ -36,122 +45,14 @@ interface ToolsState {
   builtinLoaded: boolean;
 }
 
-const initialState: ToolsState = { items: {}, builtinTools: [], builtinPermissions: {}, loading: false, loaded: false, builtinLoaded: false };
-
-export const fetchTools = createAsyncThunk(
-  'tools/fetch',
-  async () => {
-    const res = await fetch(`${TOOLS_API}/list`);
-    const data = await res.json();
-    return data.tools as ToolDefinition[];
-  },
-  { condition: (_, { getState }) => !(getState() as { tools: ToolsState }).tools.loading },
-);
-
-export const fetchBuiltinTools = createAsyncThunk(
-  'tools/fetchBuiltin',
-  async () => {
-    const res = await fetch(`${TOOLS_API}/builtin`);
-    const data = await res.json();
-    return data.tools as BuiltinTool[];
-  },
-  { condition: (_, { getState }) => !(getState() as { tools: ToolsState }).tools.builtinLoaded },
-);
-
-export const createTool = createAsyncThunk(
-  'tools/create',
-  async (body: Partial<Omit<ToolDefinition, 'id'>> & { name: string }) => {
-    const res = await fetch(`${TOOLS_API}/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    return data.tool as ToolDefinition;
-  }
-);
-
-export const updateTool = createAsyncThunk(
-  'tools/update',
-  async ({ id, ...updates }: Partial<ToolDefinition> & { id: string }) => {
-    const res = await fetch(`${TOOLS_API}/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    const data = await res.json();
-    return data.tool as ToolDefinition;
-  }
-);
-
-export const deleteTool = createAsyncThunk('tools/delete', async (id: string) => {
-  await fetch(`${TOOLS_API}/${id}`, { method: 'DELETE' });
-  return id;
-});
-
-export const startOAuth = createAsyncThunk(
-  'tools/startOAuth',
-  async (toolId: string) => {
-    const res = await fetch(`${TOOLS_API}/${toolId}/oauth/start`, { method: 'POST' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Failed to start OAuth');
-    }
-    const data = await res.json();
-    return data as { auth_url: string };
-  }
-);
-
-const disconnectOAuth = createAsyncThunk(
-  'tools/disconnectOAuth',
-  async (toolId: string) => {
-    const res = await fetch(`${TOOLS_API}/${toolId}/oauth/disconnect`, { method: 'POST' });
-    if (!res.ok) throw new Error('Failed to disconnect OAuth');
-    const data = await res.json();
-    return data.tool as ToolDefinition;
-  }
-);
-
-export const fetchToolStatus = createAsyncThunk(
-  'tools/fetchStatus',
-  async (toolId: string) => {
-    const res = await fetch(`${TOOLS_API}/${toolId}`);
-    const data = await res.json();
-    return data as ToolDefinition;
-  }
-);
-
-export const discoverTools = createAsyncThunk(
-  'tools/discover',
-  async (toolId: string) => {
-    const res = await fetch(`${TOOLS_API}/${toolId}/discover`, { method: 'POST' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Discovery failed' }));
-      throw new Error(err.detail || 'Discovery failed');
-    }
-    const data = await res.json();
-    return data.tool as ToolDefinition;
-  }
-);
-
-export const fetchBuiltinPermissions = createAsyncThunk('tools/fetchBuiltinPermissions', async () => {
-  const res = await fetch(`${TOOLS_API}/builtin/permissions`);
-  const data = await res.json();
-  return data.permissions as Record<string, string>;
-});
-
-export const updateBuiltinPermissions = createAsyncThunk(
-  'tools/updateBuiltinPermissions',
-  async (permissions: Record<string, string>) => {
-    const res = await fetch(`${TOOLS_API}/builtin/permissions`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ permissions }),
-    });
-    const data = await res.json();
-    return data.permissions as Record<string, string>;
-  }
-);
+const initialState: ToolsState = {
+  items: {},
+  builtinTools: [],
+  builtinPermissions: {},
+  loading: false,
+  loaded: false,
+  builtinLoaded: false,
+};
 
 const toolsSlice = createSlice({
   name: 'tools',
@@ -159,23 +60,53 @@ const toolsSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
-      .addCase(fetchTools.pending, (state) => { state.loading = true; })
-      .addCase(fetchTools.fulfilled, (state, action) => {
+      .addCase(LIST_TOOLS.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(LIST_TOOLS.fulfilled, (state, action) => {
         state.loading = false;
         state.loaded = true;
         state.items = {};
-        for (const t of action.payload) state.items[t.id] = t;
+        for (const t of action.payload.tools as ToolDefinition[]) state.items[t.id] = t;
       })
-      .addCase(fetchTools.rejected, (state) => { state.loading = false; state.loaded = true; })
-      .addCase(fetchBuiltinTools.fulfilled, (state, action) => { state.builtinTools = action.payload; state.builtinLoaded = true; })
-      .addCase(createTool.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(updateTool.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(deleteTool.fulfilled, (state, action) => { delete state.items[action.payload]; })
-      .addCase(disconnectOAuth.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(fetchToolStatus.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(discoverTools.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(fetchBuiltinPermissions.fulfilled, (state, action) => { state.builtinPermissions = action.payload; })
-      .addCase(updateBuiltinPermissions.fulfilled, (state, action) => { state.builtinPermissions = action.payload; });
+      .addCase(LIST_TOOLS.rejected, (state) => {
+        state.loading = false;
+        state.loaded = true;
+      })
+      .addCase(LIST_BUILTIN_TOOLS.fulfilled, (state, action) => {
+        state.builtinTools = action.payload.tools as BuiltinTool[];
+        state.builtinLoaded = true;
+      })
+      .addCase(CREATE_TOOL.fulfilled, (state, action) => {
+        const tool = action.payload.tool as ToolDefinition;
+        state.items[tool.id] = tool;
+      })
+      .addCase(UPDATE_TOOL.fulfilled, (state, action) => {
+        const tool = action.payload.tool as ToolDefinition;
+        state.items[tool.id] = tool;
+      })
+      .addCase(DELETE_TOOL.fulfilled, (state, action) => {
+        const toolId = action.meta.arg;
+        delete state.items[toolId];
+      })
+      .addCase(GET_TOOL.fulfilled, (state, action) => {
+        const tool = action.payload as unknown as ToolDefinition;
+        if (tool?.id) state.items[tool.id] = tool;
+      })
+      .addCase(DISCOVER_TOOL.fulfilled, (state, action) => {
+        const tool = action.payload.tool as ToolDefinition;
+        state.items[tool.id] = tool;
+      })
+      .addCase(GET_BUILTIN_PERMISSIONS.fulfilled, (state, action) => {
+        state.builtinPermissions = action.payload.permissions;
+      })
+      .addCase(UPDATE_BUILTIN_PERMISSIONS.fulfilled, (state, action) => {
+        state.builtinPermissions = action.payload.permissions;
+      })
+      .addCase(OAUTH_DISCONNECT.fulfilled, (state, action) => {
+        const tool = action.payload.tool as ToolDefinition;
+        if (tool?.id) state.items[tool.id] = tool;
+      });
   },
 });
 

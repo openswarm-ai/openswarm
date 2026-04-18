@@ -4,7 +4,7 @@ import LanguageIcon from '@mui/icons-material/Language';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
-import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
+import { LIST_BUILTIN_TOOLS, LIST_TOOLS } from '@/shared/backend-bridge/apps/tools';
 import { getToolGroupIcon } from '@/app/components/CommandPicker';
 import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 import { LIST_SKILLS } from '@/shared/backend-bridge/apps/skills';
@@ -28,8 +28,8 @@ export function useCommands() {
   useEffect(() => {
     if (!skillsLoaded) dispatch(LIST_SKILLS());
     if (!modesLoaded) dispatch(LIST_MODES());
-    if (!builtinLoaded) dispatch(fetchBuiltinTools());
-    if (!toolsLoaded) dispatch(fetchTools());
+    if (!builtinLoaded) dispatch(LIST_BUILTIN_TOOLS());
+    if (!toolsLoaded) dispatch(LIST_TOOLS());
     if (!outputsLoaded) dispatch(LIST_APPS());
   }, [dispatch, skillsLoaded, modesLoaded, builtinLoaded, toolsLoaded, outputsLoaded]);
 

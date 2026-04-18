@@ -8,7 +8,7 @@ import {
   RESET_MODE,
   Mode,
 } from '@/shared/state/modesSlice';
-import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
+import { LIST_BUILTIN_TOOLS, LIST_TOOLS } from '@/shared/backend-bridge/apps/tools';
 import { LIST_SKILLS } from '@/shared/backend-bridge/apps/skills';
 import { ModeForm, emptyForm } from '../modesConstants';
 
@@ -31,8 +31,8 @@ export function useModes() {
 
   useEffect(() => {
     dispatch(LIST_MODES());
-    dispatch(fetchBuiltinTools());
-    dispatch(fetchTools());
+    dispatch(LIST_BUILTIN_TOOLS());
+    dispatch(LIST_TOOLS());
     dispatch(LIST_SKILLS());
   }, [dispatch]);
 

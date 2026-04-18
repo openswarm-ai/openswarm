@@ -5,7 +5,7 @@ import type {
   Unstable_MentionItem,
 } from '@assistant-ui/core';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
-import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
+import { LIST_BUILTIN_TOOLS, LIST_TOOLS } from '@/shared/backend-bridge/apps/tools';
 import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 
 export interface MentionItemMetadata {
@@ -51,8 +51,8 @@ export function useOpenSwarmMentionAdapter(): Unstable_MentionAdapter {
   const outputsLoaded = useAppSelector((s) => s.apps.loaded);
 
   useEffect(() => {
-    if (!builtinLoaded) dispatch(fetchBuiltinTools());
-    if (!toolsLoaded) dispatch(fetchTools());
+    if (!builtinLoaded) dispatch(LIST_BUILTIN_TOOLS());
+    if (!toolsLoaded) dispatch(LIST_TOOLS());
     if (!outputsLoaded) dispatch(LIST_APPS());
   }, [dispatch, builtinLoaded, toolsLoaded, outputsLoaded]);
 
