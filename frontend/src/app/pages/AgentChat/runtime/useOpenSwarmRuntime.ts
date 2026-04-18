@@ -6,12 +6,10 @@ import {
 } from '@assistant-ui/react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
-  sendMessage as sendMessageThunk,
-  editMessage,
-  stopAgent,
   type AgentMessage,
   type StreamingMessage,
 } from '@/shared/state/agentsSlice';
+import { SEND_MESSAGE, EDIT_MESSAGE, STOP_AGENT } from '@/shared/backend-bridge/apps/agents';
 
 export interface ComposerExtras {
   images?: Array<{ data: string; media_type: string }>;
@@ -153,7 +151,7 @@ export function useOpenSwarmRuntime(
         }
         options.dispatchMessage({ prompt: text, ...extras });
       } else {
-        dispatch(sendMessageThunk({ sessionId, prompt: text }));
+        dispatch(SEND_MESSAGE({ sessionId, prompt: text }));
       }
     },
     [sessionId, dispatch, options],
@@ -163,14 +161,14 @@ export function useOpenSwarmRuntime(
     async (message: AppendMessage) => {
       if (!sessionId || !message.parentId) return;
       const text = extractText(message);
-      dispatch(editMessage({ sessionId, messageId: message.parentId, content: text }));
+      dispatch(EDIT_MESSAGE({ sessionId, messageId: message.parentId, content: text }));
     },
     [sessionId, dispatch],
   );
 
   const onCancel = useCallback(async () => {
     if (!sessionId) return;
-    dispatch(stopAgent({ sessionId }));
+    dispatch(STOP_AGENT(sessionId));
   }, [sessionId, dispatch]);
 
   const runtime = useExternalStoreRuntime({

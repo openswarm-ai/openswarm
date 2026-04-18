@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
 import {
-  closeSession,
   toggleExpandSession,
   expandSession,
-  duplicateSession,
 } from '@/shared/state/agentsSlice';
+import { CLOSE_SESSION, DUPLICATE_SESSION } from '@/shared/backend-bridge/apps/agents';
 import {
   removeViewCard,
   removeBrowserCard,
@@ -104,7 +103,7 @@ export function useDashboardKeyboard(deps: KeyboardDeps) {
       if (selectedIds.size === 0) return;
       e.preventDefault();
       for (const [id, type] of selectedIds) {
-        if (type === 'agent') dispatch(closeSession({ sessionId: id }));
+        if (type === 'agent') dispatch(CLOSE_SESSION(id));
         else if (type === 'view') dispatch(removeViewCard(id));
         else if (type === 'browser') dispatch(removeBrowserCard(id));
       }
@@ -180,9 +179,9 @@ export function useDashboardKeyboard(deps: KeyboardDeps) {
         const px = card.x + PASTE_OFFSET;
         const py = card.y - PASTE_OFFSET;
         if (card.type === 'agent') {
-          const action = await dispatch(duplicateSession({ sessionId: card.id, dashboardId }));
-          if (duplicateSession.fulfilled.match(action)) {
-            const newId = action.payload.id;
+          const action = await dispatch(DUPLICATE_SESSION(card.id));
+          if (DUPLICATE_SESSION.fulfilled.match(action)) {
+            const newId = action.payload.session.id;
             dispatch(placeCard({ sessionId: newId, x: px, y: py, width: card.width, height: card.height }));
             if (card.expanded) dispatch(expandSession(newId));
             newSelection.set(newId, 'agent');

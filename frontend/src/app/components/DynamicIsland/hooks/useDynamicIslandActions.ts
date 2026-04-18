@@ -3,11 +3,10 @@ import type { MutableRefObject } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch } from '@/shared/hooks';
 import {
-  handleApproval,
-  stopAgent,
   dismissAgentNotification,
   dismissAllFinishedNotifications,
 } from '@/shared/state/agentsSlice';
+import { HANDLE_APPROVAL, STOP_AGENT } from '@/shared/backend-bridge/apps/agents';
 import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import type { IslandState, SessionApprovalGroup } from '../islandTypes';
 
@@ -40,21 +39,21 @@ export function useDynamicIslandActions(
   }, [islandState, islandRef, setUserExpanded]);
 
   const onApprove = useCallback(
-    (requestId: string, updatedInput?: Record<string, any>) => {
-      dispatch(handleApproval({ requestId, behavior: 'allow', updatedInput }));
+    (requestId: string, updatedInput?: Record<string, unknown>) => {
+      dispatch(HANDLE_APPROVAL({ requestId, behavior: 'allow', updatedInput }));
     },
     [dispatch],
   );
 
   const onDeny = useCallback(
     (requestId: string, message?: string) => {
-      dispatch(handleApproval({ requestId, behavior: 'deny', message }));
+      dispatch(HANDLE_APPROVAL({ requestId, behavior: 'deny', message }));
     },
     [dispatch],
   );
 
   const onStopAgent = useCallback(
-    (sessionId: string) => dispatch(stopAgent({ sessionId })),
+    (sessionId: string) => dispatch(STOP_AGENT(sessionId)),
     [dispatch],
   );
 
@@ -75,7 +74,7 @@ export function useDynamicIslandActions(
     for (const g of groups) {
       for (const req of g.approvals) {
         if (req.tool_name !== 'AskUserQuestion') {
-          dispatch(handleApproval({ requestId: req.id, behavior: 'allow' }));
+          dispatch(HANDLE_APPROVAL({ requestId: req.id, behavior: 'allow' }));
         }
       }
     }
@@ -85,7 +84,7 @@ export function useDynamicIslandActions(
     for (const g of groups) {
       for (const req of g.approvals) {
         if (req.tool_name !== 'AskUserQuestion') {
-          dispatch(handleApproval({ requestId: req.id, behavior: 'deny' }));
+          dispatch(HANDLE_APPROVAL({ requestId: req.id, behavior: 'deny' }));
         }
       }
     }

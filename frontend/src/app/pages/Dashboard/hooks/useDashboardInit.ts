@@ -1,11 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
-import {
-  fetchSessions,
-  fetchHistory,
-  setExpandedSessionIds,
-} from '@/shared/state/agentsSlice';
+import { setExpandedSessionIds } from '@/shared/state/agentsSlice';
+import { GET_ALL_SESSIONS, GET_HISTORY } from '@/shared/backend-bridge/apps/agents';
 import {
   fetchLayout,
   resetLayout,
@@ -52,8 +49,8 @@ export function useDashboardInit(deps: InitDeps) {
     hasFittedRef.current = false;
     restoredExpandedRef.current = false;
     dispatch(resetLayout());
-    dispatch(fetchSessions({ dashboardId }));
-    dispatch(fetchHistory({ dashboardId }));
+    dispatch(GET_ALL_SESSIONS(dashboardId));
+    dispatch(GET_HISTORY({}));
     dispatch(fetchLayout(dashboardId));
     dispatch(fetchOutputs());
     dashboardWs.connect();

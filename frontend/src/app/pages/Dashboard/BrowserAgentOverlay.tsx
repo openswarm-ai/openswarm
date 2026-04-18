@@ -9,7 +9,9 @@ import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import { AgentSession, stopAgent } from '@/shared/state/agentsSlice';
+import { AgentSession } from '@/shared/state/agentsSlice';
+import { STOP_AGENT } from '@/shared/backend-bridge/apps/agents';
+
 import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { summarizeMessage } from './browserAgentOverlayUtils';
@@ -67,7 +69,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
     }
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
     setConfirmStop(false);
-    dispatch(stopAgent({ sessionId: session.id }));
+    dispatch(STOP_AGENT(session.id));
   }, [confirmStop, dispatch, session.id]);
 
   useEffect(() => {

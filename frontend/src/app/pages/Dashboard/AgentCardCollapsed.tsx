@@ -9,7 +9,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CloseIcon from '@mui/icons-material/Close';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import { AgentSession, handleApproval } from '@/shared/state/agentsSlice';
+import { AgentSession } from '@/shared/state/agentsSlice';
+import { HANDLE_APPROVAL } from '@/shared/backend-bridge/apps/agents';
 import { useAppDispatch } from '@/shared/hooks';
 import { ToolQuestion as QuestionForm } from '@/app/pages/AgentChat/toolkit/approval-tools';
 import { parseMcpToolName } from '@/app/pages/AgentChat/toolkit/approval-utils';
@@ -78,10 +79,10 @@ const AgentCardCollapsed: React.FC<AgentCardCollapsedProps> = ({
             compact
             request={pendingReq}
             onApprove={(requestId, updatedInput) =>
-              dispatch(handleApproval({ requestId, behavior: 'allow', updatedInput }))
+              dispatch(HANDLE_APPROVAL({ requestId, behavior: 'allow', updatedInput }))
             }
             onDeny={(requestId) =>
-              dispatch(handleApproval({ requestId, behavior: 'deny' }))
+              dispatch(HANDLE_APPROVAL({ requestId, behavior: 'deny' }))
             }
           />
         </Box>
@@ -127,7 +128,7 @@ const AgentCardCollapsed: React.FC<AgentCardCollapsedProps> = ({
                   <Tooltip title="Approve">
                     <IconButton
                       size="small"
-                      onClick={() => dispatch(handleApproval({ requestId: pendingReq.id, behavior: 'allow' }))}
+                      onClick={() => dispatch(HANDLE_APPROVAL({ requestId: pendingReq.id, behavior: 'allow' }))}
                       sx={{ color: c.status.success }}
                     >
                       <CheckCircleIcon fontSize="small" />
@@ -136,7 +137,7 @@ const AgentCardCollapsed: React.FC<AgentCardCollapsedProps> = ({
                   <Tooltip title="Deny">
                     <IconButton
                       size="small"
-                      onClick={() => dispatch(handleApproval({ requestId: pendingReq.id, behavior: 'deny' }))}
+                      onClick={() => dispatch(HANDLE_APPROVAL({ requestId: pendingReq.id, behavior: 'deny' }))}
                       sx={{ color: c.status.error }}
                     >
                       <CancelIcon fontSize="small" />
@@ -168,7 +169,7 @@ const AgentCardCollapsed: React.FC<AgentCardCollapsedProps> = ({
                 startIcon={<CheckIcon sx={{ fontSize: '14px !important' }} />}
                 onClick={() => {
                   for (const req of session.pending_approvals) {
-                    if (req.tool_name !== 'AskUserQuestion') dispatch(handleApproval({ requestId: req.id, behavior: 'allow' }));
+                    if (req.tool_name !== 'AskUserQuestion') dispatch(HANDLE_APPROVAL({ requestId: req.id, behavior: 'allow' }));
                   }
                 }}
                 sx={{
@@ -192,7 +193,7 @@ const AgentCardCollapsed: React.FC<AgentCardCollapsedProps> = ({
                 startIcon={<CloseIcon sx={{ fontSize: '14px !important' }} />}
                 onClick={() => {
                   for (const req of session.pending_approvals) {
-                    if (req.tool_name !== 'AskUserQuestion') dispatch(handleApproval({ requestId: req.id, behavior: 'deny' }));
+                    if (req.tool_name !== 'AskUserQuestion') dispatch(HANDLE_APPROVAL({ requestId: req.id, behavior: 'deny' }));
                   }
                 }}
                 sx={{

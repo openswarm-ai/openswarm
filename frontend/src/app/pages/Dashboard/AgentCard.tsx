@@ -7,7 +7,8 @@ import Tooltip from '@mui/material/Tooltip';
 import CloseIcon from '@mui/icons-material/Close';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { motion } from 'framer-motion';
-import { AgentSession, toggleExpandSession, collapseSession, closeSession } from '@/shared/state/agentsSlice';
+import { AgentSession, toggleExpandSession, collapseSession } from '@/shared/state/agentsSlice';
+import { CLOSE_SESSION } from '@/shared/backend-bridge/apps/agents';
 import { setCardPosition, setCardSize, fadeGlowingAgentCard, clearGlowingAgentCard, removeCard } from '@/shared/state/dashboardLayoutSlice';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
@@ -148,7 +149,7 @@ const AgentCard: React.FC<Props> = ({
     e.stopPropagation(); e.preventDefault();
     dispatch(collapseSession(session.id)); dispatch(removeCard(session.id));
     if (glowEntry) setTimeout(() => dispatch(clearGlowingAgentCard(session.id)), 500);
-    else dispatch(closeSession({ sessionId: session.id }));
+    else dispatch(CLOSE_SESSION(session.id));
   };
   useEffect(() => {
     if (session.status === 'running' || session.status === 'waiting_approval') {

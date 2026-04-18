@@ -12,7 +12,8 @@ import BlockIcon from '@mui/icons-material/Block';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { expandSession, collapseSession, fetchSession } from '@/shared/state/agentsSlice';
+import { expandSession, collapseSession } from '@/shared/state/agentsSlice';
+import { GET_SESSION } from '@/shared/backend-bridge/apps/agents';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { placeCard, removeCard, setGlowingAgentCard, clearGlowingAgentCard, DEFAULT_CARD_W, DEFAULT_CARD_H, EXPANDED_CARD_MIN_H, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -59,7 +60,7 @@ function useRevealAgent(
       dispatch(expandSession(revealTargetSessionId));
       dispatch(setGlowingAgentCard({ sessionId: revealTargetSessionId, sourceId: sessionId, sourceYRatio, label }));
     };
-    if (!sessions[revealTargetSessionId]) dispatch(fetchSession(revealTargetSessionId)).then(doPlace);
+    if (!sessions[revealTargetSessionId]) dispatch(GET_SESSION(revealTargetSessionId)).then(doPlace);
     else doPlace();
   }, [revealTargetSessionId, sessionId, cards, sessions, dispatch, label, bubbleRef]);
 }

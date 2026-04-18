@@ -12,11 +12,11 @@ import {
   RefreshCwIcon,
 } from 'lucide-react';
 import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button';
-import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { useAppDispatch } from '@/shared/hooks';
 import {
-  duplicateSession,
   setActiveSession,
 } from '@/shared/state/agentsSlice';
+import { DUPLICATE_SESSION } from '@/shared/backend-bridge/apps/agents';
 import { useSessionId, useBranchChatCallback } from './OpenSwarmThread';
 
 export const UserActionBar: FC = () => (
@@ -64,11 +64,6 @@ const BranchChatButton: FC = () => {
   const onBranchChat = useBranchChatCallback();
   const aui = useAui();
 
-  const dashboardId = useAppSelector((state) => {
-    if (!sessionId) return undefined;
-    return state.agents.sessions[sessionId]?.dashboard_id;
-  });
-
   const handleBranchChat = useCallback(async () => {
     if (!sessionId) return;
 
@@ -81,17 +76,13 @@ const BranchChatButton: FC = () => {
     if (!messageId) return;
 
     const action = await dispatch(
-      duplicateSession({
-        sessionId,
-        dashboardId,
-        upToMessageId: messageId,
-      }),
+      DUPLICATE_SESSION(sessionId),
     );
-    if (duplicateSession.fulfilled.match(action)) {
-      if (onBranchChat) onBranchChat(action.payload.id);
-      else dispatch(setActiveSession(action.payload.id));
+    if (DUPLICATE_SESSION.fulfilled.match(action)) {
+      if (onBranchChat) onBranchChat(action.payload.session.id);
+      else dispatch(setActiveSession(action.payload.session.id));
     }
-  }, [sessionId, dashboardId, dispatch, aui, onBranchChat]);
+  }, [sessionId, dispatch, aui, onBranchChat]);
 
   return (
     <TooltipIconButton tooltip="Branch chat" onClick={handleBranchChat}>
