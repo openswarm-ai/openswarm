@@ -6,7 +6,7 @@ import { ApprovalRouter, BatchApprovalWrapper } from './toolkit/approval-tools';
 import ChatHeader from './ChatHeader';
 import MessageQueue from './MessageQueue';
 import OpenSwarmThread from './thread/OpenSwarmThread';
-import OpenSwarmComposer from './OpenSwarmComposer/OpenSwarmComposer';
+import ChatInput from './ChatInput/ChatInput';
 import { useAgentChat } from './hooks/useAgentChat';
 import { useOpenSwarmRuntime, type ComposerExtras, type DispatchableMessage } from './runtime/useOpenSwarmRuntime';
 import { toolkit } from './toolkit';
@@ -109,7 +109,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId, onClose, embedded, aut
           </Box>
         ) : (
           <MessageQueue messageQueueRef={messageQueueRef} queueLength={queueLength} setQueueLength={setQueueLength}>
-            <OpenSwarmComposer
+            <ChatInput
               composerExtrasRef={composerExtrasRef}
               mode={mode}
               onModeChange={handleModeChange}

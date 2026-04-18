@@ -1,7 +1,7 @@
 import React, { useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { AssistantRuntimeProvider } from '@assistant-ui/react';
-import OpenSwarmComposer from '@/app/pages/AgentChat/OpenSwarmComposer/OpenSwarmComposer';
+import ChatInput from '@/app/pages/AgentChat/ChatInput/ChatInput';
 import { useStandaloneComposerRuntime } from '@/app/pages/AgentChat/runtime/useStandaloneComposerRuntime';
 import type { ComposerExtras, DispatchableMessage } from '@/app/pages/AgentChat/runtime/useOpenSwarmRuntime';
 import { useDashboardToolbar, TOOLBAR_OWNER_ID, ToolbarProps } from './useDashboardToolbar';
@@ -33,7 +33,7 @@ const ToolbarComposer: React.FC<{
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <OpenSwarmComposer
+      <ChatInput
         composerExtrasRef={composerExtrasRef}
         mode={mode}
         onModeChange={onModeChange}

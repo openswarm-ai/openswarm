@@ -10,7 +10,7 @@ import { useComposerAttachments } from './components/useComposerAttachments';
 import { MentionSelectOverride, MentionPopover, ComposerAttachmentChips } from './components/ComposerParts';
 import ModelModeSelector from './components/ModelModeSelector/ModelModeSelector';
 
-interface OpenSwarmComposerProps {
+interface ChatInputProps {
   composerExtrasRef: MutableRefObject<ComposerExtras>;
   mode: string;
   onModeChange: (mode: string) => void;
@@ -26,7 +26,7 @@ interface OpenSwarmComposerProps {
   embedded?: boolean;
 }
 
-const OpenSwarmComposer: FC<OpenSwarmComposerProps> = ({
+const ChatInput: FC<ChatInputProps> = ({
   composerExtrasRef, mode, onModeChange, model, onModelChange,
   isRunning, onStop, sessionId, queueLength, contextEstimate, autoFocus,
   initialContextPaths, embedded,
@@ -158,4 +158,4 @@ const OpenSwarmComposer: FC<OpenSwarmComposerProps> = ({
   );
 };
 
-export default OpenSwarmComposer;
+export default ChatInput;
