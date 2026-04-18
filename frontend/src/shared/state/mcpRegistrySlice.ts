@@ -4,8 +4,8 @@
 // TODO: Re-implement the mcp registry (needs to also be implemented in the backend)
 
 
-// import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { createAsyncThunk } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+// import { createAsyncThunk } from '@reduxjs/toolkit';
 // import { API_BASE } from '@/shared/config';
 
 // const MCP_REGISTRY_API = `${API_BASE}/mcp-registry`;
@@ -24,33 +24,33 @@ export interface McpServer {
   source: string;
 }
 
-// interface McpServerDetail extends McpServer {
-//   environmentVariables: { name: string; description: string; default?: string; format?: string }[];
-//   keywords: string[];
-//   license: string;
-// }
+interface McpServerDetail extends McpServer {
+  environmentVariables: { name: string; description: string; default?: string; format?: string }[];
+  keywords: string[];
+  license: string;
+}
 
-// interface McpRegistryState {
-//   servers: McpServer[];
-//   total: number;
-//   loading: boolean;
-//   query: string;
-//   offset: number;
-//   stats: { total: number; google: number; community: number; lastUpdated: number } | null;
-//   detail: McpServerDetail | null;
-//   detailLoading: boolean;
-// }
+interface McpRegistryState {
+  servers: McpServer[];
+  total: number;
+  loading: boolean;
+  query: string;
+  offset: number;
+  stats: { total: number; google: number; community: number; lastUpdated: number } | null;
+  detail: McpServerDetail | null;
+  detailLoading: boolean;
+}
 
-// const initialState: McpRegistryState = {
-//   servers: [],
-//   total: 0,
-//   loading: false,
-//   query: '',
-//   offset: 0,
-//   stats: null,
-//   detail: null,
-//   detailLoading: false,
-// };
+const initialState: McpRegistryState = {
+  servers: [],
+  total: 0,
+  loading: false,
+  query: '',
+  offset: 0,
+  stats: null,
+  detail: null,
+  detailLoading: false,
+};
 
 export const searchRegistry = createAsyncThunk(
   'mcpRegistry/search',
@@ -90,48 +90,48 @@ export const fetchServerDetail = createAsyncThunk(
   }
 );
 
-// const mcpRegistrySlice = createSlice({
-//   name: 'mcpRegistry',
-//   initialState,
-//   reducers: {
-//     clearDetail(state) {
-//       state.detail = null;
-//     },
-//   },
-//   extraReducers: (builder) => {
-//     builder
-//       .addCase(searchRegistry.pending, (state, action) => {
-//         state.loading = true;
-//         state.query = action.meta.arg.q;
-//         state.offset = action.meta.arg.offset ?? 0;
-//       })
-//       .addCase(searchRegistry.fulfilled, (state, action) => {
-//         state.loading = false;
-//         if (action.meta.arg.offset && action.meta.arg.offset > 0) {
-//           state.servers = [...state.servers, ...action.payload.servers];
-//         } else {
-//           state.servers = action.payload.servers;
-//         }
-//         state.total = action.payload.total;
-//       })
-//       .addCase(searchRegistry.rejected, (state) => {
-//         state.loading = false;
-//       })
-//       .addCase(fetchRegistryStats.fulfilled, (state, action) => {
-//         state.stats = action.payload;
-//       })
-//       .addCase(fetchServerDetail.pending, (state) => {
-//         state.detailLoading = true;
-//       })
-//       .addCase(fetchServerDetail.fulfilled, (state, action) => {
-//         state.detailLoading = false;
-//         state.detail = action.payload;
-//       })
-//       .addCase(fetchServerDetail.rejected, (state) => {
-//         state.detailLoading = false;
-//       });
-//   },
-// });
+const mcpRegistrySlice = createSlice({
+  name: 'mcpRegistry',
+  initialState,
+  reducers: {
+    clearDetail(state) {
+      state.detail = null;
+    },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(searchRegistry.pending, (state, action) => {
+        state.loading = true;
+        state.query = action.meta.arg.q;
+        state.offset = action.meta.arg.offset ?? 0;
+      })
+      .addCase(searchRegistry.fulfilled, (state, action) => {
+        state.loading = false;
+        if (action.meta.arg.offset && action.meta.arg.offset > 0) {
+          state.servers = [...state.servers, ...action.payload.servers];
+        } else {
+          state.servers = action.payload.servers;
+        }
+        state.total = action.payload.total;
+      })
+      .addCase(searchRegistry.rejected, (state) => {
+        state.loading = false;
+      })
+      .addCase(fetchRegistryStats.fulfilled, (state, action) => {
+        state.stats = action.payload;
+      })
+      .addCase(fetchServerDetail.pending, (state) => {
+        state.detailLoading = true;
+      })
+      .addCase(fetchServerDetail.fulfilled, (state, action) => {
+        state.detailLoading = false;
+        state.detail = action.payload;
+      })
+      .addCase(fetchServerDetail.rejected, (state) => {
+        state.detailLoading = false;
+      });
+  },
+});
 
-// export const { clearDetail } = mcpRegistrySlice.actions;
-// export default mcpRegistrySlice.reducer;
+export const { clearDetail } = mcpRegistrySlice.actions;
+export default mcpRegistrySlice.reducer;
