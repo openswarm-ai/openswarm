@@ -10,10 +10,9 @@ import {
   Terminal as TerminalIcon,
 } from "lucide-react";
 import type { TerminalProps } from "./schema";
-import { useCopyToClipboard } from "../shared/use-copy-to-clipboard";
+import { useCopyToClipboard } from "../_shared/useCopyToClipboard";
 
-import { Button, Collapsible, CollapsibleTrigger } from "./_adapter";
-import { cn } from "./_adapter";
+import { Button, Collapsible, CollapsibleTrigger, cn } from "./_adapter";
 
 const COPY_ID = "terminal-output";
 
@@ -276,7 +275,7 @@ type TerminalComponent = typeof TerminalRoot & {
   Empty: typeof TerminalEmpty;
 };
 
-export const Terminal = Object.assign(TerminalRoot, {
+export const TerminalA = Object.assign(TerminalRoot, {
   Header: TerminalHeader,
   Output: TerminalOutput,
   Empty: TerminalEmpty,

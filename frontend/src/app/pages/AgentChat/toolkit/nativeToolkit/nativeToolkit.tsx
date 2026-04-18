@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import type { Toolkit } from '@assistant-ui/react';
-import { Terminal } from '@/components/tool-ui/terminal/terminal';
-import { CodeBlock } from '@/components/tool-ui/code-block/code-block';
-import { CodeDiff } from '@/components/tool-ui/code-diff/code-diff';
+import { TerminalA as Terminal } from './components/TerminalA/TerminalA';
+import { CodeBlock } from './components/CodeBlock/CodeBlock';
+import { CodeDiff } from './components/CodeDiff/CodeDiff';
 
 // -- Helpers ----------------------------------------------------------------
 

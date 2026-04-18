@@ -17,7 +17,7 @@ import { parseDiffFromFile, RegisteredCustomThemes } from "@pierre/diffs";
 import type { FileDiffMetadata, ThemesType } from "@pierre/diffs";
 import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
 import type { CodeDiffProps } from "./schema";
-import { useCopyToClipboard } from "../shared/use-copy-to-clipboard";
+import { useCopyToClipboard } from "../_shared/useCopyToClipboard";
 import { Button, cn, Collapsible, CollapsibleTrigger } from "./_adapter";
 
 /*
@@ -28,10 +28,10 @@ import { Button, cn, Collapsible, CollapsibleTrigger } from "./_adapter";
  * theme files in `components/tool-ui/shared`, which Turbopack can resolve.
  */
 RegisteredCustomThemes.set("pierre-dark", () =>
-  import("../shared/pierre-dark-theme.js").then((m) => m.default as never),
+  import("../_shared/pierre-dark-theme.js").then((m) => m.default as never),
 );
 RegisteredCustomThemes.set("pierre-light", () =>
-  import("../shared/pierre-light-theme.js").then((m) => m.default as never),
+  import("../_shared/pierre-light-theme.js").then((m) => m.default as never),
 );
 
 const COPY_ID = "codediff-code";
