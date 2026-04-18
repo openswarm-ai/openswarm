@@ -1,6 +1,6 @@
 import asyncio
 from typing import Callable, Awaitable, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, InstanceOf
 from typeguard import typechecked
 
 class FutureBridge(BaseModel):
@@ -10,7 +10,7 @@ class FutureBridge(BaseModel):
     block until the frontend responds (or timeout).
     """
 
-    p_pending: Dict[str, asyncio.Future] = Field(default_factory=dict)
+    p_pending: Dict[str, InstanceOf[asyncio.Future]] = Field(default_factory=dict)
 
     # TODO: add better type specing for the output of this function
     @typechecked

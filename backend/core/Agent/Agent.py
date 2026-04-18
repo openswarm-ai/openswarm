@@ -43,7 +43,7 @@ class Agent(BaseModel):
     toolkit: Optional[Toolkit] = Field(default=None, exclude=True)
     on_event: Optional[EventCallback] = Field(default=None, exclude=True)
 
-    task: Optional[asyncio.Task] = None
+    task: Optional[InstanceOf[asyncio.Task]] = None
     lock: InstanceOf[asyncio.Lock] = Field(default_factory=asyncio.Lock)
 
     @typechecked
@@ -96,7 +96,7 @@ class Agent(BaseModel):
             session_id=self.session_id, status="waiting_approval",
         ))
 
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        future: InstanceOf[asyncio.Future] = asyncio.get_event_loop().create_future()
         try:
             await self.emit(ApprovalRequestEvent(
                 session_id=self.session_id,

@@ -1,6 +1,6 @@
 import asyncio
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, InstanceOf
 from typing import Annotated, Any, Dict, Literal, Optional, Union, Callable, Awaitable
 
 from backend.core.shared_structs.agent.Message.Message import AnyMessage
@@ -74,7 +74,7 @@ class ApprovalRequestEvent(BaseModel):
     request_id: str
     tool_name: str
     tool_input: Dict[str, Any]
-    future: asyncio.Future = Field(exclude=True)
+    future: InstanceOf[asyncio.Future] = Field(exclude=True)
 
 
 AnyEvent = Annotated[

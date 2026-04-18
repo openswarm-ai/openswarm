@@ -5,6 +5,9 @@ import logging
 import platform
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Optional
+
+from pydantic import InstanceOf
 
 from backend.config.Apps import SubApp
 from backend.apps.analytics.collector import init as init_collector, shutdown as shutdown_collector, record, identify
@@ -22,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 APP_VERSION = "1.0.20"
 
-_heartbeat_task: asyncio.Task | None = None
+_heartbeat_task: Optional[InstanceOf[asyncio.Task]] = None
 
 
 async def _heartbeat_loop():

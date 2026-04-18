@@ -9,14 +9,14 @@ Heavy logic lives in sibling modules:
 - session_store     – on-disk persistence, history, message copying
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import os
 from datetime import datetime
 from typing import Optional
 from uuid import uuid4
+
+from pydantic import InstanceOf
 
 from backend.apps.agents.models import AgentConfig, AgentSession, Message
 from backend.apps.agents.manager.ws_manager import ws_manager
@@ -47,7 +47,7 @@ os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 class AgentManager:
     def __init__(self):
         self.sessions: dict[str, AgentSession] = {}
-        self.tasks: dict[str, asyncio.Task] = {}
+        self.tasks: dict[str, InstanceOf[asyncio.Task]] = {}
 
     async def launch_agent(self, config: AgentConfig) -> AgentSession:
         session_id = uuid4().hex

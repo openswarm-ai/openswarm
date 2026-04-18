@@ -1,7 +1,7 @@
 """HTTP client for 9Router's REST API."""
 
 import httpx
-from pydantic import Field, BaseModel
+from pydantic import Field, BaseModel, InstanceOf
 from typeguard import typechecked
 
 from backend.apps.subscriptions.NineRouter.helpers.constants import NINE_ROUTER_API, NINE_ROUTER_V1
@@ -9,7 +9,7 @@ from backend.ports import NINE_ROUTER_PORT
 
 
 class NineRouterClient(BaseModel):
-    p_http: httpx.AsyncClient = Field(default_factory=httpx.AsyncClient(timeout=15.0))
+    p_http: InstanceOf[httpx.AsyncClient] = Field(default_factory=lambda: httpx.AsyncClient(timeout=15.0))
 
     async def aclose(self) -> None:
         await self.p_http.aclose()

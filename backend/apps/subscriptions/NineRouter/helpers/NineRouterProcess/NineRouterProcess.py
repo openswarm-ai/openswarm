@@ -12,7 +12,7 @@ import threading
 from typing import Optional
 
 import httpx
-from pydantic import Field, BaseModel
+from pydantic import Field, BaseModel, InstanceOf
 from typeguard import typechecked
 
 from backend.ports import NINE_ROUTER_PORT
@@ -25,7 +25,7 @@ P_THIS_DIR: str = os.path.dirname(os.path.abspath(__file__))
 
 
 class NineRouterProcess(BaseModel):
-    p_process: Optional[subprocess.Popen] = Field(default=None)
+    p_process: Optional[InstanceOf[subprocess.Popen]] = Field(default=None)
 
     @typechecked
     def is_running(self) -> bool:

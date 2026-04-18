@@ -11,5 +11,20 @@
   "python.analysis.diagnosticSeverityOverrides": {
     "reportMissingTypeStubs": "none"
   },
-  "eslint.workingDirectories": ["frontend"]
+  "eslint.workingDirectories": [
+    "frontend"
+  ],
+  "cursorpyright.analysis.diagnosticSeverityOverrides": {
+    "reportMissingTypeStubs": "none"
+  },
+  "cursorpyright.analysis.exclude": [
+    "backend/.venv",
+    "backend/uv-bin",
+    "backend/data",
+    "backend/tests"
+  ],
+  "cursorpyright.analysis.include": [
+    "backend"
+  ],
+  "cursorpyright.analysis.typeCheckingMode": "strict"
 }

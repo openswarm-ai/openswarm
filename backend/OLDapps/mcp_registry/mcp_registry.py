@@ -7,6 +7,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
+from pydantic import InstanceOf
 import httpx
 from fastapi import Query
 from backend.config.Apps import SubApp
@@ -24,7 +25,7 @@ GITHUB_CONCURRENT = 10
 
 _cache: dict[str, dict] = {}
 _cache_updated_at: float = 0
-_refresh_task: Optional[asyncio.Task] = None
+_refresh_task: Optional[InstanceOf[asyncio.Task]] = None
 _stars_cache: dict[str, int] = {}
 
 

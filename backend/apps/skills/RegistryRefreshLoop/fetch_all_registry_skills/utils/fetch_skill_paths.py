@@ -1,10 +1,11 @@
 
 import httpx
 from typeguard import typechecked
+from pydantic import InstanceOf
 
 @typechecked
 async def fetch_skill_paths(
-        client: httpx.AsyncClient, 
+        client: InstanceOf[httpx.AsyncClient], 
         manifest_url: str
     ) -> list[tuple[str, str]]:
 

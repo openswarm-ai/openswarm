@@ -3,10 +3,11 @@ from typing import Optional
 import httpx
 from backend.apps.skills.parse_frontmatter import parse_frontmatter
 from typeguard import typechecked
+from pydantic import InstanceOf
 
 @typechecked
 async def fetch_one_skill(
-    client: httpx.AsyncClient,
+    client: InstanceOf[httpx.AsyncClient],
     sem: asyncio.Semaphore,
     folder: str,
     plugin_name: str,

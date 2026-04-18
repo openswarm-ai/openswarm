@@ -8,7 +8,7 @@ ensure-task, HTTP client) lives in one place.
 import asyncio
 from typing import ClassVar, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, InstanceOf
 from typeguard import typechecked
 
 from backend.apps.subscriptions.NineRouter.helpers.NineRouterProcess.NineRouterProcess import NineRouterProcess
@@ -19,7 +19,7 @@ class NineRouter(BaseModel):
     p_instance: ClassVar[Optional["NineRouter"]] = None
     p_process: NineRouterProcess = Field(default_factory=NineRouterProcess)
     p_client: NineRouterClient = Field(default_factory=NineRouterClient)
-    p_ensure_task: Optional[asyncio.Task] = None
+    p_ensure_task: Optional[InstanceOf[asyncio.Task]] = None
 
     @classmethod
     def get(cls) -> "NineRouter":

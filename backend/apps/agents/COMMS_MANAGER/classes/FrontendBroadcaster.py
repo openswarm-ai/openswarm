@@ -3,12 +3,13 @@ from fastapi import WebSocket
 from typing import List
 from typeguard import typechecked
 from pydantic import BaseModel, Field
+from pydantic import InstanceOf
 
 
 class FrontendBroadcaster(BaseModel):
     """Singleton WebSocket connection pool for broadcasting to dashboard clients."""
 
-    p_connections: List[WebSocket] = Field(default_factory=list)
+    p_connections: List[InstanceOf[WebSocket]] = Field(default_factory=list)
 
     @typechecked
     async def connect(self, ws: WebSocket) -> None:
