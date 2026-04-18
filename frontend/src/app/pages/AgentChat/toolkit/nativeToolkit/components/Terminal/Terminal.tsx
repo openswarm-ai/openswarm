@@ -275,7 +275,7 @@ type TerminalComponent = typeof TerminalRoot & {
   Empty: typeof TerminalEmpty;
 };
 
-export const TerminalA = Object.assign(TerminalRoot, {
+export const Terminal = Object.assign(TerminalRoot, {
   Header: TerminalHeader,
   Output: TerminalOutput,
   Empty: TerminalEmpty,

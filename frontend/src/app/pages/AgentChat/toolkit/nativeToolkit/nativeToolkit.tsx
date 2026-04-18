@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Toolkit } from '@assistant-ui/react';
-import { TerminalA as Terminal } from './components/TerminalA/TerminalA';
+import { Terminal } from './components/Terminal/Terminal';
 import { CodeBlock } from './components/CodeBlock/CodeBlock';
 import { CodeDiff } from './components/CodeDiff/CodeDiff';
 
