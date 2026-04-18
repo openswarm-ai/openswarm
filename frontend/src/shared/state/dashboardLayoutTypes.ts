@@ -15,7 +15,7 @@ export interface CardPosition {
   y: number;
   width: number;
   height: number;
-  zOrder: number;
+  z_order: number;
 }
 
 export interface ViewCardPosition {
@@ -24,7 +24,7 @@ export interface ViewCardPosition {
   y: number;
   width: number;
   height: number;
-  zOrder: number;
+  z_order: number;
 }
 
 export interface BrowserTab {
@@ -43,7 +43,7 @@ export interface BrowserCardPosition {
   y: number;
   width: number;
   height: number;
-  zOrder: number;
+  z_order: number;
 }
 
 export interface DashboardLayoutState {

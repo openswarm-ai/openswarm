@@ -18,6 +18,14 @@ import {
   META_LAUNCH_AND_SEND,
 } from '@/shared/backend-bridge/apps/agents';
 
+function unwrapMessages<T extends { messages: unknown }>(session: T): T {
+  const msgs = session.messages;
+  return {
+    ...session,
+    messages: Array.isArray(msgs) ? msgs : ((msgs as { messages?: unknown[] })?.messages ?? []),
+  };
+}
+
 export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>) {
   builder
     .addCase(GET_ALL_SESSIONS.pending, (state) => {
@@ -25,18 +33,21 @@ export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>
     })
     .addCase(GET_ALL_SESSIONS.fulfilled, (state, action) => {
       state.loading = false;
-      const fetchedIds = new Set(action.payload.map((s) => s.id));
+      const fetchedIds = new Set(action.payload.map((s) => s.session_id));
       const activeStatuses = new Set(['running', 'waiting_approval']);
+      console.log(`[FRONTEND] GET_ALL_SESSIONS: fetched ${action.payload.length} sessions | fetchedIds=[${[...fetchedIds].join(',')}] localIds=[${Object.keys(state.sessions).join(',')}]`);
       for (const [id, existing] of Object.entries(state.sessions)) {
         if (fetchedIds.has(id)) continue;
         if (existing.status === 'draft') continue;
         if (state.trackedNotificationIds.includes(id)) continue;
         if (activeStatuses.has(existing.status)) continue;
+        console.warn(`[FRONTEND] GET_ALL_SESSIONS: PRUNING session ${id} (status=${existing.status}) — not in fetched set and not protected`);
         delete state.sessions[id];
       }
-      for (const s of action.payload) {
-        const existing = state.sessions[s.id];
-        state.sessions[s.id] = {
+      for (const raw of action.payload) {
+        const s = unwrapMessages(raw);
+        const existing = state.sessions[s.session_id];
+        state.sessions[s.session_id] = {
           ...s,
           pending_approvals: existing?.pending_approvals?.length
             ? existing.pending_approvals
@@ -44,8 +55,8 @@ export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>
           streamingMessage: existing?.streamingMessage ?? s.streamingMessage ?? null,
           tool_group_meta: { ...existing?.tool_group_meta, ...s.tool_group_meta },
         };
-        if (activeStatuses.has(s.status) && !state.trackedNotificationIds.includes(s.id)) {
-          state.trackedNotificationIds.push(s.id);
+        if (activeStatuses.has(s.status) && !state.trackedNotificationIds.includes(s.session_id)) {
+          state.trackedNotificationIds.push(s.session_id);
         }
       }
     })
@@ -53,30 +64,33 @@ export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>
       state.loading = false;
     })
     .addCase(LAUNCH_AGENT.fulfilled, (state, action) => {
-      const session = action.payload.session;
-      state.sessions[session.id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };
-      state.activeSessionId = session.id;
-      if (!state.expandedSessionIds.includes(session.id)) {
-        state.expandedSessionIds.push(session.id);
+      const session = unwrapMessages(action.payload.session);
+      state.sessions[session.session_id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };
+      state.activeSessionId = session.session_id;
+      if (!state.expandedSessionIds.includes(session.session_id)) {
+        state.expandedSessionIds.push(session.session_id);
       }
-      if (!state.trackedNotificationIds.includes(session.id)) {
-        state.trackedNotificationIds.push(session.id);
+      if (!state.trackedNotificationIds.includes(session.session_id)) {
+        state.trackedNotificationIds.push(session.session_id);
       }
     })
     // TODO: Re-implement this???
     .addCase(META_LAUNCH_AND_SEND.fulfilled, (state, action) => {
-      const { draftId, session } = action.payload;
+      const { draftId } = action.payload;
+      const session = unwrapMessages(action.payload.session);
       const shouldExpand = action.meta.arg.expand !== false;
+      console.log(`[FRONTEND] agents: META_LAUNCH_AND_SEND fulfilled | draftId=${draftId} realId=${session.session_id} status=${session.status} dashboard_id=${session.dashboard_id ?? 'NONE'} draftExists=${!!state.sessions[draftId]} sessionKeys=[${Object.keys(state.sessions).join(',')}]`);
       delete state.sessions[draftId];
-      state.sessions[session.id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };
-      state.activeSessionId = session.id;
-      state.expandedSessionIds = state.expandedSessionIds.map((id) => (id === draftId ? session.id : id));
-      if (shouldExpand && !state.expandedSessionIds.includes(session.id)) {
-        state.expandedSessionIds.push(session.id);
+      state.sessions[session.session_id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };
+      state.activeSessionId = session.session_id;
+      state.expandedSessionIds = state.expandedSessionIds.map((id) => (id === draftId ? session.session_id : id));
+      if (shouldExpand && !state.expandedSessionIds.includes(session.session_id)) {
+        state.expandedSessionIds.push(session.session_id);
       }
-      if (!state.trackedNotificationIds.includes(session.id)) {
-        state.trackedNotificationIds.push(session.id);
+      if (!state.trackedNotificationIds.includes(session.session_id)) {
+        state.trackedNotificationIds.push(session.session_id);
       }
+      console.log(`[FRONTEND] agents: session swapped | active=${state.activeSessionId} expanded=[${state.expandedSessionIds.join(',')}] newSessionKeys=[${Object.keys(state.sessions).join(',')}]`);
     })
     // TODO: Re-implement this???
     // .addCase(generateTitle.fulfilled, (state, action) => {
@@ -130,15 +144,15 @@ export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>
       if (session) session.active_branch_id = action.payload.branchId;
     })
     .addCase(DUPLICATE_SESSION.fulfilled, (state, action) => {
-      const session = action.payload.session;
-      state.sessions[session.id] = session;
+      const session = unwrapMessages(action.payload.session);
+      state.sessions[session.session_id] = session;
     })
     .addCase(CLOSE_SESSION.fulfilled, (state, action) => {
       const sessionId = action.payload;
       const session = state.sessions[sessionId];
       if (session) {
         state.history[sessionId] = {
-          id: session.id, name: session.name,
+          id: session.session_id, name: session.name,
           status: session.status === 'running' || session.status === 'waiting_approval' ? 'stopped' : session.status,
           model: session.model, mode: session.mode, created_at: session.created_at,
           closed_at: new Date().toISOString(), cost_usd: session.cost_usd, dashboard_id: session.dashboard_id,
@@ -154,7 +168,7 @@ export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>
       const session = state.sessions[sessionId];
       if (session) {
         state.history[sessionId] = {
-          id: session.id, name: session.name,
+          id: session.session_id, name: session.name,
           status: session.status === 'running' || session.status === 'waiting_approval' ? 'stopped' : session.status,
           model: session.model, mode: session.mode, created_at: session.created_at,
           closed_at: new Date().toISOString(), cost_usd: session.cost_usd, dashboard_id: session.dashboard_id,
@@ -174,16 +188,16 @@ export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>
       state.trackedNotificationIds = state.trackedNotificationIds.filter((id) => id !== sessionId);
     })
     .addCase(RESUME_SESSION.fulfilled, (state, action) => {
-      const session = action.payload;
-      state.sessions[session.id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };
-      delete state.history[session.id];
-      state.activeSessionId = session.id;
-      if (!state.expandedSessionIds.includes(session.id)) state.expandedSessionIds.push(session.id);
+      const session = unwrapMessages(action.payload);
+      state.sessions[session.session_id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };
+      delete state.history[session.session_id];
+      state.activeSessionId = session.session_id;
+      if (!state.expandedSessionIds.includes(session.session_id)) state.expandedSessionIds.push(session.session_id);
     })
     .addCase(GET_SESSION.fulfilled, (state, action) => {
-      const session = action.payload;
-      const existing = state.sessions[session.id];
-      state.sessions[session.id] = {
+      const session = unwrapMessages(action.payload);
+      const existing = state.sessions[session.session_id];
+      state.sessions[session.session_id] = {
         ...session,
         pending_approvals: session.pending_approvals ?? existing?.pending_approvals ?? [],
         streamingMessage: existing?.streamingMessage ?? null,

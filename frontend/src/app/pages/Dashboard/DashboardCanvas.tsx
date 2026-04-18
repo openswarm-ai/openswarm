@@ -157,19 +157,19 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = (p) => {
             <AnimatePresence>
             {Object.values(p.cards).map((card: any) => {
               const session = p.sessions[card.session_id];
-              if (!session || p.focusedCardId === session.id) return null;
-              const extras = getAgentCardExtras(session.id, p.cards, p.glowingAgentCards,
+              if (!session || p.focusedCardId === session.session_id) return null;
+              const extras = getAgentCardExtras(session.session_id, p.cards, p.glowingAgentCards,
                 p.expandedSessionIds, p.measuredHeightsRef, p.spawnOriginsRef, p.revealSpawnedRef);
               return (
-                <AgentCard key={session.id} session={session} expanded={p.expandedSessionIds.includes(session.id)}
+                <AgentCard key={session.session_id} session={session} expanded={p.expandedSessionIds.includes(session.session_id)}
                   cardX={card.x} cardY={card.y} cardWidth={card.width} cardHeight={card.height}
-                  cardZOrder={card.zOrder ?? 0} zoom={p.zoom} spawnFrom={extras.origin}
-                  exitTarget={extras.exitTarget} isSelected={p.isSelected(session.id)}
-                  isHighlighted={p.highlightedCardId === session.id} multiDragDelta={p.multiDragDelta}
+                  cardZOrder={card.z_order ?? 0} zoom={p.zoom} spawnFrom={extras.origin}
+                  exitTarget={extras.exitTarget} isSelected={p.isSelected(session.session_id)}
+                  isHighlighted={p.highlightedCardId === session.session_id} multiDragDelta={p.multiDragDelta}
                   onCardSelect={p.handleCardSelect} onDragStart={p.handleCardDragStart}
                   onDragMove={p.handleCardDragMove} onDragEnd={p.handleCardDragEnd}
                   onBranch={p.handleBranchFromCard} onMeasuredHeight={p.handleMeasuredHeight}
-                  snapColumn={extras.snapColumn} autoFocusInput={p.autoFocusSessionId === session.id}
+                  snapColumn={extras.snapColumn} autoFocusInput={p.autoFocusSessionId === session.session_id}
                   onBringToFront={p.handleBringToFront} isFocused={false}
                   onFocusRequest={p.handleFocusRequest} onFocusExit={p.handleFocusExit} />
               );
@@ -181,7 +181,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = (p) => {
               return (
                 <DashboardViewCard key={`view-${vc.output_id}`} output={output}
                   cardX={vc.x} cardY={vc.y} cardWidth={vc.width} cardHeight={vc.height}
-                  cardZOrder={vc.zOrder ?? 0} zoom={p.zoom} cmdHeld={p.cmdHeld}
+                  cardZOrder={vc.z_order ?? 0} zoom={p.zoom} cmdHeld={p.cmdHeld}
                   isSelected={p.isSelected(vc.output_id)} isHighlighted={p.highlightedCardId === vc.output_id}
                   multiDragDelta={p.multiDragDelta} onCardSelect={p.handleCardSelect}
                   onDragStart={p.handleCardDragStart} onDragMove={p.handleCardDragMove}
@@ -192,7 +192,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = (p) => {
               <BrowserCard key={`browser-${bc.browser_id}`} browserId={bc.browser_id}
                 tabs={bc.tabs} activeTabId={bc.activeTabId}
                 cardX={bc.x} cardY={bc.y} cardWidth={bc.width} cardHeight={bc.height}
-                cardZOrder={bc.zOrder ?? 0} zoom={p.zoom} cmdHeld={p.cmdHeld}
+                cardZOrder={bc.z_order ?? 0} zoom={p.zoom} cmdHeld={p.cmdHeld}
                 isSelected={p.isSelected(bc.browser_id)} isHighlighted={p.highlightedCardId === bc.browser_id}
                 multiDragDelta={p.multiDragDelta} onCardSelect={p.handleCardSelect}
                 onDragStart={p.handleCardDragStart} onDragMove={p.handleCardDragMove}

@@ -81,7 +81,7 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
         })
       ).then((action) => {
         if (META_LAUNCH_AND_SEND.fulfilled.match(action)) {
-          const realId = action.payload.session.id;
+          const realId = action.payload.session.session_id;
           // TODO: Implement title generation
           // dispatch(generateTitle({ 
           //   sessionId: realId,

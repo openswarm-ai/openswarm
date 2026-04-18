@@ -233,6 +233,12 @@ function createWindow() {
     mainWindow.loadFile(frontendPath);
   }
 
+  const LOG_LEVELS = ['verbose', 'info', 'warning', 'error'];
+  mainWindow.webContents.on('console-message', (_event, level, message) => {
+    const tag = LOG_LEVELS[level] || 'log';
+    process.stdout.write(`[frontend:${tag}] ${message}\n`);
+  });
+
   mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, _params) => {
     webPreferences.plugins = true;
     webPreferences.enableBlinkFeatures = 'EncryptedMedia';

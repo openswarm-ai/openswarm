@@ -37,15 +37,15 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
   const isRunning = session.status === 'running';
   const isDone = session.status === 'completed' || session.status === 'error' || session.status === 'stopped';
 
-  const prevSessionId = useRef(session.id);
+  const prevSessionId = useRef(session.session_id);
   useEffect(() => {
-    if (session.id !== prevSessionId.current) {
-      prevSessionId.current = session.id;
+    if (session.session_id !== prevSessionId.current) {
+      prevSessionId.current = session.session_id;
       setFadeOut(false);
       setHidden(false);
       setConfirmStop(false);
     }
-  }, [session.id]);
+  }, [session.session_id]);
 
   useEffect(() => {
     if (isDone) {
@@ -69,8 +69,8 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
     }
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
     setConfirmStop(false);
-    dispatch(STOP_AGENT(session.id));
-  }, [confirmStop, dispatch, session.id]);
+    dispatch(STOP_AGENT(session.session_id));
+  }, [confirmStop, dispatch, session.session_id]);
 
   useEffect(() => {
     return () => { if (confirmTimer.current) clearTimeout(confirmTimer.current); };

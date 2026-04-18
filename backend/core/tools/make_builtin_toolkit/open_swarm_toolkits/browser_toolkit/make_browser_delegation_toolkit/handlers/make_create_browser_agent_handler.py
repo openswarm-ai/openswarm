@@ -1,5 +1,5 @@
 import asyncio
-from typing import TypedDict
+from typing import TypedDict, Callable, Optional
 from typeguard import typechecked
 
 from backend.core.shared_structs.agent.Message.agent_outputs import ToolResponse
@@ -7,18 +7,36 @@ from backend.core.Agent.Agent import Agent
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.run_browser_agent import run_browser_agent
 from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit.make_browser_delegation_toolkit.handlers.utils.create_browser_card import create_browser_card
 from backend.core.shared_structs.browser.BrowserCommandFn import BrowserCommandFn
+from backend.core.shared_structs.dashboard.Dashboard import Dashboard
 
 class CreateBrowserAgentInput(TypedDict):
     task: str
 
 
 @typechecked
-def make_create_browser_agent_handler(parent: Agent, send_command: BrowserCommandFn, dashboard_id: str = ""):
+def make_create_browser_agent_handler(
+    parent: Agent,
+    send_command: BrowserCommandFn,
+    dashboard_id: str = "",
+    load_dashboard: Optional[Callable[[str], Dashboard]] = None,
+    save_dashboard: Optional[Callable[[Dashboard], None]] = None,
+):
 
     async def handler(args: CreateBrowserAgentInput) -> ToolResponse:
         task: str = args["task"]
 
-        browser_id: str = await create_browser_card(dashboard_id=dashboard_id)
+        if load_dashboard is None or save_dashboard is None:
+            return {
+                "content": [{"type": "text", "text": "Error: dashboard store not configured for browser agent creation"}],
+                "is_error": True,
+            }
+
+        browser_id: str = await create_browser_card(
+            dashboard_id=dashboard_id,
+            load_dashboard=load_dashboard,
+            save_dashboard=save_dashboard,
+            emit=parent.on_event,
+        )
         if not browser_id:
             return {
                 "content": [{"type": "text", "text": "Error: failed to create browser agent"}],

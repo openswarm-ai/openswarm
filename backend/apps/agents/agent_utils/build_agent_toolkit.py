@@ -3,6 +3,7 @@ from backend.core.tools.shared_structs.Toolkit import Toolkit
 from backend.core.tools.make_builtin_toolkit.make_builtin_toolkit import make_builtin_toolkit
 from backend.apps.agents.COMMS_MANAGER.COMMS_MANAGER import CommsManager
 from backend.apps.tools.tools import load_user_toolkit, load_builtin_permissions
+from backend.apps.dashboards.dashboards import DASHBOARD_STORE
 from typing import Dict, Optional
 from typeguard import typechecked
 from backend.core.tools.shared_structs.TOOL_PERMISSIONS import TOOL_PERMISSIONS
@@ -23,13 +24,19 @@ def p_apply_builtin_permission_overrides(toolkit: Toolkit, permissions: dict[str
 
 
 @typechecked
-def build_agent_toolkit(agent: Agent, sessions: Dict[str, Agent], comms_manager: CommsManager) -> Toolkit:
+async def build_agent_toolkit(agent: Agent, sessions: Dict[str, Agent], comms_manager: CommsManager) -> Toolkit:
     """Build the full toolkit tree: builtin tools + user-installed MCP tools.
 
     Also applies saved builtin permission overrides.
     """
-    builtin_toolkit: Toolkit = make_builtin_toolkit(agent, sessions, comms_manager.send_browser_command)
-    user_toolkit: Optional[Toolkit] = load_user_toolkit()
+    builtin_toolkit: Toolkit = make_builtin_toolkit(
+        parent=agent, 
+        agent_registry=sessions, 
+        send_browser_command=comms_manager.send_browser_command,
+        load_dashboard=DASHBOARD_STORE.load,
+        save_dashboard=DASHBOARD_STORE.save,
+    )
+    user_toolkit: Optional[Toolkit] = await load_user_toolkit()
 
     full_toolkit: Optional[Toolkit] = None
     if user_toolkit is not None:

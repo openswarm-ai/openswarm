@@ -94,13 +94,20 @@ async function update_dashboard_function(args: {
   thumbnail?: string;
 }): Promise<Dashboard> {
   const { dashboardId, ...updates } = args;
+  const layoutCards = (updates.layout as Record<string, unknown> | undefined)?.cards;
+  console.log(`[FRONTEND] UPDATE_DASHBOARD: PUT /api/dashboards/${dashboardId} | cardKeys=${layoutCards ? Object.keys(layoutCards as object).join(',') : 'none'} hasLayout=${!!updates.layout} hasName=${!!updates.name} hasThumbnail=${!!updates.thumbnail}`);
   const res = await fetch(`${DASHBOARDS_API}/${dashboardId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
   });
-  if (!res.ok) throw new Error(`Dashboard update failed: ${res.status}`);
+  if (!res.ok) {
+    const errorBody = await res.text();
+    console.error(`[FRONTEND] UPDATE_DASHBOARD: FAILED ${res.status} | body=${errorBody}`);
+    throw new Error(`Dashboard update failed: ${res.status}`);
+  }
   const data = await res.json();
+  console.log(`[FRONTEND] UPDATE_DASHBOARD: OK`);
   return data as Dashboard;
 }
 export const UPDATE_DASHBOARD = createAsyncThunk(

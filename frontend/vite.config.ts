@@ -20,6 +20,7 @@ export default defineConfig({
       '/api': {
         target: `http://localhost:${portsConfig.backend.dev}`,
         changeOrigin: true,
+        ws: true,
       },
     },
   },

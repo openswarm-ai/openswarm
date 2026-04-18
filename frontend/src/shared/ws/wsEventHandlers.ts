@@ -31,11 +31,19 @@ interface WsDeltaCallbacks {
 export function dispatchWsEvent(msg: WSEvent, delta: WsDeltaCallbacks): void {
   const { event, session_id, data } = msg;
 
+  if (event !== 'agent:stream_delta') {
+    console.log(`[FRONTEND] WS event: ${event} | session=${session_id ?? 'none'} | dataKeys=${Object.keys(data).join(',')}`);
+  }
+
   switch (event) {
     case 'agent:status':
       if (data.session) {
-        store.dispatch(updateSession(data.session));
+        const s = data.session;
+        console.log(`[FRONTEND] WS agent:status full session | id=${s.session_id} status=${s.status} dashboard_id=${s.dashboard_id ?? 'NONE'}`);
+        if (s.messages && !Array.isArray(s.messages)) s.messages = s.messages.messages ?? [];
+        store.dispatch(updateSession(s));
       } else if (session_id) {
+        console.log(`[FRONTEND] WS agent:status update | id=${session_id} status=${data.status}`);
         store.dispatch(updateSessionStatus({ sessionId: session_id, status: data.status }));
       }
       if (data.status === 'running' && session_id) {

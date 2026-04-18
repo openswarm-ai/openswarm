@@ -1,3 +1,4 @@
+from typing import Optional, Callable
 from typeguard import typechecked
 from backend.core.tools.shared_structs.Toolkit import Toolkit
 from backend.core.tools.shared_structs.MCP_Tool import SDK_MCP_Tool
@@ -9,9 +10,15 @@ from backend.core.tools.make_builtin_toolkit.open_swarm_toolkits.browser_toolkit
 )
 from backend.core.Agent.Agent import Agent
 from backend.core.shared_structs.browser.BrowserCommandFn import BrowserCommandFn
+from backend.core.shared_structs.dashboard.Dashboard import Dashboard
 
 @typechecked
-def make_browser_delegation_toolkit(parent: Agent, send_command: BrowserCommandFn) -> Toolkit:
+def make_browser_delegation_toolkit(
+    parent: Agent,
+    send_command: BrowserCommandFn,
+    load_dashboard: Optional[Callable[[str], Dashboard]] = None,
+    save_dashboard: Optional[Callable[[Dashboard], None]] = None,
+) -> Toolkit:
     return Toolkit(
         name="browser",
         description="Tools for browser automation",
@@ -26,7 +33,11 @@ def make_browser_delegation_toolkit(parent: Agent, send_command: BrowserCommandF
                 permission="allow",
                 server_name="openswarm-browser",
                 input_schema=CreateBrowserAgentInput,
-                handler=make_create_browser_agent_handler(parent, send_command),
+                handler=make_create_browser_agent_handler(
+                    parent, send_command,
+                    load_dashboard=load_dashboard,
+                    save_dashboard=save_dashboard,
+                ),
             ),
             SDK_MCP_Tool(
                 name="InvokeBrowserAgent",

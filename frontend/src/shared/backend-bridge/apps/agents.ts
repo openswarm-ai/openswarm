@@ -343,15 +343,17 @@ const meta_launch_and_send_endpoint: string = 'agents/meta_launch_and_send';
 async function meta_launch_and_send_function(
   payload: LaunchAndSendPayload,
 ): Promise<{ draftId: string; session: AgentSession }> {
+  console.log(`[FRONTEND] meta_launch_and_send: starting | draftId=${payload.draftId} model=${payload.model} mode=${payload.mode} dashboard_id=${payload.config.dashboard_id}`);
   const { session } = await launch_agent_function({
     model: payload.model,
     mode: payload.mode,
     system_prompt: payload.config.system_prompt ?? '',
     max_turns: payload.config.max_turns ?? 100,
   });
+  console.log(`[FRONTEND] meta_launch_and_send: launched | draftId=${payload.draftId} → realId=${session.session_id} status=${session.status} dashboard_id=${session.dashboard_id ?? 'NONE'}`);
 
   await send_message_function({
-    sessionId: session.id,
+    sessionId: session.session_id,
     prompt: payload.prompt,
     mode: payload.mode,
     model: payload.model,
@@ -361,6 +363,7 @@ async function meta_launch_and_send_function(
     forcedTools: payload.forcedTools,
     attachedSkills: payload.attachedSkills,
   });
+  console.log(`[FRONTEND] meta_launch_and_send: message sent | session=${session.session_id}`);
 
   return { draftId: payload.draftId, session };
 }

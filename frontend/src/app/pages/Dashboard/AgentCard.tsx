@@ -57,20 +57,20 @@ const AgentCard: React.FC<Props> = ({
     const el = cardBoxRef.current;
     if (!el || !onMeasuredHeight) return;
     const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) onMeasuredHeight(session.id, entry.contentRect.height);
+      for (const entry of entries) onMeasuredHeight(session.session_id, entry.contentRect.height);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [session.id, onMeasuredHeight]);
-  const glowEntry = useAppSelector((s) => s.dashboardLayout.glowingAgentCards[session.id]);
+  }, [session.session_id, onMeasuredHeight]);
+  const glowEntry = useAppSelector((s) => s.dashboardLayout.glowingAgentCards[session.session_id]);
   const isGlowingRedux = !!glowEntry;
   const glowFading = glowEntry?.fading ?? false;
   const glowFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dismissGlow = useCallback(() => {
     if (!isGlowingRedux || glowFading) return;
-    dispatch(fadeGlowingAgentCard(session.id));
-    glowFadeTimer.current = setTimeout(() => dispatch(clearGlowingAgentCard(session.id)), GLOW_FADE_MS + 300);
-  }, [isGlowingRedux, glowFading, dispatch, session.id]);
+    dispatch(fadeGlowingAgentCard(session.session_id));
+    glowFadeTimer.current = setTimeout(() => dispatch(clearGlowingAgentCard(session.session_id)), GLOW_FADE_MS + 300);
+  }, [isGlowingRedux, glowFading, dispatch, session.session_id]);
   useEffect(() => () => { if (glowFadeTimer.current) clearTimeout(glowFadeTimer.current); }, []);
   const accentColor = c.accent.primary, accentHover = c.accent.hover;
   const statusStyle = getStatusColors(c)[session.status] || { color: c.text.tertiary, bg: c.bg.secondary };
@@ -86,8 +86,8 @@ const AgentCard: React.FC<Props> = ({
     dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY };
     didDrag.current = false; setIsDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    onDragStart?.(session.id, 'agent');
-  }, [cardX, cardY, onDragStart, session.id]);
+    onDragStart?.(session.session_id, 'agent');
+  }, [cardX, cardY, onDragStart, session.session_id]);
   const handleDragPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
     const rawDx = e.clientX - dragState.current.startX, rawDy = e.clientY - dragState.current.startY;
@@ -104,16 +104,16 @@ const AgentCard: React.FC<Props> = ({
       let finalX = dragState.current.origX + dx; const finalY = dragState.current.origY + dy;
       if (snapColumn && Math.abs(finalX - snapColumn.x) < SNAP_THRESHOLD) {
         finalX = snapColumn.x;
-        dispatch(setCardSize({ sessionId: session.id, width: snapColumn.width, height: cardHeight }));
+        dispatch(setCardSize({ sessionId: session.session_id, width: snapColumn.width, height: cardHeight }));
       }
-      dispatch(setCardPosition({ sessionId: session.id, x: finalX, y: finalY }));
+      dispatch(setCardPosition({ sessionId: session.session_id, x: finalX, y: finalY }));
       justDraggedRef.current = true;
       requestAnimationFrame(() => { justDraggedRef.current = false; });
     }
     onDragEnd?.(dx, dy, didDrag.current);
     dragState.current = null; didDrag.current = false; setLocalDragPos(null); setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [zoom, dispatch, session.id, onDragEnd, snapColumn, cardHeight]);
+  }, [zoom, dispatch, session.session_id, onDragEnd, snapColumn, cardHeight]);
   const resizeRef = useRef<{ dir: ResizeDir; startX: number; startY: number; origX: number; origY: number; origW: number; origH: number } | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [localResize, setLocalResize] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -141,15 +141,15 @@ const AgentCard: React.FC<Props> = ({
   const handleResizeUp = useCallback((e: React.PointerEvent) => {
     if (!resizeRef.current) return;
     const r = computeResize(e);
-    if (r) { dispatch(setCardPosition({ sessionId: session.id, x: r.x, y: r.y })); dispatch(setCardSize({ sessionId: session.id, width: r.w, height: r.h })); }
+    if (r) { dispatch(setCardPosition({ sessionId: session.session_id, x: r.x, y: r.y })); dispatch(setCardSize({ sessionId: session.session_id, width: r.w, height: r.h })); }
     resizeRef.current = null; setLocalResize(null); setIsResizing(false);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [computeResize, dispatch, session.id]);
+  }, [computeResize, dispatch, session.session_id]);
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation(); e.preventDefault();
-    dispatch(collapseSession(session.id)); dispatch(removeCard(session.id));
-    if (glowEntry) setTimeout(() => dispatch(clearGlowingAgentCard(session.id)), 500);
-    else dispatch(CLOSE_SESSION(session.id));
+    dispatch(collapseSession(session.session_id)); dispatch(removeCard(session.session_id));
+    if (glowEntry) setTimeout(() => dispatch(clearGlowingAgentCard(session.session_id)), 500);
+    else dispatch(CLOSE_SESSION(session.session_id));
   };
   useEffect(() => {
     if (session.status === 'running' || session.status === 'waiting_approval') {
@@ -187,15 +187,15 @@ const AgentCard: React.FC<Props> = ({
           </Box>
           <IconButton size="small" onClick={() => onFocusExit?.()} sx={{ color: c.text.ghost }}><CloseIcon sx={{ fontSize: 18 }} /></IconButton>
         </Box>
-        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}><AgentChat sessionId={session.id} autoFocus={true} embedded={true} /></Box>
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}><AgentChat sessionId={session.session_id} autoFocus={true} embedded={true} /></Box>
       </Box>
     );
   }
 
   return (
-    <motion.div layout={false} initial={spawnInitial} animate={{ opacity: 1, scale: 1, left: activeX, top: activeY }} exit={exitAnimation} transition={spawnTransition} onPointerDownCapture={() => onBringToFront?.(session.id, 'agent')} style={{ position: 'absolute', zIndex: isDragging || isResizing ? 999999 : cardZOrder }}>
-    <Box ref={cardBoxRef} data-select-type="agent-card" data-select-id={session.id} data-select-meta={JSON.stringify({ name: session.name || session.id, status: session.status, model: session.model, mode: session.mode })}
-      onClick={(e: React.MouseEvent) => { if (justDraggedRef.current) return; if (!isSelected && !e.shiftKey) dispatch(toggleExpandSession(session.id)); onCardSelect?.(session.id, 'agent', e.shiftKey); }}
+    <motion.div layout={false} initial={spawnInitial} animate={{ opacity: 1, scale: 1, left: activeX, top: activeY }} exit={exitAnimation} transition={spawnTransition} onPointerDownCapture={() => onBringToFront?.(session.session_id, 'agent')} style={{ position: 'absolute', zIndex: isDragging || isResizing ? 999999 : cardZOrder }}>
+    <Box ref={cardBoxRef} data-select-type="agent-card" data-select-id={session.session_id} data-select-meta={JSON.stringify({ name: session.name || session.session_id, status: session.status, model: session.model, mode: session.mode })}
+      onClick={(e: React.MouseEvent) => { if (justDraggedRef.current) return; if (!isSelected && !e.shiftKey) dispatch(toggleExpandSession(session.session_id)); onCardSelect?.(session.session_id, 'agent', e.shiftKey); }}
       sx={{
         position: 'relative', width: localResize ? activeW : Math.max(cardWidth, MIN_W), height: localResize ? activeH : (expanded ? Math.max(EXPANDED_OVERLAY_H, cardHeight) : 'auto'),
         bgcolor: c.bg.surface,
@@ -214,10 +214,10 @@ const AgentCard: React.FC<Props> = ({
       ))}
       {isSelected && (
         <Box ref={scrollOverlayRef} onPointerDown={handleDragPointerDown} onPointerMove={handleDragPointerMove} onPointerUp={handleDragPointerUp}
-          onClick={(e: React.MouseEvent) => { if (justDraggedRef.current) return; onCardSelect?.(session.id, 'agent', e.shiftKey); }}
+          onClick={(e: React.MouseEvent) => { if (justDraggedRef.current) return; onCardSelect?.(session.session_id, 'agent', e.shiftKey); }}
           sx={{ position: 'absolute', inset: 0, zIndex: 15, cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }} />
       )}
-      <Box onPointerDown={handleDragPointerDown} onPointerMove={handleDragPointerMove} onPointerUp={handleDragPointerUp} onDoubleClick={(e) => { e.stopPropagation(); onFocusRequest?.(session.id); }} sx={{ position: 'relative', zIndex: 16, mx: -2, mt: -2, px: 2, pt: 2, pb: 1.5, cursor: isFocused ? 'default' : isDragging ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none', flexShrink: 0 }}>
+      <Box onPointerDown={handleDragPointerDown} onPointerMove={handleDragPointerMove} onPointerUp={handleDragPointerUp} onDoubleClick={(e) => { e.stopPropagation(); onFocusRequest?.(session.session_id); }} sx={{ position: 'relative', zIndex: 16, mx: -2, mt: -2, px: 2, pt: 2, pb: 1.5, cursor: isFocused ? 'default' : isDragging ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none', flexShrink: 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, flexShrink: 0 }}>
           <Box className="drag-handle" sx={{ display: 'flex', alignItems: 'center', mr: 0.5, color: c.text.ghost }}><DragIndicatorIcon sx={{ fontSize: 16 }} /></Box>
           <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1, borderRadius: 1 }}>
@@ -237,7 +237,7 @@ const AgentCard: React.FC<Props> = ({
       </Box>
       {expanded && (
         <Box onClick={(e) => e.stopPropagation()} sx={{ mx: -2, mb: -2, flex: 1, minHeight: 0, borderTop: `1px solid ${c.border.subtle}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <AgentChat key={session.id} sessionId={session.id} onClose={() => dispatch(collapseSession(session.id))} embedded autoFocus={autoFocusInput} isGlowing={isGlowingRedux && !glowFading} onDismissGlow={dismissGlow} onBranch={onBranch ? (newId: string) => onBranch(session.id, newId) : undefined} />
+          <AgentChat key={session.session_id} sessionId={session.session_id} onClose={() => dispatch(collapseSession(session.session_id))} embedded autoFocus={autoFocusInput} isGlowing={isGlowingRedux && !glowFading} onDismissGlow={dismissGlow} onBranch={onBranch ? (newId: string) => onBranch(session.session_id, newId) : undefined} />
         </Box>
       )}
       {!expanded && <AgentCardCollapsed session={session} previewContent={previewContent} isStreaming={isStreaming} hasPending={hasPending} statusStyle={statusStyle} c={c} />}

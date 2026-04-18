@@ -23,14 +23,14 @@ export const dashboardLayoutReducers = {
   },
   placeCard(state: S, action: PayloadAction<{ sessionId: string; x: number; y: number; width: number; height: number }>) {
     const { sessionId, x, y, width, height } = action.payload;
-    state.cards[sessionId] = { session_id: sessionId, x, y, width, height, zOrder: state.nextZOrder++ };
+    state.cards[sessionId] = { session_id: sessionId, x, y, width, height, z_order: state.nextZOrder++ };
   },
   bringToFront(state: S, action: PayloadAction<{ id: string; type: 'agent' | 'view' | 'browser' }>) {
     const { id, type } = action.payload;
     const z = state.nextZOrder++;
-    if (type === 'agent') { const c = state.cards[id]; if (c) c.zOrder = z; }
-    else if (type === 'view') { const c = state.viewCards[id]; if (c) c.zOrder = z; }
-    else { const c = state.browserCards[id]; if (c) c.zOrder = z; }
+    if (type === 'agent') { const c = state.cards[id]; if (c) c.z_order = z; }
+    else if (type === 'view') { const c = state.viewCards[id]; if (c) c.z_order = z; }
+    else { const c = state.browserCards[id]; if (c) c.z_order = z; }
   },
   removeCard(state: S, action: PayloadAction<string>) {
     delete state.cards[action.payload];
@@ -51,12 +51,12 @@ export const dashboardLayoutReducers = {
       if (hasDraftCard && !id.startsWith('draft-')) continue;
       const savedPos = state.closedCardPositions[id];
       if (savedPos) {
-        state.cards[id] = { ...savedPos, session_id: id, zOrder: savedPos.zOrder || state.nextZOrder++ };
+        state.cards[id] = { ...savedPos, session_id: id, z_order: savedPos.z_order || state.nextZOrder++ };
         delete state.closedCardPositions[id];
       } else {
         const rects = collectOccupiedRects(state, expandedSessionIds);
         const pos = findOpenGridCell(rects, DEFAULT_CARD_W, DEFAULT_CARD_H);
-        state.cards[id] = { session_id: id, ...pos, width: DEFAULT_CARD_W, height: DEFAULT_CARD_H, zOrder: state.nextZOrder++ };
+        state.cards[id] = { session_id: id, ...pos, width: DEFAULT_CARD_W, height: DEFAULT_CARD_H, z_order: state.nextZOrder++ };
       }
     }
   },
@@ -90,7 +90,7 @@ export const dashboardLayoutReducers = {
       const pos = findOpenGridCell(collectOccupiedRects(state, expandedSessionIds), DEFAULT_VIEW_CARD_W, DEFAULT_VIEW_CARD_H);
       posX = pos.x; posY = pos.y;
     }
-    state.viewCards[outputId] = { output_id: outputId, x: posX, y: posY, width: width || DEFAULT_VIEW_CARD_W, height: height || DEFAULT_VIEW_CARD_H, zOrder: state.nextZOrder++ };
+    state.viewCards[outputId] = { output_id: outputId, x: posX, y: posY, width: width || DEFAULT_VIEW_CARD_W, height: height || DEFAULT_VIEW_CARD_H, z_order: state.nextZOrder++ };
   },
   setViewCardPosition(state: S, action: PayloadAction<{ outputId: string; x: number; y: number }>) {
     const c = state.viewCards[action.payload.outputId];
@@ -109,13 +109,13 @@ export const dashboardLayoutReducers = {
     state.browserCards[id] = {
       browser_id: id, url: action.payload.url,
       tabs: [{ id: tabId, url: action.payload.url, title: '' }], activeTabId: tabId,
-      ...pos, width: DEFAULT_BROWSER_CARD_W, height: DEFAULT_BROWSER_CARD_H, zOrder: state.nextZOrder++,
+      ...pos, width: DEFAULT_BROWSER_CARD_W, height: DEFAULT_BROWSER_CARD_H, z_order: state.nextZOrder++,
     };
   },
   addBrowserCardFromBackend(state: S, action: PayloadAction<BrowserCardPosition>) {
     const c = action.payload;
     if (state.browserCards[c.browser_id]) return;
-    state.browserCards[c.browser_id] = { ...c, width: c.width || DEFAULT_BROWSER_CARD_W, height: c.height || DEFAULT_BROWSER_CARD_H, zOrder: c.zOrder || state.nextZOrder++ };
+    state.browserCards[c.browser_id] = { ...c, width: c.width || DEFAULT_BROWSER_CARD_W, height: c.height || DEFAULT_BROWSER_CARD_H, z_order: c.z_order || state.nextZOrder++ };
   },
   setBrowserCardPosition(state: S, action: PayloadAction<{ browserId: string; x: number; y: number }>) {
     const c = state.browserCards[action.payload.browserId];
@@ -141,7 +141,7 @@ export const dashboardLayoutReducers = {
       browser_id: id, url: activeTab?.url || action.payload.url,
       tabs: newTabs.length > 0 ? newTabs : [{ id: generateTabId(), url: action.payload.url, title: '' }],
       activeTabId: activeTab?.id || generateTabId(),
-      x: posX, y: posY, width: width || DEFAULT_BROWSER_CARD_W, height: height || DEFAULT_BROWSER_CARD_H, zOrder: state.nextZOrder++,
+      x: posX, y: posY, width: width || DEFAULT_BROWSER_CARD_W, height: height || DEFAULT_BROWSER_CARD_H, z_order: state.nextZOrder++,
     };
   },
   updateBrowserCardUrl(state: S, action: PayloadAction<{ browserId: string; url: string }>) {

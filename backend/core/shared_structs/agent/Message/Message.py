@@ -1,6 +1,6 @@
 # Message.py
 
-from typing import List, Literal, Dict, Annotated, Union
+from typing import List, Literal, Annotated, Union, TypedDict
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import uuid4
@@ -23,13 +23,13 @@ class Message(BaseModel):
     hidden: bool = False
 
 
-PromptMsgDict = Dict[
-    Literal["type", "message"], 
-    Dict[
-        Literal["role", "content"], 
-        List[PromptBlock]
-        ]
-    ]
+class PromptMessageContent(TypedDict):
+    role: str
+    content: List[PromptBlock]
+
+class PromptMsgDict(TypedDict):
+    type: str
+    message: PromptMessageContent
 
 class UserMessage(Message):
     role: Literal["user"] = "user"
@@ -51,7 +51,7 @@ class UserMessage(Message):
         full_text: str = "\n\n".join(p for p in parts if p)
 
         blocks: List[PromptBlock] = [TextPromptBlock(type="text", text=full_text)]
-        for data, media_type in zip[tuple[str, str]](self.images, self.image_media_types):
+        for data, media_type in zip(self.images, self.image_media_types):
             blocks.append(ImagePromptBlock(
                 type="image",
                 source=ImageSource(type="base64", media_type=media_type, data=data),

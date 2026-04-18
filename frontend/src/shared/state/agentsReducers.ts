@@ -9,7 +9,7 @@ export const agentsReducers = {
     reducer(state: AgentsState, action: PayloadAction<{ draftId: string; mode: string; setActive: boolean; targetDirectory?: string }>) {
       const { draftId, mode, setActive, targetDirectory } = action.payload;
       state.sessions[draftId] = {
-        id: draftId, name: 'New chat', status: 'draft', provider: 'anthropic', model: 'sonnet', mode,
+        session_id: draftId, name: 'New chat', status: 'draft', provider: 'anthropic', model: 'sonnet', mode,
         worktree_path: null, branch_name: null, sdk_session_id: null, system_prompt: null,
         allowed_tools: [], max_turns: null, created_at: new Date().toISOString(),
         cost_usd: 0, tokens: { input: 0, output: 0 }, messages: [], pending_approvals: [],
@@ -81,25 +81,31 @@ export const agentsReducers = {
   },
 
   updateSession(state: AgentsState, action: PayloadAction<AgentSession>) {
-    if (state.history[action.payload.id]) {
+    const inHistory = !!state.history[action.payload.session_id];
+    const existsInSessions = !!state.sessions[action.payload.session_id];
+    console.log(`[FRONTEND] updateSession: id=${action.payload.session_id} status=${action.payload.status} inHistory=${inHistory} existsInSessions=${existsInSessions} dashboard_id=${action.payload.dashboard_id ?? 'NONE'}`);
+    if (state.history[action.payload.session_id]) {
       if (action.payload.status === 'running' || action.payload.mode === 'browser-agent') {
-        delete state.history[action.payload.id];
+        delete state.history[action.payload.session_id];
       } else {
+        console.log(`[FRONTEND] updateSession: SKIPPED — session in history and not running/browser-agent`);
         return;
       }
     }
-    const existing = state.sessions[action.payload.id];
+    const existing = state.sessions[action.payload.session_id];
     const mergedApprovals = existing?.pending_approvals?.length && !action.payload.pending_approvals?.length
       ? existing.pending_approvals
       : action.payload.pending_approvals ?? [];
-    state.sessions[action.payload.id] = {
+    const msgs = action.payload.messages;
+    state.sessions[action.payload.session_id] = {
       ...action.payload,
+      messages: Array.isArray(msgs) ? msgs : ((msgs as unknown as { messages?: AgentMessage[] })?.messages ?? []),
       pending_approvals: mergedApprovals,
       streamingMessage: existing?.streamingMessage ?? action.payload.streamingMessage ?? null,
       tool_group_meta: { ...existing?.tool_group_meta, ...action.payload.tool_group_meta },
     };
-    if (action.payload.status === 'running' && !state.trackedNotificationIds.includes(action.payload.id)) {
-      state.trackedNotificationIds.push(action.payload.id);
+    if (action.payload.status === 'running' && !state.trackedNotificationIds.includes(action.payload.session_id)) {
+      state.trackedNotificationIds.push(action.payload.session_id);
     }
   },
   updateSessionStatus(state: AgentsState, action: PayloadAction<{ sessionId: string; status: AgentSession['status'] }>) {

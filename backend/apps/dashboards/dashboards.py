@@ -9,7 +9,6 @@ from backend.config.Apps import SubApp
 from backend.core.db.PydanticStore import PydanticStore
 from backend.core.shared_structs.dashboard.Dashboard import Dashboard
 from backend.core.shared_structs.dashboard.DashboardLayout import DashboardLayout
-from backend.apps.agents.agents import get_all_sessions, delete_session
 from backend.apps.settings.settings import load_settings
 from backend.apps.dashboards.generate_dashboard_name import generate_dashboard_name
 from backend.ports import NINE_ROUTER_PORT
@@ -65,6 +64,8 @@ async def create_dashboard(body: DashboardCreate):
 # TODO: Maybe parse the output of get_all_sessions into actual Agent objects?
 @dashboards.router.post("/{dashboard_id}/generate-name")
 async def generate_name(dashboard_id: str):
+    # TODO: Fix nested import by passing context as input maybe or idk maybe smthn else
+    from backend.apps.agents.agents import get_all_sessions
     dashboard = DASHBOARD_STORE.load(dashboard_id)
 
     if not dashboard.auto_named and dashboard.name != "Untitled Dashboard":
@@ -133,6 +134,8 @@ async def update_dashboard(dashboard_id: str, body: DashboardUpdate):
 
 @dashboards.router.delete("/{dashboard_id}")
 async def delete_dashboard(dashboard_id: str):
+    # TODO: Fix nested import somehow idek tho
+    from backend.apps.agents.agents import get_all_sessions, delete_session
     DASHBOARD_STORE.load(dashboard_id)  # confirm it exists (raises 404 if not)
 
     sessions_resp = await get_all_sessions(dashboard_id=dashboard_id)

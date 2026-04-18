@@ -102,6 +102,8 @@ export function useToolbarActions(deps: ToolbarDeps) {
         };
       }
       const config: AgentConfig = { name: 'New chat', model, mode, dashboard_id: dashboardId };
+      const origin = spawnOriginsRef.current[draftId] ?? { x: 0, y: 0 };
+      dispatch(placeCard({ sessionId: draftId, x: origin.x, y: origin.y, width: DEFAULT_CARD_W, height: DEFAULT_CARD_H }));
       dispatch(
         META_LAUNCH_AND_SEND({
           draftId, config, prompt, mode, model, images,
@@ -110,7 +112,7 @@ export function useToolbarActions(deps: ToolbarDeps) {
         }),
       ).then((action) => {
         if (META_LAUNCH_AND_SEND.fulfilled.match(action)) {
-          const realId = action.payload.session.id;
+          const realId = action.payload.session.session_id;
           // TODO: Implement title generation
           // dispatch(generateTitle({ sessionId: realId, prompt }));
           if (selectedBrowserIds?.length) {

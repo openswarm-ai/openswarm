@@ -79,8 +79,8 @@ const BranchChatButton: FC = () => {
       DUPLICATE_SESSION(sessionId),
     );
     if (DUPLICATE_SESSION.fulfilled.match(action)) {
-      if (onBranchChat) onBranchChat(action.payload.session.id);
-      else dispatch(setActiveSession(action.payload.session.id));
+      if (onBranchChat) onBranchChat(action.payload.session.session_id);
+      else dispatch(setActiveSession(action.payload.session.session_id));
     }
   }, [sessionId, dispatch, aui, onBranchChat]);
 

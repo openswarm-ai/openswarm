@@ -1,5 +1,6 @@
 import asyncio
 import os
+import traceback
 from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
@@ -9,7 +10,7 @@ from pydantic import BaseModel, Field, InstanceOf
 from typeguard import typechecked
 
 from backend.core.Agent.run_agent_loop.run_agent_loop import run_agent_loop
-from backend.core.shared_structs.agent.Message.Message import Message
+from backend.core.shared_structs.agent.Message.Message import UserMessage
 from backend.core.shared_structs.agent.ApprovalRequest import ApprovalRequest
 from backend.core.shared_structs.agent.MessageLog import MessageLog
 from backend.core.events.events import (
@@ -94,7 +95,7 @@ class Agent(BaseModel):
             session_id=self.session_id, status="waiting_approval",
         ))
 
-        future: InstanceOf[asyncio.Future] = asyncio.get_event_loop().create_future()
+        future: asyncio.Future = asyncio.get_event_loop().create_future()
         try:
             await self.emit(ApprovalRequestEvent(
                 session_id=self.session_id,
@@ -120,7 +121,7 @@ class Agent(BaseModel):
         return decision
 
     @typechecked
-    async def send_message(self, msg: Message) -> None:
+    async def send_message(self, msg: UserMessage) -> None:
         async with self.lock:
             if self.task is not None and not self.task.done():
                 debug(f"[Agent.send_message] Agent {self.session_id} is already running")
@@ -144,6 +145,16 @@ class Agent(BaseModel):
                 branch_id=self.branch_id,
                 emit=self._handle_event,
             ))
+            self.task.add_done_callback(self.p_on_task_done)
+
+    @typechecked
+    def p_on_task_done(self, task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            debug(f"[Agent] Task for {self.session_id} failed:\n{tb}")
 
     @typechecked
     async def stop_agent(self):

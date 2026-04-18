@@ -39,16 +39,16 @@ const dashboardLayoutSlice = createSlice({
 
         let maxZ = 0;
         for (const c of Object.values(state.cards)) {
-          if (!c.zOrder) c.zOrder = 0;
-          if (c.zOrder > maxZ) maxZ = c.zOrder;
+          if (!c.z_order) c.z_order = 0;
+          if (c.z_order > maxZ) maxZ = c.z_order;
         }
         for (const c of Object.values(state.viewCards)) {
-          if (!c.zOrder) c.zOrder = 0;
-          if (c.zOrder > maxZ) maxZ = c.zOrder;
+          if (!c.z_order) c.z_order = 0;
+          if (c.z_order > maxZ) maxZ = c.z_order;
         }
         for (const c of Object.values(state.browserCards)) {
-          if (!c.zOrder) c.zOrder = 0;
-          if (c.zOrder > maxZ) maxZ = c.zOrder;
+          if (!c.z_order) c.z_order = 0;
+          if (c.z_order > maxZ) maxZ = c.z_order;
         }
         state.nextZOrder = maxZ + 1;
       })
@@ -59,9 +59,13 @@ const dashboardLayoutSlice = createSlice({
       .addCase(META_LAUNCH_AND_SEND.fulfilled, (state, action) => {
         const { draftId, session } = action.payload;
         const card = state.cards[draftId];
+        console.log(`[FRONTEND] dashboardLayout: META_LAUNCH_AND_SEND fulfilled | draftId=${draftId} realId=${session.session_id} draftCardExists=${!!card} allCardKeys=[${Object.keys(state.cards).join(',')}]`);
         if (card) {
           delete state.cards[draftId];
-          state.cards[session.id] = { ...card, session_id: session.id, zOrder: state.nextZOrder++ };
+          state.cards[session.session_id] = { ...card, session_id: session.session_id, z_order: state.nextZOrder++ };
+          console.log(`[FRONTEND] dashboardLayout: card swapped | ${draftId} → ${session.session_id} | newCardKeys=[${Object.keys(state.cards).join(',')}]`);
+        } else {
+          console.warn(`[FRONTEND] dashboardLayout: NO CARD FOUND for draftId=${draftId} — card swap SKIPPED`);
         }
       });
   },

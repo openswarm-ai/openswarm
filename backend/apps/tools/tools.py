@@ -62,7 +62,7 @@ async def list_builtin_tools() -> dict:
     return {"tools": BUILTIN_TOOLS}
 
 
-def load_builtin_permissions() -> dict[str, str]:
+def load_builtin_permissions() -> dict[str, TOOL_PERMISSIONS]:
     if not os.path.exists(BUILTIN_PERMS_PATH):
         return {}
     with open(BUILTIN_PERMS_PATH) as f:

@@ -181,7 +181,7 @@ export function useDashboardKeyboard(deps: KeyboardDeps) {
         if (card.type === 'agent') {
           const action = await dispatch(DUPLICATE_SESSION(card.id));
           if (DUPLICATE_SESSION.fulfilled.match(action)) {
-            const newId = action.payload.session.id;
+            const newId = action.payload.session.session_id;
             dispatch(placeCard({ sessionId: newId, x: px, y: py, width: card.width, height: card.height }));
             if (card.expanded) dispatch(expandSession(newId));
             newSelection.set(newId, 'agent');

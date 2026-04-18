@@ -42,7 +42,7 @@ export interface ToolGroupMeta {
 }
 
 export interface AgentSession {
-  id: string;
+  session_id: string;
   name: string;
   status: 'draft' | 'running' | 'waiting_approval' | 'completed' | 'error' | 'stopped';
   provider: string;

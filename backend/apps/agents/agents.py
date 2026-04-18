@@ -64,7 +64,7 @@ async def agents_lifespan():
         try:
             stored.status = "stopped"
             stored.on_event = COMMS_MANAGER.make_session_emitter(stored.session_id)
-            stored.toolkit = build_agent_toolkit(
+            stored.toolkit = await build_agent_toolkit(
                 agent=stored,
                 sessions=SESSIONS,
                 comms_manager=COMMS_MANAGER,
@@ -144,7 +144,7 @@ async def launch_agent(
     agent.on_event = COMMS_MANAGER.make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
 
-    toolkit: Toolkit = build_agent_toolkit(
+    toolkit: Toolkit = await build_agent_toolkit(
         agent=agent,
         sessions=SESSIONS,
         comms_manager=COMMS_MANAGER,
@@ -166,9 +166,16 @@ async def launch_agent(
         nine_router_port=NINE_ROUTER_PORT if not settings.anthropic_api_key else None,
     )
 
+    NINE_ROUTER_MODEL_MAP = {
+        "sonnet": "cc/claude-sonnet-4-6",
+        "opus": "cc/claude-opus-4-6",
+        "haiku": "cc/claude-haiku-4-5-20251001",
+    }
+    resolved_model = NINE_ROUTER_MODEL_MAP.get(model, f"cc/{model}") if not settings.anthropic_api_key else model
+
     agent.config = ClaudeAgentOptions(
         env=env,
-        model=model,
+        model=resolved_model,
         system_prompt=resolved_mode_config.system_prompt,
         max_turns=max_turns,
         cwd=resolved_mode_config.cwd,
@@ -365,7 +372,7 @@ async def resume_session(session_id: str = Body()) -> dict:
         raise HTTPException(status_code=404, detail="Session not found in history")
     agent.status = "stopped"
     agent.on_event = COMMS_MANAGER.make_session_emitter(agent.session_id)
-    agent.toolkit = build_agent_toolkit(
+    agent.toolkit = await build_agent_toolkit(
         agent=agent,
         sessions=SESSIONS,
         comms_manager=COMMS_MANAGER,
@@ -395,7 +402,7 @@ async def duplicate_session(session_id: str = Body()) -> dict:
     clone.pending_approvals = []
     clone.sub_agents = []
     clone.on_event = COMMS_MANAGER.make_session_emitter(clone.session_id)
-    clone.toolkit = build_agent_toolkit(
+    clone.toolkit = await build_agent_toolkit(
         agent=clone,
         sessions=SESSIONS,
         comms_manager=COMMS_MANAGER,
