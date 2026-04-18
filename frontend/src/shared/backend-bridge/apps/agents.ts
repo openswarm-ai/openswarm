@@ -6,6 +6,8 @@ import type {
 
 const AGENTS_API: string = `${API_BASE}/agents`;
 
+export const AGENTS_WS_API: string = `${API_BASE}/agents/ws`;
+
 // ---------------------------------------------------------------------------
 // Session CRUD
 // ---------------------------------------------------------------------------

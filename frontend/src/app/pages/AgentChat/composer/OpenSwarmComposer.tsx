@@ -92,7 +92,7 @@ const OpenSwarmComposer: FC<OpenSwarmComposerProps> = ({
           onModeChange(item.id);
           return true;
         case 'file':
-          att.generalFileInputRef.current?.click();
+          att.browseAndAttachFiles();
           return true;
         case 'tool-group':
         case 'output':
@@ -143,15 +143,13 @@ const OpenSwarmComposer: FC<OpenSwarmComposerProps> = ({
                 mode={mode} onModeChange={onModeChange} model={model} onModelChange={onModelChange}
                 contextEstimate={contextEstimate} ownerId={sessionId || 'composer'} sessionId={sessionId}
                 hasContent={hasContent} isRunning={isRunning} onSend={handleSendClick} onStop={onStop}
-                addImageFiles={att.addImageFiles} uploadAndAttachFiles={att.uploadAndAttachFiles}
-                generalFileInputRef={att.generalFileInputRef} queueLength={queueLength}
+                browseAndAttachFiles={att.browseAndAttachFiles}
+                queueLength={queueLength}
               />
             </div>
           </div>
         </ComposerPrimitive.Root>
       </ComposerPrimitive.Unstable_MentionRoot>
-
-      <input ref={att.generalFileInputRef} type="file" multiple className="hidden" onChange={att.handleFileInputChange} />
     </div>
   );
 };

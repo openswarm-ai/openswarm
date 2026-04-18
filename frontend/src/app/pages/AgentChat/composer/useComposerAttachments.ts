@@ -1,5 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
-import { API_BASE } from '@/shared/config';
+import { useState, useCallback } from 'react';
 import type { ContextPath } from '@/shared/state/agentsTypes';
 
 interface AttachedImage {
@@ -20,14 +19,15 @@ interface AttachedSkill {
   content: string;
 }
 
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
+const isImagePath = (p: string) => IMAGE_EXTS.has(p.slice(p.lastIndexOf('.')).toLowerCase());
+
 export function useComposerAttachments() {
   const [images, setImages] = useState<AttachedImage[]>([]);
   const [contextPaths, setContextPaths] = useState<ContextPath[]>([]);
   const [forcedTools, setForcedTools] = useState<ForcedToolGroup[]>([]);
   const [attachedSkills, setAttachedSkills] = useState<Record<string, AttachedSkill>>({});
-  const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const generalFileInputRef = useRef<HTMLInputElement>(null);
 
   const addImageFiles = useCallback((files: FileList | File[]) => {
     Array.from(files).forEach((file) => {
@@ -44,29 +44,31 @@ export function useComposerAttachments() {
     });
   }, []);
 
-  const uploadAndAttachFiles = useCallback(async (files: File[]) => {
-    if (files.length === 0) return;
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      files.forEach((f) => formData.append('files', f));
-      const resp = await fetch(`${API_BASE}/settings/upload-files`, {
-        method: 'POST',
-        body: formData,
-      });
-      if (!resp.ok) throw new Error('Upload failed');
-      const data = await resp.json();
-      const newPaths: ContextPath[] = (data.files || []).map((f: { path: string }) => ({
-        path: f.path,
-        type: 'file' as const,
-      }));
-      setContextPaths((prev) => [...prev, ...newPaths]);
-    } catch (err) {
-      console.error('File upload failed:', err);
-    } finally {
-      setIsUploading(false);
-    }
+  const attachFilePaths = useCallback((paths: string[]) => {
+    if (paths.length === 0) return;
+    const newPaths: ContextPath[] = paths
+      .filter((p) => !isImagePath(p))
+      .map((p) => ({ path: p, type: 'file' as const }));
+    if (newPaths.length > 0) setContextPaths((prev) => [...prev, ...newPaths]);
   }, []);
+
+  /** Attach non-image files using their native Electron File.path. */
+  const attachFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    const paths = files
+      .map((f) => (f as File & { path?: string }).path)
+      .filter((p): p is string => Boolean(p));
+    attachFilePaths(paths);
+  }, [attachFilePaths]);
+
+  /** Open native OS file picker and attach selected files as context paths. */
+  const browseAndAttachFiles = useCallback(async () => {
+    const result = await window.openswarm.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+    });
+    if (result.canceled || !result.filePaths?.length) return;
+    attachFilePaths(result.filePaths);
+  }, [attachFilePaths]);
 
   const removeImage = useCallback(
     (idx: number) => setImages((prev) => prev.filter((_, i) => i !== idx)),
@@ -121,31 +123,16 @@ export function useComposerAttachments() {
       const imageFiles = allFiles.filter((f) => f.type.startsWith('image/'));
       const otherFiles = allFiles.filter((f) => !f.type.startsWith('image/'));
       if (imageFiles.length > 0) addImageFiles(imageFiles);
-      if (otherFiles.length > 0) uploadAndAttachFiles(otherFiles);
+      if (otherFiles.length > 0) attachFiles(otherFiles);
     },
-    [addImageFiles, uploadAndAttachFiles],
-  );
-
-  const handleFileInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files || files.length === 0) return;
-      const allFiles = Array.from(files);
-      const imgFiles = allFiles.filter((f) => f.type.startsWith('image/'));
-      const otherFiles = allFiles.filter((f) => !f.type.startsWith('image/'));
-      if (imgFiles.length > 0) addImageFiles(imgFiles);
-      if (otherFiles.length > 0) uploadAndAttachFiles(otherFiles);
-      e.target.value = '';
-    },
-    [addImageFiles, uploadAndAttachFiles],
+    [addImageFiles, attachFiles],
   );
 
   return {
-    images, contextPaths, forcedTools, attachedSkills, isUploading, isDragOver,
-    generalFileInputRef,
+    images, contextPaths, forcedTools, attachedSkills, isDragOver,
     setImages, setContextPaths, setForcedTools, setAttachedSkills,
-    addImageFiles, uploadAndAttachFiles, removeImage, removeContextPath,
+    addImageFiles, attachFiles, browseAndAttachFiles, removeImage, removeContextPath,
     removeForcedTool, removeSkill, clearAll,
-    handleDragOver, handleDragLeave, handleDrop, handleFileInputChange,
+    handleDragOver, handleDragLeave, handleDrop,
   };
 }

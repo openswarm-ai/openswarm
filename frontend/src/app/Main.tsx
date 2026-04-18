@@ -5,7 +5,7 @@ import { ThemeProvider as MuiThemeProvider, CssBaseline } from '@mui/material';
 import { store } from '../shared/state/store';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { GET_SETTINGS } from '@/shared/backend-bridge/apps/settings';
-import { fetchModels } from '@/shared/state/modelsSlice';
+// import { fetchModels } from '@/shared/state/modelsSlice';
 import {
   setAppVersion,
   setUpdateAvailable,
@@ -40,7 +40,7 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const loaded = useAppSelector((s) => s.settings.loaded);
   useEffect(() => {
     dispatch(GET_SETTINGS());
-    dispatch(fetchModels());
+    // dispatch(fetchModels());
   }, [dispatch]);
   useEffect(() => {
     if (loaded) setThemeMode(theme as 'light' | 'dark');

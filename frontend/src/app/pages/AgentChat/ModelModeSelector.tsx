@@ -47,9 +47,7 @@ interface Props {
   autoRunMode?: boolean; hasContent: boolean;
   isRunning?: boolean; disabled?: boolean;
   onSend: () => void; onStop?: () => void;
-  addImageFiles: (files: FileList | File[]) => void;
-  uploadAndAttachFiles: (files: File[]) => void;
-  generalFileInputRef: React.RefObject<HTMLInputElement | null>;
+  browseAndAttachFiles: () => void;
   queueLength?: number;
 }
 
@@ -57,7 +55,7 @@ const ModelModeSelector: React.FC<Props> = ({
   mode, onModeChange, model, onModelChange, provider, onProviderChange,
   contextEstimate, ownerId, sessionId,
   autoRunMode, hasContent, isRunning, disabled, onSend, onStop,
-  addImageFiles, uploadAndAttachFiles, generalFileInputRef, queueLength = 0,
+  browseAndAttachFiles, queueLength = 0,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -189,17 +187,8 @@ const ModelModeSelector: React.FC<Props> = ({
         </Tooltip>
       )}
 
-      <input ref={generalFileInputRef as React.RefObject<HTMLInputElement>} type="file" multiple hidden onChange={(e) => {
-        if (!e.target.files) return;
-        const all = Array.from(e.target.files);
-        const imgs = all.filter((f) => f.type.startsWith('image/'));
-        const rest = all.filter((f) => !f.type.startsWith('image/'));
-        if (imgs.length > 0) addImageFiles(imgs);
-        if (rest.length > 0) uploadAndAttachFiles(rest);
-        e.target.value = '';
-      }} />
       <Tooltip title="Attach file">
-        <IconButton size="small" onClick={() => generalFileInputRef.current?.click()}
+        <IconButton size="small" onClick={browseAndAttachFiles}
           sx={{ color: c.text.tertiary, p: 0.5, '&:hover': { color: c.text.secondary, bgcolor: 'rgba(0,0,0,0.04)' } }}>
           <AttachFileIcon sx={{ fontSize: 18 }} />
         </IconButton>

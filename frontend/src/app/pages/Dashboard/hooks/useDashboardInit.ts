@@ -11,7 +11,7 @@ import {
   EXPANDED_CARD_MIN_H,
 } from '@/shared/state/dashboardLayoutSlice';
 import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
-import { dashboardWs } from '@/shared/ws/WebSocketManager';
+import { agentsWs } from '@/shared/ws/WebSocketManager';
 import { initBrowserCommandHandler } from '@/shared/browserCommandHandler';
 import { clearPendingBrowserUrl, clearPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import type { CanvasActions } from '../useCanvasControls';
@@ -53,9 +53,9 @@ export function useDashboardInit(deps: InitDeps) {
     dispatch(GET_HISTORY({}));
     dispatch(GET_DASHBOARD(dashboardId));
     dispatch(LIST_APPS());
-    dashboardWs.connect();
+    agentsWs.connect();
     const cleanupBrowserHandler = initBrowserCommandHandler();
-    return () => { cleanupBrowserHandler(); dashboardWs.disconnect(); };
+    return () => { cleanupBrowserHandler(); agentsWs.disconnect(); };
   }, [dispatch, dashboardId]);
 
   useEffect(() => {

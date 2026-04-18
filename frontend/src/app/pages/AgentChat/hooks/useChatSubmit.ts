@@ -3,7 +3,6 @@ import type { CommandPickerItem } from '@/app/components/CommandPicker';
 import { useElementSelection, type SelectedElement } from '@/app/components/ElementSelectionContext';
 import { getClipboardCards, clearClipboard } from '@/shared/dashboardClipboard';
 import { getWebview } from '@/shared/browserRegistry';
-import { API_BASE } from '@/shared/config';
 import type { ContextPath } from '@/shared/state/agentsTypes';
 import {
   SKILL_PILL_ATTR, type AttachedSkill, createSkillPillElement,
@@ -14,7 +13,6 @@ import type { ForcedToolGroup } from '../AttachmentChips';
 
 interface ChatSubmitParams {
   editorRef: React.RefObject<HTMLDivElement | null>; attachedSkillsRef: React.MutableRefObject<Record<string, AttachedSkill>>;
-  generalFileInputRef: React.RefObject<HTMLInputElement | null>;
   disabled?: boolean; autoRunMode?: boolean; images: AttachedImage[]; contextPaths: ContextPath[];
   forcedTools: ForcedToolGroup[]; picker: TriggerState;
   skills: Record<string, { id: string; name: string; content: string }>; ownerId: string;
@@ -24,17 +22,17 @@ interface ChatSubmitParams {
   setImages: React.Dispatch<React.SetStateAction<AttachedImage[]>>; setContextPaths: React.Dispatch<React.SetStateAction<ContextPath[]>>;
   setForcedTools: React.Dispatch<React.SetStateAction<ForcedToolGroup[]>>; setPicker: React.Dispatch<React.SetStateAction<TriggerState>>;
   setHasContent: React.Dispatch<React.SetStateAction<boolean>>; setAttachedSkills: React.Dispatch<React.SetStateAction<Record<string, AttachedSkill>>>;
-  setIsUploading: React.Dispatch<React.SetStateAction<boolean>>; setIsDragOver: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsDragOver: React.Dispatch<React.SetStateAction<boolean>>;
   c: { font: { mono: string }; status: { error: string } };
 }
 
 export function useChatSubmit(p: ChatSubmitParams) {
   const {
-    editorRef, attachedSkillsRef, generalFileInputRef, disabled, autoRunMode,
+    editorRef, attachedSkillsRef, disabled, autoRunMode,
     images, contextPaths, forcedTools, picker, skills, ownerId,
     elementSelection, onSend, onModeChange, setImages, setContextPaths,
     setForcedTools, setPicker, setHasContent, setAttachedSkills,
-    setIsUploading, setIsDragOver, c,
+    setIsDragOver, c,
   } = p;
   const updateHasContent = useCallback(() => {
     const editor = editorRef.current;
@@ -81,19 +79,21 @@ export function useChatSubmit(p: ChatSubmitParams) {
       reader.readAsDataURL(file);
     });
   }, []);
-  const uploadAndAttachFiles = useCallback(async (files: File[]) => {
+  const attachFiles = useCallback((files: File[]) => {
     if (files.length === 0) return;
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      files.forEach((f) => formData.append('files', f));
-      const resp = await fetch(`${API_BASE}/settings/upload-files`, { method: 'POST', body: formData });
-      if (!resp.ok) throw new Error('Upload failed');
-      const data = await resp.json();
-      const newPaths: ContextPath[] = (data.files || []).map((f: { path: string }) => ({ path: f.path, type: 'file' as const }));
-      setContextPaths((prev) => [...prev, ...newPaths]);
-    } catch (err) { console.error('File upload failed:', err); }
-    finally { setIsUploading(false); }
+    const newPaths: ContextPath[] = files
+      .map((f) => (f as File & { path?: string }).path)
+      .filter((p): p is string => Boolean(p))
+      .map((p) => ({ path: p, type: 'file' as const }));
+    if (newPaths.length > 0) setContextPaths((prev) => [...prev, ...newPaths]);
+  }, []);
+  const browseAndAttachFiles = useCallback(async () => {
+    const result = await window.openswarm.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+    });
+    if (result.canceled || !result.filePaths?.length) return;
+    const newPaths: ContextPath[] = result.filePaths.map((p) => ({ path: p, type: 'file' as const }));
+    setContextPaths((prev) => [...prev, ...newPaths]);
   }, []);
   const handleSend = useCallback(async () => {
     const editor = editorRef.current;
@@ -178,7 +178,7 @@ export function useChatSubmit(p: ChatSubmitParams) {
     } else if (item.type === 'mode') {
       onModeChange(item.id);
     } else if (item.type === 'context') {
-      if (item.command === 'file') generalFileInputRef.current?.click();
+      if (item.command === 'file') { browseAndAttachFiles(); return; }
       else if (item.toolNames && item.toolNames.length > 0) setForcedTools((prev) => [...prev, { label: item.name, tools: item.toolNames!, icon: item.icon, iconKey: item.iconKey }]);
       else document.execCommand('insertText', false, `@${item.command} `);
     }
@@ -233,9 +233,9 @@ export function useChatSubmit(p: ChatSubmitParams) {
     const imageFiles = allFiles.filter((f) => f.type.startsWith('image/'));
     const otherFiles = allFiles.filter((f) => !f.type.startsWith('image/'));
     if (imageFiles.length > 0) addImageFiles(imageFiles);
-    if (otherFiles.length > 0) uploadAndAttachFiles(otherFiles);
-  }, [addImageFiles, uploadAndAttachFiles]);
+    if (otherFiles.length > 0) attachFiles(otherFiles);
+  }, [addImageFiles, attachFiles]);
   const removeImage = useCallback((idx: number) => setImages((prev) => prev.filter((_, i) => i !== idx)), []);
 
-  return { handleSend, handlePickerSelect, handlePaste, handleKeyDown, handleInput, handleEditorClick, handleDragOver, handleDragLeave, handleDrop, addImageFiles, uploadAndAttachFiles, removeImage };
+  return { handleSend, handlePickerSelect, handlePaste, handleKeyDown, handleInput, handleEditorClick, handleDragOver, handleDragLeave, handleDrop, addImageFiles, attachFiles, browseAndAttachFiles, removeImage };
 }

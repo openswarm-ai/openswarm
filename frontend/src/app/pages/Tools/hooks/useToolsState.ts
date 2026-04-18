@@ -6,11 +6,16 @@ import {
   CREATE_TOOL, UPDATE_TOOL, DELETE_TOOL, OAUTH_START, GET_TOOL, DISCOVER_TOOL,
   OAUTH_DISCONNECT,
 } from '@/shared/backend-bridge/apps/tools';
-import { searchRegistry, fetchRegistryStats, fetchServerDetail, clearDetail, McpServer } from '@/shared/state/mcpRegistrySlice';
+import { searchRegistry, fetchRegistryStats, fetchServerDetail, McpServer } from '@/shared/state/mcpRegistrySlice';
 import { LIST_APPS, UPDATE_APP } from '@/shared/backend-bridge/apps/app_builder';
 import { INTEGRATIONS, Integration, CATEGORY_ORDER } from '../integrations';
 import { ToolForm, emptyForm, serverToToolForm, serverToMcpConfig, groupTools } from '../toolUtils';
 
+const clearDetail = () => {
+  return {
+    type: 'mcpRegistry/clearDetail',
+  };
+};
 
 export function useToolsState() {
   const dispatch = useAppDispatch();

@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useId, forwardRef, useImperativeHandle } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import CircularProgress from '@mui/material/CircularProgress';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CommandPicker from '@/app/components/CommandPicker';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
@@ -41,7 +40,6 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({
   const c = useClaudeTokens();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const generalFileInputRef = useRef<HTMLInputElement>(null);
   const elementSelection = useElementSelection();
 
   const fallbackOwnerId = useId();
@@ -60,7 +58,6 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({
   const [images, setImages] = useState<AttachedImage[]>([]);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
   const [contextPaths, setContextPaths] = useState<ContextPath[]>([]);
   const [forcedTools, setForcedTools] = useState<ForcedToolGroup[]>([]);
   const [copiedPathIdx, setCopiedPathIdx] = useState<number | null>(null);
@@ -82,13 +79,13 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({
   const {
     handleSend, handlePickerSelect, handlePaste, handleKeyDown,
     handleInput, handleEditorClick, handleDragOver, handleDragLeave, handleDrop,
-    addImageFiles, uploadAndAttachFiles, removeImage,
+    addImageFiles, browseAndAttachFiles, removeImage,
   } = useChatSubmit({
-    editorRef, attachedSkillsRef, generalFileInputRef, disabled, autoRunMode,
+    editorRef, attachedSkillsRef, disabled, autoRunMode,
     images, contextPaths, forcedTools, picker, skills, ownerId,
     elementSelection, onSend, onModeChange, setImages, setContextPaths,
     setForcedTools, setPicker, setHasContent, setAttachedSkills,
-    setIsUploading, setIsDragOver, c,
+    setIsDragOver, c,
   });
 
   const handleCopyPath = (idx: number) => {
@@ -117,14 +114,6 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({
           display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '16px', pointerEvents: 'none' }}>
           <AttachFileIcon sx={{ fontSize: 16, color: c.accent.primary, mr: 0.5 }} />
           <Typography sx={{ color: c.accent.primary, fontSize: '0.85rem', fontWeight: 500 }}>Drop files here</Typography>
-        </Box>
-      )}
-
-      {isUploading && (
-        <Box sx={{ position: 'absolute', inset: 0, bgcolor: 'rgba(174,86,48,0.04)', zIndex: 10,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '16px', pointerEvents: 'none' }}>
-          <CircularProgress size={14} sx={{ color: c.accent.primary, mr: 1 }} />
-          <Typography sx={{ color: c.accent.primary, fontSize: '0.85rem', fontWeight: 500 }}>Attaching files…</Typography>
         </Box>
       )}
 
@@ -170,8 +159,8 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({
         provider={provider} onProviderChange={onProviderChange} contextEstimate={contextEstimate}
         ownerId={ownerId} sessionId={sessionId} autoRunMode={autoRunMode} hasContent={hasContent}
         isRunning={isRunning} disabled={disabled} onSend={handleSend} onStop={onStop}
-        addImageFiles={addImageFiles} uploadAndAttachFiles={uploadAndAttachFiles}
-        generalFileInputRef={generalFileInputRef} queueLength={queueLength} />
+        browseAndAttachFiles={browseAndAttachFiles}
+        queueLength={queueLength} />
     </Box>
   );
 });

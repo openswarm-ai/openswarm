@@ -1,6 +1,7 @@
 import { store } from '../state/store';
 import { streamDelta } from '../state/agentsSlice';
 import { type WSEvent, dispatchWsEvent } from './wsEventHandlers';
+import { AGENTS_WS_API } from '@/shared/backend-bridge/apps/agents';
 
 class WebSocketManager {
   private ws: WebSocket | null = null;
@@ -115,6 +116,5 @@ class WebSocketManager {
   }
 }
 
-import { WS_BASE } from '@/shared/config';
 
-export const dashboardWs = new WebSocketManager(`${WS_BASE}/ws/dashboard`);
+export const agentsWs = new WebSocketManager(AGENTS_WS_API);

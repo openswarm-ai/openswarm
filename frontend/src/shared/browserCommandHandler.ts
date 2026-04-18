@@ -1,5 +1,5 @@
 import { getWebview } from './browserRegistry';
-import { dashboardWs } from './ws/WebSocketManager';
+import { agentsWs } from './ws/WebSocketManager';
 import { type BrowserAction, setActivity } from './browserCommandTypes';
 import {
   handleScreenshot,
@@ -24,7 +24,7 @@ async function handleBrowserCommand(data: Record<string, any>) {
 
   const wv = getWebview(browser_id, tab_id || undefined);
   if (!wv) {
-    dashboardWs.send('browser:result', {
+    agentsWs.send('browser:result', {
       request_id,
       error: `Browser card '${browser_id}'${tab_id ? ` tab '${tab_id}'` : ''} not found or not an Electron webview`,
     });
@@ -79,13 +79,13 @@ async function handleBrowserCommand(data: Record<string, any>) {
   }
 
   setActivity(browser_id, null);
-  dashboardWs.send('browser:result', { request_id, ...result });
+  agentsWs.send('browser:result', { request_id, ...result });
 }
 
 export function initBrowserCommandHandler(): () => void {
   if (initialized) return () => {};
   initialized = true;
-  const unsub = dashboardWs.on('browser:command', handleBrowserCommand);
+  const unsub = agentsWs.on('browser:command', handleBrowserCommand);
   return () => {
     unsub();
     initialized = false;

@@ -84,7 +84,7 @@ agents = SubApp("agents", agents_lifespan)
 # WebSocket
 # ---------------------------------------------------------------------------
 # TODO: type spec this more
-@agents.router.websocket("/ws/dashboard")
+@agents.router.websocket("/ws")
 async def websocket_dashboard(websocket: WebSocket):
     await COMMS_MANAGER.broadcaster.connect(websocket)
     try:
