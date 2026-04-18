@@ -3,7 +3,7 @@ import { AnimatePresence } from 'framer-motion';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import AgentCard from './cards/AgentCard/AgentCard';
-import AppCard from './components/AppCard';
+import AppCard from './cards/AppCard/AppCard';
 import BrowserCard from './cards/BrowserCard/BrowserCard';
 import CanvasControls from './components/CanvasControls';
 import DashboardToolbar from './components/DashboardToolbar/DashboardToolbar';

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { toggleExpandSession } from '@/shared/state/agentsSlice';
 import { UPDATE_DASHBOARD } from '@/shared/backend-bridge/apps/dashboards';
-import { useCanvasControls } from './useCanvasControls/useCanvasControls';
+import { useCanvasControls } from './hooks/useCanvasControls/useCanvasControls';
 import { useDashboardSelection } from './hooks/useDashboardSelection';
 import { ElementSelectionProvider, useElementSelection } from '@/app/components/ElementSelectionContext';
 import { useDomElementSelector } from '@/app/components/useDomElementSelector';
