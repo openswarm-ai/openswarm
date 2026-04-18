@@ -18,9 +18,9 @@ import {
   normalizeSelectionForOptions,
   parseSelectionToIdSet,
 } from "./selection";
-import { ActionButtons } from "../shared/action-buttons";
-import { normalizeActionsConfig } from "../shared/actions-config";
-import type { Action } from "../shared/schema";
+import { ActionButtons } from "@/components/tool-ui/shared/action-buttons";
+import { normalizeActionsConfig } from "@/components/tool-ui/shared/actions-config";
+import type { Action } from "@/components/tool-ui/shared/schema";
 import { cn, Button, Separator } from "./_adapter";
 import { Check } from "lucide-react";
 

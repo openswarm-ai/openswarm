@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
-import { OptionList } from '@/components/tool-ui/option-list/option-list';
-import type { OptionListSelection } from '@/components/tool-ui/option-list/schema';
-import { QuestionFlow } from '@/components/tool-ui/question-flow/question-flow';
+import { OptionList } from './OptionList/OptionList';
+import type { OptionListSelection } from './OptionList/schema';
+import { QuestionFlow } from './QuestionFlow/QuestionFlow';
 import type { ApprovalRequest } from '@/shared/state/agentsSlice';
 
 function optionKey(opt: any): string {

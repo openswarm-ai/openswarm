@@ -1,4 +1,4 @@
-import { parseMcpToolName } from '@/app/pages/AgentChat/toolkit/approval-utils';
+import { parseMcpToolName } from '@/app/pages/AgentChat/toolkit/approvalToolkit/utils';
 
 export function getToolDisplayName(toolName: string): string {
     const mcp = parseMcpToolName(toolName);

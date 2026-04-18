@@ -1,5 +1,5 @@
 import { AgentSession } from '@/shared/state/agentsSlice';
-import { parseMcpToolName } from '@/app/pages/AgentChat/toolkit/approval-utils';
+import { parseMcpToolName } from '@/app/pages/AgentChat/toolkit/approvalToolkit/utils';
 
 export function formatDuration(createdAt: string, closedAt?: string | null, status?: string): string {
   const start = new Date(createdAt).getTime();

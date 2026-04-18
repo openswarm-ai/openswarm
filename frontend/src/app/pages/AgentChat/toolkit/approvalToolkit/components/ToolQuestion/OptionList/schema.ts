@@ -1,14 +1,14 @@
 import { z } from "zod";
 import type { ReactNode } from "react";
-import type { ActionsProp } from "../shared/actions-config";
-import type { EmbeddedActionsProps } from "../shared/embedded-actions";
+import type { ActionsProp } from "@/components/tool-ui/shared/actions-config";
+import type { EmbeddedActionsProps } from "@/components/tool-ui/shared/embedded-actions";
 import {
   ActionSchema,
   SerializableActionsConfigSchema,
   ToolUIIdSchema,
   ToolUIReceiptSchema,
   ToolUIRoleSchema,
-} from "../shared/schema";
+} from "@/components/tool-ui/shared/schema";
 
 export const OptionListOptionSchema = z.object({
   id: z.string().min(1),

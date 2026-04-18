@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
@@ -7,11 +8,24 @@ import CloseIcon from '@mui/icons-material/Close';
 import CheckIcon from '@mui/icons-material/Check';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { motion } from 'framer-motion';
-import { parseMcpToolName, getToolIcon } from '@/app/pages/AgentChat/toolkit/approval-utils';
-import { useMcpToolMeta } from '@/app/pages/AgentChat/toolkit/approval-tools';
+import { parseMcpToolName } from '@/app/pages/AgentChat/toolkit/approvalToolkit/utils';
+import { useMcpToolMeta } from '@/app/pages/AgentChat/toolkit/approvalToolkit/components/useMcpToolMeta';
 import { SPRING_BOUNCE } from './islandTypes';
 import type { ClaudeTokens } from './islandTypes';
 import type { ApprovalRequest } from '@/shared/state/agentsSlice';
+import { Terminal, FileText, FilePen, Search, MessageCircleQuestion, Wrench } from 'lucide-react';
+
+function getToolIcon(toolName: string): ReactNode {
+  const size = 16;
+  switch (toolName) {
+    case 'Bash': return <Terminal size={size} />;
+    case 'Read': return <FileText size={size} />;
+    case 'Write': case 'Edit': return <FilePen size={size} />;
+    case 'Grep': case 'Glob': return <Search size={size} />;
+    case 'AskUserQuestion': return <MessageCircleQuestion size={size} />;
+    default: return <Wrench size={size} />;
+  }
+}
 
 export const CompactActionablePill: React.FC<{
   c: ClaudeTokens;
