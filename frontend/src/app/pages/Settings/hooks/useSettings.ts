@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { updateSettings, closeSettingsModal, AppSettings } from '@/shared/state/settingsSlice';
+import { UPDATE_SETTINGS, AppSettings } from '@/shared/backend-bridge/apps/settings';
+import { closeSettingsModal } from '@/shared/state/settingsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { setChecking, setUpdateError } from '@/shared/state/updateSlice';
 import { LIST_MODES } from '@/shared/state/modesSlice';
@@ -33,7 +34,7 @@ export function useSettings() {
   useEffect(() => { if (loaded) setForm({ ...settings }); }, [loaded, settings]);
   const hasChanges = JSON.stringify(form) !== JSON.stringify(settings);
   const handleSave = async () => {
-    await dispatch(updateSettings(form));
+    await dispatch(UPDATE_SETTINGS(form));
     if (form.theme !== settings.theme) setThemeMode(form.theme);
     dispatch(fetchModels());
     setSaved(true);
@@ -48,7 +49,7 @@ export function useSettings() {
     dispatch(closeSettingsModal());
   }, [settings, dispatch]);
   const handleSaveAndClose = useCallback(async () => {
-    await dispatch(updateSettings(form));
+    await dispatch(UPDATE_SETTINGS(form));
     if (form.theme !== settings.theme) setThemeMode(form.theme);
     dispatch(fetchModels());
     setSaved(true);

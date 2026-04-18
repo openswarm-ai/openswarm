@@ -1,7 +1,10 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { API_BASE } from '@/shared/config';
-
-const SETTINGS_API = `${API_BASE}/settings`;
+import { createSlice } from '@reduxjs/toolkit';
+import {
+  GET_SETTINGS,
+  UPDATE_SETTINGS,
+  RESET_SYSTEM_PROMPT,
+} from '@/shared/backend-bridge/apps/settings';
+import type { AppSettings } from '@/shared/backend-bridge/apps/settings';
 
 export const DEFAULT_SYSTEM_PROMPT =
   `You are a personal AI assistant running inside OpenSwarm.\n\n` +
@@ -19,34 +22,6 @@ export const DEFAULT_SYSTEM_PROMPT =
   `Be direct and action-oriented. Do not ask clarifying questions unless genuinely ambiguous — ` +
   `make reasonable assumptions and act. If you need to ask, use the AskUserQuestion tool.\n` +
   `Do not over-explain what you are about to do. Just do it and show the results.`;
-
-export interface CustomProvider {
-  name: string;
-  base_url: string;
-  api_key: string;
-  models: Array<{ value: string; label: string; context_window?: number }>;
-}
-
-export interface AppSettings {
-  default_system_prompt: string | null;
-  default_folder: string | null;
-  default_model: string;
-  default_mode: string;
-  default_max_turns: number | null;
-  zoom_sensitivity: number;
-  theme: 'light' | 'dark';
-  new_agent_shortcut: string;
-  anthropic_api_key: string | null;
-  openai_api_key?: string | null;
-  google_api_key?: string | null;
-  openrouter_api_key?: string | null;
-  custom_providers?: CustomProvider[];
-  browser_homepage: string;
-  auto_select_mode_on_new_agent: boolean;
-  expand_new_chats_in_dashboard: boolean;
-  auto_reveal_sub_agents: boolean;
-  dev_mode: boolean;
-}
 
 export interface BrowseResult {
   current: string;
@@ -84,33 +59,6 @@ const initialState: SettingsState = {
   modalOpen: false,
 };
 
-export const fetchSettings = createAsyncThunk('settings/fetch', async () => {
-  const res = await fetch(SETTINGS_API);
-  return (await res.json()) as AppSettings;
-});
-
-export const updateSettings = createAsyncThunk(
-  'settings/update',
-  async (settings: AppSettings) => {
-    const res = await fetch(SETTINGS_API, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
-    });
-    const data = await res.json();
-    return data.settings as AppSettings;
-  }
-);
-
-export const resetSystemPrompt = createAsyncThunk(
-  'settings/resetSystemPrompt',
-  async () => {
-    const res = await fetch(`${SETTINGS_API}/reset-system-prompt`, { method: 'POST' });
-    const data = await res.json();
-    return data.settings as AppSettings;
-  }
-);
-
 const settingsSlice = createSlice({
   name: 'settings',
   initialState,
@@ -124,23 +72,23 @@ const settingsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchSettings.pending, (state) => {
+      .addCase(GET_SETTINGS.pending, (state) => {
         state.loading = true;
       })
-      .addCase(fetchSettings.fulfilled, (state, action) => {
+      .addCase(GET_SETTINGS.fulfilled, (state, action) => {
         state.loading = false;
         state.loaded = true;
         state.data = action.payload;
       })
-      .addCase(fetchSettings.rejected, (state) => {
+      .addCase(GET_SETTINGS.rejected, (state) => {
         state.loading = false;
         state.loaded = true;
       })
-      .addCase(updateSettings.fulfilled, (state, action) => {
-        state.data = action.payload;
+      .addCase(UPDATE_SETTINGS.fulfilled, (state, action) => {
+        state.data = action.payload.settings;
       })
-      .addCase(resetSystemPrompt.fulfilled, (state, action) => {
-        state.data = action.payload;
+      .addCase(RESET_SYSTEM_PROMPT.fulfilled, (state, action) => {
+        state.data = action.payload.settings;
       });
   },
 });

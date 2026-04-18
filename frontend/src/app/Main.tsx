@@ -4,7 +4,7 @@ import { HashRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider as MuiThemeProvider, CssBaseline } from '@mui/material';
 import { store } from '../shared/state/store';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { fetchSettings } from '@/shared/state/settingsSlice';
+import { GET_SETTINGS } from '@/shared/backend-bridge/apps/settings';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import {
   setAppVersion,
@@ -40,7 +40,7 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const theme = useAppSelector((s) => s.settings.data.theme);
   const loaded = useAppSelector((s) => s.settings.loaded);
   useEffect(() => {
-    dispatch(fetchSettings());
+    dispatch(GET_SETTINGS());
     dispatch(fetchModels());
   }, [dispatch]);
   useEffect(() => {

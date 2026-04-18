@@ -10,7 +10,8 @@ import Switch from '@mui/material/Switch';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import LanguageIcon from '@mui/icons-material/Language';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import { DEFAULT_SYSTEM_PROMPT, resetSystemPrompt } from '@/shared/state/settingsSlice';
+import { RESET_SYSTEM_PROMPT } from '@/shared/backend-bridge/apps/settings';
+import { DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
 import InterfaceSection from './InterfaceSection';
 import AboutSection from './AboutSection';
 import type { UseSettingsReturn } from './hooks/useSettings';
@@ -29,7 +30,7 @@ const GeneralTab: React.FC<{ s: UseSettingsReturn }> = ({ s }) => {
               size="small"
               startIcon={<RestartAltIcon sx={{ fontSize: 14 }} />}
               onClick={async () => {
-                await dispatch(resetSystemPrompt());
+                await dispatch(RESET_SYSTEM_PROMPT());
                 setForm((prev) => ({ ...prev, default_system_prompt: DEFAULT_SYSTEM_PROMPT }));
               }}
               sx={{
