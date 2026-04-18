@@ -10,7 +10,7 @@ import ListItemText from '@mui/material/ListItemText';
 import OutlinedInput from '@mui/material/OutlinedInput';
 import ListSubheader from '@mui/material/ListSubheader';
 import ExtensionIcon from '@mui/icons-material/Extension';
-import { ModeForm, ALL_BUILTIN_TOOL_NAMES } from './modesConstants';
+import { ModeForm, ALL_BUILTIN_TOOL_NAMES } from '@/app/pages/Modes/modesConstants';
 
 interface ToolsSelectorProps {
   form: ModeForm;

@@ -9,7 +9,7 @@ import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { LIST_BUILTIN_TOOLS, LIST_TOOLS } from '@/shared/backend-bridge/apps/tools';
 import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 import { CommandPickerItem, MODE_ICON_MAP } from './commandPickerTypes';
-import { getToolGroupIcon } from './CommandPickerIcons';
+import { getToolGroupIcon } from '@/app/pages/_shared/getToolGroupIcon';
 
 export function useCommandPickerItems(trigger: '/' | '@', filter: string) {
   const dispatch = useAppDispatch();

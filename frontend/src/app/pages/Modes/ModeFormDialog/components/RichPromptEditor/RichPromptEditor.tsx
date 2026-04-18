@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import CommandPicker from '@/app/components/CommandPicker';
+import CommandPicker from './CommandPicker/CommandPicker';
 import { RichPromptEditorProps, LINE_HEIGHT, FONT_SIZE } from './richPromptEditorTypes';
 import { useRichPromptEditor } from './useRichPromptEditor';
 

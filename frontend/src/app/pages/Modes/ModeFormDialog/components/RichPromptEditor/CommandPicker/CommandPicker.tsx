@@ -3,11 +3,8 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { CommandPickerItem, CommandPickerProps, highlightMatch } from './commandPickerTypes';
-import { useCommandPickerItems } from './useCommandPickerItems';
-
-export { getToolGroupIcon } from './CommandPickerIcons';
-export type { CommandPickerItem } from './commandPickerTypes';
+import { CommandPickerItem, CommandPickerProps, highlightMatch } from './components/commandPickerTypes';
+import { useCommandPickerItems } from './components/useCommandPickerItems';
 
 const CommandPicker: React.FC<CommandPickerProps> = ({ trigger, filter, onSelect, onClose, visible }) => {
   const c = useClaudeTokens();

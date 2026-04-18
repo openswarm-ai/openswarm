@@ -8,7 +8,7 @@ import TuneIcon from '@mui/icons-material/Tune';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useModes } from './hooks/useModes';
 import ModeCard from './ModeCard';
-import ModeFormDialog from './ModeFormDialog';
+import ModeFormDialog from './ModeFormDialog/ModeFormDialog';
 
 const Modes: React.FC = () => {
   const c = useClaudeTokens();

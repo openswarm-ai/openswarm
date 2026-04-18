@@ -15,9 +15,9 @@ import Tooltip from '@mui/material/Tooltip';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RestoreIcon from '@mui/icons-material/Restore';
 import { Mode } from '@/shared/state/modesSlice';
-import RichPromptEditor from '@/app/components/RichPromptEditor';
-import { ModeForm, ICON_MAP, ICON_OPTIONS, COLOR_OPTIONS } from './modesConstants';
-import ToolsSelector from './ToolsSelector';
+import RichPromptEditor from './components/RichPromptEditor/RichPromptEditor';
+import { ModeForm, ICON_MAP, ICON_OPTIONS, COLOR_OPTIONS } from '@/app/pages/Modes/modesConstants';
+import ToolsSelector from './components/ToolsSelector';
 
 interface ModeFormDialogProps {
   open: boolean;

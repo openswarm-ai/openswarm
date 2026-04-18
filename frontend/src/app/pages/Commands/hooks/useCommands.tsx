@@ -5,7 +5,7 @@ import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { LIST_BUILTIN_TOOLS, LIST_TOOLS } from '@/shared/backend-bridge/apps/tools';
-import { getToolGroupIcon } from '@/app/components/CommandPicker';
+import { getToolGroupIcon } from '@/app/pages/_shared/getToolGroupIcon';
 import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 import { LIST_SKILLS } from '@/shared/backend-bridge/apps/skills';
 import { LIST_MODES } from '@/shared/state/modesSlice';
