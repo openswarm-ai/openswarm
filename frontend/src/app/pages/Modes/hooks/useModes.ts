@@ -1,11 +1,11 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
-  fetchModes,
-  createMode,
-  updateMode,
-  deleteMode,
-  resetMode,
+  LIST_MODES,
+  CREATE_MODE,
+  UPDATE_MODE,
+  DELETE_MODE,
+  RESET_MODE,
   Mode,
 } from '@/shared/state/modesSlice';
 import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
@@ -30,7 +30,7 @@ export function useModes() {
   const [browseOpen, setBrowseOpen] = useState(false);
 
   useEffect(() => {
-    dispatch(fetchModes());
+    dispatch(LIST_MODES());
     dispatch(fetchBuiltinTools());
     dispatch(fetchTools());
     dispatch(fetchSkills());
@@ -71,15 +71,15 @@ export function useModes() {
     };
 
     if (editingId) {
-      await dispatch(updateMode({ id: editingId, ...payload }));
+      await dispatch(UPDATE_MODE({ modeId: editingId, ...payload }));
     } else {
-      await dispatch(createMode(payload as any));
+      await dispatch(CREATE_MODE(payload as any));
     }
     setDialogOpen(false);
   };
 
   const handleDelete = async (id: string) => {
-    await dispatch(deleteMode(id));
+    await dispatch(DELETE_MODE(id));
   };
 
   const editingIsBuiltin = editingId ? items[editingId]?.is_builtin ?? false : false;
@@ -104,8 +104,8 @@ export function useModes() {
 
   const handleReset = async () => {
     if (!editingId) return;
-    const action = await dispatch(resetMode(editingId));
-    if (resetMode.fulfilled.match(action)) {
+    const action = await dispatch(RESET_MODE(editingId));
+    if (RESET_MODE.fulfilled.match(action)) {
       const m = action.payload;
       setForm({
         name: m.name,

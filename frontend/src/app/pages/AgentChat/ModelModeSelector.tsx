@@ -20,7 +20,7 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import AdsClickIcon from '@mui/icons-material/AdsClick';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { fetchModes } from '@/shared/state/modesSlice';
+import { LIST_MODES } from '@/shared/state/modesSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ContextRing from './ContextRing';
 
@@ -69,7 +69,7 @@ const ModelModeSelector: React.FC<Props> = ({
   const [modeAnchor, setModeAnchor] = useState<HTMLElement | null>(null);
   const [modelAnchor, setModelAnchor] = useState<HTMLElement | null>(null);
 
-  useEffect(() => { if (modesArr.length === 0) dispatch(fetchModes()); }, [dispatch, modesArr.length]);
+  useEffect(() => { if (modesArr.length === 0) dispatch(LIST_MODES()); }, [dispatch, modesArr.length]);
 
   const allModelOptions = useMemo(() => {
     if (!modelsLoaded || Object.keys(modelsByProvider).length === 0) {

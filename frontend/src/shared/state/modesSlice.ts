@@ -1,20 +1,15 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { API_BASE } from '@/shared/config';
+import { createSlice } from '@reduxjs/toolkit';
+import {
+  LIST_MODES,
+  CREATE_MODE,
+  UPDATE_MODE,
+  RESET_MODE,
+  DELETE_MODE,
+} from '@/shared/backend-bridge/apps/modes';
+import type { Mode } from '@/shared/backend-bridge/apps/modes';
 
-const MODES_API = `${API_BASE}/modes`;
-
-export interface Mode {
-  id: string;
-  name: string;
-  description: string;
-  system_prompt: string | null;
-  tools: string[] | null;
-  default_next_mode: string | null;
-  is_builtin: boolean;
-  icon: string;
-  color: string;
-  default_folder: string | null;
-}
+export type { Mode };
+export { LIST_MODES, CREATE_MODE, UPDATE_MODE, RESET_MODE, DELETE_MODE };
 
 interface ModesState {
   items: Record<string, Mode>;
@@ -25,75 +20,25 @@ interface ModesState {
 
 const initialState: ModesState = { items: {}, builtinDefaults: {}, loading: false, loaded: false };
 
-export const fetchModes = createAsyncThunk(
-  'modes/fetch',
-  async () => {
-    const res = await fetch(`${MODES_API}/list`);
-    const data = await res.json();
-    return { modes: data.modes as Mode[], builtinDefaults: (data.builtin_defaults ?? {}) as Record<string, Mode> };
-  },
-  { condition: (_, { getState }) => !(getState() as { modes: ModesState }).modes.loading },
-);
-
-export const createMode = createAsyncThunk(
-  'modes/create',
-  async (body: Omit<Mode, 'id' | 'is_builtin'>) => {
-    const res = await fetch(`${MODES_API}/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    return data.mode as Mode;
-  }
-);
-
-export const updateMode = createAsyncThunk(
-  'modes/update',
-  async ({ id, ...updates }: Partial<Mode> & { id: string }) => {
-    const res = await fetch(`${MODES_API}/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    const data = await res.json();
-    return data.mode as Mode;
-  }
-);
-
-export const resetMode = createAsyncThunk(
-  'modes/reset',
-  async (id: string) => {
-    const res = await fetch(`${MODES_API}/${id}/reset`, { method: 'POST' });
-    const data = await res.json();
-    return data.mode as Mode;
-  }
-);
-
-export const deleteMode = createAsyncThunk('modes/delete', async (id: string) => {
-  await fetch(`${MODES_API}/${id}`, { method: 'DELETE' });
-  return id;
-});
-
 const modesSlice = createSlice({
   name: 'modes',
   initialState,
   reducers: {},
   extraReducers: (builder) => {
     builder
-      .addCase(fetchModes.pending, (state) => { state.loading = true; })
-      .addCase(fetchModes.fulfilled, (state, action) => {
+      .addCase(LIST_MODES.pending, (state) => { state.loading = true; })
+      .addCase(LIST_MODES.fulfilled, (state, action) => {
         state.loading = false;
         state.loaded = true;
         state.items = {};
         for (const m of action.payload.modes) state.items[m.id] = m;
-        state.builtinDefaults = action.payload.builtinDefaults;
+        state.builtinDefaults = action.payload.builtin_defaults;
       })
-      .addCase(fetchModes.rejected, (state) => { state.loading = false; state.loaded = true; })
-      .addCase(createMode.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(updateMode.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(resetMode.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(deleteMode.fulfilled, (state, action) => { delete state.items[action.payload]; });
+      .addCase(LIST_MODES.rejected, (state) => { state.loading = false; state.loaded = true; })
+      .addCase(CREATE_MODE.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
+      .addCase(UPDATE_MODE.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
+      .addCase(RESET_MODE.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
+      .addCase(DELETE_MODE.fulfilled, (state, action) => { delete state.items[action.payload]; });
   },
 });
 

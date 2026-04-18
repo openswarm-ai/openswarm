@@ -11,7 +11,7 @@ import {
   META_LAUNCH_AND_SEND
 } from '@/shared/backend-bridge/apps/agents';
 import { updateSessionMode, updateSessionModel } from '@/shared/state/agentsSlice';
-import { fetchModes } from '@/shared/state/modesSlice';
+import { LIST_MODES } from '@/shared/state/modesSlice';
 import { setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards } from '@/shared/state/dashboardLayoutSlice';
 
 export interface QueuedMessage {
@@ -48,7 +48,7 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
     dispatch(GET_SESSION(id));
   }, [id, isDraft, dispatch]);
 
-  useEffect(() => { if (Object.keys(modesMap).length === 0) dispatch(fetchModes()); }, [dispatch, modesMap]);
+  useEffect(() => { if (Object.keys(modesMap).length === 0) dispatch(LIST_MODES()); }, [dispatch, modesMap]);
 
   const sessionSystemPrompt = session?.system_prompt;
   const sessionTargetDirectory = session?.target_directory;

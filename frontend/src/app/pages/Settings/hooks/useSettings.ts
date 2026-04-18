@@ -3,7 +3,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { updateSettings, closeSettingsModal, AppSettings } from '@/shared/state/settingsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { setChecking, setUpdateError } from '@/shared/state/updateSlice';
-import { fetchModes } from '@/shared/state/modesSlice';
+import { LIST_MODES } from '@/shared/state/modesSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 
 export function useSettings() {
@@ -28,7 +28,7 @@ export function useSettings() {
   const [recordingShortcut, setRecordingShortcut] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [showApiHelp, setShowApiHelp] = useState(false);
-  useEffect(() => { dispatch(fetchModes()); }, [dispatch]);
+  useEffect(() => { dispatch(LIST_MODES()); }, [dispatch]);
   useEffect(() => { if (open) setActiveTab('general'); }, [open]);
   useEffect(() => { if (loaded) setForm({ ...settings }); }, [loaded, settings]);
   const hasChanges = JSON.stringify(form) !== JSON.stringify(settings);
