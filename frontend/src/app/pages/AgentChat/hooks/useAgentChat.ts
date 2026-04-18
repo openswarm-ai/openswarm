@@ -1,17 +1,25 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+// import {
+//   sendMessage as sendMessageThunk,
+//   launchAndSendFirstMessage,
+//   generateTitle,
+//   stopAgent,
+//   handleApproval,
+//   editMessage,
+//   updateSessionModel,
+//   updateSessionMode,
+//   fetchSession,
+// } from '@/shared/state/agentsSlice';
 import {
-  sendMessage as sendMessageThunk,
-  launchAndSendFirstMessage,
-  generateTitle,
-  stopAgent,
-  handleApproval,
-  editMessage,
-  updateSessionModel,
-  updateSessionMode,
-  fetchSession,
-} from '@/shared/state/agentsSlice';
+  SEND_MESSAGE,
+  STOP_AGENT,
+  HANDLE_APPROVAL,
+  EDIT_MESSAGE,
+  GET_SESSION,
+} from '@/shared/backend-bridge/apps/agents';
+import { updateSessionMode, updateSessionModel } from '@/shared/state/agentsSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards } from '@/shared/state/dashboardLayoutSlice';
 
@@ -36,8 +44,8 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
   const modesMap = useAppSelector((state) => state.modes.items);
   const [showResumeBubble, setShowResumeBubble] = useState(false);
   const [awaitingResponse, setAwaitingResponse] = useState(false);
-  const [mode, setMode] = useState('agent');
-  const [model, setModel] = useState('sonnet');
+  const mode = session?.mode ?? 'agent';
+  const model = session?.model ?? 'sonnet';
   const messageQueueRef = useRef<QueuedMessage[]>([]);
   const [queueLength, setQueueLength] = useState(0);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -46,12 +54,13 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
 
   useEffect(() => {
     if (!id || isDraft) return;
-    dispatch(fetchSession(id));
+    dispatch(GET_SESSION(id));
   }, [id, isDraft, dispatch]);
 
-  useEffect(() => { if (session) setMode(session.mode); }, [session?.mode]);
-  useEffect(() => { if (session) setModel(session.model); }, [session?.model]);
   useEffect(() => { if (Object.keys(modesMap).length === 0) dispatch(fetchModes()); }, [dispatch, modesMap]);
+
+  const sessionSystemPrompt = session?.system_prompt;
+  const sessionTargetDirectory = session?.target_directory;
 
   const dispatchMessage = useCallback((msg: QueuedMessage) => {
     if (!id) return;
@@ -59,8 +68,8 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
     setAwaitingResponse(true);
     if (isDraft) {
       const config: Record<string, any> = { model, mode };
-      if (session?.system_prompt) config.system_prompt = session.system_prompt;
-      if (session?.target_directory) config.target_directory = session.target_directory;
+      if (sessionSystemPrompt) config.system_prompt = sessionSystemPrompt;
+      if (sessionTargetDirectory) config.target_directory = sessionTargetDirectory;
       dispatch(
         launchAndSendFirstMessage({ draftId: id, config, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds })
       ).then((action) => {
@@ -76,10 +85,10 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
       if (msg.selectedBrowserIds?.length) {
         dispatch(setGlowingBrowserCards({ browserIds: msg.selectedBrowserIds, sessionId: id, label: 'Use Browser' }));
       }
-      dispatch(sendMessageThunk({ sessionId: id, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds }))
-        .then((action) => { if (sendMessageThunk.rejected.match(action)) setAwaitingResponse(false); });
+      dispatch(SEND_MESSAGE({ sessionId: id, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds }))
+        .then((action) => { if (SEND_MESSAGE.rejected.match(action)) setAwaitingResponse(false); });
     }
-  }, [id, isDraft, mode, model, session?.system_prompt, session?.target_directory, dispatch]);
+  }, [id, isDraft, mode, model, sessionSystemPrompt, sessionTargetDirectory, dispatch]);
 
   const agentBusy = awaitingResponse || (!isDraft && (session?.status === 'running' || session?.status === 'waiting_approval'));
 
@@ -106,8 +115,7 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
       }
       const currentMode = modesMap[mode];
       if (currentMode?.default_next_mode && modesMap[currentMode.default_next_mode]) {
-        setMode(currentMode.default_next_mode);
-        if (id && !isDraft) dispatch(updateSessionMode({ sessionId: id, mode: currentMode.default_next_mode as any }));
+        if (id && !isDraft) dispatch(updateSessionMode({ sessionId: id, mode: currentMode.default_next_mode }));
       }
     }
     if (curr === 'running') setShowResumeBubble(false);
@@ -126,27 +134,25 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
   };
 
   const handleModeChange = useCallback((newMode: string) => {
-    setMode(newMode);
     if (id && !isDraft) dispatch(updateSessionMode({ sessionId: id, mode: newMode }));
   }, [id, isDraft, dispatch]);
 
   const handleModelChange = useCallback((newModel: string) => {
-    setModel(newModel);
     if (id && !isDraft) dispatch(updateSessionModel({ sessionId: id, model: newModel }));
   }, [id, isDraft, dispatch]);
 
   const handleApprove = (requestId: string, updatedInput?: Record<string, any>) => {
-    dispatch(handleApproval({ requestId, behavior: 'allow', updatedInput }));
+    dispatch(HANDLE_APPROVAL({ requestId, behavior: 'allow', updatedInput }));
   };
   const handleDeny = (requestId: string, message?: string) => {
-    dispatch(handleApproval({ requestId, behavior: 'deny', message }));
+    dispatch(HANDLE_APPROVAL({ requestId, behavior: 'deny', message }));
   };
-  const handleStop = () => { if (id) dispatch(stopAgent({ sessionId: id })); };
+  const handleStop = () => { if (id) dispatch(STOP_AGENT(id)); };
 
   const handleResume = useCallback(() => {
     if (!id) return;
     setShowResumeBubble(false);
-    dispatch(sendMessageThunk({
+    dispatch(SEND_MESSAGE({
       sessionId: id,
       prompt: "Continue where you left off. Start you're response EXACTLY with 'Sorry, let me pick up where I left off",
       mode, model, hidden: true,
@@ -156,18 +162,35 @@ export function useAgentChat({ sessionId: sessionIdProp }: UseAgentChatParams) {
   const handleSaveEdit = useCallback(
     (messageId: string, newContent: string) => {
       if (!id) return;
-      dispatch(editMessage({ sessionId: id, messageId, content: newContent }));
+      dispatch(EDIT_MESSAGE({ sessionId: id, messageId, content: newContent }));
       setEditingMessageId(null);
     }, [id, dispatch]
   );
   const handleCancelEdit = useCallback(() => { setEditingMessageId(null); }, []);
 
   return {
-    id, session, isDraft, dispatch, mode, model,
-    messageQueueRef, showResumeBubble, awaitingResponse, editingMessageId,
-    queueLength, setQueueLength, agentBusy,
-    handleSend, handleModeChange, handleModelChange,
-    handleApprove, handleDeny, handleStop, handleResume,
-    handleSaveEdit, handleCancelEdit, setEditingMessageId,
+    id, 
+    session, 
+    isDraft, 
+    dispatch, 
+    mode, 
+    model,
+    messageQueueRef,
+    showResumeBubble,
+    awaitingResponse,
+    editingMessageId,
+    queueLength,
+    setQueueLength,
+    agentBusy,
+    handleSend,
+    handleModeChange,
+    handleModelChange,
+    handleApprove,
+    handleDeny,
+    handleStop,
+    handleResume,
+    handleSaveEdit,
+    handleCancelEdit,
+    setEditingMessageId,
   };
 }

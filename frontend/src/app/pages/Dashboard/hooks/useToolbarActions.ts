@@ -2,12 +2,15 @@ import { useCallback } from 'react';
 import type { RefObject, MutableRefObject } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
-import {
-  launchAndSendFirstMessage,
-  generateTitle,
-  expandSession,
-  resumeSession,
-} from '@/shared/state/agentsSlice';
+// import {
+//   launchAndSendFirstMessage,
+//   generateTitle,
+//   expandSession,
+//   resumeSession,
+// } from '@/shared/state/agentsSlice';
+
+import { RESUME_SESSION } from '@/shared/backend-bridge/apps/agents';
+import { expandSession } from '@/shared/state/agentsSlice';
 import type { AgentConfig } from '@/shared/state/agentsSlice';
 import {
   addViewCard,
@@ -188,8 +191,8 @@ export function useToolbarActions(deps: ToolbarDeps) {
   }, [dispatch, browserHomepage, expandedSessionIds, canvasActions, handleHighlightCard]);
 
   const handleHistoryResume = useCallback((sessionId: string) => {
-    dispatch(resumeSession({ sessionId })).then((action) => {
-      if (resumeSession.fulfilled.match(action)) {
+    dispatch(RESUME_SESSION(sessionId)).then((action) => {
+      if (RESUME_SESSION.fulfilled.match(action)) {
         dispatch(expandSession(sessionId));
         setAutoFocusSessionId(sessionId);
         setTimeout(() => {

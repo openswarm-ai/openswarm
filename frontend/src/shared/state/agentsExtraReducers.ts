@@ -201,16 +201,6 @@ export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>
         tool_group_meta: session.tool_group_meta ?? existing?.tool_group_meta ?? {},
       };
     })
-    // TODO: Re-implement this???
-    // .addCase(fetchBrowserAgentChildren.fulfilled, (state, action) => {
-    //   for (const session of action.payload) {
-    //     if (!state.sessions[session.id]) {
-    //       state.sessions[session.id] = {
-    //         ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {},
-    //       };
-    //     }
-    //   }
-    // })
     // .addCase(searchHistory.pending, (state) => {
     //   state.historySearch.loading = true;
     // })
