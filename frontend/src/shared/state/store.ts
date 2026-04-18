@@ -11,7 +11,7 @@ import dashboardLayoutReducer from './dashboardLayoutSlice';
 import dashboardsReducer from './dashboardsSlice';
 import appsReducer from './appsSlice';
 import updateReducer from './updateSlice';
-// import modelsReducer from './modelsSlice';
+import modelsReducer from './modelsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -27,7 +27,7 @@ export const store = configureStore({
     dashboards: dashboardsReducer,
     apps: appsReducer,
     update: updateReducer,
-    // models: modelsReducer,
+    models: modelsReducer,
   },
 });
 

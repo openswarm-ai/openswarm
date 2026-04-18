@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { UPDATE_SETTINGS, AppSettings } from '@/shared/backend-bridge/apps/settings';
 import { closeSettingsModal } from '@/shared/state/settingsSlice';
-// import { fetchModels } from '@/shared/state/modelsSlice';
+import { SUBSCRIPTIONS_STATUS } from '@/shared/backend-bridge/apps/subscriptions';
 import { setChecking, setUpdateError } from '@/shared/state/updateSlice';
 import { LIST_MODES } from '@/shared/state/modesSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
@@ -35,7 +35,7 @@ export function useSettings() {
   const handleSave = async () => {
     await dispatch(UPDATE_SETTINGS(form));
     if (form.theme !== settings.theme) setThemeMode(form.theme);
-    // dispatch(fetchModels());
+    dispatch(SUBSCRIPTIONS_STATUS());
     setSaved(true);
   };
   const handleRequestClose = useCallback(() => {
@@ -50,7 +50,7 @@ export function useSettings() {
   const handleSaveAndClose = useCallback(async () => {
     await dispatch(UPDATE_SETTINGS(form));
     if (form.theme !== settings.theme) setThemeMode(form.theme);
-    // dispatch(fetchModels());
+    dispatch(SUBSCRIPTIONS_STATUS());
     setSaved(true);
     setConfirmDiscard(false);
     dispatch(closeSettingsModal());

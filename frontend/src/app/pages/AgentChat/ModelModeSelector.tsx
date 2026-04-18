@@ -52,10 +52,10 @@ interface Props {
 }
 
 const ModelModeSelector: React.FC<Props> = ({
-  mode, onModeChange, model, onModelChange, provider, onProviderChange,
+  mode, onModeChange, model, onModelChange, onProviderChange,
   contextEstimate, ownerId, sessionId,
   autoRunMode, hasContent, isRunning, disabled, onSend, onStop,
-  browseAndAttachFiles, queueLength = 0,
+  browseAndAttachFiles,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
