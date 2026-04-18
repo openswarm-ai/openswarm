@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 
@@ -23,15 +24,23 @@ module.exports = (env, argv) => {
           test: /\.(js|jsx|ts|tsx)$/,
           exclude: /node_modules/,
           use: {
-            loader: 'babel-loader',
+            loader: 'swc-loader',
             options: {
-              presets: [
-                ['@babel/preset-env', { targets: 'defaults' }],
-                ['@babel/preset-react', { runtime: 'automatic' }],
-                '@babel/preset-typescript'
-              ]
-            }
-          }
+              jsc: {
+                parser: {
+                  syntax: 'typescript',
+                  tsx: true,
+                  dynamicImport: true,
+                },
+                transform: {
+                  react: {
+                    runtime: 'automatic',
+                  },
+                },
+                target: 'es2017',
+              },
+            },
+          },
         },
         {
           test: /\.css$/,
@@ -59,7 +68,11 @@ module.exports = (env, argv) => {
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx'],
       alias: {
-        '@': path.resolve(__dirname, 'src')
+        '@': path.resolve(__dirname, 'src'),
+        [path.resolve(__dirname, 'node_modules/@pierre/diffs/node_modules/shiki/dist/bundle-full.mjs')]:
+          path.resolve(__dirname, 'node_modules/@pierre/diffs/node_modules/shiki/dist/bundle-web.mjs'),
+        [path.resolve(__dirname, 'node_modules/@pierre/diffs/node_modules/shiki/dist/langs.mjs')]:
+          path.resolve(__dirname, 'src/shims/shiki-langs-noop.mjs'),
       }
     },
 
@@ -80,7 +93,7 @@ module.exports = (env, argv) => {
       }),
     ],
 
-    devtool: isDevelopment ? 'source-map' : false,
+    devtool: isDevelopment ? 'eval-cheap-module-source-map' : false,
 
     devServer: {
       static: { directory: path.join(__dirname, 'public') },

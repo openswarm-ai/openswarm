@@ -8,11 +8,8 @@ import {
   use,
   type ReactNode,
 } from "react";
-import {
-  createHighlighter,
-  createJavaScriptRegexEngine,
-  type Highlighter,
-} from "shiki";
+import { createHighlighter, type Highlighter } from "shiki/bundle/web";
+import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
 import pierreDarkTheme from "../shared/pierre-dark-theme.js";
 import pierreLightTheme from "../shared/pierre-light-theme.js";
