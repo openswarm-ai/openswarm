@@ -9,8 +9,11 @@ const APP_BUILDER_API: string = `${API_BASE}/app_builder`;
 
 
 const serve_app_source_file_endpoint: string = `${APP_BUILDER_API}/app/source_dir`;
-async function serve_app_source_file_function(appId: string, filepath: string): Promise<string> {
-  const res = await fetch(`${APP_BUILDER_API}/app/${appId}/source_dir/${filepath}`, {
+async function serve_app_source_file_function(payload: {
+  appId: string;
+  filepath: string;
+}): Promise<string> {
+  const res = await fetch(`${APP_BUILDER_API}/app/${payload.appId}/source_dir/${payload.filepath}`, {
     method: 'GET',
   });
   const text = await res.text();
@@ -23,8 +26,11 @@ export const SERVE_APP_SOURCE_FILE = createAsyncThunk(
 
 
 const serve_app_file_endpoint: string = `${APP_BUILDER_API}/serve`;
-async function serve_app_file_function(appId: string, filepath: string): Promise<string> {
-  const res = await fetch(`${APP_BUILDER_API}/${appId}/serve/${filepath}`, {
+async function serve_app_file_function(payload: {
+  appId: string;
+  filepath: string;
+}): Promise<string> {
+  const res = await fetch(`${APP_BUILDER_API}/${payload.appId}/serve/${payload.filepath}`, {
     method: 'GET',
   });
   const text = await res.text();
@@ -77,11 +83,15 @@ export const SEED_APP = createAsyncThunk(
 
 
 const write_app_file_endpoint: string = `${APP_BUILDER_API}/app/file`;
-async function write_app_file_function(appId: string, filepath: string, content: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${APP_BUILDER_API}/app/${appId}/file/${filepath}`, {
+async function write_app_file_function(payload: {
+  appId: string;
+  filepath: string;
+  content: string;
+}): Promise<{ ok: boolean }> {
+  const res = await fetch(`${APP_BUILDER_API}/app/${payload.appId}/file/${payload.filepath}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content: payload.content }),
   });
   const data = await res.json();
   return data as { ok: boolean };
@@ -93,8 +103,11 @@ export const WRITE_APP_FILE = createAsyncThunk(
 
 
 const delete_app_file_endpoint: string = `${APP_BUILDER_API}/app/file/delete`;
-async function delete_app_file_function(appId: string, filepath: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${APP_BUILDER_API}/app/${appId}/file/${filepath}`, {
+async function delete_app_file_function(payload: {
+  appId: string;
+  filepath: string;
+}): Promise<{ ok: boolean }> {
+  const res = await fetch(`${APP_BUILDER_API}/app/${payload.appId}/file/${payload.filepath}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
   });
@@ -165,15 +178,14 @@ export const CREATE_APP = createAsyncThunk(
 
 
 const update_app_endpoint: string = `${APP_BUILDER_API}/update`;
-async function update_app_function(
-  appId: string,
-  updates: {
-    name?: string;
-    description?: string;
-    icon?: string;
-    thumbnail?: string | null;
-  },
-): Promise<{ ok: boolean; app: Record<string, unknown> }> {
+async function update_app_function(payload: {
+  appId: string;
+  name?: string;
+  description?: string;
+  icon?: string;
+  thumbnail?: string | null;
+}): Promise<{ ok: boolean; app: Record<string, unknown> }> {
+  const { appId, ...updates } = payload;
   const res = await fetch(`${APP_BUILDER_API}/${appId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
