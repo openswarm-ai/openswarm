@@ -90,7 +90,7 @@ BACKEND_PORT=$(python3 -c "import json; print(json.load(open('$PROJECT_ROOT/port
 FRONTEND_PORT=$(python3 -c "import json; print(json.load(open('$PROJECT_ROOT/ports.config.json'))['frontend']['dev'])")
 
 # --- Run structural linter (warnings only, non-blocking) ---
-LINT_OUTPUT=$(python3 "$PROJECT_ROOT/linter/structlint.py" --root "$PROJECT_ROOT" 2>&1)
+LINT_OUTPUT=$(python3 "$PROJECT_ROOT/linter/lint.py" --root "$PROJECT_ROOT" 2>&1)
 LINT_EXIT=$?
 if [ $LINT_EXIT -ne 0 ]; then
     echo ""
@@ -99,7 +99,7 @@ if [ $LINT_EXIT -ne 0 ]; then
         echo -e "${YELLOW}  $line${RESET}"
     done
     LINT_COUNT=$(echo "$LINT_OUTPUT" | grep -oE '[0-9]+ error' | head -1 | grep -oE '[0-9]+')
-    echo -e "${YELLOW}${BOLD}  ${LINT_COUNT} violation(s) — fix or add exceptions in linter/structlint.json${RESET}"
+    echo -e "${YELLOW}${BOLD}  ${LINT_COUNT} violation(s) — fix or add exceptions in linter/config/config.json${RESET}"
     echo ""
 fi
 

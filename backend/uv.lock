@@ -885,6 +885,7 @@ dependencies = [
     { name = "pillow" },
     { name = "posthog" },
     { name = "pydantic" },
+    { name = "swarm-debug" },
     { name = "watchfiles" },
 ]
 
@@ -907,6 +908,7 @@ requires-dist = [
     { name = "pillow" },
     { name = "posthog" },
     { name = "pydantic", specifier = "==2.10.5" },
+    { name = "swarm-debug" },
     { name = "watchfiles" },
 ]
 
@@ -1703,6 +1705,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/81/69/17425771797c36cded50b7fe44e850315d039f28b15901ab44839e70b593/starlette-1.0.0.tar.gz", hash = "sha256:6a4beaf1f81bb472fd19ea9b918b50dc3a77a6f2e190a12954b25e6ed5eea149", size = 2655289, upload-time = "2026-03-22T18:29:46.779Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/c9/584bc9651441b4ba60cc4d557d8a547b5aff901af35bda3a4ee30c819b82/starlette-1.0.0-py3-none-any.whl", hash = "sha256:d3ec55e0bb321692d275455ddfd3df75fff145d009685eb40dc91fc66b03d38b", size = 72651, upload-time = "2026-03-22T18:29:45.111Z" },
+]
+
+[[package]]
+name = "swarm-debug"
+version = "0.1.47"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fastapi", extra = ["standard"] },
+    { name = "packaging" },
+    { name = "rich" },
+    { name = "typeguard" },
+    { name = "typer" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/82/9c/bd571dea78033dfea387f626de983115b8a96d9dd3478166119f38a115e3/swarm_debug-0.1.47.tar.gz", hash = "sha256:b3261dd675f3b4ca1046a6d293169e0dcb3f827660a2c747103b527bbb0e712c", size = 397465, upload-time = "2026-04-17T00:48:29.047Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/16/62716f8f0cdd9e4e3ff75ed4ae034dbfcf3a349d65a1fb1f3894bb686c11/swarm_debug-0.1.47-py3-none-any.whl", hash = "sha256:c137635a1425adfddc8147766c62dd2e7f811e4911682bcdacce496144a56d0a", size = 399393, upload-time = "2026-04-17T00:48:27.469Z" },
 ]
 
 [[package]]

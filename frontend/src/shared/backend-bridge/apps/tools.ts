@@ -23,7 +23,7 @@ export const LIST_BUILTIN_TOOLS = createAsyncThunk(
 );
 
 
-const get_builtin_permissions_endpoint: string = `${TOOLS_API}/builtin/permissions`;
+const get_builtin_permissions_endpoint: string = `${TOOLS_API}/get_builtin_permissions`;
 async function get_builtin_permissions_function(): Promise<{ permissions: Record<string, string> }> {
   const res = await fetch(get_builtin_permissions_endpoint, {
     method: 'GET',
@@ -38,7 +38,7 @@ export const GET_BUILTIN_PERMISSIONS = createAsyncThunk(
 );
 
 
-const update_builtin_permissions_endpoint: string = `${TOOLS_API}/builtin/permissions`;
+const update_builtin_permissions_endpoint: string = `${TOOLS_API}/update_builtin_permissions`;
 async function update_builtin_permissions_function(permissions: Record<string, string>): Promise<{ permissions: Record<string, string> }> {
   const res = await fetch(update_builtin_permissions_endpoint, {
     method: 'PUT',

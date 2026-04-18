@@ -40,7 +40,7 @@ export interface AppSettings {
 // ---------------------------------------------------------------------------
 
 
-const get_settings_endpoint: string = SETTINGS_API;
+const get_settings_endpoint: string = `${SETTINGS_API}/get_settings`;
 async function get_settings_function(): Promise<AppSettings> {
   const res = await fetch(get_settings_endpoint, {
     method: 'GET',
@@ -55,7 +55,7 @@ export const GET_SETTINGS = createAsyncThunk(
 );
 
 
-const update_settings_endpoint: string = SETTINGS_API;
+const update_settings_endpoint: string = `${SETTINGS_API}/update_settings`;
 async function update_settings_function(body: Partial<AppSettings>): Promise<{ ok: boolean; settings: AppSettings }> {
   const res = await fetch(update_settings_endpoint, {
     method: 'PUT',

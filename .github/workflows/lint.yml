@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: python3 linter/structlint.py --root .
+      - run: python3 linter/lint.py --root .
 
   typecheck:
     name: Type check (backend)

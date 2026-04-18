@@ -12,6 +12,7 @@ dependencies = [
     "posthog",
     "pydantic==2.10.5",
     "watchfiles",
+    "swarm-debug"
 ]
 
 [dependency-groups]

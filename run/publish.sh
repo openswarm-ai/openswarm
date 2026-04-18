@@ -13,9 +13,9 @@ PROJECT_ROOT="$(dirname "$RUN_DIR_ROOT")"
 cd "$PROJECT_ROOT"
 
 echo "Running structural linter..."
-if ! python3 "$PROJECT_ROOT/linter/structlint.py" --root "$PROJECT_ROOT"; then
+if ! python3 "$PROJECT_ROOT/linter/lint.py" --root "$PROJECT_ROOT"; then
     echo ""
-    echo "Publish blocked: structlint found violations. Fix them or add exceptions in linter/structlint.json."
+    echo "Publish blocked: linter found violations. Fix them or add exceptions in linter/config/config.json."
     exit 1
 fi
 echo ""

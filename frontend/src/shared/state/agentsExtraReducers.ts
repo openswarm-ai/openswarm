@@ -173,11 +173,6 @@ export function buildExtraReducers(builder: ActionReducerMapBuilder<AgentsState>
       state.expandedSessionIds = state.expandedSessionIds.filter((id) => id !== sessionId);
       state.trackedNotificationIds = state.trackedNotificationIds.filter((id) => id !== sessionId);
     })
-    .addCase(GET_HISTORY.fulfilled, (state, action) => {
-      const history: Record<string, HistorySession> = {};
-      for (const s of action.payload.sessions) history[s.id] = s;
-      state.history = history;
-    })
     .addCase(RESUME_SESSION.fulfilled, (state, action) => {
       const session = action.payload;
       state.sessions[session.id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };

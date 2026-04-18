@@ -30,12 +30,12 @@ def load_settings() -> AppSettings:
     return AppSettings()
 
 
-@settings.router.get("")
+@settings.router.get("/get_settings")
 async def get_settings():
     return load_settings().model_dump()
 
 
-@settings.router.put("")
+@settings.router.put("/update_settings")
 async def update_settings(body: AppSettings):
     os.makedirs(SETTINGS_DIR, exist_ok=True)
     with open(SETTINGS_FILE, "w") as f:
