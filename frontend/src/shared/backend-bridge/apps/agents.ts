@@ -1,5 +1,5 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
-import { API_BASE } from '@/shared/backend/base_routes';
+import { API_BASE } from '@/shared/backend-bridge/base_routes';
 import type {
   AgentSession, HistorySession,
 } from '@/shared/state/agentsTypes';

@@ -1,5 +1,5 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
-import { API_BASE } from '@/shared/backend/base_routes';
+import { API_BASE } from '@/shared/backend-bridge/base_routes';
 
 const HEALTH_API: string = `${API_BASE}/health`;
 
