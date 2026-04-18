@@ -8,7 +8,7 @@ import type { ContextPath } from '@/shared/state/agentsTypes';
 import { useOpenSwarmMentionAdapter, type MentionItemMetadata } from './components/OpenSwarmMentionAdapter';
 import { useComposerAttachments } from './components/useComposerAttachments';
 import { MentionSelectOverride, MentionPopover, ComposerAttachmentChips } from './components/ComposerParts';
-import ModelModeSelector from '../ModelModeSelector/ModelModeSelector';
+import ModelModeSelector from './components/ModelModeSelector/ModelModeSelector';
 
 interface OpenSwarmComposerProps {
   composerExtrasRef: MutableRefObject<ComposerExtras>;
@@ -23,12 +23,13 @@ interface OpenSwarmComposerProps {
   contextEstimate?: { used: number; limit: number };
   autoFocus?: boolean;
   initialContextPaths?: ContextPath[];
+  embedded?: boolean;
 }
 
 const OpenSwarmComposer: FC<OpenSwarmComposerProps> = ({
   composerExtrasRef, mode, onModeChange, model, onModelChange,
   isRunning, onStop, sessionId, queueLength, contextEstimate, autoFocus,
-  initialContextPaths,
+  initialContextPaths, embedded,
 }) => {
   const aui = useAui();
   const mentionAdapter = useOpenSwarmMentionAdapter();
@@ -115,12 +116,15 @@ const OpenSwarmComposer: FC<OpenSwarmComposerProps> = ({
     att.forcedTools.length > 0 || Object.keys(att.attachedSkills).length > 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-(--thread-max-width) flex-col">
+    <div className={embedded ? 'flex w-full flex-col' : 'mx-auto flex w-full max-w-(--thread-max-width) flex-col'}>
       <ComposerPrimitive.Unstable_MentionRoot trigger="@" adapter={mentionAdapter}>
         <ComposerPrimitive.Root ref={formRef} onSubmit={handleFormSubmit} className="aui-composer-root relative flex w-full flex-col">
           <MentionSelectOverride onSelect={handleMentionSelect} />
           <div
-            className="flex w-full flex-col gap-1 rounded-2xl border bg-background p-2 transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20"
+            className={embedded
+              ? 'flex w-full flex-col gap-1 bg-transparent p-1'
+              : 'flex w-full flex-col gap-1 rounded-2xl border bg-background p-2 transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20'
+            }
             onDragOver={att.handleDragOver} onDragLeave={att.handleDragLeave} onDrop={att.handleDrop}
             data-dragging={att.isDragOver || undefined}
           >

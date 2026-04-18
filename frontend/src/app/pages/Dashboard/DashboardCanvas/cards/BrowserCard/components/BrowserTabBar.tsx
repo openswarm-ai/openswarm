@@ -13,7 +13,7 @@ import {
   reorderBrowserTab, setActiveBrowserTab, addBrowserTab,
   removeBrowserTab, removeBrowserCard, type BrowserTab,
 } from '@/shared/state/dashboardLayoutSlice';
-import type { TabLocalState } from '@/app/pages/Dashboard/types/types';
+import type { TabLocalState } from '../TabLocalState';
 
 interface BrowserTabBarProps {
   tabs: BrowserTab[];

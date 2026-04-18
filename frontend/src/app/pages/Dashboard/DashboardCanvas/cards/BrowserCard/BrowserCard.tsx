@@ -11,7 +11,7 @@ import { useOverlayScrollPassthrough } from '../shared/useOverlayScrollPassthrou
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
 import { type ResizeDir, CURSOR_MAP, HANDLE_DEFS, DRAG_THRESHOLD } from '../shared/cardLayoutConstants';
 import { useWebviewLifecycle, isElectron, chromeUserAgent, webviewPreloadPath, type WebviewElement } from './hooks/useWebviewLifecycle';
-import type { TabLocalState } from '@/app/pages/Dashboard/types/types';
+import type { TabLocalState } from './TabLocalState';
 import BrowserTabBar from './components/BrowserTabBar';
 import BrowserNavBar from './components/BrowserNavBar';
 import BrowserActionOverlay from './components/BrowserActionOverlay';

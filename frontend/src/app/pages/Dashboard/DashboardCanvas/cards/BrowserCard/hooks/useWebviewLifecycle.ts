@@ -12,7 +12,7 @@ import {
   updateBrowserTabFavicon,
   type BrowserTab,
 } from '@/shared/state/dashboardLayoutSlice';
-import type { TabLocalState } from '@/app/pages/Dashboard/types/types';
+import type { TabLocalState } from '../TabLocalState';
 
 export type WebviewElement = BrowserWebview;
 

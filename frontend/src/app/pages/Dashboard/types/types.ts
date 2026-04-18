@@ -1,9 +1,3 @@
-export interface TabLocalState {
-  loading: boolean;
-  canGoBack: boolean;
-  canGoForward: boolean;
-}
-
 export interface TetherInfo {
   key: string;
   path: string;
