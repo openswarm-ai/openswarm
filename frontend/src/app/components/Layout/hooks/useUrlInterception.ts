@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppDispatch } from '@/shared/hooks';
-import { createDashboard } from '@/shared/state/dashboardsSlice';
+import { CREATE_DASHBOARD } from '@/shared/backend-bridge/apps/dashboards';
 import { addBrowserCard, addBrowserTab } from '@/shared/state/dashboardLayoutSlice';
 import { setPendingBrowserUrl } from '@/shared/state/tempStateSlice';
 import { findBrowserByWebContentsId } from '@/shared/browserRegistry';
@@ -30,8 +30,8 @@ export function useUrlInterception(dashboardList: { id: string }[]) {
       if (targetId) {
         navigate(`/dashboard/${targetId}`);
       } else {
-        dispatch(createDashboard('Untitled Dashboard')).then((result: any) => {
-          if (createDashboard.fulfilled.match(result)) {
+        dispatch(CREATE_DASHBOARD('Untitled Dashboard')).then((result: any) => {
+          if (CREATE_DASHBOARD.fulfilled.match(result)) {
             navigate(`/dashboard/${result.payload.id}`);
           }
         });

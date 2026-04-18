@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import type { RefObject } from 'react';
 import { store } from '@/shared/state/store';
-import { updateDashboardThumbnail } from '@/shared/state/dashboardsSlice';
+import { UPDATE_DASHBOARD } from '@/shared/backend-bridge/apps/dashboards';
 import { captureDashboardThumbnail } from '../captureDashboardThumbnail';
 
 export function useDashboardThumbnail(
@@ -45,7 +45,7 @@ export function useDashboardThumbnail(
     return () => {
       const thumbnail = pendingThumbnailRef.current;
       if (thumbnail) {
-        store.dispatch(updateDashboardThumbnail({ id: exitingId, thumbnail }));
+        store.dispatch(UPDATE_DASHBOARD({ dashboardId: exitingId, thumbnail }));
         pendingThumbnailRef.current = null;
       }
     };

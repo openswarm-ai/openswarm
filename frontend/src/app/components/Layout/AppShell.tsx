@@ -8,7 +8,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import Settings from '@/app/pages/Settings/Settings';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { fetchDashboards } from '@/shared/state/dashboardsSlice';
+import { LIST_DASHBOARDS } from '@/shared/backend-bridge/apps/dashboards';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useUpdateNotification } from './hooks/useUpdateNotification';
@@ -40,7 +40,7 @@ const AppShell: React.FC = () => {
   useUrlInterception(dashboardList);
 
   useEffect(() => {
-    dispatch(fetchDashboards());
+    dispatch(LIST_DASHBOARDS());
     dispatch(fetchOutputs());
   }, [dispatch]);
 

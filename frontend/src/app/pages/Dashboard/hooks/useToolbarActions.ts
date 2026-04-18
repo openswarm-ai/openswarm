@@ -22,7 +22,7 @@ import {
   ViewCardPosition,
   BrowserCardPosition
 } from '@/shared/state/dashboardLayoutSlice';
-import { generateDashboardName } from '@/shared/state/dashboardsSlice';
+import { GENERATE_DASHBOARD_NAME } from '@/shared/backend-bridge/apps/dashboards';
 import type { ContextPath } from '@/app/components/DirectoryBrowser';
 import type { CanvasActions } from '../useCanvasControls';
 
@@ -150,7 +150,7 @@ export function useToolbarActions(deps: ToolbarDeps) {
               currentDash &&
               (currentDash.auto_named || currentDash.name === 'Untitled Dashboard');
             if (NAME_GEN_TRIGGERS.includes(agentCount) && canAutoName) {
-              dispatch(generateDashboardName(dashboardId));
+              dispatch(GENERATE_DASHBOARD_NAME(dashboardId));
             }
           }
         } else {

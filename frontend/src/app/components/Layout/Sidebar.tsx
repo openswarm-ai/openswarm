@@ -20,7 +20,7 @@ import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { createDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
+import { CREATE_DASHBOARD, UPDATE_DASHBOARD } from '@/shared/backend-bridge/apps/dashboards';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 const CUSTOMIZATION_ITEMS = [
@@ -65,13 +65,13 @@ const Sidebar: React.FC<SidebarProps> = ({ showUpdateDot }) => {
   const handleStartRename = (id: string, name: string) => { setRenamingId(id); setRenameValue(name); };
   const handleRenameSubmit = (id: string) => {
     const t = renameValue.trim();
-    if (t && t !== dashboardItems[id]?.name) dispatch(renameDashboard({ id, name: t }));
+    if (t && t !== dashboardItems[id]?.name) dispatch(UPDATE_DASHBOARD({ dashboardId: id, name: t }));
     setRenamingId(null);
   };
   const handleCreateDash = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const r = await dispatch(createDashboard('Untitled Dashboard'));
-    if (createDashboard.fulfilled.match(r)) navigate(`/dashboard/${r.payload.id}`);
+    const r = await dispatch(CREATE_DASHBOARD('Untitled Dashboard'));
+    if (CREATE_DASHBOARD.fulfilled.match(r)) navigate(`/dashboard/${r.payload.id}`);
   };
   const handleAppsClick = () => {
     if (isAppsRoute && location.pathname === '/apps') setAppsExpanded((p) => !p);

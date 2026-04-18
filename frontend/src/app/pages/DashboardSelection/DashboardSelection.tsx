@@ -15,13 +15,13 @@ import EditIcon from '@mui/icons-material/Edit';
 import SearchIcon from '@mui/icons-material/Search';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
-  fetchDashboards,
-  createDashboard,
-  deleteDashboard,
-  duplicateDashboard,
-  renameDashboard,
-  Dashboard,
-} from '@/shared/state/dashboardsSlice';
+  LIST_DASHBOARDS,
+  CREATE_DASHBOARD,
+  DELETE_DASHBOARD,
+  DUPLICATE_DASHBOARD,
+  UPDATE_DASHBOARD,
+} from '@/shared/backend-bridge/apps/dashboards';
+import type { Dashboard } from '@/shared/state/dashboardsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import DashboardCard from './DashboardCard';
 
@@ -39,7 +39,7 @@ const DashboardSelection: React.FC = () => {
   const [renameValue, setRenameValue] = useState('');
 
   useEffect(() => {
-    dispatch(fetchDashboards());
+    dispatch(LIST_DASHBOARDS());
   }, [dispatch]);
 
   const dashboards = useMemo(() => {
@@ -52,8 +52,8 @@ const DashboardSelection: React.FC = () => {
   }, [items, search]);
 
   const handleCreate = async () => {
-    const result = await dispatch(createDashboard('Untitled Dashboard'));
-    if (createDashboard.fulfilled.match(result)) {
+    const result = await dispatch(CREATE_DASHBOARD('Untitled Dashboard'));
+    if (CREATE_DASHBOARD.fulfilled.match(result)) {
       navigate(`/dashboard/${result.payload.id}`);
     }
   };
@@ -70,12 +70,12 @@ const DashboardSelection: React.FC = () => {
   };
 
   const handleDelete = () => {
-    if (menuDashboard) dispatch(deleteDashboard(menuDashboard.id));
+    if (menuDashboard) dispatch(DELETE_DASHBOARD(menuDashboard.id));
     handleCloseMenu();
   };
 
   const handleDuplicate = () => {
-    if (menuDashboard) dispatch(duplicateDashboard(menuDashboard.id));
+    if (menuDashboard) dispatch(DUPLICATE_DASHBOARD(menuDashboard.id));
     handleCloseMenu();
   };
 
@@ -93,7 +93,7 @@ const DashboardSelection: React.FC = () => {
   const handleRenameSubmit = (id: string) => {
     const trimmed = renameValue.trim();
     if (trimmed && trimmed !== items[id]?.name) {
-      dispatch(renameDashboard({ id, name: trimmed }));
+      dispatch(UPDATE_DASHBOARD({ dashboardId: id, name: trimmed }));
     }
     setRenamingId(null);
   };
