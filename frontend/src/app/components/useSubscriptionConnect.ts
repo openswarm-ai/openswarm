@@ -1,5 +1,10 @@
 import { useCallback, MutableRefObject } from 'react';
-import { API_BASE } from '@/shared/config';
+import { useAppDispatch } from '@/shared/hooks';
+import {
+  SUBSCRIPTIONS_CONNECT,
+  SUBSCRIPTIONS_POLL,
+  SUBSCRIPTIONS_STATUS,
+} from '@/shared/backend-bridge/apps/subscriptions';
 
 interface UseSubscriptionConnectParams {
   pollTimerRef: MutableRefObject<any>;
@@ -11,6 +16,8 @@ interface UseSubscriptionConnectParams {
 export function useSubscriptionConnect({
   pollTimerRef, msgHandlerRef, setConnecting, advanceToTools,
 }: UseSubscriptionConnectParams) {
+  const dispatch = useAppDispatch();
+
   const handleConnect = useCallback(async (providerId: string) => {
     if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
     if (msgHandlerRef.current) { window.removeEventListener('message', msgHandlerRef.current); msgHandlerRef.current = null; }
@@ -19,34 +26,20 @@ export function useSubscriptionConnect({
     await new Promise(r => setTimeout(r, 1000));
 
     try {
-      const r = await fetch(`${API_BASE}/subscriptions/connect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: providerId }),
-      });
-      if (!r.ok) {
-        setConnecting(null);
-        return;
-      }
-      const data = await r.json();
+      const data = await dispatch(SUBSCRIPTIONS_CONNECT(providerId)).unwrap();
 
       if (data.flow === 'device_code') {
-        if (data.verification_uri) window.open(data.verification_uri, '_blank');
+        if (data.verification_uri) window.open(data.verification_uri as string, '_blank');
 
         const timer = setInterval(async () => {
           try {
-            const pr = await fetch(`${API_BASE}/subscriptions/poll`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                provider: providerId,
-                device_code: data.device_code,
-                code_verifier: data.code_verifier,
-                extra_data: data.extra_data,
-              }),
-            });
-            const pd = await pr.json();
-            if (pd.success) {
+            const pd = await dispatch(SUBSCRIPTIONS_POLL({
+              provider: providerId,
+              device_code: data.device_code as string,
+              code_verifier: data.code_verifier as string | undefined,
+              extra_data: data.extra_data as Record<string, unknown> | undefined,
+            })).unwrap();
+            if ((pd as any).success) {
               clearInterval(timer);
               pollTimerRef.current = null;
               advanceToTools();
@@ -57,7 +50,7 @@ export function useSubscriptionConnect({
         setTimeout(() => { clearInterval(timer); pollTimerRef.current = null; setConnecting(null); }, 30000);
 
       } else if (data.flow === 'authorization_code') {
-        const popup = window.open(data.auth_url, 'oauth_connect', 'width=600,height=700');
+        const popup = window.open(data.auth_url as string, 'oauth_connect', 'width=600,height=700');
         let resolved = false;
         const cleanup = () => {
           if (resolved) return;
@@ -87,9 +80,8 @@ export function useSubscriptionConnect({
               advanceToTools();
               return;
             }
-            const sr = await fetch(`${API_BASE}/subscriptions/status`);
-            const sd = await sr.json();
-            const connections = sd.providers?.connections || [];
+            const sd = await dispatch(SUBSCRIPTIONS_STATUS()).unwrap();
+            const connections = (sd.providers as any)?.connections || [];
             if (connections.some((p: any) => p.provider === providerId && p.isActive)) {
               cleanup();
               advanceToTools();
@@ -105,7 +97,7 @@ export function useSubscriptionConnect({
     } catch {
       setConnecting(null);
     }
-  }, [pollTimerRef, msgHandlerRef, setConnecting, advanceToTools]);
+  }, [dispatch, pollTimerRef, msgHandlerRef, setConnecting, advanceToTools]);
 
   return handleConnect;
 }

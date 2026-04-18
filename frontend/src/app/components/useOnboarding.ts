@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE } from '@/shared/config';
+import { useAppDispatch } from '@/shared/hooks';
+import { SUBSCRIPTIONS_STATUS } from '@/shared/backend-bridge/apps/subscriptions';
 import { ToolIntegration } from './onboardingConstants';
 import { useSubscriptionConnect } from './useSubscriptionConnect';
 
 export function useOnboarding() {
+  const dispatch = useAppDispatch();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<'provider' | 'tools'>('provider');
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -27,11 +30,10 @@ export function useOnboarding() {
     let attempts = 0;
     const maxAttempts = 15;
     const check = () => {
-      fetch(`${API_BASE}/subscriptions/status`)
-        .then((r) => r.json())
+      dispatch(SUBSCRIPTIONS_STATUS()).unwrap()
         .then((data) => {
           if (data.running) {
-            const connections = data.providers?.connections || [];
+            const connections = (data.providers as any)?.connections || [];
             if (connections.some((p: any) => p.isActive)) return;
             setTimeout(() => setNineRouterReady(true), 3000);
           } else {
