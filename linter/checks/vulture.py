@@ -13,7 +13,7 @@ import subprocess
 from functools import lru_cache
 from pathlib import Path
 
-from . import is_excepted
+from . import is_excepted, is_lintignored
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
@@ -45,6 +45,7 @@ def _is_inside_class(filepath: str, lineno: int) -> bool:
 def run_vulture(
     root: Path, min_confidence: int, error_threshold: int,
     exceptions: dict[str, list[str]],
+    ignores: dict[Path, set[str]] | None = None,
 ) -> list[str]:
     """Run vulture on the Python backend and return errors."""
     vulture_bin = root / "backend" / ".venv" / "bin" / "vulture"
@@ -82,6 +83,8 @@ def run_vulture(
             continue
         filepath, lineno, message = m.groups()
         if is_excepted(filepath, "vulture", exceptions):
+            continue
+        if ignores and is_lintignored(root / filepath, root, "vulture", ignores):
             continue
         if _is_inside_class(str(root / filepath), int(lineno)):
             continue

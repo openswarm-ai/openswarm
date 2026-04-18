@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from checks import is_excluded, is_excepted
+from checks import is_excluded, is_excepted, is_lintignored, collect_lintignores
 from checks.structural import check_file_lines, check_folder_items, check_nested_imports
 from checks.vulture import run_vulture
 from checks.eslint import run_eslint
@@ -34,6 +34,7 @@ def run_checks(root: Path) -> tuple[list[str], list[str], list[str], list[str], 
     excludes: list[str] = config["exclude"]
     exceptions: dict[str, list[str]] = config["exceptions"]
     extensions: list[str] = config["include_extensions"]
+    ignores = collect_lintignores(root, excludes)
 
     max_lines: int = rules["max-file-lines"]
     max_items: int = rules["max-folder-items"]
@@ -52,7 +53,12 @@ def run_checks(root: Path) -> tuple[list[str], list[str], list[str], list[str], 
             continue
 
         rel_dir = str(dp.relative_to(root))
-        if folder_items_on and rel_dir != "." and not is_excepted(rel_dir, "max-folder-items", exceptions):
+        if (
+            folder_items_on
+            and rel_dir != "."
+            and not is_excepted(rel_dir, "max-folder-items", exceptions)
+            and not is_lintignored(dp, root, "max-folder-items", ignores)
+        ):
             result = check_folder_items(dp, root, max_items, excludes)
             if result:
                 structural_errors.append(result[0])
@@ -64,11 +70,20 @@ def run_checks(root: Path) -> tuple[list[str], list[str], list[str], list[str], 
             if is_excluded(fp, root, excludes):
                 continue
             rel_file = str(fp.relative_to(root))
-            if file_lines_on and not is_excepted(rel_file, "max-file-lines", exceptions):
+            if (
+                file_lines_on
+                and not is_excepted(rel_file, "max-file-lines", exceptions)
+                and not is_lintignored(fp, root, "max-file-lines", ignores)
+            ):
                 result = check_file_lines(fp, root, max_lines)
                 if result:
                     structural_errors.append(result[0])
-            if nested_imports_on and check_imports and not is_excepted(rel_file, "no-nested-imports", exceptions):
+            if (
+                nested_imports_on
+                and check_imports
+                and not is_excepted(rel_file, "no-nested-imports", exceptions)
+                and not is_lintignored(fp, root, "no-nested-imports", ignores)
+            ):
                 structural_errors.extend(check_nested_imports(fp, root))
 
     vulture_errors: list[str] = []
@@ -77,14 +92,14 @@ def run_checks(root: Path) -> tuple[list[str], list[str], list[str], list[str], 
         if vulture_confidence is not None:
             vulture_error_threshold = rules.get("vulture-error-threshold", 100)
             vulture_errors = run_vulture(
-                root, vulture_confidence, vulture_error_threshold, exceptions,
+                root, vulture_confidence, vulture_error_threshold, exceptions, ignores,
             )
 
-    eslint_errors = run_eslint(root) if enabled.get("eslint", True) else []
-    knip_errors = run_knip(root) if enabled.get("knip", True) else []
+    eslint_errors = run_eslint(root, ignores) if enabled.get("eslint", True) else []
+    knip_errors = run_knip(root, ignores) if enabled.get("knip", True) else []
     endpoint_ignore_routes: list[str] = rules.get("endpoint-ignore-routes", [])
-    endpoint_errors = run_endpoint_check(root, exceptions, endpoint_ignore_routes) if enabled.get("endpoints", True) else []
-    class_errors = run_class_check(root, exceptions, excludes) if enabled.get("classes", True) else []
+    endpoint_errors = run_endpoint_check(root, exceptions, endpoint_ignore_routes, ignores) if enabled.get("endpoints", True) else []
+    class_errors = run_class_check(root, exceptions, excludes, ignores) if enabled.get("classes", True) else []
 
     return sorted(structural_errors), sorted(vulture_errors), sorted(eslint_errors), sorted(knip_errors), sorted(endpoint_errors), sorted(class_errors)
 
@@ -126,6 +141,8 @@ def watch_loop(root: Path) -> None:
                 return True
             p = Path(path)
             if p.suffix == ".json" and (p.parent == SCRIPT_DIR or p.parent == config_dir):
+                return True
+            if p.name.startswith(".lintignore"):
                 return True
             return Path(path).is_dir()
 

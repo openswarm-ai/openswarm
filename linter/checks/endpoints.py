@@ -19,7 +19,7 @@ import fnmatch
 import re
 from pathlib import Path
 
-from . import is_excepted
+from . import is_excepted, is_lintignored
 
 _DECORATOR_RE = re.compile(
     r"@(\w+)\.router\.\w+\(\s*[\"']([^\"']+)[\"']"
@@ -109,6 +109,7 @@ def run_endpoint_check(
     root: Path,
     exceptions: dict[str, list[str]],
     ignore_routes: list[str] | None = None,
+    ignores: dict[Path, set[str]] | None = None,
 ) -> list[str]:
     """Find backend API endpoints with no matching frontend or backend reference."""
     backend_dir = root / "backend"
@@ -167,6 +168,8 @@ def run_endpoint_check(
     errors: list[str] = []
     for subapp_name, route_path, filepath, lineno, func_name in routes:
         if is_excepted(filepath, "endpoints", exceptions):
+            continue
+        if ignores and is_lintignored(root / filepath, root, "endpoints", ignores):
             continue
 
         full_path = f"{subapp_name}{route_path}"

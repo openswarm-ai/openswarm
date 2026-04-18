@@ -11,7 +11,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from . import is_excepted, is_excluded
+from . import is_excepted, is_excluded, is_lintignored
 
 FRAMEWORK_BASES = {"BaseModel"}
 
@@ -28,6 +28,7 @@ def run_class_check(
     root: Path,
     exceptions: dict[str, list[str]],
     excludes: list[str],
+    ignores: dict[Path, set[str]] | None = None,
 ) -> list[str]:
     """Analyse classes in backend Python files and return errors."""
     errors: list[str] = []
@@ -40,6 +41,8 @@ def run_class_check(
             continue
         rel = str(pyfile.relative_to(root))
         if is_excepted(rel, "classes", exceptions):
+            continue
+        if ignores and is_lintignored(pyfile, root, "classes", ignores):
             continue
         try:
             source = pyfile.read_text()

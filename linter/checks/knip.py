@@ -6,6 +6,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from . import is_lintignored
+
 KIND_LABELS = {
     "dependencies": "Unused dependency",
     "devDependencies": "Unused devDependency",
@@ -18,7 +20,7 @@ KIND_LABELS = {
 }
 
 
-def run_knip(root: Path) -> list[str]:
+def run_knip(root: Path, ignores: dict[Path, set[str]] | None = None) -> list[str]:
     """Run Knip on the TypeScript frontend and return errors."""
     frontend_dir = root / "frontend"
     knip_bin = frontend_dir / "node_modules" / ".bin" / "knip"
@@ -43,6 +45,9 @@ def run_knip(root: Path) -> list[str]:
     for entry in data.get("issues", []):
         filepath = entry.get("file", "")
         rel = f"frontend/{filepath}"
+        abs_path = root / rel
+        if ignores and is_lintignored(abs_path, root, "knip", ignores):
+            continue
         for kind, label in KIND_LABELS.items():
             for item in entry.get(kind, []):
                 if isinstance(item, dict):

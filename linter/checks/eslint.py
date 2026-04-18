@@ -6,8 +6,10 @@ import json
 import subprocess
 from pathlib import Path
 
+from . import is_lintignored
 
-def run_eslint(root: Path) -> list[str]:
+
+def run_eslint(root: Path, ignores: dict[Path, set[str]] | None = None) -> list[str]:
     """Run ESLint on the TypeScript frontend and return errors."""
     frontend_dir = root / "frontend"
     eslint_bin = frontend_dir / "node_modules" / ".bin" / "eslint"
@@ -31,8 +33,11 @@ def run_eslint(root: Path) -> list[str]:
     errors: list[str] = []
     for entry in data:
         try:
-            rel = str(Path(entry["filePath"]).relative_to(root))
+            filepath = Path(entry["filePath"])
+            rel = str(filepath.relative_to(root))
         except (ValueError, KeyError):
+            continue
+        if ignores and is_lintignored(filepath, root, "eslint", ignores):
             continue
         for msg in entry.get("messages", []):
             sev = "error" if msg.get("severity", 0) >= 2 else "warning"
