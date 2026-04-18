@@ -6,7 +6,7 @@ import { ApprovalRouter, BatchApprovalWrapper } from './toolkit/approval-tools';
 import ChatHeader from './ChatHeader';
 import MessageQueue from './MessageQueue';
 import OpenSwarmThread from './thread/OpenSwarmThread';
-import OpenSwarmComposer from './composer/OpenSwarmComposer';
+import OpenSwarmComposer from './OpenSwarmComposer/OpenSwarmComposer';
 import { useAgentChat } from './hooks/useAgentChat';
 import { useOpenSwarmRuntime, type ComposerExtras, type DispatchableMessage } from './runtime/useOpenSwarmRuntime';
 import { toolkit } from './toolkit';

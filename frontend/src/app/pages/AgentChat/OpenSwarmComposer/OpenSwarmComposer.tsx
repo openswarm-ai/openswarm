@@ -5,9 +5,9 @@ import type { Unstable_MentionItem } from '@assistant-ui/core';
 import { useAppSelector } from '@/shared/hooks';
 import type { ComposerExtras } from '../runtime/useOpenSwarmRuntime';
 import type { ContextPath } from '@/shared/state/agentsTypes';
-import { useOpenSwarmMentionAdapter, type MentionItemMetadata } from './OpenSwarmMentionAdapter';
-import { useComposerAttachments } from './useComposerAttachments';
-import { MentionSelectOverride, MentionPopover, ComposerAttachmentChips } from './ComposerParts';
+import { useOpenSwarmMentionAdapter, type MentionItemMetadata } from './components/OpenSwarmMentionAdapter';
+import { useComposerAttachments } from './components/useComposerAttachments';
+import { MentionSelectOverride, MentionPopover, ComposerAttachmentChips } from './components/ComposerParts';
 import ModelModeSelector from '../ModelModeSelector';
 
 interface OpenSwarmComposerProps {
