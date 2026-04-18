@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Optional, List, Dict
 from uuid import uuid4
 
-from fastapi import HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import HTTPException, WebSocket, WebSocketDisconnect, Body
 import json
 from pydantic import BaseModel
 
@@ -113,32 +113,32 @@ async def websocket_dashboard(websocket: WebSocket):
 # Session CRUD
 # ---------------------------------------------------------------------------
 
-@agents.router.get("/SESSIONS")
-async def list_sessions(dashboard_id: str = "") -> dict:
+@agents.router.get("/get_all_sessions")
+async def get_all_sessions(dashboard_id: str = Body(default="")) -> dict:
     result: List[Agent] = list[Agent](SESSIONS.values())
     if dashboard_id:
         result: List[Agent] = [a for a in result if getattr(a, "dashboard_id", None) == dashboard_id]
     return {"SESSIONS": [a.model_dump(mode="json") for a in result]}
 
 
-@agents.router.get("/sessions/{session_id}")
-async def get_session(session_id: str) -> dict:
+@agents.router.get("/get_session")
+async def get_session(session_id: str = Body()) -> dict:
     return get_agent(session_id).model_dump(mode="json")
 
 
-class LaunchBody(BaseModel):
-    model: str = "claude-sonnet-4-6"
-    mode: str = "agent"
-    system_prompt: str = ""
-    max_turns: int = 200
 
-@agents.router.post("/launch")
-async def launch(body: LaunchBody) -> dict:
+@agents.router.post("/launch_agent")
+async def launch_agent(
+    model: str = Body(),
+    mode: str = Body(),
+    system_prompt: str = Body(),
+    max_turns: int = Body(),
+) -> dict:
     agent: Agent = Agent(
-        model=body.model,
-        mode=body.mode,
+        model=model,
+        mode=mode,
         status="stopped",
-        config=ClaudeAgentOptions(max_turns=body.max_turns),
+        config=ClaudeAgentOptions(max_turns=max_turns),
     )
     agent.on_event = COMMS_MANAGER.make_session_emitter(agent.session_id)
     SESSIONS[agent.session_id] = agent
@@ -152,8 +152,8 @@ async def launch(body: LaunchBody) -> dict:
     mcp_servers: Dict[str, McpServerConfig] = toolkit.collect_mcp_servers()
 
     resolved_mode_config: ResolvedModeConfig = await ResolvedModeConfig.create(
-        mode_id=body.mode,
-        session_prompt=body.system_prompt or None,
+        mode_id=mode,
+        session_prompt=system_prompt or None,
         toolkit=toolkit,
     )
 
@@ -167,9 +167,9 @@ async def launch(body: LaunchBody) -> dict:
 
     agent.config = ClaudeAgentOptions(
         env=env,
-        model=body.model,
+        model=model,
         system_prompt=resolved_mode_config.system_prompt,
-        max_turns=body.max_turns,
+        max_turns=max_turns,
         cwd=resolved_mode_config.cwd,
         mcp_servers=mcp_servers if mcp_servers else None,
         allowed_tools=resolved_mode_config.allowed_tools,
@@ -189,14 +189,14 @@ async def launch(body: LaunchBody) -> dict:
     return {"session_id": agent.session_id, "session": agent.snapshot().model_dump(mode="json")}
 
 
-class UpdateBody(BaseModel):
-    system_prompt: Optional[str] = None
-
-@agents.router.patch("/SESSIONS/{session_id}")
-async def update_session(session_id: str, body: UpdateBody) -> dict:
+@agents.router.patch("/update_system_prompt")
+async def update_system_prompt(
+    session_id: str = Body(),
+    system_prompt: Optional[str] = Body(default=None),
+) -> dict:
     agent: Agent = get_agent(session_id)
-    if body.system_prompt is not None:
-        agent.config.system_prompt = body.system_prompt
+    if system_prompt is not None:
+        agent.config.system_prompt = system_prompt
     await agent.emit(AgentStatusEvent(
         session_id=session_id, status=agent.status,
         session=agent.snapshot(),
@@ -204,8 +204,8 @@ async def update_session(session_id: str, body: UpdateBody) -> dict:
     return {"ok": True}
 
 
-@agents.router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str) -> dict:
+@agents.router.delete("/delete_session")
+async def delete_session(session_id: str = Body()) -> dict:
     agent: Optional[Agent] = SESSIONS.pop(session_id, None)
     if agent is not None:
         await agent.stop_agent()
@@ -228,16 +228,28 @@ class MessageBody(BaseModel):
     attached_skills: Optional[List[dict]] = None
     hidden: bool = False
 
-@agents.router.post("/SESSIONS/{session_id}/message")
-async def send_message(session_id: str, body: MessageBody) -> dict:
+@agents.router.post("/send_message")
+async def send_message(
+    session_id: str = Body(),
+    prompt: str = Body(),
+    mode: Optional[str] = Body(default=None),
+    model: Optional[str] = Body(default=None),
+    images: Optional[List[str]] = Body(default=None),
+    image_media_types: Optional[List[str]] = Body(default=None),
+    context_paths: Optional[List[dict]] = Body(default=None),
+    forced_tools: Optional[List[str]] = Body(default=None),
+    attached_skills: Optional[List[dict]] = Body(default=None),
+    hidden: bool = Body(default=False),
+
+) -> dict:
     agent: Agent = get_agent(session_id)
-    mode_changed: bool = bool(body.mode and body.mode != agent.mode)
-    model_changed: bool = bool(body.model and body.model != agent.model)
+    mode_changed: bool = bool(mode and mode != agent.mode)
+    model_changed: bool = bool(model and model != agent.model)
 
     if mode_changed:
-        agent.mode = body.mode  # type: ignore[assignment]
+        agent.mode = mode  # type: ignore[assignment]
     if model_changed:
-        agent.model = body.model  # type: ignore[assignment]
+        agent.model = model  # type: ignore[assignment]
 
     if mode_changed or model_changed:
         resolved_mode_config: ResolvedModeConfig = await ResolvedModeConfig.create(
@@ -253,39 +265,38 @@ async def send_message(session_id: str, body: MessageBody) -> dict:
             agent.config.cwd = resolved_mode_config.cwd
 
     msg: UserMessage = UserMessage(
-        content=body.prompt,
+        content=prompt,
         branch_id=agent.branch_id,
-        images=body.images or [],
-        image_media_types=body.image_media_types or [],
-        context_paths=body.context_paths or [],
-        attached_skills=body.attached_skills or [],
-        forced_tools=body.forced_tools or [],
-        hidden=body.hidden,
+        images=images or [],
+        image_media_types=image_media_types or [],
+        context_paths=context_paths or [],
+        attached_skills=attached_skills or [],
+        forced_tools=forced_tools or [],
+        hidden=hidden,
     )
     await agent.send_message(msg)
     return {"ok": True}
 
 
-@agents.router.post("/sessions/{session_id}/stop")
-async def stop_agent(session_id: str) -> dict:
+@agents.router.post("/stop_agent")
+async def stop_agent(session_id: str = Body()) -> dict:
     agent: Agent = get_agent(session_id)
     await agent.stop_agent()
     return {"ok": True}
 
 
-class ApprovalBody(BaseModel):
-    request_id: str
-    behavior: str
-    message: str = ""
-    updated_input: Optional[dict] = None
-
-@agents.router.post("/approval")
-async def handle_approval(body: ApprovalBody) -> dict:
+@agents.router.post("/handle_approval")
+async def handle_approval(
+    request_id: str = Body(),
+    behavior: str = Body(),
+    message: str = Body(default=""),
+    updated_input: Optional[dict] = Body(default=None),
+) -> dict:
     await COMMS_MANAGER.resolve_approval(
-        request_id=body.request_id,
-        behavior=body.behavior,
-        message=body.message,
-        updated_input=body.updated_input,
+        request_id=request_id,
+        behavior=behavior,
+        message=message,
+        updated_input=updated_input,
     )
     return {"ok": True}
 
@@ -294,31 +305,32 @@ async def handle_approval(body: ApprovalBody) -> dict:
 # Branching
 # ---------------------------------------------------------------------------
 
-class EditMessageBody(BaseModel):
-    message_id: str
-    content: str
 
-@agents.router.post("/sessions/{session_id}/edit_message")
-async def edit_message(session_id: str, body: EditMessageBody) -> dict:
+@agents.router.post("/edit_message")
+async def edit_message(
+    session_id: str = Body(),
+    message_id: str = Body(),
+    content: str = Body(),
+) -> dict:
     agent: Agent = get_agent(session_id)
     await agent.stop_agent()
-    fork: Agent = agent.branch(body.message_id)
+    fork: Agent = agent.branch(message_id)
     SESSIONS[fork.session_id] = fork
 
-    edited_msg: UserMessage = UserMessage(content=body.content, branch_id=fork.branch_id)
+    edited_msg: UserMessage = UserMessage(content=content, branch_id=fork.branch_id)
     await fork.send_message(edited_msg)
     return {"ok": True, "branch_id": fork.branch_id, "session_id": fork.session_id}
 
 
-class SwitchBranchBody(BaseModel):
-    branch_id: str
-
-@agents.router.post("/SESSIONS/{session_id}/switch_branch")
-async def switch_branch(session_id: str, body: SwitchBranchBody) -> dict:
+@agents.router.post("/switch_branch")
+async def switch_branch(
+    session_id: str = Body(),
+    branch_id: str = Body(),
+) -> dict:
     agent: Agent = get_agent(session_id)
-    agent.branch_id = body.branch_id
+    agent.branch_id = branch_id
     await agent.emit(BranchSwitchedEvent(
-        session_id=session_id, active_branch_id=body.branch_id,
+        session_id=session_id, active_branch_id=branch_id,
     ))
     return {"ok": True}
 
@@ -327,8 +339,8 @@ async def switch_branch(session_id: str, body: SwitchBranchBody) -> dict:
 # Persistence
 # ---------------------------------------------------------------------------
 
-@agents.router.post("/sessions/{session_id}/close")
-async def close_session(session_id: str) -> dict:
+@agents.router.post("/close_session")
+async def close_session(session_id: str = Body()) -> dict:
     agent: Optional[Agent] = SESSIONS.pop(session_id, None)
     if not agent:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -343,8 +355,8 @@ async def close_session(session_id: str) -> dict:
     return {"ok": True}
 
 
-@agents.router.post("/SESSIONS/{session_id}/resume")
-async def resume_session(session_id: str) -> dict:
+@agents.router.post("/resume_session")
+async def resume_session(session_id: str = Body()) -> dict:
     if session_id in SESSIONS:
         return {"session": SESSIONS[session_id].model_dump(mode="json")}
     agent: Optional[Agent] = AGENT_STORE.load_or_none(session_id)
@@ -366,8 +378,8 @@ async def resume_session(session_id: str) -> dict:
     return {"session": agent.snapshot().model_dump(mode="json")}
 
 
-@agents.router.post("/SESSIONS/{session_id}/duplicate")
-async def duplicate_session(session_id: str, body: dict = {}) -> dict:
+@agents.router.post("/duplicate_session")
+async def duplicate_session(session_id: str = Body()) -> dict:
     source: Optional[Agent] = SESSIONS.get(session_id)
     if source is None:
         source = AGENT_STORE.load_or_none(session_id)
@@ -395,8 +407,12 @@ async def duplicate_session(session_id: str, body: dict = {}) -> dict:
     return {"session": clone.snapshot().model_dump(mode="json")}
 
 
-@agents.router.get("/history")
-async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_id: str = "") -> dict:
+@agents.router.get("/get_history")
+async def get_history(
+    q: str = Body(default=""),
+    limit: int = Body(default=20),
+    offset: int = Body(default=0),
+) -> dict:
     all_agents: List[Agent] = AGENT_STORE.load_all()
     all_agents.sort(
         key=lambda a: a.messages.messages[-1].timestamp if a.messages.messages else datetime.min,

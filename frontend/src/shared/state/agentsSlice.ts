@@ -42,4 +42,3 @@ export const {
 export default agentsSlice.reducer;
 
 export * from './agentsTypes';
-export * from './agentsThunks';
