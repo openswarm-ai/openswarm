@@ -35,9 +35,4 @@ const skillsSlice = createSlice({
   },
 });
 
-// export { LIST_SKILLS as fetchSkills };
-// export { CREATE_SKILL as createSkill };
-// export { UPDATE_SKILL as updateSkill };
-// export { DELETE_SKILL as deleteSkill };
-
 export default skillsSlice.reducer;
