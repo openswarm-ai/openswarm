@@ -66,7 +66,7 @@ module.exports = (env, argv) => {
     },
 
     resolve: {
-      extensions: ['.js', '.jsx', '.ts', '.tsx'],
+      extensions: ['.tsx', '.ts', '.js'],
       alias: {
         '@': path.resolve(__dirname, 'src'),
         [path.resolve(__dirname, 'node_modules/@pierre/diffs/node_modules/shiki/dist/bundle-full.mjs')]:
@@ -92,6 +92,8 @@ module.exports = (env, argv) => {
         ],
       }),
     ],
+
+    cache: isDevelopment ? { type: 'filesystem' } : false,
 
     devtool: isDevelopment ? 'eval-cheap-module-source-map' : false,
 
