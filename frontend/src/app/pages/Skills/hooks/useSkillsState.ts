@@ -1,19 +1,17 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import {
-  fetchSkills,
-  createSkill,
-  updateSkill,
-  deleteSkill,
-  Skill,
-} from '@/shared/state/skillsSlice';
-import {
-  fetchAllRegistrySkills,
-  fetchSkillRegistryStats,
-  fetchSkillDetail,
+import { 
+  LIST_SKILLS, 
+  CREATE_SKILL, 
+  UPDATE_SKILL, 
+  DELETE_SKILL, 
+  REGISTRY_STATS,
+  FETCH_ALL_REGISTRY_SKILLS,
+  REGISTRY_DETAIL,
   RegistrySkill,
   RegistrySkillDetail,
-} from '@/shared/state/skillRegistrySlice';
+  Skill 
+} from '@/shared/backend-bridge/apps/skills';
 import { SkillPreviewData } from '../SkillBuilderChat';
 import { SkillForm, Selection, emptyForm } from '../skillsTypes';
 
@@ -50,13 +48,13 @@ export function useSkillsState() {
 
   const handleBuilderSaved = useCallback((message: string) => {
     setSnackbar({ open: true, message });
-    dispatch(fetchSkills());
+    dispatch(LIST_SKILLS());
   }, [dispatch]);
 
   useEffect(() => {
-    dispatch(fetchSkills());
-    dispatch(fetchSkillRegistryStats());
-    dispatch(fetchAllRegistrySkills());
+    dispatch(LIST_SKILLS());
+    dispatch(FETCH_ALL_REGISTRY_SKILLS());
+    dispatch(REGISTRY_STATS());
   }, [dispatch]);
 
   const regGrouped = useMemo(() => {
@@ -84,7 +82,7 @@ export function useSkillsState() {
 
   const selectRegistry = (name: string) => {
     setSelection({ type: 'registry', name });
-    dispatch(fetchSkillDetail(name));
+    dispatch(REGISTRY_DETAIL(name));
   };
 
   const selectLocal = (id: string) => {
@@ -112,21 +110,21 @@ export function useSkillsState() {
 
   const handleSave = async () => {
     if (editingId) {
-      await dispatch(updateSkill({ id: editingId, ...form }));
+      await dispatch(UPDATE_SKILL({ skillId: editingId, ...form }));
     } else {
-      await dispatch(createSkill(form));
+      await dispatch(CREATE_SKILL(form));
     }
     setDialogOpen(false);
   };
 
   const handleDelete = async (id: string) => {
-    await dispatch(deleteSkill(id));
+    await dispatch(DELETE_SKILL(id));
     if (selection?.type === 'local' && selection.id === id) setSelection(null);
   };
 
   const handleInstall = async () => {
     if (!selectedReg) return;
-    await dispatch(createSkill({
+    await dispatch(CREATE_SKILL({
       name: selectedReg.name,
       description: selectedReg.description,
       content: selectedReg.content,

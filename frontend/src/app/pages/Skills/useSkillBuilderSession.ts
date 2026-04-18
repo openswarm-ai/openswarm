@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { createDraftSession, removeDraftSession } from '@/shared/state/agentsSlice';
-import { createSkill } from '@/shared/state/skillsSlice';
+import { CREATE_SKILL } from '@/shared/backend-bridge/apps/skills';
+import { SEED_SKILL_WORKSPACE, READ_SKILL_WORKSPACE } from '@/shared/backend-bridge/apps/skills';
 import {
-  SKILLS_WORKSPACE_API,
   POLL_INTERVAL_MS,
   MIN_W, MAX_W, MIN_H, MAX_H,
   SkillPreviewData,
@@ -79,12 +79,7 @@ export function useSkillBuilderSession(
     setStableWorkspaceId(wsId);
 
     try {
-      const res = await fetch(`${SKILLS_WORKSPACE_API}/workspace/seed`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace_id: wsId }),
-      });
-      const data = await res.json();
+      const data = await dispatch(SEED_SKILL_WORKSPACE({ workspace_id: wsId })).unwrap();
       setWorkspacePath(data.path);
       const action = dispatch(createDraftSession({
         mode: 'skill-builder',
@@ -110,9 +105,7 @@ export function useSkillBuilderSession(
   const pollWorkspace = useCallback(async () => {
     if (!stableWorkspaceId) return;
     try {
-      const res = await fetch(`${SKILLS_WORKSPACE_API}/workspace/${stableWorkspaceId}`);
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await dispatch(READ_SKILL_WORKSPACE(stableWorkspaceId)).unwrap();
       const fingerprint = JSON.stringify(data);
       if (fingerprint === lastPollRef.current) return;
       lastPollRef.current = fingerprint;
@@ -161,7 +154,7 @@ export function useSkillBuilderSession(
     if (!currentPreview || !currentPreview.name || !currentPreview.content) return;
     setSaving(true);
     try {
-      await dispatch(createSkill({
+      await dispatch(CREATE_SKILL({
         name: currentPreview.name,
         description: currentPreview.description,
         content: currentPreview.content,

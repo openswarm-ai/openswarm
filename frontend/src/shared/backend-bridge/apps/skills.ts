@@ -4,18 +4,43 @@ import { API_BASE } from '@/shared/backend-bridge/base_routes';
 const SKILLS_API: string = `${API_BASE}/skills`;
 
 // ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  file_path: string;
+  command: string;
+}
+
+export interface RegistrySkill {
+  name: string;
+  description: string;
+  folder: string;
+  category: string;
+  repositoryUrl: string;
+}
+
+export interface RegistrySkillDetail extends RegistrySkill {
+  content: string;
+}
+
+// ---------------------------------------------------------------------------
 // Local skill CRUD
 // ---------------------------------------------------------------------------
 
 
 const list_skills_endpoint: string = `${SKILLS_API}/list`;
-async function list_skills_function(): Promise<Record<string, unknown>[]> {
+async function list_skills_function(): Promise<Skill[]> {
   const res = await fetch(list_skills_endpoint, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
   });
   const data = await res.json();
-  return data.skills as Record<string, unknown>[];
+  return data.skills as Skill[];
 }
 export const LIST_SKILLS = createAsyncThunk(
   list_skills_endpoint,
@@ -59,13 +84,13 @@ export const SEED_SKILL_WORKSPACE = createAsyncThunk(
 
 
 const get_skill_endpoint: string = `${SKILLS_API}/detail`;
-async function get_skill_function(skillId: string): Promise<Record<string, unknown>> {
+async function get_skill_function(skillId: string): Promise<Skill> {
   const res = await fetch(`${SKILLS_API}/detail/${skillId}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
   });
   const data = await res.json();
-  return data as Record<string, unknown>;
+  return data as Skill;
 }
 export const GET_SKILL = createAsyncThunk(
   get_skill_endpoint,
@@ -79,14 +104,14 @@ async function create_skill_function(body: {
   description?: string;
   content: string;
   command?: string;
-}): Promise<{ ok: boolean; skill: Record<string, unknown> }> {
+}): Promise<{ ok: boolean; skill: Skill }> {
   const res = await fetch(create_skill_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   const data = await res.json();
-  return data as { ok: boolean; skill: Record<string, unknown> };
+  return data as { ok: boolean; skill: Skill };
 }
 export const CREATE_SKILL = createAsyncThunk(
   create_skill_endpoint,
@@ -101,7 +126,7 @@ async function update_skill_function(args: {
   description?: string;
   content?: string;
   command?: string;
-}): Promise<{ ok: boolean; skill: Record<string, unknown> }> {
+}): Promise<{ ok: boolean; skill: Skill }> {
   const { skillId, ...updates } = args;
   const res = await fetch(`${SKILLS_API}/${skillId}`, {
     method: 'PUT',
@@ -109,7 +134,7 @@ async function update_skill_function(args: {
     body: JSON.stringify(updates),
   });
   const data = await res.json();
-  return data as { ok: boolean; skill: Record<string, unknown> };
+  return data as { ok: boolean; skill: Skill };
 }
 export const UPDATE_SKILL = createAsyncThunk(
   update_skill_endpoint,
@@ -159,7 +184,7 @@ async function registry_search_function(params: {
   offset?: number;
   sort?: string;
   category?: string;
-}): Promise<{ skills: Record<string, unknown>[]; total: number; offset: number; limit: number }> {
+}): Promise<{ skills: RegistrySkill[]; total: number; offset: number; limit: number }> {
   const query = new URLSearchParams();
   if (params.q) query.set('q', params.q);
   if (params.limit !== undefined) query.set('limit', String(params.limit));
@@ -171,7 +196,7 @@ async function registry_search_function(params: {
     headers: { 'Content-Type': 'application/json' },
   });
   const data = await res.json();
-  return data as { skills: Record<string, unknown>[]; total: number; offset: number; limit: number };
+  return data as { skills: RegistrySkill[]; total: number; offset: number; limit: number };
 }
 export const REGISTRY_SEARCH = createAsyncThunk(
   registry_search_endpoint,
@@ -179,14 +204,30 @@ export const REGISTRY_SEARCH = createAsyncThunk(
 );
 
 
+const fetch_all_registry_skills_endpoint: string = `${SKILLS_API}/registry/fetchAll`;
+async function fetch_all_registry_skills_function(): Promise<{ skills: RegistrySkill[]; total: number; offset: number; limit: number }> {
+  const query = new URLSearchParams({ q: '', limit: '100', offset: '0', sort: 'name', category: '' });
+  const res = await fetch(`${registry_search_endpoint}?${query.toString()}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const data = await res.json();
+  return data as { skills: RegistrySkill[]; total: number; offset: number; limit: number };
+}
+export const FETCH_ALL_REGISTRY_SKILLS = createAsyncThunk(
+  fetch_all_registry_skills_endpoint,
+  fetch_all_registry_skills_function,
+);
+
+
 const registry_detail_endpoint: string = `${SKILLS_API}/registry/detail`;
-async function registry_detail_function(skillName: string): Promise<{ skill: Record<string, unknown> }> {
+async function registry_detail_function(skillName: string): Promise<{ skill: RegistrySkillDetail }> {
   const res = await fetch(`${SKILLS_API}/registry/detail/${skillName}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
   });
   const data = await res.json();
-  return data as { skill: Record<string, unknown> };
+  return data as { skill: RegistrySkillDetail };
 }
 export const REGISTRY_DETAIL = createAsyncThunk(
   registry_detail_endpoint,

@@ -1,6 +1,3 @@
-import { API_BASE } from '@/shared/config';
-
-export const SKILLS_WORKSPACE_API = `${API_BASE}/skills`;
 export const POLL_INTERVAL_MS = 2000;
 
 export const MIN_W = 320;

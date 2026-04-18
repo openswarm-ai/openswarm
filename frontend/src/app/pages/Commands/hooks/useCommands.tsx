@@ -7,7 +7,7 @@ import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
 import { getToolGroupIcon } from '@/app/components/CommandPicker';
 import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
-import { fetchSkills } from '@/shared/state/skillsSlice';
+import { LIST_SKILLS } from '@/shared/backend-bridge/apps/skills';
 import { LIST_MODES } from '@/shared/state/modesSlice';
 import { SlashCommand, AtCommand, SHORTCUTS } from '../commandsTypes';
 
@@ -26,7 +26,7 @@ export function useCommands() {
   const outputsLoaded = useAppSelector((state) => state.apps.loaded);
 
   useEffect(() => {
-    if (!skillsLoaded) dispatch(fetchSkills());
+    if (!skillsLoaded) dispatch(LIST_SKILLS());
     if (!modesLoaded) dispatch(LIST_MODES());
     if (!builtinLoaded) dispatch(fetchBuiltinTools());
     if (!toolsLoaded) dispatch(fetchTools());

@@ -9,7 +9,7 @@ import {
   Mode,
 } from '@/shared/state/modesSlice';
 import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
-import { fetchSkills } from '@/shared/state/skillsSlice';
+import { LIST_SKILLS } from '@/shared/backend-bridge/apps/skills';
 import { ModeForm, emptyForm } from '../modesConstants';
 
 export function useModes() {
@@ -33,7 +33,7 @@ export function useModes() {
     dispatch(LIST_MODES());
     dispatch(fetchBuiltinTools());
     dispatch(fetchTools());
-    dispatch(fetchSkills());
+    dispatch(LIST_SKILLS());
   }, [dispatch]);
 
   const openCreate = () => {

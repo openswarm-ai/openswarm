@@ -15,8 +15,7 @@ import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 import FolderIcon from '@mui/icons-material/Folder';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { Skill } from '@/shared/state/skillsSlice';
-import { RegistrySkill } from '@/shared/state/skillRegistrySlice';
+import type { Skill, RegistrySkill } from '@/shared/backend-bridge/apps/skills';
 import { SIDEBAR_W } from './skillsTypes';
 import SidebarRow from './SidebarRow';
 

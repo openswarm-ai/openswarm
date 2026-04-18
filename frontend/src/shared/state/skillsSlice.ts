@@ -1,16 +1,11 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { API_BASE } from '@/shared/config';
-
-const SKILLS_API = `${API_BASE}/skills`;
-
-export interface Skill {
-  id: string;
-  name: string;
-  description: string;
-  content: string;
-  file_path: string;
-  command: string;
-}
+import { createSlice } from '@reduxjs/toolkit';
+import {
+  LIST_SKILLS,
+  CREATE_SKILL,
+  UPDATE_SKILL,
+  DELETE_SKILL,
+} from '@/shared/backend-bridge/apps/skills';
+import type { Skill } from '@/shared/backend-bridge/apps/skills';
 
 interface SkillsState {
   items: Record<string, Skill>;
@@ -20,65 +15,29 @@ interface SkillsState {
 
 const initialState: SkillsState = { items: {}, loading: false, loaded: false };
 
-export const fetchSkills = createAsyncThunk(
-  'skills/fetch',
-  async () => {
-    const res = await fetch(`${SKILLS_API}/list`);
-    const data = await res.json();
-    return data.skills as Skill[];
-  },
-  { condition: (_, { getState }) => !(getState() as { skills: SkillsState }).skills.loading },
-);
-
-export const createSkill = createAsyncThunk(
-  'skills/create',
-  async (body: { name: string; description?: string; content: string; command?: string }) => {
-    const res = await fetch(`${SKILLS_API}/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    return data.skill as Skill;
-  }
-);
-
-export const updateSkill = createAsyncThunk(
-  'skills/update',
-  async ({ id, ...updates }: Partial<Skill> & { id: string }) => {
-    const res = await fetch(`${SKILLS_API}/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    const data = await res.json();
-    return data.skill as Skill;
-  }
-);
-
-export const deleteSkill = createAsyncThunk('skills/delete', async (id: string) => {
-  await fetch(`${SKILLS_API}/${id}`, { method: 'DELETE' });
-  return id;
-});
-
 const skillsSlice = createSlice({
   name: 'skills',
   initialState,
   reducers: {},
   extraReducers: (builder) => {
     builder
-      .addCase(fetchSkills.pending, (state) => { state.loading = true; })
-      .addCase(fetchSkills.fulfilled, (state, action) => {
+      .addCase(LIST_SKILLS.pending, (state) => { state.loading = true; })
+      .addCase(LIST_SKILLS.fulfilled, (state, action) => {
         state.loading = false;
         state.loaded = true;
         state.items = {};
         for (const s of action.payload) state.items[s.id] = s;
       })
-      .addCase(fetchSkills.rejected, (state) => { state.loading = false; state.loaded = true; })
-      .addCase(createSkill.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(updateSkill.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(deleteSkill.fulfilled, (state, action) => { delete state.items[action.payload]; });
+      .addCase(LIST_SKILLS.rejected, (state) => { state.loading = false; state.loaded = true; })
+      .addCase(CREATE_SKILL.fulfilled, (state, action) => { state.items[action.payload.skill.id] = action.payload.skill; })
+      .addCase(UPDATE_SKILL.fulfilled, (state, action) => { state.items[action.payload.skill.id] = action.payload.skill; })
+      .addCase(DELETE_SKILL.fulfilled, (state, action) => { delete state.items[action.meta.arg]; });
   },
 });
+
+// export { LIST_SKILLS as fetchSkills };
+// export { CREATE_SKILL as createSkill };
+// export { UPDATE_SKILL as updateSkill };
+// export { DELETE_SKILL as deleteSkill };
 
 export default skillsSlice.reducer;
