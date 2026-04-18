@@ -2,7 +2,7 @@ import os
 
 from backend.ports import BACKEND_DEV_PORT
 from fastapi import FastAPI, APIRouter
-# import debug
+from swarm_debug import debug
 from uuid import uuid4
 from typing import List
 from contextlib import asynccontextmanager
@@ -34,7 +34,7 @@ class MainApp:
                     # debug(sub_app.name)
                     await stack.enter_async_context(sub_app.lifespan())
                 _port = os.environ.get("OPENSWARM_PORT", str(BACKEND_DEV_PORT))
-                print(f"\nCheck out the API docs at: http://127.0.0.1:{_port}/docs\n")
+                debug(f"\nCheck out the API docs at: http://127.0.0.1:{_port}/docs\n")
                 yield
                 
         self.app = FastAPI(lifespan=lifespan)

@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import os
 from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional
@@ -18,10 +17,9 @@ from backend.core.events.events import (
     ApprovalRequestEvent, EventCallback, AnyEvent,
 )
 from backend.core.tools.shared_structs.Toolkit import Toolkit
+from swarm_debug import debug
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
-
-logger = logging.getLogger(__name__)
 
 
 class Agent(BaseModel):
@@ -125,7 +123,7 @@ class Agent(BaseModel):
     async def send_message(self, msg: Message) -> None:
         async with self.lock:
             if self.task is not None and not self.task.done():
-                logger.warning("[Agent.send_message] Agent %s is already running", self.session_id)
+                debug(f"[Agent.send_message] Agent {self.session_id} is already running")
                 return
 
             await self.emit(AgentMessageEvent(

@@ -1,4 +1,5 @@
 from typing import Any
+from swarm_debug import debug
 from backend.apps.tools.discover_tools.DiscoveryError import DiscoveryError, DiscoveryConfigError
 from backend.apps.tools.discover_tools.utils.discover_mcp_tools_stdio import discover_mcp_tools_stdio
 from backend.apps.tools.discover_tools.utils.discover_mcp_tools_http import discover_mcp_tools_http
@@ -36,7 +37,7 @@ async def discover_tools(config: dict[str, Any], tool_name: str = "") -> list[di
         try:
             return await discover_mcp_tools_http(url, config.get("headers"))
         except DiscoveryError:
-            print(f"[discover_tools] Streamable HTTP failed for {tool_name}, retrying with SSE")
+            debug(f"[discover_tools] Streamable HTTP failed for {tool_name}, retrying with SSE")
             return await discover_mcp_tools_sse(url, config.get("headers"))
 
     raise DiscoveryConfigError(f"Unsupported MCP transport type: '{transport}'")

@@ -13,6 +13,7 @@ from backend.apps.agents.agents import get_all_sessions, delete_session
 from backend.apps.settings.settings import load_settings
 from backend.apps.dashboards.generate_dashboard_name import generate_dashboard_name
 from backend.ports import NINE_ROUTER_PORT
+from swarm_debug import debug
 from typing import Optional
 from backend.config.paths import DB_ROOT
 
@@ -93,7 +94,7 @@ async def generate_name(dashboard_id: str):
         if generated:
             fallback = generated
     except Exception as e:
-        print(f"[dashboards.generate_name] ERROR: Dashboard name generation failed, using fallback: {e}")
+        debug(f"[dashboards.generate_name] ERROR: Dashboard name generation failed, using fallback: {e}")
 
     dashboard.name = fallback
     dashboard.auto_named = True
@@ -139,7 +140,7 @@ async def delete_dashboard(dashboard_id: str):
         try:
             await delete_session(session["session_id"])
         except Exception:
-            print(f"[dashboards.delete_dashboard] ERROR: Failed to delete session {session.get('session_id')} during dashboard deletion")
+            debug(f"[dashboards.delete_dashboard] ERROR: Failed to delete session {session.get('session_id')} during dashboard deletion")
 
     DASHBOARD_STORE.delete(dashboard_id)
     return {"ok": True}

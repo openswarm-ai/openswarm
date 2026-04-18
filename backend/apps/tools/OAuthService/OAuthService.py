@@ -5,7 +5,6 @@ Pure business logic with no HTTP/FastAPI dependencies.
 
 import base64
 import hashlib
-import logging
 import os
 import secrets
 import time
@@ -19,10 +18,9 @@ from backend.apps.tools.OAuthService.OAUTH_PROVIDERS.OAuthProvider import OAuthP
 from backend.apps.tools.OAuthService.OAUTH_PROVIDERS.OAUTH_PROVIDERS import OAUTH_PROVIDERS
 from backend.apps.tools.shared_utils.ToolDefinition import ToolDefinition
 from backend.core.db.PydanticStore import PydanticStore
+from swarm_debug import debug
 from typeguard import typechecked
 from backend.ports import BACKEND_DEV_PORT
-
-logger = logging.getLogger(__name__)
 
 
 class OAuthService(BaseModel):
@@ -130,7 +128,7 @@ class OAuthService(BaseModel):
                 resp = await client.post(provider.token_url, data=token_data, headers=headers)
 
         if resp.status_code != 200:
-            logger.warning("OAuth token exchange failed: %s", resp.text)
+            debug(f"OAuth token exchange failed: {resp.text}")
             raise RuntimeError(resp.text)
 
         tokens: Dict[str, Any] = resp.json()
@@ -190,7 +188,7 @@ class OAuthService(BaseModel):
                         headers={"Content-Type": "application/x-www-form-urlencoded"},
                     )
             except Exception as e:
-                logger.warning("Failed to revoke token for tool %s: %s", tool.id, e)
+                debug(f"Failed to revoke token for tool {tool.id}: {e}")
 
         tool.oauth_tokens = {}
         tool.auth_status = "configured"
@@ -241,7 +239,7 @@ class OAuthService(BaseModel):
                 self.store.save(tool)
                 return new_token
         except Exception as e:
-            logger.warning("OAuth token refresh failed for tool %s: %s", tool.id, e)
+            debug(f"OAuth token refresh failed for tool {tool.id}: {e}")
         return None
 
     @typechecked
@@ -254,5 +252,5 @@ class OAuthService(BaseModel):
             if resp.status_code == 200:
                 return resp.json().get(field)
         except Exception as e:
-            logger.warning("Failed to fetch userinfo%s: %s", f" for {label}" if label else "", e)
+            debug(f"Failed to fetch userinfo{f' for {label}' if label else ''}: {e}")
         return None

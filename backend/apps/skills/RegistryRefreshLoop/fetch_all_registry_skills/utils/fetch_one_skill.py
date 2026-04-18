@@ -2,6 +2,7 @@ import asyncio
 from typing import Optional
 import httpx
 from backend.apps.skills.parse_frontmatter import parse_frontmatter
+from swarm_debug import debug
 from typeguard import typechecked
 from pydantic import InstanceOf
 
@@ -22,7 +23,7 @@ async def fetch_one_skill(
                 return None
             raw = resp.text
         except Exception as exc:
-            print(f"[fetch_one_skill] Failed to fetch {folder}/SKILL.md: {exc}")
+            debug(f"[fetch_one_skill] Failed to fetch {folder}/SKILL.md: {exc}")
             return None
 
     meta, body = parse_frontmatter(raw)

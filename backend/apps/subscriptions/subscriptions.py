@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from backend.config.Apps import SubApp
 from backend.apps.subscriptions.NineRouter.NineRouter import NineRouter
 from backend.apps.subscriptions.html_constants import SUCCESS_HTML, ERROR_STYLE
+from swarm_debug import debug
 
 P_PENDING_OAUTH: Dict[str, dict] = {}
 
@@ -27,7 +28,7 @@ async def subscriptions_lifespan():
     try:
         await router.ensure_running()
     except Exception as e:
-        print(f"9Router auto-start failed: {e}")
+        debug(f"9Router auto-start failed: {e}")
     yield
     try:
         await router.stop()
@@ -156,7 +157,7 @@ async def subscriptions_callback(request: Request):
             pending["redirect_uri"], pending["code_verifier"], state,
         )
     except Exception as e:
-        print(f"OAuth callback: exchange failed for provider={pending['provider']}: {e}")
+        debug(f"OAuth callback: exchange failed for provider={pending['provider']}: {e}")
         return HTMLResponse(
             f'<html><body {ERROR_STYLE}><div style="text-align:center">'
             f'<h2>Connection failed</h2><p style="color:#888">{e}</p></div></body></html>'

@@ -12,6 +12,7 @@ from backend.core.tools.shared_structs.MCP_Tool import MCP_Tool
 from backend.apps.tools.tool_definition_to_mcp_tool.helpers.inject_credentials import inject_credentials
 from backend.apps.tools.tool_definition_to_mcp_tool.helpers.build_stdio_tool import build_stdio_tool
 from backend.apps.tools.tool_definition_to_mcp_tool.helpers.build_http_sse_tool import build_http_sse_tool
+from swarm_debug import debug
 from typeguard import typechecked
 import re
 
@@ -48,5 +49,5 @@ def tool_definition_to_mcp_tool(
     elif transport in ("http", "sse"):
         return build_http_sse_tool(tool_def, config, server_name, transport)
 
-    print(f"[tool_definition_to_mcp_tool] Unsupported MCP transport type '{transport}' for tool {tool_def.name}")
+    debug(f"[tool_definition_to_mcp_tool] Unsupported MCP transport type '{transport}' for tool {tool_def.name}")
     return None

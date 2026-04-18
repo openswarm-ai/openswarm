@@ -2,6 +2,7 @@
 
 import httpx
 from pydantic import Field, BaseModel, InstanceOf
+from swarm_debug import debug
 from typeguard import typechecked
 
 from backend.apps.subscriptions.NineRouter.helpers.constants import NINE_ROUTER_API, NINE_ROUTER_V1
@@ -21,7 +22,7 @@ class NineRouterClient(BaseModel):
             if r.status_code == 200:
                 return r.json()
         except Exception as e:
-            print(f"9Router providers fetch failed: {e}")
+            debug(f"9Router providers fetch failed: {e}")
         return []
 
     @typechecked
@@ -94,9 +95,9 @@ class NineRouterClient(BaseModel):
             "codeVerifier": code_verifier,
             "state": state,
         }
-        print(f"exchange_oauth: provider={provider} redirect_uri={redirect_uri}")
+        debug(f"exchange_oauth: provider={provider} redirect_uri={redirect_uri}")
         r = await self.p_http.post(f"{NINE_ROUTER_API}/oauth/{provider}/exchange", json=payload)
-        print(f"exchange_oauth: status={r.status_code}")
+        debug(f"exchange_oauth: status={r.status_code}")
         r.raise_for_status()
         return r.json()
 
@@ -117,7 +118,7 @@ class NineRouterClient(BaseModel):
                     for m in models
                 ]
         except Exception as e:
-            print(f"9Router models fetch failed: {e}")
+            debug(f"9Router models fetch failed: {e}")
         return []
 
     @typechecked

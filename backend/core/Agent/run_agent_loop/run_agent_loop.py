@@ -1,6 +1,6 @@
 import asyncio
-import logging
 
+from swarm_debug import debug
 from typeguard import typechecked
 
 from claude_agent_sdk import (
@@ -17,8 +17,6 @@ from backend.core.events.events import (
     EventCallback, AgentStatusEvent, AgentMessageEvent,
 )
 from typing import List, Dict, Optional
-
-logger = logging.getLogger(__name__)
 
 
 @typechecked
@@ -79,7 +77,7 @@ async def run_agent_loop(
         raise
 
     except Exception as e:
-        logger.exception("Agent %s error: %s", session_id, e)
+        debug(f"Agent {session_id} error: {e}")
         error_msg = SystemMessage(
             content=f"Error: {e}",
             branch_id=branch_id,

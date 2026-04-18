@@ -31,6 +31,7 @@ from backend.apps.agents.COMMS_MANAGER.COMMS_MANAGER import COMMS_MANAGER
 from backend.apps.settings.settings import load_settings
 from backend.core.llm.resolve_sdk_env import resolve_sdk_env
 from backend.ports import NINE_ROUTER_PORT
+from swarm_debug import debug
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import HookMatcher, McpServerConfig
 from backend.core.tools.shared_structs.Toolkit import Toolkit
@@ -70,7 +71,7 @@ async def agents_lifespan():
             )
             SESSIONS[stored.session_id] = stored
         except Exception as e:
-            print(f"[agents lifespan] Skipping corrupt session {stored.session_id}: {e}")
+            debug(f"[agents lifespan] Skipping corrupt session {stored.session_id}: {e}")
     yield
     for agent in list[Agent](SESSIONS.values()):
         await agent.stop_agent()

@@ -2,6 +2,7 @@ import asyncio
 import time
 from typing import Optional
 
+from swarm_debug import debug
 from typeguard import typechecked
 from pydantic import BaseModel, Field, InstanceOf
 
@@ -45,5 +46,5 @@ class RegistryRefreshLoop(BaseModel):
                 )
                 self.updated_at = time.time()
             except Exception as e:
-                print(f"[RegistryRefreshLoop] Skill registry refresh error: {e}")
+                debug(f"[RegistryRefreshLoop] Skill registry refresh error: {e}")
             await asyncio.sleep(self.refresh_interval_s)

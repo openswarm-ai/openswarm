@@ -5,6 +5,7 @@ from backend.core.tools.shared_structs.MCP_Tool import STDIO_MCP_Tool
 from backend.apps.tools.shared_utils.mcp_config import resolve_command, augmented_path
 # TODO: either remove the import, or make them non private vars
 from backend.config.paths import P_BACKEND_DIR, p_is_packaged
+from swarm_debug import debug
 from typeguard import typechecked
 
 
@@ -21,7 +22,7 @@ def build_stdio_tool(
         if resolved:
             command = resolved
         else:
-            print(f"[build_stdio_tool] Command '{command}' not found on PATH or bundled directories")
+            debug(f"[build_stdio_tool] Command '{command}' not found on PATH or bundled directories")
 
     env = config.get("env", {})
     env.setdefault("PATH", augmented_path())

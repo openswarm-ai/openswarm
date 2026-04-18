@@ -38,7 +38,7 @@ BACKEND_PORT=$(python3 -c "import json; print(json.load(open('$PROJECT_ROOT_ABSP
 # --- Start the backend server ---
 echo "Starting backend server on http://0.0.0.0:${BACKEND_PORT} ..."
 cd "$PROJECT_ROOT_ABSPATH"
-"$UV_BIN" run --project "$BACKEND_DIR_ABSPATH" python -m uvicorn backend.main:app \
+WATCHFILES_FORCE_POLLING=true "$UV_BIN" run --project "$BACKEND_DIR_ABSPATH" python -m uvicorn backend.main:app \
     --host 0.0.0.0 --port "$BACKEND_PORT" --reload \
     --reload-dir "$BACKEND_DIR_ABSPATH" \
     --reload-exclude '*.pyc'

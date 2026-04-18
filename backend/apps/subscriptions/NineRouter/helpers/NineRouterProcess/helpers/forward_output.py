@@ -1,5 +1,6 @@
 import re
 
+from swarm_debug import debug
 from typeguard import typechecked
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b[c78]")

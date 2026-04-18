@@ -1,6 +1,7 @@
 import asyncio
 from typing import Callable, Awaitable, Dict
 from pydantic import BaseModel, Field, InstanceOf
+from swarm_debug import debug
 from typeguard import typechecked
 
 class FutureBridge(BaseModel):
@@ -26,7 +27,7 @@ class FutureBridge(BaseModel):
         try:
             return await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError:
-            print(f"[FutureBridge.request] Request {request_id} timed out after {timeout}s")
+            debug(f"[FutureBridge.request] Request {request_id} timed out after {timeout}s")
             return {"error": "Timed out"}
         finally:
             self.p_pending.pop(request_id, None)

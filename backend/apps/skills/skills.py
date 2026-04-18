@@ -1,7 +1,6 @@
 """Skills SubApp — local skill CRUD, workspace management, and remote registry."""
 
 import json
-import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Optional
@@ -14,8 +13,6 @@ from backend.config.paths import DB_ROOT
 from backend.apps.skills.SkillStore.SkillStore import SkillStore
 from backend.apps.skills.parse_frontmatter import parse_frontmatter
 from backend.apps.skills.RegistryRefreshLoop.RegistryRefreshLoop import RegistryRefreshLoop
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Paths & singletons

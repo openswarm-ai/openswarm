@@ -4,7 +4,6 @@ from typing_extensions import List
 from claude_agent_sdk.types import McpServerConfig
 from pydantic import BaseModel, Field
 import json
-import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -27,9 +26,8 @@ from backend.core.tools.shared_structs.TOOL_PERMISSIONS import TOOL_PERMISSIONS
 from backend.core.tools.shared_structs.Toolkit import Toolkit
 from backend.core.tools.shared_structs.Tool import Tool
 from backend.core.tools.shared_structs.MCP_Tool import MCP_Tool
+from swarm_debug import debug
 from typeguard import typechecked
-
-logger = logging.getLogger(__name__)
 
 TOOLS_DIR = os.path.join(DB_ROOT, "tools")
 BUILTIN_PERMS_PATH = os.path.join(TOOLS_DIR, "builtin_permissions.json")
@@ -77,12 +75,12 @@ def save_builtin_permissions(perms: dict[str, str]) -> None:
         json.dump(perms, f, indent=2)
 
 
-@tools.router.get("/builtin/permissions")
+@tools.router.get("/get_builtin_permissions")
 async def get_builtin_permissions() -> dict:
     return {"permissions": load_builtin_permissions()}
 
 
-@tools.router.put("/builtin/permissions")
+@tools.router.put("/update_builtin_permissions")
 async def update_builtin_permissions(body: dict) -> dict:
     valid_names = {t["name"] for t in BUILTIN_TOOLS}
     valid_policies = {"allow", "ask", "deny"}
@@ -200,7 +198,7 @@ async def discover(tool_id: str) -> dict:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         msg = str(e).strip() or type(e).__name__
-        logger.warning(f"MCP tool discovery failed for {tool.name}: {msg}", exc_info=True)
+        debug(f"MCP tool discovery failed for {tool.name}: {msg}")
         raise HTTPException(status_code=502, detail=f"Discovery failed: {msg}")
 
     permissions: dict[str, Any] = {}

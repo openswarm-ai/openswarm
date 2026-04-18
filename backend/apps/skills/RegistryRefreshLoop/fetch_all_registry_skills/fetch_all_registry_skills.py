@@ -4,6 +4,7 @@
 
 import asyncio
 import httpx
+from swarm_debug import debug
 from typeguard import typechecked
 from backend.apps.skills.RegistryRefreshLoop.fetch_all_registry_skills.utils.fetch_skill_paths import fetch_skill_paths
 from backend.apps.skills.RegistryRefreshLoop.fetch_all_registry_skills.utils.fetch_one_skill import fetch_one_skill
@@ -25,9 +26,9 @@ async def fetch_all_registry_skills(
                 manifest_url=f"{github_base_url}/{github_repo}/{github_branch}{manifest_extension}"
             )
         except Exception as e:
-            print(f"[fetch_all_registry_skills] Skill registry manifest fetch failed: {e}")
+            debug(f"[fetch_all_registry_skills] Skill registry manifest fetch failed: {e}")
             return result
-        print(f"[fetch_all_registry_skills] Skill registry: found {len(paths)} skills in manifest, fetching...")
+        debug(f"[fetch_all_registry_skills] Skill registry: found {len(paths)} skills in manifest, fetching...")
         sem = asyncio.Semaphore(num_concurrent_fetches)
         records = await asyncio.gather(
             *[fetch_one_skill(
@@ -43,5 +44,5 @@ async def fetch_all_registry_skills(
         for rec in records:
             if rec:
                 result[rec["name"]] = rec
-    print(f"[fetch_all_registry_skills] Skill registry cache refreshed: {len(result)} skills")
+    debug(f"[fetch_all_registry_skills] Skill registry cache refreshed: {len(result)} skills")
     return result
