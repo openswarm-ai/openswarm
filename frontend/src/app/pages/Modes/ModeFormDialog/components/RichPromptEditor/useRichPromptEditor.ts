@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { CommandPickerItem } from '@/app/components/CommandPicker';
+import { CommandPickerItem } from './CommandPicker/components/commandPickerTypes';
 import {
   SKILL_PILL_ATTR,
   AttachedSkill,
@@ -9,7 +9,7 @@ import {
   detectEditorTrigger,
   TriggerState,
   EMPTY_TRIGGER,
-} from '@/app/components/richEditorUtils';
+} from './richEditorUtils';
 import { useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { RichPromptEditorProps, LINE_HEIGHT, FONT_SIZE } from './richPromptEditorTypes';

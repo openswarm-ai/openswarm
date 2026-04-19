@@ -17,7 +17,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { OverlayEntry } from './OverlayEntry';
 import OverlayActionLog from './OverlayActionLog';
 
-export function summarizeMessage(msg: AgentMessage): OverlayEntry {
+function summarizeMessage(msg: AgentMessage): OverlayEntry {
   if (msg.role === 'assistant' && typeof msg.content === 'string') {
     const trimmed = msg.content.trim();
     if (!trimmed) return { type: 'skip', text: '' };
@@ -80,9 +80,11 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
   useEffect(() => {
     if (session.session_id !== prevSessionId.current) {
       prevSessionId.current = session.session_id;
-      setFadeOut(false);
-      setHidden(false);
-      setConfirmStop(false);
+      queueMicrotask(() => {
+        setFadeOut(false);
+        setHidden(false);
+        setConfirmStop(false);
+      });
     }
   }, [session.session_id]);
 

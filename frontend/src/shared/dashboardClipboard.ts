@@ -4,7 +4,7 @@ export interface ClipboardCard {
   type: CardType;
   id: string;
   name: string;
-  meta: Record<string, any>;
+  meta: Record<string, unknown>;
   x: number;
   y: number;
   width: number;
@@ -20,8 +20,4 @@ export function setClipboardCards(cards: ClipboardCard[]): void {
 
 export function getClipboardCards(): ClipboardCard[] {
   return clipboardCards;
-}
-
-export function clearClipboard(): void {
-  clipboardCards = [];
 }

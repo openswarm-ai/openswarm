@@ -1,7 +1,7 @@
 export interface AgentMessage {
   id: string;
   role: 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'system';
-  content: any;
+  content: string | Record<string, unknown>;
   timestamp: string;
   branch_id: string;
   parent_id: string | null;
@@ -16,7 +16,7 @@ export interface ApprovalRequest {
   id: string;
   session_id: string;
   tool_name: string;
-  tool_input: Record<string, any>;
+  tool_input: Record<string, unknown>;
   created_at: string;
 }
 
@@ -86,20 +86,6 @@ export interface ContextPath {
   type: 'file' | 'directory';
 }
 
-export interface SendMessagePayload {
-  sessionId: string;
-  prompt: string;
-  mode?: string;
-  model?: string;
-  provider?: string;
-  images?: Array<{ data: string; media_type: string }>;
-  contextPaths?: Array<ContextPath>;
-  forcedTools?: string[];
-  attachedSkills?: Array<{ id: string; name: string; content: string }>;
-  hidden?: boolean;
-  selectedBrowserIds?: string[];
-}
-
 export interface LaunchAndSendPayload {
   draftId: string;
   config: AgentConfig;
@@ -113,21 +99,6 @@ export interface LaunchAndSendPayload {
   attachedSkills?: Array<{ id: string; name: string; content: string }>;
   expand?: boolean;
   selectedBrowserIds?: string[];
-}
-
-export interface GenerateGroupMetaPayload {
-  sessionId: string;
-  groupId: string;
-  toolCalls: Array<{ tool: string; input_summary: string }>;
-  resultsSummary?: string[];
-  isRefinement?: boolean;
-}
-
-export interface SearchHistoryParams {
-  q?: string;
-  limit?: number;
-  offset?: number;
-  dashboardId?: string;
 }
 
 export interface HistorySession {
