@@ -12,7 +12,7 @@ import {
 } from '@/shared/state/dashboardLayoutSlice';
 import { LIST_APPS } from '@/shared/backend-bridge/apps/app_builder';
 import { agentsWs } from '@/shared/ws/WebSocketManager';
-import { initBrowserCommandHandler } from '@/shared/browserCommandHandler';
+import { initBrowserCommandHandler } from '@/shared/browsers/browserCommandHandler/browserCommandHandler';
 import { clearPendingBrowserUrl, clearPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import { type CanvasActions } from '@/app/pages/Dashboard/_shared/types';
 

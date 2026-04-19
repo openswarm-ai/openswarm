@@ -4,7 +4,7 @@ import { useAppDispatch } from '@/shared/hooks';
 import { CREATE_DASHBOARD } from '@/shared/backend-bridge/apps/dashboards';
 import { addBrowserCard, addBrowserTab } from '@/shared/state/dashboardLayoutSlice';
 import { setPendingBrowserUrl } from '@/shared/state/tempStateSlice';
-import { findBrowserByWebContentsId } from '@/shared/browserRegistry';
+import { findBrowserByWebContentsId } from '@/shared/browsers/browserRegistry';
 
 export function useUrlInterception(dashboardList: { id: string }[]) {
   const dispatch = useAppDispatch();

@@ -1,5 +1,5 @@
-import { type BrowserWebview } from './browserRegistry';
-import { resolveInput } from './resolveUrl';
+import { type BrowserWebview } from '../browserRegistry';
+import { resolveInput } from '../resolveUrl';
 
 export async function handleScreenshot(wv: BrowserWebview): Promise<Record<string, any>> {
   const nativeImage = await wv.capturePage();

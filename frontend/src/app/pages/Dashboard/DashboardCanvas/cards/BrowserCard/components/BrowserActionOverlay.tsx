@@ -3,7 +3,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
-import { getActionLabel } from '@/shared/browserCommandHandler';
+import { getActionLabel } from '@/shared/browsers/browserCommandHandler/browserCommandTypes';
 
 interface BrowserActionOverlayProps {
   agentAction: string | null;

@@ -1,5 +1,5 @@
-import { getWebview } from './browserRegistry';
-import { agentsWs } from './ws/WebSocketManager';
+import { getWebview } from '../browserRegistry';
+import { agentsWs } from '@/shared/ws/WebSocketManager';
 import { type BrowserAction, setActivity } from './browserCommandTypes';
 import {
   handleScreenshot,
@@ -12,9 +12,6 @@ import {
   handleGetElements,
   handleEvaluate,
 } from './browserActionHandlers';
-
-export type { BrowserAction, BrowserActivity } from './browserCommandTypes';
-export { getActivity, subscribeActivity, getActionLabel } from './browserCommandTypes';
 
 let initialized = false;
 

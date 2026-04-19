@@ -4,7 +4,7 @@ import {
   getActivity,
   type BrowserActivity,
   type BrowserAction,
-} from './browserCommandHandler';
+} from '@/shared/browsers/browserCommandHandler/browserCommandTypes';
 
 interface BrowserActivityState {
   active: boolean;

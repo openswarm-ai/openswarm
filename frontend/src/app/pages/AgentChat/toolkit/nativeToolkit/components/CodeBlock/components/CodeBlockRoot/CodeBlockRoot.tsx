@@ -5,7 +5,7 @@ import {
   useCallback,
   useEffect,
   createContext,
-  use,
+  useContext,
   type ReactNode,
 } from "react";
 import { type Highlighter } from "shiki/bundle/web";
@@ -40,7 +40,7 @@ type CodeBlockSharedState = {
 const CodeBlockContext = createContext<CodeBlockSharedState | null>(null);
 
 export function useCodeBlock(): CodeBlockSharedState {
-  const context = use(CodeBlockContext);
+  const context = useContext(CodeBlockContext);
   if (!context) {
     throw new Error(
       "CodeBlock subcomponents must be used within <CodeBlock.Root>.",

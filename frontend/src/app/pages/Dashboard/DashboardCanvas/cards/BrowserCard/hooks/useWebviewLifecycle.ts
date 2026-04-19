@@ -5,7 +5,7 @@ import {
   unregisterWebview, // only used in this file, maybe an aNr opportunity? -HD
   setActiveTab as setRegistryActiveTab,
   type BrowserWebview,
-} from '@/shared/browserRegistry';
+} from '@/shared/browsers/browserRegistry';
 import {
   updateBrowserTabUrl,
   updateBrowserTabTitle,

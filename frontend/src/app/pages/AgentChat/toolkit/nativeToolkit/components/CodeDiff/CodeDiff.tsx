@@ -3,7 +3,6 @@
 import {
   useState,
   useCallback,
-  useEffect,
   useMemo,
   createContext,
   useContext,
@@ -19,6 +18,7 @@ import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
 import type { CodeDiffProps } from "./schema";
 import { useCopyToClipboard } from "../_shared/useCopyToClipboard";
 import { Button, cn, Collapsible, CollapsibleTrigger } from "./_adapter";
+import { useResolvedTheme } from "../CodeBlock/components/CodeBlockRoot/helpers";
 
 /*
  * Pierre's shared_highlighter registers custom themes with dynamic imports
@@ -37,54 +37,6 @@ RegisteredCustomThemes.set("pierre-light", () =>
 const COPY_ID = "codediff-code";
 
 /* ── Theme detection (mirrors CodeBlock) ────────────────────────── */
-
-function getSystemTheme(): "light" | "dark" {
-  if (typeof window === "undefined") return "light";
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
-}
-
-function getDocumentTheme(): "light" | "dark" | null {
-  if (typeof document === "undefined") return null;
-  const root = document.documentElement;
-  const dataTheme = root.getAttribute("data-theme")?.toLowerCase();
-  if (dataTheme === "dark") return "dark";
-  if (dataTheme === "light") return "light";
-  if (root.classList.contains("dark")) return "dark";
-  if (root.classList.contains("light")) return "light";
-  return null;
-}
-
-function useResolvedTheme(): "light" | "dark" {
-  const [theme, setTheme] = useState<"light" | "dark">(() => {
-    return getDocumentTheme() ?? getSystemTheme();
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") {
-      return;
-    }
-
-    const update = () => setTheme(getDocumentTheme() ?? getSystemTheme());
-
-    const mql = window.matchMedia?.("(prefers-color-scheme: dark)");
-    mql?.addEventListener("change", update);
-
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "data-theme"],
-    });
-
-    return () => {
-      mql?.removeEventListener("change", update);
-      observer.disconnect();
-    };
-  }, []);
-
-  return theme;
-}
 
 /* ── Language display names (mirrors CodeBlock) ─────────────────── */
 
