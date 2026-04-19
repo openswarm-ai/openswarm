@@ -684,8 +684,11 @@ const OnboardingModal: React.FC = () => {
           </>
         ) : step === 'walkthrough' ? (
           <>
-            {/* Hero image area — soft pastel multi-color blob. Proportionally
-                larger than the content area so it reads as the visual anchor. */}
+            {/* Hero video area — autoplay/loop/muted demo for the current
+                step. `key` forces remount on step change so the next video
+                restarts from frame 0 instead of resuming. The pastel
+                gradient stays as a fallback bg behind the video while it
+                buffers / if loading fails. */}
             <Box
               sx={{
                 position: 'relative',
@@ -697,24 +700,24 @@ const OnboardingModal: React.FC = () => {
                   radial-gradient(circle at 82% 22%, #B9C9F4 0%, rgba(185,201,244,0) 58%),
                   linear-gradient(135deg, #C4D0F2 0%, #EDB3CC 50%, #F5B088 100%)
                 `,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
                 overflow: 'hidden',
               }}
             >
-              <Typography
+              <Box
+                key={walkthroughIdx}
+                component="video"
+                src={`./onboarding-videos/Step${walkthroughIdx + 1}.mp4`}
+                autoPlay
+                muted
+                loop
+                playsInline
                 sx={{
-                  position: 'relative',
-                  zIndex: 2,
-                  fontSize: 88,
-                  color: '#fff',
-                  filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.18))',
-                  lineHeight: 1,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  display: 'block',
                 }}
-              >
-                ✦
-              </Typography>
+              />
             </Box>
 
             <Box sx={{ px: 3, pt: 2, pb: 2.5 }}>
@@ -723,11 +726,11 @@ const OnboardingModal: React.FC = () => {
                   <Box
                     key={i}
                     sx={{
-                      width: i === walkthroughIdx ? 16 : 5,
-                      height: 5,
-                      borderRadius: 3,
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
                       bgcolor: i === walkthroughIdx ? c.accent.primary : i < walkthroughIdx ? c.accent.primary + '60' : c.border.medium,
-                      transition: 'all 0.25s',
+                      transition: 'background-color 0.25s',
                     }}
                   />
                 ))}
@@ -757,7 +760,7 @@ const OnboardingModal: React.FC = () => {
                 {EDUCATION_STEPS[walkthroughIdx].title}
               </Typography>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2.5, minHeight: 130 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2.5, minHeight: 200 }}>
                 {EDUCATION_STEPS[walkthroughIdx].body.map((p, i) => (
                   <Typography key={i} sx={{ fontSize: '1.02rem', color: c.text.secondary, lineHeight: 1.6 }}>
                     {p}
