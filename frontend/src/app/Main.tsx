@@ -14,7 +14,7 @@ import {
   setUpdateDownloaded,
   setUpdateError,
 } from '@/shared/state/updateSlice';
-import AppShell from './components/Layout/AppShell';
+import AppShell from './components/AppShell/AppShell';
 import Dashboard from './pages/Dashboard/Dashboard';
 import DashboardSelection from './pages/DashboardSelection/DashboardSelection';
 import Skills from './pages/Skills/Skills';
