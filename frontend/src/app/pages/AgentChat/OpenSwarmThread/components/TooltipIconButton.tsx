@@ -7,8 +7,8 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Button } from "@/components/ui/button";
+} from "./tooltip";
+import { Button } from "@/app/pages/AgentChat/_shared/button";
 import { cn } from "@/lib/utils";
 
 type TooltipIconButtonProps = ComponentPropsWithRef<typeof Button> & {

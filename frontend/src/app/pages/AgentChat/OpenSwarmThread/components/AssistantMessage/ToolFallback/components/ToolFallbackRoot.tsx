@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   useScrollLock,
 } from "@assistant-ui/react";
-import { Collapsible } from "@/components/ui/collapsible";
+import { Collapsible } from "@/app/pages/AgentChat/_shared/collapsible";
 import { cn } from "@/lib/utils";
 
 const ANIMATION_DURATION = 200;

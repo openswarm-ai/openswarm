@@ -13,14 +13,14 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
+} from "../tooltip";
 import {
   Dialog,
   DialogTitle,
   DialogContent,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+} from "./dialog";
+import { Avatar, AvatarImage, AvatarFallback } from "./avatar";
 import { TooltipIconButton } from "../TooltipIconButton";
 import { cn } from "@/lib/utils";
 

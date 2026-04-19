@@ -1,6 +1,6 @@
 "use client";
 
-import { CollapsibleContent } from "@/components/ui/collapsible";
+import { CollapsibleContent } from "@/app/pages/AgentChat/_shared/collapsible";
 import { cn } from "@/lib/utils";
 
 

@@ -1,3 +1,3 @@
 export { cn } from "@/lib/utils";
-export { Button } from "@/components/ui/button";
-export { Separator } from "@/components/ui/separator";
+export { Button } from "@/app/pages/AgentChat/_shared/button";
+export { Separator } from "../../separator";

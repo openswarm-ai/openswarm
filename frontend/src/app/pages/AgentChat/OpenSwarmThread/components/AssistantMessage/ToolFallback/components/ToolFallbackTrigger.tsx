@@ -8,7 +8,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import { type ToolCallMessagePartStatus } from "@assistant-ui/react";
-import { CollapsibleTrigger } from "@/components/ui/collapsible";
+import { CollapsibleTrigger } from "@/app/pages/AgentChat/_shared/collapsible";
 import { cn } from "@/lib/utils";
 
 type ToolStatus = ToolCallMessagePartStatus["type"];
