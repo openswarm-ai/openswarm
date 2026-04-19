@@ -1,7 +1,7 @@
 import React from 'react';
 import type { ApprovalRequest } from '@/shared/state/agentsSlice';
 import { ToolQuestion } from './components/ToolQuestion/ToolQuestion';
-import { ToolApproval } from './components/ToolApproval';
+import { ToolApproval } from './components/ToolApproval/ToolApproval';
 
 interface ApprovalRouterProps {
   request: ApprovalRequest;

@@ -9,7 +9,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { motion } from 'framer-motion';
 import { parseMcpToolName } from '@/app/pages/AgentChat/toolkit/approvalToolkit/utils';
-import { useMcpToolMeta } from '@/app/pages/AgentChat/toolkit/approvalToolkit/components/useMcpToolMeta';
+import { useMcpToolMeta } from '@/app/pages/AgentChat/toolkit/approvalToolkit/utils/useMcpToolMeta';
 import { SPRING_BOUNCE } from './islandTypes';
 import type { ClaudeTokens } from './islandTypes';
 import type { ApprovalRequest } from '@/shared/state/agentsSlice';

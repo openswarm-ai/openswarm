@@ -10,7 +10,7 @@ import OpenSwarmThread from './OpenSwarmThread/OpenSwarmThread';
 import ChatInput from './ChatInput/ChatInput';
 import { useAgentChat } from './hooks/useAgentChat';
 import { useOpenSwarmRuntime, type ComposerExtras, type DispatchableMessage } from './runtime/useOpenSwarmRuntime';
-import { toolkit } from './toolkit';
+import { toolkit } from './toolkit/toolkit';
 import type { ContextPath } from '@/shared/state/agentsTypes';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 

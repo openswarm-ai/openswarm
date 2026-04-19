@@ -18,7 +18,7 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import StopIcon from '@mui/icons-material/Stop';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import AdsClickIcon from '@mui/icons-material/AdsClick';
-import { useElementSelection } from '@/app/components/ElementSelectionContext';
+import { useElementSelection } from '@/app/pages/_shared/element_selection/useElementSelection';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { LIST_MODES } from '@/shared/state/modesSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';

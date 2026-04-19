@@ -8,7 +8,7 @@ import ViewPreview, { ViewPreviewHandle } from './ViewPreview';
 import InputSchemaForm, { getDefault, getStubbed } from './InputSchemaForm';
 import CodeEditor from './CodeEditor';
 // TODO: Fix this import, also the the element selection in this component doesnt seem to work so for now its chillin
-import { ElementSelectionProvider } from '@/app/pages/Dashboard/_shared/element_selection/ElementSelectionProvider';
+import { ElementSelectionProvider } from '@/app/pages/_shared/element_selection/ElementSelectionProvider';
 import { FileTreeItem, getEditorLanguage } from './FileTree';
 import { ConsolePanel } from './ConsolePanel';
 import { useViewWorkspace } from './hooks/useViewWorkspace';

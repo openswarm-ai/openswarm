@@ -18,7 +18,7 @@ import {
   normalizeSelectionForOptions,
   parseSelectionToIdSet,
 } from "./selection";
-import { ActionButtons } from "../../ActionButtons";
+import { ActionButtons } from "../../ActionButtons/ActionButtons";
 import { normalizeActionsConfig } from "./utils/actions-config";
 import type { Action } from "../../../utils/types";
 

@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useMemo, forwardRef, useImperativeHandle, useState } from 'react';
 import Box from '@mui/material/Box';
-import { useElementSelection } from '@/app/components/ElementSelectionContext';
+import { useElementSelection } from '@/app/pages/_shared/element_selection/useElementSelection';
 import { useIframeElementSelector } from './useIframeElementSelector';
 
 export interface ViewPreviewHandle {

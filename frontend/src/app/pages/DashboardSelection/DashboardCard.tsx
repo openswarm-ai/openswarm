@@ -8,7 +8,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { Dashboard } from '@/shared/state/dashboardsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { formatRelativeTime } from '@/app/pages/Dashboard/utils/formatRelativeTime';
+import { formatRelativeTime } from '@/app/pages/Dashboard/_shared/formatRelativeTime';
 
 interface DashboardCardProps {
   dashboard: Dashboard;

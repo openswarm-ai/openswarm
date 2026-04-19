@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { type OverlayState, type DragRect, type DragPreviewElement } from './_shared/types';
-import { useElementSelection } from './_shared/useElementSelection';
+import { useElementSelection } from '@/app/pages/_shared/element_selection/useElementSelection';
 
 const HIGHLIGHT_COLOR = '#3b82f6';
 const HIGHLIGHT_BG = 'rgba(59, 130, 246, 0.08)';

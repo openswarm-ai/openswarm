@@ -22,7 +22,7 @@ import Tools from './pages/Tools/Tools';
 import Modes from './pages/Modes/Modes';
 import Views from './pages/Views/Views';
 import Customization from './pages/Customization/Customization';
-import OnboardingModal from './components/OnboardingModal';
+import OnboardingModal from './components/OnboardingModal/OnboardingModal';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';

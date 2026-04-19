@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import type { ApprovalRequest } from '@/shared/state/agentsSlice';
 import { ToolQuestion } from './components/ToolQuestion/ToolQuestion';
-import { ToolApproval } from './components/ToolApproval';
+import { ToolApproval } from './components/ToolApproval/ToolApproval';
 import { ApprovalRouter } from './ApprovalRouter';
 
 interface BatchApprovalWrapperProps {

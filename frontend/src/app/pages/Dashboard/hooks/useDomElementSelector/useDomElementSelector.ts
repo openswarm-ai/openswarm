@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useElementSelection } from '@/app/pages/Dashboard/_shared/element_selection/useElementSelection';
+import { useElementSelection } from '@/app/pages/_shared/element_selection/useElementSelection';
 import {
   type SelectMeta,
   type DomSelectorState,
