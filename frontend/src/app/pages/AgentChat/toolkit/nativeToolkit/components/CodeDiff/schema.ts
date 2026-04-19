@@ -3,7 +3,7 @@ import {
   ToolUIIdSchema,
   ToolUIReceiptSchema,
   ToolUIRoleSchema,
-} from "../shared/schema";
+} from "@/app/pages/AgentChat/toolkit/utils/schema";
 
 const CodeDiffPropsSchemaBase = z.object({
   id: ToolUIIdSchema,

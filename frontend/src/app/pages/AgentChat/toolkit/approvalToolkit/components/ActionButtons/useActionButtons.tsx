@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Action } from "./schema";
+import type { Action } from "@/app/pages/AgentChat/toolkit/approvalToolkit/utils/types";
 
 type UseActionButtonsOptions = {
   actions: Action[];

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ReactNode } from "react";
-import { ToolUIIdSchema, ToolUIRoleSchema } from "@/components/tool-ui/shared/schema";
+import { ToolUIIdSchema, ToolUIRoleSchema } from "@/app/pages/AgentChat/toolkit/utils/schema";
 
 export const QuestionFlowOptionSchema = z.object({
   id: z.string().min(1),

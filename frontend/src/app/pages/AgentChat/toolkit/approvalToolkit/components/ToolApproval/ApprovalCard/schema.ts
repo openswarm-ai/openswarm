@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ToolUIIdSchema, ToolUIRoleSchema } from "../shared/schema";
+import { ToolUIIdSchema, ToolUIRoleSchema } from "@/app/pages/AgentChat/toolkit/utils/schema";
 
 const MetadataItemSchema = z.object({
   key: z.string().min(1),

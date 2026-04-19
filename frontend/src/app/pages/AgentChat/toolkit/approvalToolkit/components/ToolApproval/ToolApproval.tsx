@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react';
 import { ApprovalCard } from './ApprovalCard/ApprovalCard';
 import type { ApprovalRequest } from '@/shared/state/agentsSlice';
-import { useMcpToolMeta } from '../useMcpToolMeta';
+import { useMcpToolMeta } from '../../utils/useMcpToolMeta';
 import {
   parseMcpToolName,
 } from '../../utils';
-import { getMcpInputSummary } from '../getMcpInputSummary';
+import { getMcpInputSummary } from '../../utils/getMcpInputSummary';
 // TODO: what is this even supposed to try and import/use ???
 import type { MetadataItem } from '@/components/tool-ui/ApprovalCard/schema';
 

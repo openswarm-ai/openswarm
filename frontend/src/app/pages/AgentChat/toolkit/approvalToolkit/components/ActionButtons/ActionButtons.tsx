@@ -1,8 +1,9 @@
 "use client";
 
-import type { Action } from "./schema";
-import { cn, Button } from "./_adapter";
-import { useActionButtons } from "./use-action-buttons";
+import type { Action } from "../../utils/types";
+import { useActionButtons } from "./useActionButtons";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface ActionButtonsProps {
   actions: Action[];

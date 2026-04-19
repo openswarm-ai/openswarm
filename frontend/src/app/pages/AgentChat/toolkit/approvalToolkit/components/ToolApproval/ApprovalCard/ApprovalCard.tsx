@@ -3,8 +3,8 @@
 import * as React from "react";
 import { cn, Separator } from "./_adapter";
 import type { ApprovalCardProps, ApprovalDecision } from "./schema";
-import { ActionButtons } from "../shared/action-buttons";
-import { type Action } from "../shared/schema";
+import { ActionButtons } from "../../ActionButtons/ActionButtons";
+import { type Action } from "../../../utils/types";
 
 import { icons, Check, X } from "lucide-react";
 
