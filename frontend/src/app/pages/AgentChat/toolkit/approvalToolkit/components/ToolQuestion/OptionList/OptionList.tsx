@@ -4,7 +4,6 @@ import {
   useMemo,
   useState,
   useCallback,
-  useEffect,
   useRef,
   Fragment,
 } from "react";
@@ -229,7 +228,7 @@ export function OptionList({
   onBeforeAction,
   className,
 }: OptionListProps) {
-  if (process.env["NODE_ENV"] !== "production") {
+  if (import.meta.env.DEV) {
     if (value !== undefined && defaultValue !== undefined) {
       console.warn(
         "[OptionList] Both `value` (controlled) and `defaultValue` (uncontrolled) were provided. `defaultValue` is ignored when `value` is set.",
@@ -297,7 +296,7 @@ export function OptionList({
   ]);
 
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const [activeIndex, setActiveIndex] = useState(() => {
+  const [rawActiveIndex, setActiveIndex] = useState(() => {
     const firstSelected = optionStates.findIndex(
       (s) => s.isSelected && !s.isDisabled,
     );
@@ -306,20 +305,18 @@ export function OptionList({
     return firstEnabled >= 0 ? firstEnabled : 0;
   });
 
-  useEffect(() => {
-    if (optionStates.length === 0) return;
-    setActiveIndex((prev) => {
-      if (
-        prev < 0 ||
-        prev >= optionStates.length ||
-        optionStates[prev].isDisabled
-      ) {
-        const firstEnabled = optionStates.findIndex((s) => !s.isDisabled);
-        return firstEnabled >= 0 ? firstEnabled : 0;
-      }
-      return prev;
-    });
-  }, [optionStates]);
+  const activeIndex = useMemo(() => {
+    if (
+      optionStates.length === 0 ||
+      (rawActiveIndex >= 0 &&
+        rawActiveIndex < optionStates.length &&
+        !optionStates[rawActiveIndex].isDisabled)
+    ) {
+      return rawActiveIndex;
+    }
+    const firstEnabled = optionStates.findIndex((s) => !s.isDisabled);
+    return firstEnabled >= 0 ? firstEnabled : 0;
+  }, [rawActiveIndex, optionStates]);
 
   const updateSelection = useCallback(
     (next: Set<string>) => {

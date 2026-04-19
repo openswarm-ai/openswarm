@@ -6,7 +6,7 @@ import {
   AuiIf,
 } from '@assistant-ui/react';
 import { ArrowDownIcon } from 'lucide-react';
-import { Button } from '@/app/pages/AgentChat/_shared/button';
+import { Button } from '@/app/pages/AgentChat/_shared/Button';
 import { TooltipProvider } from './components/tooltip';
 import { TooltipIconButton } from './components/TooltipIconButton';
 import { UserMessage } from './components/UserMessage/UserMessage';

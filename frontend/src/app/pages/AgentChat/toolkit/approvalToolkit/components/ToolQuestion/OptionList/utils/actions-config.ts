@@ -1,4 +1,4 @@
-import type { Action, ActionsConfig } from "./schema";
+import type { Action, ActionsConfig } from "@/app/pages/AgentChat/toolkit/approvalToolkit/utils/types";
 
 export type ActionsProp = ActionsConfig | Action[];
 

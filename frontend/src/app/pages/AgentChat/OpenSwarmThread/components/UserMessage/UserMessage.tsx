@@ -81,7 +81,7 @@ function useOriginalMessage(): AgentMessage | undefined {
   try {
     messageId = aui.message().getState().id;
   } catch {
-    return undefined;
+    // intentionally empty — messageId stays undefined
   }
 
   return useAppSelector((state) => {

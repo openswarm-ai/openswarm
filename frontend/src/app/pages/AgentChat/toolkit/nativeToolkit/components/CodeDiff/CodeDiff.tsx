@@ -6,7 +6,7 @@ import {
   useEffect,
   useMemo,
   createContext,
-  use,
+  useContext,
   type ReactNode,
 } from "react";
 import {
@@ -137,7 +137,7 @@ type CodeDiffSharedState = {
 const CodeDiffContext = createContext<CodeDiffSharedState | null>(null);
 
 function useCodeDiff(): CodeDiffSharedState {
-  const context = use(CodeDiffContext);
+  const context = useContext(CodeDiffContext);
   if (!context) {
     throw new Error(
       "CodeDiff subcomponents must be used within <CodeDiff.Root>.",

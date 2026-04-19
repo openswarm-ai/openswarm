@@ -1,9 +1,5 @@
 "use client";
 
-import {
-  useState,
-  useEffect,
-} from "react";
 import { createHighlighter, type Highlighter } from "shiki/bundle/web";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import pierreDarkTheme from "../../../_shared/pierre-dark-theme.js";
@@ -57,52 +53,4 @@ export function setCachedHtml(cacheKey: string, html: string): void {
   }
 
   htmlCache.set(cacheKey, html);
-}
-
-export function getSystemTheme(): "light" | "dark" {
-  if (typeof window === "undefined") return "light";
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
-}
-
-export function getDocumentTheme(): "light" | "dark" | null {
-  if (typeof document === "undefined") return null;
-  const root = document.documentElement;
-  const dataTheme = root.getAttribute("data-theme")?.toLowerCase();
-  if (dataTheme === "dark") return "dark";
-  if (dataTheme === "light") return "light";
-  if (root.classList.contains("dark")) return "dark";
-  if (root.classList.contains("light")) return "light";
-  return null;
-}
-
-export function useResolvedTheme(): "light" | "dark" {
-  const [theme, setTheme] = useState<"light" | "dark">(() => {
-    return getDocumentTheme() ?? getSystemTheme();
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") {
-      return;
-    }
-
-    const update = () => setTheme(getDocumentTheme() ?? getSystemTheme());
-
-    const mql = window.matchMedia?.("(prefers-color-scheme: dark)");
-    mql?.addEventListener("change", update);
-
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "data-theme"],
-    });
-
-    return () => {
-      mql?.removeEventListener("change", update);
-      observer.disconnect();
-    };
-  }, []);
-
-  return theme;
 }

@@ -3,7 +3,7 @@
 import type { Action } from "../../utils/types";
 import { useActionButtons } from "./useActionButtons";
 import { cn } from "@/lib/utils";
-import { Button } from "@/app/pages/AgentChat/_shared/button";
+import { Button } from "@/app/pages/AgentChat/_shared/Button";
 
 interface ActionButtonsProps {
   actions: Action[];

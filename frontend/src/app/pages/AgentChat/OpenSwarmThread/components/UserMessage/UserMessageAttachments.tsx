@@ -29,19 +29,23 @@ const useFileSrc = (file: File | undefined) => {
 
   useEffect(() => {
     if (!file) {
-      setSrc(undefined);
       return;
     }
 
+    let revoked = false;
     const objectUrl = URL.createObjectURL(file);
-    setSrc(objectUrl);
+    queueMicrotask(() => {
+      if (!revoked) setSrc(objectUrl);
+    });
 
     return () => {
+      revoked = true;
       URL.revokeObjectURL(objectUrl);
+      queueMicrotask(() => setSrc(undefined));
     };
   }, [file]);
 
-  return src;
+  return file ? src : undefined;
 };
 
 const useAttachmentSrc = () => {

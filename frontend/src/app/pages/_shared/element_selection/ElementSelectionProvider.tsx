@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { type SelectedElement } from './SelectedElement';
 import { ElementSelectionContext } from './useElementSelection';
 
@@ -10,7 +10,9 @@ export const ElementSelectionProvider: React.FC<{ children: React.ReactNode }> =
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const activeOwnerIdRef = useRef(activeOwnerId);
-  activeOwnerIdRef.current = activeOwnerId;
+  useEffect(() => {
+    activeOwnerIdRef.current = activeOwnerId;
+  }, [activeOwnerId]);
 
   const selectedElements = useMemo(
     () => (activeOwnerId ? elementsByOwner[activeOwnerId] ?? [] : []),
