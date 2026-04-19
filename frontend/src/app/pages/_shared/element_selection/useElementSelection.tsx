@@ -22,7 +22,7 @@ interface ElementSelectionContextValue {
   iframeRef: RefObject<HTMLIFrameElement | null>;
 }
 
-const ElementSelectionContext = createContext<ElementSelectionContextValue | null>(null);
+export const ElementSelectionContext = createContext<ElementSelectionContextValue | null>(null);
 
 export function useElementSelection() {
   return useContext(ElementSelectionContext);

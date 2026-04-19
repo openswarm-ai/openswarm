@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { type SelectedElement } from './SelectedElement';
+import { ElementSelectionContext } from './useElementSelection';
 
 export const ElementSelectionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [selectMode, setSelectMode] = useState(false);
