@@ -22,13 +22,13 @@ class SkillStore(BaseModel):
     @typechecked
     def p_load_index(self) -> Dict[str, dict]:
         if os.path.exists(self.index_path):
-            with open(self.index_path) as f:
+            with open(self.index_path, encoding="utf-8") as f:
                 return json.load(f)
         return {}
 
     @typechecked
     def p_save_index(self, index: Dict[str, dict]) -> None:
-        with open(self.index_path, "w") as f:
+        with open(self.index_path, "w", encoding="utf-8") as f:
             json.dump(index, f, indent=2)
 
     @staticmethod
@@ -50,7 +50,7 @@ class SkillStore(BaseModel):
             if not fname.endswith(".md"):
                 continue
             fpath = os.path.join(self.skills_dir, fname)
-            with open(fpath) as f:
+            with open(fpath, encoding="utf-8") as f:
                 content = f.read()
             skill_id = fname.removesuffix(".md")
             meta = index.get(skill_id, {})
@@ -75,7 +75,7 @@ class SkillStore(BaseModel):
     def create(self, name: str, description: str, content: str, command: str = "") -> Skill:
         slug = self.slug(name)
         fpath = self.p_skill_path(slug)
-        with open(fpath, "w") as f:
+        with open(fpath, "w", encoding="utf-8") as f:
             f.write(content)
         index = self.p_load_index()
         index[slug] = {"name": name, "description": description, "command": command or slug}
@@ -91,7 +91,7 @@ class SkillStore(BaseModel):
         if not os.path.exists(fpath):
             raise FileNotFoundError(skill_id)
         if content is not None:
-            with open(fpath, "w") as f:
+            with open(fpath, "w", encoding="utf-8") as f:
                 f.write(content)
         index = self.p_load_index()
         meta = index.get(skill_id, {})
@@ -103,7 +103,7 @@ class SkillStore(BaseModel):
             meta["command"] = command
         index[skill_id] = meta
         self.p_save_index(index)
-        with open(fpath) as f:
+        with open(fpath, encoding="utf-8") as f:
             content = f.read()
         return Skill(id=skill_id, name=meta.get("name", skill_id),
                      description=meta.get("description", ""),

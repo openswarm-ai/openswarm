@@ -1,16 +1,15 @@
 #!/bin/bash
 # The comment above is shebang, DO NOT REMOVE
 DEV_ABSPATH="$(readlink -f "${BASH_SOURCE[0]}")"
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' 's/\r//g' "$DEV_ABSPATH"
-else
-    sed -i 's/\r//g' "$DEV_ABSPATH"
-fi
+BACKEND_DIR_ABSPATH="$(dirname "$DEV_ABSPATH")"
+PROJECT_ROOT_ABSPATH="$(dirname "$BACKEND_DIR_ABSPATH")"
+
+# shellcheck source=../run/utils/platform.sh
+source "$PROJECT_ROOT_ABSPATH/run/utils/platform.sh"
+ensure_lf "$DEV_ABSPATH"
 chmod +x "$DEV_ABSPATH"
 
-PROJECT_ROOT_ABSPATH="$(dirname "$(dirname "$DEV_ABSPATH")")"
-BACKEND_DIR_ABSPATH="$PROJECT_ROOT_ABSPATH/backend"
-UV_BIN="$BACKEND_DIR_ABSPATH/uv-bin/uv"
+UV_BIN="$BACKEND_DIR_ABSPATH/uv-bin/uv${EXE_EXT}"
 
 cleanup() {
     echo "Shutting down..."
@@ -32,8 +31,8 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
-# --- Read dev port from ports.config.json ---
-BACKEND_PORT=$(python3 -c "import json; print(json.load(open('$PROJECT_ROOT_ABSPATH/ports.config.json'))['backend']['dev'])")
+# --- Read dev port from ports.config.json (path via argv so MSYS converts it) ---
+BACKEND_PORT=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8'))['backend']['dev'])" "$PROJECT_ROOT_ABSPATH/ports.config.json")
 
 # --- Start the backend server ---
 echo "Starting backend server on http://0.0.0.0:${BACKEND_PORT} ..."

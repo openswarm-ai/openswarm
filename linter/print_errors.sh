@@ -5,12 +5,15 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="${1:-$(dirname "$SCRIPT_DIR")}"
 
+# shellcheck source=../run/utils/platform.sh
+source "$(dirname "$SCRIPT_DIR")/run/utils/platform.sh"
+
 YELLOW='\033[33m'
 CYAN='\033[36m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-LINT_OUTPUT=$(python3 "$SCRIPT_DIR/lint.py" --root "$ROOT_DIR" 2>&1)
+LINT_OUTPUT=$("$PY" "$SCRIPT_DIR/lint.py" --root "$ROOT_DIR" 2>&1)
 LINT_EXIT=$?
 
 if [ $LINT_EXIT -ne 0 ]; then

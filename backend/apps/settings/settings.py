@@ -22,7 +22,7 @@ settings = SubApp("settings", settings_lifespan)
 def load_settings() -> AppSettings:
     """Load settings from JSON file, returning defaults if not found."""
     if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE) as f:
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
             settings = AppSettings(**json.load(f))
         if settings.default_system_prompt is None:
             settings.default_system_prompt = DEFAULT_SYSTEM_PROMPT
@@ -38,7 +38,7 @@ async def get_settings():
 @settings.router.put("/update_settings")
 async def update_settings(body: AppSettings):
     os.makedirs(SETTINGS_DIR, exist_ok=True)
-    with open(SETTINGS_FILE, "w") as f:
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(body.model_dump(), f, indent=2)
     return {"ok": True, "settings": body.model_dump()}
 
@@ -48,7 +48,7 @@ async def reset_system_prompt():
     current = load_settings()
     current.default_system_prompt = DEFAULT_SYSTEM_PROMPT
     os.makedirs(SETTINGS_DIR, exist_ok=True)
-    with open(SETTINGS_FILE, "w") as f:
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(current.model_dump(), f, indent=2)
     return {"ok": True, "settings": current.model_dump()}
 

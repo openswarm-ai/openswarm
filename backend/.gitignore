@@ -16,3 +16,5 @@ apps/db/snips/*
 
 # ignore everything in data/
 data/**
+
+.venv/

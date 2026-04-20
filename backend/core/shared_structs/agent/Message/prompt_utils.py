@@ -55,7 +55,7 @@ def resolve_context_paths(context_paths: List[ContextPath]) -> str:
             continue
         if cp_type == "file" and os.path.isfile(path):
             try:
-                with open(path, "r", errors="replace") as f:
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
                     content: str = f.read(MAX_FILE_READ_BYTES)
                 sections.append(
                     f'<context_file path="{path}">\n{content}\n</context_file>'

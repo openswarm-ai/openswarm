@@ -9,7 +9,7 @@ P_CONTENT_DIR = os.path.join(P_SELF_DIR, "content")
 
 @typechecked
 def p_read(filename: str) -> str:
-    with open(os.path.join(P_CONTENT_DIR, filename)) as f:
+    with open(os.path.join(P_CONTENT_DIR, filename), encoding="utf-8") as f:
         return f.read()
 
 APP_BUILDER_SKILL: str = p_read("app_builder_skill.md")

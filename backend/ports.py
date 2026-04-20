@@ -8,7 +8,7 @@ import json
 import os
 
 _config_path = os.path.join(os.path.dirname(__file__), "..", "ports.config.json")
-with open(_config_path) as _f:
+with open(_config_path, encoding="utf-8") as _f:
     _cfg = json.load(_f)
 
 BACKEND_DEV_PORT: int = _cfg["backend"]["dev"]

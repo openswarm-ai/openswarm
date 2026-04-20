@@ -49,7 +49,7 @@ class PydanticStore(BaseModel, Generic[T]):
             path = os.path.join(self.data_dir, fname)
             size = os.path.getsize(path)
             debug("load_all: loading %s (%s bytes)", fname, size, table=False)
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 raw = f.read()
                 debug("load_all: raw content length=%s, first 100 chars: %s", len(raw), raw[:100], table=False)
                 result.append(self.model_cls(**json.loads(raw)))
@@ -62,7 +62,7 @@ class PydanticStore(BaseModel, Generic[T]):
         path = self.p_path(item_id)
         debug("save: writing %s to %s", item_id, path, table=False)
         with tempfile.NamedTemporaryFile(
-            "w", dir=self.data_dir, suffix=".tmp", delete=False
+            "w", dir=self.data_dir, suffix=".tmp", delete=False, encoding="utf-8"
         ) as tmp:
             json.dump(self.p_dump(item), tmp, indent=2)
             tmp_path = tmp.name
@@ -74,7 +74,7 @@ class PydanticStore(BaseModel, Generic[T]):
         path = self.p_path(item_id)
         if not os.path.exists(path):
             raise HTTPException(status_code=404, detail=self.not_found_detail)
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return self.model_cls(**json.load(f))
 
     @typechecked
@@ -82,7 +82,7 @@ class PydanticStore(BaseModel, Generic[T]):
         path = self.p_path(item_id)
         if not os.path.exists(path):
             return None
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return self.model_cls(**json.load(f))
 
     @typechecked

@@ -47,7 +47,7 @@ async def serve_app_file(app_id: str, filepath: str):
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
     if not os.path.isfile(full_path):
         raise HTTPException(status_code=404, detail="File not found")
-    with open(full_path) as f:
+    with open(full_path, encoding="utf-8") as f:
         content = f.read()
     mime, _ = mimetypes.guess_type(filepath)
     return Response(content=content, media_type=mime or "text/plain")
@@ -61,7 +61,7 @@ async def serve_app_file(app_id: str, filepath: str):
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
     if not os.path.isfile(full_path):
         raise HTTPException(status_code=404, detail="File not found in app")
-    with open(full_path) as f:
+    with open(full_path, encoding="utf-8") as f:
         content = f.read()
     mime, _ = mimetypes.guess_type(filepath)
     return Response(content=content, media_type=mime or "text/plain")
@@ -101,17 +101,17 @@ async def seed_app(body: OpenSwarmAppSeedRequest):
             if not full_path.startswith(os.path.normpath(folder)):
                 continue
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            with open(full_path, "w") as f:
+            with open(full_path, "w", encoding="utf-8") as f:
                 f.write(content)
     else:
         for rel_path, content in APP_BUILDER_TEMPLATE_FILES.items():
             full_path = os.path.join(folder, rel_path)
-            with open(full_path, "w") as f:
+            with open(full_path, "w", encoding="utf-8") as f:
                 f.write(content)
-    with open(os.path.join(folder, "SKILL.md"), "w") as f:
+    with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as f:
         f.write(APP_BUILDER_SKILL)
     if body.meta:
-        with open(os.path.join(folder, "meta.json"), "w") as f:
+        with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
             json.dump(body.meta, f, indent=2)
     return {"path": os.path.abspath(folder)}
 
@@ -125,7 +125,7 @@ async def write_app_file(app_id: str, filepath: str, body: dict):
     if not full_path.startswith(os.path.normpath(folder)):
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
-    with open(full_path, "w") as f:
+    with open(full_path, "w", encoding="utf-8") as f:
         f.write(body.get("content", ""))
     return {"ok": True}
 
@@ -186,9 +186,9 @@ async def create_app(body: OpenSwarmAppCreate):
         if not full_path.startswith(os.path.normpath(folder)):
             continue
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        with open(full_path, "w") as f:
+        with open(full_path, "w", encoding="utf-8") as f:
             f.write(content)
-    with open(os.path.join(folder, "SKILL.md"), "w") as f:
+    with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as f:
         f.write(APP_BUILDER_SKILL)
     P_APP_METADATA_STORE.save(app)
     return {"ok": True, "app": app.model_dump()}
@@ -239,7 +239,7 @@ def _read_app_file(app_id: str, filename: str) -> Optional[str]:
     path = os.path.join(APP_BUILDER_CONTENT_DIR, app_id, filename)
     if not os.path.isfile(path):
         return None
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return f.read()
 
 @app_builder.router.post("/execute")

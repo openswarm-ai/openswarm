@@ -65,13 +65,13 @@ async def list_builtin_tools() -> dict:
 def load_builtin_permissions() -> dict[str, TOOL_PERMISSIONS]:
     if not os.path.exists(BUILTIN_PERMS_PATH):
         return {}
-    with open(BUILTIN_PERMS_PATH) as f:
+    with open(BUILTIN_PERMS_PATH, encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_builtin_permissions(perms: dict[str, str]) -> None:
     os.makedirs(os.path.dirname(BUILTIN_PERMS_PATH), exist_ok=True)
-    with open(BUILTIN_PERMS_PATH, "w") as f:
+    with open(BUILTIN_PERMS_PATH, "w", encoding="utf-8") as f:
         json.dump(perms, f, indent=2)
 
 

@@ -67,14 +67,14 @@ async def read_skill_workspace(workspace_id: str):
     skill_content: Optional[str] = None
     skill_path = os.path.join(folder, "SKILL.md")
     if os.path.isfile(skill_path):
-        with open(skill_path) as f:
+        with open(skill_path, encoding="utf-8") as f:
             skill_content = f.read()
 
     meta: Optional[dict] = None
     meta_path = os.path.join(folder, "meta.json")
     if os.path.isfile(meta_path):
         try:
-            with open(meta_path) as f:
+            with open(meta_path, encoding="utf-8") as f:
                 meta = json.load(f)
         except json.JSONDecodeError:
             pass
@@ -95,10 +95,10 @@ async def seed_skill_workspace(body: _WorkspaceSeedBody):
     folder = os.path.join(SKILLS_WORKSPACE_DIR, body.workspace_id)
     os.makedirs(folder, exist_ok=True)
     if body.skill_content:
-        with open(os.path.join(folder, "SKILL.md"), "w") as f:
+        with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as f:
             f.write(body.skill_content)
     if body.meta:
-        with open(os.path.join(folder, "meta.json"), "w") as f:
+        with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
             json.dump(body.meta, f, indent=2)
     return {"path": os.path.abspath(folder)}
 

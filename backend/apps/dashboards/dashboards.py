@@ -168,7 +168,7 @@ async def duplicate_dashboard(dashboard_id: str):
             "browser_cards": source_data.get("layout", {}).get("browser_cards", {}),
         },
     }
-    with open(os.path.join(DB_ROOT, "dashboards", f"{new_id}.json"), "w") as f:
+    with open(os.path.join(DB_ROOT, "dashboards", f"{new_id}.json"), "w", encoding="utf-8") as f:
         json.dump(new_dashboard, f, indent=2)
 
     return new_dashboard

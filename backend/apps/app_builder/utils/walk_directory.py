@@ -12,7 +12,7 @@ def walk_directory(folder: str) -> Dict[str, str]:
             full_path = os.path.join(root, fname)
             rel_path = os.path.relpath(full_path, folder)
             try:
-                with open(full_path) as f:
+                with open(full_path, encoding="utf-8") as f:
                     files[rel_path] = f.read()
             except Exception:
                 pass

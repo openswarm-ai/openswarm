@@ -1,7 +1,6 @@
 from mcp.client.sse import sse_client
 from mcp import ClientSession
 from mcp.types import Implementation
-from exceptiongroup import BaseExceptionGroup
 
 from backend.apps.tools.discover_tools.DiscoveryError import DiscoveryError
 from typeguard import typechecked

@@ -1,15 +1,13 @@
 #!/bin/bash
 # The comment above is shebang, DO NOT REMOVE
 SCRIPT_ABSPATH="$(readlink -f "${BASH_SOURCE[0]}")"
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' 's/\r//g' "$SCRIPT_ABSPATH"
-else
-    sed -i 's/\r//g' "$SCRIPT_ABSPATH"
-fi
-chmod +x "$SCRIPT_ABSPATH"
-
 RUN_DIR_ROOT="$(dirname "$SCRIPT_ABSPATH")"
 PROJECT_ROOT="$(dirname "$RUN_DIR_ROOT")"
+
+# shellcheck source=utils/platform.sh
+source "$RUN_DIR_ROOT/utils/platform.sh"
+ensure_lf "$SCRIPT_ABSPATH"
+chmod +x "$SCRIPT_ABSPATH"
 
 BLUE='\033[0;34m'
 GREEN='\033[0;32m'
@@ -23,16 +21,6 @@ FRONTEND_PID=""
 ELECTRON_PID=""
 SHUTTING_DOWN=false
 
-kill_tree() {
-    local pid=$1 sig=${2:-TERM}
-    local children
-    children=$(pgrep -P "$pid" 2>/dev/null)
-    for child in $children; do
-        kill_tree "$child" "$sig"
-    done
-    kill -"$sig" "$pid" 2>/dev/null
-}
-
 cleanup() {
     $SHUTTING_DOWN && return
     SHUTTING_DOWN=true
@@ -45,7 +33,13 @@ cleanup() {
     for pid in $ELECTRON_PID $FRONTEND_PID; do
         [[ -n "$pid" ]] && kill_tree "$pid" TERM
     done
-    [[ -n "$BACKEND_PID" ]] && kill -TERM "$BACKEND_PID" 2>/dev/null
+    if [[ -n "$BACKEND_PID" ]]; then
+        if [[ "$IS_WINDOWS" == "true" ]]; then
+            kill_tree "$BACKEND_PID" TERM
+        else
+            kill -TERM "$BACKEND_PID" 2>/dev/null
+        fi
+    fi
 
     local elapsed=0
     while (( elapsed < 10 )); do
@@ -71,35 +65,63 @@ trap cleanup EXIT
 
 # --- Ensure bundled uv/uvx for MCP servers ---
 UV_BIN_DIR="$PROJECT_ROOT/backend/uv-bin"
-if [ ! -f "$UV_BIN_DIR/uvx" ]; then
+if [ ! -f "$UV_BIN_DIR/uvx${EXE_EXT}" ]; then
     echo -e "${YELLOW}${BOLD}[uv]${RESET}       Downloading uv/uvx..."
     mkdir -p "$UV_BIN_DIR"
     ARCH=$(uname -m)
-    if [[ "$ARCH" == "arm64" ]]; then
-        curl -sL "https://github.com/astral-sh/uv/releases/latest/download/uv-aarch64-apple-darwin.tar.gz" | tar xz -C /tmp
-        cp /tmp/uv-aarch64-apple-darwin/uv "$UV_BIN_DIR/uv"
-        cp /tmp/uv-aarch64-apple-darwin/uvx "$UV_BIN_DIR/uvx"
+    # NOTE: do not name this `TMP` -- on Windows, `TMP` is an exported env var
+    # and bash assignment preserves the export attribute, so child processes
+    # (e.g. uv) would inherit it and crash once we `rm -rf` the directory.
+    UV_DL_TMP=$(mktemp -d)
+    if [[ "$IS_WINDOWS" == "true" ]]; then
+        case "$ARCH" in
+            aarch64|arm64) UV_PKG="uv-aarch64-pc-windows-msvc.zip" ;;
+            *)             UV_PKG="uv-x86_64-pc-windows-msvc.zip" ;;
+        esac
+        curl -fsSL "https://github.com/astral-sh/uv/releases/latest/download/${UV_PKG}" -o "$UV_DL_TMP/uv.zip"
+        # Use Python's zipfile module: GNU tar in MSYS/Git Bash can't read zips,
+        # and Windows' libarchive tar.exe is shadowed on PATH by GNU tar.
+        # The Windows zip stores uv.exe/uvx.exe at the archive root (no wrapper dir),
+        # unlike the Linux/macOS tarballs which have a uv-<triple>/ prefix.
+        "$PY" -m zipfile -e "$(py_path "$UV_DL_TMP/uv.zip")" "$(py_path "$UV_DL_TMP")"
+        cp "$UV_DL_TMP/uv.exe"  "$UV_BIN_DIR/uv.exe"
+        cp "$UV_DL_TMP/uvx.exe" "$UV_BIN_DIR/uvx.exe"
+    elif [[ "$IS_MAC" == "true" ]]; then
+        if [[ "$ARCH" == "arm64" ]]; then
+            curl -sL "https://github.com/astral-sh/uv/releases/latest/download/uv-aarch64-apple-darwin.tar.gz" | tar xz -C "$UV_DL_TMP"
+            cp "$UV_DL_TMP/uv-aarch64-apple-darwin/uv"  "$UV_BIN_DIR/uv"
+            cp "$UV_DL_TMP/uv-aarch64-apple-darwin/uvx" "$UV_BIN_DIR/uvx"
+        else
+            curl -sL "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-apple-darwin.tar.gz" | tar xz -C "$UV_DL_TMP"
+            cp "$UV_DL_TMP/uv-x86_64-apple-darwin/uv"   "$UV_BIN_DIR/uv"
+            cp "$UV_DL_TMP/uv-x86_64-apple-darwin/uvx"  "$UV_BIN_DIR/uvx"
+        fi
+        chmod +x "$UV_BIN_DIR/uv" "$UV_BIN_DIR/uvx"
     else
-        curl -sL "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-apple-darwin.tar.gz" | tar xz -C /tmp
-        cp /tmp/uv-x86_64-apple-darwin/uv "$UV_BIN_DIR/uv"
-        cp /tmp/uv-x86_64-apple-darwin/uvx "$UV_BIN_DIR/uvx"
+        case "$ARCH" in
+            aarch64|arm64) UV_PKG_BASE="uv-aarch64-unknown-linux-gnu" ;;
+            *)             UV_PKG_BASE="uv-x86_64-unknown-linux-gnu" ;;
+        esac
+        curl -sL "https://github.com/astral-sh/uv/releases/latest/download/${UV_PKG_BASE}.tar.gz" | tar xz -C "$UV_DL_TMP"
+        cp "$UV_DL_TMP/$UV_PKG_BASE/uv"  "$UV_BIN_DIR/uv"
+        cp "$UV_DL_TMP/$UV_PKG_BASE/uvx" "$UV_BIN_DIR/uvx"
+        chmod +x "$UV_BIN_DIR/uv" "$UV_BIN_DIR/uvx"
     fi
-    chmod +x "$UV_BIN_DIR/uv" "$UV_BIN_DIR/uvx"
-    rm -rf /tmp/uv-*-apple-darwin
+    rm -rf "$UV_DL_TMP"
 fi
 
-# --- Read ports from config ---
-BACKEND_PORT=$(python3 -c "import json; print(json.load(open('$PROJECT_ROOT/ports.config.json'))['backend']['dev'])")
-FRONTEND_PORT=$(python3 -c "import json; print(json.load(open('$PROJECT_ROOT/ports.config.json'))['frontend']['dev'])")
+# --- Read ports from config (path passed via argv so MSYS converts it) ---
+BACKEND_PORT=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1]))['backend']['dev'])" "$PROJECT_ROOT/ports.config.json")
+FRONTEND_PORT=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1]))['frontend']['dev'])" "$PROJECT_ROOT/ports.config.json")
 
 # --- Run structural linter (warnings only, non-blocking) ---
-LINT_OUTPUT=$(python3 "$PROJECT_ROOT/linter/lint.py" --root "$PROJECT_ROOT" 2>&1)
+LINT_OUTPUT=$("$PY" "$PROJECT_ROOT/linter/lint.py" --root "$PROJECT_ROOT" 2>&1)
 LINT_EXIT=$?
 if [ $LINT_EXIT -ne 0 ]; then
     echo ""
     echo -e "${YELLOW}${BOLD}[structlint] Violations found:${RESET}"
     echo "$LINT_OUTPUT" | grep -v "^structlint:" | while IFS= read -r line; do
-        echo -e "${YELLOW}  $line${RESET}"
+        printf '%b  %s%b\n' "$YELLOW" "$line" "$RESET"
     done
     LINT_COUNT=$(echo "$LINT_OUTPUT" | grep -oE '[0-9]+ error' | head -1 | grep -oE '[0-9]+')
     echo -e "${YELLOW}${BOLD}  ${LINT_COUNT} violation(s) — fix or add exceptions in linter/config/config.json${RESET}"
@@ -114,6 +136,7 @@ bash "$PROJECT_ROOT/backend/run.sh" > >(
     done
 ) 2>&1 &
 BACKEND_PID=$!
+track_winpid "$BACKEND_PID"
 
 # --- Wait for backend to become healthy ---
 echo -e "${YELLOW}${BOLD}Waiting for backend (http://localhost:${BACKEND_PORT}) to be ready...${RESET}"
@@ -145,6 +168,7 @@ bash "$PROJECT_ROOT/frontend/run.sh" > >(
     done
 ) 2>&1 &
 FRONTEND_PID=$!
+track_winpid "$FRONTEND_PID"
 
 # --- Wait for frontend dev server to become available ---
 echo -e "${YELLOW}${BOLD}Waiting for frontend (http://localhost:${FRONTEND_PORT}) to be ready...${RESET}"
@@ -177,8 +201,8 @@ if [ ! -d "$PROJECT_ROOT/electron/node_modules" ]; then
     done
 fi
 
-# --- Sign Electron VMP for DRM (if EVS account exists) ---
-if [ -f "$PROJECT_ROOT/electron/scripts/sign-vmp.sh" ]; then
+# --- Sign Electron VMP for DRM (macOS only; Windows uses a different DRM flow) ---
+if [[ "$IS_WINDOWS" != "true" ]] && [ -f "$PROJECT_ROOT/electron/scripts/sign-vmp.sh" ]; then
     echo -e "${YELLOW}${BOLD}[vmp]${RESET}      Checking VMP signature..."
     bash "$PROJECT_ROOT/electron/scripts/sign-vmp.sh" 2>&1 | while IFS= read -r line; do
         printf "${YELLOW}${BOLD}%s${RESET}\n" "$line"
@@ -193,6 +217,7 @@ echo -e "${MAGENTA}${BOLD}[electron]${RESET} Launching Electron dev shell..."
     done
 ) 2>&1 &
 ELECTRON_PID=$!
+track_winpid "$ELECTRON_PID"
 
 echo ""
 echo -e "${BOLD}All services are running. Press Ctrl+C to stop.${RESET}"
