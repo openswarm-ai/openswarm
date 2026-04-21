@@ -23,6 +23,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { SKILL_COLOR } from '@/app/components/richEditorUtils';
 import ViewBubble from './ViewBubble';
 import PlanPicker from '@/app/components/PlanPicker';
+import { ErrorSlime } from '@/app/components/ErrorSlime';
 
 const streamingCursorKeyframes = `
 @keyframes blink-cursor {
@@ -110,14 +111,20 @@ function parseOpenSwarmError(text: string): OpenSwarmErrorInfo | null {
       ctaAction: 'settings',
     };
   }
-  // Network issues (keep last so it doesn't swallow the specific cases above)
-  if (/ECONNREFUSED|ENETUNREACH|fetch failed|ETIMEDOUT|network|Could not reach/i.test(text)) {
+  // Genuine, hard network failures only. The bare word `network` used to
+  // match anything mentioning "network" (Python traces, MCP tool output,
+  // ffmpeg lines, etc.), and `fetch failed` / `ETIMEDOUT` alone fire for
+  // transient upstream blips the backend now silently retries — surfacing
+  // a card for those just confuses the user. So: require the specific
+  // errno codes at word boundaries, and only match `fetch failed` when
+  // paired with a concrete cause so we don't swallow every Node-level
+  // transient. The backend's capacity/transient retry layer handles the
+  // rest without ever reaching this classifier.
+  if (/\b(?:ECONNREFUSED|ENETUNREACH|ENOTFOUND|EAI_AGAIN)\b|Could\s+not\s+reach\s+OpenSwarm|Unable\s+to\s+connect\s+to\s+OpenSwarm/i.test(text)) {
     return {
       kind: 'network',
-      title: 'Network issue',
-      detail: "Can't reach the OpenSwarm service. Check your internet connection and try again.",
-      ctaLabel: 'Try again',
-      ctaAction: 'retry',
+      title: 'Connection issue',
+      detail: "We couldn't reach the service. Once your connection is back, send a new message to continue.",
     };
   }
   return null;
@@ -662,6 +669,17 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
     ? parseElementContext(rawText)
     : { userMessage: rawText, elements: [] };
 
+  const renderedMarkdown = useMemo(() => (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        a: ({ children, ...props }) => (
+          <a {...props} style={{ cursor: 'pointer' }}>{children}</a>
+        ),
+      }}
+    >{rawText}</ReactMarkdown>
+  ), [rawText]);
+
   // Detect friendly OpenSwarm / upstream errors and render a card instead of
   // raw "API Error: ..." text. Checks both the wrapped format the Claude CLI
   // uses ("API Error: NNN …") and the raw JSON body.
@@ -871,9 +889,12 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                   gap: 0.7,
                 }}
               >
-                <Typography sx={{ fontSize: '0.92rem', fontWeight: 600, color: c.text.primary }}>
-                  {openswarmError.title}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <ErrorSlime size={22} />
+                  <Typography sx={{ fontSize: '0.92rem', fontWeight: 600, color: c.text.primary }}>
+                    {openswarmError.title}
+                  </Typography>
+                </Box>
                 <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, lineHeight: 1.5 }}>
                   {openswarmError.detail}
                 </Typography>
@@ -914,14 +935,22 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
               </Box>
             ) : (
               <>
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    a: ({ children, ...props }) => (
-                      <a {...props} style={{ cursor: 'pointer' }}>{children}</a>
-                    ),
-                  }}
-                >{rawText}</ReactMarkdown>
+                {isStreaming ? (
+                  <Box
+                    component="div"
+                    sx={{
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      fontSize: 'inherit',
+                      lineHeight: 'inherit',
+                      color: 'inherit',
+                    }}
+                  >
+                    {rawText}
+                  </Box>
+                ) : (
+                  renderedMarkdown
+                )}
                 {isStreaming && <StreamingCursor />}
               </>
             )}

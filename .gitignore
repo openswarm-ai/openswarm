@@ -1,6 +1,7 @@
 .DS_Store
 .worktrees
 .env
+.local-stash/
 backend/data/**
 !backend/data/outputs/
 !backend/data/outputs/*.json

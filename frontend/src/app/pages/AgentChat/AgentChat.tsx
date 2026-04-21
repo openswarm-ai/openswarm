@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -59,18 +59,20 @@ function stringifyContent(content: any): string {
   return JSON.stringify(content);
 }
 
-const thinkingDotsKeyframes = `
-@keyframes thinking-bounce {
-  0%, 80%, 100% { transform: scale(0); opacity: 0.4; }
-  40% { transform: scale(1); opacity: 1; }
+const thinkingShimmerKeyframes = `
+@keyframes thinking-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 `;
 
 const ThinkingBubble: React.FC = () => {
   const c = useClaudeTokens();
+  const shimmerBase = c.text.tertiary;
+  const shimmerHighlight = c.text.primary;
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75 }}>
-      <style>{thinkingDotsKeyframes}</style>
+      <style>{thinkingShimmerKeyframes}</style>
       <Box
         sx={{
           bgcolor: c.bg.surface,
@@ -81,23 +83,25 @@ const ThinkingBubble: React.FC = () => {
           boxShadow: c.shadow.sm,
           display: 'flex',
           alignItems: 'center',
-          gap: '4px',
           minHeight: 36,
         }}
       >
-        {[0, 1, 2].map((i) => (
-          <Box
-            key={i}
-            sx={{
-              width: 7,
-              height: 7,
-              borderRadius: '50%',
-              bgcolor: c.text.tertiary,
-              animation: 'thinking-bounce 1.4s infinite ease-in-out both',
-              animationDelay: `${i * 0.16}s`,
-            }}
-          />
-        ))}
+        <Box
+          component="span"
+          sx={{
+            fontSize: '0.85rem',
+            fontWeight: 500,
+            background: `linear-gradient(90deg, ${shimmerBase} 0%, ${shimmerBase} 40%, ${shimmerHighlight} 50%, ${shimmerBase} 60%, ${shimmerBase} 100%)`,
+            backgroundSize: '200% 100%',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            color: 'transparent',
+            animation: 'thinking-shimmer 2s linear infinite',
+          }}
+        >
+          Thinking…
+        </Box>
       </Box>
     </Box>
   );
@@ -336,12 +340,24 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     setShowScrollButton(false);
   }, []);
 
-  useLayoutEffect(() => {
-    if (isAtBottomRef.current) {
+  const scrollRafRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isAtBottomRef.current) return;
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      if (!isAtBottomRef.current) return;
       const el = scrollContainerRef.current;
       if (el) el.scrollTop = el.scrollHeight;
-    }
+    });
   }, [session?.messages.length, session?.streamingMessage?.content]);
+
+  useEffect(() => () => {
+    if (scrollRafRef.current != null) {
+      cancelAnimationFrame(scrollRafRef.current);
+      scrollRafRef.current = null;
+    }
+  }, []);
 
   const handleSend = (prompt: string, images?: Array<{ data: string; media_type: string }>, contextPaths?: Array<{ path: string; type: 'file' | 'directory' }>, forcedTools?: string[], attachedSkills?: Array<{ id: string; name: string; content: string }>, selectedBrowserIds?: string[]) => {
     if (!id) return;

@@ -526,6 +526,14 @@ app.on('web-contents-created', (_event, contents) => {
       action: 'allow',
       overrideBrowserWindowOptions: {
         parent: mainWindow || undefined,
+        width: 520,
+        height: 680,
+        center: true,
+        fullscreen: false,
+        fullscreenable: false,
+        resizable: true,
+        minimizable: false,
+        maximizable: false,
       },
     };
   });
@@ -533,6 +541,9 @@ app.on('web-contents-created', (_event, contents) => {
   contents.on('did-create-window', (childWindow) => {
     if (mainWindow && !mainWindow.isDestroyed() && !childWindow.isDestroyed()) {
       childWindow.setParentWindow(mainWindow);
+      // Belt-and-suspenders: if the parent was fullscreen when window.open
+      // fired, Electron can still spawn the child fullscreen. Force it back.
+      if (childWindow.isFullScreen()) childWindow.setFullScreen(false);
     }
   });
 

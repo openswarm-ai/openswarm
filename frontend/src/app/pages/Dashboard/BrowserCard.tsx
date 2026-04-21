@@ -245,6 +245,16 @@ const BrowserCard: React.FC<Props> = ({
         }
       };
 
+      // When a webview popup spawns while the app is in document fullscreen,
+      // Chromium's compositor shifts to the popup and the parent surface goes
+      // black with no fullscreenchange event. Drop fullscreen first so the
+      // popup renders normally and stays interactive.
+      const onNewWindow = () => {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+      };
+
       wv.addEventListener('did-navigate', onNavigate);
       wv.addEventListener('did-navigate-in-page', onNavigate);
       wv.addEventListener('page-title-updated', onTitleUpdate);
@@ -252,6 +262,7 @@ const BrowserCard: React.FC<Props> = ({
       wv.addEventListener('did-stop-loading', onLoadStop);
       wv.addEventListener('page-favicon-updated', onFaviconUpdate);
       wv.addEventListener('ipc-message', onIpcMessage as any);
+      wv.addEventListener('new-window', onNewWindow as any);
 
       cleanups.push(() => {
         unregisterWebview(browserId, tabId);
@@ -262,6 +273,7 @@ const BrowserCard: React.FC<Props> = ({
         wv.removeEventListener('did-stop-loading', onLoadStop);
         wv.removeEventListener('page-favicon-updated', onFaviconUpdate);
         wv.removeEventListener('ipc-message', onIpcMessage as any);
+        wv.removeEventListener('new-window', onNewWindow as any);
       });
     }
 

@@ -36,8 +36,8 @@ class WebSocketManager {
   private reconnectDelay = 1000;
   private maxReconnectDelay = 30000;
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
-  private deltaBuffer: Map<string, { sessionId: string; messageId: string; accumulated: string }> = new Map();
-  private flushScheduled = false;
+  private interpolatorState: Map<string, { sessionId: string; messageId: string; targetText: string; displayedLength: number }> = new Map();
+  private interpolatorRafId: number | null = null;
 
   constructor(url: string, options?: WSManagerOptions) {
     this.url = url;
@@ -45,24 +45,60 @@ class WebSocketManager {
   }
 
   private bufferDelta(sessionId: string, messageId: string, delta: string) {
-    const existing = this.deltaBuffer.get(messageId);
+    const existing = this.interpolatorState.get(messageId);
     if (existing) {
-      existing.accumulated += delta;
+      existing.targetText += delta;
     } else {
-      this.deltaBuffer.set(messageId, { sessionId, messageId, accumulated: delta });
+      this.interpolatorState.set(messageId, { sessionId, messageId, targetText: delta, displayedLength: 0 });
     }
-    if (!this.flushScheduled) {
-      this.flushScheduled = true;
-      requestAnimationFrame(() => this.flushDeltas());
-    }
+    this.scheduleInterpolator();
   }
 
-  private flushDeltas() {
-    this.flushScheduled = false;
-    for (const [, { sessionId, messageId, accumulated }] of this.deltaBuffer) {
-      store.dispatch(streamDelta({ sessionId, messageId, delta: accumulated }));
+  private scheduleInterpolator() {
+    if (this.interpolatorRafId != null) return;
+    this.interpolatorRafId = requestAnimationFrame(() => this.tickInterpolator());
+  }
+
+  // Drain each message's pending text at a paced, roughly-uniform rate so
+  // bursty server emissions paint as a smooth stream of characters instead of
+  // visible chunks. Rate adapts to backlog: small backlog → ~2 chars/frame
+  // (~120cps, typewriter feel); large backlog → up to 40 chars/frame so we
+  // catch up fast without pinning the main thread.
+  private tickInterpolator() {
+    this.interpolatorRafId = null;
+    let workRemaining = false;
+    for (const state of this.interpolatorState.values()) {
+      const remaining = state.targetText.length - state.displayedLength;
+      if (remaining <= 0) continue;
+      const step = Math.min(Math.max(Math.ceil(remaining / 6), 2), 40);
+      const nextLength = Math.min(state.displayedLength + step, state.targetText.length);
+      const deltaSlice = state.targetText.slice(state.displayedLength, nextLength);
+      state.displayedLength = nextLength;
+      store.dispatch(streamDelta({ sessionId: state.sessionId, messageId: state.messageId, delta: deltaSlice }));
+      if (state.displayedLength < state.targetText.length) workRemaining = true;
     }
-    this.deltaBuffer.clear();
+    if (workRemaining) this.scheduleInterpolator();
+  }
+
+  // Flush remaining pending text synchronously. Pass a messageId to flush
+  // only that stream (used on stream_end so the tail isn't paced).
+  private flushInterpolator(messageId?: string) {
+    const drain = (state: { sessionId: string; messageId: string; targetText: string; displayedLength: number }) => {
+      if (state.displayedLength >= state.targetText.length) return;
+      const tail = state.targetText.slice(state.displayedLength);
+      state.displayedLength = state.targetText.length;
+      store.dispatch(streamDelta({ sessionId: state.sessionId, messageId: state.messageId, delta: tail }));
+    };
+    if (messageId) {
+      const state = this.interpolatorState.get(messageId);
+      if (state) {
+        drain(state);
+        this.interpolatorState.delete(messageId);
+      }
+    } else {
+      for (const state of this.interpolatorState.values()) drain(state);
+      this.interpolatorState.clear();
+    }
   }
 
   connect() {
@@ -97,6 +133,11 @@ class WebSocketManager {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    if (this.interpolatorRafId != null) {
+      cancelAnimationFrame(this.interpolatorRafId);
+      this.interpolatorRafId = null;
+    }
+    this.flushInterpolator();
     this.ws?.close();
     this.ws = null;
   }
@@ -146,7 +187,7 @@ class WebSocketManager {
 
       case 'agent:message':
         if (session_id && data.message) {
-          if (this.deltaBuffer.size > 0) this.flushDeltas();
+          if (this.interpolatorState.size > 0) this.flushInterpolator();
           store.dispatch(addMessage({ sessionId: session_id, message: data.message }));
         }
         break;
@@ -170,7 +211,7 @@ class WebSocketManager {
 
       case 'agent:stream_end':
         if (session_id && data.message_id) {
-          if (this.deltaBuffer.size > 0) this.flushDeltas();
+          this.flushInterpolator(data.message_id);
           store.dispatch(streamEnd({
             sessionId: session_id,
             messageId: data.message_id,

@@ -53,6 +53,58 @@ def _delete_session_file(session_id: str):
         os.remove(path)
 
 
+# Patterns that indicate an upstream transient problem (overload / rate limit /
+# infra blip) — safe to silently retry with backoff. Checked against the
+# stringified exception from claude_agent_sdk / Claude CLI.
+_TRANSIENT_CAPACITY_PATTERNS = re.compile(
+    r"(?:\b(?:429|500|502|503|504|529)\b"
+    r"|overloaded"
+    r"|service\s+(?:temporarily\s+)?unavailable"
+    r"|at\s+capacity"
+    r"|try\s+again\s+shortly"
+    r"|internal\s+server\s+error"
+    r"|rate[_\s-]?limit(?:_error)?"
+    r"|ECONNRESET|ETIMEDOUT|ENETUNREACH|fetch\s+failed"
+    r"|upstream\s+connect\s+error)",
+    re.IGNORECASE,
+)
+
+# Patterns that look rate-limit-ish but are actually non-transient (user quota,
+# auth). Must NOT retry — upgrading or reauthing is required.
+_NON_TRANSIENT_PATTERNS = re.compile(
+    r"(?:usage\s+cap\s+exceeded"
+    r"|reached\s+your\s+OpenSwarm.*plan\s+limit"
+    r"|no\s+active\s+subscription"
+    r"|subscription\s+(?:canceled|past_due)"
+    r"|invalid.*token"
+    r"|missing\s+bearer\s+token"
+    r"|401|403)",
+    re.IGNORECASE,
+)
+
+
+def _is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> bool:
+    # The Claude CLI's underlying ProcessError stringifies to a generic
+    # "Command failed with exit code 1 / Check stderr output for details" —
+    # the real cause (rate_limit_error / No pool capacity available / 429
+    # / overloaded) only surfaces in the subprocess's stderr stream, which
+    # we capture via the SDK's `stderr` callback and pass in as extra_text.
+    # Classify against both so we catch capacity errors regardless of which
+    # channel carried the message.
+    combined = f"{exc!s}\n{extra_text}".strip()
+    if not combined:
+        return False
+    if _NON_TRANSIENT_PATTERNS.search(combined):
+        return False
+    if _TRANSIENT_CAPACITY_PATTERNS.search(combined):
+        return True
+    # Pool-exhaustion copy from the OpenSwarm proxy ("No pool capacity
+    # available. Try again shortly.") — matches the capacity family too.
+    if re.search(r"no\s+pool\s+capacity", combined, re.IGNORECASE):
+        return True
+    return False
+
+
 def _load_all_session_data() -> list[tuple[str, dict]]:
     results = []
     if not os.path.exists(SESSIONS_DIR):
@@ -1029,11 +1081,27 @@ class AgentManager:
             api_type = _api_type_for_session
             session.provider = api_type
 
+            # Capture the Claude CLI's stderr into a buffer so the retry
+            # classifier can see the real cause of a process crash (e.g.
+            # "No pool capacity available" from the OpenSwarm proxy, or the
+            # Anthropic SDK's 429/overloaded error body). Without this the
+            # SDK's ProcessError only stringifies to "Command failed with
+            # exit code 1 / Check stderr output for details", which masks
+            # transient capacity issues.
+            _stderr_buffer: list[str] = []
+
+            def _stderr_cb(line: str) -> None:
+                _stderr_buffer.append(line)
+                # Cap the buffer so a runaway subprocess can't balloon RAM.
+                if len(_stderr_buffer) > 500:
+                    del _stderr_buffer[:250]
+
             options_kwargs = {
                 "model": resolved_model,
                 "max_buffer_size": 5 * 1024 * 1024,
                 "permission_mode": "default",
                 "can_use_tool": can_use_tool,
+                "stderr": _stderr_cb,
                 "hooks": {
                     "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_hook])],
                     "PostToolUse": [HookMatcher(matcher=None, hooks=[post_tool_hook])],
@@ -1230,193 +1298,265 @@ class AgentManager:
             stream_block_index_map = {}
             _turn_number = 0
             _first_event = True
+            # True between the first non-ResultMessage of a turn and the
+            # following ResultMessage; False at turn boundaries. The retry
+            # layer below only retries at boundaries — resuming mid-turn via
+            # sdk_session_id would risk duplicating user-visible output.
+            _current_turn_emitted = False
 
-            async for message in query(
-                prompt=prompt_stream(),
-                options=options,
-            ):
-                if _first_event:
-                    logger.info(f"[MCP-DEBUG] First event received: {type(message).__name__}")
-                    _first_event = False
+            # Silently absorb transient upstream capacity errors (429/500/503/
+            # 529/overloaded/network blips) by waiting with exponential
+            # backoff and restarting the query with resume=sdk_session_id.
+            # The session keeps its conversation state across retries so the
+            # user just sees a pause, not a red error card. Hard errors
+            # (auth, plan limit, invalid args) fall through to the existing
+            # error handler unchanged.
+            _CAPACITY_BACKOFFS = [5, 15, 45, 90, 180]
 
-                # Log system messages (MCP server status, errors, etc.)
-                if isinstance(message, SystemMessage):
-                    raw = message.__dict__ if hasattr(message, '__dict__') else str(message)
-                    logger.info(f"[MCP-DEBUG] SystemMessage: {raw}")
+            async def _run_streaming_turn():
+                nonlocal stream_text_msg_id, stream_tool_msg_ids_ordered, stream_block_index_map
+                nonlocal _turn_number, _first_event, _current_turn_emitted
+                async for message in query(
+                    prompt=prompt_stream(),
+                    options=options,
+                ):
+                    if isinstance(message, ResultMessage):
+                        _current_turn_emitted = False
+                    else:
+                        _current_turn_emitted = True
 
-                if isinstance(message, StreamEvent):
-                    event = message.event
-                    event_type = event.get("type")
+                    if _first_event:
+                        logger.info(f"[MCP-DEBUG] First event received: {type(message).__name__}")
+                        _first_event = False
 
-                    if event_type == "content_block_start":
-                        block = event.get("content_block", {})
-                        index = event.get("index")
-                        block_type = block.get("type")
+                    # Log system messages (MCP server status, errors, etc.)
+                    if isinstance(message, SystemMessage):
+                        raw = message.__dict__ if hasattr(message, '__dict__') else str(message)
+                        logger.info(f"[MCP-DEBUG] SystemMessage: {raw}")
 
-                        if block_type == "text":
-                            if stream_text_msg_id is None:
-                                stream_text_msg_id = uuid4().hex
+                    if isinstance(message, StreamEvent):
+                        event = message.event
+                        event_type = event.get("type")
+
+                        if event_type == "content_block_start":
+                            block = event.get("content_block", {})
+                            index = event.get("index")
+                            block_type = block.get("type")
+
+                            if block_type == "text":
+                                if stream_text_msg_id is None:
+                                    stream_text_msg_id = uuid4().hex
+                                    await ws_manager.send_to_session(session_id, "agent:stream_start", {
+                                        "session_id": session_id,
+                                        "message_id": stream_text_msg_id,
+                                        "role": "assistant",
+                                    })
+                                stream_block_index_map[index] = stream_text_msg_id
+
+                            elif block_type == "thinking":
+                                # Reasoning trace from thinking-capable models
+                                # (GPT-5.3 Codex, Gemini 3 Pro/Flash, Claude
+                                # with extended thinking). Rendered as a
+                                # collapsible "thinking" message in the UI via
+                                # the existing stream infrastructure — the
+                                # frontend already handles role="thinking" for
+                                # the DynamicIsland/agent card rendering.
+                                thinking_msg_id = uuid4().hex
+                                stream_block_index_map[index] = thinking_msg_id
                                 await ws_manager.send_to_session(session_id, "agent:stream_start", {
                                     "session_id": session_id,
-                                    "message_id": stream_text_msg_id,
-                                    "role": "assistant",
+                                    "message_id": thinking_msg_id,
+                                    "role": "thinking",
                                 })
-                            stream_block_index_map[index] = stream_text_msg_id
 
-                        elif block_type == "thinking":
-                            # Reasoning trace from thinking-capable models
-                            # (GPT-5.3 Codex, Gemini 3 Pro/Flash, Claude
-                            # with extended thinking). Rendered as a
-                            # collapsible "thinking" message in the UI via
-                            # the existing stream infrastructure — the
-                            # frontend already handles role="thinking" for
-                            # the DynamicIsland/agent card rendering.
-                            thinking_msg_id = uuid4().hex
-                            stream_block_index_map[index] = thinking_msg_id
-                            await ws_manager.send_to_session(session_id, "agent:stream_start", {
+                            elif block_type == "tool_use":
+                                tool_msg_id = uuid4().hex
+                                stream_tool_msg_ids_ordered.append(tool_msg_id)
+                                stream_block_index_map[index] = tool_msg_id
+                                await ws_manager.send_to_session(session_id, "agent:stream_start", {
+                                    "session_id": session_id,
+                                    "message_id": tool_msg_id,
+                                    "role": "tool_call",
+                                    "tool_name": block.get("name", ""),
+                                })
+
+                        elif event_type == "content_block_delta":
+                            index = event.get("index")
+                            delta = event.get("delta", {})
+                            delta_type = delta.get("type")
+                            msg_id = stream_block_index_map.get(index)
+
+                            if msg_id and delta_type == "text_delta":
+                                await ws_manager.send_to_session(session_id, "agent:stream_delta", {
+                                    "session_id": session_id,
+                                    "message_id": msg_id,
+                                    "delta": delta.get("text", ""),
+                                })
+                            elif msg_id and delta_type == "thinking_delta":
+                                # Thinking content streams as thinking_delta
+                                # with a "thinking" field (not "text")
+                                await ws_manager.send_to_session(session_id, "agent:stream_delta", {
+                                    "session_id": session_id,
+                                    "message_id": msg_id,
+                                    "delta": delta.get("thinking", ""),
+                                })
+                            elif msg_id and delta_type == "input_json_delta":
+                                await ws_manager.send_to_session(session_id, "agent:stream_delta", {
+                                    "session_id": session_id,
+                                    "message_id": msg_id,
+                                    "delta": delta.get("partial_json", ""),
+                                })
+
+                        elif event_type == "content_block_stop":
+                            index = event.get("index")
+                            msg_id = stream_block_index_map.get(index)
+                            if msg_id and msg_id != stream_text_msg_id:
+                                await ws_manager.send_to_session(session_id, "agent:stream_end", {
+                                    "session_id": session_id,
+                                    "message_id": msg_id,
+                                })
+
+                        elif event_type == "message_stop":
+                            if stream_text_msg_id:
+                                await ws_manager.send_to_session(session_id, "agent:stream_end", {
+                                    "session_id": session_id,
+                                    "message_id": stream_text_msg_id,
+                                })
+
+                    elif isinstance(message, AssistantMessage):
+                        content_parts = []
+                        thinking_parts = []
+                        tool_uses = []
+                        for block in message.content:
+                            if isinstance(block, ThinkingBlock):
+                                thinking_text = getattr(block, "thinking", None) or getattr(block, "text", None) or ""
+                                if thinking_text:
+                                    thinking_parts.append(thinking_text)
+                            elif isinstance(block, TextBlock):
+                                content_parts.append(block.text)
+                            elif isinstance(block, ToolUseBlock):
+                                tool_uses.append({
+                                    "id": block.id,
+                                    "tool": block.name,
+                                    "input": block.input,
+                                })
+
+                        # Emit thinking trace as a separate message so the
+                        # frontend can render it as a collapsible reasoning
+                        # bubble (GPT-5.3 Codex, Gemini 3 Pro/Flash).
+                        if thinking_parts:
+                            thinking_msg = Message(
+                                role="thinking",
+                                content="\n".join(thinking_parts),
+                                branch_id=session.active_branch_id,
+                            )
+                            session.messages.append(thinking_msg)
+                            await ws_manager.send_to_session(session_id, "agent:message", {
                                 "session_id": session_id,
-                                "message_id": thinking_msg_id,
-                                "role": "thinking",
+                                "message": thinking_msg.model_dump(mode="json"),
                             })
 
-                        elif block_type == "tool_use":
-                            tool_msg_id = uuid4().hex
-                            stream_tool_msg_ids_ordered.append(tool_msg_id)
-                            stream_block_index_map[index] = tool_msg_id
-                            await ws_manager.send_to_session(session_id, "agent:stream_start", {
+                        if content_parts:
+                            asst_msg = Message(
+                                id=stream_text_msg_id or uuid4().hex,
+                                role="assistant",
+                                content="\n".join(content_parts),
+                                branch_id=session.active_branch_id,
+                            )
+                            session.messages.append(asst_msg)
+                            await ws_manager.send_to_session(session_id, "agent:message", {
                                 "session_id": session_id,
-                                "message_id": tool_msg_id,
-                                "role": "tool_call",
-                                "tool_name": block.get("name", ""),
+                                "message": asst_msg.model_dump(mode="json"),
                             })
 
-                    elif event_type == "content_block_delta":
-                        index = event.get("index")
-                        delta = event.get("delta", {})
-                        delta_type = delta.get("type")
-                        msg_id = stream_block_index_map.get(index)
-
-                        if msg_id and delta_type == "text_delta":
-                            await ws_manager.send_to_session(session_id, "agent:stream_delta", {
+                        for i, tu in enumerate(tool_uses):
+                            msg_id = stream_tool_msg_ids_ordered[i] if i < len(stream_tool_msg_ids_ordered) else uuid4().hex
+                            tool_msg = Message(id=msg_id, role="tool_call", content=tu, branch_id=session.active_branch_id)
+                            session.messages.append(tool_msg)
+                            await ws_manager.send_to_session(session_id, "agent:message", {
                                 "session_id": session_id,
-                                "message_id": msg_id,
-                                "delta": delta.get("text", ""),
-                            })
-                        elif msg_id and delta_type == "thinking_delta":
-                            # Thinking content streams as thinking_delta
-                            # with a "thinking" field (not "text")
-                            await ws_manager.send_to_session(session_id, "agent:stream_delta", {
-                                "session_id": session_id,
-                                "message_id": msg_id,
-                                "delta": delta.get("thinking", ""),
-                            })
-                        elif msg_id and delta_type == "input_json_delta":
-                            await ws_manager.send_to_session(session_id, "agent:stream_delta", {
-                                "session_id": session_id,
-                                "message_id": msg_id,
-                                "delta": delta.get("partial_json", ""),
+                                "message": tool_msg.model_dump(mode="json"),
                             })
 
-                    elif event_type == "content_block_stop":
-                        index = event.get("index")
-                        msg_id = stream_block_index_map.get(index)
-                        if msg_id and msg_id != stream_text_msg_id:
-                            await ws_manager.send_to_session(session_id, "agent:stream_end", {
-                                "session_id": session_id,
-                                "message_id": msg_id,
-                            })
+                        _turn_number += 1
+                        _analytics("turn.completed", {
+                            "turn_number": _turn_number,
+                            "tool_calls_in_turn": len(tool_uses),
+                            "model": session.model,
+                        }, session_id=session_id, dashboard_id=session.dashboard_id)
 
-                    elif event_type == "message_stop":
+                        stream_text_msg_id = None
+                        stream_tool_msg_ids_ordered = []
+                        stream_block_index_map = {}
+
+                    elif isinstance(message, ResultMessage):
+                        session.sdk_session_id = getattr(message, "session_id", None)
+                        cost = getattr(message, "total_cost_usd", None)
+                        if cost is not None:
+                            session.cost_usd = cost
+                            await ws_manager.send_to_session(session_id, "agent:cost_update", {
+                                "session_id": session_id,
+                                "cost_usd": session.cost_usd,
+                            })
+                        # Extract token usage from ResultMessage
+                        usage = getattr(message, "usage", None) or {}
+                        if isinstance(usage, dict):
+                            inp = usage.get("input_tokens", 0) or 0
+                            out = usage.get("output_tokens", 0) or 0
+                            cache_create = usage.get("cache_creation_input_tokens", 0) or 0
+                            cache_read = usage.get("cache_read_input_tokens", 0) or 0
+                            session.tokens["input"] = inp + cache_create + cache_read
+                            session.tokens["output"] = out
+
+            capacity_retry_attempt = 0
+            while True:
+                try:
+                    await _run_streaming_turn()
+                    break
+                except Exception as e:
+                    stderr_snapshot = "\n".join(_stderr_buffer[-50:])
+                    if (
+                        _is_transient_capacity_error(e, extra_text=stderr_snapshot)
+                        and capacity_retry_attempt < len(_CAPACITY_BACKOFFS)
+                    ):
+                        wait = _CAPACITY_BACKOFFS[capacity_retry_attempt]
+                        capacity_retry_attempt += 1
+                        mid_stream = _current_turn_emitted
+                        logger.warning(
+                            f"Transient upstream error on session {session_id} "
+                            f"(attempt {capacity_retry_attempt}/{len(_CAPACITY_BACKOFFS)}, "
+                            f"mid_stream={mid_stream}); sleeping {wait}s before retry. "
+                            f"exc={e!r} stderr_tail={stderr_snapshot[-400:]!r}"
+                        )
+                        # Finalize any in-flight stream messages so the UI
+                        # doesn't leave them pinned as "still streaming" while
+                        # we wait and restart. On resume the CLI re-runs the
+                        # last turn from scratch (Anthropic doesn't persist
+                        # in-progress responses), so the partial assistant
+                        # text / tool call we emitted is now orphaned — cap
+                        # it with stream_end and start the fresh turn under a
+                        # new message id.
                         if stream_text_msg_id:
                             await ws_manager.send_to_session(session_id, "agent:stream_end", {
                                 "session_id": session_id,
                                 "message_id": stream_text_msg_id,
                             })
-
-                elif isinstance(message, AssistantMessage):
-                    content_parts = []
-                    thinking_parts = []
-                    tool_uses = []
-                    for block in message.content:
-                        if isinstance(block, ThinkingBlock):
-                            thinking_text = getattr(block, "thinking", None) or getattr(block, "text", None) or ""
-                            if thinking_text:
-                                thinking_parts.append(thinking_text)
-                        elif isinstance(block, TextBlock):
-                            content_parts.append(block.text)
-                        elif isinstance(block, ToolUseBlock):
-                            tool_uses.append({
-                                "id": block.id,
-                                "tool": block.name,
-                                "input": block.input,
+                            stream_text_msg_id = None
+                        for _tool_msg_id in stream_tool_msg_ids_ordered:
+                            await ws_manager.send_to_session(session_id, "agent:stream_end", {
+                                "session_id": session_id,
+                                "message_id": _tool_msg_id,
                             })
-
-                    # Emit thinking trace as a separate message so the
-                    # frontend can render it as a collapsible reasoning
-                    # bubble (GPT-5.3 Codex, Gemini 3 Pro/Flash).
-                    if thinking_parts:
-                        thinking_msg = Message(
-                            role="thinking",
-                            content="\n".join(thinking_parts),
-                            branch_id=session.active_branch_id,
-                        )
-                        session.messages.append(thinking_msg)
-                        await ws_manager.send_to_session(session_id, "agent:message", {
-                            "session_id": session_id,
-                            "message": thinking_msg.model_dump(mode="json"),
-                        })
-
-                    if content_parts:
-                        asst_msg = Message(
-                            id=stream_text_msg_id or uuid4().hex,
-                            role="assistant",
-                            content="\n".join(content_parts),
-                            branch_id=session.active_branch_id,
-                        )
-                        session.messages.append(asst_msg)
-                        await ws_manager.send_to_session(session_id, "agent:message", {
-                            "session_id": session_id,
-                            "message": asst_msg.model_dump(mode="json"),
-                        })
-
-                    for i, tu in enumerate(tool_uses):
-                        msg_id = stream_tool_msg_ids_ordered[i] if i < len(stream_tool_msg_ids_ordered) else uuid4().hex
-                        tool_msg = Message(id=msg_id, role="tool_call", content=tu, branch_id=session.active_branch_id)
-                        session.messages.append(tool_msg)
-                        await ws_manager.send_to_session(session_id, "agent:message", {
-                            "session_id": session_id,
-                            "message": tool_msg.model_dump(mode="json"),
-                        })
-
-                    _turn_number += 1
-                    _analytics("turn.completed", {
-                        "turn_number": _turn_number,
-                        "tool_calls_in_turn": len(tool_uses),
-                        "model": session.model,
-                    }, session_id=session_id, dashboard_id=session.dashboard_id)
-
-                    stream_text_msg_id = None
-                    stream_tool_msg_ids_ordered = []
-                    stream_block_index_map = {}
-
-                elif isinstance(message, ResultMessage):
-                    session.sdk_session_id = getattr(message, "session_id", None)
-                    cost = getattr(message, "total_cost_usd", None)
-                    if cost is not None:
-                        session.cost_usd = cost
-                        await ws_manager.send_to_session(session_id, "agent:cost_update", {
-                            "session_id": session_id,
-                            "cost_usd": session.cost_usd,
-                        })
-                    # Extract token usage from ResultMessage
-                    usage = getattr(message, "usage", None) or {}
-                    if isinstance(usage, dict):
-                        inp = usage.get("input_tokens", 0) or 0
-                        out = usage.get("output_tokens", 0) or 0
-                        cache_create = usage.get("cache_creation_input_tokens", 0) or 0
-                        cache_read = usage.get("cache_read_input_tokens", 0) or 0
-                        session.tokens["input"] = inp + cache_create + cache_read
-                        session.tokens["output"] = out
+                        stream_tool_msg_ids_ordered = []
+                        stream_block_index_map = {}
+                        _current_turn_emitted = False
+                        await asyncio.sleep(wait)
+                        _stderr_buffer.clear()
+                        if session.sdk_session_id:
+                            options_kwargs["resume"] = session.sdk_session_id
+                            options = ClaudeAgentOptions(**options_kwargs)
+                        continue
+                    raise
 
             session.status = "completed"
         except asyncio.CancelledError:

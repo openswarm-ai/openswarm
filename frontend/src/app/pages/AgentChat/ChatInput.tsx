@@ -205,27 +205,6 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
   const connectionMode = useAppSelector((state) => state.settings.data.connection_mode);
   const toolItems = useAppSelector((state) => state.tools.items);
 
-  // Count the total number of enabled MCP tool permissions (non-deny) across
-  // all enabled MCP servers. Used to warn users before they switch to a
-  // non-Claude model that can't leverage the deferred-tool pool — those
-  // models get every schema upfront and may exhaust context fast.
-  const enabledMcpToolCount = useMemo(() => {
-    let count = 0;
-    for (const id in toolItems) {
-      const t = toolItems[id];
-      if (t.enabled && t.mcp_config && t.tool_permissions) {
-        for (const name in t.tool_permissions) {
-          if (t.tool_permissions[name] !== 'deny') count++;
-        }
-      }
-    }
-    return count;
-  }, [toolItems]);
-
-  // One-time dismissible warning when picking a non-Claude model with many MCPs.
-  const [mcpWarningOpen, setMcpWarningOpen] = useState(false);
-  const MCP_WARNING_LS_KEY = 'openswarm:nonClaudeMcpWarningDismissed';
-  const MCP_WARNING_THRESHOLD = 20;
 
   // Build flat model list with provider grouping. Group names come from the
   // backend's /agents/models response verbatim — "OpenSwarm Pro" for
@@ -1166,19 +1145,6 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
                       };
                       onProviderChange(providerMap[provLower] || provLower);
                     }
-                    // OpenSwarm Pro routes Claude models through our proxy —
-                    // they're still Claude, so they support the deferred tool
-                    // loader. Only warn when the user picks a truly non-Claude
-                    // provider (GPT/Gemini/etc).
-                    const provLowerForWarn = prov.toLowerCase();
-                    const isClaudeProvider = provLowerForWarn === 'anthropic' || provLowerForWarn === 'openswarm pro';
-                    if (!isClaudeProvider && enabledMcpToolCount > MCP_WARNING_THRESHOLD) {
-                      try {
-                        if (typeof window !== 'undefined' && !window.localStorage.getItem(MCP_WARNING_LS_KEY)) {
-                          setMcpWarningOpen(true);
-                        }
-                      } catch {}
-                    }
                     setModelAnchor(null);
                   }}
                 >
@@ -1448,40 +1414,6 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
           />
         </Box>
       </Modal>
-
-      <Snackbar
-        open={mcpWarningOpen}
-        autoHideDuration={12000}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        onClose={(_, reason) => {
-          if (reason === 'clickaway') return;
-          setMcpWarningOpen(false);
-          try {
-            if (typeof window !== 'undefined') {
-              window.localStorage.setItem(MCP_WARNING_LS_KEY, '1');
-            }
-          } catch { /* ignore */ }
-        }}
-      >
-        <Alert
-          severity="warning"
-          variant="filled"
-          onClose={() => {
-            setMcpWarningOpen(false);
-            try {
-              if (typeof window !== 'undefined') {
-                window.localStorage.setItem(MCP_WARNING_LS_KEY, '1');
-              }
-            } catch { /* ignore */ }
-          }}
-          sx={{ fontSize: '0.78rem', maxWidth: 520 }}
-        >
-          Non-Claude models don't support the deferred tool loader — all
-          {' '}{enabledMcpToolCount} MCP tool schemas will be sent upfront,
-          which may exhaust context on long sessions. Disable MCPs you
-          don't need in Settings → Tools.
-        </Alert>
-      </Snackbar>
 
     </Box>
   );

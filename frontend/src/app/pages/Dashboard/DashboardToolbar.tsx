@@ -376,7 +376,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           boxShadow: c.shadow.lg,
           padding: isExpanded ? '4px' : '6px',
           userSelect: 'none' as const,
-          overflow: inputOpen ? 'visible' : 'hidden',
+          overflow: inputOpen || newAgentBounce ? 'visible' : 'hidden',
           width: viewPickerOpen ? 480 : isExpanded ? 360 : undefined,
         }}
       >
@@ -618,8 +618,10 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 aria-label="New Agent"
                 data-onboarding="new-agent-button"
                 tabIndex={0}
-                onClick={onNewAgent}
-                onAnimationEnd={newAgentBounce ? onNewAgentBounceEnd : undefined}
+                onClick={() => {
+                  if (newAgentBounce) onNewAgentBounceEnd?.();
+                  onNewAgent();
+                }}
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
@@ -634,10 +636,14 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                   '&:hover': { bgcolor: c.accent.hover },
                   '&:active': { bgcolor: c.accent.pressed },
                   ...(newAgentBounce && {
-                    animation: 'new-agent-bounce 0.7s ease-in-out 4',
+                    animation: 'new-agent-bounce 1.6s ease-out infinite',
                     '@keyframes new-agent-bounce': {
-                      '0%, 100%': { transform: 'translateY(0)' },
-                      '50%': { transform: 'translateY(-8px)' },
+                      '0%':   { transform: 'translateY(0)' },
+                      '15%':  { transform: 'translateY(-10px)' },
+                      '30%':  { transform: 'translateY(0)' },
+                      '42%':  { transform: 'translateY(-4px)' },
+                      '55%':  { transform: 'translateY(0)' },
+                      '100%': { transform: 'translateY(0)' },
                     },
                   }),
                 }}
