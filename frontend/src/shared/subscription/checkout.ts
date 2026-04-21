@@ -26,10 +26,13 @@ export async function subscribeToPlan(
   });
 
   try {
+    // Cloud schema uses "yearly"; the desktop UI/analytics uses "annual".
+    // Normalize at the boundary so the rest of the client stays consistent.
+    const wireInterval = billingInterval === 'annual' ? 'yearly' : billingInterval;
     const r = await fetch('https://api.openswarm.com/api/stripe/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan, billing_interval: billingInterval }),
+      body: JSON.stringify({ plan, billing_interval: wireInterval }),
     });
     if (!r.ok) {
       console.error(`Checkout request failed: ${r.status}`);
