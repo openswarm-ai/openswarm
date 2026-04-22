@@ -112,3 +112,6 @@ export const darkTokens: ClaudeTokens = {
   },
   transition: 'all 300ms cubic-bezier(0.165, 0.85, 0.45, 1)',
 };
+
+/** @deprecated Use useClaudeTokens() hook instead for dark mode support */
+export const claude = lightTokens;

@@ -35,11 +35,6 @@ declare global {
     getBackendPort: () => number;
     getWebviewPreloadPath: () => string;
     getAppVersion: () => Promise<string>;
-    showOpenDialog: (options: {
-      properties?: Array<'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles'>;
-      defaultPath?: string;
-      filters?: Array<{ name: string; extensions: string[] }>;
-    }) => Promise<{ canceled: boolean; filePaths: string[] }>;
     getUpdateStatus: () => Promise<{ status: string; info: any; error: string | null }>;
     checkForUpdates: () => Promise<{ success: boolean; version?: string; error?: string }>;
     downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
@@ -50,6 +45,9 @@ declare global {
     onUpdateDownloaded: (cb: (info: OpenSwarmUpdateInfo) => void) => () => void;
     onUpdateError: (cb: (message: string) => void) => () => void;
     onWebviewNewWindow: (cb: (url: string, webContentsId: number) => void) => () => void;
+    openExternal: (url: string) => Promise<void>;
+    // Deep-link listener — fires when OS opens the app with openswarm://... URL.
+    onAuthUrl?: (cb: (url: string) => void) => () => void;
   }
 
   interface Window {

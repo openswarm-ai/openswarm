@@ -1,35 +1,70 @@
-import { createSlice } from '@reduxjs/toolkit';
-import { SUBSCRIPTIONS_STATUS } from '@/shared/backend-bridge/apps/subscriptions';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
-interface ModelEntry {
+const SUBSCRIPTIONS_API = `${API_BASE}/subscriptions`;
+
+export interface ModelOption {
   value: string;
   label: string;
+  version?: string;
   context_window: number;
-  provider: string;
+  reasoning?: boolean;
+  provider?: string;
 }
 
 interface ModelsState {
-  byProvider: Record<string, ModelEntry[]>;
-  loading: boolean;
+  byProvider: Record<string, ModelOption[]>;
   loaded: boolean;
 }
 
-const initialState: ModelsState = { byProvider: {}, loading: false, loaded: false };
+const DEFAULT_MODELS: Record<string, ModelOption[]> = {
+  anthropic: [
+    { value: 'sonnet', label: 'Claude Sonnet', context_window: 200000 },
+    { value: 'opus', label: 'Claude Opus', context_window: 200000, reasoning: true },
+    { value: 'haiku', label: 'Claude Haiku', context_window: 200000 },
+  ],
+};
 
-function groupByProvider(raw: any[]): Record<string, ModelEntry[]> {
-  const grouped: Record<string, ModelEntry[]> = {};
-  for (const m of raw) {
-    const entry: ModelEntry = {
-      value: m.value ?? m.id ?? '',
-      label: m.label ?? m.value ?? '',
-      context_window: m.context_window ?? 200_000,
-      provider: m.provider ?? 'Unknown',
-    };
-    const key = entry.provider.charAt(0).toUpperCase() + entry.provider.slice(1);
-    (grouped[key] ??= []).push(entry);
+const initialState: ModelsState = {
+  byProvider: {},
+  loaded: false,
+};
+
+export const fetchModels = createAsyncThunk('models/fetchModels', async () => {
+  try {
+    const res = await fetch(`${SUBSCRIPTIONS_API}/status`);
+    if (!res.ok) return DEFAULT_MODELS;
+    
+    const data = await res.json();
+    if (!data.running || !data.models?.length) {
+      return DEFAULT_MODELS;
+    }
+    
+    // Group models by provider
+    const byProvider: Record<string, ModelOption[]> = {};
+    for (const m of data.models) {
+      const provider = m.provider || 'subscription';
+      if (!byProvider[provider]) {
+        byProvider[provider] = [];
+      }
+      byProvider[provider].push({
+        value: m.value,
+        label: m.label,
+        context_window: m.context_window || 200000,
+        provider: m.provider,
+      });
+    }
+    
+    // Merge with defaults if no models from 9Router
+    if (Object.keys(byProvider).length === 0) {
+      return DEFAULT_MODELS;
+    }
+    
+    return byProvider;
+  } catch {
+    return DEFAULT_MODELS;
   }
-  return grouped;
-}
+});
 
 const modelsSlice = createSlice({
   name: 'models',
@@ -37,13 +72,14 @@ const modelsSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
-      .addCase(SUBSCRIPTIONS_STATUS.pending, (state) => { state.loading = true; })
-      .addCase(SUBSCRIPTIONS_STATUS.fulfilled, (state, action) => {
-        state.loading = false;
+      .addCase(fetchModels.fulfilled, (state, action) => {
+        state.byProvider = action.payload;
         state.loaded = true;
-        state.byProvider = groupByProvider((action.payload as any).models ?? []);
       })
-      .addCase(SUBSCRIPTIONS_STATUS.rejected, (state) => { state.loading = false; state.loaded = true; });
+      .addCase(fetchModels.rejected, (state) => {
+        // Mark as loaded even on failure so we fall back to hardcoded options
+        state.loaded = true;
+      });
   },
 });
 

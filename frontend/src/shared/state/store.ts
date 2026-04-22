@@ -7,10 +7,11 @@ import modesReducer from './modesSlice';
 import settingsReducer from './settingsSlice';
 import mcpRegistryReducer from './mcpRegistrySlice';
 import skillRegistryReducer from './skillRegistrySlice';
+import outputsReducer from './outputsSlice';
 import dashboardLayoutReducer from './dashboardLayoutSlice';
 import dashboardsReducer from './dashboardsSlice';
-import appsReducer from './appsSlice';
 import updateReducer from './updateSlice';
+import analyticsReducer from './analyticsSlice';
 import modelsReducer from './modelsSlice';
 
 export const store = configureStore({
@@ -23,10 +24,11 @@ export const store = configureStore({
     settings: settingsReducer,
     mcpRegistry: mcpRegistryReducer,
     skillRegistry: skillRegistryReducer,
+    outputs: outputsReducer,
     dashboardLayout: dashboardLayoutReducer,
     dashboards: dashboardsReducer,
-    apps: appsReducer,
     update: updateReducer,
+    analytics: analyticsReducer,
     models: modelsReducer,
   },
 });

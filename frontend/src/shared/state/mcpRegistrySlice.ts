@@ -1,14 +1,7 @@
-
-
-
-// TODO: Re-implement the mcp registry (needs to also be implemented in the backend)
-
-
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-// import { createAsyncThunk } from '@reduxjs/toolkit';
-// import { API_BASE } from '@/shared/config';
+import { API_BASE } from '@/shared/config';
 
-// const MCP_REGISTRY_API = `${API_BASE}/mcp-registry`;
+const MCP_REGISTRY_API = `${API_BASE}/mcp-registry`;
 
 export interface McpServer {
   name: string;
@@ -24,7 +17,7 @@ export interface McpServer {
   source: string;
 }
 
-interface McpServerDetail extends McpServer {
+export interface McpServerDetail extends McpServer {
   environmentVariables: { name: string; description: string; default?: string; format?: string }[];
   keywords: string[];
   license: string;
@@ -54,39 +47,24 @@ const initialState: McpRegistryState = {
 
 export const searchRegistry = createAsyncThunk(
   'mcpRegistry/search',
-  // async ({ q, limit = 20, offset = 0, sort = 'name', source = '' }: { q: string; limit?: number; offset?: number; sort?: string; source?: string }) => {
-  //   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset), sort, source });
-  //   const res = await fetch(`${MCP_REGISTRY_API}/search?${params}`);
-  //   return (await res.json()) as { servers: McpServer[]; total: number; offset: number; limit: number };
-  // }
-  // Throw not implemented error
-  async () => {
-    throw new Error('Not implemented');
+  async ({ q, limit = 20, offset = 0, sort = 'name', source = '' }: { q: string; limit?: number; offset?: number; sort?: string; source?: string }) => {
+    const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset), sort, source });
+    const res = await fetch(`${MCP_REGISTRY_API}/search?${params}`);
+    return (await res.json()) as { servers: McpServer[]; total: number; offset: number; limit: number };
   }
 );
 
-export const fetchRegistryStats = createAsyncThunk(
-  'mcpRegistry/stats', 
-  // async () => {
-  //   const res = await fetch(`${MCP_REGISTRY_API}/stats`);
-  //   return (await res.json()) as { total: number; google: number; community: number; lastUpdated: number };
-  // }
-  // Throw not implemented error
-  async () => {
-    throw new Error('Not implemented');
-  }
-);
+export const fetchRegistryStats = createAsyncThunk('mcpRegistry/stats', async () => {
+  const res = await fetch(`${MCP_REGISTRY_API}/stats`);
+  return (await res.json()) as { total: number; google: number; community: number; lastUpdated: number };
+});
 
 export const fetchServerDetail = createAsyncThunk(
   'mcpRegistry/detail',
-  // async (name: string) => {
-  //   const res = await fetch(`${MCP_REGISTRY_API}/detail/${encodeURIComponent(name)}`);
-  //   const data = await res.json();
-  //   return data.server as McpServerDetail;
-  // }
-  // Throw not implemented error
   async (name: string) => {
-    throw new Error('Not implemented but arg is: ' + name);
+    const res = await fetch(`${MCP_REGISTRY_API}/detail/${encodeURIComponent(name)}`);
+    const data = await res.json();
+    return data.server as McpServerDetail;
   }
 );
 

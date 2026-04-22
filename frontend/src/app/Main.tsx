@@ -1,11 +1,14 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useState, useRef } from 'react';
 import { Provider } from 'react-redux';
 import { HashRouter, Routes, Route } from 'react-router-dom';
-import { ThemeProvider as MuiThemeProvider, CssBaseline } from '@mui/material';
+import { ThemeProvider as MuiThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
 import { store } from '../shared/state/store';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { GET_SETTINGS } from '@/shared/backend-bridge/apps/settings';
-import { SUBSCRIPTIONS_STATUS } from '@/shared/backend-bridge/apps/subscriptions';
+import { fetchSettings, updateSettings } from '@/shared/state/settingsSlice';
+import { fetchModels } from '@/shared/state/modelsSlice';
+import { API_BASE } from '@/shared/config';
 import {
   setAppVersion,
   setUpdateAvailable,
@@ -14,23 +17,151 @@ import {
   setUpdateDownloaded,
   setUpdateError,
 } from '@/shared/state/updateSlice';
-import AppShell from './components/AppShell/AppShell';
-import Dashboard from './pages/Dashboard/Dashboard';
+import AppShell from './components/Layout/AppShell';
 import DashboardSelection from './pages/DashboardSelection/DashboardSelection';
 import Skills from './pages/Skills/Skills';
 import Tools from './pages/Tools/Tools';
 import Modes from './pages/Modes/Modes';
 import Views from './pages/Views/Views';
 import Customization from './pages/Customization/Customization';
-import OnboardingModal from './components/OnboardingModal/OnboardingModal';
+import Analytics from './pages/Analytics/Analytics';
+import OnboardingModal from './components/OnboardingModal';
+import { trackEvent, getLastAction, getLastPage, getTimeSpent } from '@/shared/analytics';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
+import { useDeepLink } from '@/shared/hooks/useDeepLink';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { buildMuiTheme } from './buildMuiTheme';
+import { ClaudeTokens } from '@/shared/styles/claudeTokens';
+
+function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
+  return createTheme({
+    palette: {
+      mode,
+      background: {
+        default: c.bg.page,
+        paper: c.bg.surface,
+      },
+      primary: {
+        main: c.accent.primary,
+        dark: c.accent.pressed,
+        light: c.accent.hover,
+      },
+      text: {
+        primary: c.text.primary,
+        secondary: c.text.muted,
+        disabled: c.text.tertiary,
+      },
+      divider: c.border.medium,
+      error: { main: c.status.error },
+      warning: { main: c.status.warning },
+      success: { main: c.status.success },
+      info: { main: c.status.info },
+    },
+    typography: {
+      fontFamily: c.font.sans,
+      h1: { fontWeight: 600 },
+      h2: { fontWeight: 600 },
+      h3: { fontWeight: 600 },
+      h5: { fontWeight: 600 },
+      h6: { fontWeight: 600 },
+      button: { textTransform: 'none' as const, fontWeight: 500 },
+    },
+    shape: {
+      borderRadius: c.radius.xl,
+    },
+    components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          body: {
+            backgroundColor: c.bg.page,
+            color: c.text.primary,
+            scrollbarWidth: 'thin',
+            scrollbarColor: `${c.border.strong} transparent`,
+          },
+          '*': {
+            scrollbarWidth: 'thin',
+            scrollbarColor: `${c.border.strong} transparent`,
+          },
+          '*::-webkit-scrollbar': {
+            width: '6px',
+            height: '6px',
+          },
+          '*::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '*::-webkit-scrollbar-thumb': {
+            background: c.border.strong,
+            borderRadius: '3px',
+          },
+          '*::-webkit-scrollbar-thumb:hover': {
+            background: c.text.ghost,
+          },
+          '*::-webkit-scrollbar-corner': {
+            background: 'transparent',
+          },
+        },
+      },
+      MuiButton: {
+        styleOverrides: {
+          root: {
+            borderRadius: c.radius.lg,
+            transition: c.transition,
+            textTransform: 'none' as const,
+            '&:active': { transform: 'scale(0.98)' },
+          },
+          contained: {
+            boxShadow: 'none',
+            '&:hover': { boxShadow: 'none' },
+          },
+        },
+      },
+      MuiPaper: {
+        styleOverrides: {
+          root: {
+            boxShadow: c.shadow.md,
+            border: `1px solid ${c.border.subtle}`,
+            backgroundImage: 'none',
+          },
+        },
+      },
+      MuiChip: {
+        styleOverrides: {
+          root: {
+            fontWeight: 500,
+            borderRadius: c.radius.md,
+          },
+        },
+      },
+      MuiDialog: {
+        styleOverrides: {
+          paper: {
+            borderRadius: 16,
+            boxShadow: c.shadow.lg,
+            border: `1px solid ${c.border.subtle}`,
+          },
+        },
+      },
+      MuiTooltip: {
+        styleOverrides: {
+          tooltip: {
+            backgroundColor: c.bg.inverse,
+            color: c.text.inverse,
+            fontSize: '0.75rem',
+          },
+        },
+      },
+    },
+  });
+}
 
 const ShortcutsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   useKeyboardShortcuts();
   return <>{children}<KeyboardShortcutsHelp /></>;
+};
+
+const DeepLinkListener: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  useDeepLink();
+  return <>{children}</>;
 };
 
 const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -39,13 +170,122 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const theme = useAppSelector((s) => s.settings.data.theme);
   const loaded = useAppSelector((s) => s.settings.loaded);
   useEffect(() => {
-    dispatch(GET_SETTINGS());
-    dispatch(SUBSCRIPTIONS_STATUS());
+    dispatch(fetchSettings());
+    dispatch(fetchModels());
+    // Reconcile OpenSwarm Pro state with Stripe on every launch so a
+    // missed webhook (cancel, upgrade, renewal) can't leave the user
+    // wedged on stale info. Fire-and-forget; if the cloud is unreachable
+    // we simply keep whatever local state we already had.
+    fetch(`${API_BASE}/subscription/sync`, { method: 'POST' })
+      .then((r) => {
+        if (r.ok) dispatch(fetchSettings());
+      })
+      .catch(() => { /* offline — next launch will reconcile */ });
   }, [dispatch]);
   useEffect(() => {
     if (loaded) setThemeMode(theme as 'light' | 'dark');
   }, [loaded, theme, setThemeMode]);
   return <>{children}</>;
+};
+
+// Priority order for picking a default model when the user's stored
+// default_model is unreachable (no matching provider connected). The user's
+// preferred fallback ordering: direct provider keys first, then OpenSwarm
+// Pro, then Copilot-powered OpenSwarm free tier.
+const DEFAULT_MODEL_PRIORITY: string[] = [
+  'Anthropic',
+  'OpenAI',
+  'Google',
+  'OpenSwarm Pro',
+  'OpenSwarm',
+];
+
+// Preferred model pick inside each provider group. Ordered by the user's
+// stated preference: Sonnet mid-tier for Claude, GPT-5.4 Mini for OpenAI,
+// Flash for Gemini, and conservative picks for the shared tiers.
+const DEFAULT_MODEL_PICKS: Record<string, string[]> = {
+  Anthropic: ['sonnet-cc', 'sonnet'],
+  OpenAI: ['gpt-5.4-mini', 'gpt-5.4'],
+  Google: ['gemini-2.5-flash', 'gemini-3-flash', 'gemini-2.5-pro'],
+  'OpenSwarm Pro': ['sonnet', 'opus'],
+  OpenSwarm: ['gpt-5-mini', 'claude-haiku-4.5', 'gpt-4.1'],
+};
+
+function pickFallbackModel(
+  byProvider: Record<string, Array<{ value: string; label: string }>>,
+): { value: string; label: string; provider: string } | null {
+  for (const prov of DEFAULT_MODEL_PRIORITY) {
+    const models = byProvider[prov];
+    if (!models || models.length === 0) continue;
+    const available = new Map(models.map((m) => [m.value, m]));
+    const picks = DEFAULT_MODEL_PICKS[prov] || [];
+    for (const candidate of picks) {
+      const m = available.get(candidate);
+      if (m) return { value: m.value, label: m.label, provider: prov };
+    }
+    const first = models[0];
+    return { value: first.value, label: first.label, provider: prov };
+  }
+  return null;
+}
+
+// Reconciles the stored default_model against the set of models actually
+// reachable given the user's current connections. When the stored value is
+// unavailable, falls back per DEFAULT_MODEL_PRIORITY and shows a one-time
+// warning so the user knows why their default changed.
+const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const dispatch = useAppDispatch();
+  const settings = useAppSelector((s) => s.settings.data);
+  const settingsLoaded = useAppSelector((s) => s.settings.loaded);
+  const byProvider = useAppSelector((s) => s.models.byProvider);
+  const modelsLoaded = useAppSelector((s) => s.models.loaded);
+
+  const [warning, setWarning] = useState<{ from: string; to: string; provider: string } | null>(null);
+  const pendingRef = useRef(false);
+
+  useEffect(() => {
+    if (!settingsLoaded || !modelsLoaded) return;
+    if (pendingRef.current) return;
+    if (Object.keys(byProvider).length === 0) return;
+
+    const flat = Object.values(byProvider).flat();
+    const currentExists = flat.some((m) => m.value === settings.default_model);
+    if (currentExists) return;
+
+    const fallback = pickFallbackModel(byProvider);
+    if (!fallback || fallback.value === settings.default_model) return;
+
+    const fromLabel = flat.find((m) => m.value === settings.default_model)?.label ?? settings.default_model;
+    pendingRef.current = true;
+    dispatch(updateSettings({ ...settings, default_model: fallback.value }))
+      .finally(() => {
+        pendingRef.current = false;
+      });
+    setWarning({ from: fromLabel, to: fallback.label, provider: fallback.provider });
+  }, [settingsLoaded, modelsLoaded, byProvider, settings, dispatch]);
+
+  return (
+    <>
+      {children}
+      <Snackbar
+        open={!!warning}
+        autoHideDuration={8000}
+        onClose={() => setWarning(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          severity="warning"
+          variant="filled"
+          onClose={() => setWarning(null)}
+          sx={{ fontSize: '0.8rem' }}
+        >
+          {warning && (
+            <>Default model <b>{warning.from}</b> is no longer available — switched to <b>{warning.to}</b> ({warning.provider}).</>
+          )}
+        </Alert>
+      </Snackbar>
+    </>
+  );
 };
 
 const UpdateListener: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -91,27 +331,59 @@ const ThemedApp: React.FC = () => {
   const { mode } = useThemeMode();
   const muiTheme = useMemo(() => buildMuiTheme(c, mode), [c, mode]);
 
+  // Track last action before user leaves and uncaught errors
+  useEffect(() => {
+    const handleUnload = () => {
+      trackEvent('app.last_action', {
+        last_page: getLastPage(),
+        last_action: getLastAction(),
+        time_spent_seconds: getTimeSpent(),
+      }, true); // useBeacon for reliable delivery during unload
+    };
+    const handleError = (event: ErrorEvent) => {
+      trackEvent('app.error', {
+        error_message: event.message,
+        error_stack: event.error?.stack?.slice(0, 500),
+        last_page: getLastPage(),
+      });
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('error', handleError);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('error', handleError);
+    };
+  }, []);
+
   return (
     <MuiThemeProvider theme={muiTheme}>
       <CssBaseline />
       <HashRouter>
         <ShortcutsProvider>
           <SettingsLoader>
+            <DefaultModelGuard>
             <UpdateListener>
-              <Routes>
-                <Route element={<AppShell />}>
-                  <Route path="/" element={<DashboardSelection />} />
-                  <Route path="/dashboard/:id" element={<Dashboard />} />
-                  <Route path="/customization" element={<Customization />} />
-                  <Route path="/skills" element={<Skills />} />
-                  <Route path="/actions" element={<Tools />} />
-                  <Route path="/modes" element={<Modes />} />
-                  <Route path="/apps" element={<Views />} />
-                  <Route path="/apps/:id" element={<Views />} />
-                </Route>
-              </Routes>
-              <OnboardingModal />
+              <DeepLinkListener>
+                <Routes>
+                  <Route element={<AppShell />}>
+                    <Route path="/" element={<DashboardSelection />} />
+                    {/* Dashboard route is a no-op stub — the actual <Dashboard /> is rendered
+                        persistently inside AppShell so its webviews survive navigation between
+                        routes. This route exists only so React Router matches the URL. */}
+                    <Route path="/dashboard/:id" element={null} />
+                    <Route path="/customization" element={<Customization />} />
+                    <Route path="/skills" element={<Skills />} />
+                    <Route path="/actions" element={<Tools />} />
+                    <Route path="/modes" element={<Modes />} />
+                    <Route path="/apps" element={<Views />} />
+                    <Route path="/apps/:id" element={<Views />} />
+                    <Route path="/analytics" element={<Analytics />} />
+                  </Route>
+                </Routes>
+                <OnboardingModal />
+              </DeepLinkListener>
             </UpdateListener>
+            </DefaultModelGuard>
           </SettingsLoader>
         </ShortcutsProvider>
       </HashRouter>

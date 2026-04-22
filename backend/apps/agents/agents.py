@@ -137,7 +137,7 @@ async def get_all_sessions(dashboard_id: str = "") -> dict:
 
 
 @agents.router.get("/get_session")
-async def get_session(session_id: str = Body()) -> dict:
+async def get_session(session_id: str) -> dict:
     return get_agent(session_id).model_dump(mode="json")
 
 
@@ -436,9 +436,9 @@ async def duplicate_session(session_id: str = Body()) -> dict:
 
 @agents.router.get("/get_history")
 async def get_history(
-    q: str = Body(default=""),
-    limit: int = Body(default=20),
-    offset: int = Body(default=0),
+    q: str = "",
+    limit: int = 20,
+    offset: int = 0,
 ) -> dict:
     all_agents: List[Agent] = AGENT_STORE.load_all()
     all_agents.sort(
@@ -455,12 +455,23 @@ async def get_history(
                 continue
         msgs = agent.messages.messages
         closed_at: str = msgs[-1].timestamp.isoformat() if msgs else ""
+        created_at: str = msgs[0].timestamp.isoformat() if msgs else ""
+        # Generate name from first user message or use default
+        name: str = "Chat"
+        for m in msgs:
+            if m.role == "user" and isinstance(m.content, str):
+                name = m.content[:50] + ("..." if len(m.content) > 50 else "")
+                break
         history.append({
             "id": agent.session_id,
+            "name": name,
             "status": agent.status,
             "model": agent.model,
             "mode": agent.mode,
+            "created_at": created_at,
             "closed_at": closed_at,
+            "cost_usd": 0,  # TODO: track cost
+            "dashboard_id": agent.dashboard_id,
         })
 
     total: int = len(history)

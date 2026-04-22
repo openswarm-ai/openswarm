@@ -1,12 +1,19 @@
-import { createSlice } from '@reduxjs/toolkit';
-import {
-  REGISTRY_SEARCH,
-  REGISTRY_STATS,
-  REGISTRY_DETAIL,
-  FETCH_ALL_REGISTRY_SKILLS,
-} from '@/shared/backend-bridge/apps/skills';
-import type { RegistrySkill, RegistrySkillDetail } from '@/shared/backend-bridge/apps/skills';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { API_BASE } from '@/shared/config';
 
+const SKILL_REGISTRY_API = `${API_BASE}/skill-registry`;
+
+export interface RegistrySkill {
+  name: string;
+  description: string;
+  folder: string;
+  category: string;
+  repositoryUrl: string;
+}
+
+export interface RegistrySkillDetail extends RegistrySkill {
+  content: string;
+}
 
 interface SkillRegistryState {
   skills: RegistrySkill[];
@@ -14,7 +21,7 @@ interface SkillRegistryState {
   loading: boolean;
   query: string;
   offset: number;
-  stats: { total: number; categories: Record<string, number>; lastUpdated: string | null } | null;
+  stats: { total: number; categories: Record<string, number>; lastUpdated: number } | null;
   detail: RegistrySkillDetail | null;
   detailLoading: boolean;
 }
@@ -30,6 +37,38 @@ const initialState: SkillRegistryState = {
   detailLoading: false,
 };
 
+export const searchSkillRegistry = createAsyncThunk(
+  'skillRegistry/search',
+  async ({ q, limit = 20, offset = 0, sort = 'name', category = '' }: { q: string; limit?: number; offset?: number; sort?: string; category?: string }) => {
+    const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset), sort, category });
+    const res = await fetch(`${SKILL_REGISTRY_API}/search?${params}`);
+    return (await res.json()) as { skills: RegistrySkill[]; total: number; offset: number; limit: number };
+  },
+);
+
+export const fetchSkillRegistryStats = createAsyncThunk('skillRegistry/stats', async () => {
+  const res = await fetch(`${SKILL_REGISTRY_API}/stats`);
+  return (await res.json()) as { total: number; categories: Record<string, number>; lastUpdated: number };
+});
+
+export const fetchAllRegistrySkills = createAsyncThunk(
+  'skillRegistry/fetchAll',
+  async () => {
+    const params = new URLSearchParams({ q: '', limit: '100', offset: '0', sort: 'name', category: '' });
+    const res = await fetch(`${SKILL_REGISTRY_API}/search?${params}`);
+    return (await res.json()) as { skills: RegistrySkill[]; total: number; offset: number; limit: number };
+  },
+);
+
+export const fetchSkillDetail = createAsyncThunk(
+  'skillRegistry/detail',
+  async (name: string) => {
+    const res = await fetch(`${SKILL_REGISTRY_API}/detail/${encodeURIComponent(name)}`);
+    const data = await res.json();
+    return data.skill as RegistrySkillDetail;
+  },
+);
+
 const skillRegistrySlice = createSlice({
   name: 'skillRegistry',
   initialState,
@@ -40,12 +79,12 @@ const skillRegistrySlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(REGISTRY_SEARCH.pending, (state, action) => {
+      .addCase(searchSkillRegistry.pending, (state, action) => {
         state.loading = true;
-        state.query = action.meta.arg.q ?? '';
+        state.query = action.meta.arg.q;
         state.offset = action.meta.arg.offset ?? 0;
       })
-      .addCase(REGISTRY_SEARCH.fulfilled, (state, action) => {
+      .addCase(searchSkillRegistry.fulfilled, (state, action) => {
         state.loading = false;
         if (action.meta.arg.offset && action.meta.arg.offset > 0) {
           state.skills = [...state.skills, ...action.payload.skills];
@@ -54,34 +93,35 @@ const skillRegistrySlice = createSlice({
         }
         state.total = action.payload.total;
       })
-      .addCase(REGISTRY_SEARCH.rejected, (state) => {
+      .addCase(searchSkillRegistry.rejected, (state) => {
         state.loading = false;
       })
-      .addCase(REGISTRY_STATS.fulfilled, (state, action) => {
+      .addCase(fetchSkillRegistryStats.fulfilled, (state, action) => {
         state.stats = action.payload;
       })
-      .addCase(FETCH_ALL_REGISTRY_SKILLS.pending, (state) => {
+      .addCase(fetchAllRegistrySkills.pending, (state) => {
         state.loading = true;
       })
-      .addCase(FETCH_ALL_REGISTRY_SKILLS.fulfilled, (state, action) => {
+      .addCase(fetchAllRegistrySkills.fulfilled, (state, action) => {
         state.loading = false;
         state.skills = action.payload.skills;
         state.total = action.payload.total;
       })
-      .addCase(FETCH_ALL_REGISTRY_SKILLS.rejected, (state) => {
+      .addCase(fetchAllRegistrySkills.rejected, (state) => {
         state.loading = false;
       })
-      .addCase(REGISTRY_DETAIL.pending, (state) => {
+      .addCase(fetchSkillDetail.pending, (state) => {
         state.detailLoading = true;
       })
-      .addCase(REGISTRY_DETAIL.fulfilled, (state, action) => {
+      .addCase(fetchSkillDetail.fulfilled, (state, action) => {
         state.detailLoading = false;
-        state.detail = action.payload.skill;
+        state.detail = action.payload;
       })
-      .addCase(REGISTRY_DETAIL.rejected, (state) => {
+      .addCase(fetchSkillDetail.rejected, (state) => {
         state.detailLoading = false;
       });
   },
 });
 
+export const { clearSkillDetail } = skillRegistrySlice.actions;
 export default skillRegistrySlice.reducer;
