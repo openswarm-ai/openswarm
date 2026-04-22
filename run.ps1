@@ -103,16 +103,24 @@ function Cleanup-All {
 
 try {
     # --- Start backend (NoNewWindow so logs interleave into this terminal) ---
+    # No --reload on Windows: uvicorn's reload mode forces use_subprocess=True
+    # which pins the worker to WindowsSelectorEventLoop. That loop raises
+    # NotImplementedError on asyncio.create_subprocess_exec — and the Claude
+    # Agent SDK uses exactly that to spawn the `claude` CLI, so sending a
+    # chat message crashes with "Failed to start Claude Code" under --reload.
+    # Mac doesn't hit it (no Proactor/Selector split). Packaged Windows doesn't
+    # hit it either (electron/main.js launches uvicorn without --reload).
+    # Tradeoff: no backend hot-reload in dev on Windows — Ctrl+C and re-run
+    # `.\run.ps1` after backend code changes. Frontend hot-reload is
+    # unaffected (webpack-dev-server handles its own watching).
     Write-Host ""
-    Write-Host "[backend]  Starting uvicorn --reload on http://localhost:8324 ..." -ForegroundColor Blue
+    Write-Host "[backend]  Starting uvicorn on http://localhost:8324 ..." -ForegroundColor Blue
     $backend = Start-Process -PassThru -NoNewWindow `
         -FilePath $VenvPy `
         -WorkingDirectory $ScriptDir `
         -ArgumentList @(
             '-m', 'uvicorn', 'backend.main:app',
-            '--host', '0.0.0.0', '--port', '8324', '--reload',
-            '--reload-dir', (Join-Path $ScriptDir 'backend'),
-            '--reload-exclude', '*.pyc'
+            '--host', '127.0.0.1', '--port', '8324'
         )
     [void]$script:childPids.Add(@{ Pid = $backend.Id; Label = 'backend' })
 
@@ -122,7 +130,12 @@ try {
     while ((Get-Date) -lt $deadline) {
         if ($backend.HasExited) { throw "Backend exited prematurely (code $($backend.ExitCode))" }
         try {
-            Invoke-WebRequest -Uri 'http://localhost:8324/api/health/check' -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop | Out-Null
+            # Hit 127.0.0.1 (not `localhost`) so we don't waste time on the
+            # IPv6 ::1 fallback — uvicorn is IPv4-only. TimeoutSec 5 because
+            # PS 5.1's first Invoke-WebRequest call pays ~1-2s of .NET
+            # network-stack warm-up, and Windows Defender adds scan latency
+            # on the first localhost connect from a new process.
+            Invoke-WebRequest -Uri 'http://127.0.0.1:8324/api/health/check' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null
             $ready = $true
             break
         } catch {}
@@ -146,7 +159,8 @@ try {
     while ((Get-Date) -lt $deadline) {
         if ($frontend.HasExited) { throw "Frontend exited prematurely (code $($frontend.ExitCode))" }
         try {
-            Invoke-WebRequest -Uri 'http://localhost:3000/' -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop | Out-Null
+            # See backend probe above — same 127.0.0.1 + 5s timeout reasoning.
+            Invoke-WebRequest -Uri 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null
             $ready = $true
             break
         } catch {}

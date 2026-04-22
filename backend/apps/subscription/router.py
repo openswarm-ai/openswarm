@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from backend.config.Apps import SubApp
 from backend.apps.settings.credentials import OPENSWARM_DEFAULT_PROXY_URL
-from backend.apps.settings.settings import SETTINGS_FILE, load_settings
+from backend.apps.settings.settings import SETTINGS_FILE, load_settings, save_settings_async
 
 logger = logging.getLogger(__name__)
 
@@ -36,15 +36,7 @@ def _proxy_url() -> str:
     return url.rstrip("/")
 
 
-def _write_settings(settings_obj) -> None:
-    """Persist AppSettings to disk. Mirrors backend/apps/settings/settings.py
-    _save_settings to avoid importing a private module member."""
-    os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings_obj.model_dump(), f, indent=2)
-
-
-def _clear_subscription(settings_obj) -> None:
+async def _clear_subscription(settings_obj) -> None:
     """Revert to own_key mode and drop all OpenSwarm Pro state. Used by the
     explicit /disconnect endpoint and by /status when the cloud reports the
     bearer as revoked (401) or the subscription as past its grace period
@@ -55,7 +47,7 @@ def _clear_subscription(settings_obj) -> None:
     settings_obj.openswarm_subscription_plan = None
     settings_obj.openswarm_subscription_expires = None
     settings_obj.openswarm_usage_cached = None
-    _write_settings(settings_obj)
+    await save_settings_async(settings_obj)
     _sync_subscription_identity(settings_obj)
 
 
@@ -153,7 +145,7 @@ async def activate(body: ActivateRequest):
     if isinstance(usage, dict):
         settings_obj.openswarm_usage_cached = usage
 
-    _write_settings(settings_obj)
+    await save_settings_async(settings_obj)
     _sync_subscription_identity(settings_obj)
     return {"ok": True, "plan": settings_obj.openswarm_subscription_plan}
 
@@ -198,7 +190,7 @@ async def status():
             # Update cache for offline display.
             if isinstance(live_usage, dict):
                 settings_obj.openswarm_usage_cached = live_usage
-                _write_settings(settings_obj)
+                await save_settings_async(settings_obj)
     except httpx.HTTPError as e:
         logger.debug("subscription/status live fetch failed: %s", e)
 
@@ -207,7 +199,7 @@ async def status():
     # through a dead subscription. Settings UI sees connected=False and
     # falls back to the Subscribe CTA; chat reverts to own_key routing.
     if upstream_code in (401, 402):
-        _clear_subscription(settings_obj)
+        await _clear_subscription(settings_obj)
         return {
             "connected": False,
             "connection_mode": "own_key",
@@ -266,7 +258,7 @@ async def sync():
     # the bearer is dead or the sub expired, clear local state so the app
     # reverts to own_key instead of hammering a useless token.
     if r.status_code in (401, 402):
-        _clear_subscription(settings_obj)
+        await _clear_subscription(settings_obj)
         reason = "revoked" if r.status_code == 401 else "expired"
         _record("subscription.sync_ran", {"reason": reason})
         return {
@@ -294,7 +286,7 @@ async def sync():
         settings_obj.openswarm_subscription_expires = (
             datetime.fromtimestamp(period_end_ms / 1000, tz=timezone.utc).isoformat()
         )
-    _write_settings(settings_obj)
+    await save_settings_async(settings_obj)
     _sync_subscription_identity(settings_obj)
     _record("subscription.sync_ran", {
         "reason": "ok",
@@ -343,5 +335,5 @@ async def disconnect():
     """Clears local bearer + reverts to own_key mode. Does NOT cancel the
     Stripe subscription (use the portal for that). Useful when a user wants
     to temporarily route through their own API key."""
-    _clear_subscription(load_settings())
+    await _clear_subscription(load_settings())
     return {"ok": True}

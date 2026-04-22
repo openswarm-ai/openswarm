@@ -206,7 +206,7 @@ function Copy-Excluded($Source, $Dest, $Exclude) {
 
 Copy-Excluded `
     (Join-Path $ProjectRoot 'backend') (Join-Path $Staging 'backend') `
-    @{ Dirs = @('__pycache__','.venv','tools'); Files = @('*.pyc') }
+    @{ Dirs = @('__pycache__','.venv','tools','tests'); Files = @('*.pyc') }
 New-Item -ItemType Directory -Force -Path (Join-Path $Staging 'backend\data\tools') | Out-Null
 
 Copy-Excluded `

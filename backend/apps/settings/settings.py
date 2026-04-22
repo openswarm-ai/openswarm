@@ -1,6 +1,9 @@
+import asyncio
 import json
 import os
 import tempfile
+import threading
+import time
 import logging
 from contextlib import asynccontextmanager
 from fastapi import HTTPException, Query, UploadFile, File
@@ -54,11 +57,63 @@ def load_settings() -> AppSettings:
     return AppSettings()
 
 
-def _save_settings(settings_obj: AppSettings):
-    """Persist settings to JSON file."""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings_obj.model_dump(), f, indent=2)
+# Single threading.Lock guards every write to SETTINGS_FILE — protects against
+# corruption from two requests racing through the file system. Async callers
+# offload the actual write to the default thread pool (run_in_executor), so
+# the lock works for both sync and thread-pool execution paths.
+_settings_write_lock = threading.Lock()
+
+
+def _atomic_write_settings(payload: dict) -> None:
+    """Internal: serialise payload to SETTINGS_FILE atomically.
+    Always called via save_settings* — don't invoke directly."""
+    with _settings_write_lock:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".settings.", suffix=".tmp", dir=DATA_DIR)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+            # On Windows, os.replace can transiently fail with PermissionError
+            # if Defender or another reader holds the destination open. One
+            # retry after a short backoff handles every real-world case
+            # without masking genuine permission bugs.
+            for attempt in range(2):
+                try:
+                    os.replace(tmp, SETTINGS_FILE)
+                    return
+                except PermissionError:
+                    if attempt == 1:
+                        raise
+                    time.sleep(0.05)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+
+def save_settings(settings_obj: AppSettings) -> None:
+    """Synchronously persist settings atomically. Thread-safe.
+    Use from sync paths (analytics collector, lifespans). Async callers should
+    prefer save_settings_async to avoid blocking the event loop on Windows
+    where Defender scans can stretch the write to 50-200ms."""
+    _atomic_write_settings(settings_obj.model_dump())
+
+
+async def save_settings_async(settings_obj: AppSettings) -> None:
+    """Async-safe atomic save. Runs the file I/O in the default thread pool
+    so the FastAPI event loop stays responsive while the write completes.
+    Shares the threading.Lock with the sync variant for safe interleaving."""
+    payload = settings_obj.model_dump()
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _atomic_write_settings, payload)
+
+
+# Backward-compat alias. Existing sync callers (analytics collector, analytics
+# lifespan) continue to work; new async callers should use save_settings_async.
+def _save_settings(settings_obj: AppSettings) -> None:
+    save_settings(settings_obj)
 
 
 @settings.router.get("")
@@ -117,9 +172,7 @@ async def update_settings(body: AppSettings):
         if id_props:
             _identify(id_props)
 
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(body.model_dump(), f, indent=2)
+    await save_settings_async(body)
     return {"ok": True, "settings": body.model_dump()}
 
 
@@ -132,9 +185,7 @@ async def get_default_system_prompt():
 async def reset_system_prompt():
     current = load_settings()
     current.default_system_prompt = DEFAULT_SYSTEM_PROMPT
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(current.model_dump(), f, indent=2)
+    await save_settings_async(current)
     return {"ok": True, "settings": current.model_dump()}
 
 

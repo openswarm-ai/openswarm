@@ -330,6 +330,15 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
     closes itself in a background task. Safe to call even if 1455 is busy —
     logs the collision and returns None so start_oauth can still proceed and
     surface whatever error OpenAI returns.
+
+    Also performs the OAuth exchange server-side before serving the HTML.
+    Relying on the frontend's postMessage path alone breaks on Windows where
+    COOP / popup-opener quirks silently drop the message, leaving the user
+    stuck on "Connecting…" until the 30s timeout fires. Exchanging here
+    (the same pattern backend/main.py uses for the Gemini callback) makes
+    the connection land in 9Router's DB regardless of whether the UI's
+    postMessage listener ever gets notified — the Settings / OnboardingModal
+    status pollers then pick it up within a couple seconds.
     """
 
     callback_served = asyncio.Event()
@@ -352,6 +361,53 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
             method = parts[0] if parts else ""
 
             if method == "GET" and path.startswith(_CODEX_CALLBACK_PATH):
+                # Parse code/state out of the query string and exchange
+                # server-side before serving the HTML. Duplicate exchanges
+                # are harmless (single-use auth codes fail the second call,
+                # which we swallow) so racing with the frontend's
+                # msgHandler-driven exchange is fine.
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    parsed = urlparse(path)
+                    q = parse_qs(parsed.query)
+                    code = (q.get("code") or [""])[0]
+                    state = (q.get("state") or [""])[0]
+                    if code and state:
+                        try:
+                            from backend.main import _pending_oauth, _mark_oauth_completed
+                        except Exception:
+                            _pending_oauth = None
+                            _mark_oauth_completed = None
+
+                        if _pending_oauth is not None:
+                            pending = _pending_oauth.pop(state, None)
+                            if pending:
+                                try:
+                                    await exchange_oauth(
+                                        pending["provider"],
+                                        code,
+                                        pending["redirect_uri"],
+                                        pending["code_verifier"],
+                                        state,
+                                    )
+                                    if _mark_oauth_completed is not None:
+                                        _mark_oauth_completed(state)
+                                    logger.info(
+                                        f"Codex callback: server-side exchange succeeded for state {state[:8]}..."
+                                    )
+                                except Exception as e:
+                                    # Put the pending entry back so the
+                                    # frontend's msgHandler retry via
+                                    # /agents/subscriptions/exchange still
+                                    # has a shot. Safe because we only popped
+                                    # it a moment ago.
+                                    _pending_oauth[state] = pending
+                                    logger.debug(
+                                        f"Codex callback: server-side exchange failed ({e}); leaving for frontend retry"
+                                    )
+                except Exception as e:
+                    logger.debug(f"Codex callback listener pre-exchange error: {e}")
+
                 body = _CODEX_CALLBACK_HTML
                 response = (
                     b"HTTP/1.1 200 OK\r\n"

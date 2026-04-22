@@ -735,10 +735,15 @@ const SubscriptionCards: React.FC = () => {
         };
         if (!useExternal) window.addEventListener('message', msgHandler);
 
-        // Timeout: 30s for popup flow (user finishes auth in a few seconds),
-        // 5 minutes for external-browser flow (user has to tab-switch, log
-        // in, consent — takes much longer in practice).
-        const timeoutMs = useExternal ? 300_000 : 30_000;
+        // Timeout: 3 minutes for popup flow (was 30s — too short for 2FA /
+        // slow networks, and on Windows postMessage from the callback popup
+        // can silently fail due to COOP / opener severing, leaving the only
+        // exit as this timeout firing mid-flow). 5 minutes for external-
+        // browser flow (user has to tab-switch, log in, consent — takes
+        // much longer in practice). The connecting-side poller (see the
+        // useEffect below `handleDisconnect`) is the authoritative safety
+        // net — this timeout just bounds the Connecting… indicator.
+        const timeoutMs = useExternal ? 300_000 : 180_000;
         setTimeout(() => {
           clearInterval(statusPoller);
           setPollTimer(null);
@@ -769,6 +774,41 @@ const SubscriptionCards: React.FC = () => {
       setDisconnecting(null);
     }, 500);
   };
+
+  // Safety-net poller that runs whenever a connect attempt is in flight.
+  // The handleConnect flow's own statusPoller exits as soon as isActive is
+  // seen, and its 3-minute timeout unconditionally clears `connecting` —
+  // but on Windows the OAuth popup's postMessage path can fail silently
+  // (COOP severs opener, Defender interferes, etc.), so the ONLY way out
+  // of "Connecting…" becomes that timeout, which flips the card back to
+  // "Connect" even when the backend exchange succeeded. This separate
+  // poller watches the same status endpoint every 4s and clears the
+  // Connecting state the moment 9Router reports the provider isActive,
+  // whether that's via Method 1 (postMessage → frontend exchange), the
+  // 9Router callback page's Method 4 (server-side exchange), or the Codex
+  // listener's new server-side exchange.
+  useEffect(() => {
+    if (!connecting) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await fetch(`${API_BASE}/agents/subscriptions/status`);
+        const d = await r.json();
+        if (cancelled) return;
+        const conns = d?.providers?.connections || [];
+        if (conns.some((p: any) => p.provider === connecting && (p.isActive || p.testStatus === 'active'))) {
+          setStatus(d);
+          setConnecting(null);
+          setUserCode('');
+          refreshPickerModels();
+        }
+      } catch {}
+    };
+    const id = setInterval(tick, 4000);
+    return () => { cancelled = true; clearInterval(id); };
+    // refreshPickerModels is stable (no deps), fetchStatus isn't used here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connecting]);
 
   if (!status) {
     // Initial loading — show skeleton cards

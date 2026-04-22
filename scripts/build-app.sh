@@ -172,6 +172,7 @@ rsync -a \
     --exclude='__pycache__' --exclude='**/__pycache__' \
     --exclude='*.pyc' --exclude='.venv' \
     --exclude='data/tools' \
+    --exclude='tests' --exclude='**/tests' \
     "$PROJECT_ROOT/backend/" "$STAGING_DIR/backend/"
 # Create empty tools directory so the app has a place to write
 mkdir -p "$STAGING_DIR/backend/data/tools"

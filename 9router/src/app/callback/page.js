@@ -24,13 +24,10 @@ function CallbackContent() {
       fullUrl: window.location.href,
     };
 
-    let relayed = false;
-
     // Method 1: postMessage to opener (popup mode)
     if (window.opener) {
       try {
         window.opener.postMessage({ type: "oauth_callback", data: callbackData }, "*");
-        relayed = true;
       } catch (e) {
         console.log("postMessage failed:", e);
       }
@@ -41,7 +38,6 @@ function CallbackContent() {
       const channel = new BroadcastChannel("oauth_callback");
       channel.postMessage(callbackData);
       channel.close();
-      relayed = true;
     } catch (e) {
       console.log("BroadcastChannel failed:", e);
     }
@@ -49,17 +45,48 @@ function CallbackContent() {
     // Method 3: localStorage event (fallback)
     try {
       localStorage.setItem("oauth_callback", JSON.stringify({ ...callbackData, timestamp: Date.now() }));
-      relayed = true;
     } catch (e) {
       console.log("localStorage failed:", e);
     }
 
-    // Method 4: Direct exchange via OpenSwarm backend (works even when postMessage fails)
-    // Fetch pending OAuth data from OpenSwarm, then call 9Router's exchange endpoint
+    if (!(code || error)) {
+      setTimeout(() => setStatus("manual"), 0);
+      return;
+    }
+
+    setStatus("success");
+
+    // Method 4: Direct exchange via OpenSwarm backend. This is the path that
+    // keeps the flow working when Method 1 silently fails (COOP severs
+    // window.opener on Windows / newer Chromium, or Windows Defender blocks
+    // cross-context postMessage from the popup back to the Electron parent).
+    //
+    // Two changes vs. the original implementation:
+    //   1. Discover the backend port dynamically from /api/openswarm-config
+    //      (falling back to 8324). The backend lives on a dynamic port picked
+    //      from 8324-8424, and hardcoding 8324 broke Windows users whose
+    //      machines held that port.
+    //   2. Defer window.close() until after the exchange completes. The old
+    //      1.5s unconditional close cancelled the in-flight exchange whenever
+    //      token exchange with the upstream provider ran >1.5s (common on
+    //      slow networks), leaving 9Router with no connection saved.
     if (code && state) {
       (async () => {
+        let backendPort = 8324;
         try {
-          const pendingRes = await fetch(`http://localhost:8324/api/subscriptions/pending/${encodeURIComponent(state)}`);
+          const cfgRes = await fetch("/api/openswarm-config", { cache: "no-store" });
+          if (cfgRes.ok) {
+            const cfg = await cfgRes.json();
+            if (cfg && typeof cfg.backendPort === "number") backendPort = cfg.backendPort;
+          }
+        } catch (e) {
+          console.log("config fetch failed, using 8324:", e);
+        }
+
+        try {
+          const pendingRes = await fetch(
+            `http://localhost:${backendPort}/api/subscriptions/pending/${encodeURIComponent(state)}`,
+          );
           if (pendingRes.ok) {
             const pending = await pendingRes.json();
             if (pending.provider && pending.code_verifier) {
@@ -81,19 +108,21 @@ function CallbackContent() {
         } catch (e) {
           console.log("Direct exchange fallback failed:", e);
         }
+
+        // Small grace period so any postMessage listeners on the parent
+        // get their turn before the renderer is torn down.
+        setTimeout(() => {
+          window.close();
+          setTimeout(() => setStatus("done"), 500);
+        }, 500);
       })();
+    } else {
+      // Error-only callbacks (no code) — nothing to exchange, close quickly.
+      setTimeout(() => {
+        window.close();
+        setTimeout(() => setStatus("done"), 500);
+      }, 1500);
     }
-
-    if (!(code || error)) {
-      setTimeout(() => setStatus("manual"), 0);
-      return;
-    }
-
-    setStatus("success");
-    setTimeout(() => {
-      window.close();
-      setTimeout(() => setStatus("done"), 500);
-    }, 1500);
   }, [searchParams]);
 
   return (

@@ -312,7 +312,17 @@ const OnboardingModal: React.FC = () => {
     trackEvent('onboarding.education_started');
   };
 
+  // 500ms debounce on Next/Back during the video walkthrough. The video
+  // element remounts on each step (key=walkthroughIdx), and on Windows the
+  // DirectX decode + Defender file scan delays first-frame by 700-1500ms.
+  // During that window the new video looks frozen so users click again,
+  // skipping a step. The debounce drops anything that lands inside the
+  // perceptual-freeze window so one human click = one step regardless.
+  const lastWalkthroughClickRef = useRef(0);
   const advanceWalkthrough = () => {
+    const now = Date.now();
+    if (now - lastWalkthroughClickRef.current < 500) return;
+    lastWalkthroughClickRef.current = now;
     const next = walkthroughIdx + 1;
     const currentTitle = EDUCATION_STEPS[walkthroughIdx]?.title;
     if (next >= EDUCATION_STEPS.length) {
@@ -326,6 +336,9 @@ const OnboardingModal: React.FC = () => {
   };
 
   const backWalkthrough = () => {
+    const now = Date.now();
+    if (now - lastWalkthroughClickRef.current < 500) return;
+    lastWalkthroughClickRef.current = now;
     setWalkthroughIdx((i) => Math.max(0, i - 1));
   };
 
@@ -418,7 +431,12 @@ const OnboardingModal: React.FC = () => {
           } catch {}
         }, 5000);
         pollTimerRef.current = timer;
-        setTimeout(() => { clearInterval(timer); pollTimerRef.current = null; setConnecting(null); }, 30000);
+        // 3-minute popup timeout (was 30s). OAuth with 2FA on Windows can
+        // easily take >30s; the connectedProviders poller above still picks
+        // up the connection after timeout, but a longer in-flow window
+        // keeps the "Connecting…" indicator accurate instead of flipping
+        // back to "Connect →" mid-auth.
+        setTimeout(() => { clearInterval(timer); pollTimerRef.current = null; setConnecting(null); }, 180000);
 
       } else if (data.flow === 'authorization_code') {
         const popup = window.open(data.auth_url, 'oauth_connect', 'width=600,height=700');
@@ -476,7 +494,7 @@ const OnboardingModal: React.FC = () => {
           if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
           if (msgHandlerRef.current) { window.removeEventListener('message', msgHandlerRef.current); msgHandlerRef.current = null; }
           setConnecting(null);
-        }, 30000);
+        }, 180000);
 
       } else {
         setConnecting(null);
