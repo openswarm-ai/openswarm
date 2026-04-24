@@ -255,6 +255,88 @@ def get_api_type(short_name: str) -> str:
     return (entry or {}).get("api", "anthropic")
 
 
+def _provider_for_model(short_name: str) -> str:
+    """Return the session/provider label for a built-in model short name."""
+    if _find_builtin_model(short_name) is None:
+        return ""
+    api = get_api_type(short_name)
+    if api == "codex":
+        return "openai"
+    if api == "gemini-cli":
+        return "gemini"
+    if api == "github-copilot":
+        return "github"
+    return "anthropic"
+
+
+async def resolve_available_chat_model(settings: AppSettings, requested_model: str | None) -> tuple[str, str]:
+    """Resolve a requested chat model to one that is actually configured.
+
+    This guards new sessions against stale persisted defaults. For example, a
+    user can disconnect Claude, connect Codex, and still have `sonnet` saved in
+    settings or a draft. In that case launch should start on an available
+    OpenAI/Codex model instead of silently routing to Claude.
+    """
+    from backend.apps.nine_router import is_running as _9r_running, get_providers as _9r_providers
+
+    connected: set[str] = set()
+    if _9r_running():
+        try:
+            providers_data = await _9r_providers()
+            connections = providers_data.get("connections", []) if isinstance(providers_data, dict) else []
+            connected = {
+                c.get("provider", "")
+                for c in connections
+                if c.get("isActive") or c.get("testStatus") == "active"
+            }
+        except Exception as e:
+            logger.debug(f"Failed to resolve connected subscription providers: {e}")
+
+    def available(entry: dict) -> bool:
+        api = entry.get("api", "")
+        if api == "anthropic":
+            return bool(getattr(settings, "anthropic_api_key", None)) or "claude" in connected
+        if api == "codex":
+            return "codex" in connected
+        if api == "gemini-cli":
+            return "gemini-cli" in connected
+        if api == "github-copilot":
+            return "github" in connected
+        return False
+
+    for candidate in (requested_model, getattr(settings, "default_model", None)):
+        if not candidate:
+            continue
+        entry = _find_builtin_model(candidate)
+        if entry and available(entry):
+            return candidate, _provider_for_model(candidate)
+
+    # Prefer the inexpensive Codex default when Codex is the only configured
+    # subscription, matching the onboarding/settings copy.
+    preference = [
+        "gpt-5.4-mini",
+        "sonnet",
+        "haiku",
+        "gpt-5.4",
+        "gpt-5.3-codex",
+        "gemini-2.5-flash",
+        "gemini-3-flash",
+    ]
+    for candidate in preference:
+        entry = _find_builtin_model(candidate)
+        if entry and available(entry):
+            return candidate, _provider_for_model(candidate)
+
+    for models in BUILTIN_MODELS.values():
+        for entry in models:
+            candidate = entry.get("value")
+            if candidate and available(entry):
+                return candidate, _provider_for_model(candidate)
+
+    fallback = requested_model or getattr(settings, "default_model", None) or "sonnet"
+    return fallback, _provider_for_model(fallback)
+
+
 def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     """Resolve a short model name into the id string passed to ClaudeAgentOptions.
 

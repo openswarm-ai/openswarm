@@ -80,6 +80,14 @@ def mock_settings(tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def mock_no_subscriptions(monkeypatch):
+    """Keep analytics tests isolated from a developer's live 9Router state."""
+    import backend.apps.nine_router as nine_router_mod
+
+    monkeypatch.setattr(nine_router_mod, "is_running", lambda: False)
+
+
+@pytest.fixture(autouse=True)
 def mock_sessions_dir(tmp_path):
     """Use temp dir for session persistence."""
     sessions_dir = tmp_path / "sessions"
