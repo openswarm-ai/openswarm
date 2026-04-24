@@ -40,7 +40,7 @@ import Collapse from '@mui/material/Collapse';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
-import { fetchModels } from '@/shared/state/modelsSlice';
+import { fetchModels, flattenModelOptions, hasAvailableModel, firstAvailableModel } from '@/shared/state/modelsSlice';
 import { setChecking, setUpdateError, setInstalling } from '@/shared/state/updateSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
@@ -755,9 +755,15 @@ const Settings: React.FC = () => {
   const settings = useAppSelector((s) => s.settings.data);
   const loaded = useAppSelector((s) => s.settings.loaded);
   const modes = useAppSelector((s) => s.modes.items);
+  const modelsByProvider = useAppSelector((s) => s.models.byProvider);
+  const modelsLoaded = useAppSelector((s) => s.models.loaded);
   const { setMode: setThemeMode } = useThemeMode();
 
   const modesList = useMemo(() => Object.values(modes), [modes]);
+  const availableModelOptions = useMemo(
+    () => flattenModelOptions(modelsByProvider),
+    [modelsByProvider],
+  );
 
   const updateStatus = useAppSelector((s) => s.update.status);
   const appVersion = useAppSelector((s) => s.update.appVersion);
@@ -804,6 +810,13 @@ const Settings: React.FC = () => {
       setForm({ ...settings });
     }
   }, [loaded, settings]);
+
+  useEffect(() => {
+    if (!loaded || !modelsLoaded || availableModelOptions.length === 0) return;
+    if (hasAvailableModel(modelsByProvider, form.default_model)) return;
+    const nextModel = firstAvailableModel(modelsByProvider);
+    if (nextModel) setForm((prev) => ({ ...prev, default_model: nextModel }));
+  }, [availableModelOptions.length, form.default_model, loaded, modelsByProvider, modelsLoaded]);
 
   const handleCheckForUpdates = async () => {
     dispatch(setChecking());
@@ -1084,14 +1097,17 @@ const Settings: React.FC = () => {
           </Box>
           <FormControl size="small" sx={{ minWidth: 170 }}>
             <Select
-              value={form.default_model}
+              value={hasAvailableModel(modelsByProvider, form.default_model) ? form.default_model : ''}
               onChange={(e) => setForm({ ...form, default_model: e.target.value })}
+              disabled={availableModelOptions.length === 0}
               sx={{ fontSize: '0.85rem' }}
               MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
             >
-              <MenuItem value="sonnet">Sonnet 4.6</MenuItem>
-              <MenuItem value="opus">Opus 4.6</MenuItem>
-              <MenuItem value="haiku">Haiku 3.5</MenuItem>
+              {availableModelOptions.map((option) => (
+                <MenuItem key={`${option.provider}:${option.value}`} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
         </Box>

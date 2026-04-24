@@ -31,6 +31,8 @@ import { createDraftSession, removeDraftSession, AgentMessage } from '@/shared/s
 import { createOutput, updateOutput, Output, executeOutput, OutputExecuteResult, autoRunOutput, autoRunAgentOutput, cleanupAutoRunAgent, AutoRunConfig, SERVE_BASE } from '@/shared/state/outputsSlice';
 import { createSessionWs } from '@/shared/ws/WebSocketManager';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { firstAvailableModel } from '@/shared/state/modelsSlice';
+import { store } from '@/shared/state/store';
 import AgentChat from '../AgentChat/AgentChat';
 import ChatInput, { ChatInputHandle } from '../AgentChat/ChatInput';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -584,14 +586,27 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
         });
         const data = await res.json();
         setWorkspacePath(data.path);
+        const modelsByProvider = store.getState().models.byProvider;
+        const firstModel = firstAvailableModel(modelsByProvider);
+        const modelProvider = firstModel ? Object.entries(modelsByProvider).find(([, models]) => models.some(m => m.value === firstModel))?.[0] : undefined;
         const action = dispatch(createDraftSession({
           mode: 'view-builder',
           setActive: false,
           targetDirectory: data.path,
+          model: firstModel || undefined,
+          provider: modelProvider,
         }));
         setInitialDraftId(action.payload.draftId);
       } catch {
-        const action = dispatch(createDraftSession({ mode: 'view-builder', setActive: false }));
+        const modelsByProvider = store.getState().models.byProvider;
+        const firstModel = firstAvailableModel(modelsByProvider);
+        const modelProvider = firstModel ? Object.entries(modelsByProvider).find(([, models]) => models.some(m => m.value === firstModel))?.[0] : undefined;
+        const action = dispatch(createDraftSession({
+          mode: 'view-builder',
+          setActive: false,
+          model: firstModel || undefined,
+          provider: modelProvider,
+        }));
         setInitialDraftId(action.payload.draftId);
       }
     })();

@@ -51,3 +51,27 @@ async def test_launch_replaces_unavailable_claude_default_with_codex(monkeypatch
 
     assert session.model == "gpt-5.4-mini"
     assert session.provider == "openai"
+
+
+@pytest.mark.asyncio
+async def test_subscription_sync_persists_resolved_default_model(monkeypatch):
+    import backend.apps.agents.agents as agents_mod
+    import backend.apps.agents.providers.registry as registry_mod
+    import backend.apps.settings.settings as settings_mod
+
+    settings = AppSettings(default_model="sonnet", anthropic_api_key=None)
+    saved = []
+
+    monkeypatch.setattr(settings_mod, "load_settings", lambda: settings)
+    monkeypatch.setattr(settings_mod, "_save_settings", lambda updated: saved.append(updated.default_model))
+
+    async def fake_resolver(_settings, requested_model):
+        assert requested_model == "sonnet"
+        return ("gpt-5.4-mini", "openai")
+
+    monkeypatch.setattr(registry_mod, "resolve_available_chat_model", fake_resolver)
+
+    await agents_mod._sync_default_model_to_available_provider()
+
+    assert settings.default_model == "gpt-5.4-mini"
+    assert saved == ["gpt-5.4-mini"]

@@ -11,8 +11,10 @@ export interface ModelOption {
   reasoning?: boolean;
 }
 
+export type ModelsByProvider = Record<string, ModelOption[]>;
+
 interface ModelsState {
-  byProvider: Record<string, ModelOption[]>;
+  byProvider: ModelsByProvider;
   loaded: boolean;
 }
 
@@ -27,8 +29,23 @@ export const fetchModels = createAsyncThunk('models/fetchModels', async () => {
   const data = await res.json();
   // API returns { models: { provider: [...] } }
   const models = data.models || data;
-  return models as Record<string, ModelOption[]>;
+  return models as ModelsByProvider;
 });
+
+export function flattenModelOptions(byProvider: ModelsByProvider) {
+  return Object.entries(byProvider).flatMap(([provider, models]) =>
+    models.map((model) => ({ ...model, provider })),
+  );
+}
+
+export function firstAvailableModel(byProvider: ModelsByProvider): string | null {
+  return flattenModelOptions(byProvider)[0]?.value ?? null;
+}
+
+export function hasAvailableModel(byProvider: ModelsByProvider, model: string | null | undefined): boolean {
+  if (!model) return false;
+  return flattenModelOptions(byProvider).some((option) => option.value === model);
+}
 
 const modelsSlice = createSlice({
   name: 'models',

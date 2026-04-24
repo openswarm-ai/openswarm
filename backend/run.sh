@@ -24,20 +24,28 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# --- Create virtual environment if it doesn't exist ---
-VENV_DIR="$BACKEND_DIR_ABSPATH/.venv"
-if [[ ! -d "$VENV_DIR" ]]; then
-    echo "Creating virtual environment..."
-    python3 -m venv "$VENV_DIR"
+# --- Use the installed app's Python environment ---
+APP_VENV="/Applications/OpenSwarm.app/Contents/Resources/python-env/bin"
+if [[ -d "$APP_VENV" ]]; then
+    export PATH="$APP_VENV:$PATH"
+    export PYTHON="$APP_VENV/python3"
+else
+    # Fallback to creating a venv
+    VENV_DIR="$BACKEND_DIR_ABSPATH/.venv"
+    if [[ ! -d "$VENV_DIR" ]]; then
+        echo "Creating virtual environment..."
+        python3 -m venv "$VENV_DIR"
+    fi
+    source "$VENV_DIR/bin/activate"
 fi
-source "$VENV_DIR/bin/activate"
 
-# --- Install custom debugger module if not already installed ---
+# --- Install custom debugger module in user location ---
 DEBUGGER_DIR_ABSPATH="$PROJECT_ROOT_ABSPATH/debugger"
-if ! pip3 show debug > /dev/null 2>&1; then
+export PYTHONUSERBASE="$BACKEND_DIR_ABSPATH/.local"
+if ! "$PYTHON" -m pip show debug > /dev/null 2>&1; then
     echo "Installing debugger module..."
     cd "$DEBUGGER_DIR_ABSPATH"
-    pip3 install -e .
+    "$PYTHON" -m pip install -e . --user --quiet
     if [[ $? -ne 0 ]]; then
         echo "Failed to install debugger module."
         exit 1
@@ -47,7 +55,7 @@ fi
 # --- Install Python dependencies ---
 echo "Installing dependencies..."
 cd "$BACKEND_DIR_ABSPATH"
-pip3 install -r requirements.txt
+"$PYTHON" -m pip install -r requirements.txt --quiet
 if [[ $? -ne 0 ]]; then
     echo "Failed to install Python dependencies."
     exit 1

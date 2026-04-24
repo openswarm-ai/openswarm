@@ -1,10 +1,14 @@
 import os
+import tempfile
 
-# LOG_MODE_FILE = 'debugger/log_mode.txt'
-LOG_MODE_FILE = os.path.join(os.path.dirname(__file__), 'log_mode.txt')
+# Use temp directory for log mode file to avoid permission issues
+LOG_MODE_FILE = os.path.join(tempfile.gettempdir(), 'openswarm_debug_log_mode.txt')
 def set_log_mode(mode):
-    with open(LOG_MODE_FILE, 'w') as f:
-        f.write(mode)
+    try:
+        with open(LOG_MODE_FILE, 'w') as f:
+            f.write(mode)
+    except Exception:
+        pass  # Ignore write errors
 
 def get_log_mode():
     if os.path.exists(LOG_MODE_FILE):
