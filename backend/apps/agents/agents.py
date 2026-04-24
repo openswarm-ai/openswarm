@@ -23,6 +23,18 @@ async def agents_lifespan():
 
 agents = SubApp("agents", agents_lifespan)
 
+
+async def _sync_default_model_to_available_provider() -> None:
+    """Persist a usable default model after subscription state changes."""
+    from backend.apps.agents.providers.registry import resolve_available_chat_model
+    from backend.apps.settings.settings import load_settings, _save_settings
+
+    settings = load_settings()
+    resolved_model, _ = await resolve_available_chat_model(settings, settings.default_model)
+    if resolved_model != settings.default_model:
+        settings.default_model = resolved_model
+        _save_settings(settings)
+
 # REST Endpoints
 
 @agents.router.get("/sessions")
@@ -242,6 +254,7 @@ async def subscriptions_poll(body: dict):
         if result.get("success"):
             from backend.apps.analytics.collector import record as _analytics
             _analytics("subscription.connected", {"provider": provider})
+            await _sync_default_model_to_available_provider()
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -265,6 +278,7 @@ async def subscriptions_exchange(body: dict):
         if result.get("success"):
             from backend.apps.analytics.collector import record as _analytics
             _analytics("subscription.connected", {"provider": provider})
+            await _sync_default_model_to_available_provider()
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -372,4 +386,3 @@ async def subscriptions_disconnect(body: dict):
         return {"ok": False, "error": "Connection not found"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-

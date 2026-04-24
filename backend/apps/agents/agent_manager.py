@@ -27,6 +27,7 @@ from backend.apps.tools_lib.tools_lib import (
 )
 from backend.config.paths import SESSIONS_DIR
 from backend.apps.analytics.collector import record as _analytics
+from backend.apps.agents.providers.registry import resolve_available_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -364,6 +365,10 @@ class AgentManager:
         tools = mode_tools
 
         global_settings = load_settings()
+        effective_model, effective_provider = await resolve_available_chat_model(
+            global_settings,
+            config.model,
+        )
         effective_cwd = (
             config.target_directory
             or mode_folder
@@ -379,8 +384,8 @@ class AgentManager:
         session = AgentSession(
             id=session_id,
             name=config.name,
-            provider=getattr(config, "provider", "anthropic"),
-            model=config.model,
+            provider=effective_provider or getattr(config, "provider", "anthropic"),
+            model=effective_model,
             mode=config.mode,
             system_prompt=config.system_prompt,
             allowed_tools=tools,

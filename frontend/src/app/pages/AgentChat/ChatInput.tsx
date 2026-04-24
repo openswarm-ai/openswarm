@@ -43,6 +43,7 @@ import {
   EMPTY_TRIGGER,
 } from '@/app/components/richEditorUtils';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { hasAvailableModel, firstAvailableModel } from '@/shared/state/modelsSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
@@ -241,6 +242,26 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     }
     return { flat, grouped };
   }, [modelsByProvider, modelsLoaded]);
+
+  useEffect(() => {
+    if (!modelsLoaded || Object.keys(modelsByProvider).length === 0) return;
+    if (hasAvailableModel(modelsByProvider, model)) return;
+    const nextModel = firstAvailableModel(modelsByProvider);
+    if (!nextModel) return;
+    onModelChange(nextModel);
+    const providerEntry = Object.entries(modelsByProvider).find(([, models]) =>
+      models.some((m) => m.value === nextModel),
+    );
+    if (providerEntry && onProviderChange) {
+      const provLower = providerEntry[0].toLowerCase();
+      const providerMap: Record<string, string> = {
+        anthropic: 'anthropic',
+        openai: 'openai',
+        google: 'gemini',
+      };
+      onProviderChange(providerMap[provLower] || provLower);
+    }
+  }, [model, modelsByProvider, modelsLoaded, onModelChange, onProviderChange]);
 
   useEffect(() => {
     if (modesArr.length === 0) dispatch(fetchModes());

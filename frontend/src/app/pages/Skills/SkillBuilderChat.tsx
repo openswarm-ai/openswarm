@@ -14,6 +14,8 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { createDraftSession, removeDraftSession } from '@/shared/state/agentsSlice';
 import { createSkill } from '@/shared/state/skillsSlice';
+import { firstAvailableModel } from '@/shared/state/modelsSlice';
+import { store } from '@/shared/state/store';
 import AgentChat from '../AgentChat/AgentChat';
 import { ContextPath } from '@/app/components/DirectoryBrowser';
 import { API_BASE } from '@/shared/config';
@@ -115,14 +117,27 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
       });
       const data = await res.json();
       setWorkspacePath(data.path);
+      const modelsByProvider = store.getState().models.byProvider;
+      const firstModel = firstAvailableModel(modelsByProvider);
+      const modelProvider = firstModel ? Object.entries(modelsByProvider).find(([, models]) => models.some(m => m.value === firstModel))?.[0] : undefined;
       const action = dispatch(createDraftSession({
         mode: 'skill-builder',
         setActive: false,
         targetDirectory: data.path,
+        model: firstModel || undefined,
+        provider: modelProvider,
       }));
       setInitialDraftId(action.payload.draftId);
     } catch {
-      const action = dispatch(createDraftSession({ mode: 'skill-builder', setActive: false }));
+      const modelsByProvider = store.getState().models.byProvider;
+      const firstModel = firstAvailableModel(modelsByProvider);
+      const modelProvider = firstModel ? Object.entries(modelsByProvider).find(([, models]) => models.some(m => m.value === firstModel))?.[0] : undefined;
+      const action = dispatch(createDraftSession({
+        mode: 'skill-builder',
+        setActive: false,
+        model: firstModel || undefined,
+        provider: modelProvider,
+      }));
       setInitialDraftId(action.payload.draftId);
     }
   }, [dispatch]);
