@@ -1,9 +1,14 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { API_BASE } from '@/shared/config';
 
-const OUTPUTS_API = `${API_BASE}/outputs`;
+const APP_API = `${API_BASE}/app_builder`;
 
-export const SERVE_BASE = `${API_BASE}/outputs`;
+export const SERVE_BASE = `${API_BASE}/app_builder`;
+
+const DEFAULT_SCHEMA = { type: 'object', properties: {}, required: [] } as Record<string, any>;
+const SCHEMA_FILE = 'schema.json';
+const META_FILE = 'meta.json';
+const SKILL_FILE = 'SKILL.md';
 
 
 export interface AutoRunConfig {
@@ -54,7 +59,7 @@ export function buildWorkspaceServeUrl(
 ): string {
   const dataPayload = JSON.stringify({ i: inputData, r: backendResult });
   const encoded = btoa(unescape(encodeURIComponent(dataPayload)));
-  return `${SERVE_BASE}/workspace/${workspaceId}/serve/index.html?_d=${encodeURIComponent(encoded)}`;
+  return `${SERVE_BASE}/${workspaceId}/serve/index.html?_d=${encodeURIComponent(encoded)}`;
 }
 
 export interface OutputExecuteResult {
@@ -76,16 +81,107 @@ interface OutputsState {
 
 const initialState: OutputsState = { items: {}, loading: false, loaded: false };
 
+interface AppMetadata {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  thumbnail?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function tryParseJson<T>(raw: string | undefined, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+async function fetchWorkspace(
+  appId: string,
+): Promise<{ files: Record<string, string>; meta: Record<string, any> | null }> {
+  try {
+    const res = await fetch(`${APP_API}/app/${appId}`);
+    if (!res.ok) return { files: {}, meta: null };
+    const data = await res.json();
+    return {
+      files: (data.files ?? {}) as Record<string, string>,
+      meta: (data.meta ?? null) as Record<string, any> | null,
+    };
+  } catch {
+    return { files: {}, meta: null };
+  }
+}
+
+function hydrateOutput(
+  metadata: AppMetadata,
+  workspace: { files: Record<string, string>; meta: Record<string, any> | null },
+): Output {
+  const rawFiles = workspace.files;
+  const inputSchema = tryParseJson<Record<string, any>>(rawFiles[SCHEMA_FILE], DEFAULT_SCHEMA);
+
+  const contentFiles: Record<string, string> = {};
+  for (const [path, content] of Object.entries(rawFiles)) {
+    if (path === SCHEMA_FILE || path === META_FILE || path === SKILL_FILE) continue;
+    contentFiles[path] = content;
+  }
+
+  return {
+    id: metadata.id,
+    name: metadata.name,
+    description: metadata.description,
+    icon: metadata.icon,
+    input_schema: inputSchema,
+    files: contentFiles,
+    permission: 'ask',
+    auto_run_config: null,
+    thumbnail: metadata.thumbnail ?? null,
+    created_at: metadata.created_at,
+    updated_at: metadata.updated_at,
+  };
+}
+
+function buildSeedFiles(body: {
+  files: Record<string, string>;
+  input_schema?: Record<string, any>;
+  name: string;
+  description: string;
+}): Record<string, string> {
+  const files: Record<string, string> = { ...body.files };
+  if (body.input_schema) {
+    files[SCHEMA_FILE] = JSON.stringify(body.input_schema, null, 2);
+  }
+  files[META_FILE] = JSON.stringify({ name: body.name, description: body.description }, null, 2);
+  return files;
+}
+
+async function writeFile(appId: string, path: string, content: string): Promise<void> {
+  try {
+    await fetch(`${APP_API}/app/${appId}/file/${encodeURIComponent(path)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+  } catch {
+    // Ignore failures in best-effort file writes
+  }
+}
+
 export const fetchOutputs = createAsyncThunk(
   'outputs/fetch',
-  async () => {
+  async (): Promise<Output[]> => {
     try {
-      const res = await fetch(`${OUTPUTS_API}/list`);
-      if (!res.ok) return [] as Output[];
+      const res = await fetch(`${APP_API}/list`);
+      if (!res.ok) return [];
       const data = await res.json();
-      return (data.outputs || []) as Output[];
+      const apps: AppMetadata[] = data.apps ?? [];
+      const workspaces = await Promise.all(apps.map((app) => fetchWorkspace(app.id)));
+      return apps.map((app, idx) => hydrateOutput(app, workspaces[idx]));
     } catch {
-      return [] as Output[];
+      return [];
     }
   },
   { condition: (_, { getState }) => !(getState() as { outputs: OutputsState }).outputs.loading },
@@ -93,47 +189,119 @@ export const fetchOutputs = createAsyncThunk(
 
 export const createOutput = createAsyncThunk(
   'outputs/create',
-  async (body: Omit<Output, 'id' | 'created_at' | 'updated_at' | 'permission'>) => {
-    const res = await fetch(`${OUTPUTS_API}/create`, {
+  async (body: Omit<Output, 'id' | 'created_at' | 'updated_at' | 'permission'>): Promise<Output> => {
+    const seedFiles = buildSeedFiles({
+      files: body.files,
+      input_schema: body.input_schema,
+      name: body.name,
+      description: body.description,
+    });
+
+    const res = await fetch(`${APP_API}/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        name: body.name,
+        description: body.description,
+        icon: body.icon,
+        files: seedFiles,
+        thumbnail: body.thumbnail ?? null,
+      }),
     });
     if (!res.ok) throw new Error(`Create failed: ${res.status}`);
     const data = await res.json();
-    return data.output as Output;
-  }
+    const metadata: AppMetadata = data.app;
+    const workspace = await fetchWorkspace(metadata.id);
+    return hydrateOutput(metadata, workspace);
+  },
 );
 
 export const updateOutput = createAsyncThunk(
   'outputs/update',
-  async ({ id, ...updates }: Partial<Output> & { id: string }) => {
-    const res = await fetch(`${OUTPUTS_API}/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    if (!res.ok) throw new Error(`Update failed: ${res.status}`);
-    const data = await res.json();
-    return data.output as Output;
-  }
+  async ({ id, ...updates }: Partial<Output> & { id: string }): Promise<Output> => {
+    const metadataPayload: Record<string, any> = {};
+    if (updates.name !== undefined) metadataPayload.name = updates.name;
+    if (updates.description !== undefined) metadataPayload.description = updates.description;
+    if (updates.icon !== undefined) metadataPayload.icon = updates.icon;
+    if (updates.thumbnail !== undefined) metadataPayload.thumbnail = updates.thumbnail;
+
+    let metadata: AppMetadata | null = null;
+    if (Object.keys(metadataPayload).length > 0) {
+      const res = await fetch(`${APP_API}/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(metadataPayload),
+      });
+      if (!res.ok) throw new Error(`Update failed: ${res.status}`);
+      const data = await res.json();
+      metadata = data.app;
+    }
+
+    const writes: Promise<void>[] = [];
+    if (updates.files) {
+      for (const [path, content] of Object.entries(updates.files)) {
+        writes.push(writeFile(id, path, content));
+      }
+    }
+    if (updates.input_schema) {
+      writes.push(writeFile(id, SCHEMA_FILE, JSON.stringify(updates.input_schema, null, 2)));
+    }
+    if (updates.name !== undefined || updates.description !== undefined) {
+      const nextMeta = {
+        name: updates.name ?? metadata?.name ?? '',
+        description: updates.description ?? metadata?.description ?? '',
+      };
+      writes.push(writeFile(id, META_FILE, JSON.stringify(nextMeta, null, 2)));
+    }
+    await Promise.all(writes);
+
+    if (!metadata) {
+      const getRes = await fetch(`${APP_API}/${id}`);
+      if (!getRes.ok) throw new Error(`Fetch after update failed: ${getRes.status}`);
+      metadata = (await getRes.json()) as AppMetadata;
+    }
+    const workspace = await fetchWorkspace(id);
+    return hydrateOutput(metadata, workspace);
+  },
 );
 
 export const deleteOutput = createAsyncThunk('outputs/delete', async (id: string) => {
-  await fetch(`${OUTPUTS_API}/${id}`, { method: 'DELETE' });
+  await fetch(`${APP_API}/${id}`, { method: 'DELETE' });
   return id;
 });
 
 export const executeOutput = createAsyncThunk(
   'outputs/execute',
-  async (body: { output_id: string; input_data: Record<string, any> }) => {
-    const res = await fetch(`${OUTPUTS_API}/execute`, {
+  async (body: { output_id: string; input_data: Record<string, any> }): Promise<OutputExecuteResult> => {
+    const res = await fetch(`${APP_API}/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ app_id: body.output_id }),
     });
-    return (await res.json()) as OutputExecuteResult;
-  }
+    if (!res.ok) {
+      return {
+        output_id: body.output_id,
+        output_name: '',
+        frontend_code: '',
+        input_data: body.input_data,
+        backend_result: null,
+        stdout: null,
+        stderr: null,
+        error: `Execute failed: ${res.status}`,
+      };
+    }
+    const data = await res.json();
+    return {
+      output_id: data.app_id ?? body.output_id,
+      output_name: data.app_name ?? '',
+      frontend_code: data.frontend_code ?? '',
+      input_data: body.input_data,
+      backend_result: data.backend_result ?? null,
+      stdout: data.stdout ?? null,
+      stderr: data.stderr ?? null,
+      error: data.error ?? null,
+    };
+  },
 );
 
 export interface AutoRunResult {
@@ -146,14 +314,24 @@ export interface AutoRunResult {
 
 export const autoRunOutput = createAsyncThunk(
   'outputs/autoRun',
-  async (body: { prompt: string; input_schema: Record<string, any>; backend_code?: string | null; context_paths?: Array<{ path: string; type: string }>; forced_tools?: string[]; model?: string }) => {
-    const res = await fetch(`${OUTPUTS_API}/auto-run`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return (await res.json()) as AutoRunResult;
-  }
+  async (_body: {
+    prompt: string;
+    input_schema: Record<string, any>;
+    backend_code?: string | null;
+    context_paths?: Array<{ path: string; type: string }>;
+    forced_tools?: string[];
+    model?: string;
+  }): Promise<AutoRunResult> => {
+    // Auto-run is not yet implemented in the app_builder backend. Return an
+    // informative error so the UI can surface it gracefully.
+    return {
+      input_data: null,
+      backend_result: null,
+      stdout: null,
+      stderr: null,
+      error: 'Auto-run is not available on this backend yet.',
+    };
+  },
 );
 
 export interface AutoRunAgentResult {
@@ -162,26 +340,20 @@ export interface AutoRunAgentResult {
 
 export const autoRunAgentOutput = createAsyncThunk(
   'outputs/autoRunAgent',
-  async (body: {
+  async (_body: {
     prompt: string;
     input_schema: Record<string, any>;
     output_id: string;
     model?: string;
     forced_tools?: string[];
     context_paths?: Array<{ path: string; type: string }>;
-  }) => {
-    const res = await fetch(`${OUTPUTS_API}/auto-run-agent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`Auto-run agent launch failed: ${res.status}`);
-    return (await res.json()) as AutoRunAgentResult;
-  }
+  }): Promise<AutoRunAgentResult> => {
+    throw new Error('Auto-run-agent is not available on this backend yet.');
+  },
 );
 
-export async function cleanupAutoRunAgent(sessionId: string): Promise<void> {
-  await fetch(`${OUTPUTS_API}/auto-run-agent/${sessionId}`, { method: 'DELETE' });
+export async function cleanupAutoRunAgent(_sessionId: string): Promise<void> {
+  // No-op: no auto-run-agent sessions exist on the app_builder backend yet.
 }
 
 const outputsSlice = createSlice({

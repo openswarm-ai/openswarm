@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { API_BASE } from '@/shared/config';
 
-const SKILL_REGISTRY_API = `${API_BASE}/skill-registry`;
+const SKILL_REGISTRY_API = `${API_BASE}/skills/registry`;
 
 export interface RegistrySkill {
   name: string;

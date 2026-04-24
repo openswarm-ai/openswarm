@@ -42,7 +42,7 @@ import { ElementSelectionProvider } from '@/app/components/ElementSelectionConte
 import { captureViewThumbnail } from './captureViewThumbnail';
 import { API_BASE } from '@/shared/config';
 
-const WORKSPACE_API = `${API_BASE}/outputs/workspace`;
+const WORKSPACE_API = `${API_BASE}/app_builder/app`;
 const POLL_INTERVAL_MS = 2000;
 
 function getFileIcon(filename: string): React.ReactNode {
@@ -567,7 +567,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
     draftCreated.current = true;
 
     (async () => {
-      const seedBody: Record<string, any> = { workspace_id: stableWorkspaceId };
+      const seedBody: Record<string, any> = { app_id: stableWorkspaceId };
       if (output) {
         const seedFiles: Record<string, string> = { ...output.files };
         if (output.input_schema && !seedFiles['schema.json']) {
@@ -941,7 +941,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   }, [autoRunSessionId]);
 
   const workspaceServeUrl = workspaceId
-    ? `${SERVE_BASE}/workspace/${workspaceId}/serve/index.html`
+    ? `${SERVE_BASE}/${workspaceId}/serve/index.html`
     : undefined;
 
   const filePaths = useMemo(() => Object.keys(files).filter(p => p !== 'meta.json' && p !== 'SKILL.md').sort(), [files]);
