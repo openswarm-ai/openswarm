@@ -54,7 +54,11 @@ class CommsManager(BaseModel):
                 if not event.future.done():
                     event.future.set_result(result)
                 return
-            await self.broadcaster.send_to_session(session_id, event.event, event.model_dump(mode="json"))
+            # by_alias=True so nested AgentSnapshot serializes session_id as "id"
+            # (matching the REST API and the frontend's expected shape).
+            await self.broadcaster.send_to_session(
+                session_id, event.event, event.model_dump(mode="json", by_alias=True),
+            )
         return emit
 
     @typechecked

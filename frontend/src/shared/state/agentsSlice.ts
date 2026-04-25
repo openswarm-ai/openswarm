@@ -146,7 +146,13 @@ export const launchAgent = createAsyncThunk('agents/launchAgent', async (config:
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
+  if (!res.ok) {
+    throw new Error(`Failed to launch agent (${res.status})`);
+  }
   const data = await res.json();
+  if (!data?.session?.id) {
+    throw new Error('Launch agent response missing session.id');
+  }
   return data.session as AgentSession;
 });
 
@@ -231,7 +237,13 @@ export const fetchSession = createAsyncThunk(
   'agents/fetchSession',
   async (sessionId: string) => {
     const res = await fetch(`${AGENTS_API}/get_session?session_id=${encodeURIComponent(sessionId)}`);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch session (${res.status})`);
+    }
     const session = await res.json();
+    if (!session?.id) {
+      throw new Error('Fetch session response missing id');
+    }
     return session as AgentSession;
   }
 );
@@ -244,7 +256,13 @@ export const launchAndSendFirstMessage = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     });
+    if (!launchRes.ok) {
+      throw new Error(`Failed to launch agent (${launchRes.status})`);
+    }
     const launchData = await launchRes.json();
+    if (!launchData?.session?.id) {
+      throw new Error('Launch response missing session.id');
+    }
     const session = launchData.session as AgentSession;
 
     await fetch(`${AGENTS_API}/send_message`, {
@@ -254,7 +272,13 @@ export const launchAndSendFirstMessage = createAsyncThunk(
     });
 
     const refreshRes = await fetch(`${AGENTS_API}/get_session?session_id=${encodeURIComponent(session.id)}`);
+    if (!refreshRes.ok) {
+      throw new Error(`Failed to refresh launched session (${refreshRes.status})`);
+    }
     const updatedSession = await refreshRes.json() as AgentSession;
+    if (!updatedSession?.id) {
+      throw new Error('Refreshed session response missing id');
+    }
 
     return { draftId, session: updatedSession };
   }
@@ -353,6 +377,9 @@ export const duplicateSession = createAsyncThunk(
     });
     if (!res.ok) throw new Error('Failed to duplicate session');
     const data = await res.json();
+    if (!data?.session?.id) {
+      throw new Error('Duplicate session response missing session.id');
+    }
     return data.session as AgentSession;
   }
 );
@@ -412,7 +439,13 @@ export const resumeSession = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ session_id: sessionId }),
     });
+    if (!res.ok) {
+      throw new Error(`Failed to resume session (${res.status})`);
+    }
     const data = await res.json();
+    if (!data?.session?.id) {
+      throw new Error('Resume session response missing session.id');
+    }
     return data.session as AgentSession;
   }
 );
@@ -536,33 +569,39 @@ const agentsSlice = createSlice({
     },
 
     updateSession(state, action: PayloadAction<AgentSession>) {
-      if (state.history[action.payload.id]) {
-        if (action.payload.status === 'running' || action.payload.mode === 'browser-agent') {
-          delete state.history[action.payload.id];
+      const payload = action.payload as Partial<AgentSession>;
+      const sessionId = payload.id;
+      if (!sessionId) {
+        return;
+      }
+
+      if (state.history[sessionId]) {
+        if (payload.status === 'running' || payload.mode === 'browser-agent') {
+          delete state.history[sessionId];
         } else {
           return;
         }
       }
-      const existing = state.sessions[action.payload.id];
+      const existing = state.sessions[sessionId];
       // Don't let a stale "running" message overwrite a terminal status
       const terminal = ['stopped', 'error'] as const;
-      if (existing && terminal.includes(existing.status as any) && action.payload.status === 'running') {
+      if (existing && terminal.includes(existing.status as any) && payload.status === 'running') {
         return;
       }
       // Preserve local pending_approvals if the server payload has none but
       // the frontend has some (avoids race where backend clears approvals
       // before the frontend processes the removal).
-      const mergedApprovals = existing?.pending_approvals?.length && !action.payload.pending_approvals?.length
+      const mergedApprovals = existing?.pending_approvals?.length && !payload.pending_approvals?.length
         ? existing.pending_approvals
-        : action.payload.pending_approvals ?? [];
-      state.sessions[action.payload.id] = {
-        ...action.payload,
+        : payload.pending_approvals ?? [];
+      state.sessions[sessionId] = {
+        ...(payload as AgentSession),
         pending_approvals: mergedApprovals,
-        streamingMessage: existing?.streamingMessage ?? action.payload.streamingMessage ?? null,
-        tool_group_meta: { ...existing?.tool_group_meta, ...action.payload.tool_group_meta },
+        streamingMessage: existing?.streamingMessage ?? payload.streamingMessage ?? null,
+        tool_group_meta: { ...existing?.tool_group_meta, ...payload.tool_group_meta },
       };
-      if (action.payload.status === 'running' && !state.trackedNotificationIds.includes(action.payload.id)) {
-        state.trackedNotificationIds.push(action.payload.id);
+      if (payload.status === 'running' && !state.trackedNotificationIds.includes(sessionId)) {
+        state.trackedNotificationIds.push(sessionId);
       }
     },
 
@@ -816,6 +855,7 @@ const agentsSlice = createSlice({
         state.loading = false;
       })
       .addCase(launchAgent.fulfilled, (state, action) => {
+        if (!action.payload?.id) return;
         state.sessions[action.payload.id] = { ...action.payload, streamingMessage: null, tool_group_meta: action.payload.tool_group_meta ?? {} };
         state.activeSessionId = action.payload.id;
         if (!state.expandedSessionIds.includes(action.payload.id)) {
@@ -827,6 +867,7 @@ const agentsSlice = createSlice({
       })
       .addCase(launchAndSendFirstMessage.fulfilled, (state, action) => {
         const { draftId, session } = action.payload;
+        if (!session?.id) return;
         const shouldExpand = action.meta.arg.expand !== false;
         delete state.sessions[draftId];
         state.sessions[session.id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };
@@ -902,6 +943,7 @@ const agentsSlice = createSlice({
       })
       .addCase(duplicateSession.fulfilled, (state, action) => {
         const session = action.payload;
+        if (!session?.id) return;
         state.sessions[session.id] = session;
       })
       .addCase(closeSession.fulfilled, (state, action) => {
@@ -969,6 +1011,7 @@ const agentsSlice = createSlice({
       })
       .addCase(resumeSession.fulfilled, (state, action) => {
         const session = action.payload;
+        if (!session?.id) return;
         state.sessions[session.id] = { ...session, streamingMessage: null, tool_group_meta: session.tool_group_meta ?? {} };
         delete state.history[session.id];
         state.activeSessionId = session.id;

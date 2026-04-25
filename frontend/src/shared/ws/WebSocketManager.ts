@@ -162,7 +162,7 @@ class WebSocketManager {
 
     switch (event) {
       case 'agent:status':
-        if (data.session) {
+        if (data.session && data.session.id) {
           store.dispatch(updateSession(data.session));
         } else if (session_id) {
           store.dispatch(updateSessionStatus({ sessionId: session_id, status: data.status }));

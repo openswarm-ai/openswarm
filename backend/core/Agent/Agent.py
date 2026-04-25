@@ -49,11 +49,22 @@ class Agent(BaseModel):
 
     @typechecked
     def snapshot(self) -> AgentSnapshot:
+        msgs = self.messages.messages
+        created_at = msgs[0].timestamp.isoformat() if msgs else ""
+        name = "New chat"
+        for m in msgs:
+            if m.role == "user" and isinstance(m.content, str):
+                name = m.content[:50] + ("..." if len(m.content) > 50 else "")
+                break
+
         return AgentSnapshot(
             session_id=self.session_id,
             model=self.model,
             mode=self.mode,
             status=self.status,
+            name=name,
+            created_at=created_at,
+            cost_usd=0,
             dashboard_id=self.dashboard_id,
             branch_id=self.branch_id,
             parent_id=self.parent_id,
@@ -133,6 +144,7 @@ class Agent(BaseModel):
                 debug(f"[Agent.send_message] Agent {self.session_id} is already running")
                 return
 
+            debug("Agent.send_message id=%s msg_count=%s", self.session_id, len(self.messages))
             await self.emit(AgentMessageEvent(
                 session_id=self.session_id,
                 message=msg,
@@ -164,6 +176,7 @@ class Agent(BaseModel):
 
     @typechecked
     async def stop_agent(self):
+        debug("Agent.stop_agent id=%s status=%s", self.session_id, self.status)
         for child in self.sub_agents:
             await child.stop_agent()
 

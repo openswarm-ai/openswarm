@@ -37,6 +37,26 @@ from claude_agent_sdk.types import HookMatcher, McpServerConfig
 from backend.core.tools.shared_structs.Toolkit import Toolkit
 from backend.apps.agents.agent_utils.build_agent_toolkit import build_agent_toolkit
 
+NINE_ROUTER_MODEL_MAP: dict[str, str] = {
+    "sonnet": "cc/claude-sonnet-4-6",
+    "opus": "cc/claude-opus-4-6",
+    "haiku": "cc/claude-haiku-4-5-20251001",
+}
+
+def _resolve_nine_router_model(model: str, has_api_key: bool) -> str:
+    """Resolve a model name for the active connection mode.
+
+    When using a direct API key the model passes through unchanged.
+    When routing through 9Router, short aliases are mapped to their
+    ``cc/``-prefixed canonical IDs; models that already carry the prefix
+    are returned as-is to avoid double-prefixing.
+    """
+    if has_api_key:
+        return model
+    if model.startswith("cc/"):
+        return model
+    return NINE_ROUTER_MODEL_MAP.get(model, f"cc/{model}")
+
 AGENT_STORE: PydanticStore[Agent] = PydanticStore[Agent](
     model_cls=Agent,
     data_dir=os.path.join(DB_ROOT, "sessions"),
@@ -133,12 +153,13 @@ async def get_all_sessions(dashboard_id: str = "") -> dict:
     result: List[Agent] = list(SESSIONS.values())
     if dashboard_id:
         result = [a for a in result if a.dashboard_id == dashboard_id]
-    return {"sessions": [a.model_dump(mode="json") for a in result]}
+    return {"sessions": [a.snapshot().model_dump(mode="json") for a in result]}
 
 
 @agents.router.get("/get_session")
 async def get_session(session_id: str) -> dict:
-    return get_agent(session_id).model_dump(mode="json")
+    debug("get_session id=%s", session_id)
+    return get_agent(session_id).snapshot().model_dump(mode="json")
 
 
 
@@ -183,12 +204,7 @@ async def launch_agent(
         nine_router_port=NINE_ROUTER_PORT if not settings.anthropic_api_key else None,
     )
 
-    NINE_ROUTER_MODEL_MAP = {
-        "sonnet": "cc/claude-sonnet-4-6",
-        "opus": "cc/claude-opus-4-6",
-        "haiku": "cc/claude-haiku-4-5-20251001",
-    }
-    resolved_model = NINE_ROUTER_MODEL_MAP.get(model, f"cc/{model}") if not settings.anthropic_api_key else model
+    resolved_model = _resolve_nine_router_model(model, bool(settings.anthropic_api_key))
 
     agent.config = ClaudeAgentOptions(
         env=env,
@@ -211,6 +227,7 @@ async def launch_agent(
         session_id=agent.session_id, status="stopped",
         session=agent.snapshot(),
     ))
+    debug("launch_agent id=%s model=%s mode=%s", agent.session_id, model, mode)
     return {"session_id": agent.session_id, "session": agent.snapshot().model_dump(mode="json")}
 
 
@@ -231,6 +248,7 @@ async def update_system_prompt(
 
 @agents.router.delete("/delete_session")
 async def delete_session(session_id: str = Body()) -> dict:
+    debug("delete_session id=%s", session_id)
     agent: Optional[Agent] = SESSIONS.pop(session_id, None)
     if agent is not None:
         await agent.stop_agent()
@@ -283,7 +301,11 @@ async def send_message(
             toolkit=agent.toolkit,
         )
         agent.config.system_prompt = resolved_mode_config.system_prompt
-        agent.config.model = agent.model
+        if model_changed:
+            settings = load_settings()
+            agent.config.model = _resolve_nine_router_model(
+                agent.model, bool(settings.anthropic_api_key),
+            )
         agent.config.allowed_tools = resolved_mode_config.allowed_tools
         agent.config.disallowed_tools = resolved_mode_config.disallowed_tools
         if resolved_mode_config.cwd:
@@ -299,12 +321,14 @@ async def send_message(
         forced_tools=forced_tools or [],
         hidden=hidden,
     )
+    debug("send_message id=%s prompt=%s", session_id, prompt[:80])
     await agent.send_message(msg)
     return {"ok": True}
 
 
 @agents.router.post("/stop_agent")
 async def stop_agent(session_id: str = Body()) -> dict:
+    debug("stop_agent id=%s", session_id)
     agent: Agent = get_agent(session_id)
     await agent.stop_agent()
     return {"ok": True}
@@ -366,6 +390,7 @@ async def switch_branch(
 
 @agents.router.post("/close_session")
 async def close_session(session_id: str = Body()) -> dict:
+    debug("close_session id=%s", session_id)
     agent: Optional[Agent] = SESSIONS.pop(session_id, None)
     if not agent:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -382,8 +407,9 @@ async def close_session(session_id: str = Body()) -> dict:
 
 @agents.router.post("/resume_session")
 async def resume_session(session_id: str = Body()) -> dict:
+    debug("resume_session id=%s", session_id)
     if session_id in SESSIONS:
-        return {"session": SESSIONS[session_id].model_dump(mode="json")}
+        return {"session": SESSIONS[session_id].snapshot().model_dump(mode="json")}
     agent: Optional[Agent] = AGENT_STORE.load_or_none(session_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Session not found in history")
@@ -439,8 +465,11 @@ async def get_history(
     q: str = "",
     limit: int = 20,
     offset: int = 0,
+    dashboard_id: str = "",
 ) -> dict:
     all_agents: List[Agent] = AGENT_STORE.load_all()
+    if dashboard_id:
+        all_agents = [a for a in all_agents if a.dashboard_id == dashboard_id]
     all_agents.sort(
         key=lambda a: a.messages.messages[-1].timestamp if a.messages.messages else datetime.min,
         reverse=True,
