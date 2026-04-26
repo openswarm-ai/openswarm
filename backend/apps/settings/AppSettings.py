@@ -9,6 +9,7 @@ class AppSettings(BaseModel):
     default_model: str = "sonnet"
     default_mode: str = "agent"
     default_max_turns: Optional[int] = None
+    default_thinking_level: str = "auto"
     anthropic_api_key: Optional[str] = None
 
     # Dashboard / UI preferences

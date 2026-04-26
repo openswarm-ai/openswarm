@@ -36,7 +36,7 @@ def make_invoke_agent_handler(agent_registry: Dict[str, Agent]):
             await fork.task
 
         last_response = "No response from invoked agent."
-        for m in reversed[AnyMessage](fork.messages.messages):
+        for m in reversed(fork.messages.messages):
             if isinstance(m, AssistantMessage):
                 last_response = m.content
                 break

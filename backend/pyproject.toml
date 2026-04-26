@@ -12,7 +12,8 @@ dependencies = [
     "posthog",
     "pydantic==2.10.5",
     "watchfiles",
-    "swarm-debug"
+    "swarm-debug",
+    "winloop; sys_platform == 'win32'",
 ]
 
 [dependency-groups]

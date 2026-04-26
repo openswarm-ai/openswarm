@@ -36,6 +36,7 @@ async def run_browser_agent(
     browser_config = ClaudeAgentOptions(
         env=parent.config.env,
         model=parent.config.model,
+        extra_args=parent.config.extra_args,
         system_prompt=BROWSER_AGENT_SYSTEM_PROMPT,
         tools=tool_names,
         mcp_servers=mcp_servers,
@@ -56,7 +57,7 @@ async def run_browser_agent(
     if child.task:
         await child.task
 
-    for m in reversed[AnyMessage](child.messages.messages):
+    for m in reversed(child.messages.messages):
         if isinstance(m, AssistantMessage):
             return m.content
 

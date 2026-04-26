@@ -11,7 +11,7 @@ import json
 import time
 from typing import Any, Callable, Dict, Tuple, Optional, List
 
-from claude_agent_sdk.types import PermissionResultAllow, PermissionResultDeny, PermissionResult
+from claude_agent_sdk.types import PermissionResultAllow, PermissionResultDeny, PermissionResult, ToolPermissionContext
 
 from backend.core.shared_structs.agent.Message.Message import ToolResultMessage
 from backend.core.shared_structs.agent.Message.agent_outputs import ToolResultContent
@@ -31,7 +31,7 @@ def create_sdk_hooks(
     tool_start_times: Dict[str, float] = {}
 
     @typechecked
-    async def can_use_tool(tool_name: str, input_data: Any) -> PermissionResult:
+    async def can_use_tool(tool_name: str, input_data: Any, context: ToolPermissionContext) -> PermissionResult:
         permission: Optional[TOOL_PERMISSIONS] = (
             agent.toolkit.resolve_permission(tool_name) if agent.toolkit else None
         )

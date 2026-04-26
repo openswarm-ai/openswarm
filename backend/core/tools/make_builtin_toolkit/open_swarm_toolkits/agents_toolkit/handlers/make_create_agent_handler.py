@@ -28,7 +28,7 @@ def make_create_agent_handler(parent: Agent):
         if child.task:
             await child.task
         last_response = "No response from sub-agent."
-        for m in reversed[AnyMessage](child.messages.messages):
+        for m in reversed(child.messages.messages):
             if isinstance(m, AssistantMessage):
                 last_response = m.content
                 break

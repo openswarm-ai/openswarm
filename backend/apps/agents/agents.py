@@ -37,6 +37,45 @@ from claude_agent_sdk.types import HookMatcher, McpServerConfig
 from backend.core.tools.shared_structs.Toolkit import Toolkit
 from backend.apps.agents.agent_utils.build_agent_toolkit import build_agent_toolkit
 
+NINE_ROUTER_MODEL_MAP: dict[str, str] = {
+    "sonnet": "cc/claude-sonnet-4-6",
+    "opus": "cc/claude-opus-4-6",
+    "haiku": "cc/claude-haiku-4-5-20251001",
+}
+
+CANONICAL_MODEL_MAP: dict[str, str] = {
+    alias: mid.removeprefix("cc/")
+    for alias, mid in NINE_ROUTER_MODEL_MAP.items()
+}
+
+def _resolve_nine_router_model(model: str, has_api_key: bool) -> str:
+    """Resolve a model name for the active connection mode.
+
+    When using a direct API key, any ``cc/`` prefix is stripped (the model
+    may have come from 9Router's model list) and short aliases are mapped
+    to their canonical Anthropic model IDs.
+    When routing through 9Router, short aliases are mapped to their
+    ``cc/``-prefixed canonical IDs; models that already carry the prefix
+    are returned as-is to avoid double-prefixing.
+    """
+    if has_api_key:
+        clean = model.removeprefix("cc/")
+        return CANONICAL_MODEL_MAP.get(clean, clean)
+    if model.startswith("cc/"):
+        return model
+    return NINE_ROUTER_MODEL_MAP.get(model, f"cc/{model}")
+
+
+def _resolve_extra_args(has_api_key: bool) -> dict[str, str | None]:
+    """When routing through 9Router, force the CLI to bypass keychain/OAuth.
+
+    Without ``--bare`` the Claude Code CLI may consult the local Claude.ai
+    OAuth login and ignore ANTHROPIC_BASE_URL, which sends server-side
+    tools (WebSearch/WebFetch) to api.anthropic.com over a subscription
+    token that isn't entitled for them.
+    """
+    return {} if has_api_key else {"bare": None}
+
 AGENT_STORE: PydanticStore[Agent] = PydanticStore[Agent](
     model_cls=Agent,
     data_dir=os.path.join(DB_ROOT, "sessions"),
@@ -133,21 +172,22 @@ async def get_all_sessions(dashboard_id: str = "") -> dict:
     result: List[Agent] = list(SESSIONS.values())
     if dashboard_id:
         result = [a for a in result if a.dashboard_id == dashboard_id]
-    return {"sessions": [a.model_dump(mode="json") for a in result]}
+    return {"sessions": [a.snapshot().model_dump(mode="json") for a in result]}
 
 
 @agents.router.get("/get_session")
-async def get_session(session_id: str = Body()) -> dict:
-    return get_agent(session_id).model_dump(mode="json")
+async def get_session(session_id: str) -> dict:
+    debug("get_session id=%s", session_id)
+    return get_agent(session_id).snapshot().model_dump(mode="json")
 
 
 
 @agents.router.post("/launch_agent")
 async def launch_agent(
-    model: str = Body(),
-    mode: str = Body(),
-    system_prompt: str = Body(),
-    max_turns: int = Body(),
+    model: str = Body(default="sonnet"),
+    mode: str = Body(default="agent"),
+    system_prompt: str = Body(default=""),
+    max_turns: int = Body(default=100),
     dashboard_id: Optional[str] = Body(default=None),
 ) -> dict:
     agent: Agent = Agent(
@@ -178,17 +218,15 @@ async def launch_agent(
     can_use_tool, pre_tool_hook, post_tool_hook = create_sdk_hooks(agent)
 
     settings = load_settings()
+    has_api_key: bool = bool(settings.anthropic_api_key)
     env = resolve_sdk_env(
         api_key=settings.anthropic_api_key,
-        nine_router_port=NINE_ROUTER_PORT if not settings.anthropic_api_key else None,
+        nine_router_port=NINE_ROUTER_PORT if not has_api_key else None,
     )
 
-    NINE_ROUTER_MODEL_MAP = {
-        "sonnet": "cc/claude-sonnet-4-6",
-        "opus": "cc/claude-opus-4-6",
-        "haiku": "cc/claude-haiku-4-5-20251001",
-    }
-    resolved_model = NINE_ROUTER_MODEL_MAP.get(model, f"cc/{model}") if not settings.anthropic_api_key else model
+    resolved_model = _resolve_nine_router_model(model, has_api_key)
+    extra_args = _resolve_extra_args(has_api_key)
+    debug("launch_agent backend=%s bare=%s", "api_key" if has_api_key else "9router", not has_api_key)
 
     agent.config = ClaudeAgentOptions(
         env=env,
@@ -201,6 +239,7 @@ async def launch_agent(
         disallowed_tools=resolved_mode_config.disallowed_tools,
         permission_mode="default",
         can_use_tool=can_use_tool,
+        extra_args=extra_args,
         hooks={
             "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_hook])],
             "PostToolUse": [HookMatcher(matcher=None, hooks=[post_tool_hook])],
@@ -211,6 +250,7 @@ async def launch_agent(
         session_id=agent.session_id, status="stopped",
         session=agent.snapshot(),
     ))
+    debug("launch_agent id=%s model=%s mode=%s", agent.session_id, model, mode)
     return {"session_id": agent.session_id, "session": agent.snapshot().model_dump(mode="json")}
 
 
@@ -231,6 +271,7 @@ async def update_system_prompt(
 
 @agents.router.delete("/delete_session")
 async def delete_session(session_id: str = Body()) -> dict:
+    debug("delete_session id=%s", session_id)
     agent: Optional[Agent] = SESSIONS.pop(session_id, None)
     if agent is not None:
         await agent.stop_agent()
@@ -283,7 +324,11 @@ async def send_message(
             toolkit=agent.toolkit,
         )
         agent.config.system_prompt = resolved_mode_config.system_prompt
-        agent.config.model = agent.model
+        if model_changed:
+            settings = load_settings()
+            has_api_key: bool = bool(settings.anthropic_api_key)
+            agent.config.model = _resolve_nine_router_model(agent.model, has_api_key)
+            agent.config.extra_args = _resolve_extra_args(has_api_key)
         agent.config.allowed_tools = resolved_mode_config.allowed_tools
         agent.config.disallowed_tools = resolved_mode_config.disallowed_tools
         if resolved_mode_config.cwd:
@@ -299,12 +344,14 @@ async def send_message(
         forced_tools=forced_tools or [],
         hidden=hidden,
     )
+    debug("send_message id=%s prompt=%s", session_id, prompt[:80])
     await agent.send_message(msg)
     return {"ok": True}
 
 
 @agents.router.post("/stop_agent")
 async def stop_agent(session_id: str = Body()) -> dict:
+    debug("stop_agent id=%s", session_id)
     agent: Agent = get_agent(session_id)
     await agent.stop_agent()
     return {"ok": True}
@@ -366,6 +413,7 @@ async def switch_branch(
 
 @agents.router.post("/close_session")
 async def close_session(session_id: str = Body()) -> dict:
+    debug("close_session id=%s", session_id)
     agent: Optional[Agent] = SESSIONS.pop(session_id, None)
     if not agent:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -382,8 +430,9 @@ async def close_session(session_id: str = Body()) -> dict:
 
 @agents.router.post("/resume_session")
 async def resume_session(session_id: str = Body()) -> dict:
+    debug("resume_session id=%s", session_id)
     if session_id in SESSIONS:
-        return {"session": SESSIONS[session_id].model_dump(mode="json")}
+        return {"session": SESSIONS[session_id].snapshot().model_dump(mode="json")}
     agent: Optional[Agent] = AGENT_STORE.load_or_none(session_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Session not found in history")
@@ -436,11 +485,14 @@ async def duplicate_session(session_id: str = Body()) -> dict:
 
 @agents.router.get("/get_history")
 async def get_history(
-    q: str = Body(default=""),
-    limit: int = Body(default=20),
-    offset: int = Body(default=0),
+    q: str = "",
+    limit: int = 20,
+    offset: int = 0,
+    dashboard_id: str = "",
 ) -> dict:
     all_agents: List[Agent] = AGENT_STORE.load_all()
+    if dashboard_id:
+        all_agents = [a for a in all_agents if a.dashboard_id == dashboard_id]
     all_agents.sort(
         key=lambda a: a.messages.messages[-1].timestamp if a.messages.messages else datetime.min,
         reverse=True,
@@ -455,12 +507,23 @@ async def get_history(
                 continue
         msgs = agent.messages.messages
         closed_at: str = msgs[-1].timestamp.isoformat() if msgs else ""
+        created_at: str = msgs[0].timestamp.isoformat() if msgs else ""
+        # Generate name from first user message or use default
+        name: str = "Chat"
+        for m in msgs:
+            if m.role == "user" and isinstance(m.content, str):
+                name = m.content[:50] + ("..." if len(m.content) > 50 else "")
+                break
         history.append({
             "id": agent.session_id,
+            "name": name,
             "status": agent.status,
             "model": agent.model,
             "mode": agent.mode,
+            "created_at": created_at,
             "closed_at": closed_at,
+            "cost_usd": 0,  # TODO: track cost
+            "dashboard_id": agent.dashboard_id,
         })
 
     total: int = len(history)

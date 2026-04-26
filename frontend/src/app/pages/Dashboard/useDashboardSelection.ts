@@ -1,0 +1,264 @@
+import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
+import type { CardPosition, ViewCardPosition, BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
+
+export type CardType = 'agent' | 'view' | 'browser';
+
+export interface SelectedCard {
+  id: string;
+  type: CardType;
+}
+
+export interface MarqueeRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface ScreenToCanvas {
+  panX: number;
+  panY: number;
+  zoom: number;
+  viewportRef: RefObject<HTMLDivElement | null>;
+}
+
+const DRAG_THRESHOLD = 4;
+
+function rectsIntersect(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+export function useDashboardSelection(
+  canvas: ScreenToCanvas,
+  cards: Record<string, CardPosition>,
+  viewCards: Record<string, ViewCardPosition>,
+  browserCards: Record<string, BrowserCardPosition> = {},
+) {
+  const [selectedIds, setSelectedIds] = useState<Map<string, CardType>>(new Map());
+  const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
+
+  const marqueeOriginRef = useRef<{ screenX: number; screenY: number } | null>(null);
+  const isDraggingMarqueeRef = useRef(false);
+  const shiftHeldRef = useRef(false);
+  const selectionBeforeMarqueeRef = useRef<Map<string, CardType>>(new Map());
+
+  const screenToCanvas = useCallback(
+    (screenX: number, screenY: number) => {
+      const vp = canvas.viewportRef.current;
+      if (!vp) return { x: 0, y: 0 };
+      const rect = vp.getBoundingClientRect();
+      return {
+        x: (screenX - rect.left - canvas.panX) / canvas.zoom,
+        y: (screenY - rect.top - canvas.panY) / canvas.zoom,
+      };
+    },
+    [canvas.panX, canvas.panY, canvas.zoom, canvas.viewportRef],
+  );
+
+  const isSelected = useCallback((id: string) => selectedIds.has(id), [selectedIds]);
+
+  const deselectAll = useCallback(() => setSelectedIds(new Map()), []);
+
+  const selectCard = useCallback(
+    (id: string, type: CardType, shiftKey: boolean) => {
+      setSelectedIds((prev) => {
+        if (shiftKey) {
+          const next = new Map(prev);
+          if (next.has(id)) {
+            next.delete(id);
+          } else {
+            next.set(id, type);
+          }
+          return next;
+        }
+        if (prev.has(id)) {
+          return new Map();
+        }
+        return prev;
+      });
+    },
+    [],
+  );
+
+  const selectedArray = useCallback((): SelectedCard[] => {
+    return Array.from(selectedIds.entries()).map(([id, type]) => ({ id, type }));
+  }, [selectedIds]);
+
+  const computeMarqueeSelection = useCallback(
+    (rect: MarqueeRect, shiftKey: boolean) => {
+      const intersecting = new Map<string, CardType>();
+
+      for (const card of Object.values(cards)) {
+        if (
+          rectsIntersect(rect, {
+            x: card.x,
+            y: card.y,
+            width: card.width,
+            height: card.height,
+          })
+        ) {
+          intersecting.set(card.session_id, 'agent');
+        }
+      }
+
+      for (const vc of Object.values(viewCards)) {
+        if (
+          rectsIntersect(rect, {
+            x: vc.x,
+            y: vc.y,
+            width: vc.width,
+            height: vc.height,
+          })
+        ) {
+          intersecting.set(vc.output_id, 'view');
+        }
+      }
+
+      for (const bc of Object.values(browserCards)) {
+        if (
+          rectsIntersect(rect, {
+            x: bc.x,
+            y: bc.y,
+            width: bc.width,
+            height: bc.height,
+          })
+        ) {
+          intersecting.set(bc.browser_id, 'browser');
+        }
+      }
+
+      if (shiftKey) {
+        const base = selectionBeforeMarqueeRef.current;
+        const next = new Map(base);
+        for (const [id, type] of intersecting) {
+          if (next.has(id)) {
+            next.delete(id);
+          } else {
+            next.set(id, type);
+          }
+        }
+        return next;
+      }
+
+      return intersecting;
+    },
+    [cards, viewCards, browserCards],
+  );
+
+  const handleCanvasMouseDown = useCallback(
+    (e: MouseEvent) => {
+      if (e.button !== 0 && e.button !== 2) return;
+
+      marqueeOriginRef.current = { screenX: e.clientX, screenY: e.clientY };
+      isDraggingMarqueeRef.current = false;
+      shiftHeldRef.current = e.shiftKey;
+      selectionBeforeMarqueeRef.current = new Map(selectedIds);
+    },
+    [selectedIds],
+  );
+
+  const handleCanvasMouseMove = useCallback(
+    (e: MouseEvent) => {
+      const origin = marqueeOriginRef.current;
+      if (!origin) return;
+
+      const dx = e.clientX - origin.screenX;
+      const dy = e.clientY - origin.screenY;
+
+      if (!isDraggingMarqueeRef.current) {
+        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+        isDraggingMarqueeRef.current = true;
+        document.body.style.userSelect = 'none';
+        // Disable pointer events on browser webviews/iframes for the
+        // duration of the drag so the cursor passes through them.
+        document.body.classList.add('dashboard-marquee-active');
+      }
+
+      const start = screenToCanvas(origin.screenX, origin.screenY);
+      const end = screenToCanvas(e.clientX, e.clientY);
+
+      const rect: MarqueeRect = {
+        x: Math.min(start.x, end.x),
+        y: Math.min(start.y, end.y),
+        width: Math.abs(end.x - start.x),
+        height: Math.abs(end.y - start.y),
+      };
+
+      setMarquee(rect);
+      setSelectedIds(computeMarqueeSelection(rect, shiftHeldRef.current));
+    },
+    [screenToCanvas, computeMarqueeSelection],
+  );
+
+  const handleCanvasMouseUp = useCallback(
+    (e: MouseEvent) => {
+      const origin = marqueeOriginRef.current;
+      if (!origin) return;
+
+      if (!isDraggingMarqueeRef.current) {
+        if (!e.shiftKey) {
+          deselectAll();
+        }
+      }
+
+      marqueeOriginRef.current = null;
+      isDraggingMarqueeRef.current = false;
+      setMarquee(null);
+      document.body.style.userSelect = '';
+      document.body.classList.remove('dashboard-marquee-active');
+    },
+    [deselectAll],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        deselectAll();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [deselectAll]);
+
+  // Inject (once) a global CSS rule that makes browser webviews and iframes
+  // transparent to mouse events while a marquee drag is active. Without this,
+  // the Electron <webview> hit-tests the cursor at the OS level — when the
+  // cursor lands on an interactable element inside the browser (button,
+  // link, text), the webview steals the cursor and the marquee drag visually
+  // freezes until the cursor escapes. Setting `pointer-events: none` makes
+  // the cursor pass straight through, so the dashboard's mousemove handler
+  // continues to fire and the marquee keeps growing smoothly.
+  useEffect(() => {
+    const id = 'dashboard-marquee-style';
+    if (document.getElementById(id)) return;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = `
+      body.dashboard-marquee-active webview,
+      body.dashboard-marquee-active iframe {
+        pointer-events: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
+  return {
+    selectedIds,
+    selectedArray,
+    marquee,
+    isSelected,
+    selectCard,
+    deselectAll,
+    handleCanvasMouseDown,
+    handleCanvasMouseMove,
+    handleCanvasMouseUp,
+  };
+}

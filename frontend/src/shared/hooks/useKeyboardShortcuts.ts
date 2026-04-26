@@ -1,8 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { setActiveSession } from '@/shared/state/agentsSlice';
-import { HANDLE_APPROVAL } from '@/shared/backend-bridge/apps/agents';
+import { handleApproval, setActiveSession } from '@/shared/state/agentsSlice';
 
 export function useKeyboardShortcuts() {
   const navigate = useNavigate();
@@ -23,10 +22,11 @@ export function useKeyboardShortcuts() {
         navigate('/');
         return;
       }
+
       if (e.key === 'A' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
         for (const session of Object.values(sessions)) {
           for (const req of session.pending_approvals) {
-            dispatch(HANDLE_APPROVAL({ requestId: req.id, behavior: 'allow' }));
+            dispatch(handleApproval({ requestId: req.id, behavior: 'allow' }));
           }
         }
         return;
@@ -35,7 +35,7 @@ export function useKeyboardShortcuts() {
       if (e.key === 'D' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
         for (const session of Object.values(sessions)) {
           for (const req of session.pending_approvals) {
-            dispatch(HANDLE_APPROVAL({ requestId: req.id, behavior: 'deny' }));
+            dispatch(handleApproval({ requestId: req.id, behavior: 'deny' }));
           }
         }
         return;

@@ -37,7 +37,15 @@ BACKEND_PORT=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1], enco
 # --- Start the backend server ---
 echo "Starting backend server on http://0.0.0.0:${BACKEND_PORT} ..."
 cd "$PROJECT_ROOT_ABSPATH"
+
+# Windows needs winloop for subprocess support with --reload
+if [[ "$IS_WINDOWS" == "true" ]]; then
+    LOOP_ARG="--loop winloop:new_event_loop"
+else
+    LOOP_ARG=""
+fi
+
 WATCHFILES_FORCE_POLLING=true "$UV_BIN" run --project "$BACKEND_DIR_ABSPATH" python -m uvicorn backend.main:app \
     --host 0.0.0.0 --port "$BACKEND_PORT" --reload \
     --reload-dir "$BACKEND_DIR_ABSPATH" \
-    --reload-exclude '*.pyc'
+    --reload-exclude '*.pyc' $LOOP_ARG

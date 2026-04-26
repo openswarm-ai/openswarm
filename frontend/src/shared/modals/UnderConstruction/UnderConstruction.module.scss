@@ -1,0 +1,28 @@
+.under_construction_overlay {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    // z-index: 1000;
+    text-align: center;
+    font-family: Arial, sans-serif;
+    color: white;
+    // box-sizing: border-box;
+}
+
+.under_construction_overlay img {
+    width: 100px;
+    height: 100px;
+}
+
+.under_construction_overlay h2 {
+    font-size: 24px;
+    margin-top: 20px;
+}
+
+.under_construction_overlay p {
+    font-size: 18px;
+}

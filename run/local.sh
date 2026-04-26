@@ -161,6 +161,19 @@ if (( elapsed >= MAX_WAIT )); then
 fi
 
 # --- Start frontend ---
+# Reject port conflicts early: a generic curl to :3000 is not enough — anything
+# listening there makes curl succeed, then our new webpack fails with EADDRINUSE.
+if HTTP_BODY=$(curl -fsS --connect-timeout 1 "http://127.0.0.1:${FRONTEND_PORT}/" 2>/dev/null); then
+    if echo "$HTTP_BODY" | grep -qF 'Open Swarm'; then
+        echo -e "${RED}${BOLD}Port ${FRONTEND_PORT} is already serving this app (likely a leftover dev server).${RESET}"
+        echo -e "${RED}Stop the old process (e.g. previous run/local.sh) or free the port, then try again.${RESET}"
+        exit 1
+    fi
+    echo -e "${RED}${BOLD}Port ${FRONTEND_PORT} responds to HTTP but is not this project's dev server.${RESET}"
+    echo -e "${RED}Free the port or change frontend.dev in ports.config.json.${RESET}"
+    exit 1
+fi
+
 echo -e "${GREEN}${BOLD}[frontend]${RESET} Starting frontend dev server..."
 bash "$PROJECT_ROOT/frontend/run.sh" > >(
     while IFS= read -r line; do
@@ -175,7 +188,8 @@ echo -e "${YELLOW}${BOLD}Waiting for frontend (http://localhost:${FRONTEND_PORT}
 FRONTEND_MAX_WAIT=60
 frontend_elapsed=0
 while (( frontend_elapsed < FRONTEND_MAX_WAIT )); do
-    if curl -s -o /dev/null --connect-timeout 1 "http://localhost:${FRONTEND_PORT}/" 2>/dev/null; then
+    if HTTP_BODY=$(curl -fsS --connect-timeout 1 "http://127.0.0.1:${FRONTEND_PORT}/" 2>/dev/null) \
+        && echo "$HTTP_BODY" | grep -qF 'Open Swarm'; then
         echo -e "${GREEN}${BOLD}Frontend is ready!${RESET}"
         break
     fi
