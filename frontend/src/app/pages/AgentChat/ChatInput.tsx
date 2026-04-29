@@ -46,15 +46,19 @@ async function handleSlashCommand(cmd: string, sessionId: string): Promise<boole
     window.dispatchEvent(new CustomEvent('openswarm:context-drawer', { detail: { sessionId, open: true } }));
     return true;
   }
+  // Note: API_BASE already ends in `/api`, so don't double it up — the
+  // /compact and /clear handlers in main.py are mounted at the absolute
+  // path `/api/agents/sessions/{id}/compact` (not under the `agents`
+  // SubApp), so the request URL is `${API_BASE}/agents/...`.
   if (cmd === '/compact') {
     try {
-      await fetch(`${API_BASE}/api/agents/sessions/${sessionId}/compact`, { method: 'POST', headers });
+      await fetch(`${API_BASE}/agents/sessions/${sessionId}/compact`, { method: 'POST', headers });
     } catch { /* errors flow through context_status WS event */ }
     return true;
   }
   if (cmd === '/clear') {
     try {
-      await fetch(`${API_BASE}/api/agents/sessions/${sessionId}/clear`, { method: 'POST', headers });
+      await fetch(`${API_BASE}/agents/sessions/${sessionId}/clear`, { method: 'POST', headers });
     } catch { /* same */ }
     return true;
   }
@@ -72,6 +76,7 @@ import {
 } from '@/app/components/richEditorUtils';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchModes } from '@/shared/state/modesSlice';
+import { clearSessionMessages } from '@/shared/state/agentsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 export interface AttachedImage {
@@ -595,6 +600,22 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
       e.preventDefault();
       return;
     }
+    // Cmd/Ctrl+L → clear the chat (matches Claude Code's convention).
+    // Empties the editor + visible transcript, and resets the SDK
+    // session id server-side so the next message starts in fresh context.
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l' && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      if (sessionId) {
+        handleSlashCommand('/clear', sessionId).catch(() => { /* surfaced via context_status */ });
+        dispatch(clearSessionMessages(sessionId));
+      }
+      const editor = editorRef.current;
+      if (editor) {
+        editor.innerHTML = '';
+        updateHasContent();
+      }
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey && !autoRunMode) {
       e.preventDefault();
       handleSend();
@@ -982,6 +1003,12 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
           ref={editorRef}
           contentEditable={!disabled}
           suppressContentEditableWarning
+          spellCheck
+          // autoCorrect/autoCapitalize are no-ops on Chromium but harmless,
+          // and make the input behave correctly if anyone runs the web build
+          // on iOS Safari.
+          autoCorrect="on"
+          autoCapitalize="sentences"
           onInput={handleInput}
           onClick={handleEditorClick}
           onKeyDown={handleKeyDown}
@@ -989,14 +1016,14 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
           style={{
             width: '100%',
             minHeight: '1.5em',
-            maxHeight: 200,
+            maxHeight: 220,
             overflowY: 'auto',
             background: 'transparent',
             border: 'none',
             outline: 'none',
             color: c.text.primary,
-            fontSize: '0.875rem',
-            lineHeight: '1.5',
+            fontSize: '0.95rem',
+            lineHeight: '1.55',
             fontFamily: 'inherit',
             wordBreak: 'break-word',
             whiteSpace: 'pre-wrap',
@@ -1011,7 +1038,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
               right: 0,
               padding: `${hasAttachments ? 4 : 10}px 12px`,
               color: c.text.tertiary,
-              fontSize: '0.875rem',
+              fontSize: '0.95rem',
               lineHeight: '1.5',
               fontFamily: 'inherit',
               pointerEvents: 'none',
@@ -1051,7 +1078,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
           }}
         >
           {modeConf.icon}
-          <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'inherit', lineHeight: 1 }}>
+          <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: 'inherit', lineHeight: 1 }}>
             {modeConf.label}
           </Typography>
           <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
@@ -1064,6 +1091,8 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
           anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
           transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
           slotProps={{ paper: menuPaperProps }}
+          autoFocus
+          MenuListProps={{ autoFocusItem: true, disablePadding: false }}
         >
           {modesArr.map((m) => {
             const icon = ICON_MAP[m.icon] || ICON_MAP.smart_toy;
@@ -1104,7 +1133,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
             transition: 'background 0.15s',
           }}
         >
-          <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
+          <Typography sx={{ fontSize: '0.82rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
             {(() => { const m = allModelOptions.flat.find((m) => m.value === model); return m ? m.label : model; })()}
           </Typography>
           <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
@@ -1117,6 +1146,8 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
           anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
           transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
           slotProps={{ paper: menuPaperProps }}
+          autoFocus
+          MenuListProps={{ autoFocusItem: true }}
         >
           {Object.entries(allModelOptions.grouped).map(([prov, models]) => {
             // Non-interactive provider headers followed by their models.
@@ -1225,11 +1256,11 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
                   transition: 'background 0.15s',
                 }}
               >
-                <PsychologyOutlinedIcon sx={{ fontSize: 13, opacity: 0.7 }} />
-                <Typography sx={{ fontSize: '0.72rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
+                <PsychologyOutlinedIcon sx={{ fontSize: 14, opacity: 0.7 }} />
+                <Typography sx={{ fontSize: '0.8rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
                   {current.label}
                 </Typography>
-                <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
+                <KeyboardArrowDownIcon sx={{ fontSize: 15, color: 'inherit', opacity: 0.7 }} />
               </Box>
               <Menu
                 anchorEl={thinkingAnchor}
@@ -1238,6 +1269,8 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
                 anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
                 transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
                 slotProps={{ paper: menuPaperProps }}
+                autoFocus
+                MenuListProps={{ autoFocusItem: true }}
               >
                 <MenuItem disabled sx={{ opacity: '1 !important', py: 0.5, px: 1.5, minHeight: 'auto', pointerEvents: 'none' }}>
                   <Typography sx={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: c.text.tertiary }}>

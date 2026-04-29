@@ -40,6 +40,9 @@ import {
   setGlowingAgentCard,
   clearGlowingAgentCard,
   clearPendingFocusBrowserId,
+  addNote,
+  removeNote,
+  clearPendingFocusNoteId,
   DEFAULT_CARD_W,
   DEFAULT_CARD_H,
   EXPANDED_CARD_MIN_H,
@@ -53,6 +56,7 @@ import { clearPendingBrowserUrl, clearPendingFocusAgentId } from '@/shared/state
 import AgentCard from './AgentCard';
 import DashboardViewCard from './DashboardViewCard';
 import BrowserCard from './BrowserCard';
+import NoteCard from './NoteCard';
 import CanvasControls from './CanvasControls';
 import CardSearchPalette from './CardSearchPalette';
 import DirectionHints from './DirectionHints';
@@ -103,6 +107,8 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const cards = useAppSelector((state) => state.dashboardLayout.cards);
   const viewCards = useAppSelector((state) => state.dashboardLayout.viewCards);
   const browserCards = useAppSelector((state) => state.dashboardLayout.browserCards);
+  const notes = useAppSelector((state) => state.dashboardLayout.notes);
+  const pendingFocusNoteId = useAppSelector((state) => state.dashboardLayout.pendingFocusNoteId);
   const layoutInitialized = useAppSelector((state) => state.dashboardLayout.initialized);
   const persistedExpandedSessionIds = useAppSelector((state) => state.dashboardLayout.persistedExpandedSessionIds);
   const zoomSensitivity = useAppSelector((state) => state.settings.data.zoom_sensitivity);
@@ -138,6 +144,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     cards,
     viewCards,
     browserCards,
+    notes,
   );
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -319,6 +326,10 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       const bc = layoutState.browserCards[id];
       if (!bc) return undefined;
       return { x: bc.x, y: bc.y, width: bc.width, height: bc.height };
+    } else if (type === 'note') {
+      const n = layoutState.notes[id];
+      if (!n) return undefined;
+      return { x: n.x, y: n.y, width: n.width, height: n.height };
     }
     return undefined;
   }, []);
@@ -714,7 +725,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       skipInitialSave.current = false;
       return;
     }
-    const payload = { dashboardId, cards, viewCards, browserCards, expandedSessionIds };
+    const payload = { dashboardId, cards, viewCards, browserCards, notes, expandedSessionIds };
     pendingSaveRef.current = payload;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -723,7 +734,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       saveTimerRef.current = null;
       captureNow();
     }, 500);
-  }, [isActive, cards, viewCards, browserCards, expandedSessionIds, layoutInitialized, dashboardId, dispatch, captureNow]);
+  }, [isActive, cards, viewCards, browserCards, notes, expandedSessionIds, layoutInitialized, dashboardId, dispatch, captureNow]);
 
   useEffect(() => {
     return () => {
@@ -791,6 +802,8 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
           dispatch(removeViewCard(id));
         } else if (type === 'browser') {
           dispatch(removeBrowserCard(id));
+        } else if (type === 'note') {
+          dispatch(removeNote(id));
         }
       }
       selection.deselectAll();
@@ -1265,6 +1278,28 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       }
     }, 200);
   }, [dispatch, browserHomepage, expandedSessionIds, canvas.actions, handleHighlightCard]);
+
+  const handleAddNote = useCallback(() => {
+    trackEvent('dashboard.note_added');
+    const prevIds = new Set(Object.keys(store.getState().dashboardLayout.notes));
+    dispatch(addNote({ expandedSessionIds }));
+    setTimeout(() => {
+      const allNotes = store.getState().dashboardLayout.notes;
+      const newId = Object.keys(allNotes).find((id) => !prevIds.has(id));
+      if (newId) {
+        const note = allNotes[newId];
+        canvas.actions.fitToCards([{ x: note.x, y: note.y, width: note.width, height: note.height }], 1.15, true);
+        handleHighlightCard(newId);
+      }
+    }, 200);
+  }, [dispatch, expandedSessionIds, canvas.actions, handleHighlightCard]);
+
+  // Auto-clear pendingFocusNoteId after the note has had a chance to mount + autofocus.
+  useEffect(() => {
+    if (!pendingFocusNoteId) return;
+    const t = setTimeout(() => dispatch(clearPendingFocusNoteId()), 800);
+    return () => clearTimeout(t);
+  }, [pendingFocusNoteId, dispatch]);
 
   const handleHistoryResume = useCallback((sessionId: string) => {
     dispatch(resumeSession({ sessionId })).then((action) => {
@@ -1937,6 +1972,32 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                 onBringToFront={handleBringToFront}
               />
             ))}
+            {Object.values(notes).map((n) => (
+              <NoteCard
+                key={`note-${n.note_id}`}
+                noteId={n.note_id}
+                cardX={n.x}
+                cardY={n.y}
+                cardWidth={n.width}
+                cardHeight={n.height}
+                cardZOrder={n.zOrder ?? 0}
+                zoom={canvas.zoom}
+                panX={canvas.panX}
+                panY={canvas.panY}
+                cmdHeld={canvas.cmdHeld}
+                content={n.content}
+                color={n.color}
+                isSelected={selection.isSelected(n.note_id)}
+                isHighlighted={highlightedCardId === n.note_id}
+                multiDragDelta={multiDragDelta}
+                autoFocus={pendingFocusNoteId === n.note_id}
+                onCardSelect={handleCardSelect}
+                onDragStart={handleCardDragStart}
+                onDragMove={handleCardDragMove}
+                onDragEnd={handleCardDragEnd}
+                onBringToFront={handleBringToFront}
+              />
+            ))}
             {/* Marquee selection rectangle */}
             {selection.marquee && (
               <div
@@ -1969,6 +2030,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
           onAddView={handleAddView}
           onHistoryResume={handleHistoryResume}
           onAddBrowser={handleAddBrowser}
+          onAddNote={handleAddNote}
           dashboardId={dashboardId}
           newAgentBounce={newAgentBounce}
           onNewAgentBounceEnd={() => setNewAgentBounce(false)}

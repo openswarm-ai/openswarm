@@ -56,10 +56,27 @@ export interface BrowserCardPosition {
   spawned_by?: string | null;
 }
 
+export type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'gray';
+
+export interface NotePosition {
+  note_id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  content: string;
+  color: NoteColor;
+  zOrder: number;
+}
+
+export const DEFAULT_NOTE_W = 240;
+export const DEFAULT_NOTE_H = 200;
+
 export interface DashboardLayoutState {
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
+  notes: Record<string, NotePosition>;
   closedCardPositions: Record<string, CardPosition>;
   glowingBrowserCards: Record<string, { sourceId: string; fading: boolean; label?: string }>;
   glowingAgentCards: Record<string, { sourceId: string; fading: boolean; sourceYRatio?: number; label?: string }>;
@@ -72,12 +89,14 @@ export interface DashboardLayoutState {
   // to the new card's id. Dashboard.tsx watches it and pans/zooms the canvas
   // to center on the new card, then dispatches clearPendingFocusBrowserId.
   pendingFocusBrowserId: string | null;
+  pendingFocusNoteId: string | null;
 }
 
 const initialState: DashboardLayoutState = {
   cards: {},
   viewCards: {},
   browserCards: {},
+  notes: {},
   closedCardPositions: {},
   glowingBrowserCards: {},
   glowingAgentCards: {},
@@ -86,12 +105,14 @@ const initialState: DashboardLayoutState = {
   loading: false,
   initialized: false,
   pendingFocusBrowserId: null,
+  pendingFocusNoteId: null,
 };
 
 interface LayoutPayload {
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
+  notes: Record<string, NotePosition>;
   expandedSessionIds: string[];
 }
 
@@ -123,6 +144,7 @@ export const fetchLayout = createAsyncThunk(
       cards: (layout.cards ?? {}) as Record<string, CardPosition>,
       viewCards: (layout.view_cards ?? {}) as Record<string, ViewCardPosition>,
       browserCards: browserCards as Record<string, BrowserCardPosition>,
+      notes: (layout.notes ?? {}) as Record<string, NotePosition>,
       expandedSessionIds: (layout.expanded_session_ids ?? []) as string[],
     } satisfies LayoutPayload;
   },
@@ -143,6 +165,7 @@ export const saveLayout = createAsyncThunk(
           cards: payload.cards,
           view_cards: payload.viewCards,
           browser_cards: payload.browserCards,
+          notes: payload.notes,
           expanded_session_ids: payload.expandedSessionIds,
         },
       }),
@@ -177,6 +200,9 @@ function collectOccupiedRects(
   }
   for (const c of Object.values(state.browserCards)) {
     rects.push({ x: c.x, y: c.y, w: c.width, h: c.height });
+  }
+  for (const n of Object.values(state.notes)) {
+    rects.push({ x: n.x, y: n.y, w: n.width, h: n.height });
   }
   return rects;
 }
@@ -243,7 +269,7 @@ const dashboardLayoutSlice = createSlice({
 
     bringToFront(
       state,
-      action: PayloadAction<{ id: string; type: 'agent' | 'view' | 'browser' }>,
+      action: PayloadAction<{ id: string; type: 'agent' | 'view' | 'browser' | 'note' }>,
     ) {
       const { id, type } = action.payload;
       const z = state.nextZOrder++;
@@ -253,6 +279,9 @@ const dashboardLayoutSlice = createSlice({
       } else if (type === 'view') {
         const card = state.viewCards[id];
         if (card) card.zOrder = z;
+      } else if (type === 'note') {
+        const note = state.notes[id];
+        if (note) note.zOrder = z;
       } else {
         const card = state.browserCards[id];
         if (card) card.zOrder = z;
@@ -605,7 +634,7 @@ const dashboardLayoutSlice = createSlice({
     moveCards(
       state,
       action: PayloadAction<{
-        items: Array<{ id: string; type: 'agent' | 'view' | 'browser' }>;
+        items: Array<{ id: string; type: 'agent' | 'view' | 'browser' | 'note' }>;
         dx: number;
         dy: number;
       }>,
@@ -624,6 +653,12 @@ const dashboardLayoutSlice = createSlice({
             card.x += dx;
             card.y += dy;
           }
+        } else if (item.type === 'note') {
+          const note = state.notes[item.id];
+          if (note) {
+            note.x += dx;
+            note.y += dy;
+          }
         } else {
           const card = state.browserCards[item.id];
           if (card) {
@@ -632,6 +667,65 @@ const dashboardLayoutSlice = createSlice({
           }
         }
       }
+    },
+
+    addNote(
+      state,
+      action: PayloadAction<{ x?: number; y?: number; expandedSessionIds?: string[]; color?: NoteColor }>,
+    ) {
+      const id = `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      let posX: number, posY: number;
+      if (action.payload.x != null && action.payload.y != null) {
+        posX = action.payload.x;
+        posY = action.payload.y;
+      } else {
+        const rects = collectOccupiedRects(state, action.payload.expandedSessionIds);
+        const pos = findOpenGridCell(rects, DEFAULT_NOTE_W, DEFAULT_NOTE_H);
+        posX = pos.x;
+        posY = pos.y;
+      }
+      state.notes[id] = {
+        note_id: id,
+        x: posX,
+        y: posY,
+        width: DEFAULT_NOTE_W,
+        height: DEFAULT_NOTE_H,
+        content: '',
+        color: action.payload.color || 'yellow',
+        zOrder: state.nextZOrder++,
+      };
+      state.pendingFocusNoteId = id;
+    },
+
+    setNotePosition(state, action: PayloadAction<{ noteId: string; x: number; y: number }>) {
+      const n = state.notes[action.payload.noteId];
+      if (n) { n.x = action.payload.x; n.y = action.payload.y; }
+    },
+
+    setNoteSize(state, action: PayloadAction<{ noteId: string; width: number; height: number }>) {
+      const n = state.notes[action.payload.noteId];
+      if (n) {
+        n.width = Math.max(160, action.payload.width);
+        n.height = Math.max(120, action.payload.height);
+      }
+    },
+
+    updateNoteContent(state, action: PayloadAction<{ noteId: string; content: string }>) {
+      const n = state.notes[action.payload.noteId];
+      if (n) n.content = action.payload.content;
+    },
+
+    setNoteColor(state, action: PayloadAction<{ noteId: string; color: NoteColor }>) {
+      const n = state.notes[action.payload.noteId];
+      if (n) n.color = action.payload.color;
+    },
+
+    removeNote(state, action: PayloadAction<string>) {
+      delete state.notes[action.payload];
+    },
+
+    clearPendingFocusNoteId(state) {
+      state.pendingFocusNoteId = null;
     },
 
     replaceDraftId(
@@ -692,12 +786,14 @@ const dashboardLayoutSlice = createSlice({
       state.cards = {};
       state.viewCards = {};
       state.browserCards = {};
+      state.notes = {};
       state.closedCardPositions = {};
       state.glowingBrowserCards = {};
       state.glowingAgentCards = {};
       state.persistedExpandedSessionIds = [];
       state.nextZOrder = 1;
       state.initialized = false;
+      state.pendingFocusNoteId = null;
     },
 
   },
@@ -712,6 +808,7 @@ const dashboardLayoutSlice = createSlice({
         state.cards = action.payload.cards;
         state.viewCards = action.payload.viewCards;
         state.browserCards = action.payload.browserCards;
+        state.notes = action.payload.notes || {};
         state.persistedExpandedSessionIds = action.payload.expandedSessionIds;
 
         // Ensure all cards have a zOrder and compute nextZOrder from persisted data
@@ -727,6 +824,10 @@ const dashboardLayoutSlice = createSlice({
         for (const c of Object.values(state.browserCards)) {
           if (!c.zOrder) c.zOrder = 0;
           if (c.zOrder > maxZ) maxZ = c.zOrder;
+        }
+        for (const n of Object.values(state.notes)) {
+          if (!n.zOrder) n.zOrder = 0;
+          if (n.zOrder > maxZ) maxZ = n.zOrder;
         }
         state.nextZOrder = maxZ + 1;
       })
@@ -781,6 +882,13 @@ export const {
   fadeGlowingAgentCard,
   clearGlowingAgentCard,
   clearPendingFocusBrowserId,
+  addNote,
+  setNotePosition,
+  setNoteSize,
+  updateNoteContent,
+  setNoteColor,
+  removeNote,
+  clearPendingFocusNoteId,
   resetLayout,
 } = dashboardLayoutSlice.actions;
 

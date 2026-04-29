@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
-import type { CardPosition, ViewCardPosition, BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
+import type { CardPosition, ViewCardPosition, BrowserCardPosition, NotePosition } from '@/shared/state/dashboardLayoutSlice';
 
-export type CardType = 'agent' | 'view' | 'browser';
+export type CardType = 'agent' | 'view' | 'browser' | 'note';
 
 export interface SelectedCard {
   id: string;
@@ -41,6 +41,7 @@ export function useDashboardSelection(
   cards: Record<string, CardPosition>,
   viewCards: Record<string, ViewCardPosition>,
   browserCards: Record<string, BrowserCardPosition> = {},
+  notes: Record<string, NotePosition> = {},
 ) {
   const [selectedIds, setSelectedIds] = useState<Map<string, CardType>>(new Map());
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
@@ -135,6 +136,19 @@ export function useDashboardSelection(
         }
       }
 
+      for (const n of Object.values(notes)) {
+        if (
+          rectsIntersect(rect, {
+            x: n.x,
+            y: n.y,
+            width: n.width,
+            height: n.height,
+          })
+        ) {
+          intersecting.set(n.note_id, 'note');
+        }
+      }
+
       if (shiftKey) {
         const base = selectionBeforeMarqueeRef.current;
         const next = new Map(base);
@@ -150,7 +164,7 @@ export function useDashboardSelection(
 
       return intersecting;
     },
-    [cards, viewCards, browserCards],
+    [cards, viewCards, browserCards, notes],
   );
 
   const handleCanvasMouseDown = useCallback(

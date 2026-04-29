@@ -42,10 +42,21 @@ class BrowserCardPosition(BaseModel):
     spawned_by: Optional[str] = None
 
 
+class NotePosition(BaseModel):
+    note_id: str
+    x: float = 0
+    y: float = 0
+    width: float = 240
+    height: float = 200
+    content: str = ""
+    color: str = "yellow"
+
+
 class DashboardLayout(BaseModel):
     cards: dict[str, CardPosition] = Field(default_factory=dict)
     view_cards: dict[str, ViewCardPosition] = Field(default_factory=dict)
     browser_cards: dict[str, BrowserCardPosition] = Field(default_factory=dict)
+    notes: dict[str, NotePosition] = Field(default_factory=dict)
     expanded_session_ids: list[str] = Field(default_factory=list)
 
 

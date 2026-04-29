@@ -504,6 +504,13 @@ const agentsSlice = createSlice({
       state.activeSessionId = action.payload;
     },
 
+    clearSessionMessages(state, action: PayloadAction<string>) {
+      const session = state.sessions[action.payload];
+      if (session) {
+        session.messages = [];
+      }
+    },
+
     toggleExpandSession(state, action: PayloadAction<string>) {
       const idx = state.expandedSessionIds.indexOf(action.payload);
       if (idx >= 0) {
@@ -1092,6 +1099,14 @@ const agentsSlice = createSlice({
         if (!state.expandedSessionIds.includes(session.id)) {
           state.expandedSessionIds.push(session.id);
         }
+        // Keep this session pinned across the next fetchSessions strip.
+        // Without this, an in-flight fetchSessions that returned before the
+        // resume races with the resume reducer and removes the just-resumed
+        // session (since closed/stopped sessions don't survive the strip
+        // unless they're in trackedNotificationIds, drafts, or active).
+        if (!state.trackedNotificationIds.includes(session.id)) {
+          state.trackedNotificationIds.push(session.id);
+        }
       })
       .addCase(fetchSession.fulfilled, (state, action) => {
         const session = action.payload;
@@ -1138,6 +1153,7 @@ const agentsSlice = createSlice({
 export const {
   createDraftSession,
   setActiveSession,
+  clearSessionMessages,
   toggleExpandSession,
   expandSession,
   collapseSession,

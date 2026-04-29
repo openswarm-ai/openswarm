@@ -3410,10 +3410,18 @@ class AgentManager:
     async def reconcile_on_startup(self) -> None:
         """Mark any stale running sessions as stopped."""
         for sid, data in _load_all_session_data():
+            dirty = False
             if data.get("status") in ("running", "waiting_approval"):
                 data["status"] = "stopped"
-                _save_session(sid, data)
+                dirty = True
                 logger.info(f"Marked stale session {sid} as stopped")
+            # Mode migration: Chat was merged into Ask. Rewrite mode="chat"
+            # so old sessions keep loading after the chat.json file is gone.
+            if data.get("mode") == "chat":
+                data["mode"] = "ask"
+                dirty = True
+            if dirty:
+                _save_session(sid, data)
 
     async def persist_all_sessions(self) -> None:
         """Flush every in-memory session to JSON files (for graceful shutdown)."""

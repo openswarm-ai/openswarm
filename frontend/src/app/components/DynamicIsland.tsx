@@ -19,12 +19,16 @@ import {
   stopAgent,
   dismissAgentNotification,
   dismissAllFinishedNotifications,
+  clearSessionMessages,
   ApprovalRequest,
   AgentSession,
   HistorySession,
 } from '@/shared/state/agentsSlice';
+import { API_BASE, getAuthToken } from '@/shared/config';
+import { store } from '@/shared/state/store';
 import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import ApprovalBar, { BatchApprovalBar, parseMcpToolName, useMcpToolMeta, getToolIcon } from '@/app/pages/AgentChat/ApprovalBar';
+import GlobalSearchPalette from '@/app/components/GlobalSearchPalette';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 // ---------------------------------------------------------------------------
@@ -201,6 +205,73 @@ const DynamicIsland: React.FC = () => {
   const trackedIds = useAppSelector((state) => state.agents.trackedNotificationIds);
 
   const [userExpanded, setUserExpanded] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Global Cmd/Ctrl+K — open search palette from anywhere.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // Global Cmd/Ctrl+L — clear the chat (Claude Code convention). Resolves
+  // the target session in priority order:
+  //   1) the session whose chat input currently has focus (when typing inside
+  //      a contentEditable card body, the data-session-id climbs the DOM)
+  //   2) state.agents.activeSessionId (last touched chat)
+  //   3) a single visible session if there's exactly one
+  // No-op if none of those resolve. Hits the same /clear endpoint as the
+  // /clear slash command and dispatches clearSessionMessages so the visible
+  // transcript matches the now-empty SDK context.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.shiftKey || e.altKey) return;
+      if (e.key.toLowerCase() !== 'l') return;
+
+      // Walk up from activeElement looking for an agent-card marker.
+      // Falls back to Redux's activeSessionId, then to the only session
+      // if it's unambiguous.
+      let target: string | null = null;
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae) {
+        let el: HTMLElement | null = ae;
+        while (el) {
+          if (el.getAttribute?.('data-select-type') === 'agent-card') {
+            const sid = el.getAttribute('data-select-id');
+            if (sid) { target = sid; break; }
+          }
+          el = el.parentElement;
+        }
+      }
+      const state = store.getState();
+      if (!target) {
+        const activeId = state.agents.activeSessionId;
+        if (activeId) target = activeId;
+      }
+      if (!target) {
+        const ids = Object.keys(state.agents.sessions);
+        if (ids.length === 1) target = ids[0];
+      }
+      if (!target) return;
+
+      e.preventDefault();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      try {
+        const tok = getAuthToken();
+        if (tok) headers['Authorization'] = `Bearer ${tok}`;
+      } catch { /* unauthenticated dev mode */ }
+      fetch(`${API_BASE}/agents/sessions/${target}/clear`, { method: 'POST', headers }).catch(() => {});
+      dispatch(clearSessionMessages(target));
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [dispatch]);
 
   // ---- Derived data ----
 
@@ -460,7 +531,7 @@ const DynamicIsland: React.FC = () => {
       >
         <AnimatePresence mode="wait">
           {islandState === 'idle' && (
-            <IdlePill key="idle" c={c} />
+            <IdlePill key="idle" c={c} onClick={() => setSearchOpen(true)} />
           )}
           {islandState === 'compact' && (
             <CompactPill
@@ -505,23 +576,28 @@ const DynamicIsland: React.FC = () => {
         </AnimatePresence>
       </motion.div>
     </motion.div>
+    <GlobalSearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </>
   );
 };
 
 // ---------------------------------------------------------------------------
-// Idle pill — disabled search bar
+// Idle pill — clickable search bar (opens GlobalSearchPalette).
 // ---------------------------------------------------------------------------
 
-const IdlePill: React.FC<{ c: ReturnType<typeof useClaudeTokens> }> = ({ c }) => (
+const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+const SEARCH_HOTKEY = isMac ? '⌘K' : 'Ctrl+K';
+
+const IdlePill: React.FC<{ c: ReturnType<typeof useClaudeTokens>; onClick: () => void }> = ({ c, onClick }) => (
   <motion.div
     initial={{ opacity: 0, scale: 0.92 }}
     animate={{ opacity: 1, scale: 1 }}
     exit={{ opacity: 0, scale: 0.92 }}
     transition={{ duration: 0.2 }}
   >
-    <Tooltip title="Coming soon" arrow placement="bottom">
+    <Tooltip title={`Search (${SEARCH_HOTKEY})`} arrow placement="bottom">
       <Box
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
         sx={{
           display: 'flex',
           alignItems: 'center',
@@ -529,20 +605,34 @@ const IdlePill: React.FC<{ c: ReturnType<typeof useClaudeTokens> }> = ({ c }) =>
           px: 1.25,
           height: 24,
           userSelect: 'none',
-          cursor: 'default',
+          cursor: 'pointer',
+          transition: 'background 0.15s',
+          '&:hover': { bgcolor: 'rgba(255,255,255,0.04)' },
         }}
       >
-        <SearchIcon sx={{ fontSize: 13, color: c.text.ghost, flexShrink: 0 }} />
+        <SearchIcon sx={{ fontSize: 13, color: c.text.muted, flexShrink: 0 }} />
         <Typography
           sx={{
-            color: c.text.ghost,
+            color: c.text.muted,
             fontSize: '0.66rem',
             fontWeight: 400,
             lineHeight: 1,
             whiteSpace: 'nowrap',
+            flex: 1,
           }}
         >
-          Search...
+          Search…
+        </Typography>
+        <Typography
+          sx={{
+            color: c.text.ghost,
+            fontSize: '0.6rem',
+            fontFamily: c.font.mono,
+            lineHeight: 1,
+            opacity: 0.7,
+          }}
+        >
+          {SEARCH_HOTKEY}
         </Typography>
       </Box>
     </Tooltip>

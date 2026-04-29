@@ -14,6 +14,21 @@ from backend.config.paths import MODES_DIR as DATA_DIR
 @asynccontextmanager
 async def modes_lifespan():
     os.makedirs(DATA_DIR, exist_ok=True)
+    # One-time migration: Chat was merged into Ask. Remove a stale built-in
+    # chat.json if it still has its is_builtin=True signature so users don't
+    # see two near-identical modes in the picker. Leave alone if a user has
+    # diverged it (we don't want to wipe customizations).
+    chat_path = os.path.join(DATA_DIR, "chat.json")
+    if os.path.exists(chat_path):
+        try:
+            import json as _json
+            with open(chat_path) as _f:
+                _data = _json.load(_f)
+            if _data.get("is_builtin") is True and _data.get("id") == "chat":
+                os.remove(chat_path)
+                logger.info("Removed deprecated built-in chat.json (merged into ask)")
+        except Exception:
+            logger.exception("Failed to inspect chat.json during migration")
     for builtin in BUILTIN_MODES:
         path = os.path.join(DATA_DIR, f"{builtin.id}.json")
         if not os.path.exists(path):

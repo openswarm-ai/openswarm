@@ -39,13 +39,14 @@ interface Props {
   onAddView: (outputId: string) => void;
   onHistoryResume: (sessionId: string) => void;
   onAddBrowser: () => void;
+  onAddNote: () => void;
   dashboardId?: string;
   newAgentBounce?: boolean;
   onNewAgentBounceEnd?: () => void;
 }
 
 const TOOLBAR_OWNER_ID = '__toolbar__';
-const BTN = 40;
+const BTN = 44;
 
 const WarmTooltip = styled(
   ({ className, ...props }: React.ComponentProps<typeof Tooltip> & { className?: string }) => (
@@ -85,7 +86,7 @@ function formatRelativeTime(dateStr: string | null): string {
 }
 
 const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
-  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, dashboardId, newAgentBounce, onNewAgentBounceEnd }, ref) => {
+  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, onAddNote, dashboardId, newAgentBounce, onNewAgentBounceEnd }, ref) => {
     const c = useClaudeTokens();
     const dispatch = useAppDispatch();
     const elementSelection = useElementSelection();
@@ -358,9 +359,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       }
     }, [handleHistoryLoadMore]);
 
-    const placeholderItems = [
-      { icon: StickyNote2OutlinedIcon, label: 'Add Notes', sub: 'Coming soon' },
-    ];
+    const placeholderItems: Array<{ icon: typeof StickyNote2OutlinedIcon; label: string; sub: string }> = [];
 
     return (
       <MotionBox
@@ -374,14 +373,14 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           border: `1px solid ${c.border.subtle}`,
           borderRadius: `${c.radius.xl}px`,
           boxShadow: c.shadow.lg,
-          padding: isExpanded ? '4px' : '6px',
+          padding: isExpanded ? '6px' : '5px',
           userSelect: 'none' as const,
           overflow: inputOpen || newAgentBounce ? 'visible' : 'hidden',
-          width: viewPickerOpen ? 480 : isExpanded ? 360 : undefined,
+          width: viewPickerOpen ? 580 : isExpanded ? 540 : undefined,
         }}
       >
         {inputOpen ? (
-          <div style={{ width: '100%', minHeight: 44, paddingBottom: 0, marginBottom: -4 }}>
+          <div style={{ width: '100%', minHeight: 56, paddingBottom: 0, marginBottom: -4 }}>
             <ChatInput
               onSend={handleSend}
               mode={mode}
@@ -749,6 +748,40 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 }}
               >
                 <HistoryRoundedIcon sx={{ fontSize: 22 }} />
+              </Box>
+            </WarmTooltip>
+
+            <WarmTooltip
+              tokens={c}
+              placement="top"
+              arrow
+              enterDelay={200}
+              title={
+                <Box sx={{ textAlign: 'center' }}>
+                  <Box sx={{ fontWeight: 600 }}>Add note</Box>
+                  <Box sx={{ opacity: 0.6, fontSize: '0.7rem', mt: '1px' }}>Sticky note on the canvas</Box>
+                </Box>
+              }
+            >
+              <Box
+                role="button"
+                aria-label="Add note"
+                tabIndex={0}
+                onClick={onAddNote}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: BTN,
+                  height: BTN,
+                  borderRadius: `${c.radius.md}px`,
+                  color: c.text.tertiary,
+                  cursor: 'pointer',
+                  transition: 'opacity 0.15s, background-color 0.15s',
+                  '&:hover': { opacity: 1, bgcolor: c.bg.secondary, color: c.accent.primary },
+                }}
+              >
+                <StickyNote2OutlinedIcon sx={{ fontSize: 22 }} />
               </Box>
             </WarmTooltip>
 

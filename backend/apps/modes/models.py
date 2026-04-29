@@ -42,26 +42,6 @@ class ModeUpdate(BaseModel):
 
 BUILTIN_MODES: list[Mode] = [
     Mode(
-        id="chat",
-        name="Chat",
-        description="Lightweight conversational mode. Minimal tools, no MCPs by default — perfect for quick greetings, questions, and ideation without spinning up the full agent.",
-        system_prompt=(
-            "You are in Chat mode — a lightweight conversational assistant. Keep "
-            "responses short and natural. You do NOT have file-editing or shell "
-            "access in this mode; if the user asks for something that requires "
-            "real work (writing code, running commands, hitting an MCP), tell "
-            "them to switch to Agent mode. If the user asks something that "
-            "requires an MCP server (email, calendar, etc.), you can use "
-            "MCPSearch and MCPActivate to bring it in — those are the only "
-            "external capabilities available to you here."
-        ),
-        tools=["AskUserQuestion", "WebFetch", "WebSearch"],
-        default_next_mode=None,
-        is_builtin=True,
-        icon="chat_bubble",
-        color="#60a5fa",
-    ),
-    Mode(
         id="agent",
         name="Agent",
         description="Full autonomous agent with read and write access to tools.",
@@ -75,9 +55,18 @@ BUILTIN_MODES: list[Mode] = [
     Mode(
         id="ask",
         name="Ask",
-        description="Answer questions about the codebase. Read-only, no edits or changes.",
-        system_prompt="Answer questions about the codebase. Do not make any edits or changes.",
-        tools=["Read", "Glob", "Grep", "AskUserQuestion"],
+        description="Read-only conversation. Browse the codebase, search the web, and discuss ideas — but no edits, shells, or file writes.",
+        system_prompt=(
+            "You are in Ask mode — a read-only assistant. Keep responses "
+            "natural and conversational. You CAN read files, search the "
+            "codebase, and search/fetch the web. You CANNOT edit files, run "
+            "shell commands, or otherwise modify anything; if the user asks "
+            "for real work (writing code, running commands), tell them to "
+            "switch to Agent mode. You may use MCPSearch and MCPActivate to "
+            "bring in additional read-only data sources (email, calendar, "
+            "etc.) when relevant."
+        ),
+        tools=["Read", "Glob", "Grep", "AskUserQuestion", "WebFetch", "WebSearch"],
         default_next_mode=None,
         is_builtin=True,
         icon="question_answer",
