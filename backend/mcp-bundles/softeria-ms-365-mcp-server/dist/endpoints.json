@@ -236,6 +236,34 @@
     "llmTip": "Deletes a message rule permanently. Use the Inbox folder ID (get it from list-mail-folders) for inbox rules."
   },
   {
+    "pathPattern": "/me/inferenceClassification/overrides",
+    "method": "get",
+    "toolName": "list-focused-inbox-overrides",
+    "scopes": ["Mail.Read"],
+    "llmTip": "Lists Focused Inbox classification overrides — explicit rules that force messages from a given sender (by SMTP address) into either the Focused or Other tab, regardless of what the Outlook ML classifier would predict. Each override has id, classifyAs ('focused' or 'other'), and senderEmailAddress {name, address}. Returns an empty collection if the user has never set an override."
+  },
+  {
+    "pathPattern": "/me/inferenceClassification/overrides",
+    "method": "post",
+    "toolName": "create-focused-inbox-override",
+    "scopes": ["Mail.ReadWrite"],
+    "llmTip": "Creates a Focused Inbox override for a sender. Body: { classifyAs: 'focused', senderEmailAddress: { name: 'Display Name', address: 'sender@example.com' } }. classifyAs must be 'focused' or 'other'. If an override already exists for that SMTP address, POST updates the existing override's name and classifyAs (use this to rename a sender). Resolve the sender's address with list-users or by reading a recent mail header — do not invent SMTP addresses."
+  },
+  {
+    "pathPattern": "/me/inferenceClassification/overrides/{inferenceClassificationOverride-id}",
+    "method": "patch",
+    "toolName": "update-focused-inbox-override",
+    "scopes": ["Mail.ReadWrite"],
+    "llmTip": "Updates the classifyAs field of an existing override. Body: { classifyAs: 'focused' } or { classifyAs: 'other' }. Per Graph API, PATCH cannot change senderEmailAddress — to change the SMTP address, delete and recreate the override. To rename the display name only, POST a new override with the same SMTP address (it will overwrite the name)."
+  },
+  {
+    "pathPattern": "/me/inferenceClassification/overrides/{inferenceClassificationOverride-id}",
+    "method": "delete",
+    "toolName": "delete-focused-inbox-override",
+    "scopes": ["Mail.ReadWrite"],
+    "llmTip": "Deletes a Focused Inbox override. Future messages from that sender revert to the Outlook ML classifier's default behavior. Use list-focused-inbox-overrides to find the ID first."
+  },
+  {
     "pathPattern": "/me/events",
     "method": "get",
     "toolName": "list-calendar-events",
@@ -520,6 +548,13 @@
     "toolName": "create-drive-item-preview",
     "scopes": ["Files.Read"],
     "llmTip": "Generate a short-lived embeddable preview URL for a file (Office docs, PDFs, images). Body: { page?: number | string, zoom?: number, viewer?: 'onedrive' | 'office' }. Returns getUrl (interactive) and postUrl (form-post). Useful for surfacing inline previews in summary emails or chat messages without needing the recipient to open the file."
+  },
+  {
+    "pathPattern": "/drives/{drive-id}/items/{driveItem-id}/thumbnails",
+    "method": "get",
+    "toolName": "list-drive-item-thumbnails",
+    "scopes": ["Files.Read"],
+    "llmTip": "Lists thumbnail sets for a file. Each set contains small (96px), medium (176px), large (800px) thumbnails with url and dimensions. Returns empty for unsupported types (text docs). Use $select=small,medium,large or $expand=small($select=url) to fetch specific sizes. The returned URLs are short-lived — fetch the bytes immediately."
   },
   {
     "pathPattern": "/drives/{drive-id}/items/{driveItem-id}/permissions",
@@ -1374,6 +1409,48 @@
     "llmTip": "Deletes a list item permanently. This cannot be undone — the item is moved to the site recycle bin."
   },
   {
+    "pathPattern": "/sites/{site-id}/lists",
+    "method": "post",
+    "toolName": "create-sharepoint-list",
+    "workScopes": ["Sites.Manage.All"],
+    "llmTip": "Creates a new SharePoint list in a site. Body: { displayName: 'My List', description: 'Optional', list: { template: 'genericList' }, columns: [ { name: 'Status', text: {} }, { name: 'Due', dateTime: {} } ] }. Templates include genericList, documentLibrary, tasks, calendar, contacts, links, announcements, survey. Columns can be defined inline at creation; otherwise add them later via create-sharepoint-list-column. Use search-sharepoint-sites or get-sharepoint-site-by-path to find the site ID first."
+  },
+  {
+    "pathPattern": "/sites/{site-id}/lists/{list-id}/columns",
+    "method": "get",
+    "toolName": "list-sharepoint-list-columns",
+    "workScopes": ["Sites.Read.All"],
+    "llmTip": "Lists column definitions for a SharePoint list. Returns each column's id, name, displayName, description, type indicator (text, number, choice, dateTime, person, lookup, boolean, calculated, hyperlinkOrPicture, etc.), required, indexed, hidden, readOnly. Use this to discover the schema before creating or updating list items."
+  },
+  {
+    "pathPattern": "/sites/{site-id}/lists/{list-id}/columns",
+    "method": "post",
+    "toolName": "create-sharepoint-list-column",
+    "workScopes": ["Sites.Manage.All"],
+    "llmTip": "Creates a new column on a SharePoint list. Body must include name and exactly one column type property: { name: 'Priority', text: {} } or { name: 'DueDate', dateTime: { format: 'dateOnly' } } or { name: 'Status', choice: { choices: ['Open','In Progress','Done'] } }. Other types: number, boolean, currency, hyperlinkOrPicture, personOrGroup, lookup, calculated. Optional: displayName, description, required, indexed, enforceUniqueValues."
+  },
+  {
+    "pathPattern": "/sites/{site-id}/lists/{list-id}/columns/{columnDefinition-id}",
+    "method": "get",
+    "toolName": "get-sharepoint-list-column",
+    "workScopes": ["Sites.Read.All"],
+    "llmTip": "Gets a specific column definition by ID, including its full type configuration (choices for choice columns, format for dateTime, etc.). Use list-sharepoint-list-columns first to find the column ID."
+  },
+  {
+    "pathPattern": "/sites/{site-id}/lists/{list-id}/columns/{columnDefinition-id}",
+    "method": "patch",
+    "toolName": "update-sharepoint-list-column",
+    "workScopes": ["Sites.Manage.All"],
+    "llmTip": "Updates a column definition. Body: { displayName: 'New name', description: 'New description', required: true, ... }. The column type itself (text, choice, etc.) cannot be changed — only its metadata and per-type options (e.g. choices array for a choice column). Send only the fields you want to change."
+  },
+  {
+    "pathPattern": "/sites/{site-id}/lists/{list-id}/columns/{columnDefinition-id}",
+    "method": "delete",
+    "toolName": "delete-sharepoint-list-column",
+    "workScopes": ["Sites.Manage.All"],
+    "llmTip": "Deletes a column from a SharePoint list. This is irreversible — all data stored in this column across every list item is lost. Confirm with the user before calling. Cannot delete built-in columns (Title, Created, Modified, etc.)."
+  },
+  {
     "pathPattern": "/sites/{site-id}/getByPath(path='{path}')",
     "method": "get",
     "toolName": "get-sharepoint-site-by-path",
@@ -1757,5 +1834,33 @@
     "toolName": "get-sensitivity-label",
     "workScopes": ["SensitivityLabel.Read"],
     "llmTip": "Gets a single MIP sensitivity label by id. Use list-sensitivity-labels to find ids. Not supported for personal Microsoft accounts."
+  },
+  {
+    "pathPattern": "/me/messages/{message-id}/copy",
+    "method": "post",
+    "toolName": "copy-mail-message",
+    "scopes": ["Mail.ReadWrite"],
+    "llmTip": "Copies a message to another mail folder. Body: { DestinationId: '<mailFolder-id or well-known name like inbox, archive, junkemail>' }. Returns the newly created message (with a new id) in the destination folder. For moving instead of copying, use move-mail-message."
+  },
+  {
+    "pathPattern": "/me/mailFolders/{mailFolder-id}/messages/delta()",
+    "method": "get",
+    "toolName": "list-mail-folder-messages-delta",
+    "scopes": ["Mail.Read"],
+    "llmTip": "Incremental sync of messages within a mail folder. Graph only supports delta scoped to a folder — use mailFolder-id = 'inbox' for the well-known inbox, or another folder id from list-mail-folders. First call returns all messages plus @odata.deltaLink; subsequent calls with that link return only changes (created/updated/deleted). @odata.nextLink paginates within a single delta window. Deltas expire after ~30 days of inactivity — start over if the server returns 410. Prefer this over full re-list for polling."
+  },
+  {
+    "pathPattern": "/me/outlook/masterCategories",
+    "method": "get",
+    "toolName": "list-outlook-categories",
+    "scopes": ["MailboxSettings.Read"],
+    "llmTip": "Lists the user's Outlook categories (colored labels) used to tag messages, events, contacts, and tasks. Each category has displayName and color (preset0 through preset24, or 'none'). Use this to show available tags before applying via update-mail-message or update-calendar-event with body { categories: ['Category Name'] }."
+  },
+  {
+    "pathPattern": "/me/outlook/masterCategories",
+    "method": "post",
+    "toolName": "create-outlook-category",
+    "scopes": ["MailboxSettings.ReadWrite"],
+    "llmTip": "Creates a new Outlook category. Body: { displayName (unique), color (one of: none, preset0 … preset24 — maps to red, orange, yellow, green, teal, olive, blue, purple, cranberry, steel, dark-steel, gray, dark-gray, black, dark-red, dark-orange, dark-yellow, dark-green, dark-teal, dark-olive, dark-blue, dark-purple, dark-cranberry) }. Category names are case-sensitive when applied to messages/events."
   }
 ]
