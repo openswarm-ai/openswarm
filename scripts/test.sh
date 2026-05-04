@@ -47,7 +47,7 @@ fi
 cd "$PROJECT_ROOT"
 
 # --- Ensure pytest is installed (idempotent: only re-installs if missing) -
-if ! "$PYTHON_BIN" -c "import pytest, pytest_asyncio" >/dev/null 2>&1; then
+if ! "$PYTHON_BIN" -c "import pytest, pytest_asyncio, pytest_cov" >/dev/null 2>&1; then
     echo "==> Installing backend deps + dev deps into $VENV_DIR"
     "$PYTHON_BIN" -m pip install --upgrade pip >/dev/null
     "$PYTHON_BIN" -m pip install \
@@ -66,6 +66,21 @@ if [[ "$QUICK" -eq 1 ]]; then
     echo "==> --quick: DISCONNECT_STRESS_N=$DISCONNECT_STRESS_N"
 fi
 
+# --- Coverage flags (always on; see .coveragerc for source/omit rules) ----
+COVERAGE_ARGS=(
+    --cov=backend
+    --cov-report=term-missing
+    --cov-report=html:backend/coverage_html
+    --cov-report=xml:backend/coverage.xml
+)
+
 # Already cd'd to $PROJECT_ROOT above so `from backend.apps...` resolves.
-echo "==> Running: pytest ${PYTEST_ARGS[*]}"
-exec "$PYTHON_BIN" -m pytest "${PYTEST_ARGS[@]}"
+echo "==> Running: pytest ${COVERAGE_ARGS[*]} ${PYTEST_ARGS[*]}"
+# Disable errexit around pytest so we still print the HTML report path on
+# failure (and propagate pytest's exit code).
+set +e
+"$PYTHON_BIN" -m pytest "${COVERAGE_ARGS[@]}" "${PYTEST_ARGS[@]}"
+status=$?
+set -e
+echo "==> HTML coverage report: $PROJECT_ROOT/backend/coverage_html/index.html"
+exit $status

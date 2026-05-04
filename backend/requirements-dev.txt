@@ -9,5 +9,6 @@
 
 pytest==8.3.4
 pytest-asyncio==0.25.2
+pytest-cov==7.1.0
 
 -e ./debugger

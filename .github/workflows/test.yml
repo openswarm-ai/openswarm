@@ -42,5 +42,28 @@ jobs:
             -r backend/requirements.txt \
             -r backend/requirements-dev.txt
 
-      - name: Run pytest
-        run: python -m pytest backend/tests/ -v
+      - name: Run pytest with coverage
+        run: |
+          python -m pytest backend/tests/ -v \
+            --cov=backend \
+            --cov-report=term-missing \
+            --cov-report=html:backend/coverage_html \
+            --cov-report=xml:backend/coverage.xml
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "## Backend coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python -m coverage report >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: |
+            backend/coverage_html
+            backend/coverage.xml
+          if-no-files-found: ignore
