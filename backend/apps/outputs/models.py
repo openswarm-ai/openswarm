@@ -202,10 +202,3 @@ class WorkspaceSeedRequest(BaseModel):
         return data
 
 
-class VibeCodeRequest(BaseModel):
-    prompt: str
-    current_frontend_code: str = ""
-    current_backend_code: str = ""
-    current_schema: str = ""
-    name: str = ""
-    description: str = ""

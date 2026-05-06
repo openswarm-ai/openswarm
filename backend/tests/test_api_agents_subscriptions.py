@@ -15,7 +15,6 @@ chatter from these tests. Two fixtures here:
 Coverage:
 
   - GET  /subscriptions/status   — both down + up shapes.
-  - GET  /subscriptions/models   — both down + up shapes.
   - POST /subscriptions/connect  — missing provider → 400; 503 when
                                    9Router is unavailable; happy path
                                    round-trips the device_code flow.
@@ -124,25 +123,6 @@ def test_status_when_9router_up(client, nine_router_up):
     assert "connections" in body["providers"]
     assert isinstance(body["providers"]["connections"], list)
     assert isinstance(body["models"], list)
-
-
-# ---------------------------------------------------------------------------
-# GET /subscriptions/models
-# ---------------------------------------------------------------------------
-
-
-def test_models_when_9router_down(client, nine_router_down):
-    resp = client.get("/api/agents/subscriptions/models")
-    assert resp.status_code == 200
-    assert resp.json() == {"models": []}
-
-
-def test_models_when_9router_up(client, nine_router_up):
-    resp = client.get("/api/agents/subscriptions/models")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert isinstance(body["models"], list)
-    assert len(body["models"]) == 1
 
 
 # ---------------------------------------------------------------------------

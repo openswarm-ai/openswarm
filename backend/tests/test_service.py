@@ -342,12 +342,3 @@ async def test_endpoint_event_missing_surface(sink):
     assert res["ok"] is False
 
 
-@pytest.mark.asyncio
-async def test_endpoint_spool_count(tmp_path):
-    from backend.apps.service import client as svc, buffer
-    from backend.apps.service.service import spool_count
-    spool = str(tmp_path / "spool.db")
-    with patch.object(svc, "_spool_path", lambda: spool):
-        buffer.enqueue(spool, "s:/x", {}, now=time.time())
-        result = await spool_count()
-        assert result == {"pending": 1}

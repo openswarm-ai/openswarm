@@ -13,7 +13,7 @@ from jsonschema import validate as schema_validate, ValidationError as SchemaVal
 from backend.config.Apps import SubApp
 from backend.apps.outputs.models import (
     Output, OutputCreate, OutputUpdate, OutputExecute, OutputExecuteResult,
-    VibeCodeRequest, AutoRunRequest, AutoRunConfig, AutoRunAgentRequest,
+    AutoRunRequest, AutoRunConfig, AutoRunAgentRequest,
     WorkspaceSeedRequest,
 )
 from backend.apps.outputs.executor import execute_backend_code
@@ -396,111 +396,6 @@ async def delete_output(output_id: str):
     if os.path.exists(path):
         os.remove(path)
     return {"ok": True}
-
-
-VIBE_CODE_SYSTEM_PROMPT = """\
-You are an expert at building self-contained HTML/JS/CSS applications that run in an iframe.
-
-The user will describe what they want, and you will generate:
-1. **frontend_code**: A complete HTML document. React 18 is available via esm.sh CDN.
-   - Use: <script type="importmap">{"imports":{"react":"https://esm.sh/react@18","react-dom/client":"https://esm.sh/react-dom@18/client"}}</script>
-   - Input data is at window.OUTPUT_INPUT (object), backend result at window.OUTPUT_BACKEND_RESULT.
-2. **input_schema**: A JSON Schema object defining the structured input.
-3. **backend_code** (optional): Python code where input_data is a global dict and result is a global dict to assign to.
-4. **name**: A short name for the view.
-5. **description**: A one-sentence description.
-6. **message**: A brief explanation of what you did/changed.
-
-Return ONLY valid JSON with these keys. No markdown fences, no extra text.\
-"""
-
-
-@outputs.router.post("/vibe-code")
-async def vibe_code(body: VibeCodeRequest):
-    """Use an LLM to generate or iterate on Output code from a natural language prompt."""
-    try:
-        import anthropic
-    except ImportError:
-        return {
-            "message": "anthropic SDK not installed. Install with: pip install anthropic",
-            "frontend_code": body.current_frontend_code,
-            "backend_code": body.current_backend_code,
-            "input_schema": body.current_schema,
-        }
-
-    context_parts = []
-    if body.current_frontend_code:
-        context_parts.append(f"Current frontend code:\n```html\n{body.current_frontend_code}\n```")
-    if body.current_backend_code:
-        context_parts.append(f"Current backend code:\n```python\n{body.current_backend_code}\n```")
-    if body.current_schema:
-        context_parts.append(f"Current input schema:\n```json\n{body.current_schema}\n```")
-    if body.name:
-        context_parts.append(f"Current name: {body.name}")
-    if body.description:
-        context_parts.append(f"Current description: {body.description}")
-
-    user_message = body.prompt
-    if context_parts:
-        user_message = "\n\n".join(context_parts) + "\n\nUser request: " + body.prompt
-
-    from backend.apps.agents.providers.registry import resolve_aux_model
-    try:
-        aux_model, _aux_base = await resolve_aux_model(load_settings(), preferred_tier="sonnet")
-    except ValueError as e:
-        return {
-            "message": f"Error: {str(e)}",
-            "frontend_code": body.current_frontend_code,
-            "backend_code": body.current_backend_code,
-            "input_schema": body.current_schema,
-        }
-    client = _get_anthropic_client(aux_model)
-    try:
-        resp = await client.messages.create(
-            model=aux_model,
-            max_tokens=8000,
-            system=VIBE_CODE_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
-        from backend.apps.agents.agent_manager import _safe_resp_text
-        raw = _safe_resp_text(resp).strip()
-        if not raw:
-            return {
-                "message": "Aux model returned no content. Please try again.",
-                "frontend_code": body.current_frontend_code,
-                "backend_code": body.current_backend_code,
-                "input_schema": body.current_schema,
-            }
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-            if raw.endswith("```"):
-                raw = raw[:-3]
-
-        result = json.loads(raw)
-        pass
-        return {
-            "message": result.get("message", "View updated."),
-            "frontend_code": result.get("frontend_code", body.current_frontend_code),
-            "backend_code": result.get("backend_code", body.current_backend_code),
-            "input_schema": result.get("input_schema", body.current_schema),
-            "name": result.get("name", body.name),
-            "description": result.get("description", body.description),
-        }
-    except json.JSONDecodeError:
-        return {
-            "message": "I generated code but couldn't parse the response. Please try again.",
-            "frontend_code": body.current_frontend_code,
-            "backend_code": body.current_backend_code,
-            "input_schema": body.current_schema,
-        }
-    except Exception as e:
-        logger.exception("Vibe code generation failed")
-        return {
-            "message": f"Error: {str(e)}",
-            "frontend_code": body.current_frontend_code,
-            "backend_code": body.current_backend_code,
-            "input_schema": body.current_schema,
-        }
 
 
 AUTO_RUN_SYSTEM_PROMPT = """\

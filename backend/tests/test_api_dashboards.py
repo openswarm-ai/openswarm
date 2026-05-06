@@ -57,8 +57,14 @@ def test_create_get_update_delete_dashboard(client):
     assert gone.status_code == 404
 
 
-def test_dashboard_layout_round_trip(client):
-    """PUT layout with a sticky note and assert it survives a re-fetch."""
+def test_dashboard_layout_field_round_trip(client):
+    """PUT the `layout` field on a dashboard with a sticky note and
+    assert it survives a re-fetch via /api/dashboards/{id}.
+
+    Named `_field_` (not `_dashboard_layout_`) to make clear this exercises
+    the `layout` attribute of the live `Dashboard` model — not the legacy
+    `backend.apps.dashboard_layout` package, which was removed.
+    """
     create = client.post("/api/dashboards/create", json={"name": "L"})
     dashboard_id = create.json()["id"]
 

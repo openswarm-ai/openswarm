@@ -200,7 +200,10 @@ def test_reconcile_idempotent():
 # ---------------------------------------------------------------------------
 
 
-def test_dashboard_layout_notes_round_trip():
+def test_dashboard_layout_model_notes_round_trip():
+    """`DashboardLayout` (Pydantic) with notes round-trips through model_dump
+    and model_validate. Named `_model_` to disambiguate from the long-removed
+    `backend.apps.dashboard_layout` package."""
     from backend.apps.dashboards.models import DashboardLayout, NotePosition
 
     n = NotePosition(note_id="n1", x=100, y=200, content="todo: ship",
@@ -215,8 +218,9 @@ def test_dashboard_layout_notes_round_trip():
     assert rehydrated.notes["n1"].color == "yellow"
 
 
-def test_dashboard_layout_legacy_no_notes():
-    """Older dashboard JSON without 'notes' must still load cleanly."""
+def test_dashboard_layout_model_legacy_no_notes():
+    """Older dashboard JSON without 'notes' must still load cleanly into the
+    live `DashboardLayout` Pydantic model from `backend.apps.dashboards.models`."""
     from backend.apps.dashboards.models import DashboardLayout
 
     legacy = {

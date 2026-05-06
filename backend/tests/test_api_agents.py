@@ -8,7 +8,6 @@ Tests:
     succeeds; DELETE removes it.
   - POST /sessions/{id}/edit_message validates input.
   - PATCH /sessions/{id} updates allowed fields (name, system_prompt).
-  - GET /sessions/{id}/branches returns the default 'main' branch.
   - GET /history returns paginated results.
 """
 
@@ -125,20 +124,6 @@ def test_patch_session_updates_name(client, stub_agent_loop):
     fetched = client.get(f"/api/agents/sessions/{session_id}").json()
     assert fetched["name"] == "Renamed"
     assert fetched["model"] == "sonnet"  # not changed by the PATCH
-
-
-def test_get_branches_returns_main(client, stub_agent_loop):
-    launch = client.post(
-        "/api/agents/launch",
-        json={"name": "B", "model": "sonnet", "mode": "agent"},
-    )
-    session_id = launch.json()["session_id"]
-
-    resp = client.get(f"/api/agents/sessions/{session_id}/branches")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["active_branch_id"] == "main"
-    assert "main" in body["branches"]
 
 
 def test_history_endpoint_returns_paginated_shape(client):

@@ -1,6 +1,5 @@
 import logging
 import os
-from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -271,24 +270,6 @@ async def websocket_dashboard(websocket: WebSocket):
                 )
     except WebSocketDisconnect:
         ws_manager.disconnect_global(websocket)
-
-
-@app.post("/api/browser/command")
-async def browser_command(request: Request):
-    """HTTP endpoint called by the browser MCP server subprocess.
-    Proxies commands to the frontend via WebSocket and waits for results."""
-    body = await request.json()
-    action = body.get("action", "")
-    browser_id = body.get("browser_id", "")
-    tab_id = body.get("tab_id", "")
-    params = body.get("params", {})
-
-    if not action or not browser_id:
-        return JSONResponse({"error": "action and browser_id are required"}, status_code=400)
-
-    request_id = uuid4().hex
-    result = await ws_manager.send_browser_command(request_id, action, browser_id, params, tab_id=tab_id)
-    return JSONResponse(result)
 
 
 @app.get("/api/subscriptions/pending/{state}")

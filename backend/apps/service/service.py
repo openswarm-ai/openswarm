@@ -3,8 +3,7 @@
 Replaces the former analytics SubApp with operationally-named endpoints
 and lifecycle management. Responsibilities:
 
-  - Usage-summary and cost-breakdown endpoints (user-facing, for the
-    Settings / Usage page)
+  - Usage-summary endpoint (user-facing, for the Settings / Usage page)
   - Background heartbeat that reports operational state to the cloud
   - 9Router auto-start for OpenSwarm Pro users
   - Frontend event endpoint (`POST /api/service/event`)
@@ -364,31 +363,6 @@ async def usage_summary():
     }
 
 
-@service.router.get("/cost-breakdown")
-async def cost_breakdown(period: str = "7d"):
-    from backend.apps.nine_router import get_usage_stats, is_running as _9r_running
-    if not _9r_running():
-        return {"available": False, "by_model": {}, "by_provider": {}}
-    stats = await get_usage_stats(period)
-    if not stats:
-        return {"available": False, "by_model": {}, "by_provider": {}}
-    return {
-        "available": True,
-        "period": period,
-        "total_cost": stats.get("totalCost", 0),
-        "total_requests": stats.get("totalRequests", 0),
-        "total_prompt_tokens": stats.get("totalPromptTokens", 0),
-        "total_completion_tokens": stats.get("totalCompletionTokens", 0),
-        "by_model": stats.get("byModel", {}),
-        "by_provider": stats.get("byProvider", {}),
-    }
-
-
-@service.router.get("/status")
-async def service_status():
-    return {"status": "ok", "enabled": True}
-
-
 # ---------------------------------------------------------------------------
 # Frontend event endpoints
 # ---------------------------------------------------------------------------
@@ -422,9 +396,3 @@ async def post_event(body: dict):
         "p": body.get("props") or body.get("properties") or {},
     })
     return {"ok": True}
-
-
-@service.router.get("/spool/count")
-async def spool_count():
-    from backend.apps.service import buffer
-    return {"pending": buffer.count(svc._spool_path())}

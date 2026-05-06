@@ -8,7 +8,7 @@ which we exercise here.
 Tests:
   - GET /api/settings returns defaults including the canned system prompt
   - PUT /api/settings round-trips a value and survives `load_settings()` reload
-  - default-system-prompt + reset-system-prompt
+  - reset-system-prompt
   - browse-directories on a tmp dir
 """
 
@@ -44,14 +44,6 @@ def test_put_round_trips_value(client):
     from backend.apps.settings.settings import load_settings
 
     assert load_settings().theme == "light"
-
-
-def test_default_system_prompt_returns_constant(client):
-    from backend.apps.settings.models import DEFAULT_SYSTEM_PROMPT
-
-    resp = client.get("/api/settings/default-system-prompt")
-    assert resp.status_code == 200
-    assert resp.json()["default_system_prompt"] == DEFAULT_SYSTEM_PROMPT
 
 
 def test_reset_system_prompt(client):

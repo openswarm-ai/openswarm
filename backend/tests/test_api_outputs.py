@@ -13,7 +13,7 @@ Layout mirrors `outputs.py`:
   - File serve (workspace + saved output, with token rewrite + _d
     payload injection)
   - Backend execute
-  - vibe-code + auto-run (LLM-mocked)
+  - auto-run (LLM-mocked)
   - auto-run-agent (stub_agent_loop + AgentConfig spy)
   - Auth control mirroring test_api_agents.test_protected_route_requires_auth
 """
@@ -24,7 +24,6 @@ import base64
 import json
 import os
 import sys
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -50,43 +49,6 @@ def _create_output(client, **overrides) -> dict:
     resp = client.post("/api/outputs/create", json=payload)
     assert resp.status_code == 200, resp.text
     return resp.json()["output"]
-
-
-def _make_mock_anthropic(text_response: str) -> MagicMock:
-    """Build a mock Anthropic client.
-
-    The route does `await client.messages.create(...)` then reads
-    `resp.content[0].text`. Mirror that shape.
-    """
-    fake_resp = MagicMock()
-    fake_resp.content = [MagicMock(text=text_response)]
-    client_mock = MagicMock()
-    client_mock.messages.create = AsyncMock(return_value=fake_resp)
-    return client_mock
-
-
-def _patch_anthropic(monkeypatch, text_response: str) -> MagicMock:
-    """Hook `_get_anthropic_client` in outputs.py to return a mock that
-    responds with `text_response` on every messages.create call.
-
-    Returns the inner mock client so tests can assert call args.
-    """
-    from backend.apps.outputs import outputs as outputs_mod
-
-    mock_client = _make_mock_anthropic(text_response)
-    monkeypatch.setattr(outputs_mod, "_get_anthropic_client", lambda: mock_client)
-    return mock_client
-
-
-def _patch_aux_model(monkeypatch, model_id: str = "claude-haiku-fake") -> None:
-    """Stub `resolve_aux_model` on the registry so vibe-code/auto-run never
-    try to inspect the user's actual model connections."""
-    from backend.apps.agents.providers import registry
-
-    async def _fake(_settings, preferred_tier="haiku"):
-        return (model_id, None)
-
-    monkeypatch.setattr(registry, "resolve_aux_model", _fake)
 
 
 # ---------------------------------------------------------------------------
@@ -552,45 +514,6 @@ def test_execute_no_backend_code_returns_none_result(client):
     body = resp.json()
     assert body["backend_result"] is None
     assert body["error"] is None
-
-
-# ---------------------------------------------------------------------------
-# /vibe-code (Anthropic mocked)
-# ---------------------------------------------------------------------------
-
-
-def test_vibe_code_resolver_raises_value_error_returns_graceful(client, monkeypatch):
-    """resolve_aux_model raises ValueError when no model is connected.
-    The route catches and returns a graceful error response without
-    touching the Anthropic client."""
-    from backend.apps.agents.providers import registry
-
-    async def _raise(_settings, preferred_tier="haiku"):
-        raise ValueError("no aux model")
-
-    monkeypatch.setattr(registry, "resolve_aux_model", _raise)
-
-    resp = client.post(
-        "/api/outputs/vibe-code",
-        json={"prompt": "x", "current_frontend_code": "<keep/>"},
-    )
-    body = resp.json()
-    assert "no aux model" in body["message"]
-    assert body["frontend_code"] == "<keep/>"
-
-
-def test_vibe_code_anthropic_import_error(client, monkeypatch):
-    """Forcing `import anthropic` to fail returns the install hint without
-    touching the model registry at all."""
-    monkeypatch.setitem(sys.modules, "anthropic", None)
-
-    resp = client.post(
-        "/api/outputs/vibe-code",
-        json={"prompt": "x", "current_frontend_code": "<keep/>"},
-    )
-    body = resp.json()
-    assert "anthropic SDK not installed" in body["message"]
-    assert body["frontend_code"] == "<keep/>"
 
 
 # ---------------------------------------------------------------------------
