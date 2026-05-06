@@ -80,33 +80,78 @@ function fmtSeconds(seconds: number): string {
   return `${hours}h ${minutes % 60}m`;
 }
 
-function getAgentWorkTime(messages: Array<{ role: string; timestamp: string }>, status: string): { total: number; last: number } {
-  let total = 0;
-  let last = 0;
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i];
-    if (msg.role === 'user') {
-      // Find the next assistant/system response
-      let endTime: number | null = null;
-      for (let j = i + 1; j < messages.length; j++) {
-        if (messages[j].role === 'assistant' || messages[j].role === 'system') {
-          endTime = new Date(messages[j].timestamp).getTime();
-          break;
-        }
-      }
-      if (endTime) {
-        const dur = Math.max(0, Math.floor((endTime - new Date(msg.timestamp).getTime()) / 1000));
-        total += dur;
-        last = dur;
-      } else if (status === 'running' || status === 'waiting_approval') {
-        // Currently processing this prompt
-        const dur = Math.max(0, Math.floor((Date.now() - new Date(msg.timestamp).getTime()) / 1000));
-        total += dur;
-        last = dur;
+function getAgentWorkTime(
+  messages: Array<{ role: string; timestamp: string; elapsed_ms?: number; hidden?: boolean }>,
+  status: string,
+): { total: number; last: number } {
+  // True wall-clock duration: how long the user actually waited, from
+  // their prompt to the LAST assistant/system message of that turn.
+  // Covers thinking + every tool call + assistant text generation +
+  // any subagent/MCP work — anything that consumed user attention.
+  //
+  // This is intentionally NOT the sum of `thinking.elapsed_ms` (which
+  // would cover only reasoning time and miss tool execution). The
+  // thinking pill in the chat already exposes reasoning-only as a
+  // distinct signal; the header timer's job is to answer "how long
+  // did this take?" which is a different question.
+  //
+  // For each user message we find the LAST adjacent assistant/system
+  // message before the next user message — that's the turn boundary.
+  // If the turn is still in flight (last user message has no assistant
+  // reply yet AND session is running/waiting), extrapolate to now so
+  // the timer ticks live.
+  //
+  // Hidden messages (auto-continuation prompts from MCPActivate, etc.)
+  // are skipped — they're system-internal turns the user didn't see
+  // and shouldn't be billed for.
+  const visible = messages.filter((m) => !m.hidden);
+  let totalMs = 0;
+  let lastMs = 0;
+  for (let i = 0; i < visible.length; i++) {
+    const msg = visible[i];
+    if (msg.role !== 'user') continue;
+
+    // Find the bounds of this turn: from this user message to just
+    // before the next user message (or end of array).
+    let nextUserIdx = visible.length;
+    for (let k = i + 1; k < visible.length; k++) {
+      if (visible[k].role === 'user') {
+        nextUserIdx = k;
+        break;
       }
     }
+
+    // Last assistant/system message before the next user message =
+    // turn end. Walk backwards from nextUserIdx to find it.
+    let turnEndMs: number | null = null;
+    for (let k = nextUserIdx - 1; k > i; k--) {
+      const r = visible[k].role;
+      if (r === 'assistant' || r === 'system') {
+        turnEndMs = new Date(visible[k].timestamp).getTime();
+        break;
+      }
+    }
+
+    if (turnEndMs == null) {
+      // No assistant reply yet for this turn. If the session is
+      // actively working, extrapolate to now so the header ticks.
+      // Otherwise (terminal session, no reply): contribute 0.
+      if (status === 'running' || status === 'waiting_approval') {
+        turnEndMs = Date.now();
+      } else {
+        continue;
+      }
+    }
+
+    const dur = Math.max(0, turnEndMs - new Date(msg.timestamp).getTime());
+    totalMs += dur;
+    lastMs = dur;
   }
-  return { total, last };
+
+  return {
+    total: Math.max(0, Math.round(totalMs / 1000)),
+    last: Math.max(0, Math.round(lastMs / 1000)),
+  };
 }
 
 function summarizeToolInput(toolName: string, toolInput: Record<string, any>): string {
@@ -566,6 +611,8 @@ const AgentCard: React.FC<Props> = ({
       }}
       sx={{
         position: 'relative',
+        // contain: streaming chat updates inside don't reflow the dashboard.
+        contain: 'layout style',
         width: localResize ? activeW : Math.max(cardWidth, MIN_W),
         height: localResize ? activeH : (expanded ? Math.max(EXPANDED_OVERLAY_H, cardHeight) : 'auto'),
         bgcolor: c.bg.surface,

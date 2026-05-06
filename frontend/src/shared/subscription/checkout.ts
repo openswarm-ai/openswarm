@@ -1,4 +1,4 @@
-import { trackEvent } from '@/shared/analytics';
+import { report } from '@/shared/serviceClient';
 
 export type OpenSwarmPlan = 'pro' | 'pro_plus' | 'ultra';
 export type BillingInterval = 'monthly' | 'annual';
@@ -11,14 +11,14 @@ interface SubscribeOptions {
 // Kicks off a Stripe Checkout session for the given plan + interval and opens
 // the returned URL in the user's default browser (or a new tab fallback).
 // All subscribe CTAs across Settings, Onboarding, and the 429 error card go
-// through this helper so analytics shape and error handling stay consistent.
+// through this helper so the wire shape and error handling stay consistent.
 export async function subscribeToPlan(
   plan: OpenSwarmPlan,
   billingInterval: BillingInterval,
   source: CheckoutSource,
   opts: SubscribeOptions = {},
 ): Promise<void> {
-  trackEvent('subscription.subscribe_clicked', {
+  report('subscription', 'subscribe_clicked', {
     source,
     plan,
     billing_interval: billingInterval,
@@ -26,7 +26,7 @@ export async function subscribeToPlan(
   });
 
   try {
-    // Cloud schema uses "yearly"; the desktop UI/analytics uses "annual".
+    // Cloud schema uses "yearly"; the desktop UI uses "annual".
     // Normalize at the boundary so the rest of the client stays consistent.
     const wireInterval = billingInterval === 'annual' ? 'yearly' : billingInterval;
     const r = await fetch('https://api.openswarm.com/api/stripe/checkout', {
@@ -41,7 +41,7 @@ export async function subscribeToPlan(
     const { url } = await r.json();
     if (!url) return;
 
-    trackEvent('subscription.checkout_opened', {
+    report('subscription', 'checkout_opened', {
       source,
       plan,
       billing_interval: billingInterval,

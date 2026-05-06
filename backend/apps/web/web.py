@@ -166,6 +166,128 @@ def _resolve_openai_api_key() -> str | None:
         return None
 
 
+# Cache of which 9Router subscriptions are connected. Refreshed via
+# `_refresh_9r_connected()` rather than hit on every search call —
+# 9Router's /api/providers is fast but not free, and we already
+# query it from many places.
+_NINE_ROUTER_CONNECTED: set[str] = set()
+_NINE_ROUTER_CACHE_AT: float = 0.0
+
+
+async def _refresh_9r_connected() -> set[str]:
+    """Return the set of currently-active 9Router subscription providers
+    (e.g. {"claude", "codex", "antigravity", "gemini-cli"}). Cached for
+    20s to keep search/fetch endpoints snappy."""
+    global _NINE_ROUTER_CONNECTED, _NINE_ROUTER_CACHE_AT
+    import time as _t
+    now = _t.time()
+    if now - _NINE_ROUTER_CACHE_AT < 20.0:
+        return _NINE_ROUTER_CONNECTED
+    try:
+        from backend.apps.nine_router import is_running as _9r_running, get_providers as _9r_providers
+        if not _9r_running():
+            _NINE_ROUTER_CONNECTED = set()
+        else:
+            conns = await _9r_providers()
+            _NINE_ROUTER_CONNECTED = {
+                c.get("provider")
+                for c in conns
+                if isinstance(c, dict) and c.get("isActive") and c.get("provider")
+            }
+        _NINE_ROUTER_CACHE_AT = now
+    except Exception:
+        # Cache stays — best-effort.
+        pass
+    return _NINE_ROUTER_CONNECTED
+
+
+async def _gemini_grounded_via_9router(prompt: str, use_url_context: bool) -> dict:
+    """Call 9Router's /v1/messages endpoint with a Gemini model so the
+    user's OAuth subscription (Gemini CLI or Antigravity) covers the
+    search call instead of needing a separate AI Studio API key.
+
+    Routes through Anthropic-shape against 9Router's translator. We
+    request a tool result naturally — the translator surfaces grounded
+    URIs as text + cited sources in the response body. Format-shape
+    matches the existing `_gemini_grounded_call` so downstream
+    `_format_grounded_as_search_results` works unchanged."""
+    import httpx
+    # Prefer Gemini CLI (broader model coverage). Fall back to
+    # Antigravity if CLI isn't connected.
+    connected = await _refresh_9r_connected()
+    if "gemini-cli" in connected:
+        model = "gc/gemini-2.5-flash"
+    elif "antigravity" in connected:
+        model = "ag/gemini-3-flash"
+    else:
+        return {}
+
+    sys_prompt = (
+        "You search the web and return concise grounded answers with "
+        "source citations. Always cite the URLs you used."
+        if not use_url_context
+        else "You fetch URLs and return concise summaries with citations."
+    )
+    body = {
+        "model": model,
+        "max_tokens": 1024,
+        "system": sys_prompt,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        r = await client.post(
+            "http://localhost:20128/v1/messages",
+            json=body,
+            headers={"x-api-key": "9router", "anthropic-version": "2023-06-01"},
+        )
+        if r.status_code != 200:
+            return {}
+        data = r.json()
+    # Synthesize a grounded shape so the existing formatter works:
+    # _format_grounded_as_search_results expects {"text": str, "chunks":
+    # [(title, uri), ...]}. 9Router doesn't surface citations as a
+    # structured field uniformly across providers, so we hand back
+    # text-only and let the formatter do its thing.
+    text = ""
+    for block in (data.get("content") or []):
+        if isinstance(block, dict) and block.get("type") == "text":
+            text += block.get("text", "")
+    return {"text": text, "chunks": []}
+
+
+async def _openai_websearch_via_9router(query: str) -> dict:
+    """Same idea, but for OpenAI's web_search_preview through Codex's
+    9Router connection. Goes through 9Router's openai-compat endpoint
+    (the responses API) so the user's Codex subscription covers it."""
+    import httpx
+    connected = await _refresh_9r_connected()
+    if "codex" not in connected:
+        return {}
+    body = {
+        "model": "cx/gpt-5.4-mini",
+        "max_tokens": 1024,
+        "system": (
+            "You search the web and return concise grounded answers "
+            "with source citations. Always cite the URLs you used."
+        ),
+        "messages": [{"role": "user", "content": f"Search the web for: {query}"}],
+    }
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        r = await client.post(
+            "http://localhost:20128/v1/messages",
+            json=body,
+            headers={"x-api-key": "9router", "anthropic-version": "2023-06-01"},
+        )
+        if r.status_code != 200:
+            return {}
+        data = r.json()
+    text = ""
+    for block in (data.get("content") or []):
+        if isinstance(block, dict) and block.get("type") == "text":
+            text += block.get("text", "")
+    return {"text": text, "chunks": []}
+
+
 async def _openai_websearch(api_key: str, query: str) -> dict:
     """Call OpenAI Responses API with the web_search_preview tool.
 
@@ -284,14 +406,55 @@ async def search(body: SearchBody) -> dict:
             "backend": "openai_native",
         }
 
-    # Ordered cascade: primary's native path first, then the other
-    # native paths, then DDG.
+    async def try_gemini_subscription():
+        prompt = (
+            f"Search the web for: {body.query}\n\n"
+            f"Return a concise summary of what you found. Cite sources."
+        )
+        grounded = await _gemini_grounded_via_9router(prompt, use_url_context=False)
+        if not grounded.get("text"):
+            return None
+        return {
+            "query": body.query,
+            "results": _format_grounded_as_search_results(grounded, body.query),
+            "backend": "gemini_subscription",
+        }
+
+    async def try_openai_subscription():
+        grounded = await _openai_websearch_via_9router(body.query)
+        if not grounded.get("text"):
+            return None
+        return {
+            "query": body.query,
+            "results": _format_grounded_as_search_results(grounded, body.query),
+            "backend": "openai_subscription",
+        }
+
+    # Ordered cascade: primary's native API key first (most direct), then
+    # the user's connected subscriptions (free via OAuth), then the
+    # opposite-provider native key, then DuckDuckGo last as a guaranteed
+    # fallback (which is rate-limit-prone but free).
     if primary == "openai":
-        cascade = [("openai", try_openai), ("gemini", try_gemini)]
+        cascade = [
+            ("openai_native", try_openai),
+            ("openai_subscription", try_openai_subscription),
+            ("gemini_native", try_gemini),
+            ("gemini_subscription", try_gemini_subscription),
+        ]
     elif primary in ("gemini", "google"):
-        cascade = [("gemini", try_gemini), ("openai", try_openai)]
+        cascade = [
+            ("gemini_native", try_gemini),
+            ("gemini_subscription", try_gemini_subscription),
+            ("openai_native", try_openai),
+            ("openai_subscription", try_openai_subscription),
+        ]
     else:
-        cascade = [("gemini", try_gemini), ("openai", try_openai)]
+        cascade = [
+            ("gemini_native", try_gemini),
+            ("gemini_subscription", try_gemini_subscription),
+            ("openai_native", try_openai),
+            ("openai_subscription", try_openai_subscription),
+        ]
 
     for name, fn in cascade:
         try:
@@ -314,12 +477,20 @@ async def search(body: SearchBody) -> dict:
 
     text = _join_text(parts)
     hint = ""
-    if text.startswith("No search results found") and not (gemini_key or openai_key):
-        hint = (
-            "\n\n(DuckDuckGo returned no results — likely rate-limiting this IP. "
-            "Add a Gemini key (https://aistudio.google.com/apikey) or OpenAI key "
-            "in Settings for reliable native search.)"
-        )
+    if text.startswith("No search results found"):
+        connected = await _refresh_9r_connected()
+        has_subscription = bool(connected & {"codex", "antigravity", "gemini-cli"})
+        if not (gemini_key or openai_key or has_subscription):
+            hint = (
+                "\n\n(DuckDuckGo returned no results — likely rate-limiting this IP. "
+                "Connect Codex / Antigravity / Gemini CLI in Settings, or add an "
+                "OpenAI / Gemini API key, for reliable native search.)"
+            )
+        else:
+            hint = (
+                "\n\n(DuckDuckGo returned no results and the connected providers "
+                "didn't return useful results either — try rephrasing the query.)"
+            )
     return {
         "query": body.query,
         "results": text + hint,
@@ -361,10 +532,40 @@ async def fetch(body: FetchBody) -> dict:
             "backend": "openai_native",
         }
 
+    async def try_gemini_subscription():
+        prompt_bits = [f"Fetch and summarize this URL: {body.url}"]
+        if body.prompt:
+            prompt_bits.append(f"Focus on: {body.prompt}")
+        grounded = await _gemini_grounded_via_9router(
+            "\n".join(prompt_bits), use_url_context=True,
+        )
+        if not grounded.get("text"):
+            return None
+        return {
+            "url": body.url,
+            "content": _format_grounded_as_fetch(grounded, body.url),
+            "backend": "gemini_subscription",
+        }
+
+    async def try_openai_subscription():
+        # Codex's web_search is general; URL fetch via search query
+        # works adequately for our use.
+        prompt = f"Fetch this URL and summarize: {body.url}"
+        if body.prompt:
+            prompt += f"\nFocus on: {body.prompt}"
+        grounded = await _openai_websearch_via_9router(prompt)
+        if not grounded.get("text"):
+            return None
+        return {
+            "url": body.url,
+            "content": _format_grounded_as_fetch(grounded, body.url),
+            "backend": "openai_subscription",
+        }
+
     if primary == "openai":
-        cascade = [try_openai, try_gemini]
+        cascade = [try_openai, try_openai_subscription, try_gemini, try_gemini_subscription]
     else:
-        cascade = [try_gemini, try_openai]
+        cascade = [try_gemini, try_gemini_subscription, try_openai, try_openai_subscription]
 
     for fn in cascade:
         try:

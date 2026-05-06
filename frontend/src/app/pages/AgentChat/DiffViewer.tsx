@@ -7,6 +7,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import DifferenceIcon from '@mui/icons-material/Difference';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { API_BASE } from '@/shared/config';
+import { Skeleton } from '@/app/components/Loading';
 
 const AGENTS_API = `${API_BASE}/agents`;
 
@@ -100,7 +101,11 @@ const DiffViewer: React.FC<Props> = ({ sessionId }) => {
         }}
       >
         {loading ? (
-          <Typography sx={{ color: c.text.ghost, fontSize: '0.8rem' }}>Loading...</Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+              <Skeleton key={i} variant="line" width={`${60 + (i * 7) % 30}%`} height={10} />
+            ))}
+          </Box>
         ) : diff ? (
           <pre
             style={{

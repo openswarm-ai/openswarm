@@ -626,6 +626,8 @@ const BrowserCard: React.FC<Props> = ({
       }}
       sx={{
         position: 'absolute',
+        // contain: webview repaints don't shake neighbor cards.
+        contain: 'layout style',
         left: displayX,
         top: displayY,
         width: displayW,

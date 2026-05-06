@@ -42,12 +42,13 @@ export const createDashboard = createAsyncThunk(
 
 export const renameDashboard = createAsyncThunk(
   'dashboards/rename',
-  async ({ id, name }: { id: string; name: string }) => {
+  async ({ id, name }: { id: string; name: string; previousName?: string }) => {
     const res = await fetch(`${DASHBOARDS_API}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     });
+    if (!res.ok) throw new Error(`rename failed: ${res.status}`);
     return (await res.json()) as Dashboard;
   },
 );
@@ -116,6 +117,16 @@ const dashboardsSlice = createSlice({
       .addCase(createDashboard.fulfilled, (state, action) => {
         state.items[action.payload.id] = action.payload;
       })
+      // Optimistic: update name immediately on dispatch so the sidebar
+      // entry / picker label swaps with no perceptible lag. Server confirms
+      // on .fulfilled (rare correction); .rejected rolls back to previousName.
+      .addCase(renameDashboard.pending, (state, action) => {
+        const { id, name } = action.meta.arg;
+        if (state.items[id]) {
+          state.items[id].name = name;
+          state.items[id].auto_named = false;
+        }
+      })
       .addCase(renameDashboard.fulfilled, (state, action) => {
         const d = action.payload;
         if (state.items[d.id]) {
@@ -125,6 +136,12 @@ const dashboardsSlice = createSlice({
             auto_named: d.auto_named ?? false,
             updated_at: d.updated_at,
           };
+        }
+      })
+      .addCase(renameDashboard.rejected, (state, action) => {
+        const { id, previousName } = action.meta.arg;
+        if (state.items[id] && previousName !== undefined) {
+          state.items[id].name = previousName;
         }
       })
       .addCase(deleteDashboard.fulfilled, (state, action) => {

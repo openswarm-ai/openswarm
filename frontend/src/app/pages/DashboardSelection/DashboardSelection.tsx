@@ -13,6 +13,7 @@ import ListItemText from '@mui/material/ListItemText';
 import AddIcon from '@mui/icons-material/Add';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import { Skeleton } from '@/app/components/Loading';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EditIcon from '@mui/icons-material/Edit';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -107,8 +108,9 @@ const DashboardSelection: React.FC = () => {
 
   const handleRenameSubmit = (id: string) => {
     const trimmed = renameValue.trim();
-    if (trimmed && trimmed !== items[id]?.name) {
-      dispatch(renameDashboard({ id, name: trimmed }));
+    const previousName = items[id]?.name;
+    if (trimmed && trimmed !== previousName) {
+      dispatch(renameDashboard({ id, name: trimmed, previousName }));
     }
     setRenamingId(null);
   };
@@ -174,9 +176,11 @@ const DashboardSelection: React.FC = () => {
         </Box>
 
         {loading ? (
-          <Typography sx={{ color: c.text.muted, textAlign: 'center', py: 8 }}>
-            Loading...
-          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, py: 4 }}>
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} variant="card" height={64} />
+            ))}
+          </Box>
         ) : dashboards.length === 0 ? (
           <Box sx={{ textAlign: 'center', py: 10, color: c.text.muted }}>
             <Typography sx={{ fontSize: '1.1rem', mb: 1 }}>

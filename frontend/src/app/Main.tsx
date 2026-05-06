@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useState, useRef } from 'react';
+import React, { useMemo, useEffect, useState, useRef, Suspense, lazy } from 'react';
 import { Provider } from 'react-redux';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider as MuiThemeProvider, createTheme, CssBaseline } from '@mui/material';
@@ -19,16 +19,20 @@ import {
 } from '@/shared/state/updateSlice';
 import AppShell from './components/Layout/AppShell';
 import DashboardSelection from './pages/DashboardSelection/DashboardSelection';
-import Skills from './pages/Skills/Skills';
-import Tools from './pages/Tools/Tools';
-import Modes from './pages/Modes/Modes';
-import Views from './pages/Views/Views';
-import Customization from './pages/Customization/Customization';
-import Analytics from './pages/Analytics/Analytics';
-import OnboardingModal from './components/OnboardingModal';
-import { trackEvent, getLastAction, getLastPage, getTimeSpent } from '@/shared/analytics';
+import ErrorBoundary from './components/ErrorBoundary';
+// Lazy: heavy pages that aren't on the first-paint path.
+const Skills = lazy(() => import('./pages/Skills/Skills'));
+const Tools = lazy(() => import('./pages/Tools/Tools'));
+const Modes = lazy(() => import('./pages/Modes/Modes'));
+const Views = lazy(() => import('./pages/Views/Views'));
+const Customization = lazy(() => import('./pages/Customization/Customization'));
+const Analytics = lazy(() => import('./pages/Analytics/Analytics'));
+const OnboardingModal = lazy(() => import('./components/OnboardingModal'));
+import { report, getSessionTraceState, getRecentActions } from '@/shared/serviceClient';
+import { useRouteTracker } from '@/shared/hooks/useRouteTracker';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import { useDeepLink } from '@/shared/hooks/useDeepLink';
+import { useInteractionHeartbeat } from '@/shared/hooks/useInteractionHeartbeat';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
@@ -161,6 +165,10 @@ const ShortcutsProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
 const DeepLinkListener: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   useDeepLink();
+  // Single global interaction-timestamp recorder. Powers idle-dim and
+  // similar UX, and gives the session-close dump a real "last user
+  // interaction" timestamp.
+  useInteractionHeartbeat();
   return <>{children}</>;
 };
 
@@ -331,20 +339,21 @@ const ThemedApp: React.FC = () => {
   const { mode } = useThemeMode();
   const muiTheme = useMemo(() => buildMuiTheme(c, mode), [c, mode]);
 
-  // Track last action before user leaves and uncaught errors
   useEffect(() => {
     const handleUnload = () => {
-      trackEvent('app.last_action', {
-        last_page: getLastPage(),
-        last_action: getLastAction(),
-        time_spent_seconds: getTimeSpent(),
-      }, true); // useBeacon for reliable delivery during unload
+      const { appStartTs, currentPage } = getSessionTraceState();
+      report('app', 'last_action', {
+        last_page: currentPage,
+        time_spent_seconds: Math.round((Date.now() - appStartTs) / 1000),
+      }, { immediate: true });
     };
     const handleError = (event: ErrorEvent) => {
-      trackEvent('app.error', {
+      const { currentPage } = getSessionTraceState();
+      report('app', 'error', {
         error_message: event.message,
         error_stack: event.error?.stack?.slice(0, 500),
-        last_page: getLastPage(),
+        last_page: currentPage,
+        recent_actions: getRecentActions(10),
       });
     };
     window.addEventListener('beforeunload', handleUnload);
@@ -359,28 +368,35 @@ const ThemedApp: React.FC = () => {
     <MuiThemeProvider theme={muiTheme}>
       <CssBaseline />
       <HashRouter>
+        <RouteTrackerMount />
         <ShortcutsProvider>
           <SettingsLoader>
             <DefaultModelGuard>
             <UpdateListener>
               <DeepLinkListener>
-                <Routes>
-                  <Route element={<AppShell />}>
-                    <Route path="/" element={<DashboardSelection />} />
-                    {/* Dashboard route is a no-op stub — the actual <Dashboard /> is rendered
-                        persistently inside AppShell so its webviews survive navigation between
-                        routes. This route exists only so React Router matches the URL. */}
-                    <Route path="/dashboard/:id" element={null} />
-                    <Route path="/customization" element={<Customization />} />
-                    <Route path="/skills" element={<Skills />} />
-                    <Route path="/actions" element={<Tools />} />
-                    <Route path="/modes" element={<Modes />} />
-                    <Route path="/apps" element={<Views />} />
-                    <Route path="/apps/:id" element={<Views />} />
-                    <Route path="/analytics" element={<Analytics />} />
-                  </Route>
-                </Routes>
-                <OnboardingModal />
+                <ErrorBoundary scope="routes">
+                  <Suspense fallback={null}>
+                    <Routes>
+                      <Route element={<AppShell />}>
+                        <Route path="/" element={<DashboardSelection />} />
+                        {/* Dashboard route is a no-op stub — the actual <Dashboard /> is rendered
+                            persistently inside AppShell so its webviews survive navigation between
+                            routes. This route exists only so React Router matches the URL. */}
+                        <Route path="/dashboard/:id" element={null} />
+                        <Route path="/customization" element={<Customization />} />
+                        <Route path="/skills" element={<Skills />} />
+                        <Route path="/actions" element={<Tools />} />
+                        <Route path="/modes" element={<Modes />} />
+                        <Route path="/apps" element={<Views />} />
+                        <Route path="/apps/:id" element={<Views />} />
+                        <Route path="/analytics" element={<Analytics />} />
+                      </Route>
+                    </Routes>
+                  </Suspense>
+                </ErrorBoundary>
+                <Suspense fallback={null}>
+                  <OnboardingModal />
+                </Suspense>
               </DeepLinkListener>
             </UpdateListener>
             </DefaultModelGuard>
@@ -389,6 +405,13 @@ const ThemedApp: React.FC = () => {
       </HashRouter>
     </MuiThemeProvider>
   );
+};
+
+// Tiny mount-point so the route-tracker hook can use useLocation() (which
+// requires a Router ancestor). Lives inside HashRouter, runs once.
+const RouteTrackerMount: React.FC = () => {
+  useRouteTracker();
+  return null;
 };
 
 const Main: React.FC = () => {

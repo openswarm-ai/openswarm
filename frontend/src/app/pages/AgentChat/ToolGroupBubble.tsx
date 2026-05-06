@@ -96,7 +96,12 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
       data-select-type="tool-group"
       data-select-id={group.id}
       data-select-meta={JSON.stringify({ label: displayName, callCount: group.callCount, tools: toolNames })}
-      sx={{ maxWidth: '85%', my: 0.5 }}
+      sx={{
+        maxWidth: '85%',
+        my: 0.5,
+        // contain: stops new tool rows from reflowing the whole transcript.
+        contain: 'layout style',
+      }}
     >
       <Box
         sx={{
@@ -148,16 +153,23 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
               {deniedCount} denied
             </Typography>
           )}
+          {/* Fixed-width fraction + count chip so the header row stops
+              reflowing as the count climbs from 9 → 10 → 11 → 12 during
+              parallel tool execution. Without min-widths, every digit-
+              boundary nudges the header text wider, which shifts the
+              chevron, which shifts the entire transcript below. The
+              tabular-nums + minWidth pair locks both the fraction and
+              the chip to a stable size for any 1-3 digit count. */}
           {allDone && completedCount > 0 && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, minWidth: 44, justifyContent: 'flex-end' }}>
               <CheckCircleOutlineIcon sx={{ fontSize: 12, color: c.status.success }} />
-              <Typography sx={{ color: c.status.success, fontSize: '0.68rem' }}>
+              <Typography sx={{ color: c.status.success, fontSize: '0.68rem', fontVariantNumeric: 'tabular-nums' }}>
                 {completedCount}/{group.callCount}
               </Typography>
             </Box>
           )}
           {!allDone && pendingCount > 0 && (
-            <Typography sx={{ color: c.text.tertiary, fontSize: '0.68rem', fontFamily: c.font.mono }}>
+            <Typography sx={{ color: c.text.tertiary, fontSize: '0.68rem', fontFamily: c.font.mono, fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>
               {completedCount}/{group.callCount}
             </Typography>
           )}
@@ -166,10 +178,12 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
             size="small"
             sx={{
               height: 18,
+              minWidth: 36,
               fontSize: '0.7rem',
               fontWeight: 600,
               bgcolor: c.bg.secondary,
               color: c.text.muted,
+              fontVariantNumeric: 'tabular-nums',
               '& .MuiChip-label': { px: 0.75 },
             }}
           />
@@ -179,7 +193,19 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
         </Box>
 
         <Collapse in={expanded}>
-          <Box sx={{ borderTop: `0.5px solid ${c.border.medium}` }}>
+          <Box
+            sx={{
+              borderTop: `0.5px solid ${c.border.medium}`,
+              // 140ms fade so rows don't pop in.
+              '& > *': {
+                animation: 'toolRowFadeIn 140ms ease-out',
+              },
+              '@keyframes toolRowFadeIn': {
+                from: { opacity: 0, transform: 'translateY(-2px)' },
+                to: { opacity: 1, transform: 'translateY(0)' },
+              },
+            }}
+          >
             {group.pairs.map((pair) => (
               <ToolCallBubble
                 key={pair.id}

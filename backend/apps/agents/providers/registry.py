@@ -1,22 +1,14 @@
 """Provider registry and model catalog.
 
-NOTE: `create_provider`, `BaseProvider`, `AnthropicProvider`, `OpenAICompatProvider`,
-and the native `AgentLoop` are currently unused. The live agent path is
-`claude_agent_sdk` via `agent_manager._run_agent_loop`. Kept as a foundation
-for a potential future native multi-provider loop.
-
-Multi-model subscription support routes non-Anthropic models through 9Router's
-`/v1/messages` endpoint by passing prefixed model IDs (e.g. `cx/gpt-5.4`,
-`gc/gemini-2.5-pro`). 9Router's translator converts the Anthropic-format
-request into the provider's native format transparently.
+Live agent path goes through claude_agent_sdk via agent_manager._run_agent_loop.
+Non-Anthropic models route through 9Router's /v1/messages endpoint with
+prefixed ids (cx/gpt-5.4, gc/gemini-3-pro-preview).
 """
 
 from __future__ import annotations
 
 import logging
 from typing import Any, TYPE_CHECKING
-
-from backend.apps.agents.providers.base import BaseProvider
 
 if TYPE_CHECKING:
     from backend.apps.settings.models import AppSettings
@@ -52,13 +44,16 @@ logger = logging.getLogger(__name__)
 #          Note: `gpt-5.4` is NOT available on this path — it's API-key-only.
 #          The Codex subscription's flagship is gpt-5.3-codex.
 #   - gc/  (Gemini CLI subscription) uses gemini-3-pro-preview / 3-flash-preview
-#          (thinking-capable) and gemini-2.5-pro / 2.5-flash (stable).
+#          (Gemini 3 family — thinking-capable). 2.5 models removed.
 #          Gemini 3 thought signatures handled via skip_thought_signature_validator.
 
 BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
-    # Anthropic: current-gen trio. Sonnet 4.6 (Feb 17 2026), Opus 4.6
-    # (Feb 5 2026), Haiku 4.5 (Oct 2025). All three are the current
-    # production flagships in their respective size tiers.
+    # Anthropic: Sonnet 4.6 (Feb 17 2026), Opus 4.6 (Feb 5 2026),
+    # Haiku 4.5 (Oct 2025). Opus 4.7 was briefly exposed but pulled —
+    # the Claude Code SDK currently elides plaintext thinking deltas
+    # for 4.7 (encrypted/redacted blocks only), which broke the
+    # "Thought for Ns" pill UX. Re-add once Anthropic ships the
+    # plaintext summarizer for 4.7.
     "Anthropic": [
         # Adaptive entries: route is chosen at call time based on
         # settings.connection_mode (openswarm-pro → proxy; api_key → direct;
@@ -81,7 +76,7 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
          "model_id": "claude-opus-4-6", "router_model_id": "cc/claude-opus-4-6", "api": "anthropic", "reasoning": True, "route": "cc"},
         {"value": "haiku-cc", "label": "Claude Haiku 4.5", "context_window": 200_000,
          "model_id": "claude-haiku-4-5", "router_model_id": "cc/claude-haiku-4-5-20251001", "api": "anthropic", "reasoning": True, "route": "cc"},
-      
+
         {"value": "sonnet-api", "label": "Claude Sonnet 4.6 (API key)", "context_window": 1_000_000,
          "model_id": "claude-sonnet-4-6", "router_model_id": "claude-sonnet-4-6", "api": "anthropic", "reasoning": True, "route": "api"},
         {"value": "opus-api", "label": "Claude Opus 4.6 (API key)", "context_window": 1_000_000,
@@ -91,20 +86,42 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
     ],
   
     "OpenAI": [
+        # GPT-5.5 — newest ChatGPT flagship (May 2026). Available via
+        # the Codex subscription path on 9Router 0.4.x catalogs; on
+        # 0.3.60 (our pin) the cx/ catalog stops at gpt-5.4, so the
+        # subscription-routed entry will 404 until we bump. The
+        # API-key entry below works today against api.openai.com.
+        {"value": "gpt-5.5", "label": "GPT-5.5",
+         "context_window": 1_000_000, "router_model_id": "cx/gpt-5.5",
+         "api": "codex", "subscription_only": True, "reasoning": True},
         {"value": "gpt-5.4", "label": "GPT-5.4",
          "context_window": 1_000_000, "router_model_id": "cx/gpt-5.4",
          "api": "codex", "subscription_only": True, "reasoning": True},
         {"value": "gpt-5.4-mini", "label": "GPT-5.4 Mini",
          "context_window": 400_000, "router_model_id": "cx/gpt-5.4-mini",
          "api": "codex", "subscription_only": True, "reasoning": True},
+        # GPT-5.3 Codex variants. The bare `gpt-5.3-codex` adapts reasoning
+        # effort from session.thinking_level. The -high / -xhigh suffixes
+        # are distinct codex tunes from OpenAI optimized for longer-horizon
+        # coding (xhigh = max-quality, slowest). Both are surfaced for users
+        # who want to pin effort independently of the global thinking knob.
         {"value": "gpt-5.3-codex", "label": "GPT-5.3 Codex",
          "context_window": 400_000, "router_model_id": "cx/gpt-5.3-codex",
+         "api": "codex", "subscription_only": True, "reasoning": True},
+        {"value": "gpt-5.3-codex-high", "label": "GPT-5.3 Codex High",
+         "context_window": 400_000, "router_model_id": "cx/gpt-5.3-codex-high",
+         "api": "codex", "subscription_only": True, "reasoning": True},
+        {"value": "gpt-5.3-codex-xhigh", "label": "GPT-5.3 Codex Extra High",
+         "context_window": 400_000, "router_model_id": "cx/gpt-5.3-codex-xhigh",
          "api": "codex", "subscription_only": True, "reasoning": True},
         # Pinned-API-key entries: bypass 9Router and call api.openai.com
         # directly with openai_api_key. Model ids match what OpenAI's API
         # accepts (no cx/ prefix). Surfaced when openai_api_key is set —
         # gives a metered alternative to the ChatGPT-Plus subscription
         # route. Same -api suffix convention as the Anthropic mirrors.
+        {"value": "gpt-5.5-api", "label": "GPT-5.5 (API key)",
+         "context_window": 1_000_000, "router_model_id": "gpt-5.5", "model_id": "gpt-5.5",
+         "api": "openai", "reasoning": True, "route": "api"},
         {"value": "gpt-5.4-api", "label": "GPT-5.4 (API key)",
          "context_window": 1_000_000, "router_model_id": "gpt-5.4", "model_id": "gpt-5.4",
          "api": "openai", "reasoning": True, "route": "api"},
@@ -113,6 +130,12 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
          "api": "openai", "reasoning": True, "route": "api"},
         {"value": "gpt-5.3-codex-api", "label": "GPT-5.3 Codex (API key)",
          "context_window": 400_000, "router_model_id": "gpt-5.3-codex", "model_id": "gpt-5.3-codex",
+         "api": "openai", "reasoning": True, "route": "api"},
+        {"value": "gpt-5.3-codex-high-api", "label": "GPT-5.3 Codex High (API key)",
+         "context_window": 400_000, "router_model_id": "gpt-5.3-codex-high", "model_id": "gpt-5.3-codex-high",
+         "api": "openai", "reasoning": True, "route": "api"},
+        {"value": "gpt-5.3-codex-xhigh-api", "label": "GPT-5.3 Codex Extra High (API key)",
+         "context_window": 400_000, "router_model_id": "gpt-5.3-codex-xhigh", "model_id": "gpt-5.3-codex-xhigh",
          "api": "openai", "reasoning": True, "route": "api"},
     ],
     # Google: Gemini via Gemini CLI subscription. Both 3.x (thinking-
@@ -125,35 +148,39 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
     # cost of the model not being able to build on prior reasoning
     # across turns — but all tools work and thinking is visible.
     "Google": [
+        # Gemini 3.1 Pro — newest flagship (Apr 2026), routes to
+        # `gc/gemini-3.1-pro-preview` for the subscription path. Same
+        # thoughtSignature caveat applies; resolve_model_id_for_sdk's
+        # Antigravity map handles the multi-step routing.
+        {"value": "gemini-3.1-pro", "label": "Gemini 3.1 Pro",
+         "context_window": 1_000_000, "router_model_id": "gc/gemini-3.1-pro-preview",
+         "api": "gemini-cli", "subscription_only": True, "reasoning": True},
+        {"value": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite",
+         "context_window": 1_000_000, "router_model_id": "gc/gemini-3.1-flash-lite-preview",
+         "api": "gemini-cli", "subscription_only": True, "reasoning": True},
         {"value": "gemini-3-pro", "label": "Gemini 3 Pro",
          "context_window": 1_000_000, "router_model_id": "gc/gemini-3-pro-preview",
          "api": "gemini-cli", "subscription_only": True, "reasoning": True},
         {"value": "gemini-3-flash", "label": "Gemini 3 Flash",
          "context_window": 1_000_000, "router_model_id": "gc/gemini-3-flash-preview",
          "api": "gemini-cli", "subscription_only": True, "reasoning": True},
-        {"value": "gemini-2.5-pro", "label": "Gemini 2.5 Pro",
-         "context_window": 1_000_000, "router_model_id": "gc/gemini-2.5-pro",
-         "api": "gemini-cli", "subscription_only": True},
-        {"value": "gemini-2.5-flash", "label": "Gemini 2.5 Flash",
-         "context_window": 1_000_000, "router_model_id": "gc/gemini-2.5-flash",
-         "api": "gemini-cli", "subscription_only": True},
         # Pinned-API-key entries for Google AI Studio (api="gemini"). Bypass
         # both 9Router (which routes via Gemini CLI/Antigravity OAuth) and
         # any subscription path; call generativelanguage.googleapis.com
         # directly with google_api_key. Free-tier quota is generous (~1K
         # requests/day) and lives separately from the OAuth lanes.
+        {"value": "gemini-3.1-pro-api", "label": "Gemini 3.1 Pro (API key)",
+         "context_window": 1_000_000, "router_model_id": "gemini-3.1-pro-preview", "model_id": "gemini-3.1-pro-preview",
+         "api": "gemini", "reasoning": True, "route": "api"},
+        {"value": "gemini-3.1-flash-lite-api", "label": "Gemini 3.1 Flash Lite (API key)",
+         "context_window": 1_000_000, "router_model_id": "gemini-3.1-flash-lite-preview", "model_id": "gemini-3.1-flash-lite-preview",
+         "api": "gemini", "reasoning": True, "route": "api"},
         {"value": "gemini-3-pro-api", "label": "Gemini 3 Pro (API key)",
          "context_window": 1_000_000, "router_model_id": "gemini-3-pro-preview", "model_id": "gemini-3-pro-preview",
          "api": "gemini", "reasoning": True, "route": "api"},
         {"value": "gemini-3-flash-api", "label": "Gemini 3 Flash (API key)",
          "context_window": 1_000_000, "router_model_id": "gemini-3-flash-preview", "model_id": "gemini-3-flash-preview",
          "api": "gemini", "reasoning": True, "route": "api"},
-        {"value": "gemini-2.5-pro-api", "label": "Gemini 2.5 Pro (API key)",
-         "context_window": 1_000_000, "router_model_id": "gemini-2.5-pro", "model_id": "gemini-2.5-pro",
-         "api": "gemini", "route": "api"},
-        {"value": "gemini-2.5-flash-api", "label": "Gemini 2.5 Flash (API key)",
-         "context_window": 1_000_000, "router_model_id": "gemini-2.5-flash", "model_id": "gemini-2.5-flash",
-         "api": "gemini", "route": "api"},
     ],
 }
 
@@ -189,9 +216,16 @@ def thinking_params_for(api: str, level: str, model_id: str = "") -> dict | None
             return {"thinking": {"type": "disabled"}}
         if api == "codex":
             return {"reasoning": {"effort": "none"}}
-        # Gemini: lowest available level
+        # Gemini: thinkingBudget=0 truly disables reasoning (no
+        # thoughtSignature emitted). Critical for multi-step tool turns
+        # — without this Gemini 2.5/3.x still emits signatures even at
+        # the lowest "level," which then break the next request with
+        # "Thought signature is not valid" 400 because the SDK has no
+        # way to round-trip them. The translator at 9Router 0.3.60
+        # explicitly checks `thinkingBudget == 0` to skip emitting
+        # thinking config, which is what we want.
         if api == "gemini-cli":
-            return {"thinkingConfig": {"thinkingLevel": "LOW"}}
+            return {"thinkingConfig": {"thinkingBudget": 0}}
         return None
 
     # Claude 4.6 models use adaptive thinking (no manual budget). For older
@@ -291,18 +325,39 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
             return entry.get("model_id", short_name)
     # Gemini: prefer lanes with higher quota in order —
     #   1. AI Studio apikey (free 1K/day, separate from any OAuth limit)
-    #   2. Antigravity OAuth (preview, 5-10× the Gemini CLI free tier)
-    #   3. Gemini CLI OAuth (free tier, ~5 RPM — last resort)
+    #   2. Antigravity OAuth (preview, 5-10× the Gemini CLI free tier).
+    #      CRITICAL: Antigravity's wrapper around Google's API doesn't
+    #      enforce the strict thoughtSignature continuity check that
+    #      breaks multi-step tool turns through Gemini CLI. Without
+    #      this lane, agent turns that combine thinking + tool use get
+    #      "Thought signature is not valid" 400s on every follow-up
+    #      request because the claude_agent_sdk has no hook to round-
+    #      trip Gemini-specific signatures.
+    #   3. Gemini CLI OAuth (free tier, ~5 RPM — last resort, breaks
+    #      on multi-step agent turns).
     #
     # Antigravity exposes differently-named Gemini models than Gemini CLI:
-    #   gc/gemini-3-pro-preview  →  ag/gemini-3.1-pro-high
-    #   gc/gemini-3-flash-preview →  ag/gemini-3-flash
-    #   gc/gemini-2.5-pro         →  (not available on Antigravity)
-    #   gc/gemini-2.5-flash       →  (not available on Antigravity)
-    # When Antigravity lacks a model we fall back to gc/.
+    #   gc/gemini-3-pro-preview  →  ag/gemini-3.1-pro-high (DISABLED —
+    #     Google returns 404 not_found_error on this even with an
+    #     active Antigravity connection; tier-side access gate.)
+    #   gc/gemini-3-flash-preview →  ag/gemini-3-flash (works)
+    # Models Antigravity doesn't have (or that 404) fall through to gc/.
     _ANTIGRAVITY_MAP = {
-        "gemini-3-pro-preview": "gemini-3.1-pro-high",
+        # Disabled until 9Router exposes per-model availability so we
+        # can verify pro-high is actually serviceable before routing.
+        # "gemini-3-pro-preview": "gemini-3.1-pro-high",
         "gemini-3-flash-preview": "gemini-3-flash",
+        # Gemini 3.1 family — same thoughtSignature problem as 3.0:
+        # gc/ enforces continuity, the Anthropic SDK has no hook to
+        # round-trip the signature, every multi-step tool turn 400s
+        # with "Thought signature is not valid". Routing through
+        # ag/ (Antigravity wrapper around Google's API) sidesteps
+        # the validator. AG is flagged deprecated upstream — we keep
+        # using it on 9router 0.3.60 (our pin) as the only working
+        # multi-step Gemini path; will revisit once the SDK gets
+        # signature passthrough or 9router lands a Gemini-CLI fix.
+        "gemini-3.1-pro-preview": "gemini-3.1-pro-high",
+        "gemini-3.1-flash-lite-preview": "gemini-3-flash",
     }
     if entry.get("api") == "gemini-cli":
         rid = entry.get("router_model_id", "")
@@ -332,27 +387,75 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     return entry.get("router_model_id", entry.get("model_id", short_name))
 
 
-async def resolve_aux_model(settings: AppSettings, preferred_tier: str = "haiku") -> tuple[str, str | None]:
+async def resolve_aux_model(
+    settings: AppSettings,
+    preferred_tier: str = "haiku",
+    primary_api: str | None = None,
+) -> tuple[str, str | None]:
     """Pick the cheapest/most-available model for auxiliary LLM calls.
 
     Used by title generation, group meta, dashboard naming, outputs/view
     builder, and browser_agent — wherever we need a quick one-shot LLM call
     that is NOT the user's selected chat model.
 
+    Args:
+        primary_api: when set, prefer this provider family ("anthropic" |
+            "codex" | "gemini-cli") over the default Anthropic-first cascade.
+            Lets a Codex-only or Gemini-only session keep aux work on the
+            same family it's already paying for, instead of leaking to
+            Anthropic Haiku just because the user *also* has Anthropic
+            connected. Caller passes `get_api_type(session.model)`.
+
     Returns (model_id, base_url).
     - If base_url is None, caller should use the default Anthropic client.
-    - If base_url is set, caller should route through 9Router.
+    - If base_url is set, caller should route through that endpoint.
 
-    Priority:
-    1. Anthropic API key set → bare haiku/sonnet on real Anthropic API
-    2. 9Router + Claude subscription connected → cc/<model>
-    3. 9Router + Codex connected → cx/gpt-5.4-mini
-    4. 9Router + Gemini connected → gc/gemini-2.5-flash
-    5. Nothing available → raise ValueError
+    Priority (when primary_api is None, classic cascade):
+    1. OpenSwarm Pro mode → bare haiku/sonnet via proxy
+    2. Anthropic API key set → bare haiku/sonnet on real Anthropic API
+    3. 9Router + Claude subscription connected → cc/<model>
+    4. 9Router + Codex connected → cx/gpt-5.4-mini
+    5. 9Router + Gemini connected → gc/gemini-3.1-flash-lite-preview
+    6. Nothing available → raise ValueError
+
+    When primary_api is provided, the resolver tries that family first
+    (subscription path then API key) and only falls through to other
+    providers if the primary family isn't reachable.
     """
     haiku_bare = "claude-haiku-4-5-20251001"
     sonnet_bare = "claude-sonnet-4-20250514"
     bare = haiku_bare if preferred_tier == "haiku" else sonnet_bare
+
+    # Probe 9Router once up front so the primary_api branch and the
+    # default cascade share the same connection set.
+    from backend.apps.nine_router import is_running as _9r_running, get_providers as _9r_providers
+
+    base_url = "http://localhost:20128"
+    connected: set[str] = set()
+    if _9r_running():
+        try:
+            connections = await _9r_providers()
+            connected = {c.get("provider") for c in connections if c.get("isActive")}
+        except Exception:
+            connected = set()
+
+    # Match primary_api first when supplied. Each branch checks both the
+    # subscription path (preferred — usually free) and the direct-API path
+    # before giving up on this family.
+    if primary_api == "codex":
+        if "codex" in connected:
+            return ("cx/gpt-5.4-mini", base_url)
+        if getattr(settings, "openai_api_key", None):
+            return ("gpt-5.4-mini", "https://api.openai.com/v1")
+        # primary is Codex but it's not reachable — fall through to default
+    elif primary_api == "gemini-cli" or primary_api == "gemini":
+        if "gemini-cli" in connected:
+            return ("gc/gemini-3.1-flash-lite-preview", base_url)
+        if getattr(settings, "google_api_key", None):
+            return ("gemini-3.1-flash-lite-preview", "https://generativelanguage.googleapis.com/v1beta")
+        # fall through to default
+    # primary_api == "anthropic" naturally falls into the Anthropic-first
+    # cascade below — no special branch needed.
 
     # OpenSwarm Pro — route through our cloud proxy
     if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
@@ -363,207 +466,23 @@ async def resolve_aux_model(settings: AppSettings, preferred_tier: str = "haiku"
     if getattr(settings, "anthropic_api_key", None):
         return (bare, None)
 
-    # Fall back to 9Router
-    from backend.apps.nine_router import is_running as _9r_running, get_providers as _9r_providers
-
     if not _9r_running():
         raise ValueError(
             "No AI provider configured for auxiliary LLM call. "
             "Set an Anthropic API key or connect a subscription."
         )
 
-    connections = await _9r_providers()
-    connected = {c.get("provider") for c in connections if c.get("isActive")}
-
-    base_url = "http://localhost:20128"
     if "claude" in connected:
         return (f"cc/{haiku_bare}" if preferred_tier == "haiku" else f"cc/{sonnet_bare}", base_url)
     if "codex" in connected:
         return ("cx/gpt-5.4-mini", base_url)
     if "gemini-cli" in connected:
-        return ("gc/gemini-2.5-flash", base_url)
+        return ("gc/gemini-3.1-flash-lite-preview", base_url)
 
     raise ValueError(
         "No AI provider connected for auxiliary LLM call. "
         "Connect at least one subscription in Settings."
     )
-
-
-# ---------------------------------------------------------------------------
-# Provider factory
-# ---------------------------------------------------------------------------
-
-def create_provider(
-    provider_name: str,
-    settings: AppSettings,
-    provider_config: dict | None = None,
-) -> BaseProvider:
-    """Create a provider adapter.
-
-    Routes based on the 'api' field in BUILTIN_MODELS:
-    - "anthropic" → native Anthropic SDK
-    - "openai"    → native OpenAI SDK (direct API)
-    - "gemini"    → native Google GenAI SDK
-    - "openrouter" → OpenAI-compat via openrouter.ai (Meta, Mistral, DeepSeek, Qwen, xAI, etc.)
-    Custom providers use OpenAI-compat with user's base_url.
-    """
-    api_type = _get_api_type(provider_name)
-
-    # Check for 9Router first
-    if provider_name in ("9Router", "9router"):
-        from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-        return OpenAICompatProvider(api_key="9router", base_url="http://localhost:20128/v1")
-
-    if api_type == "anthropic":
-        from backend.apps.agents.providers.anthropic import AnthropicProvider
-        if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
-            return AnthropicProvider(
-                auth_token=getattr(settings, "openswarm_bearer_token", None),
-                base_url=getattr(settings, "openswarm_proxy_url", None) or "https://api.openswarm.com",
-            )
-        # Priority: API key → 9Router subscription
-        if settings.anthropic_api_key:
-            return AnthropicProvider(api_key=settings.anthropic_api_key)
-        # No API key — try 9Router as fallback
-        if _is_9router_available():
-            from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-            provider = OpenAICompatProvider(api_key="9router", base_url="http://localhost:20128/v1")
-            # Override get_model_id to map our short names to 9Router's cc/ prefixed IDs
-            _original_get_model = provider.get_model_id
-            _9r_model_map = {
-                "sonnet": "cc/claude-sonnet-4-6",
-                "opus": "cc/claude-opus-4-6",
-                "haiku": "cc/claude-haiku-4-5-20251001",
-            }
-            provider.get_model_id = lambda name: _9r_model_map.get(name, f"cc/{name}" if not name.startswith("cc/") else name)
-            return provider
-        raise ValueError("Anthropic API key not configured. Set it in Settings, or connect 9Router.")
-
-    if api_type == "openai":
-        from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-        if settings.openai_api_key:
-            return OpenAICompatProvider(api_key=settings.openai_api_key, base_url="https://api.openai.com/v1")
-        # No API key — try 9Router as fallback
-        if _is_9router_available():
-            return OpenAICompatProvider(api_key="9router", base_url="http://localhost:20128/v1")
-        raise ValueError("OpenAI API key not configured. Set it in Settings, or connect 9Router.")
-
-    if api_type == "gemini":
-        from backend.apps.agents.providers.gemini import GeminiProvider
-        if settings.google_api_key:
-            return GeminiProvider(api_key=settings.google_api_key)
-        # No API key — try 9Router as fallback
-        if _is_9router_available():
-            from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-            return OpenAICompatProvider(api_key="9router", base_url="http://localhost:20128/v1")
-        raise ValueError("Google API key not configured. Set it in Settings, or connect 9Router.")
-
-    if api_type == "openrouter":
-        from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-        openrouter_key = getattr(settings, "openrouter_api_key", None)
-        if openrouter_key:
-            return OpenAICompatProvider(api_key=openrouter_key, base_url=OPENROUTER_BASE_URL)
-        # No OpenRouter key — try 9Router as fallback
-        if _is_9router_available():
-            return OpenAICompatProvider(api_key="9router", base_url="http://localhost:20128/v1")
-        raise ValueError(f"OpenRouter API key not configured for {provider_name}. Set it in Settings, or connect a subscription.")
-
-    # Custom provider — look up in settings.custom_providers
-    if provider_config:
-        from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-        return OpenAICompatProvider(
-            api_key=provider_config.get("api_key", ""),
-            base_url=provider_config.get("base_url", ""),
-        )
-
-    for cp in getattr(settings, "custom_providers", []):
-        if cp.name == provider_name:
-            from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-            return OpenAICompatProvider(
-                api_key=cp.api_key,
-                base_url=cp.base_url,
-            )
-
-    raise ValueError(f"Unknown provider: {provider_name}")
-
-
-def _get_api_type(provider_name: str) -> str:
-    """Get the API type for a provider from BUILTIN_MODELS.
-
-    Accepts both display names ('Anthropic') and lowercase API names ('anthropic').
-    """
-    # Direct lookup first (display name like 'Anthropic', 'OpenAI', etc.)
-    models = BUILTIN_MODELS.get(provider_name, [])
-    if models:
-        return models[0].get("api", "openrouter")
-
-    # Lowercase API name mapping
-    _API_NAME_MAP = {
-        "anthropic": "anthropic",
-        "openai": "openai",
-        "gemini": "gemini",
-        "google": "gemini",
-        "openrouter": "openrouter",
-    }
-    if provider_name.lower() in _API_NAME_MAP:
-        return _API_NAME_MAP[provider_name.lower()]
-
-    # Case-insensitive lookup into BUILTIN_MODELS
-    lower = provider_name.lower()
-    for key, models in BUILTIN_MODELS.items():
-        if key.lower() == lower:
-            return models[0].get("api", "openrouter")
-
-    return "openrouter"
-
-
-def _has_credentials(provider_name: str, settings: AppSettings) -> bool:
-    """Check if a provider has credentials configured."""
-    api_type = _get_api_type(provider_name)
-
-    if api_type == "anthropic":
-        if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
-            return bool(getattr(settings, "openswarm_bearer_token", None))
-        return bool(settings.anthropic_api_key)
-    if api_type == "openai":
-        return bool(settings.openai_api_key)
-    if api_type == "gemini":
-        return bool(getattr(settings, "google_api_key", None))
-    if api_type == "openrouter":
-        return bool(getattr(settings, "openrouter_api_key", None))
-    return False
-
-
-def get_available_models(settings: AppSettings) -> dict[str, list[dict]]:
-    """Return all models — always show everything, mark which have keys configured.
-
-    Like Cursor: show all models upfront, prompt for key when user tries to use one.
-    Returns: {"provider_name": [{"value": ..., "label": ..., "context_window": ..., "configured": bool}, ...]}
-    """
-    result: dict[str, list[dict]] = {}
-
-    # Built-in providers — always show all
-    for provider_name, models in BUILTIN_MODELS.items():
-        configured = _has_credentials(provider_name, settings)
-        result[provider_name] = [
-            {**m, "configured": configured}
-            for m in models
-        ]
-
-    # Custom providers
-    for cp in getattr(settings, "custom_providers", []):
-        if cp.models:
-            result[cp.name] = [
-                {
-                    "value": m.get("value", m.get("id", "")),
-                    "label": m.get("label", m.get("value", m.get("id", ""))),
-                    "context_window": m.get("context_window", 128_000),
-                    "configured": True,
-                }
-                for m in cp.models
-            ]
-
-    return result
 
 
 def get_context_window(provider: str, model: str, settings: AppSettings | None = None) -> int:
@@ -591,20 +510,25 @@ def get_context_window(provider: str, model: str, settings: AppSettings | None =
 COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     # (provider, model): (input_cost_per_1M, output_cost_per_1M)
     # NOTE: `calculate_cost` is currently unused in the live path — real
-    # cost tracking comes from 9Router's usage stats (analytics.py:270+).
-    # These entries are kept so the table matches BUILTIN_MODELS and can
+    # cost numbers come from 9Router's usage stats. These entries are kept
+    # so the table matches BUILTIN_MODELS and can
     # be used by any future native-loop path. Subscription-routed models
     # are zero-cost to the user, but API rates are recorded here for
     # reference where they exist.
-    # Anthropic (direct API rates)
+    # Anthropic (direct API rates).
     ("Anthropic", "sonnet"): (3.0, 15.0),
     ("Anthropic", "opus"): (5.0, 25.0),
     ("Anthropic", "haiku"): (1.0, 5.0),
     # OpenAI — Codex subscription path, user pays nothing per token
+    ("OpenAI", "gpt-5.5"): (0.0, 0.0),
     ("OpenAI", "gpt-5.4"): (0.0, 0.0),
     ("OpenAI", "gpt-5.4-mini"): (0.0, 0.0),
     ("OpenAI", "gpt-5.3-codex"): (0.0, 0.0),
+    ("OpenAI", "gpt-5.3-codex-high"): (0.0, 0.0),
+    ("OpenAI", "gpt-5.3-codex-xhigh"): (0.0, 0.0),
     # Google — Gemini CLI subscription path, user pays nothing per token
+    ("Google", "gemini-3.1-pro"): (0.0, 0.0),
+    ("Google", "gemini-3.1-flash-lite"): (0.0, 0.0),
     ("Google", "gemini-3-pro"): (0.0, 0.0),
     ("Google", "gemini-3-flash"): (0.0, 0.0),
     ("Google", "gemini-2.5-pro"): (0.0, 0.0),

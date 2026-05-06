@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import DashboardHeader from './DashboardHeader';
-import { trackEvent } from '@/shared/analytics';
+import { report } from '@/shared/serviceClient';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
 import {
@@ -118,9 +118,13 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const expandNewChats = useAppSelector((state) => state.settings.data.expand_new_chats_in_dashboard);
   const autoRevealSubAgents = useAppSelector((state) => state.settings.data.auto_reveal_sub_agents);
   const outputs = useAppSelector((state) => state.outputs.items);
+  const outputsLoaded = useAppSelector((state) => state.outputs.loaded);
   const glowingAgentCards = useAppSelector((state) => state.dashboardLayout.glowingAgentCards);
   const glowingBrowserCards = useAppSelector((state) => state.dashboardLayout.glowingBrowserCards);
-  const sessionList = Object.values(sessions);
+  // sessions is the top-level dict; useMemo on its identity so sessionList
+  // is stable when sessions hasn't actually changed (RTK only swaps the dict
+  // ref when one of its values changes, so this is the right granularity).
+  const sessionList = useMemo(() => Object.values(sessions), [sessions]);
 
   const contentBounds = useMemo(() => {
     const allRects = [
@@ -297,7 +301,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   }, [tickEdgePan]);
 
   const handleCardDragEnd = useCallback((dx: number, dy: number, didDrag: boolean) => {
-    if (didDrag) trackEvent('dashboard.card_dragged');
+    if (didDrag) report('dashboard', 'card_dragged');
     stopEdgePan();
     if (isMultiDragRef.current && didDrag) {
       const items = selection.selectedArray()
@@ -339,7 +343,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleCardSelect = useCallback((id: string, type: CardType, shiftKey: boolean) => {
-    trackEvent('dashboard.card_clicked', { card_type: type, shift: shiftKey });
+    report('dashboard', 'card_clicked', { card_type: type, shift: shiftKey });
     if (shiftKey) {
       selection.selectCard(id, type, true);
       return;
@@ -429,13 +433,13 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const handleViewportDoubleClick = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     if (isCardTarget(e.target, e.currentTarget)) return;
-    trackEvent('dashboard.canvas_double_clicked');
+    report('dashboard', 'canvas_double_clicked');
     canvas.actions.fitToView();
   }, [canvas.actions]);
 
   // Double-click a card → always expand + center + zoom (cancels pending collapse from single-click)
   const handleCardDoubleClick = useCallback((id: string, type: CardType) => {
-    trackEvent('dashboard.card_double_clicked', { card_type: type });
+    report('dashboard', 'card_double_clicked', { card_type: type });
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = null;
@@ -456,9 +460,9 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   useEffect(() => {
     if (!dashboardId) return;
     const startTime = Date.now();
-    trackEvent('dashboard.opened', { dashboard_id: dashboardId });
+    report('dashboard', 'opened', { dashboard_id: dashboardId });
     return () => {
-      trackEvent('dashboard.closed', {
+      report('dashboard', 'closed', {
         dashboard_id: dashboardId,
         time_spent_seconds: Math.round((Date.now() - startTime) / 1000),
       });
@@ -550,7 +554,13 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     const hasCards = Object.keys(allCards.cards).length > 0
       || Object.keys(allCards.viewCards).length > 0
       || Object.keys(allCards.browserCards).length > 0;
-    if (!hasCards) return;
+    if (!hasCards) {
+      // Empty dashboard — queue a thumbnail clear (sent on exit alongside
+      // the existing capture-update path). Backend treats '' as "set to
+      // empty"; null in PUT body means "don't update".
+      pendingThumbnailRef.current = '';
+      return;
+    }
     captureDashboardThumbnail(viewportEl, contentEl, allCards)
       .then((thumbnail) => { if (thumbnail) pendingThumbnailRef.current = thumbnail; })
       .catch(() => {});
@@ -570,7 +580,8 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     const exitingId = dashboardId;
     return () => {
       const thumbnail = pendingThumbnailRef.current;
-      if (thumbnail) {
+      // null = no pending change; '' = pending clear; other = pending update.
+      if (thumbnail !== null) {
         store.dispatch(updateDashboardThumbnail({ id: exitingId, thumbnail }));
         pendingThumbnailRef.current = null;
       }
@@ -651,6 +662,18 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     prevSessionIdsRef.current = liveIds;
     dispatch(reconcileSessions({ sessionIds: dashboardSessionIds, expandedSessionIds }));
   }, [sessions, layoutInitialized, dispatch, dashboardId, expandedSessionIds]);
+
+  // Prune orphan view cards whose underlying output was deleted (e.g. via
+  // the Views page). Without this, the layout entry persists in the
+  // minimap and contentBounds even though DashboardViewCard renders
+  // nothing. Gated on outputsLoaded so we don't wipe valid cards during
+  // the brief window between fetchLayout returning and outputs finishing.
+  useEffect(() => {
+    if (!layoutInitialized || !outputsLoaded) return;
+    for (const outputId of Object.keys(viewCards)) {
+      if (!outputs[outputId]) dispatch(removeViewCard(outputId));
+    }
+  }, [layoutInitialized, outputsLoaded, viewCards, outputs, dispatch]);
 
   // ---- Auto-reveal / collapse / unreveal sub-agent cards ----
   const autoRevealedRef = useRef(new Set<string>());
@@ -854,7 +877,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
       e.preventDefault();
       setSearchPaletteOpen(true);
-      trackEvent('dashboard.search_opened');
+      report('dashboard', 'search_opened');
     };
     window.addEventListener('keydown', handleSearch);
     return () => window.removeEventListener('keydown', handleSearch);
@@ -1112,7 +1135,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       }
 
       // Expand + navigate to target + bring to front
-      trackEvent('dashboard.arrow_navigated', { direction, from_card: currentFocused, to_card: target.id });
+      report('dashboard', 'arrow_navigated', { direction, from_card: currentFocused, to_card: target.id });
       if (target.type === 'agent') {
         dispatch(expandSession(target.id));
       }
@@ -1194,7 +1217,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       selectedBrowserIds?: string[],
     ) => {
       setToolbarOpen(false);
-      trackEvent('dashboard.agent_created', { mode, model, has_images: !!images?.length, has_context: !!contextPaths?.length, has_browser: !!selectedBrowserIds?.length });
+      report('dashboard', 'agent_created', { mode, model, has_images: !!images?.length, has_context: !!contextPaths?.length, has_browser: !!selectedBrowserIds?.length });
 
       const draftId = `draft-${Date.now().toString(36)}`;
 
@@ -1298,7 +1321,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   }, [dispatch, expandedSessionIds, canvas.actions, handleHighlightCard]);
 
   const handleAddBrowser = useCallback(() => {
-    trackEvent('dashboard.browser_added');
+    report('dashboard', 'browser_added');
     const prevIds = new Set(Object.keys(store.getState().dashboardLayout.browserCards));
     dispatch(addBrowserCard({ url: browserHomepage, expandedSessionIds }));
     setTimeout(() => {
@@ -1313,7 +1336,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   }, [dispatch, browserHomepage, expandedSessionIds, canvas.actions, handleHighlightCard]);
 
   const handleAddNote = useCallback(() => {
-    trackEvent('dashboard.note_added');
+    report('dashboard', 'note_added');
     const prevIds = new Set(Object.keys(store.getState().dashboardLayout.notes));
     dispatch(addNote({ expandedSessionIds }));
     setTimeout(() => {
@@ -1352,7 +1375,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
 
   // Context-aware fit: if a card is selected, zoom to it; otherwise fit all
   const handleFitToView = useCallback(() => {
-    trackEvent('dashboard.fit_to_view', { has_selection: selection.selectedIds.size > 0 });
+    report('dashboard', 'fit_to_view', { has_selection: selection.selectedIds.size > 0 });
     if (selection.selectedIds.size === 1) {
       const [[id, type]] = selection.selectedIds;
       const rect = getCardRect(id, type);
@@ -1365,7 +1388,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   }, [selection.selectedIds, getCardRect, canvas.actions]);
 
   const handleTidy = useCallback(() => {
-    trackEvent('dashboard.tidy_layout');
+    report('dashboard', 'tidy_layout');
     const currentExpanded = store.getState().agents.expandedSessionIds;
     dispatch(tidyLayout({ expandedSessionIds: currentExpanded }));
 

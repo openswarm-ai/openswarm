@@ -14,6 +14,7 @@ import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Tooltip from '@mui/material/Tooltip';
+import { Skeleton } from '@/app/components/Loading';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
@@ -242,8 +243,10 @@ const Modes: React.FC = () => {
       </Box>
 
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-          <CircularProgress sx={{ color: c.accent.primary }} />
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 2, mt: 1 }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} variant="card" height={120} />
+          ))}
         </Box>
       ) : modes.length === 0 ? (
         <Box

@@ -4,7 +4,7 @@ import { activateSubscription } from '@/shared/state/settingsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { fetchTools } from '@/shared/state/toolsSlice';
 import { API_BASE } from '@/shared/config';
-import { trackEvent } from '@/shared/analytics';
+import { report } from '@/shared/serviceClient';
 
 // Listens for openswarm://auth?token=...&plan=...&expires=... URLs coming
 // from the Electron main process via window.openswarm.onAuthUrl. Parses the
@@ -37,7 +37,7 @@ export function useDeepLink(): void {
         const plan = url.searchParams.get('plan');
         const expires = url.searchParams.get('expires');
 
-        trackEvent('subscription.deep_link_received', {
+        report('subscription', 'deep_link_received', {
           plan: plan ?? 'unknown',
         });
 
@@ -50,14 +50,14 @@ export function useDeepLink(): void {
         )
           .unwrap()
           .then((res) => {
-            trackEvent('subscription.activated', { plan: res.plan });
+            report('subscription', 'activated', { plan: res.plan });
             // Re-fetch the model list so the Claude models (via OpenSwarm
             // Pro proxy) show up in the chat picker right away.
             dispatch(fetchModels());
           })
           .catch((err) => {
             console.error('[deep-link] Activation failed:', err);
-            trackEvent('subscription.activation_failed', {
+            report('subscription', 'activation_failed', {
               message: String(err).slice(0, 120),
             });
           });
@@ -86,7 +86,7 @@ export function useDeepLink(): void {
             return;
           }
 
-          trackEvent('oauth.deep_link_received', { provider: url.pathname.split('/')[1] || 'unknown' });
+          report('oauth', 'deep_link_received', { provider: url.pathname.split('/')[1] || 'unknown' });
 
           const resp = await fetch(`${API_BASE}/tools/oauth/claim`, {
             method: 'POST',
@@ -96,10 +96,10 @@ export function useDeepLink(): void {
           if (!resp.ok) {
             const text = await resp.text();
             console.error('[deep-link] OAuth claim failed:', resp.status, text);
-            trackEvent('oauth.claim_failed', { status: resp.status });
+            report('oauth', 'claim_failed', { status: resp.status });
             return;
           }
-          trackEvent('oauth.claim_succeeded');
+          report('oauth', 'claim_succeeded');
           // Refresh tools so the UI reflects the newly-connected tool.
           dispatch(fetchTools());
         } catch (e) {

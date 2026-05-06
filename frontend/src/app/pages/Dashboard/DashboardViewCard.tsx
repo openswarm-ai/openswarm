@@ -307,6 +307,8 @@ const DashboardViewCard: React.FC<Props> = ({
       }}
       sx={{
         position: 'absolute',
+        // contain: iframe app repaints don't shake the rest of the dashboard.
+        contain: 'layout style',
         left: displayX,
         top: displayY,
         width: displayW,

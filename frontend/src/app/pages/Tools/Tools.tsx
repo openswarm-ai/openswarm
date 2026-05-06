@@ -87,6 +87,7 @@ import {
   updateOutput,
   Output,
 } from '@/shared/state/outputsSlice';
+import { Skeleton } from '@/app/components/Loading';
 
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { API_BASE } from '@/shared/config';
@@ -1384,7 +1385,11 @@ const Tools: React.FC = () => {
         </Box>
         <Collapse in={customSectionOpen}>
           {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress sx={{ color: c.accent.primary }} size={28} /></Box>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1, mt: 1 }}>
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} variant="card" height={72} />
+              ))}
+            </Box>
           ) : (tools.length === 0 && uninstalledIntegrations.length === 0) ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 6, color: c.text.ghost, gap: 1.5 }}>
               <BuildIcon sx={{ fontSize: 40, opacity: 0.3 }} />
@@ -1923,8 +1928,10 @@ const Tools: React.FC = () => {
           </Box>
 
           {regLoading && regServers.length === 0 ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1 }}>
-              <CircularProgress sx={{ color: c.accent.primary }} size={28} />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, flex: 1, py: 1 }}>
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} variant="card" height={56} />
+              ))}
             </Box>
           ) : regServers.length === 0 ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, color: c.text.ghost, gap: 1.5 }}>

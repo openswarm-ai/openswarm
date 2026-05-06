@@ -33,10 +33,21 @@ def _resolve_model(short_name: str) -> str:
     return MODEL_MAP.get(short_name, short_name)
 
 
-def _get_anthropic_client():
-    """Create an AsyncAnthropic client using the API key from app settings."""
-    from backend.apps.settings.credentials import get_anthropic_client
+def _get_anthropic_client(api_model: str | None = None):
+    """Create an AsyncAnthropic client using the API key from app settings.
+
+    When `api_model` is provided and carries a 9Router prefix (cc/, cx/, gc/),
+    the client is pointed at 9Router so non-Anthropic aux calls don't 400 on
+    api.anthropic.com. Without an api_model we fall back to the default
+    connection-mode-driven client.
+    """
+    from backend.apps.settings.credentials import (
+        get_anthropic_client,
+        get_anthropic_client_for_model,
+    )
     settings = load_settings()
+    if api_model:
+        return get_anthropic_client_for_model(settings, api_model)
     return get_anthropic_client(settings)
 
 
@@ -362,8 +373,7 @@ async def create_output(body: OutputCreate):
         updated_at=now,
     )
     _save(output)
-    from backend.apps.analytics.collector import record as _analytics
-    _analytics("feature.used", {"feature": "view.created"})
+    pass
     return {"ok": True, "output": output.model_dump()}
 
 
@@ -444,7 +454,7 @@ async def vibe_code(body: VibeCodeRequest):
             "backend_code": body.current_backend_code,
             "input_schema": body.current_schema,
         }
-    client = _get_anthropic_client()
+    client = _get_anthropic_client(aux_model)
     try:
         resp = await client.messages.create(
             model=aux_model,
@@ -452,15 +462,22 @@ async def vibe_code(body: VibeCodeRequest):
             system=VIBE_CODE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
         )
-        raw = resp.content[0].text.strip()
+        from backend.apps.agents.agent_manager import _safe_resp_text
+        raw = _safe_resp_text(resp).strip()
+        if not raw:
+            return {
+                "message": "Aux model returned no content. Please try again.",
+                "frontend_code": body.current_frontend_code,
+                "backend_code": body.current_backend_code,
+                "input_schema": body.current_schema,
+            }
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
             if raw.endswith("```"):
                 raw = raw[:-3]
 
         result = json.loads(raw)
-        from backend.apps.analytics.collector import record as _analytics
-        _analytics("feature.used", {"feature": "vibe_code.used"})
+        pass
         return {
             "message": result.get("message", "View updated."),
             "frontend_code": result.get("frontend_code", body.current_frontend_code),
@@ -523,7 +540,7 @@ async def auto_run_output(body: AutoRunRequest):
         except ValueError as e:
             return {"error": str(e), "input_data": None, "backend_result": None}
 
-    client = _get_anthropic_client()
+    client = _get_anthropic_client(api_model)
     try:
         resp = await client.messages.create(
             model=api_model,
@@ -531,7 +548,10 @@ async def auto_run_output(body: AutoRunRequest):
             system=AUTO_RUN_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
         )
-        raw = resp.content[0].text.strip()
+        from backend.apps.agents.agent_manager import _safe_resp_text
+        raw = _safe_resp_text(resp).strip()
+        if not raw:
+            return {"error": "Aux model returned no content.", "input_data": None, "backend_result": None}
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
             if raw.endswith("```"):

@@ -163,8 +163,7 @@ async def create_skill(body: SkillCreate):
         file_path=fpath,
         command=body.command or slug,
     )
-    from backend.apps.analytics.collector import record as _analytics
-    _analytics("feature.used", {"feature": "skill.created"})
+    pass
     return {"ok": True, "skill": skill.model_dump()}
 
 

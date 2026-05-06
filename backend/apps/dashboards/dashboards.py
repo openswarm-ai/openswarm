@@ -123,10 +123,8 @@ async def list_dashboards():
 
 @dashboards.router.post("/create")
 async def create_dashboard(body: DashboardCreate):
-    from backend.apps.analytics.collector import record as _analytics
     dashboard = Dashboard(name=body.name)
     _save(dashboard)
-    _analytics("dashboard.created", {"name": dashboard.name}, dashboard_id=dashboard.id)
     return dashboard.model_dump(mode="json")
 
 
@@ -221,11 +219,11 @@ async def generate_name(dashboard_id: str):
     fallback = prompts[0][:40]
     try:
         from backend.apps.settings.settings import load_settings
-        from backend.apps.settings.credentials import get_anthropic_client
+        from backend.apps.settings.credentials import get_anthropic_client_for_model
         from backend.apps.agents.providers.registry import resolve_aux_model
         global_settings = load_settings()
         aux_model, _aux_base = await resolve_aux_model(global_settings, preferred_tier="haiku")
-        client = get_anthropic_client(global_settings)
+        client = get_anthropic_client_for_model(global_settings, aux_model)
 
         if len(prompts) == 1:
             system = (
@@ -248,7 +246,8 @@ async def generate_name(dashboard_id: str):
             system=system,
             messages=[{"role": "user", "content": user_content}],
         )
-        generated = resp.content[0].text.strip().strip('"\'')
+        from backend.apps.agents.agent_manager import _safe_resp_text
+        generated = _safe_resp_text(resp).strip().strip('"\'')
         if generated:
             fallback = generated
     except Exception as e:

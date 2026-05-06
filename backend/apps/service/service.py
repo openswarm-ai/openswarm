@@ -1,4 +1,17 @@
-"""Analytics SubApp: PostHog for product analytics + local usage summary from session data."""
+"""Service SubApp.
+
+Replaces the former analytics SubApp with operationally-named endpoints
+and lifecycle management. Responsibilities:
+
+  - Usage-summary and cost-breakdown endpoints (user-facing, for the
+    Settings / Usage page)
+  - Background heartbeat that reports operational state to the cloud
+  - 9Router auto-start for OpenSwarm Pro users
+  - Frontend event endpoint (`POST /api/service/event`)
+  - Periodic spool drainer for offline retry
+"""
+
+from __future__ import annotations
 
 import asyncio
 import json
@@ -11,18 +24,14 @@ from datetime import datetime
 
 from backend.config.Apps import SubApp
 from backend.config.paths import SESSIONS_DIR
-from backend.apps.analytics.collector import init as init_collector, shutdown as shutdown_collector, record, identify
+from backend.apps.service import client as svc
 
 logger = logging.getLogger(__name__)
 
+
 def _read_app_version() -> str:
-    """Read app version from electron/package.json so we never have to bump
-    it in two places. Falls back to a literal if the file isn't reachable
-    (e.g. unusual layouts in tests)."""
-    import json
     try:
         _here = os.path.dirname(os.path.abspath(__file__))
-        # backend/apps/analytics/ -> backend/apps/ -> backend/ -> repo root
         _repo = os.path.dirname(os.path.dirname(os.path.dirname(_here)))
         _pkg = os.path.join(_repo, "electron", "package.json")
         with open(_pkg, encoding="utf-8") as _f:
@@ -33,9 +42,9 @@ def _read_app_version() -> str:
 
 APP_VERSION = _read_app_version()
 
-_heartbeat_task: asyncio.Task | None = None
+_pulse_task: asyncio.Task | None = None
+_drain_task: asyncio.Task | None = None
 
-# Delta tracking — tracks last-seen 9Router totals to compute increments
 _last_9r_cost: float | None = None
 _last_9r_prompt_tokens: int | None = None
 _last_9r_completion_tokens: int | None = None
@@ -44,11 +53,6 @@ _RESTART_THRESHOLD = 1.0
 
 
 def _compute_delta(current: float, last: float | None, threshold: float = _RESTART_THRESHOLD) -> tuple[float, float]:
-    """Compute incremental delta from cumulative values.
-
-    Returns (delta, new_last).
-    Handles 9Router restarts (large drops) and float jitter (tiny drops).
-    """
     if last is None:
         return 0.0, current
     if current < last - threshold:
@@ -58,71 +62,82 @@ def _compute_delta(current: float, last: float | None, threshold: float = _RESTA
     return current - last, current
 
 
-async def _heartbeat_loop():
-    """Send a heartbeat event every 60 seconds with cost/token deltas."""
+_pulse_count = 0
+_pulse_hours: set = set()
+_pulse_delta_cost_total = 0.0
+_pulse_batch_size = 10
+
+
+async def _pulse_loop():
+    """Periodic state-pulse loop. Every minute, samples local counters
+    (active sessions, hour bucket, 9Router cost). Every N samples, ships
+    a compact state struct to the cloud for billing reconciliation."""
     global _last_9r_cost, _last_9r_prompt_tokens, _last_9r_completion_tokens, _last_9r_requests
+    global _pulse_count, _pulse_hours, _pulse_delta_cost_total
 
     while True:
         await asyncio.sleep(60)
+        _pulse_count += 1
         try:
-            from backend.apps.agents.agent_manager import agent_manager
-            props = {
-                "active_session_count": len(agent_manager.sessions),
-            }
-
-            # Compute cost/token deltas from 9Router
-            try:
-                from backend.apps.nine_router import get_usage_stats, is_running as _9r_running
-                if _9r_running():
-                    stats = await get_usage_stats()
-                    if stats:
-                        cur_cost = stats.get("totalCost", 0) or 0
-                        cur_prompt = stats.get("totalPromptTokens", 0) or 0
-                        cur_completion = stats.get("totalCompletionTokens", 0) or 0
-                        cur_requests = stats.get("totalRequests", 0) or 0
-
-                        cost_delta, _last_9r_cost = _compute_delta(cur_cost, _last_9r_cost)
-                        prompt_delta, _last_9r_prompt_tokens = _compute_delta(cur_prompt, _last_9r_prompt_tokens, threshold=1000)
-                        completion_delta, _last_9r_completion_tokens = _compute_delta(cur_completion, _last_9r_completion_tokens, threshold=1000)
-                        requests_delta, _last_9r_requests = _compute_delta(cur_requests, _last_9r_requests, threshold=10)
-
-                        props["nine_router_total_cost"] = cur_cost
-                        props["nine_router_total_prompt_tokens"] = cur_prompt
-                        props["nine_router_total_completion_tokens"] = cur_completion
-
-                        # Per-model breakdown
-                        for model_name, model_data in (stats.get("byModel") or {}).items():
-                            safe_name = model_name.replace(".", "_").replace("-", "_")[:40]
-                            props[f"cost_model_{safe_name}"] = model_data.get("cost", 0)
-            except Exception:
-                pass
-
-            record("app.heartbeat", props)
-
-            # Fire cost.delta with incremental amounts
-            if "nine_router_total_cost" in props:
-                record("cost.delta", {
-                    "cost_delta_usd": cost_delta,
-                    "prompt_tokens_delta": int(prompt_delta),
-                    "completion_tokens_delta": int(completion_delta),
-                    "requests_delta": int(requests_delta),
-                })
+            import datetime as _dt
+            _pulse_hours.add(_dt.datetime.now().hour)
         except Exception:
             pass
 
+        cost_delta = 0.0
+        try:
+            from backend.apps.nine_router import get_usage_stats, is_running as _9r_running
+            if _9r_running():
+                stats = await get_usage_stats()
+                if stats:
+                    cur_cost = stats.get("totalCost", 0) or 0
+                    cur_prompt = stats.get("totalPromptTokens", 0) or 0
+                    cur_completion = stats.get("totalCompletionTokens", 0) or 0
+                    cur_requests = stats.get("totalRequests", 0) or 0
+                    cost_delta, _last_9r_cost = _compute_delta(cur_cost, _last_9r_cost)
+                    prompt_delta, _last_9r_prompt_tokens = _compute_delta(cur_prompt, _last_9r_prompt_tokens, threshold=1000)
+                    completion_delta, _last_9r_completion_tokens = _compute_delta(cur_completion, _last_9r_completion_tokens, threshold=1000)
+                    requests_delta, _last_9r_requests = _compute_delta(cur_requests, _last_9r_requests, threshold=10)
+                    _pulse_delta_cost_total += cost_delta
+        except Exception:
+            pass
+
+        if _pulse_count >= _pulse_batch_size:
+            try:
+                from backend.apps.agents.agent_manager import agent_manager
+                # Compact field names — the wire stays small and the cloud
+                # is the only place that knows what each key means.
+                svc.sync({
+                    "a": len(agent_manager.sessions),       # active sessions
+                    "h": sorted(_pulse_hours),               # hour bucket set
+                    "n": _pulse_count,                       # samples in batch
+                    "c": _last_9r_cost or 0,                 # cumulative cost
+                    "d1": _pulse_delta_cost_total,           # cost delta since last batch
+                })
+            except Exception:
+                pass
+            _pulse_count = 0
+            _pulse_hours = set()
+            _pulse_delta_cost_total = 0.0
+
+
+async def _drain_loop():
+    while True:
+        try:
+            await svc.drain_spool()
+        except Exception:
+            pass
+        await asyncio.sleep(60)
+
 
 @asynccontextmanager
-async def analytics_lifespan():
-    global _heartbeat_task
-
-    init_collector()
-    logger.info("PostHog analytics initialised")
+async def service_lifespan():
+    global _pulse_task, _drain_task
 
     try:
         from backend.apps.settings.settings import load_settings, _save_settings
         settings = load_settings()
 
-        # Track first open
         is_first_open = settings.first_opened_at is None
         if is_first_open:
             settings.first_opened_at = datetime.now().isoformat()
@@ -148,7 +163,7 @@ async def analytics_lifespan():
         for cp in getattr(settings, "custom_providers", []):
             providers.append(cp.name)
 
-        record("app.opened", {
+        svc.sync({
             "os": platform.system(),
             "platform": platform.platform(),
             "provider_count": len(providers),
@@ -158,7 +173,7 @@ async def analytics_lifespan():
             "app_version": APP_VERSION,
         })
 
-        id_props = {
+        id_props: dict = {
             "providers_configured": providers,
             "provider_count": len(providers),
             "app_version": APP_VERSION,
@@ -172,10 +187,6 @@ async def analytics_lifespan():
         if getattr(settings, "user_referral_source", None):
             id_props["referral_source"] = settings.user_referral_source
 
-        # Subscription context so every event from this installation can be
-        # sliced by plan / paying-vs-free in PostHog. Refreshed on activate,
-        # sync, and disconnect so these values stay current without waiting
-        # for the next app launch.
         mode = getattr(settings, "connection_mode", "own_key")
         plan = getattr(settings, "openswarm_subscription_plan", None)
         is_paying = mode == "openswarm-pro" and bool(
@@ -187,47 +198,54 @@ async def analytics_lifespan():
         if is_paying and getattr(settings, "openswarm_subscription_expires", None):
             id_props["subscription_expires"] = settings.openswarm_subscription_expires
 
-        identify(id_props)
+        svc.sync({"identity": id_props})
     except Exception as e:
-        logger.debug(f"Analytics startup event failed (non-critical): {e}")
+        logger.debug(f"Service startup event failed (non-critical): {e}")
 
-    # Auto-start 9Router for subscription access
     try:
         from backend.apps.nine_router import ensure_running as ensure_9router
         await ensure_9router()
     except Exception as e:
         logger.debug(f"9Router auto-start skipped: {e}")
 
-    # Start heartbeat
-    _heartbeat_task = asyncio.create_task(_heartbeat_loop())
+    _pulse_task = asyncio.create_task(_pulse_loop())
+    _drain_task = asyncio.create_task(_drain_loop())
 
     yield
 
-    # Stop heartbeat
-    if _heartbeat_task:
-        _heartbeat_task.cancel()
+    if _pulse_task:
+        _pulse_task.cancel()
         try:
-            await _heartbeat_task
+            await _pulse_task
         except asyncio.CancelledError:
             pass
-        _heartbeat_task = None
+        _pulse_task = None
 
-    # Stop 9Router
+    if _drain_task:
+        _drain_task.cancel()
+        try:
+            await _drain_task
+        except asyncio.CancelledError:
+            pass
+        _drain_task = None
+
     try:
         from backend.apps.nine_router import stop as stop_9router
         stop_9router()
     except Exception:
         pass
 
-    shutdown_collector()
-    logger.info("PostHog analytics shut down")
+    logger.info("Service shut down")
 
 
-analytics = SubApp("analytics", analytics_lifespan)
+service = SubApp("service", service_lifespan)
 
+
+# ---------------------------------------------------------------------------
+# Usage endpoints (user-facing, read by the Settings / Usage page)
+# ---------------------------------------------------------------------------
 
 def _load_all_sessions() -> list[dict]:
-    """Load all persisted session JSON files."""
     results = []
     if not os.path.exists(SESSIONS_DIR):
         return results
@@ -241,12 +259,10 @@ def _load_all_sessions() -> list[dict]:
     return results
 
 
-@analytics.router.get("/usage-summary")
+@service.router.get("/usage-summary")
 async def usage_summary():
-    """Compute usage stats from persisted sessions for the Settings page."""
     from backend.apps.agents.agent_manager import agent_manager
 
-    # Combine persisted + active sessions
     sessions = _load_all_sessions()
     for s in agent_manager.get_all_sessions():
         sessions.append(s.model_dump(mode="json"))
@@ -267,25 +283,18 @@ async def usage_summary():
         tool_msgs = [m for m in messages if m.get("role") == "tool_call"]
         total_messages += len(user_msgs)
         total_tool_calls += len(tool_msgs)
-
         model_counts[s.get("model", "unknown")] += 1
         provider_counts[s.get("provider", "anthropic")] += 1
         status_counts[s.get("status", "unknown")] += 1
-
-        # Duration
         created = s.get("created_at")
         closed = s.get("closed_at")
         if created and closed:
             try:
-                c_str = created[:19]
-                cl_str = closed[:19]
-                dur = (datetime.fromisoformat(cl_str) - datetime.fromisoformat(c_str)).total_seconds()
+                dur = (datetime.fromisoformat(closed[:19]) - datetime.fromisoformat(created[:19])).total_seconds()
                 if dur > 0:
                     total_duration += dur
             except Exception:
                 pass
-
-        # Count individual tools
         for m in tool_msgs:
             content = m.get("content", {})
             if isinstance(content, dict):
@@ -297,11 +306,9 @@ async def usage_summary():
     completed = status_counts.get("completed", 0)
     completion_rate = completed / total_sessions if total_sessions > 0 else 0
 
-    # Fetch 9Router usage data for accurate cost/token tracking
     from backend.apps.nine_router import get_usage_stats, is_running as _9r_running
     nine_router_stats = await get_usage_stats() if _9r_running() else None
 
-    # Determine best cost source
     if nine_router_stats and nine_router_stats.get("totalCost", 0) > 0:
         cost_source = "9router"
         total_cost = nine_router_stats["totalCost"]
@@ -312,7 +319,6 @@ async def usage_summary():
 
     avg_cost = total_cost / total_sessions if total_sessions > 0 else 0
 
-    # Extract 9Router breakdowns
     cost_by_model = {}
     cost_by_provider = {}
     total_prompt_tokens = 0
@@ -348,7 +354,6 @@ async def usage_summary():
         "providers_used": dict(provider_counts.most_common(10)),
         "top_tools": dict(tool_counts.most_common(15)),
         "status_breakdown": dict(status_counts),
-        # 9Router enrichment
         "total_prompt_tokens": total_prompt_tokens,
         "total_completion_tokens": total_completion_tokens,
         "cost_by_model": cost_by_model,
@@ -359,9 +364,8 @@ async def usage_summary():
     }
 
 
-@analytics.router.get("/cost-breakdown")
+@service.router.get("/cost-breakdown")
 async def cost_breakdown(period: str = "7d"):
-    """Get detailed cost breakdown from 9Router."""
     from backend.apps.nine_router import get_usage_stats, is_running as _9r_running
     if not _9r_running():
         return {"available": False, "by_model": {}, "by_provider": {}}
@@ -380,18 +384,47 @@ async def cost_breakdown(period: str = "7d"):
     }
 
 
-@analytics.router.get("/status")
-async def analytics_status():
-    return {"status": "posthog", "enabled": True}
+@service.router.get("/status")
+async def service_status():
+    return {"status": "ok", "enabled": True}
 
 
-@analytics.router.post("/event")
-async def record_event(body: dict):
-    """Accept analytics events from the frontend (e.g. feature.time_spent)."""
-    event_type = body.get("event_type", "")
-    properties = body.get("properties", {})
-    if event_type:
-        record(event_type, properties,
-               session_id=body.get("session_id"),
-               dashboard_id=body.get("dashboard_id"))
+# ---------------------------------------------------------------------------
+# Frontend event endpoints
+# ---------------------------------------------------------------------------
+
+@service.router.post("/submit")
+async def post_submit(body: dict):
+    kind = body.get("kind") or ""
+    payload = body.get("payload")
+    if not kind or not isinstance(payload, dict):
+        return {"ok": False, "error": "kind and payload required"}
+    svc.sync(payload)
     return {"ok": True}
+
+
+@service.router.post("/event")
+async def post_event(body: dict):
+    surface = body.get("surface") or body.get("event_type") or ""
+    action = body.get("action") or ""
+
+    # Legacy path: frontend sends {event_type: "foo.bar", properties: {...}}
+    if not action and "." in surface:
+        surface, action = surface.split(".", 1)
+    if not surface:
+        return {"ok": False, "error": "surface required"}
+    if not action:
+        action = "fired"
+
+    svc.sync({
+        "s": str(surface)[:64],
+        "a": str(action)[:64],
+        "p": body.get("props") or body.get("properties") or {},
+    })
+    return {"ok": True}
+
+
+@service.router.get("/spool/count")
+async def spool_count():
+    from backend.apps.service import buffer
+    return {"pending": buffer.count(svc._spool_path())}

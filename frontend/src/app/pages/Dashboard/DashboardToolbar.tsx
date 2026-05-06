@@ -19,6 +19,8 @@ import { useElementSelection } from '@/app/components/ElementSelectionContext';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { searchHistory, clearHistorySearch } from '@/shared/state/agentsSlice';
+import { updateSettings, AppSettings } from '@/shared/state/settingsSlice';
+import { store } from '@/shared/state/store';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import type { Output } from '@/shared/state/outputsSlice';
 
@@ -127,6 +129,32 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       }
       prevInputOpen.current = inputOpen;
     }, [inputOpen, settingsLoaded, defaultMode, defaultModel, defaultThinkingLevel]);
+
+    // Picking a model/mode/thinking-level in the toolbar writes through to
+    // the global default. Without this, the reopen-reset effect above
+    // would snap back to the old default the next time the user opens the
+    // toolbar, ignoring what they last picked.
+    const promoteToDefault = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+      const current = store.getState().settings;
+      if (!current.loaded) return;
+      if (current.data[key] === value) return;
+      dispatch(updateSettings({ ...current.data, [key]: value }));
+    }, [dispatch]);
+
+    const handleModeChange = useCallback((newMode: string) => {
+      setMode(newMode);
+      promoteToDefault('default_mode', newMode);
+    }, [promoteToDefault]);
+
+    const handleModelChange = useCallback((newModel: string) => {
+      setModel(newModel);
+      promoteToDefault('default_model', newModel);
+    }, [promoteToDefault]);
+
+    const handleThinkingLevelChange = useCallback((level: 'off' | 'low' | 'medium' | 'high' | 'auto') => {
+      setThinkingLevel(level);
+      promoteToDefault('default_thinking_level', level);
+    }, [promoteToDefault]);
     const [viewPickerOpen, setViewPickerOpen] = useState(false);
     const [viewSearch, setViewSearch] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
@@ -384,14 +412,14 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
             <ChatInput
               onSend={handleSend}
               mode={mode}
-              onModeChange={setMode}
+              onModeChange={handleModeChange}
               model={model}
-              onModelChange={setModel}
+              onModelChange={handleModelChange}
               embedded
               autoFocus
               sessionId={TOOLBAR_OWNER_ID}
               thinkingLevel={thinkingLevel}
-              onThinkingLevelChange={setThinkingLevel}
+              onThinkingLevelChange={handleThinkingLevelChange}
             />
           </div>
         ) : historyOpen ? (

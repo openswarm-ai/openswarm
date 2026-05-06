@@ -2,14 +2,12 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 interface TempState {
-  temp_state: string | null;
   pendingBrowserUrl: string | null;
   pendingFocusAgentId: string | null;
   lastDashboardId: string | null;
 }
 
 const initialState: TempState = {
-  temp_state: null,
   pendingBrowserUrl: null,
   pendingFocusAgentId: null,
   lastDashboardId: null,
@@ -19,12 +17,6 @@ const tempStateSlice = createSlice({
   name: 'tempState',
   initialState,
   reducers: {
-    setTempState(state, action: PayloadAction<string | null>) {
-      state.temp_state = action.payload;
-    },
-    resetTempState(state) {
-      state.temp_state = null;
-    },
     setPendingBrowserUrl(state, action: PayloadAction<string>) {
       state.pendingBrowserUrl = action.payload;
     },
@@ -43,9 +35,7 @@ const tempStateSlice = createSlice({
   },
 });
 
-export const { 
-  setTempState,
-  resetTempState,
+export const {
   setPendingBrowserUrl,
   clearPendingBrowserUrl,
   setLastDashboardId,

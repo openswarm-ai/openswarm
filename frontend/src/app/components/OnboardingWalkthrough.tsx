@@ -3,7 +3,22 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { trackEvent } from '@/shared/analytics';
+import { report as _report } from '@/shared/serviceClient';
+
+// Same per-step timing wrapper as OnboardingModal — every walkthrough
+// report carries `ms_since_start` so the cloud can compute per-step
+// dwell time inside the existing aggregation. Reuses the existing
+// report() surface; no new outbound paths.
+let _walkthroughStartTs: number | null = null;
+function report(surface: string, action: string, props?: Record<string, unknown>): void {
+  if (_walkthroughStartTs === null) _walkthroughStartTs = Date.now();
+  const enriched: Record<string, unknown> = { ...(props ?? {}) };
+  enriched["ms_since_start"] = Date.now() - _walkthroughStartTs;
+  _report(surface, action, enriched);
+  if (action === "completed") {
+    _walkthroughStartTs = null;
+  }
+}
 
 export interface WalkthroughStep {
   target: string;                               // data-onboarding="<value>" selector
@@ -93,13 +108,13 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
 
   // Track walkthrough start on mount
   useEffect(() => {
-    trackEvent('walkthrough.started');
+    report('walkthrough', 'started');
   }, []);
 
   // Track each step viewed
   useEffect(() => {
     if (step) {
-      trackEvent('walkthrough.step_viewed', { step: currentStep, step_name: step.target || 'done' });
+      report('walkthrough', 'step_viewed', { step: currentStep, step_name: step.target || 'done' });
     }
   }, [currentStep, step]);
 
@@ -194,7 +209,7 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
 
   const handleNext = useCallback(() => {
     if (isLastStep) {
-      trackEvent('walkthrough.completed', { steps_viewed: currentStep + 1 });
+      report('walkthrough', 'completed', { steps_viewed: currentStep + 1 });
       onComplete();
     } else {
       setCurrentStep((s) => s + 1);
@@ -216,7 +231,7 @@ const OnboardingWalkthrough: React.FC<Props> = ({ onComplete }) => {
     if (!el) return;
 
     const handler = () => {
-      trackEvent('walkthrough.step_action', { step: currentStep, step_name: step.target });
+      report('walkthrough', 'step_action', { step: currentStep, step_name: step.target });
       setTimeout(() => handleNext(), 300);
     };
     el.addEventListener('click', handler, { once: true });

@@ -28,7 +28,7 @@ const Analytics: React.FC = () => {
             </svg>
           </Box>
           <Typography sx={{ color: c.text.primary, fontSize: '1.1rem', fontWeight: 600, mb: 1 }}>
-            Analytics powered by PostHog
+            Your usage
           </Typography>
           <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.6, mb: 3, maxWidth: 500, mx: 'auto' }}>
             Usage data is automatically collected — sessions, costs, tool usage, model distribution, and task categories.

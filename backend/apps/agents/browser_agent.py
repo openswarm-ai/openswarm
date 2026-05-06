@@ -761,6 +761,23 @@ async def execute_browser_tool(
     return result
 
 
+def _extract_domain(url: str) -> str | None:
+    """Extract the apex domain from a URL (acme-corp.notion.so → notion.so).
+    Returns None for non-http URLs."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        if not host or host in ("localhost", "127.0.0.1", ""):
+            return None
+        parts = host.split(".")
+        if len(parts) >= 2:
+            return ".".join(parts[-2:])
+        return host
+    except Exception:
+        return None
+
+
 def _format_tool_result(result: dict, tool_name: str) -> list[dict]:
     """Convert a browser command result dict into Anthropic API content blocks."""
     if "error" in result:
@@ -1238,6 +1255,14 @@ async def run_browser_agent(
                         recent_tool_calls = recent_tool_calls[-_LOOP_WINDOW_SIZE * 2:]
 
                 content_blocks = _format_tool_result(result, tu.name)
+                try:
+                    url = result.get("url") or (tu.input or {}).get("url")
+                    if url:
+                        domain = _extract_domain(str(url))
+                        if domain and domain not in session.browser_domains:
+                            session.browser_domains.append(domain)
+                except Exception:
+                    pass
                 if is_loop:
                     loop_trigger_count += 1
                     repeat_count = sum(1 for c in recent_tool_calls if c == call_key)
@@ -1321,7 +1346,7 @@ async def run_browser_agent(
         )
 
         session.status = "completed"
-        agent_manager._fire_session_completed(session)
+        agent_manager._sync_session_close(session)
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
             "status": "completed",
@@ -1404,12 +1429,7 @@ async def run_browser_agents(
     Each task dict has: { browser_id (optional), task, url (optional) }
     Returns a list of result dicts, one per task.
     """
-    from backend.apps.analytics.collector import record as _analytics
-    _analytics("feature.used", {
-        "feature": "browser_agent.launched",
-        "task_count": len(tasks),
-        "model": model,
-    }, dashboard_id=dashboard_id)
+    pass  # Browser agent launch captured via session dump
 
     pre_selected = set(pre_selected_browser_ids or [])
 

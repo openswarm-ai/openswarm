@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import Main from './app/Main';
+import ErrorBoundary from './app/components/ErrorBoundary';
 import { ensureAuthToken } from './shared/config';
 
 // Resolve the per-install auth token from Electron BEFORE first render
@@ -19,6 +20,10 @@ async function bootstrap() {
     ]);
   } catch {}
   const root = document.getElementById('root')!;
-  createRoot(root).render(<Main />);
+  createRoot(root).render(
+    <ErrorBoundary scope="root">
+      <Main />
+    </ErrorBoundary>
+  );
 }
 bootstrap();

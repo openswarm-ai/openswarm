@@ -56,6 +56,10 @@ class Message(BaseModel):
     # number frozen on the persisted bubble matches what the user saw
     # rising during the stream. Pure display, not billing.
     tokens: Optional[int] = None
+    # tool_count drives the "3 tools used" segment on the thinking pill.
+    tool_count: Optional[int] = None
+    # combined input + output + children tokens for the turn (overloaded name).
+    input_tokens: Optional[int] = None
 
 class MessageBranch(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
@@ -81,10 +85,42 @@ class AgentSession(BaseModel):
     allowed_tools: list[str] = Field(default_factory=list)
     max_turns: Optional[int] = None
     cwd: Optional[str] = None
+    # Origin remote and branch resolved at session start. Persisted so a
+    # resumed session reattaches to the same project even if the user has
+    # since `cd`'d elsewhere; also surfaced in the session list UI so the
+    # user can tell two sessions apart by repo.
+    repo_url: Optional[str] = None
+    branch: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     closed_at: Optional[datetime] = None
+    # Wall-clock of the first stream event from the agent SDK. Set once
+    # at the start of the first turn so resumed sessions can show "first
+    # response was at HH:MM" in the session list without rescanning the
+    # message log.
+    first_response_at: Optional[datetime] = None
+    # Operational log of HITL approval decisions, one entry per request:
+    # {tool, behavior, decision_ms}. Persisted alongside the session so a
+    # reload restores the full approval timeline (which calls were
+    # approved, denied, and how long each took).
+    approval_decisions: list[dict] = Field(default_factory=list)
     cost_usd: float = 0.0
     tokens: dict[str, int] = Field(default_factory=lambda: {"input": 0, "output": 0})
+    # Total wall-clock ms the agent spent in `status="running"`. Accumulates
+    # across turns; persists across resume. Used by the session-close
+    # report so we can report "agent active time" alongside total session
+    # duration. Off by default so legacy sessions deserialize cleanly.
+    agent_active_ms: int = 0
+    # Accumulated wall-clock ms spent on each model. Updated when the
+    # active model changes (model switch) or on close. Surfaced in the
+    # session header so the user can see "Sonnet: 45s · Haiku: 12s"
+    # without scanning turns by hand.
+    time_per_model: dict[str, int] = Field(default_factory=dict)
+    # Per-tool latency rollup: { tool_name: { count, total_ms, max_ms } }.
+    # Populated as tools complete. Surfaced in the session "tools used"
+    # row so the user can see which tool calls were slow without
+    # opening every turn.
+    tool_latencies: dict[str, dict] = Field(default_factory=dict)
+    browser_domains: list[str] = Field(default_factory=list)
     messages: list[Message] = Field(default_factory=list)
     pending_approvals: list[ApprovalRequest] = Field(default_factory=list)
     branches: dict[str, "MessageBranch"] = Field(default_factory=lambda: {"main": MessageBranch(id="main")})
@@ -94,6 +130,14 @@ class AgentSession(BaseModel):
     browser_id: Optional[str] = None
     parent_session_id: Optional[str] = None
     needs_fork: bool = False
+    # Stronger than needs_fork: when True, the next turn drops `resume=`
+    # entirely and replays history into a brand-new sdk_session_id. This
+    # is the only way to make the bundled CLI re-read mcp_servers from
+    # the rebuilt options dict — `fork_session=True` only forks the
+    # conversation tree, it inherits the original transport's MCP server
+    # set. Set after MCPActivate when prior turns exist so the newly
+    # activated server's tools actually reach the model.
+    needs_fresh_session: bool = False
     # Set when MCPActivate (or analogous activation) wants the agent to
     # auto-continue immediately after the current turn ends — without
     # requiring the user to type another message. The agent loop reads

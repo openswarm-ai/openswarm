@@ -438,12 +438,35 @@ async function startBackend() {
 
   const shellPath = getShellPath();
 
+  // Identifies how this build was packaged. Read by the backend service
+  // client so the cloud can split installer-using customers from
+  // run-from-source developers in dashboards. Honors a build-time override
+  // (set in CI when producing platform installers) before falling back to
+  // OS-derived defaults.
+  let installMethod = process.env.OPENSWARM_INSTALL_METHOD;
+  if (!installMethod) {
+    if (!isPackaged) {
+      installMethod = 'dev';
+    } else if (process.platform === 'darwin') {
+      installMethod = 'dmg';
+    } else if (process.platform === 'win32') {
+      installMethod = 'windows-setup';
+    } else if (process.platform === 'linux') {
+      // electron-builder produces AppImage by default for linux targets.
+      // Override at packaging time when building .deb / .rpm.
+      installMethod = 'appimage';
+    } else {
+      installMethod = 'unknown';
+    }
+  }
+
   const env = {
     ...process.env,
     PATH: shellPath,
     OPENSWARM_PACKAGED: isPackaged ? '1' : '0',
     OPENSWARM_PORT: String(backendPort),
     OPENSWARM_ELECTRON_PATH: process.execPath,
+    OPENSWARM_INSTALL_METHOD: installMethod,
     PYTHONDONTWRITEBYTECODE: '1',
     // PEP 540 UTF-8 mode: makes open() default to UTF-8 on Windows where
     // the locale is otherwise cp1252. Many backend modules read UTF-8
@@ -653,8 +676,11 @@ function sendToRenderer(channel, ...args) {
 
 function setupAutoUpdater() {
   if (!autoUpdater) return;
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
+  // Silent background updates: download on detect, install on next quit.
+  // The OS gates the install on main-process exit (can't replace a
+  // running .app / locked .exe), so an active session is never disrupted.
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('update-available', (info) => {
     console.log(`Update available: ${info.version}`);
@@ -688,6 +714,14 @@ function setupAutoUpdater() {
   autoUpdater.checkForUpdates().catch((err) => {
     console.log('Update check skipped:', err.message);
   });
+
+  // Always-on users (lid never closes) miss the once-at-startup check
+  // above. Re-check every 4h; coalesces if a download is already cached.
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.log('Periodic update check failed:', err.message);
+    });
+  }, 4 * 60 * 60 * 1000);
 }
 
 function killBackend() {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { trackEvent } from '@/shared/analytics';
+import { report } from '@/shared/serviceClient';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -199,7 +199,7 @@ const OpenSwarmProCard: React.FC = () => {
   const [status, setStatus] = useState<OpenSwarmProStatus | null>(null);
   const [busy, setBusy] = useState<'manage' | 'disconnect' | null>(null);
   // Track which usage thresholds we've already fired this session so the
-  // event doesn't spam PostHog every 30s while the counter hovers past
+  // event doesn't spam every 30s while the counter hovers past
   // the threshold. Reset implicitly on page unmount (settings close).
   const firedUsageThresholds = useRef<Set<number>>(new Set());
 
@@ -219,7 +219,7 @@ const OpenSwarmProCard: React.FC = () => {
   }, [refresh]);
 
   const handleManage = async () => {
-    trackEvent('subscription.manage_clicked', {
+    report('subscription', 'manage_clicked', {
       plan: status?.plan ?? null,
       status: status?.status ?? null,
     });
@@ -257,7 +257,7 @@ const OpenSwarmProCard: React.FC = () => {
     for (const threshold of [80, 90] as const) {
       if (current >= threshold && !firedUsageThresholds.current.has(threshold)) {
         firedUsageThresholds.current.add(threshold);
-        trackEvent('subscription.usage_warning', {
+        report('subscription', 'usage_warning', {
           plan: status.plan ?? null,
           utilization: current,
           threshold,
@@ -922,7 +922,7 @@ const UsageStats: React.FC = () => {
   const [stats, setStats] = useState<any>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/analytics/usage-summary`)
+    fetch(`${API_BASE}/service/usage-summary`)
       .then(r => r.json())
       .then(setStats)
       .catch(() => {});

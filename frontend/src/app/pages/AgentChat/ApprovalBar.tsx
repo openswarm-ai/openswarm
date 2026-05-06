@@ -1156,4 +1156,4 @@ const GroupRow: React.FC<GroupRowProps> = ({ group, expanded, onToggle, onApprov
   );
 };
 
-export default ApprovalBar;
+export default React.memo(ApprovalBar);

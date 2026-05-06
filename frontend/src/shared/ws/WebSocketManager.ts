@@ -36,6 +36,7 @@ const _getAuthTokenSafe = (): string => {
   try { return getAuthToken() || ''; } catch { return ''; }
 };
 
+
 const _genUuid = (): string => {
   // Avoid pulling in `crypto.randomUUID` for compat — this is a
   // disambiguator, not a security boundary, so a 96-bit hex string is
@@ -118,47 +119,183 @@ class WebSocketManager {
   private outboundQueue: QueuedFrame[] = [];
 
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
-  private interpolatorState: Map<string, { sessionId: string; messageId: string; targetText: string; displayedLength: number }> = new Map();
+  // Per-message streaming state. Rate-based pacing tracks measured
+  // throughput so paint output is smooth even when the server emits in
+  // bursts (which Anthropic / 9Router / OS TCP all do). Each frame we
+  // paint a small uniform chunk sized so that we'd drain the backlog
+  // over the next ~burstWindowMs — when the next burst arrives, we
+  // adjust without ever going dry between bursts.
+  //
+  // Fields:
+  //   firstDeltaAt: timestamp of the very first delta. Used to compute
+  //     average chars/sec over the lifetime of the stream.
+  //   lastPaintAt: when we last actually dispatched. Frame loop reads
+  //     this to enforce minimum step-time even when RAF fires faster
+  //     than we want.
+  //   measuredCps: rolling chars-per-second estimate. Decays on idle so
+  //     a fast burst doesn't permanently inflate the rate.
+  //   underrunMs: how long we've been "caught up" (no backlog) since
+  //     the last paint. Used to detect we're rate-limited by the
+  //     server, not by our cadence — when this gets large, we slow
+  //     down to leave headroom for the next burst.
+  private interpolatorState: Map<string, {
+    sessionId: string;
+    messageId: string;
+    targetText: string;
+    displayedLength: number;
+    firstDeltaAt: number;
+    lastDeltaAt: number;
+    lastPaintAt: number;
+    measuredCps: number;
+  }> = new Map();
   private interpolatorRafId: number | null = null;
+  // Initial paint delay (ms). We hold the first delta briefly so
+  // an inter-burst gap can land before painting starts. Without it
+  // the very first frame paints aggressively, then idles waiting
+  // for the next server burst — visible as a tiny boom-pause at
+  // the start of every stream. Imperceptible to humans (saccades
+  // run at ~250ms, well above this).
+  private static INITIAL_HOLD_MS = 150;
+  // Paint cadence in ms. ~30Hz — well above perceptual flicker,
+  // light enough on React reconciliation that it stays smooth on
+  // long messages.
+  private static PAINT_INTERVAL_MS = 33;
+  // Target painting throughput. 10 chars per 33ms = ~300 cps —
+  // the "fast comfortable typing" visual rate (20% slower than the
+  // previous 400 cps default). Still well above natural reading
+  // speed (~200 cps comfort threshold), still hides bursty upstream
+  // cadence, just feels less frantic. Tuned for legibility at speed.
+  private static TARGET_CHARS_PER_PAINT = 10;
+  // When a backlog accumulates, allow up to this many chars/paint to
+  // drain it. ~1.6× the target keeps catch-up imperceptible — the
+  // eye can't tell 10 from 16 in a fluid stream. Caps the worst-case
+  // visual jump on a giant burst.
+  private static MAX_CHARS_PER_PAINT = 16;
+  // Headroom buffer in ms. We try to keep at least this much "future
+  // paintable" content on hand at all times, so the next upstream
+  // burst can be coalesced into the visible stream without a pause.
+  // Adds a fixed latency budget — humans don't notice anything below
+  // ~250ms in continuous text, so 200ms is well-tuned.
+  private static HEADROOM_MS = 200;
 
   constructor(url: string, options?: WSManagerOptions) {
     this.url = url;
     this.skipStreamEvents = options?.skipStreamEvents ?? false;
     this.sessionId = options?.sessionId ?? null;
     this.connectionUuid = _genUuid();
+    // Seed lastSeq from the cross-mount persistent map so a fresh
+    // manager (created on every AgentChat remount via key={session.id})
+    // doesn't ask the server to replay events the previous manager
+    // already saw. This is the architectural fix for "completed chats
+    // re-type themselves on reopen": the server's resume protocol now
+    // sees a real high-water mark and has nothing to replay.
+    if (this.sessionId) {
+      this.lastSeq = _sessionLastSeq.get(this.sessionId) ?? 0;
+    }
   }
 
   private bufferDelta(sessionId: string, messageId: string, delta: string) {
+    const now = performance.now();
     const existing = this.interpolatorState.get(messageId);
     if (existing) {
       existing.targetText += delta;
+      existing.lastDeltaAt = now;
     } else {
-      this.interpolatorState.set(messageId, { sessionId, messageId, targetText: delta, displayedLength: 0 });
+      this.interpolatorState.set(messageId, {
+        sessionId,
+        messageId,
+        targetText: delta,
+        displayedLength: 0,
+        firstDeltaAt: now,
+        lastDeltaAt: now,
+        // Seed lastPaintAt INITIAL_HOLD_MS in the future so the first
+        // tick won't paint until that delay has passed — gives the
+        // upstream a chance to land more bytes before we start, so
+        // we don't underrun on the very first frame.
+        lastPaintAt: now + WebSocketManager.INITIAL_HOLD_MS,
+        measuredCps: 0,
+      });
     }
     this.scheduleInterpolator();
   }
 
   private scheduleInterpolator() {
     if (this.interpolatorRafId != null) return;
+    // Schedule on every frame — the time-throttle inside tickInterpolator
+    // decides whether this frame actually paints. RAF gives us frame-
+    // synced timing without the overhead of setInterval drift, and the
+    // throttle ensures we only dispatch once per PAINT_INTERVAL_MS even
+    // if RAF fires more often (which it does on 120Hz displays).
     this.interpolatorRafId = requestAnimationFrame(() => this.tickInterpolator());
   }
 
-  // Drain each message's pending text at a paced, roughly-uniform rate so
-  // bursty server emissions paint as a smooth stream of characters instead of
-  // visible chunks. Rate adapts to backlog: small backlog → ~2 chars/frame
-  // (~120cps, typewriter feel); large backlog → up to 40 chars/frame so we
-  // catch up fast without pinning the main thread.
+  // Fixed-rate "extremely fast typing" pacing. Paints at a constant
+  // ~400 cps target regardless of upstream burstiness. The buffer
+  // grows when bursts land above target and drains during gaps —
+  // because most models stream below 400 cps on average, we keep up
+  // easily and the user sees smooth, uniform high-speed typing. No
+  // more boom-pause-boom: the buffer absorbs bursts and the constant
+  // paint rate hides them.
+  //
+  // Three behaviors:
+  //   1. Healthy backlog (>= TARGET): paint exactly TARGET chars.
+  //   2. Big backlog (more than HEADROOM_MS-worth queued): paint up
+  //      to MAX to slowly catch up. Capped low enough that the
+  //      acceleration is invisible.
+  //   3. Underflow (less than TARGET remaining, stream still active):
+  //      paint everything we have at the cadence and pause. Better
+  //      than artificially trickling — the natural pause is short
+  //      because the next burst from the server fills the buffer
+  //      again.
+  //
+  // Latency cost: HEADROOM_MS (~200ms) behind real time. Imperceptible.
   private tickInterpolator() {
     this.interpolatorRafId = null;
+    const now = performance.now();
     let workRemaining = false;
     for (const state of this.interpolatorState.values()) {
       const remaining = state.targetText.length - state.displayedLength;
       if (remaining <= 0) continue;
-      const step = Math.min(Math.max(Math.ceil(remaining / 6), 2), 40);
-      const nextLength = Math.min(state.displayedLength + step, state.targetText.length);
+      // Time-throttle: paint once per PAINT_INTERVAL_MS regardless of
+      // display refresh rate. The lastPaintAt was seeded with
+      // `now + INITIAL_HOLD_MS` in bufferDelta on first delta, so the
+      // first frame is naturally delayed.
+      const sincePaint = now - state.lastPaintAt;
+      if (sincePaint < WebSocketManager.PAINT_INTERVAL_MS) {
+        workRemaining = true;
+        continue;
+      }
+      // Headroom in ms = remaining / TARGET_CPS. If we have more than
+      // HEADROOM_MS of paintable content queued, drain slightly faster
+      // to bound visible latency. Otherwise paint at the steady target
+      // rate.
+      const targetCps = WebSocketManager.TARGET_CHARS_PER_PAINT * (1000 / WebSocketManager.PAINT_INTERVAL_MS);
+      const headroomMs = (remaining / targetCps) * 1000;
+      let step: number;
+      if (headroomMs > WebSocketManager.HEADROOM_MS * 2) {
+        // Big buffer — accelerate slightly to catch up. Bounded so
+        // the visible flow doesn't become unstably variable.
+        step = WebSocketManager.MAX_CHARS_PER_PAINT;
+      } else {
+        // Steady-state: paint exactly TARGET. This is the "fast
+        // typing" cadence that hides upstream bursts.
+        step = WebSocketManager.TARGET_CHARS_PER_PAINT;
+      }
+      // Don't paint past the end of the buffered text. When this
+      // shrinks the step, we're underflowing — the natural pause that
+      // follows is exactly what we want (better than trickling fake-
+      // slow chars). The next upstream burst will land and we'll
+      // resume painting at TARGET.
+      step = Math.min(step, remaining);
+      const nextLength = state.displayedLength + step;
       const deltaSlice = state.targetText.slice(state.displayedLength, nextLength);
       state.displayedLength = nextLength;
-      store.dispatch(streamDelta({ sessionId: state.sessionId, messageId: state.messageId, delta: deltaSlice }));
+      state.lastPaintAt = now;
+      store.dispatch(streamDelta({
+        sessionId: state.sessionId,
+        messageId: state.messageId,
+        delta: deltaSlice,
+      }));
       if (state.displayedLength < state.targetText.length) workRemaining = true;
     }
     if (workRemaining) this.scheduleInterpolator();
@@ -362,6 +499,11 @@ class WebSocketManager {
     // session, so this is the high-water mark we send back on resume.
     if (typeof msg.seq === 'number' && msg.seq > this.lastSeq) {
       this.lastSeq = msg.seq;
+      // Mirror to the module-scope persistent map so the next fresh
+      // manager (next AgentChat remount) starts here, not at zero.
+      if (this.sessionId) {
+        _sessionLastSeq.set(this.sessionId, this.lastSeq);
+      }
     }
 
     // ----- Connection-scoped frames (no business-logic side effects) -----
@@ -395,8 +537,11 @@ class WebSocketManager {
         store.dispatch(fetchSession(session_id));
         // Reset lastSeq — the REST refetch is the new authoritative
         // baseline; subsequent server events with seq numbers will
-        // re-establish the high-water mark.
+        // re-establish the high-water mark. Also wipe the cross-mount
+        // persistent map so a remount during this gap window doesn't
+        // resurrect the stale value.
         this.lastSeq = 0;
+        _sessionLastSeq.delete(session_id);
       }
       return;
     }
@@ -484,29 +629,46 @@ class WebSocketManager {
         break;
 
       case 'agent:stream_start':
-        if (session_id && data.message_id) {
-          store.dispatch(streamStart({
-            sessionId: session_id,
-            messageId: data.message_id,
-            role: data.role,
-            toolName: data.tool_name,
-          }));
-        }
-        break;
-
       case 'agent:stream_delta':
-        if (session_id && data.message_id) {
-          this.bufferDelta(session_id, data.message_id, data.delta);
-        }
-        break;
-
       case 'agent:stream_end':
-        if (session_id && data.message_id) {
-          this.flushInterpolator(data.message_id);
-          store.dispatch(streamEnd({
-            sessionId: session_id,
-            messageId: data.message_id,
-          }));
+        // Replay-skip guard. The WS resume protocol replays buffered
+        // events from the ring buffer with seq > last_seq. When this
+        // manager is freshly constructed (every AgentChat mount,
+        // because of `key={session.id}`), last_seq is 0, so the server
+        // replays EVERY buffered stream_* event for the session.
+        // Without this guard, opening any chat with prior streaming
+        // turns animates the entire history through the typewriter
+        // interpolator on every reopen.
+        //
+        // The discriminator is `resumeAcked`: it flips to true when
+        // server:hello arrives, which the server sends AFTER the replay
+        // completes. Any stream_* event arriving while !resumeAcked is
+        // replay-from-buffer (historical) and can be dropped — the REST
+        // snapshot we awaited before connect is authoritative for any
+        // already-finalized message, and any genuinely live turn the
+        // server is pushing will continue emitting events after the ack.
+        if (!this.resumeAcked) break;
+        if (event === 'agent:stream_start') {
+          if (session_id && data.message_id) {
+            store.dispatch(streamStart({
+              sessionId: session_id,
+              messageId: data.message_id,
+              role: data.role,
+              toolName: data.tool_name,
+            }));
+          }
+        } else if (event === 'agent:stream_delta') {
+          if (session_id && data.message_id) {
+            this.bufferDelta(session_id, data.message_id, data.delta);
+          }
+        } else if (event === 'agent:stream_end') {
+          if (session_id && data.message_id) {
+            this.flushInterpolator(data.message_id);
+            store.dispatch(streamEnd({
+              sessionId: session_id,
+              messageId: data.message_id,
+            }));
+          }
         }
         break;
 
@@ -764,6 +926,26 @@ class WebSocketManager {
 import { WS_BASE } from '@/shared/config';
 
 export const dashboardWs = new WebSocketManager(`${WS_BASE}/ws/dashboard`, { skipStreamEvents: true });
+
+// Per-session high-water mark for the resume protocol. Survives across
+// AgentChat mounts/unmounts so reopening a chat doesn't re-trigger a
+// full replay from the server's ring buffer.
+//
+// Why this exists: AgentChat uses `key={session.id}` on the embedded
+// instance inside AgentCard, so every expand/collapse remounts the
+// component, which constructs a fresh WebSocketManager. Without this
+// persistent map, each fresh manager starts at last_seq=0 and asks the
+// server for the entire buffered history. The server faithfully
+// replays it, the client renders the typewriter animation again, and
+// the user sees their completed chat "type itself out" on every reopen.
+//
+// Lifetime: tied to the JS module load, which means the page tab. Lost
+// on full app reload (intentional — that should re-hydrate from REST).
+// On backend restart the buffers are wiped anyway, so a stale
+// lastSeq pointing past the buffer top falls into the "fresh client"
+// path on the server (last_seq>0 but no buffer) which short-circuits
+// to a no-op replay. Safe.
+const _sessionLastSeq: Map<string, number> = new Map();
 
 export function createSessionWs(sessionId: string): WebSocketManager {
   return new WebSocketManager(`${WS_BASE}/ws/agents/${sessionId}`, { sessionId });

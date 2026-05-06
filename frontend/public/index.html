@@ -6,6 +6,11 @@
   <title>Open Swarm</title>
   <link rel="icon" href="./favicon.ico?v=2" sizes="16x16 32x32 48x48" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+  <!-- Warm sockets to the few external endpoints we hit on first paint. -->
+  <link rel="preconnect" href="https://api.openswarm.com" crossorigin />
+  <link rel="dns-prefetch" href="https://api.openswarm.com" />
+  <link rel="dns-prefetch" href="https://api.github.com" />
+  <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
 </head>
 <body>

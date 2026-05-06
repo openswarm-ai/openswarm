@@ -380,9 +380,9 @@ export const CommandsContent: React.FC = () => {
             </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              {atCommands.map((cmd) => (
+              {atCommands.map((cmd, i) => (
                 <Box
-                  key={cmd.prefix}
+                  key={`${cmd.prefix}::${cmd.source}::${i}`}
                   sx={{
                     display: 'flex',
                     alignItems: 'center',

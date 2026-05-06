@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import time
+from typing import Any
 
 import httpx
 
@@ -327,6 +328,50 @@ async def get_usage_stats(period: str = "all") -> dict | None:
                 return r.json()
     except Exception as e:
         logger.debug(f"9Router usage stats fetch failed: {e}")
+    return None
+
+
+async def get_latest_reasoning_tokens(model_hint: str | None = None) -> int | None:
+    """Fetch reasoning_tokens from 9Router for the most recently completed
+    request, optionally filtered by model. Returns None if 9Router isn't
+    running, the request didn't expose reasoning tokens, or the lookup
+    fails for any reason.
+
+    9Router's request-details endpoint returns the most recent N requests
+    in reverse chronological order with full token breakdowns including
+    `reasoning_tokens` (OpenAI's `completion_tokens_details.reasoning_tokens`)
+    and `thoughtsTokenCount` (Gemini's). For Anthropic via 9Router this
+    field will be absent/zero — Anthropic doesn't break out reasoning
+    tokens in its API response — so callers get None and should fall
+    back to the heuristic.
+    """
+    if not is_running():
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            params: dict[str, Any] = {"page": 1, "pageSize": 5}
+            if model_hint:
+                params["model"] = model_hint
+            r = await client.get(f"{NINE_ROUTER_API}/usage/request-details", params=params)
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            # Endpoint returns either {requests: [...]} or {data: [...]} —
+            # be defensive about the shape since 9Router has rolled out
+            # multiple variants.
+            requests = data.get("requests") or data.get("data") or []
+            for req in requests:
+                tokens = req.get("tokens") or req.get("usage") or {}
+                rt = (
+                    tokens.get("reasoning_tokens")
+                    or tokens.get("thoughtsTokenCount")
+                    or tokens.get("thoughts_token_count")
+                    or 0
+                )
+                if rt and int(rt) > 0:
+                    return int(rt)
+    except Exception as e:
+        logger.debug(f"9Router reasoning-token lookup failed: {e}")
     return None
 
 

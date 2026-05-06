@@ -52,12 +52,12 @@ async def _clear_subscription(settings_obj) -> None:
 
 
 def _sync_subscription_identity(settings_obj) -> None:
-    """Push the installation's current subscription state into PostHog person
+    """Push the installation's current subscription state into service-sync person
     properties so every event from this user is segmentable by plan /
-    paying-vs-free. Safe to call from hot paths — PostHog is fire-and-forget
+    paying-vs-free. Safe to call from hot paths — service-sync is fire-and-forget
     and swallows errors internally."""
     try:
-        from backend.apps.analytics.collector import identify as _identify
+        from backend.apps.service.client import identify as _identify
     except Exception:
         return
     mode = getattr(settings_obj, "connection_mode", "own_key")
@@ -231,16 +231,16 @@ async def sync():
     No-op when not in openswarm-pro mode. Best-effort: network failures are
     swallowed — the caller still gets a 200 with whatever local state we
     already had."""
-    # Lazy-import the PostHog helper so subscription/router doesn't pay the
+    # Lazy-import the service-sync helper so subscription/router doesn't pay the
     # cost when analytics are disabled.
-    from backend.apps.analytics.collector import record as _record
+    from backend.apps.service.client import sync as _sync
 
     settings_obj = load_settings()
     bearer = getattr(settings_obj, "openswarm_bearer_token", None)
     mode = getattr(settings_obj, "connection_mode", "own_key")
 
     if mode != "openswarm-pro" or not bearer:
-        _record("subscription.sync_ran", {"reason": "no_bearer"})
+        _sync(settings_obj.model_dump())
         return {"ok": True, "synced": False, "connection_mode": mode}
 
     try:
@@ -251,7 +251,7 @@ async def sync():
             )
     except httpx.HTTPError as e:
         logger.debug("subscription/sync live fetch failed: %s", e)
-        _record("subscription.sync_ran", {"reason": "network"})
+        _sync(settings_obj.model_dump())
         return {"ok": True, "synced": False, "reason": "network"}
 
     # Same 401/402 handling as /status: if Stripe-side reconciliation proves
@@ -260,7 +260,7 @@ async def sync():
     if r.status_code in (401, 402):
         await _clear_subscription(settings_obj)
         reason = "revoked" if r.status_code == 401 else "expired"
-        _record("subscription.sync_ran", {"reason": reason})
+        _sync(settings_obj.model_dump())
         return {
             "ok": True,
             "synced": False,
@@ -270,7 +270,7 @@ async def sync():
 
     if r.status_code != 200:
         logger.debug("subscription/sync got %s from cloud: %s", r.status_code, r.text[:200])
-        _record("subscription.sync_ran", {"reason": "upstream", "status_code": r.status_code})
+        _sync(settings_obj.model_dump())
         return {"ok": True, "synced": False, "reason": "upstream"}
 
     data = r.json()
@@ -288,11 +288,7 @@ async def sync():
         )
     await save_settings_async(settings_obj)
     _sync_subscription_identity(settings_obj)
-    _record("subscription.sync_ran", {
-        "reason": "ok",
-        "synced": bool(data.get("synced")),
-        "plan": cloud_plan,
-    })
+    _sync(settings_obj.model_dump())
     return {
         "ok": True,
         "synced": bool(data.get("synced")),

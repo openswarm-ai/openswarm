@@ -8,6 +8,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchOutputs, deleteOutput, Output } from '@/shared/state/outputsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ViewCard from './ViewCard';
+import { Skeleton } from '@/app/components/Loading';
 import ViewEditor from './ViewEditor';
 import ViewRunDialog from './ViewRunDialog';
 
@@ -115,9 +116,11 @@ const Views: React.FC = () => {
 
         {/* Card grid */}
         {loading ? (
-          <Typography sx={{ color: c.text.muted, textAlign: 'center', py: 8 }}>
-            Loading...
-          </Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 2, py: 2 }}>
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} variant="card" height={140} />
+            ))}
+          </Box>
         ) : outputs.length === 0 ? (
           <Box
             sx={{

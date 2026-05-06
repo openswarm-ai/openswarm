@@ -6,7 +6,7 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import CheckIcon from '@mui/icons-material/Check';
 import CircularProgress from '@mui/material/CircularProgress';
-import { trackEvent } from '@/shared/analytics';
+import { report } from '@/shared/serviceClient';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import {
   subscribeToPlan,
@@ -114,7 +114,7 @@ const PlanPicker: React.FC<PlanPickerProps> = ({
   const [pending, setPending] = useState<OpenSwarmPlan | null>(null);
 
   React.useEffect(() => {
-    trackEvent('subscription.plan_picker_opened', { source, default_plan: defaultPlan ?? 'pro_plus' });
+    report('subscription', 'plan_picker_opened', { source, default_plan: defaultPlan ?? 'pro_plus' });
   }, [source, defaultPlan]);
 
   const handleSubscribe = async (plan: OpenSwarmPlan) => {
@@ -130,7 +130,7 @@ const PlanPicker: React.FC<PlanPickerProps> = ({
   const handleIntervalChange = (_: React.MouseEvent<HTMLElement>, next: BillingInterval | null) => {
     if (!next) return;
     setInterval(next);
-    trackEvent('subscription.billing_interval_toggled', { source, interval: next });
+    report('subscription', 'billing_interval_toggled', { source, interval: next });
   };
 
   // Typography scale — scaled down in compact mode (MessageBubble modal) but

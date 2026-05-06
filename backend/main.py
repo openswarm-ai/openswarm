@@ -37,7 +37,7 @@ from backend.apps.mcp_registry.mcp_registry import mcp_registry
 from backend.apps.skill_registry.skill_registry import skill_registry
 from backend.apps.outputs.outputs import outputs
 from backend.apps.dashboards.dashboards import dashboards
-from backend.apps.analytics.analytics import analytics
+from backend.apps.service.service import service
 from backend.apps.subscription.router import subscription
 from backend.apps.web.web import web
 from backend.apps.agents.anthropic_proxy import anthropic_proxy
@@ -45,7 +45,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 import json
 
-main_app = MainApp([health, agents, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, dashboards, analytics, subscription, web, anthropic_proxy])
+main_app = MainApp([health, agents, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, dashboards, service, subscription, web, anthropic_proxy])
 app = main_app.app
 
 # Generate per-install auth token BEFORE we bind the HTTP port. By the
@@ -70,6 +70,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://api.openswarm.com",
+        "https://openswarm.com",
     ],
     allow_origin_regex=r"^(file://.*|http://localhost:\d+|http://127\.0\.0\.1:\d+)$",
     allow_credentials=True,
@@ -518,6 +520,16 @@ async def mcp_meta(action: str, request: Request):
 
         session.active_mcps.append(server_name)
         session.needs_fork = True
+        # When the session has prior turns, fork_session alone won't
+        # make the bundled CLI re-read mcp_servers — the transport
+        # snapshot at launch time is what serves tool schemas. Force a
+        # full fresh-session restart so the next turn rebuilds with the
+        # newly-activated server in its mcp_servers dict from scratch.
+        # First-turn activations don't need this (the SDK session hasn't
+        # locked in yet). One-time ~200-400ms cold start on the auto-
+        # continuation turn that fires right after this anyway.
+        if session.sdk_session_id:
+            session.needs_fresh_session = True
         try:
             from backend.apps.agents.ws_manager import ws_manager as _ws
             await _ws.send_to_session(parent_session_id, "agent:status", {
@@ -527,14 +539,7 @@ async def mcp_meta(action: str, request: Request):
             })
         except Exception:
             logger.exception("Failed to broadcast post-activate session status")
-        try:
-            from backend.apps.analytics.collector import record as _analytics
-            _analytics("mcp.activated", {
-                "server_name": server_name,
-                "reason_len": len(reason),
-            }, session_id=parent_session_id, dashboard_id=session.dashboard_id)
-        except Exception:
-            pass
+        pass  # MCP activation captured via session dump on close
 
         # Auto-continue: flag the session so that after its current turn
         # ends (which is the turn that contains this MCPActivate tool
@@ -715,14 +720,7 @@ async def outputs_meta(action: str, request: Request):
             })
         except Exception:
             logger.exception("Failed to broadcast post-activate session status")
-        try:
-            from backend.apps.analytics.collector import record as _analytics
-            _analytics("output.activated", {
-                "output_id": output_id,
-                "reason_len": len(reason),
-            }, session_id=parent_session_id, dashboard_id=session.dashboard_id)
-        except Exception:
-            pass
+        pass  # Output activation captured via session dump on close
         return JSONResponse({"status": "activated", "output_id": output_id})
 
     return JSONResponse({"error": f"unknown action: {action}"}, status_code=400)

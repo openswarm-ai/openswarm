@@ -309,4 +309,4 @@ const ItemRow: React.FC<{
   </Box>
 );
 
-export default DashboardHeader;
+export default React.memo(DashboardHeader);

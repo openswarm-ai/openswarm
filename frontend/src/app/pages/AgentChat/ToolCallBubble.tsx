@@ -20,7 +20,7 @@ import CallSplitIcon from '@mui/icons-material/CallSplit';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AgentMessage, expandSession, collapseSession, fetchSession } from '@/shared/state/agentsSlice';
-import { getToolLabel } from './toolLabels';
+import { getToolLabel, getToolLabelWithInput, prettyPath, prettyUrl, quoteQuery, bashCommandDetail } from './toolLabels';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { placeCard, removeCard, setGlowingAgentCard, clearGlowingAgentCard, DEFAULT_CARD_W, DEFAULT_CARD_H, EXPANDED_CARD_MIN_H, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
@@ -172,7 +172,11 @@ export function parseMcpToolName(rawName: string): McpToolInfo {
   if (!m) return { isMcp: false, serverSlug: '', action: '', service: '', displayName: rawName };
   const serverSlug = m[1];
   const action = m[2];
-  const display = action.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
+  // Sentence case: first word capitalized, rest lowercase. Reads "Get
+  // message details" not "Get Message Details" — the Linear/Notion/Stripe
+  // convention. Title Case feels marketing-y on every row.
+  const spaced = action.replace(/_/g, ' ').toLowerCase();
+  const display = spaced.charAt(0).toUpperCase() + spaced.slice(1);
 
   const lower = action.toLowerCase();
   let service = '';
@@ -209,23 +213,28 @@ function getInputSummary(toolName: string, input: any): string {
 
     const n = toolName.toLowerCase();
     if (isBashTool(toolName)) {
-      const cmd = input.command || '';
-      return `$ ${cmd.slice(0, 80)}${cmd.length > 80 ? '…' : ''}`;
+      // Verb is in the tool label ("Deleted", "Pulled from git", …);
+      // surface only the target so the row reads "Deleted foo.ts" instead
+      // of leaking the full shell command. Raw command stays in the body.
+      return bashCommandDetail(input.command || '');
     }
-    if (n === 'read') return input.file_path || input.path || '';
-    if (n === 'write') return input.file_path || input.path || '';
-    if (n === 'edit' || n === 'multiedit' || n === 'strreplace')
-      return input.file_path || input.path || '';
+    if (n === 'read' || n === 'write' || n === 'edit' || n === 'multiedit' || n === 'strreplace')
+      return prettyPath(input.file_path || input.path || '');
     if (n === 'glob') return input.pattern || input.glob || input.glob_pattern || '';
     if (n === 'grep' || n === 'ripgrep') {
       const pat = input.pattern || input.regex || '';
       const path = input.path || input.directory || '';
-      return path ? `/${pat}/ in ${path}` : `/${pat}/`;
+      const q = quoteQuery(pat);
+      return path ? `${q} in ${prettyPath(path)}` : q;
     }
-    if (n === 'websearch') return input.query || input.search_term || '';
-    if (n === 'webfetch') return input.url || '';
-    if (n === 'todoread' || n === 'todowrite') return 'todos';
-    if (n === 'ls') return input.path || '.';
+    if (n === 'websearch') return quoteQuery(input.query || input.search_term || '');
+    if (n === 'webfetch') return prettyUrl(input.url || '');
+    if (n === 'todoread' || n === 'todowrite') return '';
+    if (n === 'ls') return prettyPath(input.path || '.');
+    if (n === 'mcpactivate') return ''; // label already says "Connecting to X"
+    if (n === 'mcpsearch' || n === 'outputsearch') return quoteQuery(input.query || '');
+    if (n === 'outputactivate') return input.output_id || '';
+    if (n === 'renderoutput') return input.output_id || '';
     return '';
   } catch {
     return '';
@@ -398,7 +407,8 @@ export function getMcpShortAction(mcpInfo: McpToolInfo): string {
   if (service && action.toLowerCase().startsWith(service.toLowerCase() + '_')) {
     short = action.slice(service.length + 1);
   }
-  return short.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
+  const lower = short.replace(/_/g, ' ').toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
 export function getResultSummary(toolName: string, rawText: string): string {
@@ -406,9 +416,9 @@ export function getResultSummary(toolName: string, rawText: string): string {
 
   if (parsed.type === 'bash') {
     const lines = parsed.stdout.split('\n').filter((l) => l.trim()).length;
-    if (parsed.exitCode !== null && parsed.exitCode !== 0) return `✗ exit ${parsed.exitCode}`;
-    if (parsed.stderr && !parsed.stdout) return '✗ stderr';
-    return `✓ ${lines} line${lines !== 1 ? 's' : ''}`;
+    if (parsed.exitCode !== null && parsed.exitCode !== 0) return `exit ${parsed.exitCode}`;
+    if (parsed.stderr && !parsed.stdout) return 'stderr';
+    return `${lines} line${lines !== 1 ? 's' : ''}`;
   }
 
   if (parsed.type === 'mcp') {
@@ -417,7 +427,7 @@ export function getResultSummary(toolName: string, rawText: string): string {
       const subj = d.subject || getGmailHeader(d, 'Subject');
       if (subj) return subj;
       if (Array.isArray(d.messages)) return `${d.messages.length} email${d.messages.length !== 1 ? 's' : ''}`;
-      if (d.id || d.messageId) return '✓ done';
+      if (d.id || d.messageId) return 'sent';
     }
     if (parsed.service === 'calendar') {
       if (d.summary) return d.summary.slice(0, 40);
@@ -427,8 +437,8 @@ export function getResultSummary(toolName: string, rawText: string): string {
       if (d.name) return d.name;
       if (Array.isArray(d.files)) return `${d.files.length} file${d.files.length !== 1 ? 's' : ''}`;
     }
-    if (d.error || d.is_error) return '✗ error';
-    return '✓ done';
+    if (d.error || d.is_error) return 'error';
+    return '';
   }
 
   const text = parsed.content;
@@ -446,19 +456,11 @@ export function getResultSummary(toolName: string, rawText: string): string {
       return `${matchCount} match${matchCount !== 1 ? 'es' : ''}`;
     }
     if (n === 'read') return `${lineCount} lines`;
-    if (n === 'write') {
-      if (text.toLowerCase().includes('success') || text.toLowerCase().includes('written'))
-        return '✓ written';
-      return '✓ done';
-    }
-    if (n === 'edit' || n === 'multiedit' || n === 'strreplace') {
-      if (text.toLowerCase().includes('success') || text.toLowerCase().includes('applied'))
-        return '✓ applied';
-      return '✓ done';
-    }
+    if (n === 'write') return '';
+    if (n === 'edit' || n === 'multiedit' || n === 'strreplace') return '';
     if (n === 'websearch') return 'results';
     if (n === 'webfetch') return `${lineCount} lines`;
-    if (parsed.isError) return '✗ error';
+    if (parsed.isError) return 'error';
   } catch {}
 
   return `${lineCount} line${lineCount !== 1 ? 's' : ''}`;
@@ -1425,9 +1427,13 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
     const promptPrefix = getPromptPrefix(toolName);
     const shortAction = mcpInfo.isMcp ? getMcpShortAction(mcpInfo) : toolName;
 
-    const serviceLabel = mcpInfo.isMcp && mcpInfo.service
-      ? mcpInfo.service.charAt(0).toUpperCase() + mcpInfo.service.slice(1)
-      : shortAction;
+    // mcpCompact rows live inside a ToolGroup whose header already shows
+    // the brand + count, so the row uses the verb form, not the brand.
+    const mcpVerbLabel = (() => {
+      const lbl = getToolLabel(toolName, call.id);
+      return result && !isDenied ? lbl.past : lbl.present;
+    })();
+    const serviceLabel = mcpInfo.isMcp ? mcpVerbLabel : shortAction;
 
     const ServiceIcon = mcpInfo.isMcp && mcpInfo.service
       ? <GoogleServiceIcon service={mcpInfo.service} size={14} />
@@ -1536,10 +1542,8 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
 
               {hasResponse && !isDenied && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  {isError ? (
+                  {isError && (
                     <ErrorOutlineIcon sx={{ fontSize: 13, color: c.status.error }} />
-                  ) : (
-                    <CheckCircleOutlineIcon sx={{ fontSize: 13, color: c.status.success }} />
                   )}
                   {resultElapsedMs != null && (
                     <Typography sx={{ fontSize: '0.65rem', fontFamily: c.font.mono, color: c.text.tertiary }}>
@@ -1742,10 +1746,8 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
 
               {hasResponse && !isDenied && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  {isError ? (
+                  {isError && (
                     <ErrorOutlineIcon sx={{ fontSize: 13, color: c.status.error }} />
-                  ) : (
-                    <CheckCircleOutlineIcon sx={{ fontSize: 13, color: c.status.success }} />
                   )}
                   {resultElapsedMs != null && (
                     <Typography sx={{ fontSize: '0.65rem', fontFamily: c.font.mono, color: c.text.tertiary }}>
@@ -1902,10 +1904,8 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
             )}
             {result && !isDenied && (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                {isError ? (
+                {isError && (
                   <ErrorOutlineIcon sx={{ fontSize: 12, color: c.status.error }} />
-                ) : (
-                  <CheckCircleOutlineIcon sx={{ fontSize: 12, color: c.status.success }} />
                 )}
                 {resultElapsedMs != null && (
                   <Typography sx={{ fontSize: '0.63rem', fontFamily: c.font.mono, color: c.text.tertiary }}>
@@ -2009,11 +2009,8 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
               }}
             >
               {(() => {
-                if (mcpInfo.isMcp) return mcpInfo.displayName;
-                // Verb-tense progression: "Reading" while pending, "Read" once
-                // a tool_result has landed. Denied/streaming fall back to the
-                // present participle since the action is in-flight.
-                const { present, past } = getToolLabel(toolName);
+                // call.id seeds the variant pool so re-renders are stable.
+                const { present, past } = getToolLabelWithInput(toolName, input, call.id);
                 return result && !isDenied ? past : present;
               })()}
             </Typography>
@@ -2056,20 +2053,16 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
             )}
             {result && !isDenied && (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                {isError ? (
-                  <ErrorOutlineIcon sx={{ fontSize: 13, color: c.status.error }} />
-                ) : (
-                  <CheckCircleOutlineIcon sx={{ fontSize: 13, color: c.status.success }} />
+                {isError && (
+                  <>
+                    <ErrorOutlineIcon sx={{ fontSize: 13, color: c.status.error }} />
+                    {resultSummary && (
+                      <Typography sx={{ color: c.status.error, fontSize: '0.7rem', fontWeight: 500 }}>
+                        {resultSummary}
+                      </Typography>
+                    )}
+                  </>
                 )}
-                <Typography
-                  sx={{
-                    color: isError ? c.status.error : c.status.success,
-                    fontSize: '0.7rem',
-                    fontWeight: 500,
-                  }}
-                >
-                  {resultSummary}
-                </Typography>
                 {resultElapsedMs != null && (
                   <Typography
                     sx={{
