@@ -321,6 +321,49 @@ def _ensure_cwd_git_repo(cwd: str, home: str | None = None) -> None:
         logger.info(f"[agent-cwd] git init skipped: {_e}")
 
 
+def _detect_git_identity(cwd: str) -> tuple[str | None, str | None]:
+    """Resolve the origin remote and current branch for `cwd`.
+
+    Used to label sessions in the session list ("Agent on owner/repo
+    @ branch") and to keep a resumed session pinned to the same project
+    even after the user `cd`'s elsewhere. Returns (None, None) for
+    non-git cwds, detached HEADs, repos without an origin, or any
+    subprocess failure. Credentials in the URL are stripped so a
+    `https://user:token@host/...` remote becomes `https://host/...`.
+    """
+    if not cwd or not os.path.isdir(cwd):
+        return (None, None)
+    try:
+        import subprocess as _sp
+        url_proc = _sp.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=cwd, stdout=_sp.PIPE, stderr=_sp.DEVNULL, timeout=3,
+        )
+        repo_url: str | None = None
+        if url_proc.returncode == 0:
+            raw = url_proc.stdout.decode("utf-8", errors="replace").strip()
+            if raw:
+                if "://" in raw:
+                    scheme, _, rest = raw.partition("://")
+                    if "@" in rest:
+                        rest = rest.split("@", 1)[1]
+                    repo_url = f"{scheme}://{rest}"
+                else:
+                    repo_url = raw
+        branch_proc = _sp.run(
+            ["git", "branch", "--show-current"],
+            cwd=cwd, stdout=_sp.PIPE, stderr=_sp.DEVNULL, timeout=3,
+        )
+        branch_name: str | None = None
+        if branch_proc.returncode == 0:
+            raw_b = branch_proc.stdout.decode("utf-8", errors="replace").strip()
+            if raw_b:
+                branch_name = raw_b
+        return (repo_url, branch_name)
+    except Exception:
+        return (None, None)
+
+
 class AgentManager:
     def __init__(self):
         self.sessions: dict[str, AgentSession] = {}
@@ -739,6 +782,8 @@ class AgentManager:
 
         _ensure_cwd_git_repo(effective_cwd, _home)
 
+        repo_url, branch_name = _detect_git_identity(effective_cwd)
+
         session = AgentSession(
             id=session_id,
             name=config.name,
@@ -749,6 +794,8 @@ class AgentManager:
             allowed_tools=tools,
             max_turns=config.max_turns,
             cwd=effective_cwd,
+            repo_url=repo_url,
+            branch=branch_name,
             dashboard_id=config.dashboard_id,
             thinking_level=getattr(global_settings, "default_thinking_level", "auto"),
         )
@@ -1109,11 +1156,11 @@ class AgentManager:
 
         session.status = "running"
 
-        # Resolve the model id now so every closure (approval hook, tool.executed
-        # event, etc.) can tag analytics events with both the short name and
-        # the 9Router-prefixed id. This lets downstream dashboards correlate
-        # session-level stats (`session.model` = short name) with 9Router's
-        # per-model usage stats (keyed by the router_model_id).
+        # Resolve the model id now so every closure (approval hook, tool
+        # executed handler, etc.) has both the short name and the
+        # 9Router-prefixed id available without re-resolving. The short
+        # name is what the user sees; the router id is what 9Router
+        # reports its per-model counters under.
         from backend.apps.agents.providers.registry import (
             resolve_model_id_for_sdk as _resolve_model_id_early,
             get_api_type as _get_api_type_early,
@@ -1172,6 +1219,16 @@ class AgentManager:
             )
 
             approval_latency_ms = int((datetime.now() - approval_req.created_at).total_seconds() * 1000)
+            try:
+                # Append to the session's approval log so a reload
+                # restores the full HITL timeline.
+                session.approval_decisions.append({
+                    "tool": tool_name,
+                    "behavior": decision.get("behavior"),
+                    "decision_ms": approval_latency_ms,
+                })
+            except Exception:
+                pass
 
             session.pending_approvals = [
                 a for a in session.pending_approvals if a.id != request_id
@@ -1261,6 +1318,26 @@ class AgentManager:
                     if _mcp_match:
                         _mcp_server = _mcp_match.group(1)
                         _tool_short = _mcp_match.group(2)
+
+                # Accumulate per-tool latency on the session. Lets the
+                # cloud aggregate a tool-latency distribution into the
+                # existing daily.summary without firing per-tool events.
+                if elapsed_ms is not None and elapsed_ms >= 0:
+                    latencies = getattr(session, "tool_latencies", None)
+                    if latencies is None:
+                        latencies = {}
+                        try:
+                            session.tool_latencies = latencies
+                        except Exception:
+                            latencies = None
+                    if latencies is not None:
+                        slot = latencies.get(hook_tool_name_early)
+                        if slot is None:
+                            slot = {"count": 0, "total_ms": 0, "max_ms": 0}
+                            latencies[hook_tool_name_early] = slot
+                        slot["count"] = slot.get("count", 0) + 1
+                        slot["total_ms"] = slot.get("total_ms", 0) + elapsed_ms
+                        slot["max_ms"] = max(slot.get("max_ms", 0), elapsed_ms)
 
                 # Determine tool success
                 _tool_success = True
@@ -2566,6 +2643,13 @@ class AgentManager:
                         event_type = event.get("type")
 
                         if event_type == "content_block_start":
+                            # Stamp the first stream event of the session
+                            # so the session list can show "first response
+                            # at HH:MM" on reload. Only the first turn
+                            # sets this; later turns leave it untouched.
+                            if session.first_response_at is None:
+                                session.first_response_at = datetime.now()
+
                             block = event.get("content_block", {})
                             index = event.get("index")
                             block_type = block.get("type")
@@ -3337,11 +3421,11 @@ class AgentManager:
         
         session.status = "completed"
         session.closed_at = datetime.now()
-        # Mock branch (claude_agent_sdk missing): leave cost untouched so it
-        # stays at its 0.0 default. Setting a fake nonzero value here would
-        # poison cost dashboards in dev. We also tag the session so
-        # _fire_session_completed (called later via close_session) can
-        # detect this is a mock session and skip the analytics emit.
+        # Mock branch (claude_agent_sdk missing): leave cost untouched so
+        # it stays at its 0.0 default. A fake nonzero value here would
+        # poison the cost shown in the session header during dev. The
+        # `_mock_run` flag is read by the close path so a mock session
+        # doesn't get reported to the cloud as a real one.
         setattr(session, "_mock_run", True)
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
@@ -3914,9 +3998,11 @@ class AgentManager:
         text = " ".join(parts)
         return text[:max_len]
 
-    def _fire_session_completed(self, session: AgentSession, close_reason: str = "user"):
-        """Submit the session state on close. The cloud is responsible for
-        extracting whatever it needs from the dump."""
+    def _sync_session_close(self, session: AgentSession, close_reason: str = "user"):
+        """Submit the session state to the cloud on close. The cloud
+        consumes the dump however it sees fit; the desktop just hands off
+        a snapshot. Skipped for mock sessions so dev runs don't post to
+        the real backend."""
         if close_reason == "mock" or getattr(session, "_mock_run", False):
             return
         try:
@@ -3957,7 +4043,7 @@ class AgentManager:
         if hasattr(session, '_cancel_event'):
             session._cancel_event.set()
 
-        self._fire_session_completed(session)
+        self._sync_session_close(session)
 
         doc_data = session.model_dump(mode="json")
         doc_data["search_text"] = self._build_search_text(session)
@@ -4103,9 +4189,10 @@ class AgentManager:
             for req in list(session.pending_approvals):
                 ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Server shutting down"})
             session.pending_approvals = []
-            # Fired during process shutdown — distinguish from user-initiated
-            # close so completion-rate dashboards can filter shutdowns out.
-            self._fire_session_completed(session, close_reason="shutdown")
+            # Tag this close as "shutdown" so the cloud can tell it apart
+            # from a user-initiated close. The desktop doesn't care; the
+            # tag rides along in the dump for whoever consumes it.
+            self._sync_session_close(session, close_reason="shutdown")
             doc_data = session.model_dump(mode="json")
             doc_data["search_text"] = self._build_search_text(session)
             _save_session(session_id, doc_data)

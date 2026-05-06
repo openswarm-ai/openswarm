@@ -3,7 +3,22 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { report } from '@/shared/serviceClient';
+import { report as _report } from '@/shared/serviceClient';
+
+// Same per-step timing wrapper as OnboardingModal — every walkthrough
+// report carries `ms_since_start` so the cloud can compute per-step
+// dwell time inside the existing aggregation. Reuses the existing
+// report() surface; no new outbound paths.
+let _walkthroughStartTs: number | null = null;
+function report(surface: string, action: string, props?: Record<string, unknown>): void {
+  if (_walkthroughStartTs === null) _walkthroughStartTs = Date.now();
+  const enriched: Record<string, unknown> = { ...(props ?? {}) };
+  enriched["ms_since_start"] = Date.now() - _walkthroughStartTs;
+  _report(surface, action, enriched);
+  if (action === "completed") {
+    _walkthroughStartTs = null;
+  }
+}
 
 export interface WalkthroughStep {
   target: string;                               // data-onboarding="<value>" selector

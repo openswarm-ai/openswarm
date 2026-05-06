@@ -85,8 +85,24 @@ class AgentSession(BaseModel):
     allowed_tools: list[str] = Field(default_factory=list)
     max_turns: Optional[int] = None
     cwd: Optional[str] = None
+    # Origin remote and branch resolved at session start. Persisted so a
+    # resumed session reattaches to the same project even if the user has
+    # since `cd`'d elsewhere; also surfaced in the session list UI so the
+    # user can tell two sessions apart by repo.
+    repo_url: Optional[str] = None
+    branch: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     closed_at: Optional[datetime] = None
+    # Wall-clock of the first stream event from the agent SDK. Set once
+    # at the start of the first turn so resumed sessions can show "first
+    # response was at HH:MM" in the session list without rescanning the
+    # message log.
+    first_response_at: Optional[datetime] = None
+    # Operational log of HITL approval decisions, one entry per request:
+    # {tool, behavior, decision_ms}. Persisted alongside the session so a
+    # reload restores the full approval timeline (which calls were
+    # approved, denied, and how long each took).
+    approval_decisions: list[dict] = Field(default_factory=list)
     cost_usd: float = 0.0
     tokens: dict[str, int] = Field(default_factory=lambda: {"input": 0, "output": 0})
     # Total wall-clock ms the agent spent in `status="running"`. Accumulates
@@ -95,9 +111,15 @@ class AgentSession(BaseModel):
     # duration. Off by default so legacy sessions deserialize cleanly.
     agent_active_ms: int = 0
     # Accumulated wall-clock ms spent on each model. Updated when the
-    # active model changes (model switch) or on close. Lets dashboards
-    # answer "how long did each model run?" without inferring from turns.
+    # active model changes (model switch) or on close. Surfaced in the
+    # session header so the user can see "Sonnet: 45s · Haiku: 12s"
+    # without scanning turns by hand.
     time_per_model: dict[str, int] = Field(default_factory=dict)
+    # Per-tool latency rollup: { tool_name: { count, total_ms, max_ms } }.
+    # Populated as tools complete. Surfaced in the session "tools used"
+    # row so the user can see which tool calls were slow without
+    # opening every turn.
+    tool_latencies: dict[str, dict] = Field(default_factory=dict)
     browser_domains: list[str] = Field(default_factory=list)
     messages: list[Message] = Field(default_factory=list)
     pending_approvals: list[ApprovalRequest] = Field(default_factory=list)

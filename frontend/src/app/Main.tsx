@@ -28,7 +28,8 @@ const Views = lazy(() => import('./pages/Views/Views'));
 const Customization = lazy(() => import('./pages/Customization/Customization'));
 const Analytics = lazy(() => import('./pages/Analytics/Analytics'));
 const OnboardingModal = lazy(() => import('./components/OnboardingModal'));
-import { report, getSessionTraceState } from '@/shared/serviceClient';
+import { report, getSessionTraceState, getRecentActions } from '@/shared/serviceClient';
+import { useRouteTracker } from '@/shared/hooks/useRouteTracker';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import { useDeepLink } from '@/shared/hooks/useDeepLink';
 import { useInteractionHeartbeat } from '@/shared/hooks/useInteractionHeartbeat';
@@ -352,6 +353,7 @@ const ThemedApp: React.FC = () => {
         error_message: event.message,
         error_stack: event.error?.stack?.slice(0, 500),
         last_page: currentPage,
+        recent_actions: getRecentActions(10),
       });
     };
     window.addEventListener('beforeunload', handleUnload);
@@ -366,6 +368,7 @@ const ThemedApp: React.FC = () => {
     <MuiThemeProvider theme={muiTheme}>
       <CssBaseline />
       <HashRouter>
+        <RouteTrackerMount />
         <ShortcutsProvider>
           <SettingsLoader>
             <DefaultModelGuard>
@@ -402,6 +405,13 @@ const ThemedApp: React.FC = () => {
       </HashRouter>
     </MuiThemeProvider>
   );
+};
+
+// Tiny mount-point so the route-tracker hook can use useLocation() (which
+// requires a Router ancestor). Lives inside HashRouter, runs once.
+const RouteTrackerMount: React.FC = () => {
+  useRouteTracker();
+  return null;
 };
 
 const Main: React.FC = () => {

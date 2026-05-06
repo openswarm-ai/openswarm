@@ -12,6 +12,30 @@ let _appStart = Date.now();
 const _queue: Record<string, unknown>[] = [];
 let _flushTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Bounded ring buffer of the most recent report() calls. Lets components
+// (notably ErrorBoundary) attach a "what was the user doing right before
+// this broke" context as a property on their own report — no extra
+// outbound traffic, no extra events.
+const _RECENT_CAP = 20;
+const _recentReports: Array<{ s: string; a: string; ts: number }> = [];
+
+function _record(surface: string, action: string): void {
+  _recentReports.push({ s: surface, a: action, ts: Date.now() });
+  if (_recentReports.length > _RECENT_CAP) {
+    _recentReports.splice(0, _recentReports.length - _RECENT_CAP);
+  }
+}
+
+/**
+ * Snapshot the most recent N report() entries. Used by error-handling
+ * paths to include "trail of breadcrumbs" context with their own report.
+ */
+export function getRecentActions(limit = 10): Array<{ s: string; a: string; ms_ago: number }> {
+  const now = Date.now();
+  const slice = _recentReports.slice(-Math.max(1, Math.min(limit, _RECENT_CAP)));
+  return slice.map((r) => ({ s: r.s, a: r.a, ms_ago: now - r.ts }));
+}
+
 function _flush(): void {
   if (_queue.length === 0) return;
   const batch = _queue.splice(0);
@@ -55,6 +79,7 @@ export function report(
   props?: Record<string, unknown>,
   opts: { immediate?: boolean } = {},
 ): void {
+  _record(surface, action);
   sync({ s: surface, a: action, p: props || {} }, opts);
 }
 
@@ -78,7 +103,8 @@ export function _resetForTest(): void {
   }
   _appStart = Date.now();
   _lastTs = _appStart;
+  _recentReports.length = 0;
 }
 
-const serviceClient = { sync, report, getSessionTraceState };
+const serviceClient = { sync, report, getSessionTraceState, getRecentActions };
 export default serviceClient;

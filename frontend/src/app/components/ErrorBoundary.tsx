@@ -1,5 +1,5 @@
 import React from 'react';
-import { report } from '@/shared/serviceClient';
+import { report, getRecentActions } from '@/shared/serviceClient';
 
 interface Props {
   /** Friendly title for the fallback card. Default: "Something broke." */
@@ -34,6 +34,9 @@ class ErrorBoundary extends React.Component<Props, State> {
         message: String(error?.message || error).slice(0, 500),
         stack: String(error?.stack || '').slice(0, 2000),
         component_stack: String(info?.componentStack || '').slice(0, 2000),
+        // Last 10 user-surface actions before the boundary tripped, so the
+        // backend can correlate the crash with what the user just did.
+        recent_actions: getRecentActions(10),
       });
     } catch {}
     // surface in dev so developers can read the stack

@@ -5,13 +5,32 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { API_BASE } from '@/shared/config';
-import { report } from '@/shared/serviceClient';
+import { report as _report } from '@/shared/serviceClient';
 import PlanPicker from '@/app/components/PlanPicker';
 
 // Email validation: format check + typo correction for common domains.
 // Real ownership verification is intentionally pushed downstream (mailing list /
 // CRM system handles the confirm-subscription flow).
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+// Onboarding-step timing.
+//
+// We record `ms_since_start` on every onboarding/walkthrough report so the
+// cloud can derive per-step duration without firing per-step events. Stamp
+// is set on the first call (effectively when `onboarding.started` fires)
+// and persists for the lifetime of the modal — abandoned modals reset on
+// next open. This rides the existing report() surface; no new outbound
+// paths added.
+let _onboardingStartTs: number | null = null;
+function report(surface: string, action: string, props?: Record<string, unknown>): void {
+  if (_onboardingStartTs === null) _onboardingStartTs = Date.now();
+  const enriched: Record<string, unknown> = { ...(props ?? {}) };
+  enriched["ms_since_start"] = Date.now() - _onboardingStartTs;
+  _report(surface, action, enriched);
+  if (action === "completed" || action === "profile_skipped" || action === "connect_skipped") {
+    _onboardingStartTs = null;
+  }
+}
 
 const COMMON_DOMAIN_TYPOS: Record<string, string> = {
   'gmial.com': 'gmail.com',

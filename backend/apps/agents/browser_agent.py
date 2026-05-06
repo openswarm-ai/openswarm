@@ -1346,7 +1346,7 @@ async def run_browser_agent(
         )
 
         session.status = "completed"
-        agent_manager._fire_session_completed(session)
+        agent_manager._sync_session_close(session)
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
             "status": "completed",
