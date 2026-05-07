@@ -692,55 +692,46 @@ class AgentManager:
         if not active_lines and not available_lines:
             return None
 
+        # Static preamble first (kept byte-identical across users so it caches),
+        # then the per-session server list. Worked-example uses generic
+        # placeholders so a Pro Anthropic prompt-cache hit isn't broken by
+        # one user's connector names differing from another's.
         sections = ["<mcp_servers>"]
         sections.append(
-            "MCP servers are gated: the model cannot call any MCP tool until "
-            "the user approves an MCPActivate request for that server. To use "
-            "a server below, first call MCPSearch (to confirm the right server "
-            "for the task), then call MCPActivate(server_name) — the user will "
-            "be prompted to approve activation. After approval, the server's "
-            "tools (`mcp__<server>__<tool>`) become callable on the next turn."
+            "MCP servers are gated: their tools are uncallable until the user "
+            "approves an MCPActivate request. To use one below, call MCPSearch "
+            "(if unsure which) then MCPActivate(server_name); after approval the "
+            "server's tools (`mcp__<server>__<tool>`) become callable next turn."
         )
         sections.append("")
-        sections.append("## CRITICAL behavioral rules (follow these exactly)")
+        sections.append("## Rules")
         sections.append(
-            "1. If the user's request implies an integration listed below "
-            "(email, calendar, slack, notion, etc.) and that server is NOT "
-            "in the Active section, your FIRST tool call MUST be MCPSearch "
-            "or MCPActivate. Do NOT call any other tool that looks like an "
-            "auth/login helper (e.g. `mcp__*__authenticate`, "
-            "`mcp__claude_ai_*__authenticate`) — those are legacy shims "
-            "and will not work. Always go through MCPActivate."
+            "1. If the user's request needs a server below that isn't Active, "
+            "your FIRST tool call must be MCPSearch or MCPActivate. Ignore any "
+            "`mcp__*__authenticate` helpers — those are legacy shims; always go "
+            "through MCPActivate."
         )
         sections.append(
-            "2. After MCPActivate returns, end your turn cleanly. The "
-            "system will automatically run a follow-up turn with the "
-            "newly-activated tools available — you do NOT need the user "
-            "to re-prompt. Just stop and let the next turn fire."
+            "2. After MCPActivate returns, end the turn — a follow-up turn fires "
+            "automatically with the new tools available."
         )
         sections.append(
-            "3. Do not ask the user 'should I activate X?' before calling "
-            "MCPActivate — MCPActivate already triggers an explicit user "
-            "approval prompt via the standard tool-approval UI. Asking "
-            "again wastes a round-trip."
+            "3. Don't ask 'should I activate X?' first — MCPActivate already "
+            "triggers an approval prompt."
         )
         sections.append("")
-        sections.append("## Worked example")
+        sections.append("## Example")
         sections.append(
-            "User: \"check my email\"\n"
-            "Active MCPs: (none)\n"
-            "Available MCPs: google-workspace, microsoft-365\n"
-            "→ Your first tool call is `MCPActivate(server_name=\"google-workspace\", reason=\"checking inbox\")`.\n"
-            "  After it returns, end your turn. Next turn, call "
-            "`mcp__google-workspace__query_gmail_emails(...)` to actually "
-            "fetch the email."
+            "User asks for email; no email server is Active. First tool call: "
+            "`MCPActivate(server_name=\"<email-server>\", reason=\"...\")`. End "
+            "turn. Next turn: call the activated server's email tool."
         )
         sections.append("")
         if active_lines:
-            sections.append("Active (already approved this session — tools callable now):")
+            sections.append("Active (callable now):")
             sections.extend(active_lines)
         if available_lines:
-            sections.append("\nAvailable (installed but not yet activated):")
+            sections.append("\nAvailable (not yet activated):")
             sections.extend(available_lines)
         sections.append("</mcp_servers>")
         return "\n".join(sections)
@@ -2045,6 +2036,13 @@ class AgentManager:
 
             try:
                 level = getattr(session, "thinking_level", "auto") or "auto"
+                # Trivially short prompts ("hi", "thanks") don't benefit from
+                # 5-30s of hidden reasoning. Override per-turn only — session
+                # setting is untouched so the UI pill keeps reflecting the
+                # user's choice.
+                _prompt_len = len((prompt or "").strip())
+                if 0 < _prompt_len < 50 and level != "off":
+                    level = "off"
                 # gc/gemini-3* without Antigravity 400s every multi-step turn
                 # on thoughtSignature continuity. Force-disable thinking.
                 if (

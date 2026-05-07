@@ -1,10 +1,8 @@
 name: gitleaks
 
-# Block PRs that introduce hardcoded credentials. Runs the upstream gitleaks
-# action against the diff (PR) or full history (push to main). False
-# positives in the working tree are caught by the gitleaks-action's own
-# allowlist mechanism — extend .gitleaks.toml at repo root rather than
-# editing this workflow.
+# Block PRs that introduce hardcoded credentials. Runs the gitleaks CLI
+# directly (rather than gitleaks-action) because the action requires a
+# paid license on GitHub Orgs. Same scanner, same rules, same .gitleaks.toml.
 
 on:
   pull_request:
@@ -14,22 +12,54 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   scan:
     runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: '8.21.2'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Full history needed so gitleaks can scan all new commits in a PR.
-          fetch-depth: 0
+          fetch-depth: 0  # Full history so PR-diff scanning works.
 
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Treat any high-confidence finding as a hard fail.
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'true'
-          GITLEAKS_ENABLE_SUMMARY: 'true'
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run gitleaks (PR diff)
+        if: github.event_name == 'pull_request'
+        run: |
+          gitleaks detect \
+            --source . \
+            --redact \
+            --verbose \
+            --no-banner \
+            --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
+      - name: Run gitleaks (push)
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+          # New-branch push: GH sends 40 zeros for `before`. Diff against
+          # main's merge-base instead so we only scan commits unique to the
+          # branch — fast and matches the gitleaks-action default.
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main 2>/dev/null || true
+            if git rev-parse --verify origin/main >/dev/null 2>&1; then
+              BEFORE=$(git merge-base origin/main "$AFTER" 2>/dev/null || echo "")
+            fi
+          fi
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "$AFTER" ]; then
+            gitleaks detect --source . --redact --verbose --no-banner --log-opts="${BEFORE}..${AFTER}"
+          else
+            # Couldn't establish a range — full scan as fallback.
+            gitleaks detect --source . --redact --verbose --no-banner
+          fi

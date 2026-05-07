@@ -35,11 +35,9 @@ TOOLS = [
     {
         "name": "MCPList",
         "description": (
-            "List the MCP servers installed on this machine. Returns one entry "
-            "per server with its name, one-sentence purpose, and current "
-            "activation status (active/available). Costs almost nothing — the "
-            "registry is a flat list, no schemas. Use this when you want a "
-            "broad survey before picking a server."
+            "List installed MCP servers (name, one-sentence purpose, "
+            "active/available status). Cheap. Use for a broad survey before "
+            "picking a server."
         ),
         "inputSchema": {
             "type": "object",
@@ -50,18 +48,16 @@ TOOLS = [
     {
         "name": "MCPSearch",
         "description": (
-            "Find MCP servers relevant to a query. Returns the top matches "
-            "ranked by description match against the query (e.g. 'email', "
-            "'calendar', 'spreadsheet'). Use this BEFORE MCPActivate when you "
-            "are not sure which server to enable. The server's tools are NOT "
-            "callable yet — you still need MCPActivate after picking one."
+            "Rank MCP servers by relevance to a query. Use before MCPActivate "
+            "when unsure which server fits. Tools are NOT callable until you "
+            "also MCPActivate."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Free-form description of what you need (e.g. 'send email', 'read inbox', 'post to slack').",
+                    "description": "What you need (e.g. 'send email', 'post to slack').",
                 },
             },
             "required": ["query"],
@@ -71,24 +67,21 @@ TOOLS = [
     {
         "name": "MCPActivate",
         "description": (
-            "Request activation of an MCP server for this session. The user is "
-            "prompted via the standard tool-approval UI; on approve, the "
-            "server's tools become callable on the NEXT turn (the current turn "
-            "ends after this call). On deny, the server stays unavailable and "
-            "you should ask the user how to proceed. Always call MCPSearch or "
-            "MCPList first to confirm the server name — invalid names return "
-            "a list of valid alternatives instead of activating."
+            "Request activation of an MCP server for this session. Triggers a "
+            "user approval prompt; on approve the server's tools become callable "
+            "next turn. Always confirm the server name via MCPList/MCPSearch first — "
+            "invalid names return alternatives instead of activating."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "server_name": {
                     "type": "string",
-                    "description": "Sanitized server name as returned by MCPList/MCPSearch (e.g. 'gmail', 'slack', 'discord').",
+                    "description": "Sanitized name from MCPList/MCPSearch (e.g. 'gmail', 'slack').",
                 },
                 "reason": {
                     "type": "string",
-                    "description": "One-sentence explanation of why you need this server, shown to the user in the approval prompt to help them decide.",
+                    "description": "Why you need it — shown to the user in the approval prompt.",
                 },
             },
             "required": ["server_name"],

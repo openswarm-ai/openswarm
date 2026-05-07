@@ -494,6 +494,24 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     return out;
   }, [modelSearch, allModelOptions.grouped, capFilters, ctxIdx, costIdx]);
 
+  // Footer summary — counts reflect what the user actually has access to
+  // right now (post-filter, post-credentials).
+  const pickerSummary = useMemo(() => {
+    let total = 0, free = 0, reasoning = 0, subscription = 0, apiKey = 0, paid = 0, longContext = 0;
+    for (const ms of Object.values(filteredModelGroups)) {
+      for (const m of ms as any[]) {
+        total += 1;
+        if (m.reasoning) reasoning += 1;
+        if ((m.context_window ?? 0) >= 1_000_000) longContext += 1;
+        if (m.billing_kind === 'free') free += 1;
+        else if (m.billing_kind === 'subscription') subscription += 1;
+        else if (m.billing_kind === 'api_key') apiKey += 1;
+        else if (m.billing_kind === 'paid') paid += 1;
+      }
+    }
+    return { total, free, reasoning, subscription, apiKey, paid, longContext };
+  }, [filteredModelGroups]);
+
   // Recents materialised against current catalog so removed models drop out.
   const recentMaterialised = useMemo(() => {
     const flatByValue = new Map(allModelOptions.flat.map((m) => [m.value, m]));
@@ -2009,11 +2027,64 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
               px: 1.25, py: 0.5,
               fontSize: '0.65rem', color: c.text.ghost,
               display: 'flex', justifyContent: 'space-between',
-              pointerEvents: 'none',
+              gap: 1,
             }}
           >
-            <span>Type to search · Esc to close</span>
-            <span>{Object.values(filteredModelGroups).reduce((sum, ms) => sum + (ms as any[]).length, 0)} models</span>
+            <Box component="span" sx={{ flexShrink: 0, pointerEvents: 'none' }}>
+              Type to search · Esc to close
+            </Box>
+            {(() => {
+              const breakdown: Array<[string, number]> = ([
+                ['Free',          pickerSummary.free],
+                ['Subscription',  pickerSummary.subscription],
+                ['API key',       pickerSummary.apiKey],
+                ['Pay-per-use',   pickerSummary.paid],
+                ['Reasoning',     pickerSummary.reasoning],
+                ['1M+ context',   pickerSummary.longContext],
+              ] as Array<[string, number]>).filter(([, n]) => n > 0);
+              const breakdownTooltip = breakdown.length > 0 ? (
+                <Box sx={{ fontSize: '0.74rem', lineHeight: 1.6, minWidth: 180 }}>
+                  <Box sx={{
+                    fontWeight: 600, fontSize: '0.78rem',
+                    color: c.text.primary,
+                    pb: 0.6, mb: 0.6,
+                    borderBottom: `1px solid ${c.border.subtle}`,
+                  }}>
+                    {pickerSummary.total} model{pickerSummary.total === 1 ? '' : 's'} available
+                  </Box>
+                  <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr auto',
+                    columnGap: 1.5, rowGap: 0.3,
+                    color: c.text.muted,
+                  }}>
+                    {breakdown.map(([label, n]) => (
+                      <React.Fragment key={label}>
+                        <span>{label}</span>
+                        <span style={{ fontVariantNumeric: 'tabular-nums', color: c.text.secondary }}>{n}</span>
+                      </React.Fragment>
+                    ))}
+                  </Box>
+                </Box>
+              ) : null;
+              return (
+                <Tooltip
+                  title={breakdownTooltip || ''}
+                  placement="top-end"
+                  enterDelay={300}
+                  slotProps={tooltipSlotProps}
+                  disableHoverListener={!breakdownTooltip}
+                >
+                  <Box component="span" sx={{
+                    cursor: breakdownTooltip ? 'help' : 'default',
+                    fontVariantNumeric: 'tabular-nums',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {pickerSummary.total} model{pickerSummary.total === 1 ? '' : 's'}
+                  </Box>
+                </Tooltip>
+              );
+            })()}
           </Box>
         </Menu>
 
