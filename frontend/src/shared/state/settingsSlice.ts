@@ -62,12 +62,28 @@ export interface AppSettings {
   openswarm_subscription_plan?: string | null;
   openswarm_subscription_expires?: string | null;
   openswarm_usage_cached?: SubscriptionUsage | null;
+  // Identity (v1.0.30+). Populated after a successful Google OAuth or
+  // magic-link sign-in via /api/auth/signin-activate. Stripe checkout also
+  // populates these because the cloud's bearer-mint always returns user info.
+  user_id?: string | null;
+  user_email?: string | null;
+  signin_method?: 'google' | 'magic_link' | 'stripe' | null;
+  // Anonymous device identifier. Generated locally on first run, persists
+  // across launches. Used to bind cloud OAuth flows to this install and to
+  // stitch anonymous → authenticated PostHog Persons after sign-in.
+  installation_id?: string | null;
 }
 
 export interface ActivateSubscriptionPayload {
   token: string;
   plan?: string | null;
   expires?: string | null;
+}
+
+export interface ActivateSigninPayload {
+  token: string;
+  signin_method: 'google' | 'magic_link';
+  email?: string | null;
 }
 
 export interface BrowseResult {
@@ -162,6 +178,44 @@ export const activateSubscription = createAsyncThunk(
     await dispatch(fetchSettings());
     return (await res.json()) as { ok: boolean; plan: string };
   }
+);
+
+// POST /api/auth/signin-activate — called after the desktop catches the
+// bearer from a Google OAuth / magic-link sign-in flow. Validates the
+// bearer with the cloud (checks signature + user_id + email) and persists
+// it locally as a free-tier identity. The same backend route also handles
+// "user signed in AND has an active subscription" — plan/expires are set
+// when the cloud returns them.
+export const activateSignin = createAsyncThunk(
+  'settings/activateSignin',
+  async (payload: ActivateSigninPayload, { dispatch }) => {
+    const res = await fetch(`${API_BASE}/auth/signin-activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error((await res.text()) || 'Sign-in failed');
+    await dispatch(fetchSettings());
+    return (await res.json()) as {
+      ok: boolean;
+      user_id: string;
+      email: string;
+      plan: string;
+      signin_method: 'google' | 'magic_link';
+    };
+  },
+);
+
+// POST /api/auth/signout — revokes the cloud-side bearer and clears local
+// identity fields. Brings the user back to the sign-in gate.
+export const signOut = createAsyncThunk(
+  'settings/signOut',
+  async (_: void, { dispatch }) => {
+    const res = await fetch(`${API_BASE}/auth/signout`, { method: 'POST' });
+    if (!res.ok) throw new Error('Sign-out failed');
+    await dispatch(fetchSettings());
+    return true;
+  },
 );
 
 // POST /api/subscription/disconnect — clears bearer + reverts to own_key.

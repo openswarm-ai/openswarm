@@ -16,6 +16,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckIcon from '@mui/icons-material/Check';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { openSettingsModal } from '@/shared/state/settingsSlice';
 import { API_BASE, getAuthToken } from '@/shared/config';
 import {
   sendMessage as sendMessageThunk,
@@ -70,13 +71,31 @@ const thinkingShimmerKeyframes = `
 }
 `;
 
-const ThinkingBubble: React.FC<{ label?: string | null }> = ({ label }) => {
+// Single-word labels picked deterministically per session-turn so the pill
+// has variety without flickering between renders. Mirrors MessageBubble's list.
+const STREAMING_LABELS: ReadonlyArray<string> = [
+  'Thinking', 'Pondering', 'Cooking', 'Marinating', 'Deliberating',
+  'Reasoning', 'Reflecting', 'Untangling', 'Stewing', 'Locking-in',
+  'Considering', 'Processing', 'Vibing', 'Calculating', 'Chefing',
+  'Geeking', 'Brewing',
+];
+
+function streamingLabelFor(seedKey: string | undefined): string {
+  if (!seedKey) return STREAMING_LABELS[0];
+  let h = 0;
+  for (let i = 0; i < seedKey.length; i++) {
+    h = ((h << 5) - h + seedKey.charCodeAt(i)) | 0;
+  }
+  return STREAMING_LABELS[Math.abs(h) % STREAMING_LABELS.length];
+}
+
+const ThinkingBubble: React.FC<{ label?: string | null; seedKey?: string }> = ({ label, seedKey }) => {
   const c = useClaudeTokens();
   const shimmerBase = c.text.tertiary;
   const shimmerHighlight = c.text.primary;
-  // Aux-LLM-generated turn label takes priority; falls back to the
-  // generic "Thinking…" verb if no label landed yet for this turn.
-  const display = label ? `${label}…` : 'Thinking…';
+  // Aux-LLM label wins; otherwise pick a quirky verb keyed off seedKey
+  // so different sessions / turns show different verbs without flicker.
+  const display = label ? `${label}…` : `${streamingLabelFor(seedKey)}…`;
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75 }}>
       <style>{thinkingShimmerKeyframes}</style>
@@ -175,6 +194,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [showResumeBubble, setShowResumeBubble] = useState(false);
   const [awaitingResponse, setAwaitingResponse] = useState(false);
+  const [activatingMcp, setActivatingMcp] = useState<string | null>(null);
+  const [activateError, setActivateError] = useState<string | null>(null);
   const [mode, setMode] = useState('agent');
   const [model, setModel] = useState('sonnet');
 
@@ -981,12 +1002,16 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                       <Typography
                         component="button"
                         variant="caption"
+                        disabled={activatingMcp === s.id}
                         onClick={async () => {
+                          if (activatingMcp) return;
+                          setActivateError(null);
+                          setActivatingMcp(s.id);
                           try {
                             const headers: Record<string, string> = { 'Content-Type': 'application/json' };
                             const tok = (() => { try { return getAuthToken(); } catch { return ''; } })();
                             if (tok) headers['Authorization'] = `Bearer ${tok}`;
-                            await fetch(`${API_BASE}/api/mcp-meta/activate`, {
+                            const r = await fetch(`${API_BASE}/mcp-meta/activate`, {
                               method: 'POST',
                               headers,
                               body: JSON.stringify({
@@ -995,25 +1020,38 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                                 parent_session_id: session.id,
                               }),
                             });
-                          } catch { /* ignore */ }
+                            if (!r.ok) {
+                              setActivateError(`Activation failed (${r.status})`);
+                            }
+                          } catch (e: any) {
+                            setActivateError(e?.message || 'Activation failed');
+                          } finally {
+                            setActivatingMcp(null);
+                          }
                         }}
                         sx={{
-                          cursor: 'pointer',
+                          cursor: activatingMcp === s.id ? 'wait' : 'pointer',
                           border: `1px solid ${c.border.medium}`,
                           borderRadius: 1,
                           px: 1.25,
                           py: 0.5,
                           bgcolor: 'transparent',
                           color: c.text.primary,
-                          '&:hover': { bgcolor: c.bg.elevated },
+                          opacity: activatingMcp === s.id ? 0.5 : 1,
+                          '&:hover': { bgcolor: activatingMcp ? 'transparent' : c.bg.elevated },
                           flexShrink: 0,
                         }}
                       >
-                        Activate
+                        {activatingMcp === s.id ? 'Activating…' : 'Activate'}
                       </Typography>
                     </Box>
                   ))}
                 </Box>
+                {activateError && (
+                  <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: c.status.error }}>
+                    {activateError}
+                  </Typography>
+                )}
               </Box>
             )}
             {session.context_overflow && (() => {
@@ -1022,8 +1060,12 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               const title = isAuth ? 'Sign-in required' : 'Context full';
               const primaryLabel = isAuth ? 'Open Settings' : 'Start a fresh chat';
               const onPrimary = () => {
-                if (isAuth) window.location.hash = '#/settings';
-                else window.location.hash = '#/';
+                if (isAuth) {
+                  dispatch(openSettingsModal('models'));
+                } else {
+                  const did = session?.dashboard_id;
+                  window.location.hash = did ? `#/dashboard/${did}` : '#/';
+                }
               };
               return (
                 <Box sx={{
@@ -1170,7 +1212,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               )
             )}
             {(awaitingResponse || (session.status === 'running' && !session.streamingMessage)) && (
-              <ThinkingBubble label={session.turn_label?.label} />
+              <ThinkingBubble
+                label={session.turn_label?.label}
+                seedKey={`${session.id}:${session.messages?.length ?? 0}`}
+              />
             )}
             {showResumeBubble && session.status === 'stopped' && (
               <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75 }}>

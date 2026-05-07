@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
-import { activateSubscription } from '@/shared/state/settingsSlice';
+import { activateSubscription, activateSignin } from '@/shared/state/settingsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { fetchTools } from '@/shared/state/toolsSlice';
 import { API_BASE } from '@/shared/config';
@@ -23,7 +23,13 @@ export function useDeepLink(): void {
 
     const unsubscribe = api.onAuthUrl?.((rawUrl: string) => {
       try {
-        // openswarm://auth?token=...  (host = "auth", search carries fields)
+        // openswarm://auth?token=...  (host = "auth", search carries fields).
+        // Two flavors land here, distinguished by the `signin` flag:
+        //   - signin=true  → free-tier sign-in (Google OAuth / magic link)
+        //   - (default)    → Stripe checkout subscription activation
+        // Note: the bearer-handoff page in lib/authMint.ts (cloud) POSTs
+        // directly to localhost so this deep-link path is currently a
+        // backstop for older flows. Both branches here remain wired up.
         const url = new URL(rawUrl);
         if (url.host !== 'auth' && url.pathname !== '//auth' && url.pathname !== '/auth') {
           console.warn('[deep-link] Unknown openswarm:// host:', url.host);
@@ -34,8 +40,31 @@ export function useDeepLink(): void {
           console.warn('[deep-link] Missing token in', rawUrl);
           return;
         }
+        const isSignin = url.searchParams.get('signin') === 'true';
+        const signinMethodRaw = url.searchParams.get('signin_method');
+        const email = url.searchParams.get('email');
         const plan = url.searchParams.get('plan');
         const expires = url.searchParams.get('expires');
+
+        if (isSignin) {
+          const signinMethod: 'google' | 'magic_link' =
+            signinMethodRaw === 'magic_link' ? 'magic_link' : 'google';
+          report('signin', 'deep_link_received', { method: signinMethod });
+
+          dispatch(activateSignin({ token, signin_method: signinMethod, email }))
+            .unwrap()
+            .then((res) => {
+              report('signin', 'activated', { method: res.signin_method, plan: res.plan });
+              dispatch(fetchModels());
+            })
+            .catch((err) => {
+              console.error('[deep-link] Sign-in activation failed:', err);
+              report('signin', 'activation_failed', {
+                message: String(err).slice(0, 120),
+              });
+            });
+          return;
+        }
 
         report('subscription', 'deep_link_received', {
           plan: plan ?? 'unknown',

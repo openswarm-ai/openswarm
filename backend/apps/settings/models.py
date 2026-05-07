@@ -78,6 +78,14 @@ class AppSettings(BaseModel):
     openswarm_subscription_plan: Optional[str] = None  # "hobby"|"pro"|"pro_plus"|"ultra"
     openswarm_subscription_expires: Optional[str] = None  # ISO 8601
     openswarm_usage_cached: Optional[dict] = None  # {count, limit, window_end_at}
+    # Identity (v1.0.30+). Populated after a successful sign-in via the cloud's
+    # /api/auth/signin-activate endpoint (Google OAuth or email magic link).
+    # Stripe checkout also populates these because the cloud's bearer-mint
+    # always returns user info. Distinct from user_email above which was
+    # historically a self-reported onboarding field — the values agree once
+    # sign-in completes (server-validated wins).
+    user_id: Optional[str] = None
+    signin_method: Optional[Literal["google", "magic_link", "stripe"]] = None
 
 
 class CustomProvider(BaseModel):

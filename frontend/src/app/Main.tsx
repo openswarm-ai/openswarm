@@ -28,6 +28,7 @@ const Views = lazy(() => import('./pages/Views/Views'));
 const Customization = lazy(() => import('./pages/Customization/Customization'));
 const Analytics = lazy(() => import('./pages/Analytics/Analytics'));
 const OnboardingModal = lazy(() => import('./components/OnboardingModal'));
+const SignInGate = lazy(() => import('./components/SignInGate'));
 import { report, getSessionTraceState, getRecentActions } from '@/shared/serviceClient';
 import { useRouteTracker } from '@/shared/hooks/useRouteTracker';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
@@ -194,6 +195,94 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
     if (loaded) setThemeMode(theme as 'light' | 'dark');
   }, [loaded, theme, setThemeMode]);
   return <>{children}</>;
+};
+
+// Sign-in gate. Sits between SettingsLoader and DefaultModelGuard so the
+// gate is the very first thing a user without a user_id sees. Two modes:
+//
+//   - Hard gate (fresh installs, existing installs past the 30-day grace):
+//     Modal blocks the app until sign-in completes. No skip link.
+//   - Soft gate (existing installs inside the grace window): Modal can be
+//     dismissed. settings.signin_skipped_until_ts persists "remind me in 7
+//     days." On the next launch after that timestamp, the modal returns.
+//
+// Already-signed-in users (settings.user_id != null) skip the gate. Existing
+// paid Stripe users without explicit sign-in also skip — their bearer is
+// valid even though user_id might not have been backfilled yet (deferred
+// to a one-time /api/me hit on the v1.0.30 first-launch). For the simple
+// case we treat openswarm_bearer_token alone as "signed in" so paying
+// customers never see the gate.
+interface IdentityStatus {
+  authed: boolean;
+  hard_gate: boolean;
+  install_age_days?: number;
+  deadline_ts?: number | null;
+}
+
+const SignInGateLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const settings = useAppSelector((s) => s.settings.data);
+  const settingsLoaded = useAppSelector((s) => s.settings.loaded);
+  const [status, setStatus] = useState<IdentityStatus | null>(null);
+  const [skipTs, setSkipTs] = useState<number>(0);
+
+  // Already authenticated, either via the new sign-in flow (user_id set) or
+  // a still-valid Stripe bearer (paid user upgrading from v1.0.29).
+  const alreadySignedIn = Boolean(settings.user_id || settings.openswarm_bearer_token);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    if (alreadySignedIn) {
+      setStatus({ authed: true, hard_gate: false });
+      return;
+    }
+    let cancelled = false;
+    fetch(`${API_BASE}/auth/identity-status`)
+      .then((r) => (r.ok ? r.json() : { authed: false, hard_gate: true }))
+      .then((data) => {
+        if (!cancelled) setStatus(data as IdentityStatus);
+      })
+      .catch(() => {
+        // Cloud unreachable → fail open with soft gate so the user can keep
+        // working. The gate will retry on next mount.
+        if (!cancelled) setStatus({ authed: false, hard_gate: false });
+      });
+    return () => { cancelled = true; };
+  }, [settingsLoaded, alreadySignedIn]);
+
+  // Read the persisted "remind me later" timestamp from localStorage so
+  // soft-gate skip survives reloads but doesn't bloat AppSettings.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('openswarm_signin_skipped_until');
+      const n = raw ? parseInt(raw, 10) : 0;
+      if (Number.isFinite(n)) setSkipTs(n);
+    } catch { /* localStorage unavailable */ }
+  }, []);
+
+  if (!settingsLoaded || !status) return null;
+  if (status.authed) return <>{children}</>;
+
+  const skipActive = !status.hard_gate && Date.now() < skipTs;
+  if (skipActive) return <>{children}</>;
+
+  return (
+    <>
+      {children}
+      <Suspense fallback={null}>
+        <SignInGate
+          softGate={!status.hard_gate}
+          onSkip={() => {
+            // 7-day reminder window for soft gate.
+            const until = Date.now() + 7 * 24 * 60 * 60 * 1000;
+            try {
+              window.localStorage.setItem('openswarm_signin_skipped_until', String(until));
+            } catch { /* ignore */ }
+            setSkipTs(until);
+          }}
+        />
+      </Suspense>
+    </>
+  );
 };
 
 // Priority order for picking a default model when the user's stored
@@ -371,6 +460,7 @@ const ThemedApp: React.FC = () => {
         <RouteTrackerMount />
         <ShortcutsProvider>
           <SettingsLoader>
+            <SignInGateLoader>
             <DefaultModelGuard>
             <UpdateListener>
               <DeepLinkListener>
@@ -400,6 +490,7 @@ const ThemedApp: React.FC = () => {
               </DeepLinkListener>
             </UpdateListener>
             </DefaultModelGuard>
+            </SignInGateLoader>
           </SettingsLoader>
         </ShortcutsProvider>
       </HashRouter>

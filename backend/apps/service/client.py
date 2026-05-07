@@ -91,7 +91,17 @@ def _get_user_id() -> Optional[str]:
     try:
         from backend.apps.settings.settings import load_settings
         s = load_settings()
-        return getattr(s, "user_email", None) or None
+        # Prefer the cloud-issued user_id (UUID) if the user has signed in
+        # via Google OAuth, magic link, or Stripe checkout — that's the
+        # authoritative identity. Falls back to user_email for installs
+        # that haven't completed sign-in yet (so existing onboarding-only
+        # installs don't lose their Person history during the v1.0.30
+        # rollout). After every install signs in, this fallback drops out.
+        return (
+            getattr(s, "user_id", None)
+            or getattr(s, "user_email", None)
+            or None
+        )
     except Exception:
         return None
 

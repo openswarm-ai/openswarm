@@ -19,6 +19,8 @@ import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AgentMessage } from '@/shared/state/agentsSlice';
+import { openSettingsModal } from '@/shared/state/settingsSlice';
+import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { SKILL_COLOR } from '@/app/components/richEditorUtils';
 import ViewBubble from './ViewBubble';
@@ -465,11 +467,46 @@ const MessageImageThumbnails: React.FC<{
   );
 };
 
-// thinking pill. shows "Thought for Ns" if we caught it live, else just "Thoughts".
+// 17 single-word labels picked deterministically per turn from the message id.
+// Mostly normal-warm with a kitchen cluster + a few gen-z picks for variety.
+const THINKING_LABELS: ReadonlyArray<{ live: string; past: string }> = [
+  { live: 'Thinking',     past: 'Thought' },
+  { live: 'Pondering',    past: 'Pondered' },
+  { live: 'Cooking',      past: 'Cooked' },
+  { live: 'Marinating',   past: 'Marinated' },
+  { live: 'Deliberating', past: 'Deliberated' },
+  { live: 'Reasoning',    past: 'Reasoned' },
+  { live: 'Reflecting',   past: 'Reflected' },
+  { live: 'Untangling',   past: 'Untangled' },
+  { live: 'Stewing',      past: 'Stewed' },
+  { live: 'Locking-in',   past: 'Locked-in' },
+  { live: 'Considering',  past: 'Considered' },
+  { live: 'Processing',   past: 'Processed' },
+  { live: 'Vibing',       past: 'Vibed' },
+  { live: 'Calculating',  past: 'Calculated' },
+  { live: 'Chefing',      past: 'Chefed' },
+  { live: 'Geeking',      past: 'Geeked' },
+  { live: 'Brewing',      past: 'Brewed' },
+];
+
+// Stable hash of the message id → label index. Same message always shows the
+// same label — so reload / scroll-back / resume don't shuffle history. Cheap:
+// 6 ops per char, but the id is 32 hex chars so ~200 ops total per bubble,
+// completely negligible vs. a single React re-render.
+function labelIndexFromId(id: string | undefined): number {
+  if (!id) return 0;
+  let h = 0;
+  for (let i = 0; i < id.length; i++) {
+    h = ((h << 5) - h + id.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h) % THINKING_LABELS.length;
+}
+
 const ThinkingBubble: React.FC<{
   content: string;
   isStreaming?: boolean;
   timestamp?: string;
+  messageId?: string;
   // server-stamped totals for the turn. survives unmount.
   persistedElapsedMs?: number;
   persistedTokens?: number;
@@ -477,8 +514,13 @@ const ThinkingBubble: React.FC<{
   persistedToolCount?: number;
   // aux-LLM label like "Auditing the pull request". null = use the heuristic.
   dynamicLabel?: string | null;
-}> = ({ content, isStreaming, persistedElapsedMs, persistedTokens, persistedInputTokens, persistedToolCount, dynamicLabel }) => {
+}> = ({ content, isStreaming, messageId, persistedElapsedMs, persistedTokens, persistedInputTokens, persistedToolCount, dynamicLabel }) => {
   const c = useClaudeTokens();
+
+  const turnLabel = useMemo(
+    () => THINKING_LABELS[labelIndexFromId(messageId)],
+    [messageId],
+  );
 
   // live timer is just the fallback. server-stamped values win.
   const [startedStreamingAt, setStartedStreamingAt] = useState<number | null>(
@@ -521,7 +563,7 @@ const ThinkingBubble: React.FC<{
 
   const activeLabel = dynamicLabel
     ? (liveTokenEstimate > 0 ? `${dynamicLabel}… · ~${liveTokenEstimate} tokens` : `${dynamicLabel}…`)
-    : (liveTokenEstimate > 0 ? `Thinking… (~${liveTokenEstimate} tokens)` : 'Thinking…');
+    : (liveTokenEstimate > 0 ? `${turnLabel.live}… (~${liveTokenEstimate} tokens)` : `${turnLabel.live}…`);
 
   const fmtTokens = (n: number) => {
     if (n >= 1000) {
@@ -565,8 +607,8 @@ const ThinkingBubble: React.FC<{
     segments.push(
       <span key="duration">
         {finalSeconds != null
-          ? `Thought for ${fmtThoughtDuration(finalSeconds)}`
-          : 'Thoughts'}
+          ? `${turnLabel.past} for ${fmtThoughtDuration(finalSeconds)}`
+          : turnLabel.past}
       </span>
     );
     if (tokenBreakdown) {
@@ -769,6 +811,7 @@ interface Props {
 
 const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, onSaveEdit, onCancelEdit, isStreaming, dynamicTurnLabel }) => {
   const c = useClaudeTokens();
+  const dispatch = useAppDispatch();
   const [editText, setEditText] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const { role, content } = message;
@@ -789,6 +832,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
         content={typeof content === 'string' ? content : JSON.stringify(content)}
         isStreaming={isStreaming}
         timestamp={message.timestamp}
+        messageId={message.id}
         persistedElapsedMs={(message as any).elapsed_ms}
         persistedTokens={(message as any).tokens}
         persistedInputTokens={(message as any).input_tokens}
@@ -1069,10 +1113,9 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                       onClick={() => {
                         const api = (window as any).openswarm;
                         if (openswarmError.ctaAction === 'upgrade') {
-                          // tier picker, not direct checkout.
                           setPickerOpen(true);
                         } else if (openswarmError.ctaAction === 'settings') {
-                          window.dispatchEvent(new CustomEvent('openswarm:open-settings', { detail: { tab: 'models' } }));
+                          dispatch(openSettingsModal('models'));
                         } else if (openswarmError.ctaAction === 'waitlist') {
                           const url = 'https://discord.com/channels/1486442924391796896/1486442927554170892';
                           if (api?.openExternal) api.openExternal(url);
