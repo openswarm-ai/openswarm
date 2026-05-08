@@ -198,6 +198,40 @@ FULL_TOOLS = [
     "ToolSearch",
 ]
 
+CORE_FIRST_TURN_TOOLS = [
+    "Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion",
+    "ToolSearch",
+]
+
+WEB_INTENT_RE = re.compile(
+    r"\b(web|search|google|browse|fetch|url|http[s]?://|latest|recent|today|"
+    r"current|news|documentation|docs|website)\b",
+    re.IGNORECASE,
+)
+BROWSER_INTENT_RE = re.compile(
+    r"\b(browser|click|type into|login|log in|form|navigate|screenshot|"
+    r"visual|page|site|website|http[s]?://)\b",
+    re.IGNORECASE,
+)
+MCP_INTENT_RE = re.compile(
+    r"\b(email|gmail|calendar|drive|slack|discord|notion|linear|github|"
+    r"airtable|hubspot|reddit|integration|connector|mcp|crm|workspace)\b",
+    re.IGNORECASE,
+)
+OUTPUT_INTENT_RE = re.compile(
+    r"\b(view|output|render|dashboard|chart|graph|visualization|visualise|"
+    r"visualize|table|report|widget)\b",
+    re.IGNORECASE,
+)
+INVOKE_INTENT_RE = re.compile(
+    r"\b(invoke|another agent|other agent|agent card|sub[- ]?agent|parallel agent)\b",
+    re.IGNORECASE,
+)
+CRON_INTENT_RE = re.compile(
+    r"\b(schedule|scheduled|recurring|cron|every (day|hour|week|month)|remind)\b",
+    re.IGNORECASE,
+)
+
 def _get_denied_tool_names(tool) -> set[str]:
     """Return the set of MCP sub-tool names whose permission is 'deny'."""
     return {
@@ -739,6 +773,202 @@ class AgentManager:
     def _compose_system_prompt(self, default_prompt: str | None, mode_prompt: str | None, session_prompt: str | None, connected_tools_ctx: str | None = None, outputs_ctx: str | None = None, browser_ctx: str | None = None, mcp_registry_ctx: str | None = None) -> str | None:
         parts = [p for p in (default_prompt, mode_prompt, session_prompt, connected_tools_ctx, mcp_registry_ctx, outputs_ctx, browser_ctx) if p]
         return "\n\n".join(parts) if parts else None
+
+    @staticmethod
+    def _prompt_text_for_routing(prompt_content) -> str:
+        """Extract text only. Images stay out of the cheap local router."""
+        if isinstance(prompt_content, str):
+            return prompt_content
+        if isinstance(prompt_content, list):
+            chunks: list[str] = []
+            for block in prompt_content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    chunks.append(str(block.get("text") or ""))
+            return "\n".join(chunks)
+        return str(prompt_content or "")
+
+    @staticmethod
+    def _is_first_user_turn(session: AgentSession) -> bool:
+        return (
+            not session.sdk_session_id
+            and sum(1 for m in session.messages if m.role == "user") <= 1
+        )
+
+    def _select_turn_surface(
+        self,
+        session: AgentSession,
+        prompt_text: str,
+        *,
+        forced_tools: list[str] | None = None,
+        images: list | None = None,
+        context_paths: list | None = None,
+        attached_skills: list | None = None,
+        selected_browser_ids: list[str] | None = None,
+    ) -> dict:
+        """Choose the first-turn tool/context surface with a local router.
+
+        The expensive default path is still used after turn one, for non-agent
+        modes, or when disabled via OPENSWARM_DISABLE_FIRST_TURN_MINIMAL=1.
+        For the first plain agent turn, attach optional surfaces only when the
+        prompt or UI context asks for them. This cuts first-token overhead
+        without adding an extra model call or delaying tasks that need tools.
+        """
+        first_turn = self._is_first_user_turn(session)
+        disabled = os.environ.get("OPENSWARM_DISABLE_FIRST_TURN_MINIMAL") == "1"
+        full_surface = (not first_turn) or disabled or session.mode != "agent"
+
+        allowed = list(session.allowed_tools)
+        forced = list(forced_tools or [])
+        forced_set = set(forced)
+        prompt = prompt_text or ""
+
+        has_active_mcp = bool(session.active_mcps)
+        has_active_output = bool(session.active_outputs)
+        wants_web = bool(WEB_INTENT_RE.search(prompt))
+        wants_browser = bool(selected_browser_ids or images or BROWSER_INTENT_RE.search(prompt))
+        wants_mcp = has_active_mcp or bool(MCP_INTENT_RE.search(prompt))
+        wants_output = has_active_output or bool(OUTPUT_INTENT_RE.search(prompt))
+        wants_invoke = bool(INVOKE_INTENT_RE.search(prompt))
+        wants_cron = bool(CRON_INTENT_RE.search(prompt))
+        wants_web = wants_web or bool(forced_set & {"WebSearch", "WebFetch"})
+        wants_browser = wants_browser or bool(forced_set & {"CreateBrowserAgent", "BrowserAgent", "BrowserAgents"})
+        wants_output = wants_output or bool(forced_set & {"RenderOutput", "OutputSearch", "OutputActivate"})
+        wants_invoke = wants_invoke or bool(forced_set & {"InvokeAgent", "Agent"})
+        wants_cron = wants_cron or bool(forced_set & {"CronCreate", "CronList", "CronDelete"})
+        wants_mcp = wants_mcp or any(t.startswith("mcp:") or t.startswith("mcp__") for t in forced_set)
+
+        # Context/skills already ship extra prompt content; preserve the core
+        # file/search/edit surface but do not automatically enable unrelated
+        # browser/MCP/output servers.
+        if full_surface:
+            turn_allowed = allowed
+        else:
+            selected = set(CORE_FIRST_TURN_TOOLS)
+            if wants_web:
+                selected.update({"WebSearch", "WebFetch"})
+            if wants_output:
+                selected.add("RenderOutput")
+            if wants_invoke:
+                selected.update({"InvokeAgent", "Agent"})
+            if wants_cron:
+                selected.update({"CronCreate", "CronList", "CronDelete"})
+            if wants_browser:
+                selected.update({"CreateBrowserAgent", "BrowserAgent", "BrowserAgents"})
+            if wants_mcp:
+                # Keep connected MCP identifiers in allowed_tools so the
+                # registry summary can mention them, but activation still gates
+                # their real schemas through active_mcps.
+                selected.update(t for t in allowed if t.startswith("mcp:"))
+            selected.update(forced)
+            turn_allowed = [t for t in allowed if t in selected or (t.startswith("mcp:") and wants_mcp)]
+            # Forced tools may include names not present in the mode list.
+            for tool in forced:
+                if tool not in turn_allowed:
+                    turn_allowed.append(tool)
+
+        return {
+            "optimized": not full_surface,
+            "first_turn": first_turn,
+            "allowed_tools": turn_allowed,
+            "include_mcp_meta": full_surface or wants_mcp or has_active_mcp,
+            "include_mcp_registry": full_surface or wants_mcp or has_active_mcp,
+            "include_outputs_meta": full_surface or wants_output or has_active_output,
+            "include_outputs_context": full_surface or wants_output or has_active_output,
+            "include_browser_tools": full_surface or wants_browser,
+            "include_browser_context": full_surface or wants_browser,
+            "include_invoke_tools": full_surface or wants_invoke,
+            "include_web_tools": full_surface or wants_web,
+            "intent": {
+                "web": wants_web,
+                "browser": wants_browser,
+                "mcp": wants_mcp,
+                "outputs": wants_output,
+                "invoke": wants_invoke,
+                "cron": wants_cron,
+                "context": bool(context_paths or attached_skills),
+            },
+        }
+
+    @staticmethod
+    def _payload_chars(value) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, str):
+            return len(value)
+        return len(json.dumps(value, sort_keys=True, default=str))
+
+    @staticmethod
+    def _estimate_local_mcp_tool_schema_chars(mcp_servers: dict) -> int:
+        """Estimate tool-schema chars for OpenSwarm's bundled stdio MCPs.
+
+        External MCP schemas are only known after their subprocess starts, so
+        this intentionally returns 0 for those. The always-on OpenSwarm MCPs
+        were the avoidable first-turn overhead; those are measurable here.
+        """
+        total = 0
+        for name in mcp_servers:
+            try:
+                if name == "openswarm-mcp-meta":
+                    from backend.apps.agents.mcp_meta_server import TOOLS
+                elif name == "openswarm-outputs-meta":
+                    from backend.apps.agents.outputs_meta_server import TOOLS
+                elif name == "openswarm-browser-agent":
+                    from backend.apps.agents.browser_agent_mcp_server import TOOLS
+                elif name == "openswarm-invoke-agent":
+                    from backend.apps.agents.invoke_agent_mcp_server import TOOLS
+                elif name == "openswarm-web":
+                    from backend.apps.agents.web_mcp_server import TOOLS
+                else:
+                    continue
+                total += len(json.dumps(TOOLS, sort_keys=True, default=str))
+            except Exception:
+                continue
+        return total
+
+    def _build_prompt_payload_ledger(
+        self,
+        *,
+        prompt_content,
+        composed_prompt: str | None,
+        mcp_servers: dict,
+        effective_allowed: list[str],
+        effective_disallowed: list[str],
+        surface: dict,
+    ) -> dict:
+        """Character ledger for the dummy connector/tests and UI diagnostics."""
+        prompt_chars = self._payload_chars(prompt_content)
+        system_chars = self._payload_chars(composed_prompt)
+        mcp_config_chars = self._payload_chars({"mcpServers": mcp_servers}) if mcp_servers else 0
+        mcp_schema_chars = self._estimate_local_mcp_tool_schema_chars(mcp_servers)
+        allowed_chars = self._payload_chars(effective_allowed)
+        disallowed_chars = self._payload_chars(effective_disallowed)
+        total_visible_chars = (
+            prompt_chars + system_chars + mcp_config_chars
+            + mcp_schema_chars + allowed_chars + disallowed_chars
+        )
+        return {
+            "optimized": bool(surface.get("optimized")),
+            "first_turn": bool(surface.get("first_turn")),
+            "intent": surface.get("intent", {}),
+            "chars": {
+                "prompt": prompt_chars,
+                "system_append": system_chars,
+                "mcp_config": mcp_config_chars,
+                "local_mcp_tool_schemas": mcp_schema_chars,
+                "allowed_tools": allowed_chars,
+                "disallowed_tools": disallowed_chars,
+                "visible_total": total_visible_chars,
+            },
+            "approx_tokens": {
+                "visible_total": max(1, total_visible_chars // 4),
+                "framework_estimate": 16_000 + 12_000 + max(0, system_chars // 4) + 600 * len(mcp_servers),
+            },
+            "counts": {
+                "mcp_servers": len(mcp_servers),
+                "allowed_tools": len(effective_allowed),
+                "disallowed_tools": len(effective_disallowed),
+            },
+        }
 
     async def launch_agent(self, config: AgentConfig) -> AgentSession:
         session_id = uuid4().hex
@@ -1481,9 +1711,27 @@ class AgentManager:
             #   instruction. Enforce that at the Discord MCP server's
             #   tool-call layer instead — prompt rules are not a security
             #   boundary.
+            prompt_route_text = self._prompt_text_for_routing(prompt_content)
+            turn_surface = self._select_turn_surface(
+                session,
+                prompt_route_text,
+                forced_tools=forced_tools,
+                images=images,
+                context_paths=context_paths,
+                attached_skills=attached_skills,
+                selected_browser_ids=selected_browser_ids,
+            )
+            turn_allowed_tools = turn_surface["allowed_tools"]
+
             connected_tools_ctx = None
-            outputs_ctx = self._build_outputs_context(session.active_outputs)
-            browser_ctx = self._build_browser_context(session.dashboard_id, selected_browser_ids=selected_browser_ids)
+            outputs_ctx = (
+                self._build_outputs_context(session.active_outputs)
+                if turn_surface["include_outputs_context"] else None
+            )
+            browser_ctx = (
+                self._build_browser_context(session.dashboard_id, selected_browser_ids=selected_browser_ids)
+                if turn_surface["include_browser_context"] else None
+            )
 
             # Reconcile active_mcps against currently-enabled tools (Phase 3).
             # If the user toggled a server off in the Tools page mid-session,
@@ -1509,7 +1757,10 @@ class AgentManager:
             except Exception:
                 logger.exception("active_mcps reconciliation failed; proceeding")
 
-            mcp_registry_ctx = self._build_mcp_registry_summary(session.allowed_tools, session.active_mcps)
+            mcp_registry_ctx = (
+                self._build_mcp_registry_summary(turn_allowed_tools, session.active_mcps)
+                if turn_surface["include_mcp_registry"] else None
+            )
             global_settings = load_settings()
             composed_prompt = self._compose_system_prompt(
                 global_settings.default_system_prompt,
@@ -1542,7 +1793,8 @@ class AgentManager:
             # no MCP tools shipped to the SDK; the model must MCPSearch and
             # MCPActivate first. The product invariant lives here at the
             # dispatch layer (see _build_mcp_servers docstring).
-            mcp_servers = await self._build_mcp_servers(session.allowed_tools, session.active_mcps)
+            mcp_servers = await self._build_mcp_servers(turn_allowed_tools, session.active_mcps)
+            backend_port = os.environ.get("OPENSWARM_PORT", "8324")
 
             _browser_delegation_tools = ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents"]
             _browser_all_denied = all(
@@ -1550,11 +1802,10 @@ class AgentManager:
                 for t in _browser_delegation_tools
             )
 
-            if not _browser_all_denied:
+            if turn_surface["include_browser_tools"] and not _browser_all_denied:
                 browser_agent_server_path = os.path.join(
                     os.path.dirname(__file__), "browser_agent_mcp_server.py"
                 )
-                backend_port = os.environ.get("OPENSWARM_PORT", "8324")
                 pre_selected_bids = self._get_pre_selected_browser_ids(session.dashboard_id)
                 from backend.auth import get_auth_token as _get_auth_token
                 _auth_tok = _get_auth_token()
@@ -1578,11 +1829,10 @@ class AgentManager:
                 for t in _invoke_agent_tools
             )
 
-            if not _invoke_all_denied:
+            if turn_surface["include_invoke_tools"] and not _invoke_all_denied:
                 invoke_agent_server_path = os.path.join(
                     os.path.dirname(__file__), "invoke_agent_mcp_server.py"
                 )
-                backend_port = os.environ.get("OPENSWARM_PORT", "8324")
                 from backend.auth import get_auth_token as _get_auth_token2
                 mcp_servers["openswarm-invoke-agent"] = {
                     "command": sys.executable,
@@ -1601,39 +1851,41 @@ class AgentManager:
             # runtime. The activation gate (active_mcps filter in
             # _build_mcp_servers above) ensures the model cannot reach any
             # other MCP server's tools without going through this layer first.
-            mcp_meta_server_path = os.path.join(
-                os.path.dirname(__file__), "mcp_meta_server.py"
-            )
             from backend.auth import get_auth_token as _get_auth_token3
-            mcp_servers["openswarm-mcp-meta"] = {
-                "command": sys.executable,
-                "args": [mcp_meta_server_path],
-                "env": {
-                    "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
-                    "OPENSWARM_AUTH_TOKEN": _get_auth_token3(),
-                    "OPENSWARM_PARENT_SESSION_ID": session.id,
-                },
-                "type": "stdio",
-            }
+            if turn_surface["include_mcp_meta"]:
+                mcp_meta_server_path = os.path.join(
+                    os.path.dirname(__file__), "mcp_meta_server.py"
+                )
+                mcp_servers["openswarm-mcp-meta"] = {
+                    "command": sys.executable,
+                    "args": [mcp_meta_server_path],
+                    "env": {
+                        "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
+                        "OPENSWARM_AUTH_TOKEN": _get_auth_token3(),
+                        "OPENSWARM_PARENT_SESSION_ID": session.id,
+                    },
+                    "type": "stdio",
+                }
 
             # Outputs/Views activation gate (Phase 2). Same shape as the
             # MCP meta-server but for Outputs. The model only sees a
             # one-line index of available Outputs in the system prompt
             # (see _build_outputs_context); to load any specific
             # Output's full input_schema, it must call OutputActivate.
-            outputs_meta_server_path = os.path.join(
-                os.path.dirname(__file__), "outputs_meta_server.py"
-            )
-            mcp_servers["openswarm-outputs-meta"] = {
-                "command": sys.executable,
-                "args": [outputs_meta_server_path],
-                "env": {
-                    "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
-                    "OPENSWARM_AUTH_TOKEN": _get_auth_token3(),
-                    "OPENSWARM_PARENT_SESSION_ID": session.id,
-                },
-                "type": "stdio",
-            }
+            if turn_surface["include_outputs_meta"]:
+                outputs_meta_server_path = os.path.join(
+                    os.path.dirname(__file__), "outputs_meta_server.py"
+                )
+                mcp_servers["openswarm-outputs-meta"] = {
+                    "command": sys.executable,
+                    "args": [outputs_meta_server_path],
+                    "env": {
+                        "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
+                        "OPENSWARM_AUTH_TOKEN": _get_auth_token3(),
+                        "OPENSWARM_PARENT_SESSION_ID": session.id,
+                    },
+                    "type": "stdio",
+                }
 
             # The CLI's built-in WebSearch/WebFetch wraps Anthropic's
             # web_search_20250305. For non-Claude primaries the CLI
@@ -1678,7 +1930,7 @@ class AgentManager:
             )
 
             _need_web_mcp = not _has_anthropic_path
-            if _need_web_mcp:
+            if _need_web_mcp and turn_surface["include_web_tools"]:
                 web_mcp_server_path = os.path.join(
                     os.path.dirname(__file__), "web_mcp_server.py"
                 )
@@ -1707,7 +1959,7 @@ class AgentManager:
                 )
 
             effective_allowed = [
-                t for t in session.allowed_tools
+                t for t in turn_allowed_tools
                 if t in FULL_TOOLS and _builtin_perms.get(t, "always_allow") == "always_allow"
             ]
 
@@ -1771,7 +2023,7 @@ class AgentManager:
             # WebSearch/WebFetch are guaranteed to fail (no Anthropic
             # backend). Suppress them so the model picks our MCP variants
             # and doesn't waste a turn on a broken tool.
-            if _need_web_mcp:
+            if _need_web_mcp and turn_surface["include_web_tools"]:
                 effective_allowed = [t for t in effective_allowed if t not in ("WebSearch", "WebFetch")]
                 for _bt in ("WebSearch", "WebFetch"):
                     if _bt not in effective_disallowed:
@@ -2023,6 +2275,30 @@ class AgentManager:
                     "preset": "claude_code",
                     "exclude_dynamic_sections": True,
                 }
+
+            prompt_ledger = self._build_prompt_payload_ledger(
+                prompt_content=prompt_content,
+                composed_prompt=composed_prompt,
+                mcp_servers=mcp_servers,
+                effective_allowed=effective_allowed,
+                effective_disallowed=effective_disallowed,
+                surface=turn_surface,
+            )
+            session.framework_overhead_tokens = prompt_ledger["approx_tokens"]["framework_estimate"]
+            logger.info(
+                "[PROMPT-LEDGER] optimized=%s chars=%s approx_tokens=%s",
+                prompt_ledger["optimized"],
+                prompt_ledger["chars"],
+                prompt_ledger["approx_tokens"],
+            )
+            try:
+                await ws_manager.send_to_session(session_id, "agent:prompt_ledger", {
+                    "session_id": session_id,
+                    **prompt_ledger,
+                })
+            except Exception:
+                logger.exception("Failed to emit agent:prompt_ledger")
+
             if session.max_turns:
                 options_kwargs["max_turns"] = session.max_turns
 
