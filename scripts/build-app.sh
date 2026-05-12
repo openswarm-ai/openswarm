@@ -355,8 +355,14 @@ rsync -a \
     --exclude='*.pyc' --exclude='.venv' \
     --exclude='data/tools' \
     --exclude='tests' --exclude='**/tests' \
-    --exclude='.env' --exclude='.env.*' --exclude='**/.env' --exclude='**/.env.*' \
+    --exclude='/.env' --exclude='/.env.*' \
     "$PROJECT_ROOT/backend/" "$STAGING_DIR/backend/"
+# Note: .env exclude is anchored to the backend/ source root (`/.env` /
+# `/.env.*`), not recursive. The vendored webapp-template snapshot at
+# backend/apps/outputs/webapp_template/.env.example MUST be shipped so
+# new App workspaces can seed from it; recursive `**/.env*` excludes
+# would strip it. The top-level backend/.env is still excluded (it's
+# (re)generated at the production .env step below).
 
 # Production .env: OAuth helper base URL + Google client_id and client_secret.
 # v1.0.29 moved the *OAuth flow* (auth-code exchange + refresh) to the Fly

@@ -1,221 +1,306 @@
 # App Builder — Platform Reference
 
-You are building an **App**: a self-contained web app rendered inside an
-Electron `<webview>` (so it behaves like a real browser tab — cross-origin
-`fetch`, popups, mic/camera, etc. all work). The workspace you're working
-in is the source of truth — every file you write here is served directly
-to the live preview.
+You are building an **App** inside OpenSwarm. The workspace you're working
+in is a **React 18 + TypeScript + Vite** project (with an optional FastAPI
+backend you can opt into on demand). It's served live to a webview, so it
+behaves like a real browser tab — cross-origin `fetch`, popups, mic/camera,
+clipboard, anything a normal web page does.
+
+You are **NOT** writing a single HTML file or vanilla JS. Match the
+codebase's patterns.
 
 ---
 
-## File conventions
-
-| File | Required | Purpose |
-|------|----------|---------|
-| `index.html` | **Yes** | Entry point. Must be a complete HTML document. This is the ONLY file the preview loads — never rename it. |
-| `meta.json` | **Yes** | `{"name":"…","description":"…"}` — displayed in the UI header. Always write this. |
-| `backend.py` | Optional | Long-running HTTP server. See "Backend" below. |
-| Everything else | Optional | JS, CSS, images, subdirectories — referenced from `index.html` via relative paths. |
-
-### ⚠️ Do NOT
-
-- Name the main HTML file anything other than `index.html` — the platform
-  will not find it and the preview will be blank.
-- Use `document.write()` — it breaks the injected data globals.
-- Treat `backend.py` like a one-shot helper. It's a real HTTP server (see below).
-
----
-
-## Injected globals
-
-Before `index.html` loads, the platform injects:
-
-```javascript
-window.OUTPUT_INPUT       // Object — optional structured input (may be {})
-window.OUTPUT_BACKEND_URL // string | null — base URL of the running backend.py, e.g. "http://127.0.0.1:54213"
-```
-
-`OUTPUT_BACKEND_URL` is `null` when the app has no `backend.py` (pure-frontend
-app). When it's set, `fetch(window.OUTPUT_BACKEND_URL + '/your-route')` hits
-the persistent backend.
-
----
-
-## backend.py — persistent HTTP server
-
-`backend.py` runs as a **long-lived subprocess** for the lifetime of the
-app being open in the editor. It is **NOT a one-shot helper** that runs
-once before render — it's a real backend server that responds to
-frontend `fetch()` calls.
-
-The platform auto-allocates a free port and exposes it via the env var
-`PORT`. Your `backend.py` MUST bind to that port. Any standard Python
-HTTP framework works (FastAPI, Flask, raw `http.server`).
-
-Minimal FastAPI example:
-
-```python
-# backend.py
-import os
-import uvicorn
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
-app = FastAPI()
-# The frontend is served from http://localhost:8324 (different origin
-# than this backend on http://127.0.0.1:$PORT), so CORS must allow it.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.get("/items")
-def list_items():
-    return {"items": ["alpha", "beta", "gamma"]}
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ["PORT"]))
-```
-
-Then in `index.html`:
-
-```javascript
-const res = await fetch(window.OUTPUT_BACKEND_URL + '/items');
-const data = await res.json();
-```
-
-Stdout/stderr from `backend.py` stream live into the App Builder's
-**Terminal** tab (prefixed `[BACKEND]`), so `print()` is your debugger.
-
----
-
-## Multi-file projects
-
-Split code across files for organization. All files are served from the
-workspace root, so relative imports work naturally:
+## Workspace layout
 
 ```
 workspace/
-├── index.html
-├── meta.json
-├── backend.py          (optional)
-├── styles/
-│   └── main.css
-├── components/
-│   └── Chart.js
-└── utils/
-    └── helpers.js
+├── .env                   # FRONTEND_PORT, BACKEND_PORT (NONE by default)
+├── .env.example           # Mirror of .env (LLM-consistency — edit both
+│                          #   when you change either)
+├── run.sh                 # OpenSwarm's runtime spawns this; you don't
+├── backend_init.sh        # Run this when you need a backend (see below)
+├── SKILL.md               # This document
+└── frontend/
+    ├── package.json       # React 18, MUI v7, Redux Toolkit, Framer
+    │                      #   Motion, react-router v7
+    ├── vite.config.ts     # Vite config — DO NOT edit unless you know why
+    ├── tsconfig.json      # `@/*` → `src/*` path alias
+    ├── index.html
+    └── src/
+        ├── index.tsx              # ReactDOM entry; mounts <Main />
+        ├── app/
+        │   ├── Main.tsx           # Redux + Theme + BrowserRouter + AppShell
+        │   └── components/
+        │       └── Layout/
+        │           ├── AppShell.tsx   # Sidebar + scrollable content
+        │           └── Sidebar.tsx    # Nav, theme toggle
+        ├── pages/                 # FILE-BASED ROUTING — see below
+        │   ├── index.tsx          # /
+        │   └── health.tsx         # /health
+        └── shared/
+            ├── hooks.ts                 # useAppDispatch, useAppSelector
+            ├── state/
+            │   ├── store.ts             # Redux store config
+            │   ├── tempStateSlice.ts    # Sample slice — replace or extend
+            │   └── API_ENDPOINTS.ts     # ALL backend URL constants
+            └── styles/
+                └── ThemeContext.tsx     # Design tokens — USE THESE
 ```
 
-Reference from `index.html`:
+If a backend is enabled (after `bash backend_init.sh`), you'll also have:
 
-```html
-<link rel="stylesheet" href="./styles/main.css">
-<script type="module" src="./components/Chart.js"></script>
 ```
-
-ES module imports between JS files:
-
-```javascript
-// components/Chart.js
-import { formatNumber } from '../utils/helpers.js';
+└── backend/
+    ├── pyproject.toml         # FastAPI + typeguard (+ swarm_debug)
+    ├── main.py                # FastAPI app entry — registers SubApps
+    ├── apps/                  # Each feature is a SubApp
+    │   └── health/
+    │       └── health.py      # GET /api/health/check
+    └── config/Apps.py         # SubApp / MainApp plugin framework
 ```
 
 ---
 
-## Using React
+## File-based routing
 
-React 18 is available via esm.sh CDN — no build step needed:
+`vite-plugin-pages` auto-registers every `.tsx` file under `frontend/src/pages/`
+as a route. **You don't touch any router config.** Just create the file.
 
-```html
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18",
-    "react-dom/client": "https://esm.sh/react-dom@18/client"
-  }
+- `src/pages/index.tsx`           → `/`
+- `src/pages/about.tsx`           → `/about`
+- `src/pages/users/index.tsx`     → `/users`
+- `src/pages/users/[id].tsx`      → `/users/:id` (dynamic segment)
+- `src/pages/users/$id.tsx`       → `/users/:id` (alternate dynamic syntax,
+                                                 same plugin)
+
+Each page is a default-exported React component:
+
+```tsx
+// src/pages/about.tsx
+export default function About() {
+  return <Box sx={{ p: 4 }}>About this app</Box>;
 }
-</script>
-<div id="root"></div>
-<script type="module">
-import React from 'react';
-import { createRoot } from 'react-dom/client';
+```
 
-function App() {
-  const input = window.OUTPUT_INPUT || {};
-  return React.createElement('div', null,
-    React.createElement('h1', null, input.title || 'Hello')
+Add a sidebar link via `frontend/src/app/components/Layout/Sidebar.tsx`.
+
+---
+
+## Styling — MUST use the design token system
+
+The template ships a complete design system at `frontend/src/shared/styles/ThemeContext.tsx`.
+Use tokens via the `useClaudeTokens()` hook (or whatever the template exposes — check the file).
+**Don't hand-roll hex colors or pixel values.**
+
+Patterns:
+
+```tsx
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+
+export default function Card() {
+  const c = useClaudeTokens();
+  return (
+    <Box sx={{
+      bgcolor: c.bg.surface,
+      border: `1px solid ${c.border.subtle}`,
+      borderRadius: 2,
+      p: 3,
+    }}>
+      <Typography variant="h2" sx={{ color: c.text.primary }}>
+        Hello
+      </Typography>
+    </Box>
   );
 }
-
-createRoot(document.getElementById('root')).render(
-  React.createElement(App)
-);
-</script>
 ```
 
-Other CDN libraries work too — use `https://esm.sh/` or `https://cdn.jsdelivr.net/npm/` for any npm package.
+- **Use MUI components** (`Box`, `Typography`, `Button`, `IconButton`, `Tooltip`, `Stack`, etc.) — never write raw `<div>` for layout.
+- **Use the `sx` prop** for styles, not separate CSS files.
+- **Don't add Tailwind**, Bootstrap, or any other CSS framework.
+
+Check `frontend/DESIGN.md` for the complete design system spec.
 
 ---
 
-## Design guidelines
+## State management — Redux Toolkit
 
-- **Dark theme by default** — use dark backgrounds (#0f1117, #1a1d27) with
-  light text (#e2e8f0) unless the user requests otherwise.
-- **Modern aesthetics** — rounded corners (8-12px), subtle borders, box shadows,
-  smooth transitions (0.15-0.3s ease).
-- **Responsive** — use flexbox/grid, test at different sizes.
-- **Typography** — system font stack for UI, monospace for code/data.
-- **Color accents** — use a single accent color with variations for hover/active states.
-- **Spacing** — consistent padding (12-20px), adequate whitespace between sections.
-- **Interactivity** — hover effects, focus states, loading indicators where appropriate.
+Store is at `frontend/src/shared/state/store.ts`. Add new slices following
+the `tempStateSlice.ts` pattern (createSlice, named action creators, register
+the reducer in the store).
+
+```tsx
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+
+function MyComponent() {
+  const items = useAppSelector(s => s.myFeature.items);
+  const dispatch = useAppDispatch();
+  // ...
+}
+```
+
+For server data, use plain async thunks (`createAsyncThunk`) or fetch
+directly inside `useEffect` — no react-query in the template (yet).
 
 ---
 
-## Complete minimal example
+## Backend — opt-in, never roll your own
 
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My App</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0f1117;
-      color: #e2e8f0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .card {
-      background: #1a1d27;
-      border: 1px solid #2e3248;
-      border-radius: 12px;
-      padding: 32px;
-      max-width: 480px;
-      width: 100%;
-    }
-    h1 { font-size: 1.5rem; margin-bottom: 8px; }
-    p { color: #8892a4; line-height: 1.6; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1 id="title">Loading…</h1>
-    <p id="desc"></p>
-  </div>
-  <script>
-    const input = window.OUTPUT_INPUT || {};
-    document.getElementById('title').textContent = input.title || 'Untitled';
-    document.getElementById('desc').textContent = input.description || 'No description provided.';
-  </script>
-</body>
-</html>
+The workspace **starts without a backend**. If your app needs server-side
+code (API endpoints, secrets, server-managed state):
+
+```bash
+bash backend_init.sh
 ```
+
+This script COPIES the canonical backend scaffold (FastAPI + SubApp pattern
++ swarm-debug pre-installed) into your workspace, allocates a free port,
+and flips `BACKEND_PORT` in both `.env` and `.env.example`. Then **hard-
+reload the preview** (right-click the reload button) so the runtime
+restarts and brings the backend up.
+
+**You MUST NOT roll your own backend.** Do not:
+- Hand-write a `backend/main.py` from scratch.
+- Use Flask, Django, or any framework other than the FastAPI scaffold
+  the script gives you.
+- Install your own venv or `pip install` manually.
+- Edit `backend/run.sh` or the SubApp framework.
+
+Adding a new endpoint is just adding a new SubApp:
+
+```python
+# backend/apps/jobs/jobs.py
+from contextlib import asynccontextmanager
+from backend.config.Apps import SubApp
+from swarm_debug import debug
+
+@asynccontextmanager
+async def jobs_lifespan():
+    debug("jobs SubApp lifespan starting")
+    yield
+
+jobs = SubApp("jobs", jobs_lifespan)
+
+@jobs.router.get("/list")
+async def list_jobs():
+    return {"jobs": [...]}
+```
+
+Then register it in `backend/main.py`:
+
+```python
+from backend.apps.jobs.jobs import jobs
+main_app = MainApp([health, jobs])
+```
+
+Routes are auto-prefixed: `jobs.router.get("/list")` becomes
+`GET /api/jobs/list` — accessible from the frontend at `fetch('/api/jobs/list')`.
+
+---
+
+## Frontend ↔ Backend wiring
+
+Vite proxies `/api/*` calls from the frontend to the workspace's own
+backend (on `BACKEND_PORT`). **Always call `/api/...` from frontend code**
+— never hardcode `localhost:<port>`. The proxy is configured in
+`vite.config.ts` and reads `BACKEND_PORT` from `.env` automatically.
+
+```tsx
+// frontend/src/pages/jobs.tsx
+import { useEffect, useState } from 'react';
+
+export default function Jobs() {
+  const [jobs, setJobs] = useState([]);
+  useEffect(() => {
+    fetch('/api/jobs/list')
+      .then(r => r.json())
+      .then(data => setJobs(data.jobs));
+  }, []);
+  return <>{/* render jobs */}</>;
+}
+```
+
+Keep ALL backend URL paths in `frontend/src/shared/state/API_ENDPOINTS.ts`
+so refactors are one-file edits:
+
+```ts
+export const JOBS_LIST = '/api/jobs/list';
+```
+
+---
+
+## Debugging — use `swarm_debug`, not `print()`
+
+The backend has `swarm_debug` pre-installed. It's a colored frame-aware
+logger that lands in the App Builder's **Terminal** tab under `[BACKEND]`.
+
+```python
+from swarm_debug import debug
+
+debug(value)          # [endpoint_name] : value = ...
+debug(a, b, c)        # logs all three with labels
+debug(err)            # red + ❌ if variable is an exception
+```
+
+See the **swarm-debug Logger** built-in skill (Skills page) for the full
+reference. `print()` works too but lacks the variable-name inference and
+colorization.
+
+Frontend `console.log/warn/error` calls land in the Terminal pane under
+`[FRONTEND]` via the App Builder's webview-preload bridge. Same chronological
+stream as `[BACKEND]` lines, so you can correlate cause and effect across
+the two halves of your stack.
+
+---
+
+## Adding npm packages
+
+Just `npm install <package>` in the workspace's `frontend/` directory.
+Vite picks it up on the next HMR cycle.
+
+```bash
+cd frontend && npm install lodash @types/lodash
+```
+
+Then import normally — Vite resolves it.
+
+Common deps already in the template:
+- `@mui/material`, `@mui/icons-material` — use these for any UI primitive
+- `@reduxjs/toolkit`, `react-redux`
+- `framer-motion` — for animations
+- `react-router-dom@7`
+- `vite-plugin-pages` — file-based routing (already configured)
+
+---
+
+## ⚠️ Don't
+
+- **Don't rename `index.html` or `run.sh`** — the runtime needs both at fixed paths.
+- **Don't edit `vite.config.ts`** unless you know exactly why. The `/api` proxy and `vite-plugin-pages` config are load-bearing.
+- **Don't write a standalone HTML file** at the workspace root. There's no longer a `serve/index.html` endpoint for new-mode workspaces — the webview points at Vite's dev server.
+- **Don't hand-roll a backend**. Use `bash backend_init.sh`.
+- **Don't bypass MUI** with raw `<div>` + custom CSS. Use `Box`, `Stack`, `sx`.
+- **Don't hardcode `localhost:<port>`**. Use relative `/api/...` paths so the Vite proxy handles routing.
+
+---
+
+## Workflow tips
+
+- **Edits are auto-saved**. As soon as you write a file via the Edit/Write tool, it's on disk. Vite HMR re-renders the preview within ~100ms.
+- **Hard Reload (right-click the reload button)** restarts the runtime — useful after you `bash backend_init.sh` or change `.env` values.
+- **`meta.json`** at workspace root is shown in the OpenSwarm Apps page UI. Update its `name` and `description` when the app's purpose changes.
+
+---
+
+## Quick start checklist
+
+When making a new app from scratch:
+
+1. Replace `frontend/src/pages/index.tsx` with your home page.
+2. Add additional pages under `frontend/src/pages/`.
+3. Add a sidebar nav entry in `frontend/src/app/components/Layout/Sidebar.tsx`.
+4. Style with `useClaudeTokens()` and MUI's `sx`.
+5. If you need a backend: `bash backend_init.sh`, then add a SubApp under `backend/apps/<name>/`.
+6. Update `meta.json` with the app's name + description.

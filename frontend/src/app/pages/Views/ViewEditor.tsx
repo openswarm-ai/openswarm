@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback, PointerEvent as ReactPointerEvent } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import CircularProgress from '@mui/material/CircularProgress';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
@@ -340,17 +341,59 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
       // agent made) and skip createDraftSession (would orphan the live session).
       // Just resolve the workspace path and tell AgentChat which session to bind to.
       if (output?.session_id && output?.workspace_id) {
+        // Resolve the workspace path first (best-effort; chat works without it).
+        let resolvedWorkspacePath: string | null = null;
         try {
           const res = await fetch(`${WORKSPACE_API}/${output.workspace_id}`);
           if (res.ok) {
             const data = await res.json();
-            if (data.path) setWorkspacePath(data.path);
+            if (data.path) {
+              resolvedWorkspacePath = data.path;
+              setWorkspacePath(data.path);
+            }
           }
-        } catch { /* path is best-effort; chat still works without it */ }
-        // Pull the latest session state from the backend so the chat catches up
-        // on anything the agent did while the user was on another tab.
-        dispatch(fetchSession(output.session_id));
-        setInitialDraftId(output.session_id);
+        } catch { /* path is best-effort */ }
+
+        // Verify the persisted session still exists on the backend before
+        // binding to it. The id can become stale (backend data wiped,
+        // sessions cleared, different OpenSwarm install) — without this
+        // check we'd hand AgentChat a non-existent id and the chat pane
+        // would be stuck on "Initializing agent…" forever. On 200 we
+        // bind; on 404 we fall through to seed a fresh draft session
+        // attached to the same workspace (preserves app code on disk;
+        // only the chat history is lost — acceptable trade).
+        let sessionStillExists = false;
+        try {
+          const sr = await fetch(`${API_BASE}/agents/sessions/${output.session_id}`);
+          sessionStillExists = sr.ok;
+        } catch { /* network blip — treat as missing */ }
+
+        if (sessionStillExists) {
+          // Pull the latest session state from the backend so the chat
+          // catches up on anything the agent did while the user was on
+          // another tab.
+          dispatch(fetchSession(output.session_id));
+          setInitialDraftId(output.session_id);
+          return;
+        }
+
+        // Stale linkage. Clear it from the Output so future opens skip
+        // the 404 round-trip, then fall through to createDraftSession
+        // with the same workspace.
+        if (output.id) {
+          try {
+            await dispatch(updateOutput({ id: output.id, session_id: null })).unwrap();
+          } catch { /* best-effort cleanup */ }
+        }
+        const action = dispatch(createDraftSession({
+          mode: 'view-builder',
+          setActive: false,
+          targetDirectory: resolvedWorkspacePath || undefined,
+          model: defaultModel || undefined,
+          provider: resolvedProvider,
+          thinkingLevel: defaultThinkingLevel || undefined,
+        }));
+        setInitialDraftId(action.payload.draftId);
         return;
       }
 
@@ -661,19 +704,34 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
   }, [workspaceId]);
 
   // Persistent backend lifecycle. Once we know the workspaceId:
-  //   1. POST /runtime/start so the workspace's backend.py (if present)
-  //      gets spawned and an `OUTPUT_BACKEND_URL` lands in the preview's
-  //      injected script.
-  //   2. Open the runtime WS to stream [BACKEND] stdout/stderr into the
-  //      Terminal pane.
+  //   1. POST /runtime/start so the workspace's runtime (bash run.sh
+  //      for new-mode webapp-template workspaces; python backend.py for
+  //      legacy flat workspaces) gets spawned.
+  //   2. Open the runtime WS to stream [BACKEND]/[RUNTIME] stdout/stderr
+  //      into the Terminal pane AND surface the frontend_url for new-
+  //      mode workspaces (so the preview pane can point at Vite's dev
+  //      server instead of our legacy /serve/ endpoint).
   //   3. On unmount, POST /runtime/stop. Multiple editors on the same
   //      workspace share the runtime (ref-counted server-side); detach
   //      is a no-op until the last subscriber leaves.
   const runtimeWsRef = useRef<WebSocket | null>(null);
+  // Where the preview pane should point. New-mode workspaces report a
+  // frontend_url via runtime:status; until it arrives (or for old-mode
+  // workspaces that never set it), we fall back to the legacy
+  // /api/outputs/workspace/{ws}/serve/ endpoint below.
+  const [frontendUrl, setFrontendUrl] = useState<string | null>(null);
+  // Track new-mode separately so the preview pane can show a
+  // "Installing dependencies…" placeholder while Vite is still booting
+  // instead of trying to load the legacy /serve/index.html path (which
+  // 404s — new-mode workspaces have no `index.html` at root, only
+  // `frontend/index.html` reachable via Vite).
+  const [isNewModeRuntime, setIsNewModeRuntime] = useState(false);
   useEffect(() => {
     if (!workspaceId) return;
     let cancelled = false;
     let ws: WebSocket | null = null;
+    setFrontendUrl(null); // reset when workspace changes
+    setIsNewModeRuntime(false);
 
     const auth = getAuthToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -695,7 +753,18 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
         ws.onmessage = (ev) => {
           try {
             const msg = JSON.parse(ev.data);
-            if (msg.event === 'runtime:log') {
+            if (msg.event === 'runtime:status') {
+              // New-mode runtimes report a frontend_url here as soon as
+              // Vite has actually bound (the runtime poll-gates it);
+              // old-mode workspaces report null and the preview pane
+              // stays on the legacy /serve/ path. We also track
+              // is_new_mode separately so the placeholder pane shows
+              // "Installing dependencies…" instead of the 404'd /serve
+              // path while Vite is mid-npm-install.
+              const fu = msg.data?.frontend_url ?? null;
+              setFrontendUrl(fu || null);
+              setIsNewModeRuntime(!!msg.data?.is_new_mode);
+            } else if (msg.event === 'runtime:log') {
               const stream = msg.data?.stream || 'stdout';
               const text = msg.data?.text || '';
               if (stream === 'runtime') {
@@ -713,6 +782,8 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
       cancelled = true;
       try { ws?.close(); } catch (_) {}
       runtimeWsRef.current = null;
+      setFrontendUrl(null);
+      setIsNewModeRuntime(false);
       fetch(`${API_BASE}/outputs/workspace/${workspaceId}/runtime/stop`, {
         method: 'POST',
         headers,
@@ -720,9 +791,17 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     };
   }, [workspaceId, appendTerminalLine]);
 
-  const workspaceServeUrl = workspaceId
-    ? `${SERVE_BASE}/workspace/${workspaceId}/serve/index.html`
-    : undefined;
+  // Preview URL: prefer the new-mode Vite dev server when the runtime
+  // reports one; otherwise fall back to the legacy serve endpoint.
+  // For new-mode workspaces where Vite hasn't bound yet (npm install
+  // still running), `workspaceServeUrl` is undefined and the preview
+  // pane renders the "Installing dependencies…" placeholder below
+  // instead of falling back to the legacy /serve/ path (which 404s —
+  // new-mode workspaces have no `index.html` at root).
+  const showInstallPlaceholder = isNewModeRuntime && !frontendUrl;
+  const workspaceServeUrl = showInstallPlaceholder
+    ? undefined
+    : (frontendUrl ?? (workspaceId ? `${SERVE_BASE}/workspace/${workspaceId}/serve/index.html` : undefined));
 
   const filePaths = useMemo(() => Object.keys(files).filter(p => p !== 'meta.json' && p !== 'SKILL.md').sort(), [files]);
   const fileTree = useMemo(() => buildFileTree(filePaths), [filePaths]);
@@ -994,14 +1073,41 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
         {/* Tab content */}
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
           {activeTab === TAB_PREVIEW && (
-            <ViewPreview
-              ref={previewRef}
-              serveUrl={workspaceServeUrl}
-              frontendCode={!workspaceServeUrl ? (files['index.html'] ?? '') : undefined}
-              inputData={testInput}
-              backendResult={null}
-              onConsoleMessage={handleWebviewConsole}
-            />
+            showInstallPlaceholder ? (
+              <Box
+                sx={{
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 1.5,
+                  bgcolor: c.bg.surface,
+                  p: 3,
+                  textAlign: 'center',
+                }}
+              >
+                <CircularProgress size={28} sx={{ color: c.accent.primary }} />
+                <Typography sx={{ color: c.text.primary, fontSize: '0.95rem', fontWeight: 600 }}>
+                  Installing dependencies…
+                </Typography>
+                <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem', maxWidth: 420, lineHeight: 1.5 }}>
+                  Cold start can take 60–90 seconds. Check the <b>Terminal</b> tab to follow{' '}
+                  npm install + Vite startup output. The preview will appear here automatically{' '}
+                  once Vite is ready.
+                </Typography>
+              </Box>
+            ) : (
+              <ViewPreview
+                ref={previewRef}
+                serveUrl={workspaceServeUrl}
+                frontendCode={!workspaceServeUrl ? (files['index.html'] ?? '') : undefined}
+                inputData={testInput}
+                backendResult={null}
+                onConsoleMessage={handleWebviewConsole}
+              />
+            )
           )}
           {activeTab === TAB_CODE && (
             <Box sx={{ display: 'flex', height: '100%' }}>

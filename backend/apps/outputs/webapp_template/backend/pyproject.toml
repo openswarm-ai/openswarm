@@ -1,0 +1,12 @@
+[project]
+name = "openswarm-backend"
+version = "0.1.0"
+description = "OpenSwarm web app backend — FastAPI + SubApp plugin pattern"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi[standard]",
+    "typeguard==4.4.2",
+]
+
+[tool.setuptools]
+packages = []

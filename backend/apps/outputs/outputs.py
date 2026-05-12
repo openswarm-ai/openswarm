@@ -16,7 +16,11 @@ from backend.apps.outputs.models import (
     VibeCodeRequest, WorkspaceSeedRequest,
 )
 from backend.apps.outputs.executor import execute_backend_code
-from backend.apps.outputs.view_builder_templates import VIEW_TEMPLATE_FILES, load_app_builder_skill
+from backend.apps.outputs.view_builder_templates import (
+    VIEW_TEMPLATE_FILES,
+    load_app_builder_skill,
+    seed_webapp_template_workspace,
+)
 from backend.apps.settings.settings import load_settings
 
 logger = logging.getLogger(__name__)
@@ -311,10 +315,53 @@ async def read_workspace(workspace_id: str):
 
 @outputs.router.post("/workspace/seed")
 async def seed_workspace(body: WorkspaceSeedRequest):
-    """Create a workspace folder and optionally pre-seed it with files."""
+    """Create a workspace folder and pre-seed it.
+
+    Two seeding modes:
+
+    - **`template_mode="flat"`** (current default): writes the legacy
+      VIEW_TEMPLATE_FILES (single index.html + meta.json + schema.json).
+      Used by every workspace created so far. Runtime spawns
+      `python -u backend.py` (if present) and the preview pane fetches
+      from `/api/outputs/workspace/{ws}/serve/...`.
+
+    - **`template_mode="webapp_template"`**: copies the vendored
+      openswarm-ai/webapp-template snapshot (React + Vite + TS frontend
+      with an optional FastAPI backend) into the workspace, allocates a
+      free FRONTEND_PORT and writes it into both `.env` and
+      `.env.example`. BACKEND_PORT stays NONE — the agent opts in with
+      `bash backend_init.sh`. Runtime spawn flips to `bash run.sh` and
+      the preview pane points at `http://localhost:{FRONTEND_PORT}/`.
+      `body.files` is ignored in this mode; the snapshot is the source
+      of truth.
+    """
     folder = os.path.join(WORKSPACE_DIR, body.workspace_id)
     os.makedirs(folder, exist_ok=True)
 
+    # An explicit non-empty `files` payload means the caller has flat-mode
+    # content to write (a saved legacy Output being reseeded). Don't
+    # clobber that with the React template even if template_mode is the
+    # new default — the migration helper has its own path for that.
+    effective_mode = body.template_mode
+    if body.files:
+        effective_mode = "flat"
+
+    if effective_mode == "webapp_template":
+        # Defer to the helper — copytree, env scaffolding, install paths.
+        from backend.apps.outputs.runtime import _find_free_port
+        frontend_port = _find_free_port()
+        seed_webapp_template_workspace(folder, frontend_port)
+        # SKILL.md still goes in workspace root — agent reads it for
+        # context. Live content (user-editable via Skills page) is
+        # injected into the system prompt regardless.
+        with open(os.path.join(folder, "SKILL.md"), "w") as f:
+            f.write(load_app_builder_skill())
+        if body.meta:
+            with open(os.path.join(folder, "meta.json"), "w") as f:
+                json.dump(body.meta, f, indent=2)
+        return {"path": os.path.abspath(folder), "template_mode": "webapp_template", "frontend_port": frontend_port}
+
+    # Legacy flat path — unchanged.
     if body.files:
         for rel_path, content in body.files.items():
             full_path = os.path.normpath(os.path.join(folder, rel_path))
@@ -342,7 +389,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
         with open(os.path.join(folder, "meta.json"), "w") as f:
             json.dump(body.meta, f, indent=2)
 
-    return {"path": os.path.abspath(folder)}
+    return {"path": os.path.abspath(folder), "template_mode": "flat"}
 
 
 # ---------------------------------------------------------------------------
@@ -356,12 +403,29 @@ def _runtime_status_payload(workspace_id: str) -> dict:
     from backend.apps.outputs.runtime import manager as runtime_manager
     rt = runtime_manager.get(workspace_id)
     if not rt:
-        return {"running": False, "port": None, "has_backend_file": False, "backend_url": None}
+        return {
+            "running": False,
+            "port": None,
+            "has_backend_file": False,
+            "backend_url": None,
+            "frontend_port": None,
+            "frontend_url": None,
+            "is_new_mode": False,
+        }
     return {
         "running": rt.running,
         "port": rt.port,
         "has_backend_file": rt.has_backend_file,
+        # For old-mode: backend.py serves; backend_url is its port. For
+        # new-mode: backend.py is optional (gated by BACKEND_PORT!=NONE);
+        # only populated if the agent ran bash backend_init.sh.
         "backend_url": f"http://127.0.0.1:{rt.port}" if rt.running and rt.port else None,
+        # New-mode only: where the Vite dev server is reachable.
+        # Old-mode workspaces report null and the editor falls back to
+        # the legacy /api/outputs/workspace/{ws}/serve/... path.
+        "frontend_port": rt.frontend_port,
+        "frontend_url": rt.frontend_url if rt.running else None,
+        "is_new_mode": rt.is_new_mode,
     }
 
 

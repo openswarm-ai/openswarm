@@ -102,9 +102,17 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 14, y: 14 }, side = 'rig
     // drawn to the LEFT of the cursor (and its tail anchors on the
     // bubble's right edge). Default preference is right.
     let flipX = side === 'left';
+    // `side: 'left'` AND cursor in the lower half → also flip
+    // vertically so the bubble sits ABOVE-LEFT of the cursor rather
+    // than beside its target row. This matters for the chat-input
+    // cluster (cursor-circle / clip / mic) where a below-left bubble
+    // would extend horizontally across the input field's placeholder
+    // text. Above-left stacks the bubble above the input box where
+    // there's clear canvas. Top-half cursors (dashboard toolbar) stay
+    // below-left so the bubble doesn't fly off into the title bar.
+    let flipY = side === 'left' && y > vh / 2;
     let nx = flipX ? x - w - offset.x : x + offset.x;
-    let ny = y + offset.y;
-    let flipY = false;
+    let ny = flipY ? y - h - offset.y : y + offset.y;
 
     // Viewport clip: if the preferred side would overflow, flip to the
     // other side. The flip wins over the preference so the bubble stays
@@ -116,9 +124,12 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 14, y: 14 }, side = 'rig
       nx = x + offset.x;
       flipX = false;
     }
-    if (ny + h + SAFE_PAD > vh) {
+    if (!flipY && ny + h + SAFE_PAD > vh) {
       ny = y - h - offset.y;
       flipY = true;
+    } else if (flipY && ny < SAFE_PAD) {
+      ny = y + offset.y;
+      flipY = false;
     }
     nx = Math.max(SAFE_PAD, Math.min(nx, vw - w - SAFE_PAD));
     ny = Math.max(SAFE_PAD, Math.min(ny, vh - h - SAFE_PAD));

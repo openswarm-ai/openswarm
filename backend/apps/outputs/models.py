@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, Any
+from typing import Literal, Optional, Any
 from uuid import uuid4
 from datetime import datetime
 
@@ -140,6 +140,16 @@ class WorkspaceSeedRequest(BaseModel):
     workspace_id: str
     files: Optional[dict[str, str]] = None
     meta: Optional[dict[str, Any]] = None
+    # "webapp_template" (default) → seed the vendored
+    # openswarm-ai/webapp-template snapshot (React + Vite + TS frontend
+    # with optional FastAPI backend), allocate a free FRONTEND_PORT,
+    # leave BACKEND_PORT=NONE. Runtime spawns `bash run.sh`; preview
+    # pane points at `http://localhost:{FRONTEND_PORT}/`.
+    # "flat" → legacy single-`index.html` workspace, kept for explicit
+    # opt-in (migration helper, regression tests). Workspaces predating
+    # this flip continue to work in old-mode automatically since the
+    # runtime detects mode via the presence of `run.sh`.
+    template_mode: Literal["flat", "webapp_template"] = "webapp_template"
 
     @model_validator(mode="before")
     @classmethod

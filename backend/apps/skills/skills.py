@@ -37,7 +37,10 @@ def _built_in_skill_registry() -> list[dict]:
     # Imported lazily so this module stays cheap to import from
     # everywhere (the skills outputs module pulls in pydantic+fastapi
     # transitively and we don't want a cycle).
-    from backend.apps.outputs.view_builder_templates import APP_BUILDER_SKILL_SOURCE_PATH
+    from backend.apps.outputs.view_builder_templates import (
+        APP_BUILDER_SKILL_SOURCE_PATH,
+        SWARM_DEBUG_SKILL_SOURCE_PATH,
+    )
     return [
         {
             "id": "app_builder_skill",
@@ -50,6 +53,19 @@ def _built_in_skill_registry() -> list[dict]:
             ),
             "command": "app-builder-skill",
             "source_path": APP_BUILDER_SKILL_SOURCE_PATH,
+        },
+        {
+            "id": "swarm_debug_skill",
+            "name": "swarm-debug Logger",
+            "description": (
+                "How to use `swarm_debug.debug()` in an App backend — the "
+                "colored frame-aware logger that lands in the App Builder's "
+                "Terminal pane under [BACKEND]. Edit to teach your debugging "
+                "conventions to the App Builder agent. Built-in: editable, "
+                "not deletable."
+            ),
+            "command": "swarm-debug-skill",
+            "source_path": SWARM_DEBUG_SKILL_SOURCE_PATH,
         },
     ]
 

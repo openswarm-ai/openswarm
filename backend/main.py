@@ -288,18 +288,28 @@ async def websocket_runtime_logs(websocket: WebSocket, workspace_id: str):
             pass
 
     unsubscribe = rt.subscribe(_on_line)
-    try:
-        # Initial status frame so the client knows port/running state
-        # without a second HTTP round-trip.
-        await websocket.send_text(json.dumps({
+
+    def _build_status_frame() -> dict:
+        return {
             "event": "runtime:status",
             "workspace_id": workspace_id,
             "data": {
                 "running": rt.running,
                 "port": rt.port,
                 "backend_url": f"http://127.0.0.1:{rt.port}" if rt.running and rt.port else None,
+                "frontend_port": rt.frontend_port,
+                "frontend_url": rt.frontend_url if rt.running else None,
+                "is_new_mode": rt.is_new_mode,
             },
-        }))
+        }
+
+    try:
+        # Initial status frame so the client knows port/running state
+        # without a second HTTP round-trip. `frontend_url` is the
+        # new-mode preview pointer (Vite dev server); `backend_url` is
+        # the workspace's optional FastAPI backend (old-mode backend.py
+        # OR new-mode post-backend_init.sh).
+        await websocket.send_text(json.dumps(_build_status_frame()))
         while True:
             stream, text = await queue.get()
             await websocket.send_text(json.dumps({
@@ -307,6 +317,14 @@ async def websocket_runtime_logs(websocket: WebSocket, workspace_id: str):
                 "workspace_id": workspace_id,
                 "data": {"stream": stream, "text": text},
             }))
+            # Runtime-level events (start, frontend-ready, exit) flow
+            # through the same log channel with stream="runtime". When
+            # the client sees one, it usually wants the fresh status —
+            # bind-ready in particular flips frontend_url from null
+            # to the Vite URL and the preview pane has to know to
+            # switch over. Re-push status after every runtime line.
+            if stream == "runtime":
+                await websocket.send_text(json.dumps(_build_status_frame()))
     except WebSocketDisconnect:
         pass
     finally:
