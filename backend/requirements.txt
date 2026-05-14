@@ -16,6 +16,25 @@ python-dotenv==1.1.1
 Pillow
 httpx>=0.27.0
 trafilatura
+# Twitter MCP SubApp (backend.apps.twitter). twikit drives X's internal
+# GraphQL API on behalf of a user's logged-in account. Pinned to an exact
+# version because twikit breaks every few weeks as X rotates query IDs;
+# the SubApp's lifespan does a smoke probe on startup and logs loudly if
+# the wire shape drifted.
+twikit==2.3.3
+# Cloudflare TLS-fingerprint bypass for twikit. Stock httpx → OpenSSL
+# binding → recognizable Python-library JA3/JA4 → 403 on every request
+# to x.com since late 2025. `httpx-curl-cffi` is a BaseTransport that
+# wraps curl-impersonate (BoringSSL for Chrome targets), producing a
+# byte-identical TLS ClientHello + HTTP/2 SETTINGS frame to a real
+# browser. `_twikit_patches._apply_tls_transport_patch` wires it into
+# twikit's namespace at import time and picks the best chrome target
+# the installed curl-cffi exposes (see `_IMPERSONATE_PREFERENCE`), so
+# we don't need a tight version pin. `curl-cffi>=0.7.0` is a generous
+# floor that covers every chrome target in our preference list back to
+# chrome120. See twikit#396.
+curl-cffi>=0.7.0
+httpx-curl-cffi>=0.1.5
 # tzlocal: dev-mode fallback for resolving the user's IANA timezone when
 # Electron's OPENSWARM_TIMEZONE env var isn't set (i.e. `bash run.sh`).
 # Packaged builds get the env var directly so this is a safety net.

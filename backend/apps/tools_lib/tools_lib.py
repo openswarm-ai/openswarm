@@ -326,6 +326,32 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
         existing_pp = env.get("PYTHONPATH") or os.environ.get("PYTHONPATH", "")
         env["PYTHONPATH"] = (_project_root + os.pathsep + existing_pp) if existing_pp else _project_root
 
+    # Twitter MCP runs as a Python shim (`backend.apps.twitter_mcp_shim`)
+    # that forwards each tool call to the local backend's
+    # /api/twitter/* routes. The shim carries no twikit dependency — it
+    # only speaks HTTP — so we just give it the base URL and a path to
+    # the bearer-token file (re-read on every call so a backend
+    # restart that rotates the token can't strand the shim in 401).
+    if tool.name.lower() == "twitter" and config.get("type") == "stdio":
+        from backend.config.paths import AUTH_TOKEN_FILE
+        from backend.auth import get_auth_token
+        env = config.setdefault("env", {})
+        env.setdefault(
+            "OPENSWARM_BASE_URL",
+            f"http://127.0.0.1:{os.environ.get('OPENSWARM_PORT', '8324')}",
+        )
+        env.setdefault("OPENSWARM_AUTH_TOKEN_FILE", AUTH_TOKEN_FILE)
+        # Belt-and-suspenders: pass the current token via env too. The
+        # shim prefers the file but falls back to the env var if the
+        # file isn't readable (e.g. packaged-mode permission glitch).
+        env.setdefault("OPENSWARM_AUTH_TOKEN", get_auth_token())
+        # Same PYTHONPATH trick the Discord shim uses — the subprocess
+        # needs to import `backend.apps.twitter_mcp_shim`, so we point
+        # PYTHONPATH at the project root (parent of backend/).
+        _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        existing_pp = env.get("PYTHONPATH") or os.environ.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (_project_root + os.pathsep + existing_pp) if existing_pp else _project_root
+
     # Microsoft 365 MCP: use a stable token cache path shared across process spawns
     if tool.name.lower() == "microsoft 365" and config.get("type") == "stdio":
         env = config.setdefault("env", {})
