@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from fastapi import WebSocket
+from backend.builtin_server import WebSocket
 
 from backend.apps.agents.seq_log import TERMINAL_STATUSES, seq_log
 
