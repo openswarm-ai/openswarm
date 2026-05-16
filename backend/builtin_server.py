@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import socket
+import struct
 from typing import Callable, Dict, Any, List, Optional
 from urllib.parse import urlparse, parse_qs
 
@@ -53,39 +54,54 @@ class WebSocket:
         await self.writer.drain()
 
     async def send_text(self, text: str):
-        data = text.encode('utf-8')
-        header = bytearray([0x81]) # Final fragment, text frame
+        await self._send_frame(0x1, text.encode('utf-8'))
+
+    async def _send_frame(self, opcode: int, data: bytes):
+        header = bytearray([0x80 | opcode])
         if len(data) <= 125:
             header.append(len(data))
         elif len(data) <= 65535:
             header.append(126)
-            header.extend(len(data).to_bytes(2, 'big'))
+            header.extend(struct.pack("!H", len(data)))
         else:
             header.append(127)
-            header.extend(len(data).to_bytes(8, 'big'))
+            header.extend(struct.pack("!Q", len(data)))
 
         self.writer.write(header + data)
         await self.writer.drain()
 
     async def receive_text(self) -> str:
-        # Very basic WS frame parsing (no support for multi-fragment or continuation frames yet)
+        try:
+            while True:
+                opcode, payload = await self._read_frame()
+                if opcode == 0x8: # Close
+                    self.closed = True
+                    return ""
+                if opcode == 0x1: # Text
+                    return payload.decode('utf-8')
+                if opcode == 0x9: # Ping
+                    await self._send_frame(0xA, payload) # Pong
+                # Ignore others for now
+        except Exception as e:
+            logger.error(f"WS receive error: {e}")
+            self.closed = True
+            return ""
+
+    async def _read_frame(self) -> tuple[int, bytes]:
         header = await self.reader.readexactly(2)
         b1, b2 = header[0], header[1]
 
+        fin = b1 & 0x80
         opcode = b1 & 0x0F
         masked = b2 & 0x80
         length = b2 & 0x7F
 
-        if opcode == 0x8: # Close frame
-            self.closed = True
-            return ""
-
         if length == 126:
             length_data = await self.reader.readexactly(2)
-            length = int.from_bytes(length_data, 'big')
+            length = struct.unpack("!H", length_data)[0]
         elif length == 127:
             length_data = await self.reader.readexactly(8)
-            length = int.from_bytes(length_data, 'big')
+            length = struct.unpack("!Q", length_data)[0]
 
         mask = None
         if masked:
@@ -95,13 +111,14 @@ class WebSocket:
         if mask:
             payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
 
-        return payload.decode('utf-8')
+        return opcode, payload
 
     async def close(self, code: int = 1000):
         if self.closed: return
-        header = bytearray([0x88, 0x02]) # Final fragment, close frame, length 2
-        self.writer.write(header + code.to_bytes(2, 'big'))
-        await self.writer.drain()
+        try:
+            await self._send_frame(0x8, struct.pack("!H", code))
+        except:
+            pass
         self.writer.close()
         self.closed = True
 
@@ -109,8 +126,8 @@ class BuiltinServer:
     def __init__(self, host: str = '127.0.0.1', port: int = 8324):
         self.host = host
         self.port = port
-        self.routes: Dict[str, Dict[str, Callable]] = {} # method -> path -> handler
-        self.ws_routes: Dict[str, Callable] = {} # pattern -> handler
+        self.routes: Dict[str, Dict[str, Callable]] = {}
+        self.ws_routes: Dict[str, Callable] = {}
         self.middlewares: List[Callable] = []
 
     def add_route(self, method: str, path: str, handler: Callable):
@@ -128,10 +145,12 @@ class BuiltinServer:
         try:
             request_line = await reader.readline()
             if not request_line:
-                writer.close()
                 return
 
-            method, full_path, _ = request_line.decode().split()
+            parts = request_line.decode().split()
+            if len(parts) < 2: return
+            method, full_path = parts[0], parts[1]
+
             parsed_url = urlparse(full_path)
             path = parsed_url.path
             query_params = parse_qs(parsed_url.query)
@@ -141,11 +160,11 @@ class BuiltinServer:
                 line = await reader.readline()
                 if line == b'\r\n' or not line:
                     break
-                k, v = line.decode().split(':', 1)
-                headers[k.lower().strip()] = v.strip()
+                if b':' in line:
+                    k, v = line.decode().split(':', 1)
+                    headers[k.lower().strip()] = v.strip()
 
-            if headers.get('upgrade') == 'websocket':
-                # Handle WebSocket
+            if headers.get('upgrade', '').lower() == 'websocket':
                 handler = None
                 for pattern, h in self.ws_routes.items():
                     if re.match(pattern, path):
@@ -158,18 +177,27 @@ class BuiltinServer:
                 else:
                     writer.write(b"HTTP/1.1 404 Not Found\r\n\r\n")
                     await writer.drain()
-                    writer.close()
                 return
 
-            # Handle HTTP
-            content_length = int(headers.get('content-length', 0))
-            body = await reader.readexactly(content_length) if content_length > 0 else b''
+            # Handle Chunked or Normal body
+            body = b''
+            if headers.get('transfer-encoding', '').lower() == 'chunked':
+                while True:
+                    line = await reader.readline()
+                    size = int(line.strip(), 16)
+                    if size == 0:
+                        await reader.readline() # blank line
+                        break
+                    chunk = await reader.readexactly(size)
+                    body += chunk
+                    await reader.readline() # blank line
+            else:
+                content_length = int(headers.get('content-length', 0))
+                body = await reader.readexactly(content_length) if content_length > 0 else b''
 
             request = HttpRequest(method, path, headers, query_params, body)
 
-            # Apply middlewares (simplified)
             for mw in self.middlewares:
-                # Middleware can return a response to short-circuit
                 resp = await mw(request)
                 if resp:
                     await self.send_response(writer, resp)
@@ -177,7 +205,6 @@ class BuiltinServer:
 
             handler = self.routes.get(method, {}).get(path)
             if not handler:
-                # Try regex matching for path parameters if needed, but for now exact match
                 response = HttpResponse(404, {"Content-Type": "application/json"}, json.dumps({"error": "Not Found"}).encode())
             else:
                 try:
@@ -188,6 +215,8 @@ class BuiltinServer:
 
             await self.send_response(writer, response)
 
+        except asyncio.IncompleteReadError:
+            pass
         except Exception:
             logger.exception("Error handling client")
         finally:
@@ -195,13 +224,19 @@ class BuiltinServer:
                 writer.close()
 
     async def send_response(self, writer: asyncio.StreamWriter, response: HttpResponse):
-        status_text = {200: "OK", 401: "Unauthorized", 404: "Not Found", 500: "Internal Server Error"}.get(response.status_code, "Unknown")
-        writer.write(f"HTTP/1.1 {response.status_code} {status_text}\r\n".encode())
+        status_text = {
+            200: "OK", 201: "Created", 204: "No Content",
+            400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
+            404: "Not Found", 500: "Internal Server Error"
+        }.get(response.status_code, "Unknown")
+
+        header_lines = [f"HTTP/1.1 {response.status_code} {status_text}"]
         for k, v in response.headers.items():
-            writer.write(f"{k}: {v}\r\n".encode())
-        writer.write(f"Content-Length: {len(response.body)}\r\n".encode())
-        writer.write(b"\r\n")
-        writer.write(response.body)
+            header_lines.append(f"{k}: {v}")
+        header_lines.append(f"Content-Length: {len(response.body)}")
+        header_lines.append("\r\n")
+
+        writer.write("\r\n".join(header_lines).encode() + response.body)
         await writer.drain()
 
     async def start(self):
@@ -210,10 +245,8 @@ class BuiltinServer:
             await server.serve_forever()
 
 if __name__ == "__main__":
-    # Test server
     async def hello(req):
         return HttpResponse(200, {"Content-Type": "text/plain"}, b"Hello World")
-
     server = BuiltinServer(port=8325)
     server.add_route("GET", "/", hello)
     asyncio.run(server.start())
