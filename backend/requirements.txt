@@ -16,6 +16,10 @@ python-dotenv==1.1.1
 Pillow
 httpx>=0.27.0
 trafilatura
+# instagrapi: used by /credentials/instagram/validate to verify Instagram
+# login server-side before persisting credentials (verify-before-save flow,
+# same shape as the OAuth integrations).
+instagrapi>=2.0
 # tzlocal: dev-mode fallback for resolving the user's IANA timezone when
 # Electron's OPENSWARM_TIMEZONE env var isn't set (i.e. `bash run.sh`).
 # Packaged builds get the env var directly so this is a safety net.

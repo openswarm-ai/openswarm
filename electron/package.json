@@ -118,6 +118,13 @@
         ]
       },
       {
+        "from": "build-staging/instagram-mcp",
+        "to": "instagram-mcp",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "build-staging/router",
         "to": "router",
         "filter": [

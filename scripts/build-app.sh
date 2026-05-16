@@ -346,6 +346,36 @@ else
 fi
 echo ""
 
+# Ship instagram-mcp-buddy (dist + prod node_modules) so "Sign in with Instagram"
+# works in packaged apps without system npx/node. Optional: META_APP_ID +
+# META_APP_SECRET inject the same Meta app credentials as npm publish.
+echo "[3d/5] Staging instagram-mcp-buddy for desktop OAuth CLI..."
+IG_SRC="$PROJECT_ROOT/instagram-mcp"
+IG_STAGE="$STAGING_DIR/instagram-mcp"
+if [[ ! -f "$IG_SRC/package.json" ]]; then
+    echo "ERROR: instagram-mcp not found at $IG_SRC"
+    exit 1
+fi
+mkdir -p "$IG_STAGE"
+(
+    cd "$IG_SRC"
+    npm ci
+    npm run build
+)
+if [[ -n "${META_APP_ID:-}" && -n "${META_APP_SECRET:-}" ]]; then
+    (cd "$IG_SRC" && node scripts/inject-credentials.mjs)
+    echo "[3d] Injected Meta app credentials into staged oauth-config."
+else
+    echo "[3d] META_APP_ID/META_APP_SECRET not set — OAuth uses placeholders unless INSTAGRAM_MCP_APP_ID/SECRET exists at runtime."
+fi
+rsync -a --delete "$IG_SRC/dist/" "$IG_STAGE/dist/"
+cp "$IG_SRC/package.json" "$IG_STAGE/package.json"
+[[ -f "$IG_SRC/package-lock.json" ]] && cp "$IG_SRC/package-lock.json" "$IG_STAGE/package-lock.json"
+rsync -a --delete "$IG_SRC/node_modules/" "$IG_STAGE/node_modules/"
+(cd "$IG_STAGE" && npm prune --omit=dev --no-audit --no-fund)
+echo "[3d] instagram-mcp staged ($(du -sh "$IG_STAGE" 2>/dev/null | cut -f1 || echo '?'))"
+echo ""
+
 # Step 3c: Pre-build the webapp-template node_modules archive so first-app
 # create on a fresh user install decompresses (~3 s) instead of running a
 # live `npm install` (~22 s). The backend's _try_extract_bundled_archive

@@ -98,6 +98,7 @@ interface CredentialField {
   label: string;
   placeholder: string;
   helpText?: string;
+  type?: 'text' | 'password';
 }
 
 interface Integration {
@@ -147,22 +148,20 @@ const INTEGRATIONS: Integration[] = [
     id: 'instagram',
     name: 'Instagram',
     description:
-      'Insights, publishing, comments, DMs, hashtags, mentions, and discovery for Business/Creator accounts. On the desktop app, use Sign in with Instagram below (or open an agent chat and run instagram_connect). A browser opens for Meta OAuth; the token stays in your OS keychain. In the browser-only app, connect from chat. Requires Instagram Professional.',
+      'Instagram DM outreach plus user/follower lookup, post engagement, and story reads. 25 tools from trypeggy/instagram_dm_mcp. Sign in with your Instagram username and password (personal accounts supported). NOTE: mass-DMing from personal accounts triggers Instagram anti-abuse detection; use sparingly on established accounts.',
     mcp_config: {
       type: 'stdio',
-      command: 'npx',
-      args: ['-y', 'instagram-mcp-buddy'],
-      env: {
-        INSTAGRAM_MCP_ENABLE_PUBLISHING: 'true',
-        INSTAGRAM_MCP_ENABLE_COMMENTMODERATION: 'true',
-        INSTAGRAM_MCP_ENABLE_MESSAGING: 'true',
-      },
+      command: '/usr/local/bin/python3.11',
+      args: ['/Users/shawnmadadha/dev/instagram_dm_mcp/src/mcp_server.py'],
     },
     color: '#E4405F',
-    website: 'https://www.npmjs.com/package/instagram-mcp-buddy',
-    connectLabel: 'Sign-in steps',
-    connectInstructions:
-      '1) Enable Instagram here. 2) Desktop: click Sign in with Instagram (or use agent chat / instagram_connect). 3) Complete login in the browser. 4) Optional: instagram_status lists granted scopes. Publishing/DMs require those permissions on your Meta app; OpenSwarm enables feature flags in mcp_config.env so agents see the full surface.',
+    website: 'https://github.com/trypeggy/instagram_dm_mcp',
+    connectLabel: 'Connect Instagram',
+    connectInstructions: 'Sign in with the username and password of the Instagram account you want the agent to use. Credentials are stored locally in OpenSwarm and passed as env vars to the MCP server on launch. Instagram session is cached on disk after first successful login so you do not need to re-enter on every restart.',
+    credentialFields: [
+      { key: 'INSTAGRAM_USERNAME', label: 'Instagram Username', placeholder: 'your_handle (no @)', type: 'text' },
+      { key: 'INSTAGRAM_PASSWORD', label: 'Instagram Password', placeholder: '••••••••', type: 'password' },
+    ],
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22">
         <defs>
@@ -180,6 +179,24 @@ const INTEGRATIONS: Integration[] = [
       </svg>
     ),
   },
+  // Personal tile disabled — consolidated to single Instagram tile with the
+  // TS Graph API server. Personal accounts must convert to Business/Creator
+  // (free, 30 sec) to use Instagram in OpenSwarm. Preserved here in case the
+  // Personal fallback is wanted later.
+  /*
+  {
+    id: 'instagram-personal',
+    name: 'Instagram (Personal)',
+    description: 'For personal Instagram accounts...',
+    mcp_config: {
+      type: 'stdio',
+      command: '/usr/local/bin/python3.11',
+      args: ['-m', 'instagram_mcp_buddy'],
+    },
+    color: '#E4405F',
+    website: 'https://www.npmjs.com/package/instagram-mcp-buddy',
+  },
+  */
   {
     id: 'google-workspace',
     name: 'Google Workspace',
@@ -515,8 +532,54 @@ const Tools: React.FC = () => {
   const outputs = useMemo(() => Object.values(outputItems), [outputItems]);
   const allTools = Object.values(items);
   const tools = allTools;
-  const uninstalledIntegrations = useMemo(() => INTEGRATIONS.filter((ig) => !allTools.find((t) => t.name === ig.name)), [allTools]);
-  const getIntegrationForTool = useCallback((tool: ToolDefinition) => INTEGRATIONS.find((ig) => ig.name === tool.name), []);
+  // Match tool to integration by exact name. Fallback: any tool whose name
+  // starts with "Instagram" maps to the unified "instagram" integration so
+  // historic Redux state from earlier tile names ("Instagram (Personal)",
+  // "Instagram (DM Outreach)", etc.) still resolves to a valid integration
+  // and doesn't crash the render with ig.color on undefined.
+  const matchIntegration = (toolName: string | undefined) => {
+    if (!toolName) return undefined;
+    const exact = INTEGRATIONS.find((ig) => ig.name === toolName);
+    if (exact) return exact;
+    if (toolName.toLowerCase().startsWith('instagram')) {
+      return INTEGRATIONS.find((ig) => ig.id === 'instagram');
+    }
+    return undefined;
+  };
+  const uninstalledIntegrations = useMemo(
+    () => INTEGRATIONS.filter((ig) => !allTools.find((t) => matchIntegration(t.name)?.id === ig.id)),
+    [allTools],
+  );
+  const getIntegrationForTool = useCallback((tool: ToolDefinition) => matchIntegration(tool.name), []);
+
+  // Deduplicate tools: if multiple Redux entries resolve to the same
+  // integration (happens when an integration was renamed and old entries
+  // linger in persisted state), render only one tile per integration.
+  // Prefer connected over configured/disconnected.
+  const dedupedTools = useMemo(() => {
+    const byIntegration = new Map<string, ToolDefinition>();
+    const orphans: ToolDefinition[] = [];
+    for (const t of tools) {
+      const ig = matchIntegration(t.name);
+      if (!ig) {
+        orphans.push(t);
+        continue;
+      }
+      const existing = byIntegration.get(ig.id);
+      if (!existing) {
+        byIntegration.set(ig.id, t);
+        continue;
+      }
+      const tConnected = t.auth_status === 'connected';
+      const existingConnected = existing.auth_status === 'connected';
+      if (tConnected && !existingConnected) byIntegration.set(ig.id, t);
+    }
+    return [...byIntegration.values(), ...orphans];
+    // matchIntegration is stable across renders since INTEGRATIONS is const;
+    // we intentionally don't include it in deps to avoid creating a new array
+    // on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tools]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -597,6 +660,27 @@ const Tools: React.FC = () => {
 
   /** Instagram desktop CLI (Electron); null when idle */
   const [instagramConnectBusy, setInstagramConnectBusy] = useState<string | null>(null);
+
+  // Full-auth upgrade dialog (password + 2FA) is disabled while we figure out
+  // Instagram's trusted-notification polling endpoint. Connect uses browser-only
+  // sign-in, which unlocks ~8 read tools. See handleInstagramConnect below.
+  // To re-enable: uncomment the state, handlers (handleIgUpgrade*, handleIgTfa*,
+  // handleIgApproveApp, handleIgResendSms, handleIgSkipUpgrade, handleIgUpgradeSuccess),
+  // the upgrade Dialog JSX, and restore the needs_upgrade branch in handleInstagramConnect.
+  /*
+  type IgUpgradeState = {
+    toolId: string;
+    username: string;
+    password: string;
+    step: 'password' | '2fa';
+    pending2fa: { identifier: string; session_key: string; obfuscated_phone: string; sms_on: boolean; totp_on?: boolean; whatsapp_on?: boolean; sms_error?: string } | null;
+    busy: boolean;
+    error: string;
+  };
+  const [igUpgrade, setIgUpgrade] = useState<IgUpgradeState | null>(null);
+  const [igUpgradePw, setIgUpgradePw] = useState('');
+  const [igUpgradeCode, setIgUpgradeCode] = useState('');
+  */
 
   const getInstalledIntegration = useCallback((integration: Integration): ToolDefinition | undefined => {
     return allTools.find((t) => t.name === integration.name);
@@ -1028,35 +1112,41 @@ const Tools: React.FC = () => {
     setSnackbar({ open: true, message: 'Disconnected from Microsoft 365' });
   };
 
+  const finalizeInstagramConnect = async (toolId: string, username: string) => {
+    const label = username ? `@${username}` : '';
+    await dispatch(updateTool({ id: toolId, auth_status: 'connected', connected_account_email: label }));
+    setSnackbar({ open: true, message: username ? `Instagram connected as @${username}` : 'Instagram connected' });
+    setExpandedToolId(toolId);
+    dispatch(discoverTools(toolId));
+  };
+
   const handleInstagramConnect = async (toolId: string) => {
-    const tool = items[toolId];
-    const bridge = (window as unknown as { openswarm?: { instagramConnect?: (env?: Record<string, string>) => Promise<{ ok?: boolean; error?: string; username?: string }> } }).openswarm?.instagramConnect;
+    // Single Instagram tile pointed at trypeggy/instagram_dm_mcp.
+    // Click Connect → in-app browser opens → user signs in (handles their own
+    // 2FA in the IG UI they already trust) → Electron polls cookies → spawns
+    // trypeggy's auth.py --from-browser which writes the session file →
+    // tool is enabled and ready to use.
+    const bridge = (window as unknown as { openswarm?: { instagramConnect?: (arg?: { toolId: string }) => Promise<{ ok?: boolean; error?: string; username?: string; user_id?: string }> } }).openswarm?.instagramConnect;
     if (!bridge) {
       setSnackbar({
         open: true,
-        message: 'Instagram sign-in here needs the OpenSwarm desktop app. In the browser, open an agent chat and run instagram_connect (or say “connect Instagram”).',
+        message: 'Instagram sign-in here needs the OpenSwarm desktop app.',
         severity: 'error',
       });
       return;
     }
     setInstagramConnectBusy(toolId);
     try {
-      const rawEnv = tool?.mcp_config?.env;
-      const mcpEnv: Record<string, string> = {};
-      if (rawEnv && typeof rawEnv === 'object' && !Array.isArray(rawEnv)) {
-        for (const [k, v] of Object.entries(rawEnv)) {
-          if (v !== undefined && v !== null) mcpEnv[k] = String(v);
-        }
-      }
-      const result = await bridge(mcpEnv);
+      const result = await bridge({ toolId });
       if (!result?.ok) {
         setSnackbar({ open: true, message: result?.error || 'Instagram sign-in failed', severity: 'error' });
         return;
       }
-      const username = typeof result.username === 'string' ? result.username : '';
-      const label = username ? `@${username}` : '';
-      await dispatch(updateTool({ id: toolId, auth_status: 'connected', connected_account_email: label }));
-      setSnackbar({ open: true, message: username ? `Instagram connected as @${username}` : 'Instagram connected — discovering actions…' });
+      // Backend already persisted credentials + auth_status='connected' inside
+      // the from_browser endpoint. Refresh local state so the tile flips.
+      await dispatch(fetchToolStatus(toolId));
+      const username = result.username || '';
+      setSnackbar({ open: true, message: username ? `Instagram connected as @${username}` : 'Instagram connected' });
       setExpandedToolId(toolId);
       dispatch(discoverTools(toolId));
     } catch (err: unknown) {
@@ -1066,6 +1156,111 @@ const Tools: React.FC = () => {
       setInstagramConnectBusy(null);
     }
   };
+
+  // Upgrade-flow handlers disabled while trusted-notification polling is unimplemented.
+  // See state declaration above for re-enable notes.
+  /*
+  const igUpgradeBridge = () => (window as unknown as { openswarm?: { instagramUpgrade?: (p: Record<string, unknown>) => Promise<Record<string, unknown>> } }).openswarm?.instagramUpgrade;
+
+  const handleIgUpgradeSuccess = async (result: Record<string, unknown>) => {
+    if (!igUpgrade) return;
+    const uname = (result.username as string) || igUpgrade.username;
+    setIgUpgrade(null);
+    setIgUpgradePw('');
+    setIgUpgradeCode('');
+    await finalizeInstagramConnect(igUpgrade.toolId, uname);
+  };
+
+  const handleIgUpgradeSubmit = async () => {
+    if (!igUpgrade || !igUpgradePw.trim() || igUpgrade.busy) return;
+    const bridge = igUpgradeBridge();
+    if (!bridge) return;
+    setIgUpgrade((p) => p ? { ...p, busy: true, error: '' } : null);
+    const result = await bridge({ username: igUpgrade.username, password: igUpgradePw.trim() }) as Record<string, unknown>;
+    if (result.ok) {
+      void handleIgUpgradeSuccess(result);
+    } else if (result.needs_2fa) {
+      setIgUpgrade((p) => p ? { ...p, step: '2fa', password: igUpgradePw.trim(), pending2fa: result as IgUpgradeState['pending2fa'], busy: false, error: '' } : null);
+      setIgUpgradeCode('');
+    } else {
+      setIgUpgrade((p) => p ? { ...p, busy: false, error: (result.error as string) || 'Sign-in failed. Check your password.' } : null);
+    }
+  };
+
+  const handleIgTfaSubmit = async () => {
+    if (!igUpgrade || !igUpgradeCode.trim() || igUpgrade.busy) return;
+    const bridge = igUpgradeBridge();
+    if (!bridge) return;
+    setIgUpgrade((p) => p ? { ...p, busy: true, error: '' } : null);
+    const result = await bridge({
+      username: igUpgrade.username,
+      password: igUpgrade.password,
+      code: igUpgradeCode.trim(),
+      identifier: igUpgrade.pending2fa?.identifier || '',
+      session_key: igUpgrade.pending2fa?.session_key || '',
+    }) as Record<string, unknown>;
+    if (result.ok) {
+      void handleIgUpgradeSuccess(result);
+    } else if (result.needs_2fa) {
+      setIgUpgrade((p) => p ? { ...p, pending2fa: result as IgUpgradeState['pending2fa'], busy: false, error: '' } : null);
+      setIgUpgradeCode('');
+    } else {
+      setIgUpgrade((p) => p ? { ...p, busy: false, error: (result.error as string) || 'Code incorrect. Try again.' } : null);
+    }
+  };
+
+  const handleIgResendSms = async () => {
+    if (!igUpgrade || igUpgrade.busy) return;
+    const bridge = igUpgradeBridge();
+    if (!bridge) return;
+    setIgUpgrade((p) => p ? { ...p, busy: true, error: '' } : null);
+    const result = await bridge({ username: igUpgrade.username, password: igUpgrade.password }) as Record<string, unknown>;
+    if (result.ok) {
+      void handleIgUpgradeSuccess(result);
+    } else if (result.needs_2fa) {
+      setIgUpgrade((p) => p ? { ...p, pending2fa: result as IgUpgradeState['pending2fa'], busy: false, error: '' } : null);
+      setIgUpgradeCode('');
+    } else {
+      setIgUpgrade((p) => p ? { ...p, busy: false, error: (result.error as string) || 'Could not resend code.' } : null);
+    }
+  };
+
+  const handleIgApproveApp = async () => {
+    if (!igUpgrade || igUpgrade.busy) return;
+    const bridge = igUpgradeBridge();
+    if (!bridge) return;
+    setIgUpgrade((p) => p ? { ...p, busy: true, error: '' } : null);
+    const result = await bridge({
+      username: igUpgrade.username,
+      password: igUpgrade.password,
+      session_key: igUpgrade.pending2fa?.session_key || '',
+      approved_from_app: true,
+    }) as Record<string, unknown>;
+    if (result.ok) {
+      void handleIgUpgradeSuccess(result);
+    } else if (result.needs_2fa) {
+      setIgUpgrade((p) => p ? {
+        ...p,
+        pending2fa: result as IgUpgradeState['pending2fa'],
+        busy: false,
+        error: 'Still waiting on Instagram to confirm the approval. Try again, or enter a code instead.',
+      } : null);
+      setIgUpgradeCode('');
+    } else {
+      setIgUpgrade((p) => p ? { ...p, busy: false, error: (result.error as string) || 'Approval not detected.' } : null);
+    }
+  };
+
+  const handleIgSkipUpgrade = () => {
+    if (!igUpgrade) return;
+    const toolId = igUpgrade.toolId;
+    const uname = igUpgrade.username;
+    setIgUpgrade(null);
+    setIgUpgradePw('');
+    setIgUpgradeCode('');
+    void finalizeInstagramConnect(toolId, uname);
+  };
+  */
 
   const handleInstagramDisconnect = async (toolId: string) => {
     const tool = items[toolId];
@@ -1116,6 +1311,31 @@ const Tools: React.FC = () => {
 
     setCredDialogSaving(true);
     try {
+      // Instagram: verify the login server-side against instagrapi BEFORE
+      // persisting. Mirrors the OAuth verify-before-save shape used by Notion
+      // and Airtable; the only difference is we hit our own endpoint instead
+      // of bouncing through a third-party OAuth proxy.
+      if (credDialogIntegration.id === 'instagram') {
+        const username = (credDialogValues['INSTAGRAM_USERNAME'] || '').replace(/^@/, '').trim();
+        const password = credDialogValues['INSTAGRAM_PASSWORD'] || '';
+        const resp = await fetch(`${API_BASE}/tools/credentials/instagram/validate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tool_id: credDialogToolId, username, password }),
+        });
+        const data = await resp.json().catch(() => ({ ok: false, error: `bad response (${resp.status})` }));
+        if (!data.ok) {
+          setSnackbar({ open: true, message: `Instagram login failed: ${data.error || 'unknown error'}`, severity: 'error' });
+          return;
+        }
+        // Backend persisted credentials + auth_status='connected'. Refresh
+        // local tool state so the tile flips without a hard reload.
+        await dispatch(fetchToolStatus(credDialogToolId));
+        setCredDialogOpen(false);
+        setSnackbar({ open: true, message: `Instagram connected as @${data.username}! Re-discovering actions…` });
+        dispatch(discoverTools(credDialogToolId));
+        return;
+      }
       const result = await dispatch(updateTool({
         id: credDialogToolId,
         credentials: credDialogValues,
@@ -1558,8 +1778,13 @@ const Tools: React.FC = () => {
                   </Card>
                 );
               })}
-              {tools.map((tool) => {
+              {dedupedTools.map((tool) => {
                 const ig = getIntegrationForTool(tool);
+                // Defensive: if Redux has a tool whose name no longer matches
+                // any integration definition (e.g. an integration was renamed
+                // or removed in a later code change), skip rendering instead
+                // of crashing on ig.color.
+                if (!ig) return null;
                 const isExpanded = expandedToolId === tool.id;
                 const isMcp = tool.mcp_config && Object.keys(tool.mcp_config).length > 0;
                 const isStdio = isMcp && (tool.mcp_config.type === 'stdio' || !!tool.mcp_config.command);
@@ -1755,10 +1980,6 @@ const Tools: React.FC = () => {
                   ig?.id === 'youtube' ||
                   tool.name?.toLowerCase() === 'youtube' ||
                   (tool.command || '').toLowerCase().includes('youtube');
-                const isInstagram =
-                  ig?.id === 'instagram' ||
-                  tool.name?.toLowerCase() === 'instagram' ||
-                  (tool.command || '').toLowerCase().includes('instagram');
                 return (
                   <Card
                     key={tool.id}
@@ -1821,7 +2042,7 @@ const Tools: React.FC = () => {
                             Connect Microsoft 365
                           </Button>
                         )}
-                        {!isDisabled && isInstagram && tool.auth_status !== 'connected' && (
+                        {!isDisabled && ig?.id === 'instagram' && tool.auth_status !== 'connected' && (
                           <Button
                             size="small"
                             variant="outlined"
@@ -1833,7 +2054,7 @@ const Tools: React.FC = () => {
                             Sign in with Instagram
                           </Button>
                         )}
-                        {!isDisabled && ig?.credentialFields && tool.auth_status !== 'connected' && (
+                        {!isDisabled && ig?.credentialFields && ig?.id !== 'instagram' && tool.auth_status !== 'connected' && (
                           <Button
                             size="small"
                             variant="outlined"
@@ -1845,15 +2066,14 @@ const Tools: React.FC = () => {
                           </Button>
                         )}
                         {!isDisabled && ig && tool.auth_status === 'connected' && (
-                          <Tooltip title={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code' || isInstagram) ? 'Disconnect' : ''}>
+                          <Tooltip title={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code') ? 'Disconnect' : ''}>
                             <Chip
                               icon={<CheckCircleIcon sx={{ fontSize: 12 }} />}
                               label={tool.connected_account_email ? `Connected · ${tool.connected_account_email}` : 'Connected'}
                               size="small"
-                              onDelete={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code' || isInstagram) ? (e: React.SyntheticEvent) => {
+                              onDelete={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code') ? (e: React.SyntheticEvent) => {
                                 e.stopPropagation();
                                 if (ig.authType === 'device_code') handleM365Disconnect(tool.id);
-                                else if (isInstagram) void handleInstagramDisconnect(tool.id);
                                 else handleDisconnectIntegration(tool.id, ig);
                               } : undefined}
                               onClick={(e) => e.stopPropagation()}
@@ -2496,6 +2716,157 @@ const Tools: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      {/* Instagram Upgrade Dialog (password + 2FA) disabled while trusted-notification polling is unimplemented. */}
+      {/*
+      <Dialog
+        open={igUpgrade !== null}
+        onClose={() => { if (!igUpgrade?.busy) { setIgUpgrade(null); setIgUpgradePw(''); setIgUpgradeCode(''); } }}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: c.bg.surface, backgroundImage: 'none', borderRadius: 4, border: `1px solid ${c.border.subtle}` } }}
+      >
+        {igUpgrade?.step === 'password' ? (
+          <>
+            <DialogTitle sx={{ color: c.text.primary, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ width: 32, height: 32, borderRadius: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#e1306c18', fontSize: '1rem' }}>
+                📸
+              </Box>
+              Unlock full access
+            </DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
+              <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.5 }}>
+                Signed in as <strong>@{igUpgrade?.username}</strong>. Enter your Instagram password to unlock feed, search, DMs, stories, and hashtags.
+              </Typography>
+              {igUpgrade?.error && (
+                <Alert severity="error" sx={{ fontSize: '0.8rem', py: 0.5 }}>{igUpgrade.error}</Alert>
+              )}
+              <TextField
+                label="Instagram password"
+                type="password"
+                fullWidth
+                size="small"
+                value={igUpgradePw}
+                onChange={(e) => setIgUpgradePw(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void handleIgUpgradeSubmit(); }}
+                autoFocus
+                disabled={igUpgrade?.busy}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: c.bg.page } }}
+              />
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+              <Button
+                onClick={() => { setIgUpgrade(null); setIgUpgradePw(''); void finalizeInstagramConnect(igUpgrade?.toolId || '', igUpgrade?.username || ''); }}
+                sx={{ color: c.text.tertiary, textTransform: 'none', mr: 'auto' }}
+                disabled={igUpgrade?.busy}
+              >
+                Skip — basic access only
+              </Button>
+              <Button
+                variant="contained"
+                onClick={() => void handleIgUpgradeSubmit()}
+                disabled={igUpgrade?.busy || !igUpgradePw.trim()}
+                startIcon={igUpgrade?.busy ? <CircularProgress size={14} /> : undefined}
+                sx={{ bgcolor: '#e1306c', '&:hover': { bgcolor: '#c1275c' }, textTransform: 'none', borderRadius: 2 }}
+              >
+                {igUpgrade?.busy ? 'Connecting…' : 'Connect'}
+              </Button>
+            </DialogActions>
+          </>
+        ) : (
+          <>
+            <DialogTitle sx={{ color: c.text.primary, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ width: 32, height: 32, borderRadius: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#e1306c18', fontSize: '1rem' }}>
+                🔐
+              </Box>
+              Verify it&apos;s you
+            </DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
+              <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.5 }}>
+                {(() => {
+                  const p = igUpgrade?.pending2fa;
+                  if (!p) return 'Enter your two-factor code.';
+                  const methods: string[] = [];
+                  if (p.sms_on && !p.sms_error) methods.push(`SMS to ${p.obfuscated_phone || 'your phone'}`);
+                  if (p.totp_on) methods.push('your authenticator app');
+                  if (p.whatsapp_on) methods.push('WhatsApp');
+                  if (methods.length === 0) return 'Enter the code from your authenticator app or a saved backup code.';
+                  return `Enter the code from ${methods.join(' or ')}.`;
+                })()}
+              </Typography>
+              {igUpgrade?.pending2fa?.sms_error && (
+                <Alert severity="warning" sx={{ fontSize: '0.8rem', py: 0.5 }}>
+                  Instagram didn&apos;t accept the SMS request ({igUpgrade.pending2fa.sms_error}). Use your authenticator app or a backup code instead.
+                </Alert>
+              )}
+              {igUpgrade?.error && (
+                <Alert severity="error" sx={{ fontSize: '0.8rem', py: 0.5 }}>{igUpgrade.error}</Alert>
+              )}
+              <TextField
+                label="Verification code"
+                fullWidth
+                size="small"
+                value={igUpgradeCode}
+                onChange={(e) => setIgUpgradeCode(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void handleIgTfaSubmit(); }}
+                autoFocus
+                disabled={igUpgrade?.busy}
+                inputProps={{ inputMode: 'numeric', maxLength: 8 }}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: c.bg.page } }}
+              />
+              <Button
+                variant="outlined"
+                onClick={() => void handleIgApproveApp()}
+                disabled={igUpgrade?.busy}
+                startIcon={igUpgrade?.busy ? <CircularProgress size={14} /> : undefined}
+                sx={{ borderColor: '#4caf50', color: '#2e7d32', textTransform: 'none', borderRadius: 2, '&:hover': { borderColor: '#388e3c', bgcolor: '#4caf5010' } }}
+              >
+                {igUpgrade?.busy ? 'Waiting for Instagram to confirm...' : "I approved it in the Instagram app"}
+              </Button>
+              <Typography sx={{ color: c.text.tertiary, fontSize: '0.7rem', lineHeight: 1.4, mt: -0.5 }}>
+                After tapping Approve in Instagram, click this. We wait up to 35 seconds for the approval to land.
+              </Typography>
+              {igUpgrade?.pending2fa?.sms_on && (
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={() => void handleIgResendSms()}
+                  disabled={igUpgrade?.busy}
+                  sx={{ color: c.text.tertiary, textTransform: 'none', fontSize: '0.78rem', alignSelf: 'flex-start', px: 0.5 }}
+                >
+                  Didn&apos;t get it? Resend SMS
+                </Button>
+              )}
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button
+                onClick={handleIgSkipUpgrade}
+                sx={{ color: c.text.tertiary, textTransform: 'none', mr: 'auto', fontSize: '0.78rem' }}
+                disabled={igUpgrade?.busy}
+              >
+                Skip to basic access (8 tools)
+              </Button>
+              <Button
+                onClick={() => { setIgUpgrade(null); setIgUpgradeCode(''); }}
+                sx={{ color: c.text.tertiary, textTransform: 'none' }}
+                disabled={igUpgrade?.busy}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                onClick={() => void handleIgTfaSubmit()}
+                disabled={igUpgrade?.busy || !igUpgradeCode.trim()}
+                startIcon={igUpgrade?.busy ? <CircularProgress size={14} /> : undefined}
+                sx={{ bgcolor: '#e1306c', '&:hover': { bgcolor: '#c1275c' }, textTransform: 'none', borderRadius: 2 }}
+              >
+                {igUpgrade?.busy ? 'Verifying…' : 'Verify'}
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
+      */}
+
       {/* Integration Credentials Dialog */}
       <Dialog
         open={credDialogOpen}
@@ -2532,6 +2903,7 @@ const Tools: React.FC = () => {
                   key={field.key}
                   label={field.label}
                   placeholder={field.placeholder}
+                  type={field.type || 'text'}
                   value={credDialogValues[field.key] || ''}
                   onChange={(e) => setCredDialogValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                   fullWidth

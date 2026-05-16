@@ -353,6 +353,49 @@ function getBundledNodePath() {
 }
 
 /**
+ * Directory containing package.json + dist/index.js + node_modules for
+ * instagram-mcp-buddy (dev: monorepo root; packaged: extraResources/instagram-mcp).
+ */
+function getInstagramMcpPackageRoot() {
+  const base = isPackaged ? process.resourcesPath : path.join(__dirname, '..');
+  return path.join(base, 'instagram-mcp');
+}
+
+/**
+ * Resolve a Node binary for spawning instagram-mcp-buddy. Prefer the same
+ * bundled Node shipped for 9Router/MCP so Finder-launched Mac apps work
+ * without a user PATH; fall back to OPENSWARM_NODE_PATH, login-shell resolution
+ * (dev), then `node` on PATH.
+ */
+function resolveNodeForMcpCli() {
+  const bundled = getBundledNodePath();
+  if (bundled && fs.existsSync(bundled)) return bundled;
+  const fromEnv = process.env.OPENSWARM_NODE_PATH;
+  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
+  if (!isPackaged && process.platform !== 'win32') {
+    try {
+      const shell = process.env.SHELL || '/bin/zsh';
+      const p = execFileSync(shell, ['-lc', 'command -v node'], {
+        encoding: 'utf8',
+        timeout: 8000,
+        env: { ...process.env, HOME: os.homedir() },
+      }).trim().split(/\r?\n/).filter(Boolean).pop();
+      if (p && fs.existsSync(p)) return p;
+    } catch (_) { /* fall through */ }
+    for (const c of ['/opt/homebrew/bin/node', '/usr/local/bin/node']) {
+      if (fs.existsSync(c)) return c;
+    }
+  }
+  if (!isPackaged && process.platform === 'win32') {
+    try {
+      const p = execFileSync('where', ['node'], { encoding: 'utf8', timeout: 8000 }).trim().split(/\r?\n/).filter(Boolean)[0];
+      if (p && fs.existsSync(p)) return p;
+    } catch (_) { /* fall through */ }
+  }
+  return process.platform === 'win32' ? 'node.exe' : 'node';
+}
+
+/**
  * Run instagram-mcp-buddy connect|logout non-interactively. Prefers the workspace
  * build at ../instagram-mcp/dist/index.js when present (dev / source tree);
  * otherwise `npx -y instagram-mcp-buddy` so packaged apps work without shipping
@@ -364,25 +407,28 @@ function getBundledNodePath() {
  */
 function runInstagramBuddyCli(subcommand, extraEnv = {}) {
   return new Promise((resolve, reject) => {
-    const repoRoot = path.join(__dirname, '..');
-    const localScript = path.join(repoRoot, 'instagram-mcp', 'dist', 'index.js');
+    const igPkgRoot = getInstagramMcpPackageRoot();
+    const localScript = path.join(igPkgRoot, 'dist', 'index.js');
     const pathMerged = [getShellPath(), process.env.PATH || ''].filter(Boolean).join(path.delimiter);
     const env = { ...process.env, ...extraEnv, PATH: pathMerged };
 
     let cmd;
     let args;
     let shell = false;
+    /** cwd for module resolution (instagram-mcp-buddy needs package node_modules). */
+    let cwd = isPackaged ? process.resourcesPath : path.join(__dirname, '..');
+
     if (fs.existsSync(localScript)) {
-      const nodeExe = getBundledNodePath() || (process.platform === 'win32' ? 'node.exe' : 'node');
-      cmd = nodeExe;
+      cmd = resolveNodeForMcpCli();
       args = [localScript, subcommand];
+      cwd = igPkgRoot;
     } else {
       cmd = 'npx';
       args = ['-y', 'instagram-mcp-buddy', subcommand];
       if (process.platform === 'win32') shell = true;
     }
 
-    const child = spawn(cmd, args, { env, cwd: repoRoot, windowsHide: true, shell });
+    const child = spawn(cmd, args, { env, cwd, windowsHide: true, shell });
     let out = '';
     let err = '';
     child.stdout.on('data', (d) => { out += d.toString(); });
@@ -1543,19 +1589,162 @@ function normalizeEnvRecord(mcpEnv) {
   return extra;
 }
 
-ipcMain.handle('instagram-connect', async (_event, mcpEnv) => {
-  try {
-    const parsed = await runInstagramBuddyCli('connect', normalizeEnvRecord(mcpEnv));
-    return { ok: true, ...parsed };
-  } catch (err) {
-    return { ok: false, error: err?.message || String(err) };
+// instagram-connect: opens an in-app browser window pointed at instagram.com,
+// polls for the sessionid cookie, then hands them to instagram-mcp-buddy's
+// `validate-credentials --from-browser` subcommand which builds an instagrapi
+// session and saves it to the keychain + platformdirs session.json.
+// User never sees a terminal, never types a password, never types 2FA.
+ipcMain.handle('instagram-connect', async (_event, payload) => {
+  const toolId = (payload && payload.toolId) || '';
+  if (!toolId) {
+    return { ok: false, error: 'instagram-connect: missing toolId from caller' };
   }
+
+  const win = new BrowserWindow({
+    width: 480,
+    height: 700,
+    title: 'Sign in to Instagram',
+    parent: mainWindow || undefined,
+    modal: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      partition: 'persist:instagram-auth',
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  try {
+    await win.loadURL('https://www.instagram.com/accounts/login/');
+  } catch (err) {
+    if (!win.isDestroyed()) win.close();
+    return { ok: false, error: `Failed to load Instagram: ${err.message}` };
+  }
+
+  // POST cookies to the backend /credentials/instagram/from_browser endpoint.
+  // The backend uses instagrapi to build a session, writes a trypeggy-compatible
+  // session file, and persists tool.credentials + auth_status='connected'.
+  const callBackend = (body) => new Promise((res) => {
+    const data = Buffer.from(JSON.stringify(body), 'utf8');
+    const req = http.request({
+      host: '127.0.0.1',
+      port: backendPort || 8324,
+      path: '/api/tools/credentials/instagram/from_browser',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': data.length,
+        'Authorization': `Bearer ${authToken || ''}`,
+      },
+      timeout: 60000,
+    }, (resp) => {
+      let chunks = '';
+      resp.on('data', (c) => { chunks += c; });
+      resp.on('end', () => {
+        try {
+          res(JSON.parse(chunks));
+        } catch (_) {
+          res({ ok: false, error: `backend non-JSON response (${resp.statusCode}): ${chunks.slice(0, 200)}` });
+        }
+      });
+    });
+    req.on('timeout', () => { req.destroy(new Error('backend call timed out after 60s')); });
+    req.on('error', (e) => { res({ ok: false, error: `backend call failed: ${e.message}` }); });
+    req.write(data);
+    req.end();
+  });
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(browserPoll);
+      clearTimeout(timeoutHandle);
+      if (!win.isDestroyed()) win.close();
+      resolve(value);
+    };
+
+    win.on('closed', () => { if (!settled) finish({ ok: false, error: 'Sign-in window was closed' }); });
+
+    const browserPoll = setInterval(async () => {
+      if (win.isDestroyed() || settled) return;
+      try {
+        const cookies = await win.webContents.session.cookies.get({ domain: '.instagram.com' });
+        const sessionid = (cookies.find(c => c.name === 'sessionid') || {}).value;
+        const dsUserId = (cookies.find(c => c.name === 'ds_user_id') || {}).value;
+        if (!sessionid || !dsUserId) return;
+
+        clearInterval(browserPoll);
+        const cookieDict = {};
+        for (const c of cookies) cookieDict[c.name] = c.value;
+
+        console.log(`[ig-connect] cookies acquired; calling backend from_browser for tool ${toolId}`);
+        const result = await callBackend({
+          tool_id: toolId,
+          sessionid,
+          ds_user_id: dsUserId,
+          cookies: cookieDict,
+        });
+        if (!result.ok) { finish(result); return; }
+        finish({ ok: true, username: result.username || dsUserId, user_id: result.user_id });
+      } catch (_) { /* transient cookie read, retry next tick */ }
+    }, 1500);
+
+    const timeoutHandle = setTimeout(() => {
+      finish({ ok: false, error: 'Sign-in timed out after 10 minutes' });
+    }, 10 * 60 * 1000);
+  });
 });
 
-ipcMain.handle('instagram-logout', async (_event, mcpEnv) => {
+// Full-auth upgrade handler (password + 2FA) disabled while trusted-notification
+// polling is unimplemented. Connect uses browser cookies only — see above.
+/*
+ipcMain.handle('instagram-upgrade-session', async (_event, payload) => {
+  const PYTHON = '/usr/local/bin/python3.11';
+  return new Promise((res) => {
+    const py = spawn(PYTHON, ['-m', 'instagram_mcp_buddy', 'validate-credentials'], {
+      stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+    });
+    let out = '', pyErr = '';
+    py.stdout.on('data', d => { out += d; });
+    py.stderr.on('data', d => { pyErr += d; });
+    py.stdin.write(JSON.stringify(payload));
+    py.stdin.end();
+    py.on('close', exitCode => {
+      const lastLine = out.trim().split('\n').pop() || '';
+      try {
+        res(JSON.parse(lastLine));
+      } catch (_) {
+        res({ ok: false, error: exitCode !== 0 ? (pyErr.slice(0, 300) || 'validate-credentials failed') : 'invalid JSON' });
+      }
+    });
+  });
+});
+*/
+
+ipcMain.handle('instagram-logout', async (_event, _mcpEnv) => {
   try {
-    const parsed = await runInstagramBuddyCli('logout', normalizeEnvRecord(mcpEnv));
-    return { ok: true, ...parsed };
+    const pyLines = [
+      'import keyring',
+      'from pathlib import Path',
+      'from platformdirs import user_data_dir',
+      "username = keyring.get_password('instagram-mcp-buddy', 'active_username')",
+      'if username:',
+      "    try: keyring.delete_password('instagram-mcp-buddy', f'password:{username}')",
+      '    except Exception: pass',
+      "    try: keyring.delete_password('instagram-mcp-buddy', 'active_username')",
+      '    except Exception: pass',
+      "session_file = Path(user_data_dir('instagram-mcp-buddy')) / 'session.json'",
+      'if session_file.exists(): session_file.unlink()',
+      'print("{\\\"ok\\\": true}")',
+    ];
+    await new Promise((resolve, reject) => {
+      const py = spawn('/usr/local/bin/python3.11', ['-c', pyLines.join('\n')], { windowsHide: true });
+      py.on('close', code => code === 0 ? resolve() : reject(new Error('logout failed')));
+    });
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: err?.message || String(err) };
   }

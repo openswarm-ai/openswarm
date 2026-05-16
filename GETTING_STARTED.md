@@ -163,6 +163,47 @@ Your agents can now use Google Calendar, Gmail, Drive, etc. through MCP tools.
 
 ---
 
+## Instagram (`instagram-mcp-buddy`) from this repo (optional)
+
+The published npm package is meant to ship a **maintainer-injected** Meta app so end users need no `.env`. A **git checkout** uses placeholders until you either set env vars or inject at build time.
+
+1. [Create a Meta developer app](https://developers.facebook.com/) with Instagram API (Instagram Login), and note the app id and secret.
+2. Open a terminal and `cd` to your **clone of this repository** (the folder that contains `backend/`, `frontend/`, and **`instagram-mcp/`**).  
+   It is **not** `~/instagram-mcp` unless you created that yourself. Example:
+
+```bash
+cd /path/to/your/openswarm   # e.g. ~/OpenSwarmShawn/openswarm
+cd instagram-mcp
+```
+
+If `cd instagram-mcp` says **no such file**, you are in the wrong directory — go up to the repo root first.
+
+3. Configure and build (run every command **from `instagram-mcp/`**):
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set `INSTAGRAM_MCP_APP_ID` and `INSTAGRAM_MCP_APP_SECRET` on the **uncommented** `KEY=value` lines (lines starting with `#` are ignored by the loader).
+
+```bash
+npm install
+npm run build
+node dist/index.js connect
+```
+
+The CLI **loads `instagram-mcp/.env` automatically** (no need to `export` in your shell). Alternatively, bake credentials into `dist/oauth-config.js` once (still from **`instagram-mcp/`**):
+
+```bash
+npm run build:inject
+```
+
+(`inject-credentials.mjs` also reads `.env` if the variables are not already in the environment.)
+
+To skip `npx` delegation entirely when testing: set `INSTAGRAM_MCP_NO_NPX_FALLBACK=1` in `.env`.
+
+---
+
 ## Project structure
 
 ```

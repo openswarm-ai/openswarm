@@ -30,6 +30,7 @@ const { contextBridge, ipcRenderer } = require('electron');
     connectSlack: () => ipcRenderer.invoke('connect-slack'),
     /** Desktop Instagram OAuth via instagram-mcp-buddy CLI (keychain). Optional env merged from tool mcp_config.env */
     instagramConnect: (mcpEnv) => ipcRenderer.invoke('instagram-connect', mcpEnv),
+    // instagramUpgrade: (payload) => ipcRenderer.invoke('instagram-upgrade-session', payload), // disabled until trusted-notification polling is implemented
     instagramLogout: (mcpEnv) => ipcRenderer.invoke('instagram-logout', mcpEnv),
     sendCdpCommand: (wcId, method, params) => ipcRenderer.invoke('send-cdp-command', wcId, method, params),
     cdpCacheSet: (wcId, indexMap) => ipcRenderer.invoke('cdp-cache-set', wcId, indexMap),

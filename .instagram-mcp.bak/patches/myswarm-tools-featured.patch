@@ -1,0 +1,51 @@
+Add Instagram to the featured tools list in myswarm.
+
+Adds an Instagram entry to FEATURED_TOOLS in
+frontend/src/app/pages/Tools/Tools.tsx, modeled on the existing Reddit
+entry. Wires up the `instagram-mcp-buddy` MCP server, which self-bootstraps
+OAuth on first use — no API keys required.
+
+Insertion is alphabetical: between the X (Twitter) entry and the Reddit
+entry, since 'instagram' sorts between 'twitter' (which the X catalog
+entry follows) and 'reddit' in the existing layout.
+
+Apply with:
+  git apply patches/myswarm-tools-featured.patch
+
+diff --git a/frontend/src/app/pages/Tools/Tools.tsx b/frontend/src/app/pages/Tools/Tools.tsx
+--- a/frontend/src/app/pages/Tools/Tools.tsx
++++ b/frontend/src/app/pages/Tools/Tools.tsx
+@@ -125,9 +125,33 @@
+       { key: 'TWITTER_AUTH_TOKEN', label: 'auth_token', placeholder: 'Paste auth_token cookie value' },
+       { key: 'TWITTER_CT0', label: 'ct0', placeholder: 'Paste ct0 cookie value' },
+     ],
+   },
++  {
++    id: 'instagram',
++    name: 'Instagram',
++    description: 'Post, schedule, and analyze content. Sign in with your Instagram Business or Creator account — no API keys required.',
++    mcp_config: { type: 'stdio', command: 'npx', args: ['-y', 'instagram-mcp-buddy'] },
++    color: '#E4405F',
++    website: 'https://github.com/<placeholder-username>/instagram-mcp-buddy',
++    icon: (
++      <svg viewBox="0 0 24 24" width="22" height="22">
++        <defs>
++          <linearGradient id="ig-grad" x1="0%" y1="100%" x2="100%" y2="0%">
++            <stop offset="0%" stopColor="#FED576" />
++            <stop offset="26%" stopColor="#F47133" />
++            <stop offset="61%" stopColor="#BC3081" />
++            <stop offset="100%" stopColor="#4C63D2" />
++          </linearGradient>
++        </defs>
++        <rect x="2" y="2" width="20" height="20" rx="5" fill="url(#ig-grad)" />
++        <rect x="4.5" y="4.5" width="15" height="15" rx="4" fill="none" stroke="#fff" strokeWidth="1.5" />
++        <circle cx="12" cy="12" r="4" fill="none" stroke="#fff" strokeWidth="2" />
++        <circle cx="17.5" cy="6.5" r="1.25" fill="#fff" />
++      </svg>
++    ),
++  },
+   {
+     id: 'reddit',
+     name: 'Reddit',
+     description: 'Browse subreddits, search posts, get post details, analyze users. No API keys required.',
+     mcp_config: { type: 'stdio', command: 'npx', args: ['-y', 'reddit-mcp-buddy'] },

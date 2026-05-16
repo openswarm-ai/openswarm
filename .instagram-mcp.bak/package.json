@@ -1,0 +1,47 @@
+{
+  "name": "instagram-mcp-buddy",
+  "version": "0.1.0",
+  "description": "Instagram for AI agents. Sign in with your Instagram Business or Creator account — no API keys, no Meta Developer app, no .env. MCP server for OpenSwarm, Claude Desktop, Cursor, and Claude Code.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "instagram-mcp-buddy": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "TOOLS.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "inject:credentials": "node scripts/inject-credentials.mjs",
+    "build:inject": "tsc && node scripts/inject-credentials.mjs",
+    "publish:npm": "tsc && node scripts/inject-credentials.mjs && npm publish --access public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "get-port": "^7.1.0",
+    "node-machine-id": "^1.1.12",
+    "open": "^10.1.0",
+    "zod": "^3.23.8"
+  },
+  "optionalDependencies": {
+    "keytar": "^7.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

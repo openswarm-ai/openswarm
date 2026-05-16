@@ -544,6 +544,21 @@ async def mcp_meta(action: str, request: Request):
         "hubspot": ["crm", "sales", "leads", "contacts", "deals"],
         "reddit": ["forum", "subreddit", "posts", "comments", "social"],
         "youtube": ["video", "transcript", "channel"],
+        "instagram": [
+            "ig",
+            "reels",
+            "stories",
+            "social",
+            "analytics",
+            "insights",
+            "hashtag",
+            "dm",
+            "direct message",
+            "comments",
+            "creator",
+            "business",
+            "meta",
+        ],
     }
 
     def _connected_servers() -> list[dict]:

@@ -1290,3 +1290,144 @@ async def refresh_airtable_token(tool: ToolDefinition) -> Optional[str]:
 async def refresh_hubspot_token(tool: ToolDefinition) -> Optional[str]:
     """Refresh an expired HubSpot OAuth access_token."""
     return await _refresh_via_proxy("hubspot", tool, default_expiry=1800)
+
+
+@tools_lib.router.post("/credentials/instagram/validate")
+async def validate_instagram_credentials(payload: dict) -> dict:
+    """Verify Instagram username/password via instagrapi.Client.login() and persist on success.
+
+    Modeled on the OAuth verify-before-save flow: nothing is written to the tool
+    record unless the credentials actually log in. On success we also cache the
+    instagrapi session file at trypeggy's expected location so the MCP server
+    skips re-login on first spawn.
+
+    Body    : {"tool_id": str, "username": str, "password": str}
+    Returns : {"ok": true,  "username": str}
+            | {"ok": false, "error": "<reason>"}
+    """
+    tool_id = payload.get("tool_id")
+    username = (payload.get("username") or "").strip().lstrip("@")
+    password = payload.get("password") or ""
+    if not tool_id or not username or not password:
+        raise HTTPException(
+            status_code=400,
+            detail="tool_id, username, and password are required",
+        )
+
+    tool = _load(tool_id)
+
+    def _do_login() -> "object":
+        from instagrapi import Client  # type: ignore[import-not-found]
+        cl = Client()
+        cl.delay_range = [1, 3]
+        cl.request_timeout = 15
+        cl.login(username, password)
+        return cl
+
+    try:
+        cl = await asyncio.to_thread(_do_login)
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        return {"ok": False, "error": msg[:300] if msg else type(e).__name__}
+
+    # Cache session where trypeggy expects it so the MCP server's startup
+    # account_info() probe has a fresh session and skips client.login() on
+    # first spawn. Trypeggy reads SESSION_FILE = REPO_ROOT/f"{username}_session.json".
+    try:
+        from pathlib import Path
+        trypeggy_root = Path("/Users/shawnmadadha/dev/instagram_dm_mcp")
+        if trypeggy_root.exists():
+            cl.dump_settings(trypeggy_root / f"{username}_session.json")
+            (trypeggy_root / "current_user.txt").write_text(username + "\n")
+    except Exception as cache_err:  # noqa: BLE001
+        logger.warning(f"validate_instagram: could not cache session for trypeggy: {cache_err}")
+
+    tool.credentials = {"INSTAGRAM_USERNAME": username, "INSTAGRAM_PASSWORD": password}
+    tool.auth_type = "env_vars"
+    tool.auth_status = "connected"
+    tool.connected_account_email = f"@{username}"
+    _save(tool)
+    return {"ok": True, "username": username}
+
+
+@tools_lib.router.post("/credentials/instagram/from_browser")
+async def instagram_from_browser(payload: dict) -> dict:
+    """Build a trypeggy-compatible instagrapi session from browser cookies.
+
+    Called by the Electron `instagram-connect` IPC handler after it opens
+    instagram.com, lets the user log in, and polls cookies for sessionid +
+    ds_user_id. Mirrors the password-based validate endpoint's persistence
+    shape so the Tools tile flips to Connected the same way.
+
+    Body : {"tool_id": str, "sessionid": str, "ds_user_id": str, "cookies": {name: value}}
+    Returns:
+      {"ok": true,  "username": str, "user_id": str}    -- session saved
+      {"ok": false, "error": "<reason>"}                -- nothing persisted
+    """
+    from pathlib import Path
+    from urllib.parse import unquote
+
+    tool_id = payload.get("tool_id")
+    sessionid_raw = payload.get("sessionid") or ""
+    ds_user_id = str(payload.get("ds_user_id") or "")
+    cookies: dict = payload.get("cookies") or {}
+    if not tool_id or not sessionid_raw or not ds_user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="tool_id, sessionid, and ds_user_id are required",
+        )
+
+    tool = _load(tool_id)
+
+    def _do_build() -> dict:
+        from instagrapi import Client  # type: ignore[import-not-found]
+        cl = Client()
+        cl.delay_range = [1, 3]
+        cl.request_timeout = 15
+        sid = unquote(sessionid_raw)
+        # login_by_sessionid resets the cookie jar to {sessionid} only via
+        # init(). Catch any 467 it raises so we still get the cookies set up
+        # for re-injection below.
+        try:
+            cl.login_by_sessionid(sid)
+        except Exception:  # noqa: BLE001
+            pass
+        decoded = {name: unquote(str(value)) for name, value in cookies.items()}
+        for name, value in decoded.items():
+            cl.private.cookies.set(name, value, domain=".instagram.com")
+        if decoded.get("mid"):
+            cl.mid = decoded["mid"]
+        if not cl.user_id:
+            try:
+                cl.user_id = int(ds_user_id)
+            except (TypeError, ValueError):
+                pass
+        username = cl.username or f"id_{ds_user_id}"
+        user_id_str = str(cl.user_id) if cl.user_id else ds_user_id
+        return {"settings": cl.get_settings(), "username": username, "user_id": user_id_str}
+
+    try:
+        result = await asyncio.to_thread(_do_build)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": (str(e) or type(e).__name__)[:300]}
+
+    username = result["username"]
+    user_id_str = result["user_id"]
+    settings = result["settings"]
+
+    trypeggy_root = Path("/Users/shawnmadadha/dev/instagram_dm_mcp")
+    try:
+        if trypeggy_root.exists():
+            (trypeggy_root / f"{username}_session.json").write_text(json.dumps(settings))
+            (trypeggy_root / "current_user.txt").write_text(username + "\n")
+    except Exception as cache_err:  # noqa: BLE001
+        logger.warning(f"instagram_from_browser: could not write trypeggy session file: {cache_err}")
+
+    # No password from the browser flow. trypeggy will load the session and
+    # tolerate a 467 on its startup account_info() probe (patched locally).
+    tool.credentials = {"INSTAGRAM_USERNAME": username}
+    tool.auth_type = "env_vars"
+    tool.auth_status = "connected"
+    tool.connected_account_email = f"@{username}"
+    _save(tool)
+    return {"ok": True, "username": username, "user_id": user_id_str}

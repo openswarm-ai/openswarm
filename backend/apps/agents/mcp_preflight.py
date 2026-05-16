@@ -118,6 +118,11 @@ CURATED_SHORTLIST: list[CuratedEntry] = [
         "title": "YouTube",
         "description": "Video transcripts, details, comments, channel stats, search — when the task involves YouTube content.",
     },
+    {
+        "id": "Instagram",
+        "title": "Instagram",
+        "description": "Insights, publishing, comments, DMs, hashtags, and account discovery — when the task involves the user's Instagram Business or Creator presence (sign-in via instagram_connect in chat).",
+    },
 ]
 
 
