@@ -1749,3 +1749,240 @@ ipcMain.handle('instagram-logout', async (_event, _mcpEnv) => {
     return { ok: false, error: err?.message || String(err) };
   }
 });
+
+// LinkedIn connect/logout via stickerdaniel/linkedin-mcp-server (PyPI: linkedin-scraper-mcp).
+// The MCP server reads a Patchright persistent browser profile at ~/.linkedin-mcp/profile/.
+// We open an embedded Electron BrowserWindow at linkedin.com/login (same UX as the
+// Instagram flow), poll for the li_at cookie, then inject the harvested cookies into
+// the Patchright profile via a Python helper. Cookies without an expires timestamp
+// are treated as session cookies by Chromium and wiped on context close, so we
+// stamp a 1-year default on anything missing one before injection.
+// Why path probing for uv/uvx: Electron launched from Finder on macOS inherits
+// /usr/bin:/bin only, not the user's shell PATH where uv/uvx typically lives.
+function resolveBin(name) {
+  const candidates = [
+    path.join(os.homedir(), '.local', 'bin', name),
+    `/opt/homebrew/bin/${name}`,
+    `/usr/local/bin/${name}`,
+  ];
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) return c; } catch (_) {}
+  }
+  return name;
+}
+
+const LINKEDIN_PROFILE_DIR = path.join(os.homedir(), '.linkedin-mcp', 'profile');
+
+const LINKEDIN_INJECT_SCRIPT = `
+import asyncio, json, sys, time
+from pathlib import Path
+
+async def main():
+    from patchright.async_api import async_playwright
+    raw = sys.stdin.read()
+    payload = json.loads(raw)
+    cookies = payload["cookies"]
+    profile_dir = Path(payload["profile_dir"]).expanduser()
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    async with async_playwright() as p:
+        ctx = await p.chromium.launch_persistent_context(
+            user_data_dir=str(profile_dir),
+            headless=True,
+        )
+        await ctx.add_cookies(cookies)
+        await ctx.close()
+    print(json.dumps({"ok": True, "count": len(cookies)}))
+
+try:
+    asyncio.run(main())
+except Exception as exc:
+    print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
+    sys.exit(1)
+`;
+
+function electronCookiesToPatchright(electronCookies) {
+  const oneYearFromNow = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
+  const sameSiteMap = {
+    'no_restriction': 'None',
+    'lax': 'Lax',
+    'strict': 'Strict',
+    'unspecified': 'Lax',
+  };
+  return electronCookies.map((c) => {
+    const expires = (typeof c.expirationDate === 'number' && c.expirationDate > 0)
+      ? Math.floor(c.expirationDate)
+      : oneYearFromNow;
+    const sameSite = sameSiteMap[c.sameSite] || 'Lax';
+    const out = {
+      name: c.name,
+      value: c.value,
+      domain: c.domain,
+      path: c.path || '/',
+      expires,
+      httpOnly: Boolean(c.httpOnly),
+      secure: Boolean(c.secure),
+      sameSite,
+    };
+    if (out.sameSite === 'None') out.secure = true;
+    return out;
+  });
+}
+
+function injectLinkedinCookies(electronCookies) {
+  return new Promise((resolve) => {
+    const uv = resolveBin('uv');
+    const cookies = electronCookiesToPatchright(electronCookies);
+    const env = { ...process.env, UV_HTTP_TIMEOUT: '300' };
+    let child;
+    try {
+      child = spawn(uv, ['run', '--with', 'patchright', '--quiet', 'python', '-c', LINKEDIN_INJECT_SCRIPT], {
+        env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+      });
+    } catch (err) {
+      resolve({ ok: false, error: `failed to spawn ${uv}: ${err.message}` });
+      return;
+    }
+    let stdout = '', stderr = '';
+    child.stdout.on('data', (c) => { stdout += c.toString(); });
+    child.stderr.on('data', (c) => { stderr += c.toString(); });
+    child.on('error', (e) => resolve({ ok: false, error: `spawn error: ${e.message}` }));
+    child.on('exit', (code) => {
+      if (code !== 0) {
+        resolve({ ok: false, error: `cookie inject exited ${code}: ${(stderr || stdout).slice(-400)}` });
+        return;
+      }
+      try {
+        const line = stdout.trim().split('\n').filter(Boolean).pop() || '{}';
+        const parsed = JSON.parse(line);
+        resolve(parsed.ok ? { ok: true, count: parsed.count } : { ok: false, error: parsed.error || 'unknown injection error' });
+      } catch (e) {
+        resolve({ ok: false, error: `inject script non-JSON output: ${stdout.slice(-200)}` });
+      }
+    });
+    try {
+      child.stdin.write(JSON.stringify({ cookies, profile_dir: LINKEDIN_PROFILE_DIR }));
+      child.stdin.end();
+    } catch (e) {
+      resolve({ ok: false, error: `stdin write failed: ${e.message}` });
+    }
+  });
+}
+
+ipcMain.handle('linkedin-connect', async (_event, payload) => {
+  const toolId = (payload && payload.toolId) || '';
+  if (!toolId) {
+    return { ok: false, error: 'linkedin-connect: missing toolId from caller' };
+  }
+
+  // Fast-path: if the persist partition already has a valid li_at from a
+  // previous session, skip the BrowserWindow entirely and inject straight in.
+  // Same UX feel as Instagram: re-Connect is near-instant when nothing expired.
+  // URL-based query (not { domain }) so we pick up cookies set on .linkedin.com,
+  // .www.linkedin.com, www.linkedin.com all in one call.
+  try {
+    const partitionCookies = await session.fromPartition('persist:linkedin-auth').cookies.get({ url: 'https://www.linkedin.com/' });
+    const cached = partitionCookies.find((c) => c.name === 'li_at');
+    if (cached) {
+      console.log(`[linkedin-connect] cached li_at found in partition (${partitionCookies.length} cookies); fast-path inject for tool ${toolId}`);
+      const result = await injectLinkedinCookies(partitionCookies);
+      if (result.ok) return { ok: true, count: result.count, fastPath: true };
+      console.log(`[linkedin-connect] fast-path inject failed, falling back to window flow: ${result.error}`);
+    }
+  } catch (err) {
+    console.log(`[linkedin-connect] fast-path probe failed: ${err.message}`);
+  }
+
+  // Hidden by default. Only shown if the user actually needs to sign in.
+  const win = new BrowserWindow({
+    width: 520,
+    height: 760,
+    title: 'Sign in to LinkedIn',
+    parent: mainWindow || undefined,
+    modal: false,
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      partition: 'persist:linkedin-auth',
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  try {
+    // /feed/ redirects to /login when unauthed, but lets us reuse a cached
+    // session without bouncing through the login form when it's still valid.
+    await win.loadURL('https://www.linkedin.com/feed/');
+  } catch (err) {
+    if (!win.isDestroyed()) win.close();
+    return { ok: false, error: `Failed to load LinkedIn: ${err.message}` };
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let shown = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      clearTimeout(timer);
+      if (!win.isDestroyed()) win.close();
+      resolve(value);
+    };
+    win.on('closed', () => { if (!settled) finish({ ok: false, error: 'Sign-in window was closed' }); });
+
+    let attempts = 0;
+    const tick = async () => {
+      if (settled || win.isDestroyed()) return;
+      attempts += 1;
+      try {
+        // URL-based query: matches every cookie Chromium would send to
+        // www.linkedin.com regardless of whether the cookie domain is
+        // .linkedin.com, .www.linkedin.com, www.linkedin.com, etc.
+        const cookies = await win.webContents.session.cookies.get({ url: 'https://www.linkedin.com/' });
+        const liAt = cookies.find((c) => c.name === 'li_at');
+        if (attempts <= 3 || attempts % 10 === 0) {
+          console.log(`[linkedin-connect] tick ${attempts}: ${cookies.length} cookies [${cookies.map(c => c.name).join(',')}], li_at=${liAt ? 'YES' : 'no'}`);
+        }
+        if (liAt) {
+          clearInterval(poll);
+          console.log(`[linkedin-connect] li_at acquired (${cookies.length} cookies); injecting into Patchright profile for tool ${toolId}`);
+          const result = await injectLinkedinCookies(cookies);
+          finish(result.ok ? { ok: true, count: result.count } : result);
+          return;
+        }
+      } catch (err) {
+        console.log(`[linkedin-connect] tick ${attempts}: cookie read error: ${err.message}`);
+      }
+      // No li_at after the first ~1.6s of polling means the user actually
+      // needs to sign in; reveal the window so they can.
+      if (!shown && attempts >= 2 && !win.isDestroyed()) {
+        shown = true;
+        win.show();
+      }
+    };
+
+    // Immediate first check, then 800ms cadence (faster than Instagram's
+    // 1500ms; we're optimizing for the silent-reauth case).
+    tick();
+    const poll = setInterval(tick, 800);
+    const timer = setTimeout(() => {
+      finish({ ok: false, error: 'LinkedIn sign-in timed out after 10 minutes' });
+    }, 10 * 60 * 1000);
+  });
+});
+
+ipcMain.handle('linkedin-logout', async () => {
+  return new Promise((resolve) => {
+    try {
+      if (fs.existsSync(LINKEDIN_PROFILE_DIR)) {
+        fs.rmSync(LINKEDIN_PROFILE_DIR, { recursive: true, force: true });
+      }
+      session.fromPartition('persist:linkedin-auth').clearStorageData().then(
+        () => resolve({ ok: true }),
+        (err) => resolve({ ok: false, error: `cleared profile but failed to clear partition: ${err.message}` }),
+      );
+    } catch (err) {
+      resolve({ ok: false, error: err.message || String(err) });
+    }
+  });
+});

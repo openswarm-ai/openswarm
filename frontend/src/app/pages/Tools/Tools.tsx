@@ -309,6 +309,28 @@ const INTEGRATIONS: Integration[] = [
     ),
     authType: 'oauth2',
   },
+  {
+    id: 'linkedin',
+    name: 'LinkedIn',
+    description:
+      'LinkedIn profiles, companies, jobs, messaging, and feed. 17 tools from stickerdaniel/linkedin-mcp-server. Auth is a Patchright persistent browser profile (one LinkedIn account per host); run scripts/setup-linkedin-mcp.sh once to sign in.',
+    mcp_config: {
+      type: 'stdio',
+      command: 'uvx',
+      args: ['linkedin-scraper-mcp@latest'],
+      env: { UV_HTTP_TIMEOUT: '300' },
+    },
+    color: '#0A66C2',
+    website: 'https://github.com/stickerdaniel/linkedin-mcp-server',
+    connectLabel: 'Sign in with LinkedIn',
+    connectInstructions: 'Click Sign in to open a Chromium window for LinkedIn login (2FA and captcha supported). The session profile is saved at ~/.linkedin-mcp/profile/ and reused on every server start. Click the Connected chip to wipe the profile. Requires `uv` installed on this machine (https://docs.astral.sh/uv/getting-started/installation/).',
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <rect x="2" y="2" width="20" height="20" rx="3" fill="#0A66C2" />
+        <path d="M7.5 9.5h2.4v8.2H7.5V9.5zm1.2-3.8a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8zm3.5 3.8h2.3v1.1h.03c.32-.6 1.1-1.24 2.27-1.24 2.43 0 2.88 1.6 2.88 3.68v4.65h-2.4v-4.12c0-.98-.02-2.25-1.37-2.25-1.37 0-1.58 1.07-1.58 2.18v4.19h-2.4V9.5z" fill="#fff" />
+      </svg>
+    ),
+  },
 ];
 
 const CATEGORY_ORDER = ['filesystem', 'system', 'search', 'interaction', 'agents', 'planning', 'scheduling'];
@@ -616,7 +638,7 @@ const Tools: React.FC = () => {
   // browse the long tail.
   const CURATED_MCP_NAMES = useMemo(() => new Set([
     'google-workspace', 'microsoft-365', 'slack', 'discord',
-    'notion', 'airtable', 'hubspot', 'reddit', 'youtube', 'instagram',
+    'notion', 'airtable', 'hubspot', 'reddit', 'youtube', 'instagram', 'linkedin',
   ]), []);
   const regServers = useMemo(() => {
     if (regSource !== 'curated') return regServersRaw;
@@ -660,6 +682,9 @@ const Tools: React.FC = () => {
 
   /** Instagram desktop CLI (Electron); null when idle */
   const [instagramConnectBusy, setInstagramConnectBusy] = useState<string | null>(null);
+
+  /** LinkedIn desktop CLI (Electron); null when idle */
+  const [linkedinConnectBusy, setLinkedinConnectBusy] = useState<string | null>(null);
 
   // Full-auth upgrade dialog (password + 2FA) is disabled while we figure out
   // Instagram's trusted-notification polling endpoint. Connect uses browser-only
@@ -1118,6 +1143,62 @@ const Tools: React.FC = () => {
     setSnackbar({ open: true, message: username ? `Instagram connected as @${username}` : 'Instagram connected' });
     setExpandedToolId(toolId);
     dispatch(discoverTools(toolId));
+  };
+
+  const handleLinkedInConnect = async (toolId: string) => {
+    // Spawns `uvx linkedin-scraper-mcp@latest --login` via Electron IPC.
+    // The MCP server opens its own Patchright-driven Chromium for the user
+    // to sign in (2FA + captcha handled by LinkedIn's own UI). On exit 0,
+    // the profile at ~/.linkedin-mcp/profile/ is saved and reused by every
+    // subsequent server start. No credentials touch OpenSwarm.
+    const bridge = (window as unknown as { openswarm?: { linkedinConnect?: (arg?: { toolId: string }) => Promise<{ ok?: boolean; error?: string }> } }).openswarm?.linkedinConnect;
+    if (!bridge) {
+      setSnackbar({
+        open: true,
+        message: 'LinkedIn sign-in here needs the OpenSwarm desktop app.',
+        severity: 'error',
+      });
+      return;
+    }
+    setLinkedinConnectBusy(toolId);
+    try {
+      const result = await bridge({ toolId });
+      if (!result?.ok) {
+        setSnackbar({ open: true, message: result?.error || 'LinkedIn sign-in failed', severity: 'error' });
+        return;
+      }
+      await dispatch(updateTool({ id: toolId, auth_status: 'connected' }));
+      await dispatch(fetchToolStatus(toolId));
+      setSnackbar({ open: true, message: 'LinkedIn connected' });
+      setExpandedToolId(toolId);
+      dispatch(discoverTools(toolId));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSnackbar({ open: true, message: msg || 'LinkedIn sign-in failed', severity: 'error' });
+    } finally {
+      setLinkedinConnectBusy(null);
+    }
+  };
+
+  const handleLinkedInDisconnect = async (toolId: string) => {
+    const bridge = (window as unknown as { openswarm?: { linkedinLogout?: () => Promise<{ ok?: boolean; error?: string }> } }).openswarm?.linkedinLogout;
+    if (!bridge) {
+      setSnackbar({ open: true, message: 'LinkedIn disconnect needs the OpenSwarm desktop app.', severity: 'error' });
+      return;
+    }
+    try {
+      const result = await bridge();
+      if (!result?.ok) {
+        setSnackbar({ open: true, message: result?.error || 'LinkedIn logout failed', severity: 'error' });
+        return;
+      }
+      await dispatch(updateTool({ id: toolId, auth_status: 'disconnected', connected_account_email: '' }));
+      await dispatch(fetchToolStatus(toolId));
+      setSnackbar({ open: true, message: 'LinkedIn disconnected' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSnackbar({ open: true, message: msg || 'LinkedIn logout failed', severity: 'error' });
+    }
   };
 
   const handleInstagramConnect = async (toolId: string) => {
@@ -2054,6 +2135,18 @@ const Tools: React.FC = () => {
                             Sign in with Instagram
                           </Button>
                         )}
+                        {!isDisabled && ig?.id === 'linkedin' && tool.auth_status !== 'connected' && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={linkedinConnectBusy === tool.id ? <CircularProgress size={12} sx={{ color: ig.color }} /> : <LinkIcon sx={{ fontSize: 14 }} />}
+                            onClick={(e) => { e.stopPropagation(); void handleLinkedInConnect(tool.id); }}
+                            disabled={linkedinConnectBusy === tool.id}
+                            sx={{ borderColor: `${ig.color}40`, color: ig.color, '&:hover': { borderColor: ig.color, bgcolor: `${ig.color}10` }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
+                          >
+                            Sign in with LinkedIn
+                          </Button>
+                        )}
                         {!isDisabled && ig?.credentialFields && ig?.id !== 'instagram' && tool.auth_status !== 'connected' && (
                           <Button
                             size="small"
@@ -2066,14 +2159,15 @@ const Tools: React.FC = () => {
                           </Button>
                         )}
                         {!isDisabled && ig && tool.auth_status === 'connected' && (
-                          <Tooltip title={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code') ? 'Disconnect' : ''}>
+                          <Tooltip title={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code' || ig.id === 'linkedin') ? 'Disconnect' : ''}>
                             <Chip
                               icon={<CheckCircleIcon sx={{ fontSize: 12 }} />}
                               label={tool.connected_account_email ? `Connected · ${tool.connected_account_email}` : 'Connected'}
                               size="small"
-                              onDelete={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code') ? (e: React.SyntheticEvent) => {
+                              onDelete={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code' || ig.id === 'linkedin') ? (e: React.SyntheticEvent) => {
                                 e.stopPropagation();
                                 if (ig.authType === 'device_code') handleM365Disconnect(tool.id);
+                                else if (ig.id === 'linkedin') void handleLinkedInDisconnect(tool.id);
                                 else handleDisconnectIntegration(tool.id, ig);
                               } : undefined}
                               onClick={(e) => e.stopPropagation()}

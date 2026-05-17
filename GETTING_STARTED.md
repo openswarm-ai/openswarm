@@ -204,6 +204,42 @@ To skip `npx` delegation entirely when testing: set `INSTAGRAM_MCP_NO_NPX_FALLBA
 
 ---
 
+## LinkedIn (`linkedin-scraper-mcp` via uvx) (optional)
+
+LinkedIn integration uses [stickerdaniel/linkedin-mcp-server](https://github.com/stickerdaniel/linkedin-mcp-server) (PyPI: `linkedin-scraper-mcp`). Auth is a persistent [Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright) browser profile, not OAuth and not cookies. This means **one LinkedIn account per host**: the saved profile at `~/.linkedin-mcp/profile/` is shared across every OpenSwarm session on this machine.
+
+### Prerequisite
+
+[`uv`](https://docs.astral.sh/uv/getting-started/installation/) must be on `PATH` (provides the `uvx` runner).
+
+### Connect from the UI (recommended)
+
+1. Open the **Tools** page in the sidebar.
+2. Find the **LinkedIn** tile and click **Sign in with LinkedIn**.
+3. A Chromium window opens. Complete sign-in (2FA and captcha are supported).
+4. The window closes on success; the profile is written to `~/.linkedin-mcp/profile/` and the tile flips to **Connected**.
+
+Behind the scenes, Electron spawns `uvx linkedin-scraper-mcp@latest --login`. No credentials touch OpenSwarm; the MCP server owns the browser session.
+
+### CLI fallback (headless dev, CI, web build)
+
+If you are not using the desktop shell, run the equivalent script from the repo root:
+
+```bash
+bash scripts/setup-linkedin-mcp.sh
+```
+
+### Sessions and reset
+
+* Sessions can expire. If a tool call fails with an auth error, click **Sign in with LinkedIn** again (or rerun the script).
+* To wipe the stored profile (e.g. to switch accounts): click the **Connected** chip in the Tools page, or run `uvx linkedin-scraper-mcp@latest --logout`.
+
+### Tools exposed (17 total)
+
+`get_person_profile`, `get_my_profile`, `connect_with_person`, `get_sidebar_profiles`, `get_inbox`, `get_conversation`, `search_conversations`, `send_message`, `get_company_profile`, `get_company_posts`, `search_companies`, `get_company_employees`, `search_jobs`, `search_people`, `get_job_details`, `get_feed`, `close_session`.
+
+---
+
 ## Project structure
 
 ```

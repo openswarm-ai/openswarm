@@ -32,6 +32,10 @@ const { contextBridge, ipcRenderer } = require('electron');
     instagramConnect: (mcpEnv) => ipcRenderer.invoke('instagram-connect', mcpEnv),
     // instagramUpgrade: (payload) => ipcRenderer.invoke('instagram-upgrade-session', payload), // disabled until trusted-notification polling is implemented
     instagramLogout: (mcpEnv) => ipcRenderer.invoke('instagram-logout', mcpEnv),
+    /** Spawns `uvx linkedin-scraper-mcp@latest --login`; the server opens its own Chromium for sign-in. */
+    linkedinConnect: (payload) => ipcRenderer.invoke('linkedin-connect', payload),
+    /** Spawns `uvx linkedin-scraper-mcp@latest --logout` to wipe the Patchright profile. */
+    linkedinLogout: () => ipcRenderer.invoke('linkedin-logout'),
     sendCdpCommand: (wcId, method, params) => ipcRenderer.invoke('send-cdp-command', wcId, method, params),
     cdpCacheSet: (wcId, indexMap) => ipcRenderer.invoke('cdp-cache-set', wcId, indexMap),
     cdpCacheGet: (wcId) => ipcRenderer.invoke('cdp-cache-get', wcId),
