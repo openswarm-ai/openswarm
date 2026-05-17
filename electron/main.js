@@ -1449,3 +1449,98 @@ ipcMain.handle('connect-slack', async () => {
     }, 10 * 60 * 1000);
   });
 });
+
+ipcMain.handle('connect-twitter', async () => {
+  // Mirrors `connect-slack` above. The differences are:
+  //   1. The login URL is x.com's `/i/flow/login`.
+  //   2. We rely on `session.cookies.get(...)` (the only readable
+  //      surface — auth_token / ct0 are HttpOnly, so a JavaScript
+  //      executeJavaScript poll on document.cookie returns nothing).
+  //   3. `ct0` is set as a CSRF cookie BEFORE login completes, so we
+  //      can't return on bare cookie presence. We also require the
+  //      popup's URL to have left the /i/flow/login (or signup) page
+  //      and the auth_token value to be long-looking, both of which
+  //      hold only after a real sign-in succeeded.
+  const win = new BrowserWindow({
+    width: 520,
+    height: 720,
+    title: 'Sign in to X',
+    parent: mainWindow || undefined,
+    modal: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      partition: 'persist:twitter-auth',
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  // Same window-open redirect trick as the Slack flow: keep all new
+  // navigations inside this popup so x.com's "open in new tab" links
+  // (rare, but they exist for embedded auth flows) don't get caught
+  // by the dashboard's webview-new-window plumbing.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      win.loadURL(url).catch(() => {});
+    }
+    return { action: 'deny' };
+  });
+
+  try {
+    await win.loadURL('https://x.com/i/flow/login');
+  } catch (err) {
+    if (!win.isDestroyed()) win.close();
+    throw new Error(`Failed to load x.com: ${err.message}`);
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(pollInterval);
+      clearTimeout(timeoutHandle);
+      if (!win.isDestroyed()) win.close();
+      fn(value);
+    };
+
+    win.on('closed', () => {
+      if (!settled) {
+        settled = true;
+        clearInterval(pollInterval);
+        clearTimeout(timeoutHandle);
+        reject(new Error('Sign-in window was closed'));
+      }
+    });
+
+    const pollInterval = setInterval(async () => {
+      if (win.isDestroyed()) return;
+      try {
+        const url = win.webContents.getURL();
+        // While the user is on /i/flow/login (or /i/flow/signup), ct0
+        // is a pre-auth CSRF token — returning then would land a stale
+        // session in the backend. Wait until we've navigated off.
+        if (url.includes('/i/flow/login') || url.includes('/i/flow/signup')) {
+          return;
+        }
+        // x.com sets these on the .x.com apex domain.
+        const cookies = await win.webContents.session.cookies.get({ domain: '.x.com' });
+        const at = cookies.find((c) => c.name === 'auth_token');
+        const ct = cookies.find((c) => c.name === 'ct0');
+        // Length guard: an empty auth_token literal can appear briefly
+        // mid-redirect; a real one is ~40 chars hex. >20 is a safe
+        // floor that won't trip false positives.
+        if (at && at.value && ct && ct.value && at.value.length > 20) {
+          finish(resolve, { auth_token: at.value, ct0: ct.value });
+        }
+      } catch (_) {
+        // page navigating, retry next tick
+      }
+    }, 1000);
+
+    const timeoutHandle = setTimeout(() => {
+      finish(reject, new Error('Sign-in timed out after 10 minutes'));
+    }, 10 * 60 * 1000);
+  });
+});

@@ -412,3 +412,211 @@ def test_delete_missing_account_is_noop(isolated_subapp):
     r = isolated_subapp["client"].delete("/api/twitter/accounts/never-existed")
     assert r.status_code == 200
     assert r.json()["removed"] is True
+
+
+# ---------------------------------------------------------------------------
+# POST /accounts/import — cookie import from the Electron webview flow
+# ---------------------------------------------------------------------------
+#
+# The route is the HTTP sibling of `import_cookies.py`: it accepts the
+# raw `auth_token` + `ct0` pair the popup BrowserWindow scrapes from
+# x.com's session and plugs them into the live pool. These tests use a
+# Mock twikit.Client so we never actually hit x.com — same shape as the
+# `_add_fake_account` helper above, just plumbed in via the route's
+# `from twikit import Client` import.
+
+@pytest.fixture
+def patched_twikit_client(monkeypatch):
+    """Replace `twikit.Client` with a Mock factory.
+
+    The route under test does `from twikit import Client; client =
+    Client(...)`. We patch the attribute on the twikit module so the
+    route receives a Mock whose `set_cookies` is a no-op and whose
+    async `user()` returns a duck-typed user. Per-test customization
+    is via the returned `make` factory (e.g. swap `user.side_effect`
+    to drive the verify-failure path).
+    """
+    from unittest.mock import MagicMock, AsyncMock
+
+    state = {"clients": []}
+
+    def make(*_a, **_kw):
+        c = MagicMock(name="twikit.Client")
+        c.set_cookies = MagicMock()
+        c.save_cookies = MagicMock()
+        fake_user = MagicMock()
+        fake_user.screen_name = "imported_user"
+        c.user = AsyncMock(return_value=fake_user)
+        state["clients"].append(c)
+        return c
+
+    import twikit
+    monkeypatch.setattr(twikit, "Client", make)
+    return state
+
+
+def test_import_creates_new_account(isolated_subapp, patched_twikit_client):
+    """Happy path: fresh import lands one account in the pool + on disk."""
+    from backend.apps.twitter import persistence as pers
+
+    api = isolated_subapp["client"]
+    r = api.post(
+        "/api/twitter/accounts/import",
+        json={"auth_token": "a" * 40, "ct0": "c" * 32, "label": "personal"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    account = body["account"]
+    assert account["state"] == "active"
+    assert account["label"] == "personal"
+    # /verify (run inline) stamped the handle from the mocked client.user().
+    assert account["handle"] == "imported_user"
+
+    # Cookies landed on disk with the right mode.
+    cookie_path = pers.cookies_path(account["id"])
+    assert os.path.exists(cookie_path)
+    mode = os.stat(cookie_path).st_mode & 0o777
+    assert mode == 0o600, f"cookies file should be 0o600, got {oct(mode)}"
+    with open(cookie_path) as f:
+        on_disk = json.load(f)
+    assert on_disk == {"auth_token": "a" * 40, "ct0": "c" * 32}
+
+    # Pool got exactly one entry.
+    pool = isolated_subapp["pool"]
+    assert len(pool.accounts) == 1
+    assert pool.get(account["id"]) is not None
+
+
+def test_import_idempotent_relogin_by_id(isolated_subapp, patched_twikit_client):
+    """Re-importing with the same id refreshes cookies in place.
+
+    This is the "my session expired, sign me in again" path. The
+    pool should still hold one account and the on-disk cookies
+    should reflect the latest tokens.
+    """
+    from backend.apps.twitter import persistence as pers
+
+    api = isolated_subapp["client"]
+    r1 = api.post(
+        "/api/twitter/accounts/import",
+        json={"auth_token": "old" + "x" * 40, "ct0": "ct0-old" + "y" * 32},
+    )
+    assert r1.status_code == 200
+    aid = r1.json()["account"]["id"]
+    first_verified = r1.json()["account"]["last_verified_at"]
+
+    # Sleep a hair so last_verified_at advances.
+    time.sleep(0.01)
+    r2 = api.post(
+        "/api/twitter/accounts/import",
+        json={"auth_token": "new" + "x" * 40, "ct0": "ct0-new" + "y" * 32, "id": aid},
+    )
+    assert r2.status_code == 200
+    body = r2.json()
+    assert body["account"]["id"] == aid
+    assert body["account"]["last_verified_at"] >= first_verified
+
+    # Pool size unchanged.
+    assert len(isolated_subapp["pool"].accounts) == 1
+
+    # On-disk cookies are the *new* values, not the old ones.
+    with open(pers.cookies_path(aid)) as f:
+        on_disk = json.load(f)
+    assert on_disk["auth_token"].startswith("new")
+    assert on_disk["ct0"].startswith("ct0-new")
+
+
+def test_import_by_handle_dedupes(isolated_subapp, patched_twikit_client):
+    """Pre-existing account with the same handle is re-used.
+
+    The UI passes `handle` when refreshing a session for a known
+    account whose id it doesn't have on hand. The pool's
+    `by_handle()` lookup is what backs the dedupe.
+    """
+    _, _client = _add_fake_account(isolated_subapp["pool"], account_id="seed-1", handle="alice")
+    pool = isolated_subapp["pool"]
+    assert len(pool.accounts) == 1
+
+    api = isolated_subapp["client"]
+    r = api.post(
+        "/api/twitter/accounts/import",
+        json={"auth_token": "a" * 40, "ct0": "c" * 32, "handle": "alice"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    # Same id as the seed account — by_handle matched.
+    assert body["account"]["id"] == "seed-1"
+    # Pool stays at one account; we didn't create a duplicate.
+    assert len(pool.accounts) == 1
+
+
+def test_import_rejects_empty_tokens(isolated_subapp, patched_twikit_client):
+    """Either field empty (after strip) is a 422.
+
+    Belt-and-suspenders: the model has `min_length=1` AND a validator
+    that strips. Both empty inputs and whitespace-only inputs should
+    fail before we touch the pool.
+    """
+    api = isolated_subapp["client"]
+    assert api.post("/api/twitter/accounts/import", json={"auth_token": "", "ct0": "x"}).status_code == 422
+    assert api.post("/api/twitter/accounts/import", json={"auth_token": "x", "ct0": ""}).status_code == 422
+    assert api.post("/api/twitter/accounts/import", json={"auth_token": "   ", "ct0": "x" * 40}).status_code == 422
+    # Pool stays empty.
+    assert len(isolated_subapp["pool"].accounts) == 0
+
+
+def test_import_response_excludes_cookies(isolated_subapp, patched_twikit_client):
+    """The response must never echo the cookies back.
+
+    Mirrors `test_accounts_list_excludes_cookies` — the same contract
+    applies to import. The frontend has the tokens already; sending
+    them back over the wire just widens the surface area for a leak.
+    """
+    api = isolated_subapp["client"]
+    r = api.post(
+        "/api/twitter/accounts/import",
+        json={"auth_token": "secret-auth-token-value-aaaaa", "ct0": "secret-ct0-value-bbbbb"},
+    )
+    assert r.status_code == 200
+    flat = json.dumps(r.json())
+    assert "secret-auth-token-value-aaaaa" not in flat
+    assert "secret-ct0-value-bbbbb" not in flat
+    assert "auth_token" not in flat
+    assert "\"ct0\"" not in flat
+
+
+def test_import_verify_failure_marks_needs_relogin(isolated_subapp, patched_twikit_client):
+    """A stale/forged cookie pair still imports, but state degrades.
+
+    We force the verify call (`client.user()`) to raise Unauthorized.
+    `_verify_account` catches it and flips the account to
+    `needs_relogin`. The route still returns 200 — we want the UI to
+    surface the degraded state, not eat a 4xx for what was a
+    successful import-followed-by-failed-verify.
+    """
+    from unittest.mock import AsyncMock
+    from twikit.errors import Unauthorized
+
+    # Replace the factory so any new Client raises Unauthorized on .user().
+    import twikit
+
+    def make_failing(*_a, **_kw):
+        from unittest.mock import MagicMock
+        c = MagicMock(name="twikit.Client")
+        c.set_cookies = MagicMock()
+        c.save_cookies = MagicMock()
+        c.user = AsyncMock(side_effect=Unauthorized("expired session"))
+        return c
+
+    twikit.Client = make_failing  # patched_twikit_client fixture already monkeypatched; this just overrides
+
+    api = isolated_subapp["client"]
+    r = api.post(
+        "/api/twitter/accounts/import",
+        json={"auth_token": "a" * 40, "ct0": "c" * 32},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is False
+    assert body["account"]["state"] == "needs_relogin"

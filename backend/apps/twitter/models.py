@@ -54,6 +54,38 @@ class LoginRequest(BaseModel):
     role: AccountRole = "primary"
 
 
+class CookieImportRequest(BaseModel):
+    """Inbound body for `POST /accounts/import`.
+
+    Carries the two cookies that x.com's GraphQL endpoints actually
+    cross-check (``auth_token`` = session secret, ``ct0`` = CSRF token
+    paired with the ``x-csrf-token`` header twikit sends). Mirrors the
+    CLI signature of `import_cookies.py` so the on-disk format and the
+    HTTP path stay interchangeable.
+
+    `id` is the re-login hook: if it matches an existing pool entry
+    the cookies are overwritten in place and bucket state is preserved
+    (`pool.add` handles the in-place swap). Otherwise a fresh uuid is
+    minted. `handle` is a secondary dedupe path used when the UI knows
+    the screen_name (e.g. from a previous verify) but not the account id.
+    """
+
+    auth_token: str = Field(min_length=1)
+    ct0: str = Field(min_length=1)
+    label: Optional[str] = None
+    handle: Optional[str] = None
+    role: AccountRole = "primary"
+    id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _strip_and_check(self) -> "CookieImportRequest":
+        self.auth_token = self.auth_token.strip()
+        self.ct0 = self.ct0.strip()
+        if not self.auth_token or not self.ct0:
+            raise ValueError("auth_token and ct0 must be non-empty after stripping")
+        return self
+
+
 class TrustUpdateRequest(BaseModel):
     """PATCH /accounts/{id} body — currently just trust_multiplier.
 

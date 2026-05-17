@@ -242,6 +242,25 @@ const INTEGRATIONS: Integration[] = [
     ],
   },
   {
+    id: 'twitter',
+    name: 'Twitter',
+    description: 'Search tweets, look up users, read user timelines, fetch tweets and replies on x.com. Uses your existing logged-in session (no API keys).',
+    // The Python shim talks to the backend's /api/twitter routes; the
+    // `tools_lib.py` env-injection branch keyed on name=="Twitter"
+    // gives it the install URL + bearer token at spawn time.
+    mcp_config: { type: 'stdio', command: 'python', args: ['-m', 'backend.apps.twitter_mcp_shim'] },
+    color: '#000000',
+    website: 'https://x.com',
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <rect x="0" y="0" width="24" height="24" fill="#000" rx="3"/>
+        <path d="M18.244 3h2.485l-5.43 6.205L21.75 21h-5l-3.918-5.12L8.34 21H5.853l5.806-6.635L4.5 3h5.124l3.538 4.679zm-.872 16.48h1.376L8.685 4.42H7.21z" fill="#fff"/>
+      </svg>
+    ),
+    connectLabel: 'Connect X',
+    connectInstructions: 'Click Sign in with X below — a window will open at x.com. Sign in normally and the window will close automatically once your session is captured. If x.com blocks the popup, the `python -m backend.apps.twitter.import_cookies` CLI is the fallback.',
+  },
+  {
     id: 'discord',
     name: 'Discord',
     description: 'Read messages, send messages, manage channels, and interact with Discord servers via the OpenSwarm bot.',
@@ -1057,6 +1076,75 @@ const Tools: React.FC = () => {
     }
   };
 
+  const handleTwitterAutoConnect = async () => {
+    if (!credDialogToolId || !credDialogIntegration) return;
+    const twitterBridge = (window as any).openswarm?.connectTwitter;
+    if (!twitterBridge) {
+      setSnackbar({ open: true, message: 'X sign-in requires the desktop app', severity: 'error' });
+      return;
+    }
+    setCredDialogSaving(true);
+    try {
+      const { auth_token, ct0 } = await twitterBridge();
+      // POST raw cookies straight to the twitter SubApp — it writes
+      // cookies/<id>.json (0600), upserts accounts.json, hydrates the
+      // pool, and runs an inline verify before returning. We never
+      // hold these cookies in redux or localStorage; the only place
+      // they live after this fetch is the backend cookies dir.
+      const resp = await fetch(`${API_BASE}/twitter/accounts/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auth_token, ct0 }),
+      });
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(`Import failed (${resp.status}): ${text || resp.statusText}`);
+      }
+      const body = await resp.json();
+      const account = body?.account || {};
+      const verified = body?.ok === true;
+      // Flip the ToolDefinition to "connected" so the MCP shim spawns
+      // on the next agent run. The shim's env is injected by
+      // `tools_lib.py` based on name === "twitter", so we don't pass
+      // any credentials through the tool itself.
+      const result = await dispatch(updateTool({
+        id: credDialogToolId,
+        auth_type: 'cookies',
+        auth_status: 'connected',
+        connected_account_email: account.handle ? `@${account.handle}` : '',
+      }));
+      if (updateTool.fulfilled.match(result)) {
+        setCredDialogOpen(false);
+        if (verified) {
+          setSnackbar({ open: true, message: 'X connected! Re-discovering actions…' });
+        } else {
+          // Backend imported the cookies but the immediate verify
+          // call failed (account locked / cookies stale / network
+          // hiccup). The shim is still spawnable; the user can retry
+          // verify from the Twitter admin endpoints. Surface yellow.
+          setSnackbar({ open: true, message: `X session imported but verify did not succeed (state: ${account.state || 'unknown'}). Try again if it persists.`, severity: 'error' });
+        }
+        dispatch(discoverTools(credDialogToolId));
+      } else {
+        setSnackbar({ open: true, message: 'Failed to mark X tool as connected', severity: 'error' });
+      }
+    } catch (err: any) {
+      setSnackbar({ open: true, message: err?.message || 'X sign-in cancelled', severity: 'error' });
+    } finally {
+      setCredDialogSaving(false);
+    }
+  };
+
+  // Lookup table for integrations that capture credentials via an
+  // in-app popup instead of asking the user to paste them. The dialog
+  // body / action button below branch on the presence of an entry
+  // here rather than hardcoding integration ids.
+  const browserAuthHandlers: Record<string, () => Promise<void>> = {
+    slack: handleSlackAutoConnect,
+    twitter: handleTwitterAutoConnect,
+  };
+  const browserAuthHandler = credDialogIntegration ? browserAuthHandlers[credDialogIntegration.id] : undefined;
+
   const handleDisconnectIntegration = async (toolId: string, integration: Integration) => {
     if (integration.authType === 'oauth2') {
       // Revoke the token on Google's side (fire-and-forget)
@@ -1709,7 +1797,7 @@ const Tools: React.FC = () => {
                             Connect Microsoft 365
                           </Button>
                         )}
-                        {!isDisabled && ig?.credentialFields && tool.auth_status !== 'connected' && (
+                        {!isDisabled && ig && (ig.credentialFields || browserAuthHandlers[ig.id]) && tool.auth_status !== 'connected' && (
                           <Button
                             size="small"
                             variant="outlined"
@@ -1721,12 +1809,12 @@ const Tools: React.FC = () => {
                           </Button>
                         )}
                         {!isDisabled && ig && tool.auth_status === 'connected' && (
-                          <Tooltip title={ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code' ? 'Disconnect' : ''}>
+                          <Tooltip title={ig.credentialFields || browserAuthHandlers[ig.id] || ig.authType === 'oauth2' || ig.authType === 'device_code' ? 'Disconnect' : ''}>
                             <Chip
                               icon={<CheckCircleIcon sx={{ fontSize: 12 }} />}
                               label={tool.connected_account_email ? `Connected · ${tool.connected_account_email}` : 'Connected'}
                               size="small"
-                              onDelete={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code') ? (e: React.SyntheticEvent) => { e.stopPropagation(); ig.authType === 'device_code' ? handleM365Disconnect(tool.id) : handleDisconnectIntegration(tool.id, ig); } : undefined}
+                              onDelete={(ig.credentialFields || browserAuthHandlers[ig.id] || ig.authType === 'oauth2' || ig.authType === 'device_code') ? (e: React.SyntheticEvent) => { e.stopPropagation(); ig.authType === 'device_code' ? handleM365Disconnect(tool.id) : handleDisconnectIntegration(tool.id, ig); } : undefined}
                               onClick={(e) => e.stopPropagation()}
                               sx={{ bgcolor: c.status.successBg, color: c.status.success, fontSize: '0.7rem', height: 22, '& .MuiChip-icon': { color: c.status.success }, '& .MuiChip-deleteIcon': { color: c.status.success, '&:hover': { color: c.status.error } }, flexShrink: 0 }}
                             />
@@ -2387,9 +2475,11 @@ const Tools: React.FC = () => {
           {credDialogIntegration?.connectLabel || 'Connect'}
         </DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
-          {credDialogIntegration?.id === 'slack' ? (
+          {browserAuthHandler ? (
             <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.5, bgcolor: c.bg.secondary, px: 2, py: 1.5, borderRadius: 2, border: `1px solid ${c.border.subtle}` }}>
-              Click <strong>Sign in with Slack</strong> below — a Slack window will open. Sign in normally and the window will close automatically once you reach your workspace.
+              {credDialogIntegration?.connectInstructions || (
+                <>Click <strong>Sign in</strong> below — a window will open. Sign in normally and the window will close automatically once your session is captured.</>
+              )}
             </Typography>
           ) : (
             <>
@@ -2418,12 +2508,14 @@ const Tools: React.FC = () => {
           <Button onClick={() => setCredDialogOpen(false)} sx={{ color: c.text.tertiary, textTransform: 'none' }}>Cancel</Button>
           <Button
             variant="contained"
-            onClick={credDialogIntegration?.id === 'slack' ? handleSlackAutoConnect : handleCredentialsSave}
-            disabled={credDialogSaving || (credDialogIntegration?.id !== 'slack' && (credDialogIntegration?.credentialFields || []).some((f) => !credDialogValues[f.key]?.trim()))}
+            onClick={browserAuthHandler || handleCredentialsSave}
+            disabled={credDialogSaving || (!browserAuthHandler && (credDialogIntegration?.credentialFields || []).some((f) => !credDialogValues[f.key]?.trim()))}
             startIcon={credDialogSaving ? <CircularProgress size={14} /> : <LinkIcon sx={{ fontSize: 14 }} />}
             sx={{ bgcolor: credDialogIntegration?.color || c.accent.primary, '&:hover': { bgcolor: credDialogIntegration?.color || c.accent.pressed, filter: 'brightness(0.9)' }, textTransform: 'none', borderRadius: 2 }}
           >
-            {credDialogIntegration?.id === 'slack' ? (credDialogSaving ? 'Waiting for sign-in…' : 'Sign in with Slack') : 'Connect'}
+            {browserAuthHandler
+              ? (credDialogSaving ? 'Waiting for sign-in…' : `Sign in with ${credDialogIntegration?.name || ''}`)
+              : 'Connect'}
           </Button>
         </DialogActions>
       </Dialog>

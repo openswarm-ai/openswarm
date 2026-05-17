@@ -37,6 +37,7 @@ from backend.apps.twitter.cache import TTLCache
 from backend.apps.twitter.models import (
     AccountHealth,
     BucketSnapshot,
+    CookieImportRequest,
     LoginRequest,
     TrustUpdateRequest,
     TwitterAccount,
@@ -426,6 +427,97 @@ async def accounts_login(body: LoginRequest):
     _persist_accounts(pool)
 
     return {"account": managed.record.model_dump()}
+
+
+@twitter.router.post("/accounts/import")
+async def accounts_import(body: CookieImportRequest):
+    """Import browser-captured cookies into the pool.
+
+    The Electron "Sign in with X" popup captures `auth_token` + `ct0`
+    from x.com's session via `webContents.session.cookies.get(...)` and
+    POSTs them here. This is the HTTP sibling of the
+    `import_cookies.py` CLI: same on-disk layout (cookies file 0600 +
+    accounts.json), but plugged straight into the live `AccountPool`
+    so the import takes effect without a backend restart.
+
+    Re-login semantics match `accounts_login`:
+    - If `body.id` matches a pool entry, that account's cookies are
+      overwritten in place and `pool.add` drains any in-flight call
+      under the concurrency semaphore before swapping the Client.
+    - Else if `body.handle` matches an existing account, same path
+      keyed by handle (the UI's "refresh @alice's session" button).
+    - Else a fresh uuid is minted.
+
+    `_verify_account` runs inline (under the `_self_user` bucket, same
+    as `POST /accounts/{id}/verify`) so the response immediately tells
+    the UI whether the imported cookies are live. A failed verify
+    flips state to `needs_relogin`/`locked`/`suspended`/etc but the
+    route still returns 200 with the (possibly downgraded) record —
+    the frontend surfaces the state, doesn't need a 4xx.
+
+    Cookies are never echoed in the response body: the response shape
+    `{ok, account}` mirrors `accounts_login` so the
+    `test_accounts_list_excludes_cookies` contract stays green.
+    """
+    pool = _require_started()
+    persistence.ensure_dirs()
+
+    from twikit import Client
+
+    cookies = {"auth_token": body.auth_token, "ct0": body.ct0}
+
+    existing: Optional[ManagedAccount] = None
+    if body.id:
+        existing = pool.get(body.id)
+    if existing is None and body.handle:
+        existing = pool.by_handle(body.handle)
+
+    if existing is not None:
+        target_id = existing.id
+        existing.record.state = "active"
+        existing.record.last_error = None
+        existing.record.last_verified_at = time.time()
+        if body.label:
+            existing.record.label = body.label
+        if body.handle:
+            existing.record.handle = body.handle.lstrip("@")
+        record = existing.record
+    else:
+        target_id = body.id or uuid4().hex
+        record = TwitterAccount(
+            id=target_id,
+            label=body.label or (body.handle.lstrip("@") if body.handle else "imported"),
+            handle=body.handle.lstrip("@") if body.handle else None,
+            role=body.role,
+        )
+        record.state = "active"
+        record.last_verified_at = time.time()
+
+    # Reuse the CLI's atomic-write helper so the on-disk format and
+    # mode bits stay identical regardless of which entry point the
+    # operator used (CLI vs HTTP).
+    from backend.apps.twitter.import_cookies import _write_cookies
+    _write_cookies(target_id, cookies)
+
+    client = Client(language="en-US", proxy=record.proxy or None)
+    try:
+        client.set_cookies(cookies)
+    except Exception as e:
+        logger.warning("twitter: set_cookies failed for %s: %s", target_id, e)
+        raise HTTPException(400, f"Invalid cookies: {type(e).__name__}: {e}")
+
+    managed = await pool.add(record, client)
+
+    # Inline verify against the live x.com — mirrors accounts_verify.
+    # On failure _verify_account already audits + flips state; we just
+    # capture the boolean for the response.
+    ok = await _verify_account(pool, managed)
+
+    pool.audit_lifecycle(managed.id, "cookie_import_ok", managed.record.handle or "")
+    pool.commit()
+    _persist_accounts(pool)
+
+    return {"ok": ok, "account": managed.record.model_dump()}
 
 
 @twitter.router.get("/accounts")
