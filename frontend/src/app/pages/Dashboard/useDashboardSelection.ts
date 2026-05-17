@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
-import type { CardPosition, ViewCardPosition, BrowserCardPosition, NotePosition } from '@/shared/state/dashboardLayoutSlice';
+import type { CardPosition, ViewCardPosition, BrowserCardPosition, NotePosition, WorkflowCardPosition } from '@/shared/state/dashboardLayoutSlice';
 
-export type CardType = 'agent' | 'view' | 'browser' | 'note';
+export type CardType = 'agent' | 'view' | 'browser' | 'note' | 'workflow';
 
 export interface SelectedCard {
   id: string;
@@ -42,6 +42,7 @@ export function useDashboardSelection(
   viewCards: Record<string, ViewCardPosition>,
   browserCards: Record<string, BrowserCardPosition> = {},
   notes: Record<string, NotePosition> = {},
+  workflowCards: Record<string, WorkflowCardPosition> = {},
 ) {
   const [selectedIds, setSelectedIds] = useState<Map<string, CardType>>(new Map());
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
@@ -149,6 +150,19 @@ export function useDashboardSelection(
         }
       }
 
+      for (const wc of Object.values(workflowCards)) {
+        if (
+          rectsIntersect(rect, {
+            x: wc.x,
+            y: wc.y,
+            width: wc.width,
+            height: wc.height,
+          })
+        ) {
+          intersecting.set(wc.workflow_id, 'workflow');
+        }
+      }
+
       if (shiftKey) {
         const base = selectionBeforeMarqueeRef.current;
         const next = new Map(base);
@@ -164,7 +178,7 @@ export function useDashboardSelection(
 
       return intersecting;
     },
-    [cards, viewCards, browserCards, notes],
+    [cards, viewCards, browserCards, notes, workflowCards],
   );
 
   const handleCanvasMouseDown = useCallback(

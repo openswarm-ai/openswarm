@@ -32,6 +32,7 @@ import {
   setGlowingBrowserCards,
   removeViewCard,
   removeBrowserCard,
+  removeWorkflowCard,
   pasteBrowserCard,
   placeCard,
   setCardPosition,
@@ -40,6 +41,8 @@ import {
   setGlowingAgentCard,
   clearGlowingAgentCard,
   clearPendingFocusBrowserId,
+  clearPendingFocusWorkflowId,
+  clearPendingFocusWorkflowsHub,
   addNote,
   removeNote,
   clearPendingFocusNoteId,
@@ -49,6 +52,7 @@ import {
   GRID_GAP,
 } from '@/shared/state/dashboardLayoutSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
+import { fetchWorkflows, closeWorkflowCard } from '@/shared/state/workflowsSlice';
 import { generateDashboardName, updateDashboardThumbnail } from '@/shared/state/dashboardsSlice';
 import { dashboardWs } from '@/shared/ws/WebSocketManager';
 import { initBrowserCommandHandler } from '@/shared/browserCommandHandler';
@@ -64,6 +68,8 @@ import DirectionHints from './DirectionHints';
 // (mounted in Main.tsx) replaces it. Keeping this banner to prevent stale
 // imports from sneaking back in via auto-completion.
 import DashboardToolbar from './DashboardToolbar';
+import WorkflowCard from '@/app/pages/Workflows/WorkflowCard';
+import WorkflowsHubCard from '@/app/pages/Workflows/WorkflowsHubCard';
 import { captureDashboardThumbnail } from './captureDashboardThumbnail';
 import { useCanvasControls } from './useCanvasControls';
 import { useDashboardSelection } from './useDashboardSelection';
@@ -110,6 +116,8 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const cards = useAppSelector((state) => state.dashboardLayout.cards);
   const viewCards = useAppSelector((state) => state.dashboardLayout.viewCards);
   const browserCards = useAppSelector((state) => state.dashboardLayout.browserCards);
+  const workflowCards = useAppSelector((state) => state.dashboardLayout.workflowCards);
+  const workflowsHub = useAppSelector((state) => state.dashboardLayout.workflowsHub);
   const notes = useAppSelector((state) => state.dashboardLayout.notes);
   const pendingFocusNoteId = useAppSelector((state) => state.dashboardLayout.pendingFocusNoteId);
   const layoutInitialized = useAppSelector((state) => state.dashboardLayout.initialized);
@@ -133,6 +141,8 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       ...Object.values(cards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
       ...Object.values(viewCards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
       ...Object.values(browserCards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
+      ...Object.values(workflowCards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
+      ...(workflowsHub ? [{ x: workflowsHub.x, y: workflowsHub.y, w: workflowsHub.width, h: workflowsHub.height }] : []),
     ];
     if (allRects.length === 0) return undefined;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -143,7 +153,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       maxY = Math.max(maxY, r.y + r.h);
     }
     return { minX, minY, maxX, maxY };
-  }, [cards, viewCards, browserCards]);
+  }, [cards, viewCards, browserCards, workflowCards, workflowsHub]);
 
   const canvas = useCanvasControls(zoomSensitivity, contentBounds, isActive);
   const selection = useDashboardSelection(
@@ -152,6 +162,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     viewCards,
     browserCards,
     notes,
+    workflowCards,
   );
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -341,6 +352,10 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       const n = layoutState.notes[id];
       if (!n) return undefined;
       return { x: n.x, y: n.y, width: n.width, height: n.height };
+    } else if (type === 'workflow') {
+      const wc = layoutState.workflowCards[id];
+      if (!wc) return undefined;
+      return { x: wc.x, y: wc.y, width: wc.width, height: wc.height };
     }
     return undefined;
   }, []);
@@ -495,11 +510,13 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       ? (window as any).requestIdleCallback(() => {
           dispatch(fetchHistory({ dashboardId }));
           dispatch(fetchOutputs());
+          dispatch(fetchWorkflows(dashboardId));
           dashboardWs.connect();
         }, { timeout: 2000 })
       : window.setTimeout(() => {
           dispatch(fetchHistory({ dashboardId }));
           dispatch(fetchOutputs());
+          dispatch(fetchWorkflows(dashboardId));
           dashboardWs.connect();
         }, 200);
 
@@ -552,6 +569,8 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const pendingBrowserUrl = useAppSelector((state) => state.tempState.pendingBrowserUrl);
   const pendingFocusAgentId = useAppSelector((state) => state.tempState.pendingFocusAgentId);
   const pendingFocusBrowserId = useAppSelector((state) => state.dashboardLayout.pendingFocusBrowserId);
+  const pendingFocusWorkflowId = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowId);
+  const pendingFocusWorkflowsHub = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowsHub);
 
   useEffect(() => {
     if (!dashboardId) return;
@@ -672,6 +691,53 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       }
     }, 200);
   }, [isActive, pendingFocusBrowserId, layoutInitialized, dispatch, canvas.actions, handleHighlightCard]);
+
+  // Same pan/highlight choreography for newly-spawned workflow cards
+  // ("Make workflow", "+ New workflow", or list-picker → canvas).
+  useEffect(() => {
+    if (!isActive) return;
+    if (!pendingFocusWorkflowId || !layoutInitialized) return;
+    const workflowId = pendingFocusWorkflowId;
+    dispatch(clearPendingFocusWorkflowId());
+    setTimeout(() => {
+      const card = store.getState().dashboardLayout.workflowCards[workflowId];
+      if (card) {
+        canvas.actions.fitToCards(
+          [{ x: card.x, y: card.y, width: card.width, height: card.height }],
+          1.15,
+          true,
+        );
+        handleHighlightCard(workflowId);
+      }
+    }, 200);
+  }, [isActive, pendingFocusWorkflowId, layoutInitialized, dispatch, canvas.actions, handleHighlightCard]);
+
+  // Pan/zoom to the Workflows Hub singleton when Expand is clicked. Without
+  // this the hub spawns at an open grid cell, which can be far from the
+  // current viewport — making the click look like a no-op.
+  //
+  // We chain rAFs so the fit runs after Dashboard's next render has actually
+  // committed the hub <div> with its new coordinates. A bare setTimeout(100)
+  // raced the layout on slower mounts.
+  useEffect(() => {
+    if (!isActive) return;
+    if (!pendingFocusWorkflowsHub || !layoutInitialized) return;
+    dispatch(clearPendingFocusWorkflowsHub());
+    const fit = () => {
+      const hub = store.getState().dashboardLayout.workflowsHub;
+      if (!hub) return;
+      canvas.actions.fitToCards(
+        [{ x: hub.x, y: hub.y, width: hub.width, height: hub.height }],
+        1.1,
+        true,
+      );
+    };
+    // Two rAFs: one for the workflowsHub state to land in the rendered tree,
+    // one for layout to settle. Then a fallback timeout for slow boots.
+    requestAnimationFrame(() => requestAnimationFrame(fit));
+    const fallback = setTimeout(fit, 300);
+    return () => clearTimeout(fallback);
+  }, [isActive, pendingFocusWorkflowsHub, layoutInitialized, dispatch, canvas.actions]);
 
   useEffect(() => {
     if (!layoutInitialized || restoredExpandedRef.current) return;
@@ -822,7 +888,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       skipInitialSave.current = false;
       return;
     }
-    const payload = { dashboardId, cards, viewCards, browserCards, notes, expandedSessionIds };
+    const payload = { dashboardId, cards, viewCards, browserCards, workflowCards, workflowsHub, notes, expandedSessionIds };
     pendingSaveRef.current = payload;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -831,7 +897,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       saveTimerRef.current = null;
       captureNow();
     }, 500);
-  }, [isActive, cards, viewCards, browserCards, notes, expandedSessionIds, layoutInitialized, dashboardId, dispatch, captureNow]);
+  }, [isActive, cards, viewCards, browserCards, workflowCards, workflowsHub, notes, expandedSessionIds, layoutInitialized, dashboardId, dispatch, captureNow]);
 
   useEffect(() => {
     return () => {
@@ -901,6 +967,10 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
           dispatch(removeBrowserCard(id));
         } else if (type === 'note') {
           dispatch(removeNote(id));
+        } else if (type === 'workflow') {
+          dispatch(removeWorkflowCard(id));
+          // also drop transient view state so re-opening starts fresh
+          dispatch(closeWorkflowCard(id));
         }
       }
       selection.deselectAll();
@@ -1051,6 +1121,9 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     for (const bc of Object.values(browserCards)) {
       allCardEntries.push({ id: bc.browser_id, type: 'browser', cx: bc.x + bc.width / 2, cy: bc.y + bc.height / 2 });
     }
+    for (const wc of Object.values(workflowCards)) {
+      allCardEntries.push({ id: wc.workflow_id, type: 'workflow', cx: wc.x + wc.width / 2, cy: wc.y + wc.height / 2 });
+    }
 
     const current = allCardEntries.find((c) => c.id === currentId);
     if (!current) return null;
@@ -1083,7 +1156,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     }
 
     return best ? { id: best.id, type: best.type } : null;
-  }, [cards, viewCards, browserCards]);
+  }, [cards, viewCards, browserCards, workflowCards]);
 
   // Compute which directions have neighbors from the focused card
   const neighborDirections = useMemo(() => {
@@ -1725,9 +1798,93 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
 
     const browserTethers = Array.from(glowTethers.values()).filter(Boolean) as Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }>;
 
-    return [...agentTethers, ...browserTethers];
+    // Workflow tethers: every workflow card with a source agent gets a
+    // persistent "Make workflow" arrow back to the agent it was generated
+    // from. Reuses the same anchor-picking + elbow-path math as the
+    // browser tether so visual style stays uniform across card kinds.
+    const workflowTethers: Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }> = [];
+    for (const wc of Object.values(workflowCards)) {
+      const sourceId = wc.source_session_id;
+      if (!sourceId) continue;
+      const src = cards[sourceId];
+      if (!src) continue;
+
+      let srcX = src.x, srcY = src.y;
+      let dstX = wc.x, dstY = wc.y;
+      if (liveDragInfo) {
+        if (liveDragInfo.cardId === sourceId) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
+        if (liveDragInfo.cardId === wc.workflow_id) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
+      }
+
+      const srcMeasured = measuredHeightsRef.current[sourceId];
+      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
+        ? Math.max(EXPANDED_CARD_MIN_H, src.height)
+        : src.height);
+
+      const srcCx = srcX + src.width / 2;
+      const dstCx = dstX + wc.width / 2;
+      const srcAnchors: Anchor[] = [
+        { x: srcX + src.width, y: srcY + srcH * 0.54, side: 'right' },
+        { x: srcX, y: srcY + srcH * 0.54, side: 'left' },
+        { x: srcCx, y: srcY, side: 'top' },
+        { x: srcCx, y: srcY + srcH, side: 'bottom' },
+      ];
+      const dstAnchors: Anchor[] = [
+        { x: dstX, y: dstY + wc.height * 0.54, side: 'left' },
+        { x: dstX + wc.width, y: dstY + wc.height * 0.54, side: 'right' },
+        { x: dstCx, y: dstY, side: 'top' },
+        { x: dstCx, y: dstY + wc.height, side: 'bottom' },
+      ];
+      let bestSrc = srcAnchors[0], bestDst = dstAnchors[0];
+      let bestDist = Infinity;
+      for (const sa of srcAnchors) {
+        for (const da of dstAnchors) {
+          const d = Math.hypot(sa.x - da.x, sa.y - da.y);
+          if (d < bestDist) { bestDist = d; bestSrc = sa; bestDst = da; }
+        }
+      }
+      const x1 = bestSrc.x, y1 = bestSrc.y;
+      const x2 = bestDst.x, y2 = bestDst.y;
+      const isVertical = (bestSrc.side === 'top' || bestSrc.side === 'bottom')
+        && (bestDst.side === 'top' || bestDst.side === 'bottom');
+      let pathD: string;
+      if (isVertical) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const midY = y1 + dy / 2;
+        const r = (Math.abs(dx) < 1 || Math.abs(dy) < ELBOW_RADIUS * 2)
+          ? 0
+          : Math.min(ELBOW_RADIUS, Math.abs(dx) / 2, Math.abs(dy) / 4);
+        const sx = dx >= 0 ? 1 : -1;
+        const sy = dy >= 0 ? 1 : -1;
+        pathD = [
+          `M ${x1},${y1}`,
+          `V ${midY - sy * r}`,
+          `Q ${x1},${midY} ${x1 + sx * r},${midY}`,
+          `H ${x2 - sx * r}`,
+          `Q ${x2},${midY} ${x2},${midY + sy * r}`,
+          `V ${y2}`,
+        ].join(' ');
+      } else {
+        pathD = elbowPath(x1, y1, x2, y2);
+      }
+      const midX = x1 + (x2 - x1) / 2;
+      const midY = y1 + (y2 - y1) / 2;
+      const labelX = isVertical ? midX : midX + (x2 - midX) * 0.15;
+      const labelY = isVertical ? midY + (y2 - midY) * 0.15 : y2;
+      workflowTethers.push({
+        key: `workflow-${wc.workflow_id}`,
+        path: pathD,
+        labelX,
+        labelY,
+        label: 'Make workflow',
+        fading: false,
+      });
+    }
+
+    return [...agentTethers, ...browserTethers, ...workflowTethers];
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
 
   const dotSize = Math.max(1, 1.5 * canvas.zoom);
   const dotSpacing = 24 * canvas.zoom;
@@ -2080,6 +2237,41 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                 cmdHeld={canvas.cmdHeld}
                 isSelected={selection.isSelected(bc.browser_id)}
                 isHighlighted={highlightedCardId === bc.browser_id}
+                multiDragDelta={multiDragDelta}
+                onCardSelect={handleCardSelect}
+                onDragStart={handleCardDragStart}
+                onDragMove={handleCardDragMove}
+                onDragEnd={handleCardDragEnd}
+                onDoubleClick={handleCardDoubleClick}
+                onBringToFront={handleBringToFront}
+              />
+            ))}
+            {workflowsHub && (
+              <WorkflowsHubCard
+                cardX={workflowsHub.x}
+                cardY={workflowsHub.y}
+                cardWidth={workflowsHub.width}
+                cardHeight={workflowsHub.height}
+                cardZOrder={workflowsHub.zOrder ?? 0}
+                zoom={canvas.zoom}
+                panX={canvas.panX}
+                panY={canvas.panY}
+              />
+            )}
+            {Object.values(workflowCards).map((wc) => (
+              <WorkflowCard
+                key={`workflow-${wc.workflow_id}`}
+                workflowId={wc.workflow_id}
+                cardX={wc.x}
+                cardY={wc.y}
+                cardWidth={wc.width}
+                cardHeight={wc.height}
+                cardZOrder={wc.zOrder ?? 0}
+                zoom={canvas.zoom}
+                panX={canvas.panX}
+                panY={canvas.panY}
+                isSelected={selection.isSelected(wc.workflow_id)}
+                isHighlighted={highlightedCardId === wc.workflow_id}
                 multiDragDelta={multiDragDelta}
                 onCardSelect={handleCardSelect}
                 onDragStart={handleCardDragStart}

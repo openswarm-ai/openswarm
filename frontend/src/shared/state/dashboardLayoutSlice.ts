@@ -20,6 +20,10 @@ export const DEFAULT_VIEW_CARD_W = 1280;
 export const DEFAULT_VIEW_CARD_H = 800;
 export const DEFAULT_BROWSER_CARD_W = 1280;
 export const DEFAULT_BROWSER_CARD_H = 800;
+export const DEFAULT_WORKFLOW_CARD_W = 440;
+export const DEFAULT_WORKFLOW_CARD_H = 520;
+export const DEFAULT_WORKFLOWS_HUB_W = 1200;
+export const DEFAULT_WORKFLOWS_HUB_H = 640;
 export const EXPANDED_CARD_MIN_H = 620;
 export const GRID_GAP = 24;
 const GRID_ORIGIN = { x: 40, y: 100 };
@@ -66,6 +70,26 @@ export interface BrowserCardPosition {
   spawned_by?: string | null;
 }
 
+export interface WorkflowCardPosition {
+  workflow_id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zOrder: number;
+  source_session_id?: string | null;
+}
+
+// Singleton per dashboard. There's only one Workflows Hub card open at a
+// time (the calendar + sidebar view), so it doesn't need an id keyspace.
+export interface WorkflowsHubPosition {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zOrder: number;
+}
+
 export type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'gray';
 
 export interface NotePosition {
@@ -86,6 +110,8 @@ export interface DashboardLayoutState {
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
+  workflowCards: Record<string, WorkflowCardPosition>;
+  workflowsHub: WorkflowsHubPosition | null;
   notes: Record<string, NotePosition>;
   closedCardPositions: Record<string, CardPosition>;
   glowingBrowserCards: Record<string, { sourceId: string; fading: boolean; label?: string }>;
@@ -100,12 +126,20 @@ export interface DashboardLayoutState {
   // to center on the new card, then dispatches clearPendingFocusBrowserId.
   pendingFocusBrowserId: string | null;
   pendingFocusNoteId: string | null;
+  pendingFocusWorkflowId: string | null;
+  // Transient flag: when openWorkflowsHub creates/raises the singleton hub
+  // card, set to true so Dashboard.tsx can pan/zoom-to-fit on the new card.
+  // Without this, the hub spawns at an open grid cell which may be far
+  // from the user's current pan, and "click Expand" looks like a no-op.
+  pendingFocusWorkflowsHub: boolean;
 }
 
 const initialState: DashboardLayoutState = {
   cards: {},
   viewCards: {},
   browserCards: {},
+  workflowCards: {},
+  workflowsHub: null,
   notes: {},
   closedCardPositions: {},
   glowingBrowserCards: {},
@@ -116,12 +150,16 @@ const initialState: DashboardLayoutState = {
   initialized: false,
   pendingFocusBrowserId: null,
   pendingFocusNoteId: null,
+  pendingFocusWorkflowId: null,
+  pendingFocusWorkflowsHub: false,
 };
 
 interface LayoutPayload {
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
+  workflowCards: Record<string, WorkflowCardPosition>;
+  workflowsHub: WorkflowsHubPosition | null;
   notes: Record<string, NotePosition>;
   expandedSessionIds: string[];
 }
@@ -154,6 +192,8 @@ export const fetchLayout = createAsyncThunk(
       cards: (layout.cards ?? {}) as Record<string, CardPosition>,
       viewCards: (layout.view_cards ?? {}) as Record<string, ViewCardPosition>,
       browserCards: browserCards as Record<string, BrowserCardPosition>,
+      workflowCards: (layout.workflow_cards ?? {}) as Record<string, WorkflowCardPosition>,
+      workflowsHub: (layout.workflows_hub ?? null) as WorkflowsHubPosition | null,
       notes: (layout.notes ?? {}) as Record<string, NotePosition>,
       expandedSessionIds: (layout.expanded_session_ids ?? []) as string[],
     } satisfies LayoutPayload;
@@ -175,6 +215,8 @@ export const saveLayout = createAsyncThunk(
           cards: payload.cards,
           view_cards: payload.viewCards,
           browser_cards: payload.browserCards,
+          workflow_cards: payload.workflowCards,
+          workflows_hub: payload.workflowsHub,
           notes: payload.notes,
           expanded_session_ids: payload.expandedSessionIds,
         },
@@ -210,6 +252,12 @@ function collectOccupiedRects(
   }
   for (const c of Object.values(state.browserCards)) {
     rects.push({ x: c.x, y: c.y, w: c.width, h: c.height });
+  }
+  for (const w of Object.values(state.workflowCards)) {
+    rects.push({ x: w.x, y: w.y, w: w.width, h: w.height });
+  }
+  if (state.workflowsHub) {
+    rects.push({ x: state.workflowsHub.x, y: state.workflowsHub.y, w: state.workflowsHub.width, h: state.workflowsHub.height });
   }
   for (const n of Object.values(state.notes)) {
     rects.push({ x: n.x, y: n.y, w: n.width, h: n.height });
@@ -371,7 +419,7 @@ const dashboardLayoutSlice = createSlice({
 
     bringToFront(
       state,
-      action: PayloadAction<{ id: string; type: 'agent' | 'view' | 'browser' | 'note' }>,
+      action: PayloadAction<{ id: string; type: 'agent' | 'view' | 'browser' | 'note' | 'workflow' | 'workflows-hub' }>,
     ) {
       const { id, type } = action.payload;
       const z = state.nextZOrder++;
@@ -384,6 +432,11 @@ const dashboardLayoutSlice = createSlice({
       } else if (type === 'note') {
         const note = state.notes[id];
         if (note) note.zOrder = z;
+      } else if (type === 'workflow') {
+        const card = state.workflowCards[id];
+        if (card) card.zOrder = z;
+      } else if (type === 'workflows-hub') {
+        if (state.workflowsHub) state.workflowsHub.zOrder = z;
       } else {
         const card = state.browserCards[id];
         if (card) card.zOrder = z;
@@ -439,13 +492,15 @@ const dashboardLayoutSlice = createSlice({
       const agentCards = Object.values(state.cards);
       const viewCards = Object.values(state.viewCards);
       const bCards = Object.values(state.browserCards);
-      const total = agentCards.length + viewCards.length + bCards.length;
+      const wCards = Object.values(state.workflowCards);
+      const total = agentCards.length + viewCards.length + bCards.length + wCards.length;
       if (total === 0) return;
 
       const allItems = [
         ...agentCards.map((c) => ({ kind: 'agent' as const, id: c.session_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
         ...viewCards.map((c) => ({ kind: 'view' as const, id: c.output_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
         ...bCards.map((c) => ({ kind: 'browser' as const, id: c.browser_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
+        ...wCards.map((c) => ({ kind: 'workflow' as const, id: c.workflow_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
       ];
       allItems.sort((a, b) => a.y - b.y || a.x - b.x);
 
@@ -469,6 +524,9 @@ const dashboardLayoutSlice = createSlice({
           if (card) { card.x = pos.x; card.y = pos.y; }
         } else if (item.kind === 'view') {
           const card = state.viewCards[item.id];
+          if (card) { card.x = pos.x; card.y = pos.y; }
+        } else if (item.kind === 'workflow') {
+          const card = state.workflowCards[item.id];
           if (card) { card.x = pos.x; card.y = pos.y; }
         } else {
           const card = state.browserCards[item.id];
@@ -599,6 +657,129 @@ const dashboardLayoutSlice = createSlice({
 
     removeBrowserCard(state, action: PayloadAction<string>) {
       delete state.browserCards[action.payload];
+    },
+
+    addWorkflowCard(
+      state,
+      action: PayloadAction<{
+        workflowId: string;
+        sourceSessionId?: string | null;
+        expandedSessionIds?: string[];
+      }>,
+    ) {
+      const { workflowId, sourceSessionId, expandedSessionIds } = action.payload;
+      if (state.workflowCards[workflowId]) {
+        // Already on the canvas; just raise it and signal focus.
+        state.workflowCards[workflowId].zOrder = state.nextZOrder++;
+        state.pendingFocusWorkflowId = workflowId;
+        return;
+      }
+      const rects = collectOccupiedRects(state, expandedSessionIds);
+      let posX: number, posY: number;
+      const parentCard = sourceSessionId ? state.cards[sourceSessionId] : null;
+      if (parentCard) {
+        const anchorX = parentCard.x + parentCard.width + GRID_GAP * 6;
+        const anchorY = parentCard.y;
+        const pos = findOpenSpotNear(anchorX, anchorY, rects, DEFAULT_WORKFLOW_CARD_W, DEFAULT_WORKFLOW_CARD_H);
+        posX = pos.x;
+        posY = pos.y;
+      } else {
+        const pos = findOpenGridCell(rects, DEFAULT_WORKFLOW_CARD_W, DEFAULT_WORKFLOW_CARD_H);
+        posX = pos.x;
+        posY = pos.y;
+      }
+      state.workflowCards[workflowId] = {
+        workflow_id: workflowId,
+        x: posX,
+        y: posY,
+        width: DEFAULT_WORKFLOW_CARD_W,
+        height: DEFAULT_WORKFLOW_CARD_H,
+        zOrder: state.nextZOrder++,
+        source_session_id: sourceSessionId || null,
+      };
+      state.pendingFocusWorkflowId = workflowId;
+    },
+
+    setWorkflowCardPosition(
+      state,
+      action: PayloadAction<{ workflowId: string; x: number; y: number }>,
+    ) {
+      const { workflowId, x, y } = action.payload;
+      const card = state.workflowCards[workflowId];
+      if (card) { card.x = x; card.y = y; }
+    },
+
+    setWorkflowCardSize(
+      state,
+      action: PayloadAction<{ workflowId: string; width: number; height: number }>,
+    ) {
+      const { workflowId, width, height } = action.payload;
+      const card = state.workflowCards[workflowId];
+      if (card) {
+        card.width = Math.max(360, width);
+        card.height = Math.max(280, height);
+      }
+    },
+
+    removeWorkflowCard(state, action: PayloadAction<string>) {
+      delete state.workflowCards[action.payload];
+    },
+
+    // When a draft workflow is saved, the temporary `draft-...` id is
+    // replaced by the real workflow id from the server. Rekey the layout
+    // entry in-place so the card doesn't visibly hop position.
+    rekeyWorkflowCard(
+      state,
+      action: PayloadAction<{ oldId: string; newId: string }>,
+    ) {
+      const { oldId, newId } = action.payload;
+      const card = state.workflowCards[oldId];
+      if (!card) return;
+      delete state.workflowCards[oldId];
+      state.workflowCards[newId] = { ...card, workflow_id: newId };
+      if (state.pendingFocusWorkflowId === oldId) state.pendingFocusWorkflowId = newId;
+    },
+
+    clearPendingFocusWorkflowId(state) {
+      state.pendingFocusWorkflowId = null;
+    },
+
+    openWorkflowsHub(state, action: PayloadAction<{ expandedSessionIds?: string[] } | undefined>) {
+      if (state.workflowsHub) {
+        state.workflowsHub.zOrder = state.nextZOrder++;
+        state.pendingFocusWorkflowsHub = true;
+        return;
+      }
+      const rects = collectOccupiedRects(state, action.payload?.expandedSessionIds);
+      const pos = findOpenGridCell(rects, DEFAULT_WORKFLOWS_HUB_W, DEFAULT_WORKFLOWS_HUB_H);
+      state.workflowsHub = {
+        x: pos.x,
+        y: pos.y,
+        width: DEFAULT_WORKFLOWS_HUB_W,
+        height: DEFAULT_WORKFLOWS_HUB_H,
+        zOrder: state.nextZOrder++,
+      };
+      state.pendingFocusWorkflowsHub = true;
+    },
+
+    clearPendingFocusWorkflowsHub(state) {
+      state.pendingFocusWorkflowsHub = false;
+    },
+
+    closeWorkflowsHub(state) {
+      state.workflowsHub = null;
+    },
+
+    setWorkflowsHubPosition(state, action: PayloadAction<{ x: number; y: number }>) {
+      if (!state.workflowsHub) return;
+      state.workflowsHub.x = action.payload.x;
+      state.workflowsHub.y = action.payload.y;
+    },
+
+    setWorkflowsHubSize(state, action: PayloadAction<{ width: number; height: number }>) {
+      if (!state.workflowsHub) return;
+      state.workflowsHub.width = Math.max(720, action.payload.width);
+      state.workflowsHub.height = Math.max(420, action.payload.height);
     },
 
     pasteBrowserCard(
@@ -749,7 +930,7 @@ const dashboardLayoutSlice = createSlice({
     moveCards(
       state,
       action: PayloadAction<{
-        items: Array<{ id: string; type: 'agent' | 'view' | 'browser' | 'note' }>;
+        items: Array<{ id: string; type: 'agent' | 'view' | 'browser' | 'note' | 'workflow' }>;
         dx: number;
         dy: number;
       }>,
@@ -773,6 +954,12 @@ const dashboardLayoutSlice = createSlice({
           if (note) {
             note.x += dx;
             note.y += dy;
+          }
+        } else if (item.type === 'workflow') {
+          const card = state.workflowCards[item.id];
+          if (card) {
+            card.x += dx;
+            card.y += dy;
           }
         } else {
           const card = state.browserCards[item.id];
@@ -901,6 +1088,8 @@ const dashboardLayoutSlice = createSlice({
       state.cards = {};
       state.viewCards = {};
       state.browserCards = {};
+      state.workflowCards = {};
+      state.workflowsHub = null;
       state.notes = {};
       state.closedCardPositions = {};
       state.glowingBrowserCards = {};
@@ -909,6 +1098,7 @@ const dashboardLayoutSlice = createSlice({
       state.nextZOrder = 1;
       state.initialized = false;
       state.pendingFocusNoteId = null;
+      state.pendingFocusWorkflowId = null;
     },
 
   },
@@ -923,6 +1113,8 @@ const dashboardLayoutSlice = createSlice({
         state.cards = action.payload.cards;
         state.viewCards = action.payload.viewCards;
         state.browserCards = action.payload.browserCards;
+        state.workflowCards = action.payload.workflowCards || {};
+        state.workflowsHub = action.payload.workflowsHub || null;
         state.notes = action.payload.notes || {};
         state.persistedExpandedSessionIds = action.payload.expandedSessionIds;
 
@@ -939,6 +1131,10 @@ const dashboardLayoutSlice = createSlice({
         for (const c of Object.values(state.browserCards)) {
           if (!c.zOrder) c.zOrder = 0;
           if (c.zOrder > maxZ) maxZ = c.zOrder;
+        }
+        for (const w of Object.values(state.workflowCards)) {
+          if (!w.zOrder) w.zOrder = 0;
+          if (w.zOrder > maxZ) maxZ = w.zOrder;
         }
         for (const n of Object.values(state.notes)) {
           if (!n.zOrder) n.zOrder = 0;
@@ -1010,6 +1206,17 @@ export const {
   fadeGlowingAgentCard,
   clearGlowingAgentCard,
   clearPendingFocusBrowserId,
+  addWorkflowCard,
+  setWorkflowCardPosition,
+  setWorkflowCardSize,
+  removeWorkflowCard,
+  rekeyWorkflowCard,
+  clearPendingFocusWorkflowId,
+  openWorkflowsHub,
+  closeWorkflowsHub,
+  setWorkflowsHubPosition,
+  setWorkflowsHubSize,
+  clearPendingFocusWorkflowsHub,
   addNote,
   setNotePosition,
   setNoteSize,

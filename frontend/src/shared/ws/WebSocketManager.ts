@@ -24,6 +24,7 @@ import {
 } from '../state/agentsSlice';
 import { streamStart, streamDelta, streamEnd } from '../state/streamingSlice';
 import { addBrowserCardFromBackend, removeBrowserCard, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
+import { upsertRun } from '../state/workflowsSlice';
 import { getAuthToken } from '../config';
 import { notifyAgentCompletion } from '../notifications';
 
@@ -685,6 +686,22 @@ class WebSocketManager {
             }
           }
         }
+        break;
+
+      case 'workflow:run':
+        if (data.run) {
+          store.dispatch(upsertRun(data.run));
+        }
+        break;
+
+      case 'workflow:notify':
+        try {
+          notifyAgentCompletion({
+            sessionId: data.session_id || data.workflow_id,
+            sessionName: data.workflow_title || 'Workflow',
+            status: data.status === 'success' ? 'completed' : 'error',
+          });
+        } catch { /* notifications are best-effort */ }
         break;
 
       case 'dashboard:browser_card_added':

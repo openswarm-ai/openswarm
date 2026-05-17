@@ -34,6 +34,32 @@ import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
 import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
 import { useStreamingMessage } from '@/shared/state/streamingSlice';
 import { isCanvasInteractionActive, onCanvasInteractionEnd } from '@/shared/canvasInteractionState';
+import { openWorkflowCard, type Workflow } from '@/shared/state/workflowsSlice';
+import { addWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesomeOutlined';
+
+// Extract up to 3 user-prompt steps from a completed chat to seed a workflow.
+// Skips trivial messages (one-liners, single-word replies) so the preview
+// card matches the substantive steps the agent actually executed.
+function extractStepsFromSession(session: { messages: Array<{ role: string; content: unknown; hidden?: boolean }> }): Array<{ id: string; text: string }> {
+  const out: Array<{ id: string; text: string }> = [];
+  for (const msg of session.messages || []) {
+    if (msg.role !== 'user' || msg.hidden) continue;
+    const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.map((b: any) => (typeof b === 'string' ? b : b?.text || '')).join(' ') : '');
+    const trimmed = text.trim();
+    if (trimmed.length < 6) continue;
+    out.push({ id: `step-${out.length + 1}-${Date.now().toString(36)}`, text: trimmed.slice(0, 400) });
+    if (out.length === 3) break;
+  }
+  if (out.length === 0 && session.messages?.length) {
+    const fallback = session.messages.find((m) => m.role === 'user');
+    if (fallback) {
+      const text = typeof fallback.content === 'string' ? fallback.content : '';
+      out.push({ id: `step-1-${Date.now().toString(36)}`, text: text.slice(0, 400) || 'Run the original task' });
+    }
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Helper components & functions (unchanged)
@@ -992,6 +1018,54 @@ const AgentCard: React.FC<Props> = ({
             onPointerDown={(e) => e.stopPropagation()}
             sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, ml: 0.5 }}
           >
+            {(session.status === 'completed' || session.status === 'stopped') && session.messages.length >= 2 && (
+              <Tooltip title="Turn this chat into a reusable, schedulable workflow">
+                <Box
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const steps = extractStepsFromSession(session);
+                    if (steps.length === 0) return;
+                    const draft: Partial<Workflow> = {
+                      title: session.name || 'New workflow',
+                      description: 'Auto-generated from this chat. Edit anytime in Workflows.',
+                      steps,
+                      source_session_id: session.id,
+                      dashboard_id: session.dashboard_id || null,
+                      model: session.model,
+                      mode: session.mode,
+                      provider: session.provider,
+                    };
+                    const tempId = `draft-${session.id}`;
+                    dispatch(addWorkflowCard({
+                      workflowId: tempId,
+                      sourceSessionId: session.id,
+                    }));
+                    dispatch(openWorkflowCard({
+                      workflowId: tempId,
+                      sourceSessionId: session.id,
+                      view: 'preview',
+                      draft,
+                    }));
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  sx={{
+                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                    color: c.accent.primary,
+                    bgcolor: c.accent.primary + '12',
+                    border: `1px solid ${c.accent.primary}40`,
+                    fontSize: '0.78rem', fontWeight: 600,
+                    px: 1, py: 0.45,
+                    borderRadius: `${c.radius.md}px`,
+                    cursor: 'pointer',
+                    '&:hover': { bgcolor: c.accent.primary + '22' },
+                  }}
+                >
+                  <AutoAwesomeIcon sx={{ fontSize: 14 }} />
+                  Make workflow
+                </Box>
+              </Tooltip>
+            )}
             <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
               <IconButton
                 size="small"

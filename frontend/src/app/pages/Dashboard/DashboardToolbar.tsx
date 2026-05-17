@@ -15,6 +15,9 @@ import SearchIcon from '@mui/icons-material/Search';
 import { motion } from 'framer-motion';
 import ChatInput from '@/app/pages/AgentChat/ChatInput';
 import type { ContextPath } from '@/app/components/DirectoryBrowser';
+import SchedulePopover from '@/app/pages/Workflows/SchedulePopover';
+import { openWorkflowCard } from '@/shared/state/workflowsSlice';
+import { addWorkflowCard, openWorkflowsHub } from '@/shared/state/dashboardLayoutSlice';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -159,6 +162,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const [viewSearch, setViewSearch] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
     const [historyQuery, setHistoryQuery] = useState('');
+    const [popoverMode, setPopoverMode] = useState<'search' | 'schedule'>('search');
     const shortcut = useAppSelector((s) => s.settings.data.new_agent_shortcut);
     const outputs = useAppSelector((s) => s.outputs.items);
     const historySearch = useAppSelector((s) => s.agents.historySearch);
@@ -390,6 +394,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const placeholderItems: Array<{ icon: typeof StickyNote2OutlinedIcon; label: string; sub: string }> = [];
 
     return (
+      <>
       <MotionBox
         ref={containerRef}
         layout
@@ -397,14 +402,23 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         style={{
           display: 'flex',
           flexDirection: 'column',
-          background: c.bg.surface,
-          border: `1px solid ${c.border.subtle}`,
+          // When the schedule popover is open the chips render OUTSIDE the
+          // popover's own card (Figma image #30). The toolbar wrapper must
+          // drop its own card chrome in that mode so we don't end up with a
+          // double-card sandwich; the popover supplies its own surface +
+          // border + shadow.
+          background: historyOpen ? 'transparent' : c.bg.surface,
+          border: historyOpen ? '1px solid transparent' : `1px solid ${c.border.subtle}`,
           borderRadius: `${c.radius.xl}px`,
-          boxShadow: c.shadow.lg,
+          boxShadow: historyOpen ? 'none' : c.shadow.lg,
           padding: isExpanded ? '6px' : '5px',
           userSelect: 'none' as const,
-          overflow: inputOpen || newAgentBounce ? 'visible' : 'hidden',
-          width: viewPickerOpen ? 580 : isExpanded ? 540 : undefined,
+          overflow: inputOpen || newAgentBounce || historyOpen ? 'visible' : 'hidden',
+          // When historyOpen, width is owned by SchedulePopover (POPOVER_W
+          // constant) so Search and Schedule modes share an identical
+          // fixed pixel width. Leave width=undefined here so framer-motion
+          // measures the popover's intrinsic size and animates to it.
+          width: viewPickerOpen ? 580 : historyOpen ? undefined : isExpanded ? 540 : undefined,
         }}
       >
         {inputOpen ? (
@@ -433,97 +447,33 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           </div>
         ) : historyOpen ? (
           <div style={{ width: '100%' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1 }}>
-              <SearchIcon sx={{ fontSize: 18, color: c.text.muted }} />
-              <InputBase
-                inputRef={historyInputRef}
-                value={historyQuery}
-                onChange={(e) => setHistoryQuery(e.target.value)}
-                placeholder="Search past chats..."
-                sx={{
-                  flex: 1,
-                  fontSize: '0.85rem',
-                  color: c.text.primary,
-                  fontFamily: c.font.sans,
-                  '& input::placeholder': { color: c.text.ghost, opacity: 1 },
-                }}
-              />
-              {historySearch.loading && historySearch.results.length === 0 && (
-                <CircularProgress size={16} sx={{ color: c.text.muted }} />
-              )}
-            </Box>
-            <Box
-              ref={historyListRef}
-              onScroll={handleHistoryScroll}
-              sx={{
-                maxHeight: 320,
-                overflow: 'auto',
-                borderTop: `1px solid ${c.border.subtle}`,
-                '&::-webkit-scrollbar': { width: 4 },
-                '&::-webkit-scrollbar-track': { background: 'transparent' },
-                '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 2 },
-                scrollbarWidth: 'thin',
-                scrollbarColor: `${c.border.medium} transparent`,
+            <SchedulePopover
+              mode={popoverMode}
+              onModeChange={setPopoverMode}
+              historyResults={historySearch.results.map((e) => ({ id: e.id, name: e.name, closed_at: e.closed_at }))}
+              historyLoading={historySearch.loading}
+              historyQuery={historyQuery}
+              onHistoryQueryChange={setHistoryQuery}
+              onHistorySelect={handleHistorySelect}
+              onNewChat={() => { handleCloseHistory(); onNewAgent(); }}
+              onWorkflowSelect={(wid) => {
+                dispatch(addWorkflowCard({ workflowId: wid }));
+                dispatch(openWorkflowCard({
+                  workflowId: wid,
+                  view: 'saved',
+                }));
+                handleCloseHistory();
               }}
-            >
-              {historySearch.results.length === 0 && !historySearch.loading ? (
-                <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
-                  <Typography sx={{ fontSize: '0.82rem', color: c.text.muted }}>
-                    {historyQuery ? 'No matching chats' : 'No chat history yet'}
-                  </Typography>
-                </Box>
-              ) : (
-                <>
-                  {historySearch.results.map((entry) => (
-                    <Box
-                      key={entry.id}
-                      onClick={() => handleHistorySelect(entry.id)}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 1.5,
-                        px: 1.5,
-                        py: 0.9,
-                        cursor: 'pointer',
-                        transition: 'background-color 0.1s',
-                        '&:hover': { bgcolor: c.bg.elevated },
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          fontSize: '0.82rem',
-                          fontWeight: 500,
-                          color: c.text.primary,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          flex: 1,
-                          minWidth: 0,
-                        }}
-                      >
-                        {entry.name}
-                      </Typography>
-                      <Typography
-                        sx={{
-                          fontSize: '0.7rem',
-                          color: c.text.ghost,
-                          flexShrink: 0,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {formatRelativeTime(entry.closed_at)}
-                      </Typography>
-                    </Box>
-                  ))}
-                  {historySearch.loading && historySearch.results.length > 0 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
-                      <CircularProgress size={16} sx={{ color: c.text.muted }} />
-                    </Box>
-                  )}
-                </>
-              )}
-            </Box>
+              onExpand={() => {
+                // Expand → spawn the Workflows Hub as a canvas card and close
+                // the popover. The hub is a singleton per dashboard so a
+                // second Expand just brings the existing card forward.
+                dispatch(openWorkflowsHub({ expandedSessionIds: [] }));
+                handleCloseHistory();
+              }}
+              historyScrollRef={historyListRef as React.RefObject<HTMLDivElement>}
+              onHistoryScroll={handleHistoryScroll}
+            />
           </div>
         ) : viewPickerOpen ? (
           <div style={{ width: '100%' }}>
@@ -859,6 +809,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           </div>
         )}
       </MotionBox>
+      </>
     );
   },
 );
