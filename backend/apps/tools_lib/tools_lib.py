@@ -1695,7 +1695,11 @@ async def spotify_authorize(payload: dict) -> dict:
         "redirect_uri": _SPOTIFY_REDIRECT_URI,
         "scope": _SPOTIFY_SCOPES,
         "state": state,
-        "show_dialog": "false",
+        # show_dialog=true forces Spotify to display the full scope-approval
+        # screen on EVERY connect — even if you've authorized this app before.
+        # Without this, Spotify silently reuses the prior consent, so newly-
+        # added scopes (e.g. playlist-modify) never get granted on the token.
+        "show_dialog": "true",
     }
     url = "https://accounts.spotify.com/authorize?" + _urlparse.urlencode(params)
     return {"ok": True, "url": url}
@@ -1742,6 +1746,18 @@ async def spotify_callback(code: str = "", state: str = "", error: str = "") -> 
     refresh_token = data.get("refresh_token", "")
     if not refresh_token:
         return HTMLResponse("<h2>Spotify did not return a refresh_token</h2><p>Retry from OpenSwarm.</p>", status_code=400)
+
+    # Log what Spotify ACTUALLY granted vs what we requested. If a user
+    # complains about "scope not granted" later, this is the first place
+    # to check — the granted set should equal _SPOTIFY_SCOPES.
+    granted_scopes = data.get("scope", "")
+    requested_set = set(_SPOTIFY_SCOPES.split())
+    granted_set = set(granted_scopes.split())
+    missing = requested_set - granted_set
+    if missing:
+        logger.warning(f"spotify: Spotify granted fewer scopes than requested. Missing: {missing}")
+    else:
+        logger.info(f"spotify: all {len(granted_set)} scopes granted")
 
     # Look up the user's Spotify display name for the Connected chip.
     display_name = ""
