@@ -4,6 +4,7 @@ import json
 import os
 import re
 import logging
+import html
 import shutil
 import sys
 import time
@@ -342,6 +343,27 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
         import sys as _sys
         if config.get("command") == "python":
             config["command"] = _sys.executable
+
+    # Spotify MCP: vendored Python package; needs PYTHONPATH + sys.executable
+    # like the others, plus app-level OAuth creds (OpenSwarm-team owned) and
+    # the per-user SPOTIFY_REFRESH_TOKEN saved by the /credentials/spotify/*
+    # endpoints during the Connect flow.
+    if tool.name.lower() == "spotify" and config.get("type") == "stdio":
+        env = config.setdefault("env", {})
+        _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        existing_pp = env.get("PYTHONPATH") or os.environ.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (_project_root + os.pathsep + existing_pp) if existing_pp else _project_root
+        import sys as _sys
+        if config.get("command") == "python":
+            config["command"] = _sys.executable
+        sp_id = os.environ.get("OPENSWARM_SPOTIFY_CLIENT_ID", "")
+        sp_secret = os.environ.get("OPENSWARM_SPOTIFY_CLIENT_SECRET", "")
+        if sp_id:
+            env["OPENSWARM_SPOTIFY_CLIENT_ID"] = sp_id
+        if sp_secret:
+            env["OPENSWARM_SPOTIFY_CLIENT_SECRET"] = sp_secret
+        # SPOTIFY_REFRESH_TOKEN comes from tool.credentials and is already
+        # merged into env above by the generic credentials-as-env loop.
 
     # Telegram MCP: same vendored-package treatment as Instagram. Also
     # injects the OpenSwarm app-level Telegram credentials from backend env
@@ -1616,6 +1638,137 @@ async def telegram_verify(payload: dict) -> dict:
     await _tg_finalize_after_auth(tool, phone, client)
     _TG_PENDING.pop(tool_id, None)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Spotify OAuth (PKCE-free authorization-code flow with app credentials)
+# ---------------------------------------------------------------------------
+_SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8324/api/tools/credentials/spotify/callback"
+_SPOTIFY_SCOPES = (
+    "user-read-currently-playing user-read-playback-state user-modify-playback-state "
+    "user-read-recently-played user-top-read playlist-read-private "
+    "playlist-read-collaborative playlist-modify-public playlist-modify-private "
+    "user-library-read user-library-modify"
+)
+# Short-lived mapping from OAuth state -> tool_id so the callback knows which
+# tool to attach the tokens to. Pruned on use.
+_SPOTIFY_PENDING: dict[str, dict] = {}
+
+
+def _spotify_app_creds() -> tuple[str, str]:
+    cid = os.environ.get("OPENSWARM_SPOTIFY_CLIENT_ID", "").strip()
+    csec = os.environ.get("OPENSWARM_SPOTIFY_CLIENT_SECRET", "").strip()
+    if not cid or not csec:
+        raise ValueError(
+            "Spotify is not configured on this OpenSwarm install. Register an app at "
+            "https://developer.spotify.com/dashboard and set OPENSWARM_SPOTIFY_CLIENT_ID "
+            "and OPENSWARM_SPOTIFY_CLIENT_SECRET in backend/.env."
+        )
+    return cid, csec
+
+
+@tools_lib.router.post("/credentials/spotify/authorize")
+async def spotify_authorize(payload: dict) -> dict:
+    """Step 1: hand the frontend a Spotify OAuth URL to open in a browser.
+
+    Body: {tool_id: str}
+    Returns: {ok: bool, url: str} or {ok: false, error: str}.
+    """
+    import secrets as _secrets
+    import urllib.parse as _urlparse
+
+    tool_id = payload.get("tool_id") or ""
+    if not tool_id:
+        return {"ok": False, "error": "tool_id is required"}
+    tool = _load(tool_id)
+    try:
+        client_id, _ = _spotify_app_creds()
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+    state = _secrets.token_urlsafe(24)
+    _SPOTIFY_PENDING[state] = {"tool_id": tool_id, "started_at": time.time()}
+
+    params = {
+        "client_id": client_id,
+        "response_type": "code",
+        "redirect_uri": _SPOTIFY_REDIRECT_URI,
+        "scope": _SPOTIFY_SCOPES,
+        "state": state,
+        "show_dialog": "false",
+    }
+    url = "https://accounts.spotify.com/authorize?" + _urlparse.urlencode(params)
+    return {"ok": True, "url": url}
+
+
+@tools_lib.router.get("/credentials/spotify/callback")
+async def spotify_callback(code: str = "", state: str = "", error: str = "") -> Any:
+    """Step 2: Spotify redirects the user's browser here with ?code=&state=.
+    We exchange code -> tokens, persist on the tool, and render a small HTML
+    page so the user sees a clean "Connected" confirmation in their browser
+    tab and can close it.
+    """
+    from fastapi.responses import HTMLResponse
+    if error:
+        return HTMLResponse(f"<h2>Spotify sign-in cancelled</h2><p>{html.escape(error)}</p>", status_code=400)
+    pending = _SPOTIFY_PENDING.pop(state, None)
+    if not pending or not code:
+        return HTMLResponse("<h2>Invalid Spotify callback</h2><p>State mismatch — retry from OpenSwarm.</p>", status_code=400)
+
+    tool_id = pending["tool_id"]
+    try:
+        tool = _load(tool_id)
+        client_id, client_secret = _spotify_app_creds()
+    except (HTTPException, ValueError) as e:
+        return HTMLResponse(f"<h2>Spotify connect failed</h2><p>{html.escape(str(e))}</p>", status_code=400)
+
+    # Exchange the auth code for access + refresh tokens.
+    import httpx as _httpx
+    import base64 as _b64
+    basic = _b64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    try:
+        async with _httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://accounts.spotify.com/api/token",
+                headers={"Authorization": f"Basic {basic}", "Content-Type": "application/x-www-form-urlencoded"},
+                data={"grant_type": "authorization_code", "code": code, "redirect_uri": _SPOTIFY_REDIRECT_URI},
+            )
+        if resp.status_code != 200:
+            return HTMLResponse(f"<h2>Spotify token exchange failed</h2><pre>{html.escape(resp.text[:500])}</pre>", status_code=400)
+        data = resp.json()
+    except Exception as e:  # noqa: BLE001
+        return HTMLResponse(f"<h2>Spotify token exchange error</h2><p>{html.escape(str(e))}</p>", status_code=400)
+
+    refresh_token = data.get("refresh_token", "")
+    if not refresh_token:
+        return HTMLResponse("<h2>Spotify did not return a refresh_token</h2><p>Retry from OpenSwarm.</p>", status_code=400)
+
+    # Look up the user's Spotify display name for the Connected chip.
+    display_name = ""
+    try:
+        access_token = data.get("access_token", "")
+        async with _httpx.AsyncClient(timeout=10.0) as client:
+            me = await client.get("https://api.spotify.com/v1/me", headers={"Authorization": f"Bearer {access_token}"})
+        if me.status_code == 200:
+            mejson = me.json()
+            display_name = mejson.get("display_name") or mejson.get("id") or ""
+    except Exception:  # noqa: BLE001
+        pass
+
+    tool.credentials = {"SPOTIFY_REFRESH_TOKEN": refresh_token}
+    tool.auth_type = "env_vars"
+    tool.auth_status = "connected"
+    tool.connected_account_email = display_name or "Spotify"
+    _save(tool)
+
+    return HTMLResponse(
+        "<html><body style='font-family:-apple-system,system-ui,sans-serif;text-align:center;padding:60px 20px;color:#fff;background:#191414;'>"
+        "<div style='max-width:420px;margin:0 auto;'>"
+        "<div style='font-size:48px;color:#1DB954;margin-bottom:16px;'>♪</div>"
+        f"<h2 style='margin:0 0 8px 0;'>Spotify connected{(' as ' + html.escape(display_name)) if display_name else ''}</h2>"
+        "<p style='color:#b3b3b3;'>You can close this tab and return to OpenSwarm.</p>"
+        "</div></body></html>"
+    )
 
 
 @tools_lib.router.post("/credentials/telegram_bot/validate")

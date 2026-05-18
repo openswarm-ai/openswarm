@@ -24,6 +24,10 @@ instagrapi>=2.0
 # persistence). The vendored Telegram MCP server (backend.apps.telegram_mcp)
 # loads sessions via Telethon and runs as a stdio subprocess.
 telethon~=1.36
+# spotipy: Spotify Web API client for the vendored Spotify MCP
+# (backend.apps.spotify_mcp). Auto-refreshes access_token using the
+# SPOTIFY_REFRESH_TOKEN env var saved by the Connect flow.
+spotipy~=2.24
 # tzlocal: dev-mode fallback for resolving the user's IANA timezone when
 # Electron's OPENSWARM_TIMEZONE env var isn't set (i.e. `bash run.sh`).
 # Packaged builds get the env var directly so this is a safety net.

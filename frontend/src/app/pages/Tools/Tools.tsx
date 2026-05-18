@@ -334,6 +334,29 @@ const INTEGRATIONS: Integration[] = [
     ),
   },
   {
+    id: 'spotify',
+    name: 'Spotify',
+    description:
+      'Search Spotify, control playback, read your library, manage playlists. 14 tools covering search, queue, top tracks/artists, recently played, and playlist mutation. Playback control requires Spotify Premium; search and library reads work on Free.',
+    mcp_config: {
+      type: 'stdio',
+      command: 'python',
+      args: ['-m', 'backend.apps.spotify_mcp'],
+    },
+    color: '#1DB954',
+    website: 'https://developer.spotify.com',
+    connectLabel: 'Connect Spotify',
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <circle cx="12" cy="12" r="12" fill="#1DB954" />
+        <path d="M17.4 10.6c-3.2-1.9-8.4-2-11.5-1.1-.5.15-1-.13-1.15-.62-.15-.5.13-1 .62-1.15 3.5-1 9.3-.85 13 1.3.45.27.6.85.33 1.3-.27.45-.85.6-1.3.27z" fill="#fff"/>
+        <path d="M17.3 13.1c-.23.38-.72.5-1.1.27-2.65-1.62-6.67-2.1-9.78-1.15-.43.13-.88-.12-1.02-.55-.13-.43.12-.88.55-1.02 3.55-1.08 8-.55 11.1 1.35.38.23.5.72.27 1.1z" fill="#fff"/>
+        <path d="M16.4 15.4c-.18.3-.57.4-.87.22-2.32-1.42-5.24-1.74-8.68-.95-.35.08-.7-.14-.78-.49-.08-.35.14-.7.49-.78 3.78-.87 7.02-.5 9.62 1.1.3.18.4.57.22.87z" fill="#fff"/>
+      </svg>
+    ),
+    authType: 'oauth2',
+  },
+  {
     id: 'telegram-bot',
     name: 'Telegram Bot',
     description:
@@ -715,7 +738,7 @@ const Tools: React.FC = () => {
   // browse the long tail.
   const CURATED_MCP_NAMES = useMemo(() => new Set([
     'google-workspace', 'microsoft-365', 'slack', 'discord',
-    'notion', 'airtable', 'hubspot', 'reddit', 'youtube', 'instagram', 'linkedin', 'github', 'telegram', 'telegram-bot',
+    'notion', 'airtable', 'hubspot', 'reddit', 'youtube', 'instagram', 'linkedin', 'github', 'telegram', 'telegram-bot', 'spotify',
   ]), []);
   const regServers = useMemo(() => {
     if (regSource !== 'curated') return regServersRaw;
@@ -1137,6 +1160,42 @@ const Tools: React.FC = () => {
     setEditingId(null);
     setForm(f);
     setDialogOpen(true);
+  };
+
+  const handleSpotifyConnect = async (toolId: string) => {
+    // Spotify uses its own OAuth endpoint (not the cloud-proxied flow used by
+    // Notion/Airtable/etc.) because our app credentials live in backend/.env
+    // and the redirect target is OpenSwarm's own backend on :8324.
+    try {
+      const resp = await fetch(`${API_BASE}/tools/credentials/spotify/authorize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool_id: toolId }),
+      });
+      const data = await resp.json().catch(() => ({ ok: false, error: `bad response (${resp.status})` }));
+      if (!data.ok || !data.url) {
+        setSnackbar({ open: true, message: `Spotify connect failed: ${data.error || 'unknown error'}`, severity: 'error' });
+        return;
+      }
+      const popup = window.open(data.url, 'spotify-oauth', 'width=500,height=700,left=200,top=100');
+      const afterConnect = async () => {
+        const statusResult = await dispatch(fetchToolStatus(toolId));
+        if (fetchToolStatus.fulfilled.match(statusResult) && statusResult.payload.auth_status === 'connected') {
+          setSnackbar({ open: true, message: 'Spotify connected! Discovering actions…' });
+          setExpandedToolId(toolId);
+          dispatch(discoverTools(toolId));
+        }
+      };
+      const pollInterval = setInterval(() => {
+        if (popup?.closed) {
+          clearInterval(pollInterval);
+          afterConnect();
+        }
+      }, 1000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSnackbar({ open: true, message: `Spotify connect error: ${msg}`, severity: 'error' });
+    }
   };
 
   const handleOAuthConnect = async (toolId: string) => {
@@ -2324,7 +2383,7 @@ const Tools: React.FC = () => {
                             size="small"
                             variant="outlined"
                             startIcon={<LinkIcon sx={{ fontSize: 14 }} />}
-                            onClick={(e) => { e.stopPropagation(); handleOAuthConnect(tool.id); }}
+                            onClick={(e) => { e.stopPropagation(); if (ig?.id === 'spotify') handleSpotifyConnect(tool.id); else handleOAuthConnect(tool.id); }}
                             sx={{ borderColor: `${c.status.info}40`, color: c.status.info, '&:hover': { borderColor: c.status.info, bgcolor: `${c.status.info}10` }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
                           >
                             {ig?.id === 'discord' && tool.auth_status === 'connected' ? 'Add server' : `Connect ${tool.name}`}
