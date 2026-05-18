@@ -208,6 +208,36 @@ class AccountPool:
         candidates.sort(key=lambda a: a.bucket(endpoint).time_until_available())
         return candidates[0]
 
+    async def pick_writable(self, endpoint: str) -> Optional[ManagedAccount]:
+        """Like `pick()` but only considers accounts authorized to write.
+
+        Writes (`create_tweet`, `favorite_tweet`, `retweet`, `follow_user`,
+        ...) mutate the user's identity on x.com and shouldn't fan out
+        across accounts the operator has dialed back to read-only. We
+        gate them by the `role` field on `TwitterAccount` (default
+        "primary"), which is plumbed end-to-end already — only the
+        gate/pool was ignoring it.
+
+        Returns None when no eligible account exists. The RateGate
+        translates that into a `no_account` outcome → HTTP 503 with a
+        helpful body, same as `pick()` does for reads.
+
+        An operator can demote an account to "read_only" to keep it in
+        the pool for search/lookup traffic while preventing writes
+        through it (e.g. a flaky session that's hit a 429 too many times
+        on POSTs but is otherwise fine for GETs).
+        """
+        candidates = [
+            a for a in self._accounts.values()
+            if a.id not in self._removing
+            and a.state == "active"
+            and a.role == "primary"
+        ]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda a: a.bucket(endpoint).time_until_available())
+        return candidates[0]
+
     # ---- mutation ------------------------------------------------------
 
     async def add(self, account: TwitterAccount, client: object) -> ManagedAccount:
@@ -275,6 +305,37 @@ class AccountPool:
                 managed.restore_buckets(snaps)
             self._accounts[account.id] = managed
             return managed
+
+    async def dedupe_by_handle(self, handle: str, keep_id: str) -> list[str]:
+        """Remove every other ManagedAccount that shares this handle.
+
+        Preserves the invariant "at most one pool entry per X identity"
+        on every login/import path. Removal goes through `remove()` so
+        any in-flight call on the loser drains under its semaphore
+        first, and its cookies file is deleted from disk by the caller-
+        equivalent path (`persistence.delete_cookies`).
+
+        `keep_id` is the canonical winner — typically the entry the
+        route just upserted. Other entries with the same lowercased
+        handle are collapsed into a single audit + remove + cookie wipe.
+
+        Returns the ids that were removed (empty list when this was a
+        no-op). Audit policy: one `dedupe_removed` lifecycle row per
+        loser, with the keeper's id as detail so an operator combing
+        through audit later can reconstruct which entry won.
+        """
+        norm = handle.lstrip("@").lower()
+        losers = [
+            a.id for a in self._accounts.values()
+            if a.id != keep_id
+            and a.record.handle
+            and a.record.handle.lstrip("@").lower() == norm
+        ]
+        for loser_id in losers:
+            await self.remove(loser_id, wipe_buckets=True)
+            persistence.delete_cookies(loser_id)
+            self.audit_lifecycle(loser_id, "dedupe_removed", f"kept={keep_id}")
+        return losers
 
     async def remove(self, account_id: str, *, wipe_buckets: bool = True) -> bool:
         """Remove an account, awaiting any in-flight call.

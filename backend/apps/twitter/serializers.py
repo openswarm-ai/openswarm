@@ -143,6 +143,67 @@ def _shallow_tweet_to_dict(tweet: object) -> dict:
     }
 
 
+def response_to_dict(resp: object) -> dict:
+    """Minimal serializer for twikit calls that return `httpx.Response`.
+
+    `favorite_tweet`, `unfavorite_tweet`, `retweet`, `delete_retweet`,
+    `bookmark_tweet`, `delete_bookmark`, and `delete_tweet` all return
+    a bare httpx Response with no useful body for the agent. Surface a
+    {ok, status} pair so the MCP shim and UI can show a clean
+    confirmation. The route tail (`_gate_result_to_response`) already
+    handles error outcomes — this serializer only runs on success.
+
+    Tolerates duck-typed mocks in tests by falling back to (True, 200)
+    when the attributes aren't present, so the happy-path assertions
+    don't have to construct an httpx.Response.
+    """
+    return {
+        "ok": bool(getattr(resp, "is_success", True)),
+        "status": int(getattr(resp, "status_code", 200)),
+    }
+
+
+def message_to_dict(msg: object) -> dict:
+    """twikit.Message / twikit.GroupMessage → JSON-safe dict.
+
+    Both 1:1 `Message` and `GroupMessage` share the same field set
+    (`id`, `time`, `text`, `sender_id`, `recipient_id`, `attachment`);
+    `GroupMessage` adds `group_id`. We pull `group_id` unconditionally
+    — `_safe` returns None for 1:1 messages that don't carry it, which
+    is the right shape for the caller (None signals "1:1 DM").
+
+    `time` is twikit's own epoch-string field (not `created_at`); the
+    caller is responsible for parsing if it wants a datetime.
+
+    `attachment` is a free-form dict containing media metadata. We
+    pass it through verbatim — it's already JSON-safe coming out of
+    twikit's parser.
+    """
+    return {
+        "id": _safe(msg, "id"),
+        "time": _safe(msg, "time"),
+        "text": _safe(msg, "text"),
+        "sender_id": _safe(msg, "sender_id"),
+        "recipient_id": _safe(msg, "recipient_id"),
+        "attachment": _safe(msg, "attachment"),
+        "group_id": _safe(msg, "group_id"),
+    }
+
+
+def group_to_dict(group: object) -> dict:
+    """twikit.Group → JSON-safe dict.
+
+    Members are serialized through `user_to_dict` to keep the LLM
+    payload consistent with every other place we surface User objects.
+    """
+    members = _safe(group, "members", default=[]) or []
+    return {
+        "id": _safe(group, "id"),
+        "name": _safe(group, "name"),
+        "members": [user_to_dict(m) for m in members],
+    }
+
+
 def result_to_dict(result: object, item_serializer) -> dict:
     """twikit.utils.Result → {items, next_cursor, previous_cursor}.
 

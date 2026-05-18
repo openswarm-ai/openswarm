@@ -64,6 +64,34 @@ DEFAULT_BUDGETS: dict[str, int] = {
     # appear to rate-limit `client.user()` tightly so a roomier budget
     # is safe.
     "_self_user": 100,
+    "create_tweet": 25,
+    "delete_tweet": 25,
+    "favorite_tweet": 50,
+    "unfavorite_tweet": 50,
+    "retweet": 25,
+    "delete_retweet": 25,
+    "bookmark_tweet": 50,
+    "delete_bookmark": 50,
+    "follow_user": 25,
+    "unfollow_user": 25,
+    # DM endpoints. X's DM-abuse heuristics are aggressive, so we keep
+    # send/delete/reaction caps tight — operators can dial these up per
+    # account via trust_multiplier once they've observed no 429s.
+    # `dm_conversation` is shared between 1:1 `get_dm_history` and
+    # group `get_group_dm_history` (both hit X's dm_conversation
+    # endpoint family with effectively the same per-window cap), so a
+    # single bucket per account is the right granularity. Likewise
+    # `add_reaction_to_message` / `remove_reaction_from_message` are
+    # shared across 1:1 and group reactions — twikit dispatches both
+    # through the same v11 endpoint, so the rate window is shared too.
+    "send_dm": 25,
+    "delete_dm": 25,
+    "dm_conversation": 50,
+    "get_group": 50,
+    "add_members_to_group": 25,
+    "change_group_name": 25,
+    "add_reaction_to_message": 25,
+    "remove_reaction_from_message": 25,
 }
 
 WINDOW_S: float = 15 * 60.0
@@ -249,17 +277,34 @@ class RateGate:
         cache_key: tuple | None = None,
         cache_ttl: int = 0,
         skip_cache: bool = False,
+        writable: bool = False,
     ) -> GateResult:
+        # Writes must never cache (the response is the mutation receipt,
+        # not idempotent read data) and must only run against
+        # role="primary" accounts. We coerce both here so a route can't
+        # accidentally pass writable=True together with a cache_key and
+        # silently leak a write-receipt into the read cache.
+        if writable:
+            cache_key = None
+            cache_ttl = 0
+            skip_cache = True
+
         # 1. Cache check.
         if cache_key is not None and cache_ttl > 0 and not skip_cache:
             cached = self.cache.get(cache_key)
             if cached is not None:
                 return GateResult(outcome="ok", value=cached)
 
-        # 2. Pick an account.
-        account = await self.pool.pick(endpoint)
+        # 2. Pick an account. Writes flow through `pick_writable` so
+        # read_only accounts stay out of the write path.
+        if writable:
+            account = await self.pool.pick_writable(endpoint)
+            no_account_msg = "No writable Twitter account available (need role=primary, state=active)"
+        else:
+            account = await self.pool.pick(endpoint)
+            no_account_msg = "No active Twitter account available"
         if account is None:
-            return GateResult(outcome="no_account", value={"error": "No active Twitter account available"})
+            return GateResult(outcome="no_account", value={"error": no_account_msg})
 
         bucket = account.bucket(endpoint)
 

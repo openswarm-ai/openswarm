@@ -36,9 +36,15 @@ from backend.apps.twitter import persistence, serializers
 from backend.apps.twitter.cache import TTLCache
 from backend.apps.twitter.models import (
     AccountHealth,
+    AddDMReactionRequest,
+    AddGroupMembersRequest,
+    AddGroupReactionRequest,
     BucketSnapshot,
+    ChangeGroupNameRequest,
     CookieImportRequest,
+    CreateTweetRequest,
     LoginRequest,
+    SendDMRequest,
     TrustUpdateRequest,
     TwitterAccount,
 )
@@ -185,6 +191,13 @@ async def _hydrate_pool(pool: AccountPool) -> None:
     saved cookies file (twikit-format) and feed it back in. If a
     cookies file is missing, we still register the account but mark
     it needs_relogin so the UI prompts a re-login.
+
+    One-time dedupe pass after loading: prior versions of
+    `accounts_import` could leave the on-disk state with multiple
+    entries sharing the same X handle (each webview re-auth minted a
+    fresh uuid instead of swapping in place). We collapse those groups
+    here so the live pool starts with the invariant "at most one entry
+    per X identity" holding, regardless of what's on disk.
     """
     import json as _json
     from twikit import Client
@@ -216,6 +229,50 @@ async def _hydrate_pool(pool: AccountPool) -> None:
             record.last_error = "no cookies on disk"
 
         await pool.add(record, client)
+
+    # Collapse same-handle duplicates left over from the pre-dedupe
+    # accounts_import. Records with handle=None are skipped — they were
+    # never verified, so we can't prove they belong to the same X
+    # identity as any other entry; safer to leave them alone and let
+    # the next verify/import decide.
+    by_handle: dict[str, list[ManagedAccount]] = {}
+    for managed in pool.accounts:
+        h = managed.record.handle
+        if not h:
+            continue
+        by_handle.setdefault(h.lstrip("@").lower(), []).append(managed)
+
+    removed_any = False
+    for _norm, group in by_handle.items():
+        if len(group) <= 1:
+            continue
+        # Canonical winner ordering: state=="active" wins over anything
+        # else, then most recent last_verified_at, then earliest
+        # created_at as a deterministic tiebreaker. The keeper is the
+        # FIRST item after sort.
+        group.sort(
+            key=lambda m: (
+                0 if m.record.state == "active" else 1,
+                -m.record.last_verified_at,
+                m.record.created_at,
+            )
+        )
+        keeper = group[0]
+        for loser in group[1:]:
+            logger.info(
+                "twitter: startup dedupe — collapsing duplicate %s into %s (handle=%s)",
+                loser.id,
+                keeper.id,
+                keeper.record.handle,
+            )
+            await pool.remove(loser.id, wipe_buckets=True)
+            persistence.delete_cookies(loser.id)
+            pool.audit_lifecycle(loser.id, "startup_dedupe", f"kept={keeper.id}")
+            removed_any = True
+
+    if removed_any:
+        pool.commit()
+        _persist_accounts(pool)
 
 
 def _persist_accounts(pool: AccountPool) -> None:
@@ -308,6 +365,11 @@ _CACHE_TTLS = {
     "get_user_by_id": 300,
     "get_user_tweets": 120,
     "get_tweet_by_id": 30,
+    # DM reads. Short TTLs because callers expect near-real-time
+    # semantics; the cache is still useful for the within-turn retry
+    # case (agent retries the same tool a second later).
+    "dm_conversation": 15,
+    "get_group": 60,
 }
 
 
@@ -423,6 +485,14 @@ async def accounts_login(body: LoginRequest):
         managed = await pool.add(record, client)
 
     pool.audit_lifecycle(managed.id, "login_ok", handle or "")
+
+    # Collapse any pre-existing same-handle duplicates left over from
+    # the old import-then-mint-new-uuid bug. New logins/imports
+    # already dedupe by handle ABOVE; this call is what cleans up
+    # whatever historical duplicates are still loaded in the pool.
+    if managed.record.handle:
+        await pool.dedupe_by_handle(managed.record.handle, keep_id=managed.id)
+
     pool.commit()
     _persist_accounts(pool)
 
@@ -440,20 +510,28 @@ async def accounts_import(body: CookieImportRequest):
     accounts.json), but plugged straight into the live `AccountPool`
     so the import takes effect without a backend restart.
 
-    Re-login semantics match `accounts_login`:
-    - If `body.id` matches a pool entry, that account's cookies are
-      overwritten in place and `pool.add` drains any in-flight call
-      under the concurrency semaphore before swapping the Client.
-    - Else if `body.handle` matches an existing account, same path
-      keyed by handle (the UI's "refresh @alice's session" button).
-    - Else a fresh uuid is minted.
+    Dedupe is keyed off the handle the *cookies themselves* prove. We
+    build the twikit Client, set the cookies, and call `client.user()`
+    as a preflight — that gives us the authoritative screen_name
+    BEFORE we choose a target id. The previous order (pool.add →
+    _verify_account) meant a webview re-auth always minted a fresh
+    uuid (the UI doesn't carry the prior id), which accumulated
+    duplicates of the same X identity. Pulling the dedupe forward
+    fixes the re-auth path without requiring frontend changes.
 
-    `_verify_account` runs inline (under the `_self_user` bucket, same
-    as `POST /accounts/{id}/verify`) so the response immediately tells
-    the UI whether the imported cookies are live. A failed verify
-    flips state to `needs_relogin`/`locked`/`suspended`/etc but the
-    route still returns 200 with the (possibly downgraded) record —
-    the frontend surfaces the state, doesn't need a 4xx.
+    Dedupe precedence:
+    1. `body.id` — explicit id from the caller (CLI re-login).
+    2. preflight-discovered handle (`client.user().screen_name`) —
+       authoritative because it's derived from the cookies presented.
+    3. `body.handle` — caller-supplied hint, consulted only when the
+       preflight failed (e.g. 429 / Unauthorized / network), so we
+       still get a chance to dedupe via the UI's known handle.
+
+    Bad-cookies policy: a failed preflight does NOT block the import.
+    We still register the cookies and flip state to `needs_relogin`
+    so the UI can surface "imported but verify failed" without losing
+    the user's freshly-captured tokens. The route always returns 200;
+    the body's `ok` and `account.state` carry the diagnosis.
 
     Cookies are never echoed in the response body: the response shape
     `{ok, account}` mirrors `accounts_login` so the
@@ -466,54 +544,101 @@ async def accounts_import(body: CookieImportRequest):
 
     cookies = {"auth_token": body.auth_token, "ct0": body.ct0}
 
+    # Hoisted from the old post-pool.add position: build the Client
+    # and set cookies up front so the preflight client.user() below
+    # can prove the handle BEFORE we pick a target id.
+    client = Client(language="en-US")
+    try:
+        client.set_cookies(cookies)
+    except Exception as e:
+        logger.warning("twitter: set_cookies failed: %s", e)
+        raise HTTPException(400, f"Invalid cookies: {type(e).__name__}: {e}")
+
+    discovered_handle: Optional[str] = None
+    preflight_error: Optional[Exception] = None
+    try:
+        me = await client.user()
+        discovered_handle = getattr(me, "screen_name", None)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        preflight_error = e
+        logger.warning(
+            "twitter: import preflight client.user() failed (%s: %s); "
+            "registering cookies anyway and flipping to needs_relogin",
+            type(e).__name__,
+            e,
+        )
+
+    # Dedupe precedence: explicit id > authoritative cookie-derived
+    # handle > caller-supplied handle hint (fallback for preflight
+    # failure).
     existing: Optional[ManagedAccount] = None
     if body.id:
         existing = pool.get(body.id)
+    if existing is None and discovered_handle:
+        existing = pool.by_handle(discovered_handle)
     if existing is None and body.handle:
         existing = pool.by_handle(body.handle)
 
     if existing is not None:
         target_id = existing.id
-        existing.record.state = "active"
-        existing.record.last_error = None
-        existing.record.last_verified_at = time.time()
         if body.label:
             existing.record.label = body.label
-        if body.handle:
+        if discovered_handle:
+            existing.record.handle = discovered_handle
+        elif body.handle:
             existing.record.handle = body.handle.lstrip("@")
         record = existing.record
     else:
         target_id = body.id or uuid4().hex
+        new_handle = discovered_handle or (
+            body.handle.lstrip("@") if body.handle else None
+        )
         record = TwitterAccount(
             id=target_id,
-            label=body.label or (body.handle.lstrip("@") if body.handle else "imported"),
-            handle=body.handle.lstrip("@") if body.handle else None,
+            label=body.label or (new_handle or "imported"),
+            handle=new_handle,
             role=body.role,
         )
-        record.state = "active"
-        record.last_verified_at = time.time()
 
-    # Reuse the CLI's atomic-write helper so the on-disk format and
-    # mode bits stay identical regardless of which entry point the
-    # operator used (CLI vs HTTP).
+    # Atomic-write cookies under the chosen target id (overwrites the
+    # existing file on re-auth). Reuse the CLI's helper so the on-disk
+    # format/mode bits stay identical across CLI vs HTTP entry points.
     from backend.apps.twitter.import_cookies import _write_cookies
     _write_cookies(target_id, cookies)
 
-    client = Client(language="en-US", proxy=record.proxy or None)
-    try:
-        client.set_cookies(cookies)
-    except Exception as e:
-        logger.warning("twitter: set_cookies failed for %s: %s", target_id, e)
-        raise HTTPException(400, f"Invalid cookies: {type(e).__name__}: {e}")
-
     managed = await pool.add(record, client)
 
-    # Inline verify against the live x.com — mirrors accounts_verify.
-    # On failure _verify_account already audits + flips state; we just
-    # capture the boolean for the response.
-    ok = await _verify_account(pool, managed)
+    if preflight_error is None:
+        # mark_active stamps last_verified_at, clears last_error, and
+        # sets state="active". Subsumes what _verify_account used to
+        # do after the (now-redundant) second client.user() call.
+        pool.mark_active(managed.id)
+        pool.audit_lifecycle(
+            managed.id, "cookie_import_ok", managed.record.handle or ""
+        )
+        ok = True
+    else:
+        pool.mark_needs_relogin(
+            managed.id,
+            f"import preflight failed: {type(preflight_error).__name__}: {preflight_error}",
+        )
+        pool.audit_lifecycle(
+            managed.id,
+            "cookie_import_fail",
+            f"{type(preflight_error).__name__}: {preflight_error}",
+        )
+        ok = False
 
-    pool.audit_lifecycle(managed.id, "cookie_import_ok", managed.record.handle or "")
+    # Collapse any pre-existing entries that share this handle so the
+    # pool's "one entry per X identity" invariant holds after every
+    # import. No-op when this is the only entry with that handle, or
+    # when we couldn't determine a handle (preflight failed AND no
+    # body.handle hint).
+    if managed.record.handle:
+        await pool.dedupe_by_handle(managed.record.handle, keep_id=managed.id)
+
     pool.commit()
     _persist_accounts(pool)
 
@@ -825,6 +950,586 @@ async def tool_get_tweet_replies(
         serializer=serialize,
         cache_key=("tweet_replies", tweet_id, cursor or ""),
         cache_ttl=_CACHE_TTLS["get_tweet_by_id"],
+    )
+    return _gate_result_to_response(res, response)
+
+
+# ---------------------------------------------------------------------------
+# Tool write routes — mutate state on x.com
+# ---------------------------------------------------------------------------
+#
+# Every route here passes `writable=True` to the gate. That:
+#  1. routes through `pool.pick_writable()` (skips read_only accounts),
+#  2. coerces `cache_key`/`cache_ttl` to None inside the gate so a write
+#     receipt can never end up cached, and
+#  3. inherits the same 429/409/503/502 mapping as reads via
+#     `_gate_result_to_response`.
+#
+# Cache invalidation after writes is intentionally NOT done here: the
+# read TTLs are short enough (30-300s) that the eventual-consistency
+# window is acceptable. If a stale read becomes a UX issue, add a
+# `TTLCache.invalidate_prefix(prefix)` helper and call it after the
+# relevant mutations.
+
+@twitter.router.post("/tweets")
+async def tool_create_tweet(body: CreateTweetRequest, response: Response):
+    """Post a tweet, a reply, or a quote.
+
+    `text` is required. `reply_to=<tweet_id>` turns it into a reply
+    (the gate's twikit call uses twikit's `reply_to=` kwarg). Quote
+    tweets pass `attachment_url=<full https://x.com/.../status/...
+    URL>`. Both `reply_to` and `attachment_url` can coexist for a
+    quote-reply, though that combination is uncommon.
+
+    Media upload (`media_ids`) is forwarded if provided. Today there's
+    no upload route in the SubApp, so this only works if the caller
+    has separately obtained media_ids via twikit's own API — a future
+    upload route can stitch in without touching this one.
+    """
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        kwargs: dict = {}
+        if body.reply_to:
+            kwargs["reply_to"] = body.reply_to
+        if body.attachment_url:
+            kwargs["attachment_url"] = body.attachment_url
+        if body.media_ids:
+            kwargs["media_ids"] = body.media_ids
+        return await client.create_tweet(body.text, **kwargs)
+
+    res = await _gate.execute(
+        endpoint="create_tweet",
+        op=op,
+        serializer=lambda t: serializers.tweet_to_dict(t, include_replies=False),
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.delete("/tweets/{tweet_id}")
+async def tool_delete_tweet(tweet_id: str, response: Response):
+    """Delete one of the authenticated user's own tweets.
+
+    Only succeeds for tweets owned by the account picked by
+    `pick_writable`. X returns 403 (which surfaces as a twikit
+    exception → 502 from the gate) for tweets owned by other users.
+    """
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.delete_tweet(tweet_id)
+
+    res = await _gate.execute(
+        endpoint="delete_tweet",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.post("/tweets/{tweet_id}/favorite")
+async def tool_favorite_tweet(tweet_id: str, response: Response):
+    """Like (favorite) a tweet."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.favorite_tweet(tweet_id)
+
+    res = await _gate.execute(
+        endpoint="favorite_tweet",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.delete("/tweets/{tweet_id}/favorite")
+async def tool_unfavorite_tweet(tweet_id: str, response: Response):
+    """Unlike (unfavorite) a tweet."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.unfavorite_tweet(tweet_id)
+
+    res = await _gate.execute(
+        endpoint="unfavorite_tweet",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.post("/tweets/{tweet_id}/retweet")
+async def tool_retweet(tweet_id: str, response: Response):
+    """Retweet a tweet."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.retweet(tweet_id)
+
+    res = await _gate.execute(
+        endpoint="retweet",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.delete("/tweets/{tweet_id}/retweet")
+async def tool_delete_retweet(tweet_id: str, response: Response):
+    """Undo a retweet."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.delete_retweet(tweet_id)
+
+    res = await _gate.execute(
+        endpoint="delete_retweet",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.post("/tweets/{tweet_id}/bookmark")
+async def tool_bookmark_tweet(tweet_id: str, response: Response):
+    """Bookmark a tweet."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.bookmark_tweet(tweet_id)
+
+    res = await _gate.execute(
+        endpoint="bookmark_tweet",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.delete("/tweets/{tweet_id}/bookmark")
+async def tool_delete_bookmark(tweet_id: str, response: Response):
+    """Remove a tweet from bookmarks."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.delete_bookmark(tweet_id)
+
+    res = await _gate.execute(
+        endpoint="delete_bookmark",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.post("/users/{user_id}/follow")
+async def tool_follow_user(user_id: str, response: Response):
+    """Follow a user by id.
+
+    twikit's `follow_user` returns the followed `User`, so the response
+    body carries the same shape as `GET /user` — the agent can use the
+    returned profile data without an extra lookup.
+    """
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.follow_user(user_id)
+
+    res = await _gate.execute(
+        endpoint="follow_user",
+        op=op,
+        serializer=serializers.user_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.delete("/users/{user_id}/follow")
+async def tool_unfollow_user(user_id: str, response: Response):
+    """Unfollow a user by id."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.unfollow_user(user_id)
+
+    res = await _gate.execute(
+        endpoint="unfollow_user",
+        op=op,
+        serializer=serializers.user_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+# ---------------------------------------------------------------------------
+# Direct messages (1:1)
+#
+# All write routes pass `writable=True` so they only ever land on
+# role=primary accounts (`pool.pick_writable`) and bypass the cache.
+# Read routes use the regular `pick` and cache with a short TTL.
+#
+# `send_dm` and the 1:1 reaction routes internally call
+# `client.user_id()` to build the X-side conversation_id
+# (`f"{partner_id}-{my_user_id}"`). twikit caches `_user_id` after the
+# first hit, so this is effectively free after warmup.
+# ---------------------------------------------------------------------------
+
+@twitter.router.post("/users/{user_id}/dms")
+async def tool_send_dm(user_id: str, body: SendDMRequest, response: Response):
+    """Send a 1:1 direct message to a user.
+
+    Returns the newly-created `Message` (serialized via
+    `message_to_dict`). twikit's `send_dm` builds the conversation_id
+    internally from the recipient id and the bot's own user id, so
+    only the recipient + text are required.
+    """
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        kwargs: dict = {}
+        if body.media_id:
+            kwargs["media_id"] = body.media_id
+        if body.reply_to:
+            kwargs["reply_to"] = body.reply_to
+        return await client.send_dm(user_id, body.text, **kwargs)
+
+    res = await _gate.execute(
+        endpoint="send_dm",
+        op=op,
+        serializer=serializers.message_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.get("/users/{user_id}/dms")
+async def tool_get_dm_history(
+    response: Response,
+    user_id: str,
+    max_id: Optional[str] = None,
+):
+    """Page through 1:1 DM history with a given user.
+
+    `max_id` paginates — pass back the oldest message id from a prior
+    page to get older messages. twikit returns a `Result[Message]`
+    that the serializer flattens into `{items, next_cursor,
+    previous_cursor}`.
+    """
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.get_dm_history(user_id, max_id)
+
+    def serialize(result):
+        return serializers.result_to_dict(result, serializers.message_to_dict)
+
+    res = await _gate.execute(
+        endpoint="dm_conversation",
+        op=op,
+        serializer=serialize,
+        cache_key=("dm_history", user_id, max_id or ""),
+        cache_ttl=_CACHE_TTLS["dm_conversation"],
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.delete("/dms/{message_id}")
+async def tool_delete_dm(message_id: str, response: Response):
+    """Delete one of the authenticated account's own DMs.
+
+    X only lets you delete DMs you sent; other-party deletes return a
+    twikit exception that the gate maps to a 502. The success response
+    is the canonical `{ok, status}` from `response_to_dict`.
+    """
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.delete_dm(message_id)
+
+    res = await _gate.execute(
+        endpoint="delete_dm",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.post("/dms/{message_id}/reaction")
+async def tool_add_dm_reaction(
+    message_id: str,
+    body: AddDMReactionRequest,
+    response: Response,
+):
+    """Add an emoji reaction to a 1:1 DM.
+
+    Builds the conversation_id (`f"{partner_id}-{my_user_id}"`) from
+    the caller-supplied `partner_id` (the *other* user) and the bot's
+    own id, then forwards to twikit's `add_reaction_to_message`. See
+    `twikit/message.py::Message.add_reaction` for the same formula.
+    """
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        me = await client.user_id()
+        conv_id = f"{body.partner_id}-{me}"
+        return await client.add_reaction_to_message(message_id, conv_id, body.emoji)
+
+    res = await _gate.execute(
+        endpoint="add_reaction_to_message",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.delete("/dms/{message_id}/reaction")
+async def tool_remove_dm_reaction(
+    response: Response,
+    message_id: str,
+    partner_id: str = Query(..., min_length=1),
+    emoji: str = Query(..., min_length=1),
+):
+    """Remove an emoji reaction from a 1:1 DM.
+
+    Mirror of `tool_add_dm_reaction`. `partner_id` and `emoji` are
+    query params because DELETE bodies are spec-fuzzy across HTTP
+    clients — keeping them in the query string matches the rest of
+    the SubApp's DELETE routes.
+    """
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        me = await client.user_id()
+        conv_id = f"{partner_id}-{me}"
+        return await client.remove_reaction_from_message(message_id, conv_id, emoji)
+
+    res = await _gate.execute(
+        endpoint="remove_reaction_from_message",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+# ---------------------------------------------------------------------------
+# Group DMs
+#
+# Same gate/cache discipline as 1:1 DMs. Group reactions use the
+# group_id as the conversation_id directly — no `user_id()` lookup
+# needed.
+# ---------------------------------------------------------------------------
+
+@twitter.router.post("/groups/{group_id}/dms")
+async def tool_send_group_dm(
+    group_id: str,
+    body: SendDMRequest,
+    response: Response,
+):
+    """Send a DM into an existing group conversation."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        kwargs: dict = {}
+        if body.media_id:
+            kwargs["media_id"] = body.media_id
+        if body.reply_to:
+            kwargs["reply_to"] = body.reply_to
+        return await client.send_dm_to_group(group_id, body.text, **kwargs)
+
+    res = await _gate.execute(
+        endpoint="send_dm",
+        op=op,
+        serializer=serializers.message_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.get("/groups/{group_id}/dms")
+async def tool_get_group_dm_history(
+    response: Response,
+    group_id: str,
+    max_id: Optional[str] = None,
+):
+    """Page through a group conversation's message history."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.get_group_dm_history(group_id, max_id)
+
+    def serialize(result):
+        return serializers.result_to_dict(result, serializers.message_to_dict)
+
+    res = await _gate.execute(
+        endpoint="dm_conversation",
+        op=op,
+        serializer=serialize,
+        cache_key=("group_dm_history", group_id, max_id or ""),
+        cache_ttl=_CACHE_TTLS["dm_conversation"],
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.get("/groups/{group_id}")
+async def tool_get_group(response: Response, group_id: str):
+    """Fetch group metadata (name + members)."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.get_group(group_id)
+
+    res = await _gate.execute(
+        endpoint="get_group",
+        op=op,
+        serializer=serializers.group_to_dict,
+        cache_key=("group", group_id),
+        cache_ttl=_CACHE_TTLS["get_group"],
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.post("/groups/{group_id}/members")
+async def tool_add_group_members(
+    group_id: str,
+    body: AddGroupMembersRequest,
+    response: Response,
+):
+    """Add one or more users to a group conversation by numeric id."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.add_members_to_group(group_id, body.user_ids)
+
+    res = await _gate.execute(
+        endpoint="add_members_to_group",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.patch("/groups/{group_id}/name")
+async def tool_change_group_name(
+    group_id: str,
+    body: ChangeGroupNameRequest,
+    response: Response,
+):
+    """Rename a group conversation."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.change_group_name(group_id, body.name)
+
+    res = await _gate.execute(
+        endpoint="change_group_name",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.post("/groups/{group_id}/messages/{message_id}/reaction")
+async def tool_add_group_reaction(
+    group_id: str,
+    message_id: str,
+    body: AddGroupReactionRequest,
+    response: Response,
+):
+    """Add an emoji reaction to a message in a group conversation.
+
+    For group DMs the conversation_id passed to twikit is the
+    `group_id` itself (no partner-id flip needed).
+    """
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.add_reaction_to_message(message_id, group_id, body.emoji)
+
+    res = await _gate.execute(
+        endpoint="add_reaction_to_message",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
+    )
+    return _gate_result_to_response(res, response)
+
+
+@twitter.router.delete("/groups/{group_id}/messages/{message_id}/reaction")
+async def tool_remove_group_reaction(
+    response: Response,
+    group_id: str,
+    message_id: str,
+    emoji: str = Query(..., min_length=1),
+):
+    """Remove an emoji reaction from a message in a group conversation."""
+    _require_started()
+    if _gate is None:
+        raise HTTPException(503, "Twitter SubApp not ready")
+
+    async def op(client):
+        return await client.remove_reaction_from_message(message_id, group_id, emoji)
+
+    res = await _gate.execute(
+        endpoint="remove_reaction_from_message",
+        op=op,
+        serializer=serializers.response_to_dict,
+        writable=True,
     )
     return _gate_result_to_response(res, response)
 

@@ -288,17 +288,53 @@ def test_stdio_initialize_returns_protocol_metadata(fresh_shim):
     assert "tools" in replies[0]["result"]["capabilities"]
 
 
-def test_stdio_tools_list_returns_five_tools(fresh_shim):
+def test_stdio_tools_list_returns_expected_tools(fresh_shim):
+    """tools/list returns the 5 reads + 10 writes + 10 DM tools in order.
+
+    The original 5 reads come first (callers that built UIs against the
+    original contract see the same prefix); tweet writes are appended,
+    then DM tools. If a future change reorders these on purpose, update
+    the expected list — but treat unexpected reorderings as a regression:
+    agent prompts may have been tuned against this ordering.
+    """
     server = fresh_shim["server"]
     replies = _drive_stdio(server, [{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}])
     names = [t["name"] for t in replies[0]["result"]["tools"]]
-    assert names == [
+    expected = [
+        # reads
         "twitter_search",
         "twitter_get_user",
         "twitter_get_user_tweets",
         "twitter_get_tweet",
         "twitter_get_tweet_replies",
+        # tweet writes
+        "twitter_create_tweet",
+        "twitter_delete_tweet",
+        "twitter_favorite_tweet",
+        "twitter_unfavorite_tweet",
+        "twitter_retweet",
+        "twitter_delete_retweet",
+        "twitter_bookmark_tweet",
+        "twitter_delete_bookmark",
+        "twitter_follow_user",
+        "twitter_unfollow_user",
+        # DM tools (1:1 first, then groups)
+        "twitter_send_dm",
+        "twitter_get_dm_history",
+        "twitter_delete_dm",
+        "twitter_add_dm_reaction",
+        "twitter_remove_dm_reaction",
+        "twitter_send_group_dm",
+        "twitter_get_group_dm_history",
+        "twitter_get_group",
+        "twitter_add_group_members",
+        "twitter_change_group_name",
     ]
+    assert names == expected
+    # Regression guard: all original 5 reads must still be present even
+    # if the order changes in a future patch.
+    for read_name in expected[:5]:
+        assert read_name in names
 
 
 def test_stdio_tools_call_routes_through_handle(fresh_shim):
@@ -327,3 +363,194 @@ def test_stdio_ping_works(fresh_shim):
     server = fresh_shim["server"]
     replies = _drive_stdio(server, [{"jsonrpc": "2.0", "id": 10, "method": "ping"}])
     assert replies[0] == {"jsonrpc": "2.0", "id": 10, "result": {}}
+
+
+# ---------------------------------------------------------------------------
+# DM tool dispatch
+# ---------------------------------------------------------------------------
+#
+# Each test exercises a single tool branch in `handle_tool_call`,
+# asserting:
+#   - the right HTTP method,
+#   - the right URL (path + percent-encoding),
+#   - the right body / query payload,
+# by capturing the `urllib.request.Request` object urlopen receives.
+
+def _capture_request(urlopen_mock):
+    """Return the most recent Request object passed to urlopen."""
+    return urlopen_mock.call_args[0][0]
+
+
+def _request_body(req):
+    """Decode the JSON body from a urllib Request."""
+    raw = req.data
+    return json.loads(raw.decode("utf-8")) if raw else None
+
+
+# ----- 1:1 DM dispatch ----------------------------------------------------
+
+def test_send_dm_dispatch(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"id": "m1"})
+        result = server.handle_tool_call(
+            "twitter_send_dm",
+            {"user_id": "u-42", "text": "hi", "media_id": "med-1"},
+        )
+    assert "isError" not in result, result
+    req = _capture_request(urlopen_mock)
+    assert req.method == "POST"
+    assert req.full_url.endswith("/api/twitter/users/u-42/dms")
+    assert _request_body(req) == {"text": "hi", "media_id": "med-1"}
+
+
+def test_send_dm_missing_args_returns_error_locally(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        r1 = server.handle_tool_call("twitter_send_dm", {"user_id": "u-42", "text": ""})
+        r2 = server.handle_tool_call("twitter_send_dm", {"user_id": "", "text": "hi"})
+    assert r1.get("isError") is True
+    assert r2.get("isError") is True
+    urlopen_mock.assert_not_called()
+
+
+def test_get_dm_history_dispatch(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"items": []})
+        server.handle_tool_call(
+            "twitter_get_dm_history",
+            {"user_id": "u-42", "max_id": "m9"},
+        )
+    req = _capture_request(urlopen_mock)
+    assert req.method == "GET"
+    assert "/api/twitter/users/u-42/dms" in req.full_url
+    assert "max_id=m9" in req.full_url
+
+
+def test_get_dm_history_omits_empty_max_id(fresh_shim):
+    """`max_id` is dropped from the URL when empty (avoids ?max_id=)."""
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"items": []})
+        server.handle_tool_call("twitter_get_dm_history", {"user_id": "u-42"})
+    req = _capture_request(urlopen_mock)
+    assert "max_id" not in req.full_url
+
+
+def test_delete_dm_dispatch(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"ok": True})
+        server.handle_tool_call("twitter_delete_dm", {"message_id": "m1"})
+    req = _capture_request(urlopen_mock)
+    assert req.method == "DELETE"
+    assert req.full_url.endswith("/api/twitter/dms/m1")
+
+
+def test_add_dm_reaction_dispatch(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"ok": True})
+        server.handle_tool_call(
+            "twitter_add_dm_reaction",
+            {"message_id": "m1", "partner_id": "u-42", "emoji": "❤"},
+        )
+    req = _capture_request(urlopen_mock)
+    assert req.method == "POST"
+    assert req.full_url.endswith("/api/twitter/dms/m1/reaction")
+    assert _request_body(req) == {"partner_id": "u-42", "emoji": "❤"}
+
+
+def test_remove_dm_reaction_dispatch(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"ok": True})
+        server.handle_tool_call(
+            "twitter_remove_dm_reaction",
+            {"message_id": "m1", "partner_id": "u-42", "emoji": "❤"},
+        )
+    req = _capture_request(urlopen_mock)
+    assert req.method == "DELETE"
+    assert "/api/twitter/dms/m1/reaction" in req.full_url
+    assert "partner_id=u-42" in req.full_url
+    # `❤` is U+2764 -> percent-encoded as %E2%9D%A4.
+    assert "emoji=%E2%9D%A4" in req.full_url
+
+
+# ----- Group DM dispatch --------------------------------------------------
+
+def test_send_group_dm_dispatch(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"id": "gm1"})
+        server.handle_tool_call(
+            "twitter_send_group_dm",
+            {"group_id": "g1", "text": "hi all", "reply_to": "gm0"},
+        )
+    req = _capture_request(urlopen_mock)
+    assert req.method == "POST"
+    assert req.full_url.endswith("/api/twitter/groups/g1/dms")
+    assert _request_body(req) == {"text": "hi all", "reply_to": "gm0"}
+
+
+def test_get_group_dm_history_dispatch(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"items": []})
+        server.handle_tool_call(
+            "twitter_get_group_dm_history",
+            {"group_id": "g1", "max_id": "gm0"},
+        )
+    req = _capture_request(urlopen_mock)
+    assert req.method == "GET"
+    assert "/api/twitter/groups/g1/dms" in req.full_url
+    assert "max_id=gm0" in req.full_url
+
+
+def test_get_group_dispatch(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"id": "g1"})
+        server.handle_tool_call("twitter_get_group", {"group_id": "g1"})
+    req = _capture_request(urlopen_mock)
+    assert req.method == "GET"
+    assert req.full_url.endswith("/api/twitter/groups/g1")
+
+
+def test_add_group_members_dispatch(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"ok": True})
+        server.handle_tool_call(
+            "twitter_add_group_members",
+            {"group_id": "g1", "user_ids": ["u-1", "u-2"]},
+        )
+    req = _capture_request(urlopen_mock)
+    assert req.method == "POST"
+    assert req.full_url.endswith("/api/twitter/groups/g1/members")
+    assert _request_body(req) == {"user_ids": ["u-1", "u-2"]}
+
+
+def test_add_group_members_rejects_empty_list_locally(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        r = server.handle_tool_call(
+            "twitter_add_group_members", {"group_id": "g1", "user_ids": []}
+        )
+    assert r.get("isError") is True
+    urlopen_mock.assert_not_called()
+
+
+def test_change_group_name_dispatch(fresh_shim):
+    server = fresh_shim["server"]
+    with patch.object(server.urllib.request, "urlopen") as urlopen_mock:
+        urlopen_mock.return_value = _fake_urlopen(200, {"ok": True})
+        server.handle_tool_call(
+            "twitter_change_group_name",
+            {"group_id": "g1", "name": "Closer Friends"},
+        )
+    req = _capture_request(urlopen_mock)
+    assert req.method == "PATCH"
+    assert req.full_url.endswith("/api/twitter/groups/g1/name")
+    assert _request_body(req) == {"name": "Closer Friends"}

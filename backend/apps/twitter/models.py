@@ -86,6 +86,28 @@ class CookieImportRequest(BaseModel):
         return self
 
 
+class CreateTweetRequest(BaseModel):
+    """Inbound body for `POST /tweets`.
+
+    `create_tweet` covers the post / reply / quote triangle in a single
+    twikit call — pass `reply_to=<tweet_id>` to reply and
+    `attachment_url=<full tweet URL>` to quote-tweet. Both can coexist
+    (a quote that's also a reply), though that's uncommon. `media_ids`
+    requires a separate upload route which is currently out of scope;
+    we forward the field through if provided so a future media-upload
+    route can stitch in without touching this model.
+
+    `max_length` is 4000 (the new X premium ceiling); short accounts
+    still get truncation feedback from the gate's twikit exception
+    path so we don't need a stricter local cap.
+    """
+
+    text: str = Field(min_length=1, max_length=4000)
+    reply_to: Optional[str] = None
+    attachment_url: Optional[str] = None
+    media_ids: Optional[list[str]] = None
+
+
 class TrustUpdateRequest(BaseModel):
     """PATCH /accounts/{id} body — currently just trust_multiplier.
 
@@ -177,3 +199,71 @@ class TweetLookupRequest(BaseModel):
 class TweetRepliesRequest(BaseModel):
     tweet_id: str
     cursor: Optional[str] = None
+
+
+# --- DM request schemas (1:1 + group). All follow the same shape as
+# --- the tweet-write schemas above: text is required and bounded, the
+# --- recipient (user_id or group_id) is a path param on the route so
+# --- it isn't repeated in the body.
+
+class SendDMRequest(BaseModel):
+    """Body for `POST /users/{user_id}/dms` and `POST /groups/{group_id}/dms`.
+
+    The recipient (user or group) comes from the path; `text` is the
+    message body. `media_id` and `reply_to` mirror twikit's `send_dm` /
+    `send_dm_to_group` kwargs and are forwarded only when set.
+
+    The 10_000-char ceiling matches X's documented DM length cap; the
+    real cap drifts with premium tier, but agents shouldn't need more
+    than this. Excess length is rejected by Pydantic before any twikit
+    call, so we don't burn a bucket on a server-side reject.
+    """
+
+    text: str = Field(min_length=1, max_length=10000)
+    media_id: Optional[str] = None
+    reply_to: Optional[str] = None
+
+
+class AddGroupMembersRequest(BaseModel):
+    """Body for `POST /groups/{group_id}/members`.
+
+    twikit's `add_members_to_group` takes a list of numeric user ids.
+    We enforce non-empty at the Pydantic layer; the upper bound is
+    intentionally loose because X's own cap drifts.
+    """
+
+    user_ids: list[str] = Field(min_length=1)
+
+
+class ChangeGroupNameRequest(BaseModel):
+    """Body for `PATCH /groups/{group_id}/name`.
+
+    50 chars matches X's UI cap. Stricter local validation here so an
+    over-long name doesn't waste a bucket on a server-side 400.
+    """
+
+    name: str = Field(min_length=1, max_length=50)
+
+
+class AddDMReactionRequest(BaseModel):
+    """Body for `POST /dms/{message_id}/reaction` (1:1 DMs).
+
+    twikit's `add_reaction_to_message` takes (message_id,
+    conversation_id, emoji). For 1:1 DMs the conversation_id is
+    `f"{partner_id}-{my_user_id}"`, so we accept the partner id from
+    the caller and compute the rest inside the route using
+    `client.user_id()` (cached after first call).
+    """
+
+    partner_id: str = Field(min_length=1)
+    emoji: str = Field(min_length=1)
+
+
+class AddGroupReactionRequest(BaseModel):
+    """Body for `POST /groups/{group_id}/messages/{message_id}/reaction`.
+
+    For group DMs the conversation_id is the group_id itself, so no
+    partner_id is needed — the route reads group_id from the path.
+    """
+
+    emoji: str = Field(min_length=1)

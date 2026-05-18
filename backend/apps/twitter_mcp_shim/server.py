@@ -6,6 +6,12 @@ to the local OpenSwarm backend (`OPENSWARM_BASE_URL`), authenticated
 with our per-install token. The SubApp owns twikit, cookies, and rate-
 limit state — this shim is pure protocol translation.
 
+Write tools (`twitter_create_tweet`, `twitter_favorite_tweet`, ...)
+go through the SubApp's `pick_writable` path, which only considers
+accounts with `role=primary`. An operator can demote any account to
+`read_only` via `PATCH /accounts/{id}` to keep it serving reads while
+blocking writes through it.
+
 Authentication. The bearer token comes from either:
 
 1. `OPENSWARM_AUTH_TOKEN_FILE` — preferred. The shim re-reads this file
@@ -168,6 +174,261 @@ TOOLS = [
                 "cursor": {"type": "string"},
             },
             "required": ["tweet_id"],
+        },
+    },
+    # -----------------------------------------------------------------
+    # Write tools. All of these mutate state on the authenticated
+    # account. The agent harness should request user consent on the
+    # first call per session (same gate it uses for other mutating MCP
+    # tools); the backend's `pick_writable` adds a second line of
+    # defense by refusing to use accounts the operator marked read_only.
+    # -----------------------------------------------------------------
+    {
+        "name": "twitter_create_tweet",
+        "description": (
+            "Post a tweet. Use `reply_to=<tweet_id>` to reply, `attachment_url=<full "
+            "tweet URL>` to quote-tweet. Both can be combined for a quote-reply. "
+            "Returns the newly-created tweet."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "minLength": 1, "maxLength": 4000},
+                "reply_to": {"type": "string", "description": "Tweet id to reply to (optional)"},
+                "attachment_url": {"type": "string", "description": "Full URL of the tweet to quote (optional)"},
+                "media_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Pre-uploaded media ids (optional; upload route is separate)",
+                },
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "twitter_delete_tweet",
+        "description": "Delete one of the authenticated account's own tweets by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"tweet_id": {"type": "string"}},
+            "required": ["tweet_id"],
+        },
+    },
+    {
+        "name": "twitter_favorite_tweet",
+        "description": "Like (favorite) a tweet by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"tweet_id": {"type": "string"}},
+            "required": ["tweet_id"],
+        },
+    },
+    {
+        "name": "twitter_unfavorite_tweet",
+        "description": "Unlike (unfavorite) a previously-liked tweet by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"tweet_id": {"type": "string"}},
+            "required": ["tweet_id"],
+        },
+    },
+    {
+        "name": "twitter_retweet",
+        "description": "Retweet a tweet by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"tweet_id": {"type": "string"}},
+            "required": ["tweet_id"],
+        },
+    },
+    {
+        "name": "twitter_delete_retweet",
+        "description": "Undo a retweet by tweet id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"tweet_id": {"type": "string"}},
+            "required": ["tweet_id"],
+        },
+    },
+    {
+        "name": "twitter_bookmark_tweet",
+        "description": "Bookmark a tweet by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"tweet_id": {"type": "string"}},
+            "required": ["tweet_id"],
+        },
+    },
+    {
+        "name": "twitter_delete_bookmark",
+        "description": "Remove a tweet from bookmarks by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"tweet_id": {"type": "string"}},
+            "required": ["tweet_id"],
+        },
+    },
+    {
+        "name": "twitter_follow_user",
+        "description": (
+            "Follow a user by numeric id. Returns the followed user's profile so the "
+            "agent doesn't need a separate lookup."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"user_id": {"type": "string", "description": "Numeric user id"}},
+            "required": ["user_id"],
+        },
+    },
+    {
+        "name": "twitter_unfollow_user",
+        "description": "Unfollow a user by numeric id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"user_id": {"type": "string", "description": "Numeric user id"}},
+            "required": ["user_id"],
+        },
+    },
+    # -----------------------------------------------------------------
+    # Direct messaging tools. Same write-gating discipline as the tweet
+    # writes — every send/delete/reaction is `writable=True` server-side
+    # and only runs against role=primary accounts.
+    # -----------------------------------------------------------------
+    {
+        "name": "twitter_send_dm",
+        "description": (
+            "Send a 1:1 direct message to a user by numeric id. `media_id` and "
+            "`reply_to` are optional. Returns the created message."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user_id": {"type": "string", "description": "Recipient's numeric user id"},
+                "text": {"type": "string", "minLength": 1, "maxLength": 10000},
+                "media_id": {"type": "string", "description": "Pre-uploaded media id (optional)"},
+                "reply_to": {"type": "string", "description": "Message id this DM replies to (optional)"},
+            },
+            "required": ["user_id", "text"],
+        },
+    },
+    {
+        "name": "twitter_get_dm_history",
+        "description": (
+            "Fetch a page of 1:1 DM history with a user. Pass back `max_id` (the "
+            "oldest message id from a prior page) to load older messages."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user_id": {"type": "string", "description": "Other user's numeric id"},
+                "max_id": {"type": "string", "description": "Paginate older than this message id (optional)"},
+            },
+            "required": ["user_id"],
+        },
+    },
+    {
+        "name": "twitter_delete_dm",
+        "description": "Delete one of the authenticated account's own DMs by message id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"message_id": {"type": "string"}},
+            "required": ["message_id"],
+        },
+    },
+    {
+        "name": "twitter_add_dm_reaction",
+        "description": (
+            "Add an emoji reaction to a 1:1 DM. `partner_id` is the *other* user's "
+            "numeric id (the conversation peer); the backend builds the "
+            "conversation id internally."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "message_id": {"type": "string"},
+                "partner_id": {"type": "string", "description": "Other user's numeric id"},
+                "emoji": {"type": "string", "minLength": 1},
+            },
+            "required": ["message_id", "partner_id", "emoji"],
+        },
+    },
+    {
+        "name": "twitter_remove_dm_reaction",
+        "description": "Remove an emoji reaction from a 1:1 DM.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "message_id": {"type": "string"},
+                "partner_id": {"type": "string", "description": "Other user's numeric id"},
+                "emoji": {"type": "string", "minLength": 1},
+            },
+            "required": ["message_id", "partner_id", "emoji"],
+        },
+    },
+    {
+        "name": "twitter_send_group_dm",
+        "description": (
+            "Send a DM into an existing group conversation. `media_id` and "
+            "`reply_to` are optional. Returns the created message."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "group_id": {"type": "string"},
+                "text": {"type": "string", "minLength": 1, "maxLength": 10000},
+                "media_id": {"type": "string"},
+                "reply_to": {"type": "string"},
+            },
+            "required": ["group_id", "text"],
+        },
+    },
+    {
+        "name": "twitter_get_group_dm_history",
+        "description": "Page through a group conversation's message history.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "group_id": {"type": "string"},
+                "max_id": {"type": "string", "description": "Paginate older than this message id (optional)"},
+            },
+            "required": ["group_id"],
+        },
+    },
+    {
+        "name": "twitter_get_group",
+        "description": "Fetch a group conversation's metadata (name + members).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"group_id": {"type": "string"}},
+            "required": ["group_id"],
+        },
+    },
+    {
+        "name": "twitter_add_group_members",
+        "description": "Add one or more users to a group conversation by numeric id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "group_id": {"type": "string"},
+                "user_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                },
+            },
+            "required": ["group_id", "user_ids"],
+        },
+    },
+    {
+        "name": "twitter_change_group_name",
+        "description": "Rename a group conversation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "group_id": {"type": "string"},
+                "name": {"type": "string", "minLength": 1, "maxLength": 50},
+            },
+            "required": ["group_id", "name"],
         },
     },
 ]
@@ -377,6 +638,250 @@ def handle_tool_call(name: str, args: dict) -> dict:
             "GET",
             f"/api/twitter/tweet/{urllib.parse.quote(tweet_id, safe='')}/replies",
             query={"cursor": args.get("cursor")},
+        )
+        return _handle_response(status, body)
+
+    # ----- write tools ------------------------------------------------
+    # Each write tool maps 1:1 onto a route under /api/twitter/tweets or
+    # /api/twitter/users. The backend gate handles role checks (writable=
+    # True -> pick_writable), rate-limit budgets, and 429 surfacing.
+
+    if name == "twitter_create_tweet":
+        text = str(args.get("text", "")).strip()
+        if not text:
+            return _err("Missing required argument: text")
+        body_payload: dict = {"text": text}
+        if args.get("reply_to"):
+            body_payload["reply_to"] = str(args["reply_to"])
+        if args.get("attachment_url"):
+            body_payload["attachment_url"] = str(args["attachment_url"])
+        media_ids = args.get("media_ids")
+        if isinstance(media_ids, list) and media_ids:
+            body_payload["media_ids"] = [str(m) for m in media_ids]
+        status, body = _call("POST", "/api/twitter/tweets", body=body_payload)
+        return _handle_response(status, body)
+
+    if name == "twitter_delete_tweet":
+        tweet_id = str(args.get("tweet_id", "")).strip()
+        if not tweet_id:
+            return _err("Missing required argument: tweet_id")
+        status, body = _call(
+            "DELETE",
+            f"/api/twitter/tweets/{urllib.parse.quote(tweet_id, safe='')}",
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_favorite_tweet":
+        tweet_id = str(args.get("tweet_id", "")).strip()
+        if not tweet_id:
+            return _err("Missing required argument: tweet_id")
+        status, body = _call(
+            "POST",
+            f"/api/twitter/tweets/{urllib.parse.quote(tweet_id, safe='')}/favorite",
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_unfavorite_tweet":
+        tweet_id = str(args.get("tweet_id", "")).strip()
+        if not tweet_id:
+            return _err("Missing required argument: tweet_id")
+        status, body = _call(
+            "DELETE",
+            f"/api/twitter/tweets/{urllib.parse.quote(tweet_id, safe='')}/favorite",
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_retweet":
+        tweet_id = str(args.get("tweet_id", "")).strip()
+        if not tweet_id:
+            return _err("Missing required argument: tweet_id")
+        status, body = _call(
+            "POST",
+            f"/api/twitter/tweets/{urllib.parse.quote(tweet_id, safe='')}/retweet",
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_delete_retweet":
+        tweet_id = str(args.get("tweet_id", "")).strip()
+        if not tweet_id:
+            return _err("Missing required argument: tweet_id")
+        status, body = _call(
+            "DELETE",
+            f"/api/twitter/tweets/{urllib.parse.quote(tweet_id, safe='')}/retweet",
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_bookmark_tweet":
+        tweet_id = str(args.get("tweet_id", "")).strip()
+        if not tweet_id:
+            return _err("Missing required argument: tweet_id")
+        status, body = _call(
+            "POST",
+            f"/api/twitter/tweets/{urllib.parse.quote(tweet_id, safe='')}/bookmark",
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_delete_bookmark":
+        tweet_id = str(args.get("tweet_id", "")).strip()
+        if not tweet_id:
+            return _err("Missing required argument: tweet_id")
+        status, body = _call(
+            "DELETE",
+            f"/api/twitter/tweets/{urllib.parse.quote(tweet_id, safe='')}/bookmark",
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_follow_user":
+        user_id = str(args.get("user_id", "")).strip()
+        if not user_id:
+            return _err("Missing required argument: user_id")
+        status, body = _call(
+            "POST",
+            f"/api/twitter/users/{urllib.parse.quote(user_id, safe='')}/follow",
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_unfollow_user":
+        user_id = str(args.get("user_id", "")).strip()
+        if not user_id:
+            return _err("Missing required argument: user_id")
+        status, body = _call(
+            "DELETE",
+            f"/api/twitter/users/{urllib.parse.quote(user_id, safe='')}/follow",
+        )
+        return _handle_response(status, body)
+
+    # ----- DM tools ---------------------------------------------------
+    # 1:1 DMs use /users/{user_id}/dms and /dms/{message_id}; group DMs
+    # use /groups/{group_id}/dms and /groups/{group_id}/members. The
+    # backend gate handles role checks, rate-limit budgets, and 429
+    # surfacing — same as the tweet writes above.
+
+    if name == "twitter_send_dm":
+        user_id = str(args.get("user_id", "")).strip()
+        text = str(args.get("text", "")).strip()
+        if not user_id or not text:
+            return _err("Missing required arguments: user_id and text")
+        body_payload: dict = {"text": text}
+        if args.get("media_id"):
+            body_payload["media_id"] = str(args["media_id"])
+        if args.get("reply_to"):
+            body_payload["reply_to"] = str(args["reply_to"])
+        status, body = _call(
+            "POST",
+            f"/api/twitter/users/{urllib.parse.quote(user_id, safe='')}/dms",
+            body=body_payload,
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_get_dm_history":
+        user_id = str(args.get("user_id", "")).strip()
+        if not user_id:
+            return _err("Missing required argument: user_id")
+        status, body = _call(
+            "GET",
+            f"/api/twitter/users/{urllib.parse.quote(user_id, safe='')}/dms",
+            query={"max_id": args.get("max_id")},
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_delete_dm":
+        message_id = str(args.get("message_id", "")).strip()
+        if not message_id:
+            return _err("Missing required argument: message_id")
+        status, body = _call(
+            "DELETE",
+            f"/api/twitter/dms/{urllib.parse.quote(message_id, safe='')}",
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_add_dm_reaction":
+        message_id = str(args.get("message_id", "")).strip()
+        partner_id = str(args.get("partner_id", "")).strip()
+        emoji = str(args.get("emoji", "")).strip()
+        if not message_id or not partner_id or not emoji:
+            return _err("Missing required arguments: message_id, partner_id, emoji")
+        status, body = _call(
+            "POST",
+            f"/api/twitter/dms/{urllib.parse.quote(message_id, safe='')}/reaction",
+            body={"partner_id": partner_id, "emoji": emoji},
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_remove_dm_reaction":
+        message_id = str(args.get("message_id", "")).strip()
+        partner_id = str(args.get("partner_id", "")).strip()
+        emoji = str(args.get("emoji", "")).strip()
+        if not message_id or not partner_id or not emoji:
+            return _err("Missing required arguments: message_id, partner_id, emoji")
+        status, body = _call(
+            "DELETE",
+            f"/api/twitter/dms/{urllib.parse.quote(message_id, safe='')}/reaction",
+            query={"partner_id": partner_id, "emoji": emoji},
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_send_group_dm":
+        group_id = str(args.get("group_id", "")).strip()
+        text = str(args.get("text", "")).strip()
+        if not group_id or not text:
+            return _err("Missing required arguments: group_id and text")
+        body_payload = {"text": text}
+        if args.get("media_id"):
+            body_payload["media_id"] = str(args["media_id"])
+        if args.get("reply_to"):
+            body_payload["reply_to"] = str(args["reply_to"])
+        status, body = _call(
+            "POST",
+            f"/api/twitter/groups/{urllib.parse.quote(group_id, safe='')}/dms",
+            body=body_payload,
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_get_group_dm_history":
+        group_id = str(args.get("group_id", "")).strip()
+        if not group_id:
+            return _err("Missing required argument: group_id")
+        status, body = _call(
+            "GET",
+            f"/api/twitter/groups/{urllib.parse.quote(group_id, safe='')}/dms",
+            query={"max_id": args.get("max_id")},
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_get_group":
+        group_id = str(args.get("group_id", "")).strip()
+        if not group_id:
+            return _err("Missing required argument: group_id")
+        status, body = _call(
+            "GET",
+            f"/api/twitter/groups/{urllib.parse.quote(group_id, safe='')}",
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_add_group_members":
+        group_id = str(args.get("group_id", "")).strip()
+        user_ids = args.get("user_ids") or []
+        if not group_id:
+            return _err("Missing required argument: group_id")
+        if not isinstance(user_ids, list) or not user_ids:
+            return _err("Missing required argument: user_ids (non-empty array)")
+        status, body = _call(
+            "POST",
+            f"/api/twitter/groups/{urllib.parse.quote(group_id, safe='')}/members",
+            body={"user_ids": [str(u) for u in user_ids]},
+        )
+        return _handle_response(status, body)
+
+    if name == "twitter_change_group_name":
+        group_id = str(args.get("group_id", "")).strip()
+        new_name = str(args.get("name", "")).strip()
+        if not group_id or not new_name:
+            return _err("Missing required arguments: group_id and name")
+        status, body = _call(
+            "PATCH",
+            f"/api/twitter/groups/{urllib.parse.quote(group_id, safe='')}/name",
+            body={"name": new_name},
         )
         return _handle_response(status, body)
 

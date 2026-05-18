@@ -100,6 +100,80 @@ def test_pick_prefers_account_with_more_budget(tmp_state_db, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# pick_writable() — only role="primary" accounts are eligible for writes
+# ---------------------------------------------------------------------------
+
+def test_pick_writable_empty_returns_none(tmp_state_db):
+    async def _run():
+        pool = _make_pool(tmp_state_db)
+        return await pool.pick_writable("create_tweet")
+
+    assert asyncio.run(_run()) is None
+
+
+def test_pick_writable_excludes_read_only(tmp_state_db):
+    """Pool with a primary + a read_only: writable picker returns primary."""
+    async def _run():
+        pool = _make_pool(tmp_state_db)
+        await pool.add(_make_record("ro", role="read_only"), object())
+        await pool.add(_make_record("pri", role="primary"), object())
+        chosen = await pool.pick_writable("create_tweet")
+        return chosen.id
+
+    assert asyncio.run(_run()) == "pri"
+
+
+def test_pick_writable_returns_none_when_only_read_only(tmp_state_db):
+    """If every account is read_only, writes have no home."""
+    async def _run():
+        pool = _make_pool(tmp_state_db)
+        await pool.add(_make_record("ro1", role="read_only"), object())
+        await pool.add(_make_record("ro2", role="read_only"), object())
+        return await pool.pick_writable("create_tweet")
+
+    assert asyncio.run(_run()) is None
+
+
+def test_pick_writable_skips_non_active_primaries(tmp_state_db):
+    """`role=primary` + `state=needs_relogin` is still ineligible.
+
+    `pick_writable` keeps both the read/`pick()` invariants — never
+    return removing-in-progress or non-active accounts — and adds the
+    role filter. A "broken" primary doesn't downgrade to writable.
+    """
+    async def _run():
+        pool = _make_pool(tmp_state_db)
+        await pool.add(_make_record("pri_locked", role="primary", state="locked"), object())
+        await pool.add(_make_record("pri_relogin", role="primary", state="needs_relogin"), object())
+        return await pool.pick_writable("create_tweet")
+
+    assert asyncio.run(_run()) is None
+
+
+def test_pick_writable_prefers_account_with_more_budget(tmp_state_db):
+    """Two writable primaries: the one with more bucket budget wins.
+
+    Same ordering rule as `pick()` — the role filter is an additional
+    filter, not a replacement for the budget-based tie-breaker.
+    """
+    async def _run():
+        pool = _make_pool(tmp_state_db)
+        await pool.add(_make_record("hot", role="primary"), object())
+        await pool.add(_make_record("cold", role="primary"), object())
+
+        hot = pool.get("hot")
+        b = hot.bucket("create_tweet")
+        b.tokens = 0.0
+        import time as t
+        b.locked_until = t.time() + 999
+
+        chosen = await pool.pick_writable("create_tweet")
+        return chosen.id
+
+    assert asyncio.run(_run()) == "cold"
+
+
+# ---------------------------------------------------------------------------
 # add() — runtime registration
 # ---------------------------------------------------------------------------
 
@@ -443,3 +517,125 @@ def test_recent_429s_helper_returns_audit_count(tmp_state_db):
         return pool.recent_429s("a1", since_s=3600)
 
     assert asyncio.run(_run()) == 2
+
+
+# ---------------------------------------------------------------------------
+# dedupe_by_handle — invariant: one ManagedAccount per X identity
+# ---------------------------------------------------------------------------
+
+def test_dedupe_by_handle_removes_others(tmp_state_db):
+    """Two entries share a handle; dedupe collapses to the keeper.
+
+    Unrelated handles must be untouched. The loser's cookies file
+    must be deleted from disk so a future hydrate pass can't re-load
+    the stale entry.
+    """
+    from backend.apps.twitter import persistence as pers
+
+    pers.ensure_dirs()
+
+    async def _run():
+        pool = _make_pool(tmp_state_db)
+        await pool.add(_make_record("keep", handle="alice"), object())
+        await pool.add(_make_record("dup", handle="Alice"), object())  # case-insensitive
+        await pool.add(_make_record("other", handle="bob"), object())
+
+        # Cookies files for each, so we can verify cleanup.
+        for aid in ("keep", "dup", "other"):
+            with open(pers.cookies_path(aid), "w") as f:
+                f.write("{}")
+
+        removed = await pool.dedupe_by_handle("alice", keep_id="keep")
+        return removed, [a.id for a in pool.accounts]
+
+    removed, remaining = asyncio.run(_run())
+    assert removed == ["dup"]
+    assert sorted(remaining) == ["keep", "other"]
+
+    from backend.apps.twitter import persistence as pers
+    assert os.path.exists(pers.cookies_path("keep"))
+    assert not os.path.exists(pers.cookies_path("dup"))
+    assert os.path.exists(pers.cookies_path("other"))
+
+
+def test_dedupe_by_handle_is_noop_when_unique(tmp_state_db):
+    """Calling dedupe with only one matching handle removes nothing."""
+
+    async def _run():
+        pool = _make_pool(tmp_state_db)
+        await pool.add(_make_record("only", handle="alice"), object())
+        await pool.add(_make_record("other", handle="bob"), object())
+        removed = await pool.dedupe_by_handle("alice", keep_id="only")
+        return removed, [a.id for a in pool.accounts]
+
+    removed, remaining = asyncio.run(_run())
+    assert removed == []
+    assert sorted(remaining) == ["only", "other"]
+
+
+def test_hydrate_pool_collapses_same_handle_duplicates(tmp_state_db, monkeypatch):
+    """Startup hydration deduplicates pre-existing same-handle entries.
+
+    Simulates state left over from the pre-fix accounts_import (two
+    accounts.json records with the same handle). After _hydrate_pool,
+    only the canonical winner remains in the pool, the loser's
+    cookies file is gone, and accounts.json is rewritten.
+    """
+    import json as _json
+    from unittest.mock import MagicMock
+
+    from backend.apps.twitter import persistence as pers
+    from backend.apps.twitter import twitter as tw
+
+    pers.ensure_dirs()
+
+    # Two records with the same handle. "loser" is inactive + older
+    # last_verified_at; the keeper sort prefers state=active first.
+    accounts = [
+        {
+            "id": "loser",
+            "label": "imported",
+            "handle": "alice",
+            "role": "primary",
+            "state": "needs_relogin",
+            "trust_multiplier": 0.4,
+            "created_at": 1000.0,
+            "last_verified_at": 0.0,
+            "last_error": None,
+        },
+        {
+            "id": "keeper",
+            "label": "imported",
+            "handle": "alice",
+            "role": "primary",
+            "state": "active",
+            "trust_multiplier": 0.4,
+            "created_at": 2000.0,
+            "last_verified_at": 9999.0,
+            "last_error": None,
+        },
+    ]
+    pers.save_accounts(accounts)
+    for aid in ("loser", "keeper"):
+        with open(pers.cookies_path(aid), "w") as f:
+            _json.dump({"auth_token": f"tok-{aid}", "ct0": f"ct0-{aid}"}, f)
+
+    # Stub twikit.Client — _hydrate_pool constructs one per record.
+    import twikit
+
+    def _make_client(*_a, **_kw):
+        c = MagicMock(name="twikit.Client")
+        c.set_cookies = MagicMock()
+        return c
+
+    monkeypatch.setattr(twikit, "Client", _make_client)
+
+    pool = _make_pool(tmp_state_db)
+    asyncio.run(tw._hydrate_pool(pool))
+
+    assert [a.id for a in pool.accounts] == ["keeper"]
+    assert os.path.exists(pers.cookies_path("keeper"))
+    assert not os.path.exists(pers.cookies_path("loser"))
+    # accounts.json was rewritten with only the keeper.
+    on_disk = pers.load_accounts()
+    assert [a["id"] for a in on_disk] == ["keeper"]
