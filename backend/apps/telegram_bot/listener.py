@@ -271,7 +271,9 @@ async def _handle_status(event) -> None:
 
 
 async def _handle_task(event, prompt: str) -> None:
-    """Spawn an agent, poll until it stops, send the final assistant reply."""
+    """Spawn an agent, show Telegram's native typing indicator while it runs,
+    send back the agent's reply as a normal-looking message. Feels like a
+    real text conversation — no session IDs, no status banners."""
     from backend.apps.agents.agent_manager import agent_manager
     from backend.apps.agents.models import AgentConfig
 
@@ -289,40 +291,59 @@ async def _handle_task(event, prompt: str) -> None:
     try:
         session = await agent_manager.launch_agent(config)
     except Exception as exc:  # noqa: BLE001
-        await _respond(event,f"Could not launch agent: {exc}")
+        await _respond(event, f"Sorry, I couldn't get started: {exc}")
         return
-
-    await _respond(event,f"⏳ Starting task — session `{session.id[:8]}`")
 
     try:
         await agent_manager.send_message(session.id, prompt)
     except Exception as exc:  # noqa: BLE001
-        await _respond(event,f"Send failed: {exc}")
+        await _respond(event, f"Sorry, I couldn't pass that to the agent: {exc}")
         return
 
-    # Poll until the session reports a terminal status, with a hard cap.
-    deadline = asyncio.get_event_loop().time() + _TASK_TIMEOUT_S
+    # Telegram-native "typing..." indicator while the agent works. Telethon's
+    # action() context manager auto-refreshes every 5s so the indicator stays
+    # alive for long-running tasks. No fake status message, no session id —
+    # the user just sees the typing dots like in any normal chat.
     final = None
-    while asyncio.get_event_loop().time() < deadline:
-        await asyncio.sleep(_POLL_INTERVAL_S)
-        s = agent_manager.get_session(session.id)
-        if s is None:
-            break
-        if s.status in ("completed", "stopped", "error"):
-            final = s
-            break
+    try:
+        async with _client.action(event.chat_id, "typing"):
+            deadline = asyncio.get_event_loop().time() + _TASK_TIMEOUT_S
+            while asyncio.get_event_loop().time() < deadline:
+                await asyncio.sleep(_POLL_INTERVAL_S)
+                s = agent_manager.get_session(session.id)
+                if s is None:
+                    break
+                if s.status in ("completed", "stopped", "error"):
+                    final = s
+                    break
+    except Exception as exc:  # noqa: BLE001
+        # Action context blew up for some reason — still wait for the agent
+        # to finish before replying.
+        logger.warning(f"telegram-bot: typing action failed, polling without indicator: {exc}")
+        deadline = asyncio.get_event_loop().time() + _TASK_TIMEOUT_S
+        while asyncio.get_event_loop().time() < deadline:
+            await asyncio.sleep(_POLL_INTERVAL_S)
+            s = agent_manager.get_session(session.id)
+            if s is None:
+                break
+            if s.status in ("completed", "stopped", "error"):
+                final = s
+                break
 
     if final is None:
-        await _respond(event,
-            f"Task `{session.id[:8]}` is still running after {_TASK_TIMEOUT_S // 60}m. "
-            f"Check OpenSwarm UI for progress."
+        await _respond(
+            event,
+            "I'm taking longer than expected on this one. You can check progress in the OpenSwarm "
+            "app on your computer, or send me a new task and I'll start fresh."
         )
         return
 
-    reply = _extract_last_assistant_text(final.id) or f"Task `{session.id[:8]}` finished with no text reply."
-    if final.status == "error":
-        reply = f"❌ Task errored.\n\n{reply}"
-    await _respond(event,reply[:_MAX_REPLY_CHARS])
+    reply = _extract_last_assistant_text(final.id)
+    if not reply:
+        reply = "I worked on that but didn't get a clear response. Try rephrasing?"
+    elif final.status == "error":
+        reply = f"I ran into a problem:\n\n{reply}"
+    await _respond(event, reply[:_MAX_REPLY_CHARS])
 
 
 def _extract_last_assistant_text(session_id: str) -> str:
