@@ -1520,6 +1520,21 @@ async def _tg_finalize_after_auth(tool, phone: str, client) -> None:
         pass
 
     digits = _tg_sanitize_phone(phone)
+
+    # Snapshot the freshly-authenticated SQLite session to a side path used
+    # by the long-running bot listener (backend.apps.telegram_bot). Without
+    # this copy, listener + MCP-server would fight over the same file lock
+    # whenever an agent invokes a Telegram tool mid-listener-session.
+    try:
+        import shutil as _sh
+        session_dir = _tg_session_dir()
+        main_session = session_dir / f"{digits}.session"
+        listener_session = session_dir / f"{digits}.listener.session"
+        if main_session.exists():
+            _sh.copy2(main_session, listener_session)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"telegram: could not snapshot listener session: {exc}")
+
     if me and me.username:
         tool.connected_account_email = f"@{me.username}"
     elif me and (me.first_name or me.last_name):
