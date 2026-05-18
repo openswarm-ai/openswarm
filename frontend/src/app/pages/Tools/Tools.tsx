@@ -334,6 +334,34 @@ const INTEGRATIONS: Integration[] = [
     ),
   },
   {
+    id: 'telegram-bot',
+    name: 'Telegram Bot',
+    description:
+      'Drive OpenSwarm from any Telegram client by DM-ing your own bot. Type a task in plain English (no slash needed) — the bot runs it on this OpenSwarm install and replies with the result. Great for kicking off agents from your phone while away from the desktop. Two-minute setup via @BotFather.',
+    mcp_config: {
+      // No MCP server — the bot runs as a backend listener (telegram_bot.listener).
+      // This empty config keeps the tile in the curated list without spawning anything.
+      type: 'stdio',
+      command: 'true',
+      args: [],
+    },
+    color: '#229ED9',
+    website: 'https://core.telegram.org/bots',
+    connectLabel: 'Connect Telegram Bot',
+    connectInstructions: 'Open Telegram → message @BotFather → send `/newbot` → pick a name and username for your bot (e.g. ShawnsOpenSwarmBot). @BotFather will reply with a token like `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`. Paste that token below. After connecting, DM your bot anything and OpenSwarm runs it as an agent task. First message auto-authorizes you as owner.',
+    credentialFields: [
+      { key: 'TELEGRAM_BOT_TOKEN', label: 'Bot Token (from @BotFather)', placeholder: '123456:ABC-DEF1234ghIkl-...', type: 'password' },
+    ],
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <circle cx="12" cy="12" r="12" fill="#229ED9" />
+        <path d="M7 11.5l9.7-3.8c.45-.17.85.1.7.78l-1.65 7.8c-.1.5-.4.62-.83.4l-2.3-1.7-1.1 1.07c-.13.13-.23.23-.47.23l.17-2.43 4.43-4c.2-.17-.04-.27-.3-.1L9.9 11.2l-2.35-.73c-.5-.16-.51-.5.12-.74z" fill="#fff"/>
+        <circle cx="18" cy="6" r="3.5" fill="#fff" stroke="#229ED9" strokeWidth="0.5" />
+        <path d="M16.5 6.7l1 1 2-2" stroke="#229ED9" strokeWidth="0.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
     id: 'telegram',
     name: 'Telegram',
     description:
@@ -686,7 +714,7 @@ const Tools: React.FC = () => {
   // browse the long tail.
   const CURATED_MCP_NAMES = useMemo(() => new Set([
     'google-workspace', 'microsoft-365', 'slack', 'discord',
-    'notion', 'airtable', 'hubspot', 'reddit', 'youtube', 'instagram', 'linkedin', 'github', 'telegram',
+    'notion', 'airtable', 'hubspot', 'reddit', 'youtube', 'instagram', 'linkedin', 'github', 'telegram', 'telegram-bot',
   ]), []);
   const regServers = useMemo(() => {
     if (regSource !== 'curated') return regServersRaw;
@@ -1471,6 +1499,31 @@ const Tools: React.FC = () => {
         await dispatch(fetchToolStatus(credDialogToolId));
         setCredDialogOpen(false);
         setSnackbar({ open: true, message: `Instagram connected as @${data.username}! Re-discovering actions…` });
+        dispatch(discoverTools(credDialogToolId));
+        return;
+      }
+
+      // Telegram Bot: validate the bot token against Telethon before saving.
+      // Bot tokens don't expire and there's no OTP — single field, one call.
+      if (credDialogIntegration.id === 'telegram-bot') {
+        const token = (credDialogValues['TELEGRAM_BOT_TOKEN'] || '').trim();
+        if (!token.includes(':')) {
+          setSnackbar({ open: true, message: 'Bot token should look like `123456:ABC-DEF...` (number:hash). Get it from @BotFather.', severity: 'error' });
+          return;
+        }
+        const resp = await fetch(`${API_BASE}/tools/credentials/telegram_bot/validate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tool_id: credDialogToolId, bot_token: token }),
+        });
+        const data = await resp.json().catch(() => ({ ok: false, error: `bad response (${resp.status})` }));
+        if (!data.ok) {
+          setSnackbar({ open: true, message: `Bot token invalid: ${data.error || 'unknown error'}`, severity: 'error' });
+          return;
+        }
+        await dispatch(fetchToolStatus(credDialogToolId));
+        setCredDialogOpen(false);
+        setSnackbar({ open: true, message: `Connected @${data.username || 'bot'}! DM your bot to start. First message auto-authorizes you as owner. Restart OpenSwarm to start the listener.` });
         dispatch(discoverTools(credDialogToolId));
         return;
       }

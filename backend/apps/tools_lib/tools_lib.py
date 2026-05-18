@@ -1618,6 +1618,58 @@ async def telegram_verify(payload: dict) -> dict:
     return {"ok": True}
 
 
+@tools_lib.router.post("/credentials/telegram_bot/validate")
+async def telegram_bot_validate(payload: dict) -> dict:
+    """Validate a bot token from @BotFather and persist it as a connected tool.
+
+    Body: {tool_id: str, bot_token: str}
+    The bot doesn't have user-style sessions; the token IS the credential.
+    We do verify it by signing in once via Telethon to make sure it's real,
+    then disconnect and save.
+    """
+    tool_id = payload.get("tool_id") or ""
+    token = (payload.get("bot_token") or "").strip()
+    if not tool_id or not token:
+        return {"ok": False, "error": "tool_id and bot_token are required"}
+    tool = _load(tool_id)
+    try:
+        api_id, api_hash = _tg_app_creds()
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+
+    client = TelegramClient(StringSession(), api_id, api_hash)
+    try:
+        await client.connect()
+        try:
+            await client.sign_in(bot_token=token)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": (str(e) or "invalid bot token")[:300]}
+        me = await client.get_me()
+        if not me or not getattr(me, "bot", False):
+            return {"ok": False, "error": "token authenticated but the account is not a bot"}
+        bot_username = me.username or ""
+        bot_id = me.id
+    finally:
+        try: await client.disconnect()
+        except Exception: pass
+
+    # First-time setup: empty authorized list. The first incoming message
+    # to the bot will auto-authorize the sender (TOFU). The bot owner can
+    # /authorize <user_id> additional people from any authorized session.
+    tool.credentials = {
+        "TELEGRAM_BOT_TOKEN": token,
+        "AUTHORIZED_USER_IDS": "",
+    }
+    tool.auth_type = "env_vars"
+    tool.auth_status = "connected"
+    tool.connected_account_email = f"@{bot_username}" if bot_username else f"bot_{bot_id}"
+    _save(tool)
+    return {"ok": True, "username": bot_username, "bot_id": bot_id}
+
+
 @tools_lib.router.post("/credentials/telegram/password")
 async def telegram_password(payload: dict) -> dict:
     """Step 3 (only if account has cloud 2FA): submit the 2FA password.
