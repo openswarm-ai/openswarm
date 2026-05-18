@@ -1752,15 +1752,36 @@ async def spotify_callback(code: str = "", state: str = "", error: str = "") -> 
     if not refresh_token:
         return HTMLResponse("<h2>Spotify did not return a refresh_token</h2><p>Retry from OpenSwarm.</p>", status_code=400)
 
-    # Log what Spotify ACTUALLY granted vs what we requested. If a user
-    # complains about "scope not granted" later, this is the first place
-    # to check — the granted set should equal _SPOTIFY_SCOPES.
+    # Spotify returns the actual granted scopes in the token response.
+    # Compare against what we asked for and bail HARD if any are missing —
+    # otherwise the user thinks they're connected but every playlist /
+    # library mutation will 403 later with a cryptic error.
     granted_scopes = data.get("scope", "")
     requested_set = set(_SPOTIFY_SCOPES.split())
     granted_set = set(granted_scopes.split())
     missing = requested_set - granted_set
     if missing:
-        logger.warning(f"spotify: Spotify granted fewer scopes than requested. Missing: {missing}")
+        logger.warning(f"spotify: Spotify granted fewer scopes than requested. Missing: {sorted(missing)}")
+        missing_pretty = ", ".join(sorted(missing))
+        return HTMLResponse(
+            "<html><body style='font-family:-apple-system,system-ui,sans-serif;text-align:center;padding:60px 20px;color:#fff;background:#191414;'>"
+            "<div style='max-width:560px;margin:0 auto;'>"
+            "<div style='font-size:48px;color:#e74c3c;margin-bottom:16px;'>⚠</div>"
+            "<h2 style='margin:0 0 12px 0;'>Spotify didn't grant all required scopes</h2>"
+            f"<p style='color:#b3b3b3;'>Spotify only granted <strong>{len(granted_set)}</strong> of <strong>{len(requested_set)}</strong> scopes. "
+            f"Missing:</p>"
+            f"<pre style='background:#000;color:#e74c3c;padding:12px;border-radius:8px;text-align:left;display:inline-block;'>{html.escape(missing_pretty)}</pre>"
+            "<h3 style='margin-top:32px;'>To fix:</h3>"
+            "<ol style='text-align:left;color:#b3b3b3;max-width:480px;margin:0 auto;'>"
+            "<li>Open <a href='https://www.spotify.com/account/apps' style='color:#1DB954;'>spotify.com/account/apps</a> in your browser</li>"
+            "<li>Click <strong>REMOVE ACCESS</strong> next to the OpenSwarm app</li>"
+            "<li>Come back to OpenSwarm and click Connect Spotify again</li>"
+            "<li>This time the consent screen will show every permission — tick all of them and click Agree</li>"
+            "</ol>"
+            "<p style='margin-top:32px;color:#666;font-size:13px;'>Your token was NOT saved. The Spotify tile in OpenSwarm is still disconnected.</p>"
+            "</div></body></html>",
+            status_code=400,
+        )
     else:
         logger.info(f"spotify: all {len(granted_set)} scopes granted")
 
@@ -1776,7 +1797,12 @@ async def spotify_callback(code: str = "", state: str = "", error: str = "") -> 
     except Exception:  # noqa: BLE001
         pass
 
-    tool.credentials = {"SPOTIFY_REFRESH_TOKEN": refresh_token}
+    tool.credentials = {
+        "SPOTIFY_REFRESH_TOKEN": refresh_token,
+        # Stash the granted scopes so we can introspect later without
+        # round-tripping to Spotify. Used by the diagnostic display below.
+        "SPOTIFY_GRANTED_SCOPES": granted_scopes,
+    }
     tool.auth_type = "env_vars"
     tool.auth_status = "connected"
     tool.connected_account_email = display_name or "Spotify"
@@ -1784,10 +1810,11 @@ async def spotify_callback(code: str = "", state: str = "", error: str = "") -> 
 
     return HTMLResponse(
         "<html><body style='font-family:-apple-system,system-ui,sans-serif;text-align:center;padding:60px 20px;color:#fff;background:#191414;'>"
-        "<div style='max-width:420px;margin:0 auto;'>"
+        "<div style='max-width:480px;margin:0 auto;'>"
         "<div style='font-size:48px;color:#1DB954;margin-bottom:16px;'>♪</div>"
         f"<h2 style='margin:0 0 8px 0;'>Spotify connected{(' as ' + html.escape(display_name)) if display_name else ''}</h2>"
-        "<p style='color:#b3b3b3;'>You can close this tab and return to OpenSwarm.</p>"
+        f"<p style='color:#b3b3b3;'>All <strong>{len(granted_set)}</strong> permissions granted, including playlist write access.</p>"
+        "<p style='color:#666;font-size:13px;margin-top:24px;'>You can close this tab and return to OpenSwarm.</p>"
         "</div></body></html>"
     )
 
