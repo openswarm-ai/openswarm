@@ -21,7 +21,6 @@ Env contract (set by OpenSwarm at spawn time):
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import re
@@ -60,12 +59,12 @@ def _session_path(phone: str) -> Path:
 
 
 _client: Optional[TelegramClient] = None
-_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
 def _get_client() -> TelegramClient:
-    """Lazy-init the singleton client. Tools run synchronously and share one
-    background event loop so we don't pay the connect cost on every call."""
+    """Lazy-init the singleton client. FastMCP runs the server in its own
+    event loop and awaits async tools, so we share one Telethon client
+    across calls — no per-call connect/disconnect tax."""
     global _client
     if _client is not None:
         return _client
@@ -94,15 +93,7 @@ def _get_client() -> TelegramClient:
     return _client
 
 
-def _run(coro):
-    """Run an async Telethon coroutine from a sync MCP tool body."""
-    global _loop
-    if _loop is None or _loop.is_closed():
-        _loop = asyncio.new_event_loop()
-    return _loop.run_until_complete(coro)
-
-
-async def _ensure_connected() -> None:
+async def _ensure_connected() -> TelegramClient:
     client = _get_client()
     if not client.is_connected():
         await client.connect()
@@ -110,6 +101,7 @@ async def _ensure_connected() -> None:
         raise RuntimeError(
             "Telegram session exists but is not authorized. Disconnect and reconnect via the OpenSwarm Tools page."
         )
+    return client
 
 
 def _message_summary(m: Message) -> Dict[str, Any]:
@@ -142,7 +134,7 @@ def _dialog_summary(d: Any) -> Dict[str, Any]:
 
 @mcp.tool()
 @rate_limited("send")
-def send_message(chat: str, message: str, reply_to: Optional[int] = None) -> Dict[str, Any]:
+async def send_message(chat: str, message: str, reply_to: Optional[int] = None) -> Dict[str, Any]:
     """Send a text message to a Telegram user, group, or channel.
 
     Args:
@@ -153,20 +145,17 @@ def send_message(chat: str, message: str, reply_to: Optional[int] = None) -> Dic
     Returns:
         Dictionary with success flag and the sent message's id.
     """
-    async def _do():
-        await _ensure_connected()
-        client = _get_client()
+    try:
+        client = await _ensure_connected()
         sent = await client.send_message(chat, message, reply_to=reply_to)
         return {"success": True, "message_id": sent.id, "chat": chat}
-    try:
-        return _run(_do())
     except Exception as e:  # noqa: BLE001
         return {"success": False, "message": str(e)}
 
 
 @mcp.tool()
 @rate_limited("send")
-def send_file(chat: str, file_path: str, caption: Optional[str] = None) -> Dict[str, Any]:
+async def send_file(chat: str, file_path: str, caption: Optional[str] = None) -> Dict[str, Any]:
     """Send a photo, video, document, or any file to a Telegram chat.
 
     Args:
@@ -178,20 +167,17 @@ def send_file(chat: str, file_path: str, caption: Optional[str] = None) -> Dict[
     """
     if not os.path.exists(file_path):
         return {"success": False, "message": f"File not found: {file_path}"}
-    async def _do():
-        await _ensure_connected()
-        client = _get_client()
+    try:
+        client = await _ensure_connected()
         sent = await client.send_file(chat, file_path, caption=caption)
         return {"success": True, "message_id": sent.id, "chat": chat}
-    try:
-        return _run(_do())
     except Exception as e:  # noqa: BLE001
         return {"success": False, "message": str(e)}
 
 
 @mcp.tool()
 @rate_limited("send")
-def send_voice(chat: str, file_path: str, caption: Optional[str] = None) -> Dict[str, Any]:
+async def send_voice(chat: str, file_path: str, caption: Optional[str] = None) -> Dict[str, Any]:
     """Send a voice note (.ogg, .opus, .mp3) to a Telegram chat.
 
     Args:
@@ -203,13 +189,10 @@ def send_voice(chat: str, file_path: str, caption: Optional[str] = None) -> Dict
     """
     if not os.path.exists(file_path):
         return {"success": False, "message": f"File not found: {file_path}"}
-    async def _do():
-        await _ensure_connected()
-        client = _get_client()
+    try:
+        client = await _ensure_connected()
         sent = await client.send_file(chat, file_path, caption=caption, voice_note=True)
         return {"success": True, "message_id": sent.id, "chat": chat}
-    try:
-        return _run(_do())
     except Exception as e:  # noqa: BLE001
         return {"success": False, "message": str(e)}
 
@@ -219,7 +202,7 @@ def send_voice(chat: str, file_path: str, caption: Optional[str] = None) -> Dict
 
 @mcp.tool()
 @rate_limited("forward")
-def forward_message(from_chat: str, message_id: int, to_chat: str) -> Dict[str, Any]:
+async def forward_message(from_chat: str, message_id: int, to_chat: str) -> Dict[str, Any]:
     """Forward a single message from one chat to another.
 
     Args:
@@ -229,14 +212,11 @@ def forward_message(from_chat: str, message_id: int, to_chat: str) -> Dict[str, 
     Returns:
         Dictionary with success flag and the forwarded message id.
     """
-    async def _do():
-        await _ensure_connected()
-        client = _get_client()
+    try:
+        client = await _ensure_connected()
         sent = await client.forward_messages(to_chat, message_id, from_chat)
         new_id = sent.id if not isinstance(sent, list) else (sent[0].id if sent else None)
         return {"success": True, "new_message_id": new_id, "to": to_chat}
-    try:
-        return _run(_do())
     except Exception as e:  # noqa: BLE001
         return {"success": False, "message": str(e)}
 
@@ -246,7 +226,7 @@ def forward_message(from_chat: str, message_id: int, to_chat: str) -> Dict[str, 
 
 @mcp.tool()
 @rate_limited("lookup")
-def list_dialogs(limit: int = 20, archived: bool = False) -> Dict[str, Any]:
+async def list_dialogs(limit: int = 20, archived: bool = False) -> Dict[str, Any]:
     """List your recent Telegram dialogs (chats, groups, channels).
 
     Args:
@@ -255,20 +235,17 @@ def list_dialogs(limit: int = 20, archived: bool = False) -> Dict[str, Any]:
     Returns:
         Dictionary with success flag and a list of dialog summaries.
     """
-    async def _do():
-        await _ensure_connected()
-        client = _get_client()
+    try:
+        client = await _ensure_connected()
         dialogs = await client.get_dialogs(limit=limit, archived=archived)
         return {"success": True, "dialogs": [_dialog_summary(d) for d in dialogs]}
-    try:
-        return _run(_do())
     except Exception as e:  # noqa: BLE001
         return {"success": False, "message": str(e)}
 
 
 @mcp.tool()
 @rate_limited("lookup")
-def get_messages(chat: str, limit: int = 20, offset_id: int = 0) -> Dict[str, Any]:
+async def get_messages(chat: str, limit: int = 20, offset_id: int = 0) -> Dict[str, Any]:
     """Read recent messages from a Telegram chat.
 
     Args:
@@ -279,20 +256,17 @@ def get_messages(chat: str, limit: int = 20, offset_id: int = 0) -> Dict[str, An
         Dictionary with success flag and a list of message summaries
         (newest first).
     """
-    async def _do():
-        await _ensure_connected()
-        client = _get_client()
+    try:
+        client = await _ensure_connected()
         messages = await client.get_messages(chat, limit=limit, offset_id=offset_id)
         return {"success": True, "messages": [_message_summary(m) for m in messages]}
-    try:
-        return _run(_do())
     except Exception as e:  # noqa: BLE001
         return {"success": False, "message": str(e)}
 
 
 @mcp.tool()
 @rate_limited("search")
-def search_messages(query: str, chat: Optional[str] = None, limit: int = 20) -> Dict[str, Any]:
+async def search_messages(query: str, chat: Optional[str] = None, limit: int = 20) -> Dict[str, Any]:
     """Full-text search across messages.
 
     Args:
@@ -302,13 +276,10 @@ def search_messages(query: str, chat: Optional[str] = None, limit: int = 20) -> 
     Returns:
         Dictionary with success flag and a list of matching message summaries.
     """
-    async def _do():
-        await _ensure_connected()
-        client = _get_client()
+    try:
+        client = await _ensure_connected()
         messages = await client.get_messages(chat, search=query, limit=limit)
         return {"success": True, "messages": [_message_summary(m) for m in messages]}
-    try:
-        return _run(_do())
     except Exception as e:  # noqa: BLE001
         return {"success": False, "message": str(e)}
 
@@ -318,14 +289,13 @@ def search_messages(query: str, chat: Optional[str] = None, limit: int = 20) -> 
 
 @mcp.tool()
 @rate_limited("lookup")
-def get_me() -> Dict[str, Any]:
+async def get_me() -> Dict[str, Any]:
     """Return profile info for the currently signed-in Telegram account.
 
     Useful as a connectivity check before running other tools.
     """
-    async def _do():
-        await _ensure_connected()
-        client = _get_client()
+    try:
+        client = await _ensure_connected()
         me = await client.get_me()
         return {
             "success": True,
@@ -337,23 +307,18 @@ def get_me() -> Dict[str, Any]:
             "is_bot": me.bot,
             "is_premium": getattr(me, "premium", False),
         }
-    try:
-        return _run(_do())
     except Exception as e:  # noqa: BLE001
         return {"success": False, "message": str(e)}
 
 
 @mcp.tool()
-def close_session() -> Dict[str, Any]:
+async def close_session() -> Dict[str, Any]:
     """Cleanly disconnect the Telegram client. Good agent hygiene at end of task."""
-    global _client, _loop
+    global _client
     try:
         if _client and _client.is_connected():
-            _run(_client.disconnect())
+            await _client.disconnect()
         _client = None
-        if _loop and not _loop.is_closed():
-            _loop.close()
-        _loop = None
         return {"success": True}
     except Exception as e:  # noqa: BLE001
         return {"success": False, "message": str(e)}

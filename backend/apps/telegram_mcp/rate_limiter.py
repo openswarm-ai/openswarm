@@ -141,9 +141,14 @@ def rate_limited(category: str) -> Callable[[Callable[..., Dict[str, Any]]], Cal
     if category not in DEFAULTS:
         raise ValueError(f"Unknown rate-limit category: {category}")
 
-    def decorator(func: Callable[..., Dict[str, Any]]) -> Callable[..., Dict[str, Any]]:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        # Telegram tools are all async (Telethon is async-only) so we
+        # wrap with an async wrapper. Jitter uses asyncio.sleep so we don't
+        # block the FastMCP event loop the way time.sleep would.
+        import asyncio as _asyncio
+
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+        async def wrapper(*args: Any, **kwargs: Any) -> Dict[str, Any]:
             limits = _get_limits(category)
             state = _load_state()
             ok, reason, retry_after, current = _check_budget(category, limits, state)
@@ -168,7 +173,9 @@ def rate_limited(category: str) -> Callable[[Callable[..., Dict[str, Any]]], Cal
             _save_state(state)
             lo, hi = limits["jitter"]
             if hi > 0:
-                time.sleep(random.uniform(lo, hi))
+                await _asyncio.sleep(random.uniform(lo, hi))
+            if _asyncio.iscoroutinefunction(func):
+                return await func(*args, **kwargs)
             return func(*args, **kwargs)
         return wrapper
     return decorator
