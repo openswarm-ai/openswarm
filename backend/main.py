@@ -2,7 +2,18 @@ import asyncio
 import html
 import logging
 import os
+from pathlib import Path
 from uuid import uuid4
+
+# Load backend/.env before any module reads os.environ. Production builds
+# (DMG/EXE) get env vars injected by Electron at spawn so this is a no-op
+# there. In dev mode (`bash run.sh`) this is the only thing pulling .env
+# values into the process — OPENSWARM_TELEGRAM_API_ID, GOOGLE_OAUTH_*, etc.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(Path(__file__).parent / ".env")
+except Exception:  # noqa: BLE001
+    pass
 
 logger = logging.getLogger(__name__)
 
