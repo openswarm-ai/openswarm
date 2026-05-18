@@ -24,6 +24,7 @@ from backend.apps.tools_lib.tools_lib import (
     refresh_google_token,
     refresh_hubspot_token,
 )
+from backend.apps.tools_lib import mcp_rate_limiter
 from backend.config.paths import SESSIONS_DIR
 from backend.apps.service.client import sync as _sync
 
@@ -1281,6 +1282,27 @@ class AgentManager:
         async def pre_tool_hook(input_data, tool_use_id, context):
             tool_name = input_data.get("tool_name", "")
             hook_event = input_data.get("hook_event_name", "PreToolUse")
+
+            # OpenSwarm-side proactive rate limiting for MCP tools. Sits in
+            # front of the per-tool permission check so caps apply even to
+            # tools the user has set to "always_allow". Servers with their
+            # own rigorous limiter (e.g. vendored Instagram) are not in
+            # POLICIES, so this is a no-op for them.
+            if tool_name.startswith("mcp__"):
+                _m = re.match(r"mcp__([^_]+(?:-[^_]+)*)__(.+)", tool_name)
+                if _m:
+                    _mcp_server, _mcp_tool = _m.group(1), _m.group(2)
+                    _rl = mcp_rate_limiter.check(_mcp_server, _mcp_tool)
+                    if _rl and "deny" in _rl:
+                        return {
+                            "hookSpecificOutput": {
+                                "hookEventName": hook_event,
+                                "permissionDecision": "deny",
+                                "permissionDecisionReason": _rl["deny"],
+                            }
+                        }
+                    if _rl and _rl.get("jitter_s", 0) > 0:
+                        await asyncio.sleep(_rl["jitter_s"])
 
             if tool_name and tool_name != "AskUserQuestion":
                 tool_input = input_data.get("tool_input", {})
