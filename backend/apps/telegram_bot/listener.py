@@ -44,6 +44,31 @@ _MAX_REPLY_CHARS = 3500
 _POLL_INTERVAL_S = 2.0
 _TASK_TIMEOUT_S = 30 * 60
 
+# Telegram is a phone-first messaging app. Agent output that's appropriate
+# for the OpenSwarm desktop UI (markdown tables, code blocks, long
+# structured reports) looks like garbage on mobile. This system prompt
+# resets the agent into "texting a friend" mode for the duration of the
+# Telegram-driven task. The same agent still has full tool access; only
+# the rendering style changes.
+TELEGRAM_SYSTEM_PROMPT = """You are responding to a user via the Telegram messaging app on their phone.
+Every word you write goes into a chat bubble, like texting a friend.
+
+Hard rules:
+- NEVER produce markdown tables, pipe-separated columns, or CSV-like rows. Telegram does not render them.
+- NEVER include session IDs, internal agent metadata, or "Task X started" status banners.
+- NEVER use ASCII art, code fences (```), or headers (#, ##) unless the user explicitly asked for code.
+- Keep replies SHORT. Aim for 1-4 sentences for simple questions. If listing items, use 2-6 plain bullets max (use "- " or "•").
+- Conversational tone. Write like a friend texting, not a report generator.
+- No "Let me know if you need anything else" boilerplate. End naturally.
+- If you need to show data with multiple fields per row (e.g. inbox messages), use a short natural sentence per item like:
+    "- Jing Wu: 'Hi, nice to meet you today' (unread)"
+  NOT: "| May 16 | Jing Wu | unread | ..."
+- Bold sparingly with *single asterisks* if you must emphasize. Never use **double asterisks**.
+- When summarizing many items, group and summarize aggressively. The user can ask "show me more" if they want detail.
+- Total reply should fit comfortably on one phone screen. Hard cap: 2000 chars. Prefer 500.
+
+If you complete a tool call and the result is structured data, you must reformat it conversationally before replying. Do not dump raw tool output."""
+
 _listener_task: Optional[asyncio.Task] = None
 _client: Optional[TelegramClient] = None
 _mode: Optional[str] = None  # "bot" or "user"
@@ -280,6 +305,7 @@ async def _handle_task(event, prompt: str) -> None:
     config = AgentConfig(
         name=f"telegram: {prompt[:48]}",
         mode="agent",
+        system_prompt=TELEGRAM_SYSTEM_PROMPT,
         # Default allowed_tools (Read/Edit/Write/Bash/Glob/Grep/AskUserQuestion)
         # plus the connected MCPs so the agent can use Telegram, Instagram,
         # LinkedIn, GitHub as needed when invoked from this entry point.
@@ -343,7 +369,40 @@ async def _handle_task(event, prompt: str) -> None:
         reply = "I worked on that but didn't get a clear response. Try rephrasing?"
     elif final.status == "error":
         reply = f"I ran into a problem:\n\n{reply}"
+    reply = _conversational(reply)
     await _respond(event, reply[:_MAX_REPLY_CHARS])
+
+
+def _conversational(text: str) -> str:
+    """Last-mile safety net: even with the system prompt, the agent sometimes
+    slips a markdown table or a code-fenced block back in. Strip the worst
+    offenders so Telegram users don't see CSV-pipe-soup or ``` markers."""
+    import re as _re
+    lines = []
+    in_code_fence = False
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        # Drop code-fence markers entirely; keep the code inside as plain text.
+        if line.strip().startswith("```"):
+            in_code_fence = not in_code_fence
+            continue
+        # Convert pipe-rows to readable bullets: "| A | B | C |" -> "- A — B — C".
+        # Skip rows where every cell is just dashes (markdown table separator).
+        if line.count("|") >= 2 and line.strip().startswith("|") and line.strip().endswith("|"):
+            cells = [c.strip() for c in line.strip().strip("|").split("|") if c.strip()]
+            if all(_re.fullmatch(r"[-:]+", c) for c in cells):
+                continue  # separator row, drop entirely
+            if cells:
+                line = "- " + " — ".join(cells)
+        # Telegram doesn't render **bold**; collapse to *bold* (or just text).
+        line = _re.sub(r"\*\*([^*\n]+)\*\*", r"*\1*", line)
+        # Drop heavy markdown headers (#, ##, ###).
+        line = _re.sub(r"^\s*#{1,6}\s+", "", line)
+        lines.append(line)
+    cleaned = "\n".join(lines)
+    # Collapse 3+ blank lines down to a paragraph break.
+    cleaned = _re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned
 
 
 def _extract_last_assistant_text(session_id: str) -> str:
