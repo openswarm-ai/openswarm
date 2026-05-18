@@ -20,6 +20,10 @@ trafilatura
 # login server-side before persisting credentials (verify-before-save flow,
 # same shape as the OAuth integrations).
 instagrapi>=2.0
+# telethon: Telegram MCP backend (MTProto user-account auth + session
+# persistence). The vendored Telegram MCP server (backend.apps.telegram_mcp)
+# loads sessions via Telethon and runs as a stdio subprocess.
+telethon~=1.36
 # tzlocal: dev-mode fallback for resolving the user's IANA timezone when
 # Electron's OPENSWARM_TIMEZONE env var isn't set (i.e. `bash run.sh`).
 # Packaged builds get the env var directly so this is a safety net.

@@ -492,7 +492,7 @@ class AgentManager:
             # the agent MUST stop the task, tell the user the retry-after, and
             # NOT retry. Without this guidance, agents tend to loop trying
             # alternative tools or even shell out to filesystem search.
-            if tool.name.lower() in ("instagram", "linkedin"):
+            if tool.name.lower() in ("instagram", "linkedin", "telegram"):
                 lines.append(
                     f"  RATE LIMIT BEHAVIOR (HARD RULE): If a {tool.name} tool returns "
                     "rate_limited: true, or any tool call here returns a 'deny' with "

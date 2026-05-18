@@ -334,6 +334,30 @@ const INTEGRATIONS: Integration[] = [
     ),
   },
   {
+    id: 'telegram',
+    name: 'Telegram',
+    description:
+      'Telegram via MTProto user account. 9 tools: send/receive messages, send files and voice, list dialogs, read history, search, forward, and diagnostics. Per-category rate limits enforced server-side to protect from spam bans. Single sign-on with phone + OTP; works with scheduled tasks for daily digests, drip campaigns, and auto-forwards.',
+    mcp_config: {
+      type: 'stdio',
+      command: 'python',
+      args: ['-m', 'backend.apps.telegram_mcp'],
+    },
+    color: '#229ED9',
+    website: 'https://core.telegram.org/api',
+    connectLabel: 'Connect Telegram',
+    connectInstructions: 'Enter your Telegram phone (E.164 format, e.g. +15551234567). Telegram will send a 5-digit code to your existing Telegram app — you\'ll be prompted for it next. If you have cloud 2FA enabled, you\'ll be asked for the password after the code. Session is saved at ~/.telegram_mcp/sessions/ and reused on every spawn.',
+    credentialFields: [
+      { key: 'TELEGRAM_PHONE', label: 'Phone (E.164)', placeholder: '+15551234567', type: 'text' },
+    ],
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <circle cx="12" cy="12" r="12" fill="#229ED9" />
+        <path d="M5.5 11.4l11.6-4.5c.55-.2 1.05.14.87.99l-1.97 9.3c-.13.62-.5.77-1.02.48l-2.83-2.09-1.36 1.31c-.15.15-.28.28-.57.28l.2-2.9 5.3-4.78c.23-.2-.05-.32-.36-.12l-6.55 4.13-2.83-.88c-.61-.2-.63-.61.13-.91z" fill="#fff"/>
+      </svg>
+    ),
+  },
+  {
     id: 'linkedin',
     name: 'LinkedIn',
     description:
@@ -662,7 +686,7 @@ const Tools: React.FC = () => {
   // browse the long tail.
   const CURATED_MCP_NAMES = useMemo(() => new Set([
     'google-workspace', 'microsoft-365', 'slack', 'discord',
-    'notion', 'airtable', 'hubspot', 'reddit', 'youtube', 'instagram', 'linkedin', 'github',
+    'notion', 'airtable', 'hubspot', 'reddit', 'youtube', 'instagram', 'linkedin', 'github', 'telegram',
   ]), []);
   const regServers = useMemo(() => {
     if (regSource !== 'curated') return regServersRaw;
@@ -709,6 +733,15 @@ const Tools: React.FC = () => {
 
   /** LinkedIn desktop CLI (Electron); null when idle */
   const [linkedinConnectBusy, setLinkedinConnectBusy] = useState<string | null>(null);
+
+  /** Telegram multi-step OTP flow (phone -> code -> optional 2FA password). */
+  const [telegramFlow, setTelegramFlow] = useState<{
+    toolId: string;
+    phone: string;
+    step: 'code' | 'password';
+    busy: boolean;
+  } | null>(null);
+  const [telegramInput, setTelegramInput] = useState('');
 
   // Full-auth upgrade dialog (password + 2FA) is disabled while we figure out
   // Instagram's trusted-notification polling endpoint. Connect uses browser-only
@@ -1441,6 +1474,39 @@ const Tools: React.FC = () => {
         dispatch(discoverTools(credDialogToolId));
         return;
       }
+
+      // Telegram: phone -> /start -> wait for OTP -> /verify -> (optional 2FA) -> /password.
+      // We keep the credentials dialog open and morph its credentialFields between
+      // steps so the user never sees a fresh modal between steps. Backend caches
+      // the Telethon client between calls via _TG_PENDING.
+      if (credDialogIntegration.id === 'telegram') {
+        const phone = (credDialogValues['TELEGRAM_PHONE'] || '').trim();
+        if (!phone.startsWith('+')) {
+          setSnackbar({ open: true, message: 'Phone must be E.164 (start with + and country code, e.g. +15551234567)', severity: 'error' });
+          return;
+        }
+        const startResp = await fetch(`${API_BASE}/tools/credentials/telegram/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tool_id: credDialogToolId, phone }),
+        });
+        const startData = await startResp.json().catch(() => ({ ok: false, error: `bad response (${startResp.status})` }));
+        if (!startData.ok) {
+          setSnackbar({ open: true, message: `Telegram sign-in failed: ${startData.error || 'unknown error'}`, severity: 'error' });
+          return;
+        }
+        if (!startData.needs_code) {
+          // Existing valid session was reused.
+          await dispatch(fetchToolStatus(credDialogToolId));
+          setCredDialogOpen(false);
+          setSnackbar({ open: true, message: 'Telegram connected (existing session)! Re-discovering actions…' });
+          dispatch(discoverTools(credDialogToolId));
+          return;
+        }
+        setTelegramFlow({ toolId: credDialogToolId, phone, step: 'code', busy: false });
+        setSnackbar({ open: true, message: 'Telegram sent you a code. Enter it below.' });
+        return;
+      }
       const result = await dispatch(updateTool({
         id: credDialogToolId,
         credentials: credDialogValues,
@@ -1487,6 +1553,75 @@ const Tools: React.FC = () => {
       setSnackbar({ open: true, message: err?.message || 'Slack sign-in cancelled', severity: 'error' });
     } finally {
       setCredDialogSaving(false);
+    }
+  };
+
+  // Telegram OTP step handlers. Each posts to the matching backend endpoint
+  // and either advances the flow (code → password if 2FA), completes it, or
+  // surfaces an error inline without closing the dialog.
+  const handleTelegramVerify = async () => {
+    if (!telegramFlow) return;
+    const code = telegramInput.trim();
+    if (!code) return;
+    setTelegramFlow({ ...telegramFlow, busy: true });
+    try {
+      const resp = await fetch(`${API_BASE}/tools/credentials/telegram/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool_id: telegramFlow.toolId, code }),
+      });
+      const data = await resp.json().catch(() => ({ ok: false, error: `bad response (${resp.status})` }));
+      if (data.needs_password) {
+        setTelegramInput('');
+        setTelegramFlow({ ...telegramFlow, step: 'password', busy: false });
+        setSnackbar({ open: true, message: 'Cloud 2FA password required. Enter it below.' });
+        return;
+      }
+      if (!data.ok) {
+        setTelegramFlow({ ...telegramFlow, busy: false });
+        setSnackbar({ open: true, message: `Telegram verify failed: ${data.error || 'unknown error'}`, severity: 'error' });
+        return;
+      }
+      await dispatch(fetchToolStatus(telegramFlow.toolId));
+      setTelegramFlow(null);
+      setTelegramInput('');
+      setCredDialogOpen(false);
+      setSnackbar({ open: true, message: 'Telegram connected! Re-discovering actions…' });
+      dispatch(discoverTools(telegramFlow.toolId));
+    } catch (err: unknown) {
+      setTelegramFlow({ ...telegramFlow, busy: false });
+      const msg = err instanceof Error ? err.message : String(err);
+      setSnackbar({ open: true, message: msg, severity: 'error' });
+    }
+  };
+
+  const handleTelegramPassword = async () => {
+    if (!telegramFlow) return;
+    const password = telegramInput;
+    if (!password) return;
+    setTelegramFlow({ ...telegramFlow, busy: true });
+    try {
+      const resp = await fetch(`${API_BASE}/tools/credentials/telegram/password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool_id: telegramFlow.toolId, password }),
+      });
+      const data = await resp.json().catch(() => ({ ok: false, error: `bad response (${resp.status})` }));
+      if (!data.ok) {
+        setTelegramFlow({ ...telegramFlow, busy: false });
+        setSnackbar({ open: true, message: `Telegram 2FA failed: ${data.error || 'unknown error'}`, severity: 'error' });
+        return;
+      }
+      await dispatch(fetchToolStatus(telegramFlow.toolId));
+      setTelegramFlow(null);
+      setTelegramInput('');
+      setCredDialogOpen(false);
+      setSnackbar({ open: true, message: 'Telegram connected! Re-discovering actions…' });
+      dispatch(discoverTools(telegramFlow.toolId));
+    } catch (err: unknown) {
+      setTelegramFlow({ ...telegramFlow, busy: false });
+      const msg = err instanceof Error ? err.message : String(err);
+      setSnackbar({ open: true, message: msg, severity: 'error' });
     }
   };
 
@@ -3009,6 +3144,33 @@ const Tools: React.FC = () => {
             <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.5, bgcolor: c.bg.secondary, px: 2, py: 1.5, borderRadius: 2, border: `1px solid ${c.border.subtle}` }}>
               Click <strong>Sign in with Slack</strong> below — a Slack window will open. Sign in normally and the window will close automatically once you reach your workspace.
             </Typography>
+          ) : credDialogIntegration?.id === 'telegram' && telegramFlow ? (
+            <>
+              <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.5, bgcolor: c.bg.secondary, px: 2, py: 1.5, borderRadius: 2, border: `1px solid ${c.border.subtle}` }}>
+                {telegramFlow.step === 'code'
+                  ? `Telegram sent a 5-digit code to ${telegramFlow.phone}. Check your existing Telegram app and paste it below.`
+                  : `Your Telegram account has cloud 2FA enabled. Enter the password you set up to complete sign-in.`}
+              </Typography>
+              <TextField
+                autoFocus
+                label={telegramFlow.step === 'code' ? 'Telegram code' : '2FA password'}
+                placeholder={telegramFlow.step === 'code' ? '12345' : '••••••••'}
+                type={telegramFlow.step === 'code' ? 'text' : 'password'}
+                value={telegramInput}
+                onChange={(e) => setTelegramInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && telegramInput.trim() && !telegramFlow.busy) {
+                    e.preventDefault();
+                    if (telegramFlow.step === 'code') void handleTelegramVerify();
+                    else void handleTelegramPassword();
+                  }
+                }}
+                fullWidth
+                size="small"
+                disabled={telegramFlow.busy}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: c.bg.page, fontFamily: c.font.mono, fontSize: '0.85rem' } }}
+              />
+            </>
           ) : (
             <>
               {credDialogIntegration?.connectInstructions && (
@@ -3034,15 +3196,38 @@ const Tools: React.FC = () => {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setCredDialogOpen(false)} sx={{ color: c.text.tertiary, textTransform: 'none' }}>Cancel</Button>
+          <Button
+            onClick={() => { setCredDialogOpen(false); setTelegramFlow(null); setTelegramInput(''); }}
+            sx={{ color: c.text.tertiary, textTransform: 'none' }}
+          >
+            Cancel
+          </Button>
           <Button
             variant="contained"
-            onClick={credDialogIntegration?.id === 'slack' ? handleSlackAutoConnect : handleCredentialsSave}
-            disabled={credDialogSaving || (credDialogIntegration?.id !== 'slack' && (credDialogIntegration?.credentialFields || []).some((f) => !credDialogValues[f.key]?.trim()))}
-            startIcon={credDialogSaving ? <CircularProgress size={14} /> : <LinkIcon sx={{ fontSize: 14 }} />}
+            onClick={
+              credDialogIntegration?.id === 'slack'
+                ? handleSlackAutoConnect
+                : (credDialogIntegration?.id === 'telegram' && telegramFlow)
+                  ? (telegramFlow.step === 'code' ? handleTelegramVerify : handleTelegramPassword)
+                  : handleCredentialsSave
+            }
+            disabled={
+              (credDialogIntegration?.id === 'telegram' && telegramFlow)
+                ? (telegramFlow.busy || !telegramInput.trim())
+                : (credDialogSaving || (credDialogIntegration?.id !== 'slack' && (credDialogIntegration?.credentialFields || []).some((f) => !credDialogValues[f.key]?.trim())))
+            }
+            startIcon={
+              ((credDialogIntegration?.id === 'telegram' && telegramFlow?.busy) || credDialogSaving)
+                ? <CircularProgress size={14} />
+                : <LinkIcon sx={{ fontSize: 14 }} />
+            }
             sx={{ bgcolor: credDialogIntegration?.color || c.accent.primary, '&:hover': { bgcolor: credDialogIntegration?.color || c.accent.pressed, filter: 'brightness(0.9)' }, textTransform: 'none', borderRadius: 2 }}
           >
-            {credDialogIntegration?.id === 'slack' ? (credDialogSaving ? 'Waiting for sign-in…' : 'Sign in with Slack') : 'Connect'}
+            {credDialogIntegration?.id === 'slack'
+              ? (credDialogSaving ? 'Waiting for sign-in…' : 'Sign in with Slack')
+              : (credDialogIntegration?.id === 'telegram' && telegramFlow)
+                ? (telegramFlow.step === 'code' ? (telegramFlow.busy ? 'Verifying…' : 'Verify code') : (telegramFlow.busy ? 'Signing in…' : 'Sign in'))
+                : 'Connect'}
           </Button>
         </DialogActions>
       </Dialog>

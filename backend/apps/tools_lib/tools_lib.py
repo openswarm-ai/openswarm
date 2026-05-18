@@ -343,6 +343,27 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
         if config.get("command") == "python":
             config["command"] = _sys.executable
 
+    # Telegram MCP: same vendored-package treatment as Instagram. Also
+    # injects the OpenSwarm app-level Telegram credentials from backend env
+    # (registered once at https://my.telegram.org/apps) so the server can
+    # talk to MTProto. End-users never see these values; their own login
+    # is identified by TELEGRAM_PHONE which comes from tool.credentials.
+    if tool.name.lower() == "telegram" and config.get("type") == "stdio":
+        env = config.setdefault("env", {})
+        _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        existing_pp = env.get("PYTHONPATH") or os.environ.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (_project_root + os.pathsep + existing_pp) if existing_pp else _project_root
+        import sys as _sys
+        if config.get("command") == "python":
+            config["command"] = _sys.executable
+        # App-level Telegram credentials — never per-user.
+        tg_api_id = os.environ.get("OPENSWARM_TELEGRAM_API_ID", "")
+        tg_api_hash = os.environ.get("OPENSWARM_TELEGRAM_API_HASH", "")
+        if tg_api_id:
+            env["OPENSWARM_TELEGRAM_API_ID"] = tg_api_id
+        if tg_api_hash:
+            env["OPENSWARM_TELEGRAM_API_HASH"] = tg_api_hash
+
     # Microsoft 365 MCP: use a stable token cache path shared across process spawns
     if tool.name.lower() == "microsoft 365" and config.get("type") == "stdio":
         env = config.setdefault("env", {})
@@ -1448,3 +1469,162 @@ async def instagram_from_browser(payload: dict) -> dict:
     tool.connected_account_email = f"@{username}"
     _save(tool)
     return {"ok": True, "username": username, "user_id": user_id_str}
+
+
+# ---------------------------------------------------------------------------
+# Telegram: phone + OTP + (optional) 2FA password flow via Telethon.
+#
+# The vendored MCP server at backend.apps.telegram_mcp loads a Telethon
+# session file at ~/.telegram_mcp/sessions/<sanitized_phone>.session. These
+# endpoints drive the multi-step auth that builds that session: /start
+# requests the SMS code, /verify submits it, /password handles cloud 2FA.
+# A short-lived in-memory cache keeps the active Telethon client between
+# /start and /verify so we don't lose phone_code_hash state.
+# ---------------------------------------------------------------------------
+import re as _re_tg
+_TG_PENDING: dict[str, dict] = {}
+
+
+def _tg_session_dir() -> "Path":
+    from pathlib import Path
+    p = Path.home() / ".telegram_mcp" / "sessions"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _tg_sanitize_phone(phone: str) -> str:
+    return _re_tg.sub(r"\D", "", phone or "")
+
+
+def _tg_app_creds() -> tuple[int, str]:
+    api_id_raw = os.environ.get("OPENSWARM_TELEGRAM_API_ID", "").strip()
+    api_hash = os.environ.get("OPENSWARM_TELEGRAM_API_HASH", "").strip()
+    if not api_id_raw or not api_hash:
+        raise ValueError(
+            "Telegram is not configured on this OpenSwarm install. "
+            "Set OPENSWARM_TELEGRAM_API_ID and OPENSWARM_TELEGRAM_API_HASH "
+            "in backend/.env (register an app at https://my.telegram.org/apps)."
+        )
+    return int(api_id_raw), api_hash
+
+
+async def _tg_finalize_after_auth(tool, phone: str, client) -> None:
+    """Persist the tool config after a successful Telethon sign_in."""
+    try:
+        me = await client.get_me()
+    except Exception:  # noqa: BLE001
+        me = None
+    try:
+        await client.disconnect()
+    except Exception:  # noqa: BLE001
+        pass
+
+    digits = _tg_sanitize_phone(phone)
+    if me and me.username:
+        tool.connected_account_email = f"@{me.username}"
+    elif me and (me.first_name or me.last_name):
+        tool.connected_account_email = f"{(me.first_name or '').strip()} {(me.last_name or '').strip()}".strip()
+    else:
+        tool.connected_account_email = f"+{digits}"
+    tool.credentials = {"TELEGRAM_PHONE": phone}
+    tool.auth_type = "env_vars"
+    tool.auth_status = "connected"
+    _save(tool)
+
+
+@tools_lib.router.post("/credentials/telegram/start")
+async def telegram_start(payload: dict) -> dict:
+    """Step 1: send the Telegram OTP to the user's phone.
+
+    Body: {tool_id: str, phone: str (E.164, e.g. +15551234567)}
+    Returns: {ok: true, needs_code: bool} or {ok: false, error: str}.
+    """
+    tool_id = payload.get("tool_id") or ""
+    phone = (payload.get("phone") or "").strip()
+    if not tool_id or not phone:
+        return {"ok": False, "error": "tool_id and phone are required"}
+    tool = _load(tool_id)
+    try:
+        api_id, api_hash = _tg_app_creds()
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+    from telethon import TelegramClient
+    session_file = _tg_session_dir() / _tg_sanitize_phone(phone)
+    client = TelegramClient(str(session_file), api_id, api_hash)
+    try:
+        await client.connect()
+        if await client.is_user_authorized():
+            # Session already valid from a prior login.
+            await _tg_finalize_after_auth(tool, phone, client)
+            return {"ok": True, "needs_code": False, "already_authorized": True}
+        sent = await client.send_code_request(phone)
+    except Exception as e:  # noqa: BLE001
+        try: await client.disconnect()
+        except Exception: pass
+        return {"ok": False, "error": (str(e) or type(e).__name__)[:300]}
+
+    _TG_PENDING[tool_id] = {
+        "phone": phone,
+        "phone_code_hash": sent.phone_code_hash,
+        "client": client,
+    }
+    return {"ok": True, "needs_code": True}
+
+
+@tools_lib.router.post("/credentials/telegram/verify")
+async def telegram_verify(payload: dict) -> dict:
+    """Step 2: submit the OTP code received in Telegram.
+
+    Body: {tool_id: str, code: str}
+    Returns: {ok: true} or {ok: false, needs_password: bool, error: str?}.
+    """
+    tool_id = payload.get("tool_id") or ""
+    code = (payload.get("code") or "").strip()
+    if not tool_id or not code:
+        return {"ok": False, "error": "tool_id and code are required"}
+    pending = _TG_PENDING.get(tool_id)
+    if not pending:
+        return {"ok": False, "error": "no pending Telegram sign-in; call /start first"}
+    tool = _load(tool_id)
+
+    from telethon.errors import SessionPasswordNeededError
+    client = pending["client"]
+    phone = pending["phone"]
+    try:
+        await client.sign_in(phone, code, phone_code_hash=pending["phone_code_hash"])
+    except SessionPasswordNeededError:
+        return {"ok": False, "needs_password": True}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": (str(e) or type(e).__name__)[:300]}
+
+    await _tg_finalize_after_auth(tool, phone, client)
+    _TG_PENDING.pop(tool_id, None)
+    return {"ok": True}
+
+
+@tools_lib.router.post("/credentials/telegram/password")
+async def telegram_password(payload: dict) -> dict:
+    """Step 3 (only if account has cloud 2FA): submit the 2FA password.
+
+    Body: {tool_id: str, password: str}
+    """
+    tool_id = payload.get("tool_id") or ""
+    password = payload.get("password") or ""
+    if not tool_id or not password:
+        return {"ok": False, "error": "tool_id and password are required"}
+    pending = _TG_PENDING.get(tool_id)
+    if not pending:
+        return {"ok": False, "error": "no pending Telegram sign-in"}
+    tool = _load(tool_id)
+
+    client = pending["client"]
+    phone = pending["phone"]
+    try:
+        await client.sign_in(password=password)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": (str(e) or type(e).__name__)[:300]}
+
+    await _tg_finalize_after_auth(tool, phone, client)
+    _TG_PENDING.pop(tool_id, None)
+    return {"ok": True}

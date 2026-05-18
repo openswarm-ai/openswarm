@@ -47,6 +47,23 @@ POLICIES: dict[str, dict] = {
             ("*",                   "lookup"),
         ],
     },
+    # Telegram has its own server-side rate limiter inside the vendored
+    # package, so this entry is intentionally absent to avoid double-throttling.
+    # If you want belt-and-suspenders, uncomment the block below:
+    # "telegram": {
+    #     "categories": {
+    #         "send":    {"per_minute": 30, "per_hour": 200, "per_day": 1000, "jitter": (0.5, 2.0)},
+    #         "forward": {"per_minute": 20, "per_hour": 150, "per_day": 600,  "jitter": (0.5, 2.0)},
+    #         "search":  {"per_minute": 60, "per_hour": 500, "per_day": 3000, "jitter": (0.0, 0.5)},
+    #         "lookup":  {"per_minute": 60, "per_hour": 500, "per_day": 3000, "jitter": (0.0, 0.5)},
+    #     },
+    #     "tools": [
+    #         ("send_*",        "send"),
+    #         ("forward_*",     "forward"),
+    #         ("search_*",      "search"),
+    #         ("*",             "lookup"),
+    #     ],
+    # },
 }
 
 
