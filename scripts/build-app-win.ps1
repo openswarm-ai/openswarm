@@ -298,8 +298,7 @@ try {
     Write-Host "[3b] Downloading $NodeUrl..."
     Invoke-WebRequest -Uri $NodeUrl -OutFile $NodeZip -UseBasicParsing
     Expand-Archive -Path $NodeZip -DestinationPath $NodeExtract -Force
-    # Ship just node.exe — npm/npx are unused at runtime (router + MCP
-    # bundles are pre-built). Saves ~70 MB from the installer.
+    # Ship just node.exe; npm/npx are unused at runtime (saves ~70 MB).
     $SrcNode = Join-Path $NodeExtract "node-$NodeVersion-win-x64\node.exe"
     if (-not (Test-Path $SrcNode)) { throw "node.exe not found at $SrcNode after extract" }
     Copy-Item -Force $SrcNode (Join-Path $NodeStageDir 'node.exe')

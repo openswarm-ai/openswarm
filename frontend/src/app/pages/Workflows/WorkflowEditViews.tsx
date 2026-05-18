@@ -39,6 +39,20 @@ export default function WorkflowEditViews({ workflow, facet, onChangeFacet, onDi
   // a stale "you have unsaved changes" dot on the tab.
   useEffect(() => () => { onDirtyChange?.(false); }, [onDirtyChange]);
 
+  // Auto-save on a quiet idle. We debounce 800ms after the last edit so
+  // rapid typing doesn't fire dozens of PATCHes. Validation still gates
+  // the network call so bad drafts (empty phone, etc.) don't auto-save
+  // a broken state. Explicit Save still works for users who want it.
+  useEffect(() => {
+    if (!dirty || busy) return;
+    if (validateDraft(draft)) return; // skip auto-save while invalid
+    const handle = window.setTimeout(() => { onSaveRef.current?.(); }, 800);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, dirty, busy]);
+  // onSave refs itself so the effect above doesn't depend on it.
+  const onSaveRef = React.useRef<(() => Promise<void>) | null>(null);
+
   const onSave = useCallback(async () => {
     if (busy || !dirty) return;
     const reason = validateDraft(draft);
@@ -72,6 +86,10 @@ export default function WorkflowEditViews({ workflow, facet, onChangeFacet, onDi
     }
   }, [busy, dirty, dispatch, workflow.id, workflow.updated_at, draft]);
 
+  // Keep the ref pointing at the latest onSave so the auto-save effect
+  // can call it without re-subscribing on every keystroke.
+  useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
+
   const onDiscard = useCallback(() => {
     setDraft(workflow);
     setSaveError(null);
@@ -91,11 +109,11 @@ export default function WorkflowEditViews({ workflow, facet, onChangeFacet, onDi
           <MenuItem value="Schedule">Schedule</MenuItem>
         </Select>
         <Box sx={{ flex: 1 }} />
-        <ActionBtn label="Discard" tone="muted" disabled={!dirty || busy} onClick={onDiscard} />
+        <ActionBtn label="Undo changes" tone="muted" disabled={!dirty || busy} onClick={onDiscard} />
         <ActionBtn
-          label={savedFlash ? '✓ Saved' : busy ? 'Saving…' : 'Save'}
+          label={busy ? 'Saving…' : savedFlash ? '✓ Saved' : dirty ? 'Save now' : '✓ Up to date'}
           tone="success"
-          disabled={!dirty || busy || savedFlash}
+          disabled={!dirty || busy}
           onClick={onSave}
         />
       </Box>

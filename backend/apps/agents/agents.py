@@ -11,12 +11,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# In-flight dedup map for generate-group-meta. Keyed by (session_id, group_id).
-# When the frontend issues N concurrent requests for the same group (which it
-# can during heavy streaming), we only fire ONE upstream Anthropic call and
-# return the same Future to all callers. Eliminates the 429 thundering herd
-# without changing retry/fallback semantics — each unique (session, group)
-# still gets its full retry budget, just not multiplied by N callers.
+# Dedup concurrent generate-group-meta calls; collapses the 429 thundering herd by sharing one upstream Future per (session, group).
 _group_meta_inflight: dict[tuple[str, str], asyncio.Future] = {}
 
 @asynccontextmanager
@@ -32,7 +27,6 @@ async def agents_lifespan():
 
 agents = SubApp("agents", agents_lifespan)
 
-# REST Endpoints
 
 @agents.router.get("/sessions")
 async def list_sessions(dashboard_id: str = ""):
@@ -57,12 +51,7 @@ async def send_message(session_id: str, body: dict):
     if not prompt:
         raise HTTPException(status_code=400, detail="prompt is required")
 
-    # Pre-flight MCP suggestion (Phase 3, Layer N). Runs in parallel with
-    # the agent launch path — if it produces suggestions, they're
-    # surfaced inline in the chat via agent:mcp_suggestions WS event.
-    # Fails open: any error from the classifier is swallowed and the
-    # agent proceeds normally. The classifier is short-circuited for
-    # obviously-local prompts (greetings, shell commands, file paths).
+    # Run MCP-suggestion classifier in parallel with the agent launch; fails open.
     try:
         from backend.apps.agents.mcp_preflight import run_preflight
         from backend.apps.agents.ws_manager import ws_manager as _ws
@@ -79,7 +68,6 @@ async def send_message(session_id: str, body: dict):
             except Exception:
                 pass
 
-        # Non-blocking — don't gate the agent on the classifier.
         import asyncio as _asyncio
         _asyncio.create_task(_emit_preflight())
     except Exception:
@@ -146,11 +134,7 @@ async def generate_group_meta(session_id: str, body: dict):
     if not group_id or not tool_calls:
         raise HTTPException(status_code=400, detail="group_id and tool_calls are required")
 
-    # In-flight dedup. If an identical request is already running, await its
-    # result instead of firing another Anthropic call. This is the entire fix
-    # for the 429 storm we were seeing — N concurrent identical requests
-    # collapse to 1 upstream call. Refinement requests bypass dedup since
-    # they may legitimately want fresh results with different inputs.
+    # Dedup: share an in-flight Future across callers; refinement requests bypass since they may want fresh results.
     is_refinement = body.get("is_refinement", False)
     key = (session_id, group_id)
     if not is_refinement:
@@ -159,8 +143,7 @@ async def generate_group_meta(session_id: str, body: dict):
             try:
                 return await existing
             except Exception:
-                # If the in-flight call failed, fall through and try again
-                # ourselves rather than propagating someone else's error.
+                # In-flight call failed; retry ourselves rather than propagate someone else's error.
                 pass
 
     future: asyncio.Future = asyncio.get_event_loop().create_future()
@@ -182,7 +165,6 @@ async def generate_group_meta(session_id: str, body: dict):
             future.set_exception(e)
         raise
     finally:
-        # Always clear our slot if we own it, so the next request runs fresh.
         if not is_refinement and _group_meta_inflight.get(key) is future:
             _group_meta_inflight.pop(key, None)
 
@@ -252,22 +234,13 @@ async def resume_session(session_id: str):
 
 @agents.router.post("/sessions/{session_id}/warm-cache")
 async def warm_session_cache(session_id: str):
-    """Fire a max_tokens=1 dummy request through the agent path so
-    Anthropic processes the system+tools prefix and writes the prompt
-    cache. The next real user turn lands a cache hit instead of paying
-    cold-start TTFT. Non-blocking, fire-and-forget on the frontend.
-    Returns 200 even on failure (best-effort).
-    """
+    """Fire a max_tokens=1 dummy request to prime the Anthropic prompt cache; best-effort."""
     try:
         await agent_manager.warm_prompt_cache(session_id)
     except Exception:
         pass
     return {"ok": True}
 
-
-# ---------------------------------------------------------------------------
-# 9Router / Subscription endpoints
-# ---------------------------------------------------------------------------
 
 @agents.router.get("/subscriptions/status")
 async def subscriptions_status():
@@ -277,8 +250,7 @@ async def subscriptions_status():
         return {"running": False, "providers": [], "models": []}
     connections = await get_providers()
     models = await get_models()
-    # Frontend consumers (OnboardingModal, Settings) read
-    # `data.providers.connections` — preserve that envelope here.
+    # Frontend reads data.providers.connections; preserve the envelope.
     return {"running": True, "providers": {"connections": connections}, "models": models}
 
 
@@ -295,11 +267,7 @@ async def subscriptions_connect(body: dict):
         if not is_running():
             raise HTTPException(status_code=503, detail="9Router not available. Please install Node.js.")
 
-    # If reconnecting a primary lane (e.g. gemini-cli), drop its cascade
-    # siblings first. The registry prefers antigravity over gemini-cli
-    # when both are present, so a stale antigravity token would keep
-    # 400ing even after gemini-cli refreshes. Wiping the sibling forces
-    # the registry onto the freshly reconnected lane.
+    # Reconnecting gemini-cli must wipe antigravity; registry prefers AG and a stale AG token would 400 after gemini-cli refreshes.
     cascade = _PROVIDER_CASCADE_REMOVES.get(provider, [])
     if cascade:
         try:
@@ -310,7 +278,6 @@ async def subscriptions_connect(body: dict):
     try:
         result = await start_oauth(provider)
 
-        # For auth_code flows, store pending state so the callback can exchange
         if result.get("flow") == "authorization_code" and result.get("state"):
             from backend.main import _pending_oauth
             _pending_oauth[result["state"]] = {
@@ -384,8 +351,7 @@ async def subscriptions_models():
 
 @agents.router.post("/probe-model")
 async def probe_model(body: dict):
-    """1-token health probe. Returns {ok, latency_ms} or {ok:false, error}
-    or {ok:true, skipped:true} when the route's ambiguous (silent beats wrong)."""
+    """1-token health probe; returns latency or skipped when the route is ambiguous (silent beats wrong)."""
     import time as _time
     short_name = (body or {}).get("model") or ""
     if not short_name:
@@ -444,8 +410,7 @@ async def probe_model(body: dict):
     except Exception as e:
         msg = str(e).splitlines()[0] if str(e) else type(e).__name__
         low = msg.lower()
-        # Suppress transients — chat will retry naturally and probe-time aliasing
-        # 404s often differ from how the chat path resolves the same id.
+        # Suppress transients: chat retries naturally and probe-time alias 404s often differ from chat resolution.
         if any(s in low for s in (
             "timeout", "timed out",
             "connection reset", "connection aborted",
@@ -474,7 +439,7 @@ async def list_models():
         try:
             conns = await _9r_providers()
             raw_providers = {c.get("provider", "") for c in conns if c.get("isActive") or c.get("testStatus") == "active"}
-            # 9Router uses "claude"; our models use api="anthropic" — map across.
+            # 9Router uses "claude"; our models use api="anthropic". Map across.
             _9R_TO_API = {
                 "claude": "anthropic",
                 "codex": "codex",
@@ -486,8 +451,7 @@ async def list_models():
             logger.debug(f"Failed to fetch 9Router providers: {e}")
 
     def _serialize(models: list[dict]) -> list[dict]:
-        # Native models. Tiers describe the model itself; billing_kind
-        # describes the user's wallet for it. Pricing is shown only for paid.
+        # Tiers describe the model; billing_kind describes the wallet. Pricing shown only for paid.
         from backend.apps.agents.providers.registry import (
             COST_PER_1M_TOKENS,
             compute_tiers,
@@ -518,7 +482,7 @@ async def list_models():
                 "reasoning": bool(m.get("reasoning", False)),
                 "input_cost_per_1m": input_cost,
                 "output_cost_per_1m": output_cost,
-                # Strict — subscription doesn't count. Pickerside uses Subscription chip.
+                # Strict free; subscriptions show via the picker's Subscription chip.
                 "is_free": billing_kind == "free",
                 "billing_kind": billing_kind,
                 "tiers": list(tiers),
@@ -539,8 +503,7 @@ async def list_models():
     cc_variants = [m for m in anthropic_models if m.get("route") == "cc"]
     api_variants = [m for m in anthropic_models if m.get("route") == "api"]
 
-    # Pro mode shows two groups (Pro proxy + Anthropic alternates via cc/api);
-    # own-key mode collapses to one Anthropic group using adaptive routing.
+    # Pro mode splits into Pro proxy + Anthropic alternates; own-key collapses to one adaptive group.
     notes: list[dict] = []
     if is_openswarm_pro:
         result["OpenSwarm Pro"] = _serialize(adaptive)
@@ -605,8 +568,7 @@ async def list_models():
         if visible:
             result[provider_name] = visible
 
-    # OR catalog fetched straight from openrouter.ai (independent of 9Router
-    # boot state) so picker populates the moment a key lands.
+    # Fetch OpenRouter catalog directly (independent of 9Router) so picker fills the moment a key lands.
     if has_openrouter_key:
         try:
             from backend.apps.agents.providers.registry import fetch_openrouter_models
@@ -654,10 +616,7 @@ async def list_models():
                 entries = sorted(by_vendor[vendor], key=lambda x: x["label"].lower())
                 result[f"OpenRouter · {pretty}"] = entries
 
-    # User-configured custom OpenAI-compatible providers (Ollama Cloud, Together, etc).
-    # Each provider becomes its own group in the picker; each model is addressed via
-    # the `custom/<slug>/<model_id>` value, which `_find_builtin_model` synthesises
-    # into a route='api' / api='custom' entry at request time.
+    # Custom OpenAI-compatible providers (Ollama Cloud, Together, etc); addressed via custom/<slug>/<model_id>.
     from backend.apps.agents.providers.registry import _custom_provider_slug_for_lookup
     for cp in (getattr(settings, "custom_providers", None) or []):
         cp_name = (getattr(cp, "name", "") or "").strip()
@@ -692,27 +651,14 @@ async def list_models():
     return {"models": result, "notes": notes}
 
 
-# Google's two OAuth lanes (gemini-cli and antigravity) share user-facing
-# meaning (both = "Google subscription") but 9Router treats them as
-# separate connections with independent token lifecycles. The registry
-# prefers `ag/` over `gc/` whenever AG is active because AG bypasses the
-# thoughtSignature validator that breaks multi-step tool turns. That
-# preference becomes a footgun when AG's token expires silently: the
-# user reconnects "Google", only gemini-cli refreshes, and every request
-# still routes through the stale AG token -> 400 Invalid argument.
-#
-# Cascade is one-directional. gemini-cli is the primary lane the UI
-# exposes; operations on it sweep antigravity too. Direct operations on
-# antigravity (e.g. an explicit AG opt-in/out path) MUST NOT cascade
-# back to gemini-cli or we'd nuke the user's main Google connection.
+# gemini-cli and antigravity are two Google OAuth lanes; registry prefers AG, so we cascade-wipe AG when reconnecting gemini-cli to avoid stale-AG 400s. One-directional: AG operations MUST NOT cascade back.
 _PROVIDER_CASCADE_REMOVES: dict[str, list[str]] = {
     "gemini-cli": ["antigravity"],
 }
 
 
 async def _delete_provider_connections(providers: list[str]) -> int:
-    """Delete all 9Router connections whose provider is in the given list.
-    Returns the count actually removed. Silent if 9Router is unreachable."""
+    """Delete 9Router connections in `providers`; returns count removed, silent on 9Router unreachable."""
     import httpx
     from backend.apps.nine_router import NINE_ROUTER_API, get_providers
     try:
@@ -733,12 +679,7 @@ async def _delete_provider_connections(providers: list[str]) -> int:
 
 @agents.router.post("/subscriptions/disconnect")
 async def subscriptions_disconnect(body: dict):
-    """Disconnect a subscription provider via 9Router.
-
-    For Google's paired lanes (gemini-cli + antigravity), wipe BOTH so a
-    subsequent reconnect lands on a clean slate instead of resurrecting
-    a stale sibling.
-    """
+    """Disconnect a subscription provider via 9Router; cascades-wipe Google's paired lanes."""
     provider = body.get("provider", "")
     if not provider:
         raise HTTPException(status_code=400, detail="provider required")

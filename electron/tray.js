@@ -1,11 +1,4 @@
-// Menubar tray for OpenSwarm. Keeps the app resident while the user
-// closes the main window, so scheduled workflows still fire. Owned by
-// main.js; this module exports a single setup() that returns the Tray
-// instance plus a status updater.
-//
-// Icon assets live under electron/assets/tray-{idle,running,paused}.png.
-// They are templated on macOS so the menubar respects light/dark mode
-// without two separate sets.
+// Menubar tray that keeps the app resident after window close so scheduled workflows still fire.
 
 const { app, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
@@ -17,11 +10,15 @@ let backendPortRef = null;
 let authTokenRef = null;
 
 function iconPath(state) {
-  const base = path.join(__dirname, 'assets', `tray-${state}.png`);
-  // We don't crash on missing icons; nativeImage returns an empty image
-  // and Electron still renders a fallback. Avoids hard-failing the
-  // packaged build if assets aren't bundled yet.
-  return base;
+  // Windows tray prefers .ico (multi-res, crisp at any DPI); falls back to PNG if not shipped.
+  if (process.platform === 'win32') {
+    const ico = path.join(__dirname, 'assets', `tray-${state}.ico`);
+    try {
+      const fs = require('fs');
+      if (fs.existsSync(ico)) return ico;
+    } catch (_) {}
+  }
+  return path.join(__dirname, 'assets', `tray-${state}.png`);
 }
 
 function postPause(value) {
@@ -97,6 +94,21 @@ function setup({ backendPort, authToken }) {
     trayInstance.setToolTip('OpenSwarm: idle');
     enabled = true;
     rebuildMenu({ activeTitle: null, paused: false });
+    // Cross-platform click parity: on macOS the context menu opens on
+    // left-click automatically; on Windows/Linux left-click does
+    // nothing by default. We attach a click handler that opens the
+    // window on left-click (a Windows-typical pattern) so users on
+    // those platforms aren't confused when the tray "doesn't work."
+    if (process.platform !== 'darwin') {
+      trayInstance.on('click', () => {
+        const { BrowserWindow } = require('electron');
+        const wins = BrowserWindow.getAllWindows();
+        if (wins[0]) { wins[0].show(); wins[0].focus(); }
+        else { app.emit('activate'); }
+      });
+      // Right-click already shows the context menu on Windows/Linux
+      // (Electron default), no extra wiring needed.
+    }
   } catch (_) {
     trayInstance = null;
     enabled = false;

@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""Generate macOS/Windows tray PNG assets at base + @2x resolution.
-
-The tray icons are template images on macOS, so we draw in solid black
-with full alpha and let the OS invert for dark/light menubars. Three
-states:
-  idle    - small filled circle (a pinpoint)
-  running - radial "fire" with two overlapping circles
-  paused  - two vertical bars (the classic pause glyph)
-
-Sizes: 16x16 base + 32x32 @2x. Output dir: electron/assets/.
-
-Re-run with: python3 scripts/generate-tray-icons.py
-"""
+"""Generate macOS/Windows tray PNG assets at base + @2x; macOS template images so drawn in solid black with alpha."""
 
 import os
 from PIL import Image, ImageDraw
@@ -59,4 +47,14 @@ for state in DRAWERS:
     img2x = render(state, 32)
     img1x.save(os.path.join(OUT_DIR, f"tray-{state}.png"), "PNG")
     img2x.save(os.path.join(OUT_DIR, f"tray-{state}@2x.png"), "PNG")
-    print(f"wrote tray-{state}.png + tray-{state}@2x.png")
+    # Windows .ico (multi-resolution baked-in for crisp HiDPI). PIL
+    # supports saving an ICO with multiple sizes embedded; Windows
+    # picks the closest match for the tray's current DPI scale.
+    ico_sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (256, 256)]
+    img_for_ico = render(state, 256)
+    img_for_ico.save(
+        os.path.join(OUT_DIR, f"tray-{state}.ico"),
+        format="ICO",
+        sizes=ico_sizes,
+    )
+    print(f"wrote tray-{state}.png + @2x + .ico ({len(ico_sizes)} sizes)")

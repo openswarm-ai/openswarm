@@ -71,7 +71,7 @@ def _load(tool_id: str) -> ToolDefinition:
         tool = ToolDefinition(**json.load(f))
     # Migrate Discord tool configs from the old npx-based spawn (which
     # broke whenever the npx cache was partially populated) to the local
-    # Python shim. Idempotent — if it's already on the shim, no-op.
+    # Python shim. Idempotent; if it's already on the shim, no-op.
     if (
         tool.name.lower() == "discord"
         and tool.mcp_config
@@ -224,7 +224,7 @@ def _resolve_command(command: str) -> str | None:
     if found:
         return found
     # Windows binaries need an extension. shutil.which() handles PATHEXT for
-    # PATH lookups, but we manually scan _extra_bin_dirs below — replicate
+    # PATH lookups, but we manually scan _extra_bin_dirs below; replicate
     # the suffix probing here so `uvx` finds `uvx.exe`, etc.
     if sys.platform == "win32":
         suffixes = [""] + os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").lower().split(os.pathsep)
@@ -320,7 +320,7 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
         if guild_ids:
             env["OPENSWARM_DISCORD_GUILD_IDS"] = ",".join(guild_ids)
         # The shim runs as a subprocess and needs to import
-        # `backend.apps.discord_mcp_shim` — set PYTHONPATH to the project
+        # `backend.apps.discord_mcp_shim`; set PYTHONPATH to the project
         # root (parent of the backend/ dir) so that import resolves.
         _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         existing_pp = env.get("PYTHONPATH") or os.environ.get("PYTHONPATH", "")
@@ -338,7 +338,7 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
         if config.get("command"):
             # `python` (no version suffix) doesn't exist on a stock macOS,
             # so a tool config that asks for "python" silently fails to
-            # spawn — Claude Agent SDK then exposes zero tools from that
+            # spawn; Claude Agent SDK then exposes zero tools from that
             # MCP. We resolve to the actual interpreter running the
             # backend (sys.executable), which is guaranteed to exist and
             # have backend modules importable. `python3` and absolute
@@ -347,7 +347,7 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
                 resolved_python = sys.executable or shutil.which("python3") or shutil.which("python")
                 if resolved_python:
                     config["command"] = resolved_python
-            # Check for bundled npm MCP servers — use Electron's Node.js instead of npx
+            # Check for bundled npm MCP servers; use Electron's Node.js instead of npx
             if config["command"] in ("npx", "bunx"):
                 pkg_name = next((a for a in (config.get("args") or []) if not a.startswith("-")), None)
                 if pkg_name:
@@ -425,7 +425,7 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
         env = config.setdefault("env", {})
         env.setdefault("PATH", _augmented_path())
         env.setdefault("PYTHONPATH", "")
-        # Point uv/uvx at our bundled Python — avoids macOS CLT popup on fresh Macs
+        # Point uv/uvx at our bundled Python; avoids macOS CLT popup on fresh Macs
         # and avoids downloading Python at runtime
         _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
         _is_windows = sys.platform == "win32"
@@ -607,7 +607,7 @@ def _try_heal_npx_cache(stderr: str) -> str | None:
 
     Why: interrupted npx installs leave a `package-lock.json` in the cache dir so
     subsequent spawns reuse a partially-extracted node_modules tree, which dies at
-    import time. Scoped strictly to the extracted hash subdir — never touches
+    import time. Scoped strictly to the extracted hash subdir; never touches
     anything outside `~/.npm/_npx/`.
     """
     if "ERR_MODULE_NOT_FOUND" not in stderr:
@@ -729,7 +729,7 @@ async def _discover_mcp_tools_stdio(command: str, args: list[str] | None = None,
 
     except HTTPException as e:
         # Heal-on-corrupt-npx-cache still triggers from the EOF branch,
-        # which now includes the full stderr tail in `e.detail` — so the
+        # which now includes the full stderr tail in `e.detail`; so the
         # ERR_MODULE_NOT_FOUND signature is still discoverable here.
         if _attempt == 0 and _try_heal_npx_cache(str(e.detail) if e.detail is not None else ""):
             return await _discover_mcp_tools_stdio(command, args, env, _attempt=1)
@@ -737,10 +737,10 @@ async def _discover_mcp_tools_stdio(command: str, args: list[str] | None = None,
     except asyncio.TimeoutError:
         # Most common cause: cold npx cache on Windows. The npm install
         # persists across attempts, so a retry usually finishes against a
-        # warm cache. Surface npx's own progress line if we have one — it
+        # warm cache. Surface npx's own progress line if we have one; it
         # makes the cause obvious ("downloading X...") instead of opaque.
         tail_text = "".join(stderr_tail[-5:]).strip()
-        detail = "MCP discovery timed out — the server may still be downloading on first run"
+        detail = "MCP discovery timed out; the server may still be downloading on first run"
         if tail_text:
             preview = tail_text[-200:].replace("\n", " ").strip()
             detail += f" (last output: {preview})"
@@ -871,7 +871,7 @@ def _m365_server_script() -> str:
     backend/mcp-bundles/softeria-ms-365-mcp-server/dist/index.js (4.7MB).
     The new path mirrors the SDK's internal layout (dist/index.js + sibling
     package.json) because cli.js reads __dirname/../package.json for the
-    --version flag — see scripts/build-app.sh `build_mcp_bundle_dir`.
+    --version flag; see scripts/build-app.sh `build_mcp_bundle_dir`.
     """
     _backend = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     bundle = os.path.join(
@@ -955,7 +955,7 @@ async def m365_device_login(tool_id: str):
                 login_state["status"] = "awaiting_auth"
             if url_match and "microsoft" in url_match.group(1).lower():
                 login_state["device_code_url"] = url_match.group(1)
-        # Process ended — check result
+        # Process ended; check result
         proc.wait()
         remaining_stderr = proc.stderr.read() if proc.stderr else ""
         login_state["output"] += remaining_stderr
@@ -1163,7 +1163,7 @@ async def oauth_cloud_claim(
     data = resp.json()
     tokens = data.get("tokens", {}) or {}
     tool = _load(tool_id)
-    # Google's token endpoint doesn't include the user's email — fetch it
+    # Google's token endpoint doesn't include the user's email; fetch it
     # from userinfo so the UI can show "you connected ericzeng@gmail.com"
     # rather than the generic "Google account" placeholder.
     if tool.name.lower() == "google" and tokens.get("access_token") and not tokens.get("email"):
@@ -1186,7 +1186,7 @@ def _persist_cloud_tokens(tool: ToolDefinition, tokens: dict) -> None:
     """Normalise the cloud's claim response into tool.oauth_tokens.
 
     Per-provider shaping mirrors what the v1.0.25 local-callback flow used
-    to write — the rest of the app (refresh helpers, MCP env injection)
+    to write; the rest of the app (refresh helpers, MCP env injection)
     expects exactly this shape.
     """
     name = tool.name.lower()
@@ -1242,7 +1242,7 @@ async def _refresh_via_proxy(provider: str, tool: ToolDefinition, default_expiry
                 json={"refresh_token": refresh_token},
             )
         if resp.status_code == 401:
-            # Provider rejected — user revoked at the provider's side. Mark
+            # Provider rejected; user revoked at the provider's side. Mark
             # as needing re-auth so the UI prompts a Reconnect.
             tool.auth_status = "expired"
             _save(tool)
@@ -1275,7 +1275,7 @@ async def _refresh_via_proxy(provider: str, tool: ToolDefinition, default_expiry
 async def refresh_google_token(tool: ToolDefinition) -> Optional[str]:
     """Refresh an expired Google access_token via the Fly cloud-proxy.
 
-    The client_secret never leaves Fly — desktop only POSTs the
+    The client_secret never leaves Fly; desktop only POSTs the
     refresh_token. Same pattern as Airtable/HubSpot. Pre-v1.0.29 builds
     held the secret in their bundled .env; v1.0.29 removed it.
     """

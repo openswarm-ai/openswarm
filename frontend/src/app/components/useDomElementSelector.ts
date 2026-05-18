@@ -139,7 +139,6 @@ export function useDomElementSelector(): DomSelectorState {
   }, [ctx?.selectedElements]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    // If we're drawing a drag rectangle, update it instead of hover overlay
     if (dragOriginRef.current) {
       const origin = dragOriginRef.current;
       const dx = e.clientX - origin.x;
@@ -253,15 +252,7 @@ export function useDomElementSelector(): DomSelectorState {
     preDragFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dragOriginRef.current = { x: e.clientX, y: e.clientY };
     isDraggingRef.current = false;
-    // Make webviews/iframes transparent to mouse events for the duration of
-    // a potential drag. Without this, dragging the selection rect across a
-    // browser card freezes the rect at the webview's entry edge — the
-    // <webview> hit-tests the cursor at the OS level and steals mousemove
-    // events from the document listener until the cursor exits the other
-    // side. Reuses the existing CSS rule installed by useDashboardSelection
-    // ("body.dashboard-marquee-active webview, ... { pointer-events: none }").
-    // Added on mousedown (not on first drag-threshold cross) so the cursor
-    // is already passing through if the drag begins inside a webview.
+    // Make webviews pointer-transparent during drag; the OS-level hit-test would otherwise steal mousemove.
     document.body.classList.add('dashboard-marquee-active');
   }, []);
 
@@ -375,8 +366,7 @@ export function useDomElementSelector(): DomSelectorState {
       dragBoundsRef.current = null;
       isDraggingRef.current = false;
       preDragFocusRef.current = null;
-      // Defensive — if select mode flips off mid-drag, drop the class so
-      // webviews regain interactivity.
+      // Defensive: if select mode flips off mid-drag, drop the class so webviews regain interactivity.
       document.body.classList.remove('dashboard-marquee-active');
     };
   }, [ctx?.selectMode, handleMouseMove, handleMouseDown, handleMouseUp, handleClick]);

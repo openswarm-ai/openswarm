@@ -10,9 +10,7 @@ class File:
         return get_abspath(self.path)
 
     def calls_debug_function(self):
-        """
-        Checks if the file calls the debug function.
-        """
+        """True if the file contains a debug() call."""
         full_path = self.get_abspath()
 
         if not full_path.endswith('.py') or full_path.endswith('.pyc'):
@@ -25,5 +23,4 @@ class File:
             except (UnicodeDecodeError, FileNotFoundError) as e:
                 print(f"Error reading file {full_path}")
                 result = False
-        # print(f"??calls_debug_function?? {result}")
         return result

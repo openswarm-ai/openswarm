@@ -32,7 +32,7 @@ def _save_index(index: dict[str, dict]):
 # skill file we copy into ~/.claude/skills/ on first boot and tag with
 # `built_in: true` in the index. Users can edit the content (their
 # changes flow through to the matching agent's prompt on the next turn),
-# but they can't delete the file — the DELETE endpoint refuses with 409.
+# but they can't delete the file; the DELETE endpoint refuses with 409.
 def _built_in_skill_registry() -> list[dict]:
     # Imported lazily so this module stays cheap to import from
     # everywhere (the skills outputs module pulls in pydantic+fastapi
@@ -47,7 +47,7 @@ def _built_in_skill_registry() -> list[dict]:
             "name": "App Builder",
             "description": (
                 "Reference doc the App Builder agent reads on every turn. "
-                "Edit this to change how every App Builder agent behaves — "
+                "Edit this to change how every App Builder agent behaves; "
                 "your edits take effect on the next turn, no restart. "
                 "Built-in: can be edited but not deleted."
             ),
@@ -58,7 +58,7 @@ def _built_in_skill_registry() -> list[dict]:
             "id": "swarm_debug_skill",
             "name": "swarm-debug Logger",
             "description": (
-                "How to use `swarm_debug.debug()` in an App backend — the "
+                "How to use `swarm_debug.debug()` in an App backend; the "
                 "colored frame-aware logger that lands in the App Builder's "
                 "Terminal pane under [BACKEND]. Edit to teach your debugging "
                 "conventions to the App Builder agent. Built-in: editable, "
@@ -73,7 +73,7 @@ def _built_in_skill_registry() -> list[dict]:
 def _seed_built_in_skills() -> None:
     """Copy each built-in skill into SKILLS_DIR if not already present, and
     ensure the index has the `built_in: true` flag so the UI and DELETE
-    endpoint know to treat it specially. Idempotent — safe to call on
+    endpoint know to treat it specially. Idempotent; safe to call on
     every boot. Doesn't overwrite the file once it exists (so user edits
     are preserved across restarts and upgrades)."""
     index = _load_index()
@@ -114,7 +114,7 @@ async def skills_lifespan():
     try:
         _seed_built_in_skills()
     except Exception:
-        # Don't block app startup on a skill-seed failure — the worst
+        # Don't block app startup on a skill-seed failure; the worst
         # case is the user has to manually paste the skill in once.
         logger.exception("failed to seed built-in skills")
     yield
@@ -296,7 +296,7 @@ async def delete_skill(skill_id: str):
             status_code=409,
             detail=(
                 f"'{skill_id}' is a built-in skill and can't be deleted "
-                "(edit its content instead — your edits take effect on "
+                "(edit its content instead; your edits take effect on "
                 "the next agent turn)."
             ),
         )

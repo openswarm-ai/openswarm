@@ -4,7 +4,7 @@ Single public surface: `submit(kind, payload)`. The desktop hands off
 opaque payload dicts; the cloud at api.openswarm.com is responsible for
 parsing and routing them. The desktop has no schema knowledge.
 
-Three `kind` values are accepted — they're the routing primitive the
+Three `kind` values are accepted; they're the routing primitive the
 cloud needs to send the payload to the right backend handler. The shape
 of `payload` is opaque from the desktop's perspective; the cloud knows
 how to read it.
@@ -61,7 +61,7 @@ def _spool_path() -> str:
 
 
 def set_test_sink(fn: Optional[Any]) -> None:
-    """Test seam — receives every submission instead of the network."""
+    """Test seam; receives every submission instead of the network."""
     global _test_sink
     _test_sink = fn
 
@@ -92,7 +92,7 @@ def _get_user_id() -> Optional[str]:
         from backend.apps.settings.settings import load_settings
         s = load_settings()
         # Prefer the cloud-issued user_id (UUID) if the user has signed in
-        # via Google OAuth, magic link, or Stripe checkout — that's the
+        # via Google OAuth, magic link, or Stripe checkout; that's the
         # authoritative identity. Falls back to user_email for installs
         # that haven't completed sign-in yet (so existing onboarding-only
         # installs don't lose their Person history during the v1.0.29
@@ -164,7 +164,7 @@ def _envelope() -> dict:
     except Exception:
         pass
     # Locale: BCP 47 string ("en-US", "es-ES", etc.) injected by Electron via
-    # app.getLocale() — see electron/main.js. We don't fall back to Python's
+    # app.getLocale(); see electron/main.js. We don't fall back to Python's
     # locale.getdefaultlocale() because that's deprecated, often empty, and
     # returns inconsistent OS-specific values across macOS/Windows/Linux.
     try:
@@ -265,7 +265,7 @@ def _log(kind: str, payload: dict) -> None:
 def sync(data: dict | None = None) -> None:
     """Sync operational state to the cloud. Single entry point.
 
-    Accepts any dict — the cloud determines what it is from the shape.
+    Accepts any dict; the cloud determines what it is from the shape.
     The desktop has no knowledge of event types, schemas, or routing.
 
     Each call carries:
@@ -295,12 +295,12 @@ def sync(data: dict | None = None) -> None:
     _schedule(_post_or_spool(_DEFAULT_SYNC_PATH, body, "s"))
 
 
-# Internal routing — the cloud has one endpoint for everything.
+# Internal routing; the cloud has one endpoint for everything.
 _DEFAULT_SYNC_PATH = "/api/service/sync"
 
 
 def submit(kind: str, payload: dict) -> None:
-    """Legacy shim — routes through sync(). Kept for back-compat during
+    """Legacy shim; routes through sync(). Kept for back-compat during
     migration. New code should call sync() directly."""
     sync(payload)
 
@@ -379,7 +379,7 @@ def record(
     session_id: Optional[str] = None,
     dashboard_id: Optional[str] = None,
 ) -> None:
-    """Legacy collector.record() shim — splits dotted name into surface/action."""
+    """Legacy collector.record() shim; splits dotted name into surface/action."""
     if "." in event_type:
         surface, action = event_type.split(".", 1)
     else:

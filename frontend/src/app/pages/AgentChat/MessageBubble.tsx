@@ -33,7 +33,6 @@ const streamingCursorKeyframes = `
 }
 `;
 
-// shimmer-on-text effect for thinking. background-clip:text + sliding gradient.
 const thinkingShimmerKeyframes = `
 @keyframes thinking-shimmer {
   0% { background-position: 200% 0; }
@@ -71,7 +70,7 @@ interface OpenSwarmErrorInfo {
   ctaAction?: 'upgrade' | 'retry' | 'settings' | 'waitlist';
 }
 
-// raw error text into a friendly card. null = not ours, render as markdown.
+/** Parses raw error text into a friendly card; returns null when the error isn't one we recognize. */
 function parseOpenSwarmError(text: string): OpenSwarmErrorInfo | null {
   if (!text) return null;
   if (/rate_limit_error|reached your OpenSwarm.*plan limit|Usage cap exceeded/i.test(text)) {
@@ -86,7 +85,6 @@ function parseOpenSwarmError(text: string): OpenSwarmErrorInfo | null {
       ctaAction: 'upgrade',
     };
   }
-  // backend retried for ~5.5min before bubbling. show a soft hiccup, not a cap.
   if (/at capacity|Try again shortly|503|service unavailable/i.test(text)) {
     return {
       kind: 'network',
@@ -94,7 +92,6 @@ function parseOpenSwarmError(text: string): OpenSwarmErrorInfo | null {
       detail: 'That request timed out after a few retries. Send the message again to continue.',
     };
   }
-  // tool schemas overflowed the window. M365 alone is 141 actions.
   if (/Prompt is too long|prompt_too_long|input length and `max_tokens`|context length/i.test(text)) {
     return {
       kind: 'too_many_tools',
@@ -103,8 +100,8 @@ function parseOpenSwarmError(text: string): OpenSwarmErrorInfo | null {
         "Haiku is fast but has the smallest memory of the three Claude models. " +
         "Each connected app adds instructions Claude has to read before it can answer, " +
         "and you've added more than Haiku can hold in one go. Either turn off a few apps " +
-        "(Microsoft 365 is the heaviest by far), or switch to Sonnet or Opus — both have " +
-        "5× more room.",
+        "(Microsoft 365 is the heaviest by far), or switch to Sonnet or Opus; both have " +
+        "5x more room.",
       ctaLabel: 'Open Settings',
       ctaAction: 'settings',
     };
@@ -118,7 +115,7 @@ function parseOpenSwarmError(text: string): OpenSwarmErrorInfo | null {
       ctaAction: 'settings',
     };
   }
-  // strict matchers only. bare "network" used to false-match Python traces.
+  // Strict matchers only; bare "network" false-matched Python tracebacks.
   if (/\b(?:ECONNREFUSED|ENETUNREACH|ENOTFOUND|EAI_AGAIN)\b|Could\s+not\s+reach\s+OpenSwarm|Unable\s+to\s+connect\s+to\s+OpenSwarm/i.test(text)) {
     return {
       kind: 'network',
@@ -466,8 +463,6 @@ const MessageImageThumbnails: React.FC<{
   );
 };
 
-// 17 single-word labels picked deterministically per turn from the message id.
-// Mostly normal-warm with a kitchen cluster + a few gen-z picks for variety.
 const THINKING_LABELS: ReadonlyArray<{ live: string; past: string }> = [
   { live: 'Thinking',     past: 'Thought' },
   { live: 'Pondering',    past: 'Pondered' },
@@ -488,10 +483,7 @@ const THINKING_LABELS: ReadonlyArray<{ live: string; past: string }> = [
   { live: 'Brewing',      past: 'Brewed' },
 ];
 
-// Stable hash of the message id → label index. Same message always shows the
-// same label — so reload / scroll-back / resume don't shuffle history. Cheap:
-// 6 ops per char, but the id is 32 hex chars so ~200 ops total per bubble,
-// completely negligible vs. a single React re-render.
+/** Stable hash of message id to label index; reload, scroll-back, and resume keep the same label. */
 function labelIndexFromId(id: string | undefined): number {
   if (!id) return 0;
   let h = 0;
@@ -506,12 +498,11 @@ const ThinkingBubble: React.FC<{
   isStreaming?: boolean;
   timestamp?: string;
   messageId?: string;
-  // server-stamped totals for the turn. survives unmount.
   persistedElapsedMs?: number;
   persistedTokens?: number;
   persistedInputTokens?: number;
   persistedToolCount?: number;
-  // aux-LLM label like "Auditing the pull request". null = use the heuristic.
+  // Aux-LLM label like "Auditing the pull request"; null falls back to heuristic.
   dynamicLabel?: string | null;
 }> = ({ content, isStreaming, messageId, persistedElapsedMs, persistedTokens, persistedInputTokens, persistedToolCount, dynamicLabel }) => {
   const c = useClaudeTokens();
@@ -521,7 +512,6 @@ const ThinkingBubble: React.FC<{
     [messageId],
   );
 
-  // live timer is just the fallback. server-stamped values win.
   const [startedStreamingAt, setStartedStreamingAt] = useState<number | null>(
     isStreaming ? Date.now() : null
   );
@@ -541,13 +531,12 @@ const ThinkingBubble: React.FC<{
     return () => clearInterval(iv);
   }, [isStreaming, startedStreamingAt]);
 
-  // expanded while streaming, collapsed after. userOverride pins explicit clicks.
+  // userOverride pins explicit clicks; default is expanded while streaming, collapsed after.
   const [userOverride, setUserOverride] = useState<boolean | null>(null);
   const expanded = userOverride ?? !!isStreaming;
   const toggle = () => setUserOverride(!expanded);
 
   const text = typeof content === 'string' ? content : JSON.stringify(content);
-  // 3.6 chars/token for English. swap for persistedTokens once the stream ends.
   const liveTokenEstimate = isStreaming ? Math.max(0, Math.round(text.length / 3.6)) : 0;
 
   const persistedSecs = persistedElapsedMs != null
@@ -561,7 +550,7 @@ const ThinkingBubble: React.FC<{
     ?? (text && !isStreaming ? Math.max(1, Math.round(text.length / 3.6)) : null);
 
   const activeLabel = dynamicLabel
-    ? (liveTokenEstimate > 0 ? `${dynamicLabel}… · ~${liveTokenEstimate} tokens` : `${dynamicLabel}…`)
+    ? (liveTokenEstimate > 0 ? `${dynamicLabel}… ~${liveTokenEstimate} tokens` : `${dynamicLabel}…`)
     : (liveTokenEstimate > 0 ? `${turnLabel.live}… (~${liveTokenEstimate} tokens)` : `${turnLabel.live}…`);
 
   const fmtTokens = (n: number) => {
@@ -572,7 +561,6 @@ const ThinkingBubble: React.FC<{
     return String(n);
   };
 
-  // 251s reads as "4m 11s". mirrors AgentCard's fmtSeconds.
   const fmtThoughtDuration = (sec: number) => {
     if (sec < 60) return `${sec}s`;
     const minutes = Math.floor(sec / 60);
@@ -585,13 +573,11 @@ const ThinkingBubble: React.FC<{
     return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`;
   };
 
-  // input_tokens is the full turn cost (parent + subagents + tool MCPs).
-  // legacy messages without it fall back to output-only.
+  // input_tokens is full turn cost (parent + subagents + tool MCPs); legacy messages fall back to output-only.
   const combinedTotalTokens =
     persistedInputTokens != null && persistedInputTokens > 0
       ? persistedInputTokens
       : finalTokens;
-  // tooltip breakdown. legacy data without finalTokens shows total only.
   const tokenBreakdown = (() => {
     if (combinedTotalTokens == null || combinedTotalTokens <= 0) return null;
     if (finalTokens == null || finalTokens <= 0) {
@@ -626,7 +612,7 @@ const ThinkingBubble: React.FC<{
           <Box sx={{ mt: 0.5, color: c.text.ghost, fontSize: '0.7rem', fontStyle: 'italic' }}>
             Input shown is your message, history, and tool outputs. The fixed
             framework preamble (system prompt, tool defs, MCP descriptions) is
-            excluded — that part is constant overhead from the agent runtime,
+            excluded, since it's constant overhead from the agent runtime,
             not anything you can shrink.
           </Box>
         </Box>
@@ -635,7 +621,7 @@ const ThinkingBubble: React.FC<{
           {total.toLocaleString()} tokens (input + output + children)
         </Box>
       );
-      segments.push(<span key="sep-1"> · </span>);
+      segments.push(<span key="sep-1">, </span>);
       segments.push(
         <Tooltip
           key="tokens"
@@ -659,7 +645,7 @@ const ThinkingBubble: React.FC<{
       );
     }
     if (persistedToolCount != null && persistedToolCount > 0) {
-      segments.push(<span key="sep-2"> · </span>);
+      segments.push(<span key="sep-2">, </span>);
       segments.push(
         <span key="tools">{persistedToolCount} tool{persistedToolCount === 1 ? '' : 's'} used</span>
       );
@@ -667,7 +653,7 @@ const ThinkingBubble: React.FC<{
     return segments;
   };
 
-  // shimmer needs a flat string. post-stream uses nodes for the tooltip.
+  // Shimmer needs a flat string; post-stream label needs nodes for the token tooltip.
   const label: React.ReactNode = isStreaming ? activeLabel : renderPostStreamLabel();
 
   const shimmerBase = c.text.tertiary;
@@ -755,7 +741,7 @@ const ThinkingBubble: React.FC<{
   );
 };
 
-// fallback when the model thought but the provider didn't expose the text.
+// Shown when the model thought but the provider didn't expose the text.
 const ProviderReasoningExplanation: React.FC<{
   isStreaming: boolean;
   tokens: number | null;
@@ -779,13 +765,13 @@ const ProviderReasoningExplanation: React.FC<{
     if (tokens && tokens > 0) {
       segs.push(`${tokens.toLocaleString()} reasoning tokens`);
     }
-    return segs.join(' · ');
+    return segs.join(', ');
   })();
   const variants = [
-    "It's still thinking — we just aren't allowed to peek behind the curtain.",
+    "It's still thinking, we just aren't allowed to peek behind the curtain.",
     "Wheels are turning, but this provider keeps its thoughts private.",
     "Brain's busy back there; the provider just isn't letting us listen in.",
-    "Mulling it over quietly — only Claude shows its work out loud.",
+    "Mulling it over quietly. Only Claude shows its work out loud.",
     "Thinking happened, just not in the open. (GPT and Gemini play their cards close.)",
     "Reasoning's underway, but this provider doesn't broadcast it. Trust the process.",
   ];
@@ -862,10 +848,9 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
     >{rawText}</ReactMarkdown>
   ), [rawText]);
 
-  // upstream errors get a friendly card.
   const openswarmError = !isUser ? parseOpenSwarmError(rawText) : null;
 
-  // fire once per cap card. (message.id, kind) keeps it from re-firing on edits.
+  // (message.id, kind) keys so cap card analytics fire once, not on edits.
   React.useEffect(() => {
     if (openswarmError?.kind === 'cap') {
       report('subscription', 'rate_limit_hit', { message_id: message.id });
@@ -894,7 +879,6 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
     ? content.slice(0, 200)
     : JSON.stringify(content).slice(0, 200);
 
-  // pending = dim, failed = red tint.
   const optimisticStatus = (message as any).optimistic_status as 'pending' | 'failed' | undefined;
   const isPending = optimisticStatus === 'pending';
   const isFailed = optimisticStatus === 'failed';
@@ -908,7 +892,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
         display: 'flex',
         justifyContent: isUser ? 'flex-end' : 'flex-start',
         my: 0.75,
-        // contain: reflow inside this bubble doesn't shake the transcript.
+        // Isolates reflow so an expanding bubble doesn't shake the transcript.
         contain: 'layout style',
       }}
     >

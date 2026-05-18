@@ -7,8 +7,7 @@ const ZOOM_IN_FACTOR = 1.1;
 const ZOOM_OUT_FACTOR = 1 / ZOOM_IN_FACTOR;
 const FIT_PADDING = 200;
 
-// Maps the 1–100 user setting to an internal multiplier.
-// 50 (default) → 0.004, 1 → 0.0004, 100 → 0.008
+// Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.004).
 function sensitivityToMultiplier(setting: number): number {
   return 0.00008 * setting;
 }
@@ -50,12 +49,9 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
   contentBoundsRef.current = contentBounds;
   const animFrameRef = useRef<number | null>(null);
   const inertiaFrameRef = useRef<number | null>(null);
-  // Pending fit-target settle timer (see fitToCards). Cancelled when
-  // any new pan/zoom/animation kicks off so a stale settle never
-  // overrides fresh user input or a back-to-back fitToCards call.
+  // Cancelled on any pan/zoom/animation so a stale settle never overrides fresh input or back-to-back fitToCards.
   const settleTimerRef = useRef<number | null>(null);
 
-  // ---- Velocity tracking for momentum panning ----
   const velocityHistoryRef = useRef<Array<{ x: number; y: number; t: number }>>([]);
   const FRICTION = 0.93;
   const MIN_VELOCITY = 0.5;
@@ -136,15 +132,12 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     }
   }, []);
 
-  // ---- Reusable animation helper ----
   const cancelAnimation = useCallback(() => {
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
     }
-    // Also kill any pending fit-target settle so a stale snap doesn't
-    // fire after the user has started panning or after a fresh
-    // fitToCards call has set a different target.
+    // Kill pending settle so a stale snap doesn't fire after the user pans or fitToCards is recalled.
     if (settleTimerRef.current !== null) {
       window.clearTimeout(settleTimerRef.current);
       settleTimerRef.current = null;
@@ -182,26 +175,13 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     const el = viewportRef.current;
     if (!el || !enabled) return;  // Skip wheel listener when canvas is hidden
 
-    // RAF-coalesce wheel-driven state updates. Trackpads fire wheel
-    // events at ~120Hz; without batching, every event triggered a full
-    // Dashboard re-render (all hooks + selectors + the cards .map). The
-    // visible pan was fine because transform-only changes are cheap to
-    // composite, but the JS-side render storm at 120fps caused the
-    // "low FPS" feel during two-finger drag. Accumulating deltas per
-    // frame caps Dashboard re-renders at the display's refresh rate
-    // (usually 60Hz), with no perceptible motion difference because we
-    // apply all the accumulated deltas in one shot.
+    // RAF-coalesce wheel state updates; trackpads at 120Hz would otherwise re-render Dashboard per event.
     let pendingPanDx = 0;
     let pendingPanDy = 0;
     let pendingZoomDy = 0;
     let pendingZoomCenter: { cx: number; cy: number } | null = null;
     let wheelRafId: number | null = null;
-    // Trackpad wheel gestures don't have a "gestureend" event; we infer
-    // it from idle time. ~140ms after the last wheel event we declare
-    // the gesture over and unset the interaction flag, which un-pauses
-    // ResizeObservers etc. The 140ms window is short enough to feel
-    // responsive on re-engage and long enough to absorb the inter-burst
-    // gaps inside a continuous swipe.
+    // No "gestureend" on trackpads; 140ms idle declares the gesture over (short enough to feel snappy, long enough to span inter-burst gaps).
     let wheelIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
     const flushWheel = () => {
@@ -246,15 +226,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     };
 
     // Cache "is this element a scrollable child" decision per node. The
-    // canvas wheel handler walks up from e.target to el on every event;
-    // without caching, it called getComputedStyle on every ancestor on
-    // every wheel event (120Hz from a trackpad × 5-10 ancestors × style
-    // recalc). That was the dominant cost of trackpad two-finger
-    // navigation — RAF-coalescing the state update only fixed half of
-    // the problem. WeakMap entries get GC'd with their elements; no
-    // manual invalidation needed for unmounted DOM. We do invalidate
-    // explicitly when a node's scroll capacity might have changed (see
-    // the resize observer below).
+    // Cache getComputedStyle ancestor walks; uncached was the dominant cost of trackpad two-finger nav. ResizeObserver below invalidates on scroll-capacity change.
     const scrollableCache: WeakMap<HTMLElement, 'scrollable' | 'not'> = new WeakMap();
 
     const onWheel = (e: WheelEvent) => {
@@ -267,10 +239,6 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       const dx = e.deltaMode === 1 ? e.deltaX * 40 : e.deltaX;
       let target = e.target as HTMLElement | null;
       while (target && target !== el) {
-        // Cached classification: 'scrollable' = has overflow auto/scroll
-        // AND content exceeds its frame in some direction. 'not' = neither.
-        // Fast path: cheap scrollHeight/scrollWidth read (a layout-flushing
-        // property, but no style recalc) before paying for getComputedStyle.
         let cls = scrollableCache.get(target);
         if (cls === undefined) {
           const couldScroll =
@@ -290,10 +258,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         }
 
         if (cls === 'scrollable' && !isPinchZoom) {
-          // Re-read scrollHeight/clientHeight here (cheap, no style recalc)
-          // to make the at-boundary check responsive — the cached decision
-          // is structural (does this element have overflow:auto/scroll AND
-          // exceed its frame); the current scroll position is dynamic.
+          // Re-read scrollHeight/clientHeight; cached decision is structural, scroll position is dynamic.
           const canScrollY = target.scrollHeight > target.clientHeight;
           const canScrollX = target.scrollWidth > target.clientWidth;
           const atYBoundary = !canScrollY ||
@@ -304,7 +269,6 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
             (dx < 0 && target.scrollLeft <= 1);
 
           if (atYBoundary && atXBoundary) {
-            // At boundary — fall through to canvas pan
             target = target.parentElement;
             continue;
           }
@@ -385,12 +349,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     };
   }, [cancelAnimation, cancelInertia]);
 
-  // RAF-coalesce mouse-drag pan. Mouse events fire at 60-240Hz; without
-  // batching, every event called setState directly and Dashboard
-  // re-rendered at the same rate, causing the "hop hop hop" feel when
-  // dragging the canvas with the cursor. Velocity history still captures
-  // per-event (for inertia accuracy on mouseup) — only the React state
-  // update is throttled.
+  // RAF-coalesce drag pan; setState per event caused "hop hop hop" feel. Velocity history still captures per-event for inertia accuracy.
   const dragRafRef = useRef<number | null>(null);
   const latestDragRef = useRef<{ dx: number; dy: number } | null>(null);
   const flushDrag = useCallback(() => {
@@ -598,10 +557,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     animateTo({ panX: newPanX, panY: newPanY, zoom: newZoom });
   }, [animateTo]);
 
-  // Pure target computation — extracted so we can re-run it after the
-  // animation settles and detect viewport-rect drift mid-flight (sidebar
-  // collapse, route switch, panel mount/unmount, etc). Returns null if
-  // the viewport is missing or the rect set is empty.
+  // Extracted so we can re-run after animation to detect viewport-rect drift (sidebar collapse, route switch).
   const computeFitTarget = useCallback(
     (
       cardRects: Array<{ x: number; y: number; width: number; height: number }>,
@@ -659,9 +615,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
 
       const target = computeFitTarget(cardRects, maxZoom, minZoom);
       if (!target) {
-        // Viewport unavailable / no content — keep current camera, don't
-        // snap to (0,0,1) which used to leave the minimap thinking it
-        // was centered when the canvas was anywhere.
+        // Keep current camera; snapping to (0,0,1) used to desync the minimap.
         if (cardRects.length === 0 || !viewportRef.current) {
           setState({ panX: 0, panY: 0, zoom: 1 });
         }
@@ -674,14 +628,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         const dZoom = Math.abs(cur.zoom - target.zoom);
         if (dPan < 5 && dZoom < 0.01) return;
         animateTo(target);
-        // Settle pass — re-run the math one frame after the animation
-        // ends and snap-correct any drift from viewport changes during
-        // the flight (sidebar collapse, route switch, etc). Stored in
-        // a ref so cancelAnimation() can cancel it — without that,
-        // back-to-back fitToCards calls would race: first call's settle
-        // would fire 370ms later and overwrite the second call's
-        // result, leaving the camera on the WRONG target while the
-        // minimap accurately reflects the broken state.
+        // Settle pass: cancelAnimation() must be able to cancel it, else back-to-back fitToCards races and the first settle overwrites the second target.
         settleTimerRef.current = window.setTimeout(() => {
           settleTimerRef.current = null;
           const fresh = computeFitTarget(cardRects, maxZoom, minZoom);

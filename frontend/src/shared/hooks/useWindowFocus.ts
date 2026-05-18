@@ -1,15 +1,4 @@
-// Window blur/focus tracking — analytics signal for "user switched to
-// another app" (temp-churn measurement).
-//
-// Wires the IPC channel that electron/main.js fires on the BrowserWindow's
-// blur/focus events into the existing `report()` analytics pipeline. Each
-// blur emits `app focus_lost` with the elapsed-ms-since-last-focus, and
-// each focus emits `app focus_gained` with elapsed-ms-since-last-blur.
-//
-// Together these answer: how often do users leave OpenSwarm mid-session,
-// for how long, and at what cadence?
-//
-// No-op in browser/web context where window.openswarm is undefined.
+// Reports app focus_lost/focus_gained from Electron blur/focus IPC; no-op in browser.
 
 import { useEffect } from 'react';
 import { report } from '@/shared/serviceClient';

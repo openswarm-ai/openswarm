@@ -60,14 +60,7 @@ import { API_BASE } from '@/shared/config';
 import PlanPicker from '@/app/components/PlanPicker';
 import type { OpenSwarmPlan } from '@/shared/subscription/checkout';
 
-// NOTE: a standalone CopilotAuthButton component used to live here, but it
-// referenced `/agents/copilot/{models,start-auth,poll-auth,disconnect}`
-// endpoints that never existed on the backend. GitHub Copilot now flows
-// through 9Router's `github` OAuth under the generic SubscriptionCard path
-// below, so the dead component was removed.
-
-// Brand colors for provider group headers in the default-model picker.
-// Mirrors the set used by the in-session ChatInput picker.
+// Brand colors for provider group headers; mirrors ChatInput picker.
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: '#E8927A',
   openai: '#74AA9C',
@@ -89,14 +82,9 @@ const DEFAULT_MODEL_FALLBACK = [
   { value: 'haiku', label: 'Claude Haiku 4.5' },
 ];
 
-// ── Subscription Provider Card ──
 const SUBSCRIPTION_PROVIDERS = [
   { id: 'claude', name: 'Claude Pro / Max', desc: 'Sonnet 4.6, Opus 4.6, Haiku 4.5', color: '#E8927A', preview: false },
-  // We route "Gemini" through Antigravity OAuth — same Google sign-in,
-  // but a different backend lane with a much higher preview quota than
-  // Gemini CLI's Code Assist free tier (which 429s after ~5 req/min).
-  // Users with Google AI Pro/Ultra automatically get "priority" limits
-  // on the Antigravity side; no extra action required from them.
+  // "Gemini" routes through Antigravity OAuth (same Google sign-in, higher quota than Gemini CLI's free tier).
   { id: 'antigravity', name: 'Gemini Advanced', desc: 'Gemini 3 Pro, 3 Flash, 2.5 Pro, 2.5 Flash', color: '#4285F4', preview: false },
   { id: 'codex', name: 'ChatGPT Plus / Pro', desc: 'GPT-5.4, GPT-5.4 Mini, GPT-5.3 Codex', color: '#74AA9C', preview: false },
 ];
@@ -165,27 +153,18 @@ const SubscriptionCard: React.FC<{ provider: typeof SUBSCRIPTION_PROVIDERS[0]; c
   );
 };
 
-// ── OpenSwarm Pro managed-subscription card ──
-//
-// Renders either a "Subscribe" CTA (when not connected) or a live usage +
-// Manage/Disconnect card (when connection_mode === 'openswarm-pro'). All
-// billing details come from /api/subscription/status at runtime — no
-// pricing is hardcoded in this OSS repo.
+/** Pro managed-subscription card: Subscribe CTA when disconnected, live usage + Manage/Disconnect when active. */
 interface OpenSwarmProStatus {
   connected: boolean;
   connection_mode?: string;
   plan?: string | null;
   status?: string | null;
   expires?: string | null;
-  // When the cloud reports the bearer as revoked (401) or the sub as past
-  // its grace period (402), backend clears local state and returns
-  // connected=false with a reason + last_plan so the UI can distinguish
-  // "your subscription ended" from "never subscribed."
+  // Backend returns reason + last_plan on 401/402 so UI distinguishes "subscription ended" from "never subscribed".
   reason?: 'revoked' | 'expired' | null;
   last_plan?: string | null;
   usage?: {
-    // Live utilization from Claude's /api/oauth/usage — 0-100 percent of the
-    // shared pool subscription's 5h window consumed. Updated every ~30s.
+    // Live utilization (0-100%) of the shared pool subscription's 5h window; polled ~30s.
     utilization?: number;
     window_hours?: number;
     window_ends_at?: number;
@@ -193,28 +172,17 @@ interface OpenSwarmProStatus {
   } | null;
 }
 
-// Clamp an arbitrary plan name from the cloud to one of the three picker
-// tiers. Falls back to pro_plus so the "recommended" default stays selected
-// if the user's prior plan was hobby or an unknown value.
+/** Clamp arbitrary cloud plan name to one of the three picker tiers; defaults to pro_plus. */
 const clampPickerPlan = (plan: string | null | undefined): OpenSwarmPlan => {
   if (plan === 'pro' || plan === 'pro_plus' || plan === 'ultra') return plan;
   return 'pro_plus';
 };
 
-// ── Account card ──
-//
-// Shown at the top of the General tab. Three states:
-//   - Signed in (settings.user_id present): show email + signin method
-//     + Sign out button.
-//   - Paid user with no signed-in identity yet (bearer set, user_id null):
-//     same email shown, with a one-click "Link your account" CTA that
-//     fires a Google sign-in so analytics finally has a Person row.
-//   - Not signed in: small "Sign in to OpenSwarm" CTA that opens the gate.
+/** Account card at top of General tab; three states: signed in, paid-but-unlinked, or not signed in. */
 const AccountCard: React.FC = () => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
-  // Narrow selectors: each subscribes to one primitive so unrelated
-  // settings edits (e.g. theme toggle) don't re-render this card.
+  // Narrow primitive selectors so unrelated settings edits (theme, etc.) don't re-render this card.
   const userEmail = useAppSelector((s) => s.settings.data.user_email ?? null);
   const userId = useAppSelector((s) => s.settings.data.user_id ?? null);
   const signinMethod = useAppSelector((s) => s.settings.data.signin_method ?? null);
@@ -243,8 +211,7 @@ const AccountCard: React.FC = () => {
   };
 
   const onSignIn = () => {
-    // Pass local_port so the bearer-handoff page POSTs to the right
-    // backend port (Electron may bind anything in 8324..8424).
+    // Pass local_port so the bearer-handoff page POSTs to the right backend (Electron binds in 8324..8424).
     const localPort = (window as any).__OPENSWARM_PORT__ || 8324;
     const params = new URLSearchParams({
       install_id: installId,
@@ -256,7 +223,7 @@ const AccountCard: React.FC = () => {
     else window.open(startUrl, '_blank');
   };
 
-  // Not signed in at all (no bearer, no user_id) — small inline CTA.
+  // Not signed in at all (no bearer, no user_id); inline CTA.
   if (!userId && !hasBearer) {
     return (
       <Box sx={{ p: 2, mb: 2, borderRadius: `${c.radius.lg}px`, border: `1px solid ${c.border.subtle}`, bgcolor: c.bg.surface }}>
@@ -340,9 +307,7 @@ const OpenSwarmProCard: React.FC = () => {
   const dispatch = useAppDispatch();
   const [status, setStatus] = useState<OpenSwarmProStatus | null>(null);
   const [busy, setBusy] = useState<'manage' | 'disconnect' | null>(null);
-  // Track which usage thresholds we've already fired this session so the
-  // event doesn't spam every 30s while the counter hovers past
-  // the threshold. Reset implicitly on page unmount (settings close).
+  // Track fired usage thresholds so the event doesn't spam every 30s while counter hovers past the line.
   const firedUsageThresholds = useRef<Set<number>>(new Set());
 
   const refresh = useCallback(async () => {
@@ -350,7 +315,7 @@ const OpenSwarmProCard: React.FC = () => {
       const r = await fetch(`${API_BASE}/subscription/status`);
       if (r.ok) setStatus(await r.json());
     } catch {
-      // silently ignore — cloud might be offline
+      // silently ignore; cloud might be offline
     }
   }, []);
 
@@ -389,9 +354,7 @@ const OpenSwarmProCard: React.FC = () => {
     }
   };
 
-  // Fire subscription.usage_warning exactly once per threshold per session
-  // when utilization crosses 80% / 90%. Placed before the early return so
-  // the hook chain stays stable.
+  // Fire usage_warning once per threshold (80%, 90%); placed before the early return so hook chain stays stable.
   useEffect(() => {
     if (!status?.connected) return;
     const rawPct = status.usage?.utilization ?? 0;
@@ -408,14 +371,12 @@ const OpenSwarmProCard: React.FC = () => {
     }
   }, [status]);
 
-  // Loading state — don't flash a CTA that disappears on first fetch.
+  // Don't flash a CTA that disappears on first fetch.
   if (!status) return null;
 
   const isConnected = !!status.connected;
   const usage = status.usage;
-  // Pool utilization is live data from Claude's own /api/oauth/usage endpoint
-  // — a 0-100 percentage for the current 5h window of the subscription we're
-  // routing this user through.
+  // Pool utilization (0-100%) for the current 5h window of the routed subscription.
   const pct = Math.max(0, Math.min(100, Math.round(usage?.utilization ?? 0)));
   const windowEndsAt = usage?.window_ends_at;
 
@@ -473,21 +434,19 @@ const OpenSwarmProCard: React.FC = () => {
 
       {isConnected ? (
         <>
-          {/* Canceled-in-grace banner: user canceled in Stripe but still
-              inside the paid period. Show a clear "scheduled to cancel"
-              state so they're not surprised when access stops. */}
+          {/* Canceled-in-grace banner: canceled in Stripe but still inside paid period. */}
           {status.status === 'canceled' && (
             <Box sx={{
               px: 1.2, py: 0.6, mb: 1.2, borderRadius: `${c.radius.sm}px`,
               bgcolor: `${c.status.warning}15`, border: `1px solid ${c.status.warning}40`,
             }}>
               <Typography sx={{ fontSize: '0.72rem', color: c.status.warning, fontWeight: 500 }}>
-                Subscription canceled — you still have access until {expiresLabel || 'the end of the period'}.
+                Subscription canceled. You still have access until {expiresLabel || 'the end of the period'}.
               </Typography>
             </Box>
           )}
 
-          {/* Usage bar — percentage only, no raw counts */}
+          {/* Usage bar; percentage only, no raw counts. */}
           <Box sx={{ mb: 1.2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0.5 }}>
               <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, fontWeight: 500 }}>
@@ -540,11 +499,7 @@ const OpenSwarmProCard: React.FC = () => {
             </Button>
           </Box>
 
-          {/* Canceled-in-grace: show the 3-tier picker inline so users can
-              pick a plan and resubscribe without clicking through a dialog.
-              Active (non-canceled) subscribers don't get the picker —
-              mid-subscription plan changes go through Stripe's Customer
-              Portal via "Manage in Stripe". */}
+          {/* Canceled-in-grace: 3-tier picker inline for resubscribe; active subs use Stripe's portal instead. */}
           {status.status === 'canceled' && (
             <>
               <Box sx={{ mt: 2.5, mb: 1.5, borderTop: `1px solid ${c.border.subtle}`, pt: 2 }}>
@@ -552,7 +507,7 @@ const OpenSwarmProCard: React.FC = () => {
                   Resubscribe to keep access past {expiresLabel || 'your end date'}
                 </Typography>
                 <Typography sx={{ fontSize: '0.7rem', color: c.text.muted }}>
-                  Pick any plan below — you can keep your current tier or switch.
+                  Pick any plan below; you can keep your current tier or switch.
                 </Typography>
               </Box>
               <PlanPicker
@@ -564,9 +519,7 @@ const OpenSwarmProCard: React.FC = () => {
           )}
         </>
       ) : status.reason === 'expired' && status.last_plan ? (
-        // Truly expired: the bearer's subscription ended past its grace
-        // period. Show the 3-tier picker so the user can pick the same plan
-        // or upgrade; their prior plan is preselected visually.
+        // Expired: bearer's sub ended past grace; show picker with prior plan preselected.
         <>
           <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, mb: 1.5 }}>
             Your OpenSwarm Pro subscription has ended. Pick a plan to keep using Claude Sonnet, Opus, and Haiku without a Claude account.
@@ -578,8 +531,7 @@ const OpenSwarmProCard: React.FC = () => {
           />
         </>
       ) : status.reason === 'revoked' && status.last_plan ? (
-        // Token revoked but subscription existed — different CTA language
-        // so the user knows this isn't a billing issue.
+        // Token revoked but sub existed; CTA language differs so user knows this isn't billing.
         <>
           <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, mb: 1.5 }}>
             Your OpenSwarm Pro access token was revoked. Pick a plan to reconnect.
@@ -591,7 +543,7 @@ const OpenSwarmProCard: React.FC = () => {
           />
         </>
       ) : (
-        // Genuine new user — never had a subscription on this machine.
+        // Genuine new user; never had a subscription on this machine.
         <>
           <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 1.5 }}>
             One subscription, no Claude account needed. We handle everything behind the scenes.
@@ -606,12 +558,7 @@ const OpenSwarmProCard: React.FC = () => {
 const SubscriptionCards: React.FC = () => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
-  // `status` and the polymorphic-shape `connections` array now live in the
-  // subscriptionsSlice. The onboarding gate (hasModelConnected in
-  // skipPredicates.ts) reads the same slice, so OAuth-driven connections
-  // unstick step 1 the moment they land — previously this card kept the
-  // status in local useState, which the onboarding predicate could never
-  // observe.
+  // status + connections live in subscriptionsSlice so the onboarding gate (hasModelConnected) sees OAuth connections immediately.
   const status = useAppSelector((s) => s.subscriptions.status);
   const connections = useAppSelector(selectSubscriptionConnections);
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -619,9 +566,7 @@ const SubscriptionCards: React.FC = () => {
   const [userCode, setUserCode] = useState('');
   const [pollTimer, setPollTimer] = useState<any>(null);
 
-  // Thin wrapper around the slice thunk — returns the resolved status so
-  // call sites that inspect the payload (e.g. the initial-load retry loop
-  // checking `data?.running`) keep working unchanged.
+  // Thin wrapper that returns the resolved status so call sites inspecting the payload keep working.
   const fetchStatus = useCallback(
     async (opts?: { preserveTransient?: boolean }) => {
       return dispatch(fetchSubscriptionStatus(opts)).unwrap();
@@ -629,18 +574,13 @@ const SubscriptionCards: React.FC = () => {
     [dispatch],
   );
 
-  // Refresh the chat model picker whenever subscription connection state
-  // changes — GET /agents/models intersects BUILTIN_MODELS with 9Router's
-  // live connected-provider set, so newly-connected subscriptions surface
-  // their models in the dropdown immediately.
+  // Refetch model picker after sub changes so newly-connected providers surface in the dropdown immediately.
   const refreshPickerModels = () => { dispatch(fetchModels()); };
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Retry initial load — a single transient probe miss on mount would
-      // otherwise wedge the UI on the loading spinner until the user closes
-      // and reopens Settings.
+      // Retry initial load; a single transient probe miss would otherwise wedge the spinner until reopen.
       for (const delay of [0, 800, 2000]) {
         if (cancelled) return;
         if (delay) await new Promise(r => setTimeout(r, delay));
@@ -659,12 +599,11 @@ const SubscriptionCards: React.FC = () => {
     );
 
   const handleConnect = async (providerId: string) => {
-    // Cancel any previous attempt first
     if (pollTimer) { clearInterval(pollTimer); setPollTimer(null); }
     setConnecting(providerId);
     setUserCode('');
 
-    // Small delay if retrying — avoids hitting Claude's rate limit
+    // Small delay on retry to avoid Claude's rate limit.
     await new Promise(r => setTimeout(r, 500));
 
     try {
@@ -678,22 +617,13 @@ const SubscriptionCards: React.FC = () => {
       if (data.flow === 'device_code') {
         const code = data.user_code || '';
         setUserCode(code);
-        // Use a named window with features (not `_blank`) so Electron's
-        // setWindowOpenHandler sees `new-window` disposition and spawns a
-        // BrowserWindow popup — matching the Anthropic/Codex flow. With
-        // `_blank` the disposition becomes `foreground-tab` and our main.js
-        // handler routes it into the dashboard as a webview tab, which is
-        // what we saw for GitHub before this change.
-        //
-        // Keep a reference to the popup so we can auto-close it when the
-        // backend poll detects success, instead of leaving the user to
-        // dismiss the "Congratulations, you're all set" page manually.
+        // Named window + features so Electron's setWindowOpenHandler spawns a BrowserWindow popup, not a webview tab.
         let devicePopup: Window | null = null;
         if (data.verification_uri) {
           devicePopup = window.open(data.verification_uri, 'oauth_connect', 'width=600,height=720');
         }
 
-        // Shared cleanup — whichever detection path fires first calls this.
+        // Shared cleanup; whichever detection path fires first calls this.
         let stopped = false;
         const onDeviceSuccess = () => {
           if (stopped) return;
@@ -705,8 +635,7 @@ const SubscriptionCards: React.FC = () => {
           setUserCode('');
           fetchStatus();
           refreshPickerModels();
-          // Auto-close popup 2s after success so user briefly sees the
-          // "Congratulations" page then it goes away automatically.
+          // Auto-close popup 2s after success so the "Congratulations" page is briefly visible then closes.
           setTimeout(() => {
             if (devicePopup && !devicePopup.closed) {
               try { devicePopup.close(); } catch {}
@@ -714,8 +643,7 @@ const SubscriptionCards: React.FC = () => {
           }, 2000);
         };
 
-        // Path 1: device-code poll — asks backend to poll the provider's
-        // token endpoint via 9Router. Primary path when it works.
+        // Path 1: device-code poll via backend/9Router; primary path.
         const pollOnce = async () => {
           if (stopped) return;
           try {
@@ -737,14 +665,10 @@ const SubscriptionCards: React.FC = () => {
             console.warn(`[subscription-poll] ${providerId}: error:`, e);
           }
         };
-        pollOnce(); // immediate first attempt
+        pollOnce();
         const devicePollTimer = setInterval(pollOnce, 5000);
 
-        // Path 2: status poller — checks 9Router's connection list
-        // directly every 2s. Catches the connection even if the
-        // device-code poll silently errors (e.g. 9Router 500 from
-        // postExchange or createProviderConnection). Same pattern
-        // the authorization_code flow already uses.
+        // Path 2: status poller every 2s; catches connection even when device-code poll silently errors.
         const statusPollTimer = setInterval(async () => {
           if (stopped) return;
           try {
@@ -759,21 +683,15 @@ const SubscriptionCards: React.FC = () => {
 
         setPollTimer(devicePollTimer);
 
-        // Detect when the user returns to the main window after
-        // interacting with the popup. In Electron, `popup.closed` is
-        // unreliable (the WindowProxy may not update when the child
-        // BrowserWindow is destroyed). Listening for `focus` on the
-        // main window is more robust — it fires when the user closes
-        // the popup, switches tabs, or clicks back on the app.
+        // Listen for main-window focus; Electron's popup.closed is unreliable when child BrowserWindow is destroyed.
         let focusCheckDone = false;
         const onFocus = async () => {
           if (stopped || focusCheckDone) return;
           focusCheckDone = true;
           window.removeEventListener('focus', onFocus);
-          // Give 9Router 3 seconds to process the token exchange
+          // Give 9Router 3s to process the token exchange before the final status check.
           await new Promise(r => setTimeout(r, 3000));
           if (stopped) return;
-          // Final status check
           try {
             const sr = await fetch(`${API_BASE}/agents/subscriptions/status`);
             const sd = await sr.json();
@@ -783,7 +701,7 @@ const SubscriptionCards: React.FC = () => {
               return;
             }
           } catch {}
-          // Connection not found — reset card
+          // Connection not found; reset card.
           stopped = true;
           clearInterval(devicePollTimer);
           clearInterval(statusPollTimer);
@@ -792,14 +710,12 @@ const SubscriptionCards: React.FC = () => {
           setUserCode('');
           fetchStatus();
         };
-        // Delay registering the focus listener so the initial popup
-        // open doesn't immediately trigger it (opening a popup blurs
-        // then refocuses the parent in some cases).
+        // Delay focus listener; popup open can blur/refocus the parent and falsely trigger it.
         setTimeout(() => {
           if (!stopped) window.addEventListener('focus', onFocus);
         }, 2000);
 
-        // 5-minute hard timeout — clean up everything.
+        // 5-minute hard timeout; cleans up everything.
         setTimeout(() => {
           if (stopped) return;
           stopped = true;
@@ -815,16 +731,7 @@ const SubscriptionCards: React.FC = () => {
         }, 300000);
 
       } else if (data.flow === 'authorization_code') {
-        // Some providers (currently Gemini/Google) enforce an anti-embedded-
-        // browser policy on their OAuth consent page that no amount of
-        // user-agent spoofing defeats. For those, the backend sets
-        // `use_external_browser: true` and we open the auth URL in the
-        // user's default browser via shell.openExternal. The callback then
-        // lands on OpenSwarm's own /api/subscriptions/callback endpoint
-        // (backend/main.py:138) which performs the exchange itself and
-        // shows a "Connected!" page. Detection happens via the status
-        // poller below — no postMessage handoff possible because the
-        // system browser has no window.opener relationship back to us.
+        // Gemini/Google block embedded browsers; backend sets use_external_browser and exchange happens server-side via /api/subscriptions/callback. Detect via status poller (no postMessage possible).
         const useExternal = !!data.use_external_browser;
         let popup: Window | null = null;
         if (useExternal && (window as any).openswarm?.openExternal) {
@@ -833,8 +740,7 @@ const SubscriptionCards: React.FC = () => {
           popup = window.open(data.auth_url, 'oauth_connect', 'width=600,height=700');
         }
 
-        // Status polling — primary for external-browser flow, secondary
-        // (fast postMessage path below) for popup flow.
+        // Status polling: primary for external-browser flow, secondary for popup flow (postMessage is faster).
         const statusPoller = setInterval(async () => {
           try {
             const sr = await fetch(`${API_BASE}/agents/subscriptions/status`);
@@ -852,8 +758,7 @@ const SubscriptionCards: React.FC = () => {
         }, 2000);
         setPollTimer(statusPoller);
 
-        // Shared exchange helper — called from whichever relay path
-        // (postMessage or Electron IPC) delivers the code first.
+        // Shared exchange helper invoked by whichever relay path delivers the code first.
         let exchanged = false;
         const runExchange = async (code: string, state?: string) => {
           if (exchanged) return;
@@ -878,9 +783,7 @@ const SubscriptionCards: React.FC = () => {
           refreshPickerModels();
         };
 
-        // postMessage listener — works when the popup's /callback page can
-        // reach window.opener. Silently no-ops on Anthropic flows where the
-        // opener chain is severed by cross-origin redirects.
+        // postMessage listener; no-ops when cross-origin redirects sever window.opener.
         const msgHandler = async (event: MessageEvent) => {
           const d = event.data;
           const callbackData = d?.type === 'oauth_callback' ? d.data : d;
@@ -888,10 +791,7 @@ const SubscriptionCards: React.FC = () => {
         };
         if (!useExternal) window.addEventListener('message', msgHandler);
 
-        // Electron IPC fallback — main.js captures any child webContents
-        // navigating to localhost:20128/callback?code=... and forwards the
-        // parsed params here, so we exchange the code even when opener
-        // postMessage fails. No-op in non-Electron contexts.
+        // Electron IPC fallback; main.js forwards callback params so exchange works when opener postMessage fails.
         let ipcUnsub: (() => void) | null = null;
         const ow = (window as any).openswarm;
         if (ow && typeof ow.onOauthCallback === 'function') {
@@ -900,14 +800,7 @@ const SubscriptionCards: React.FC = () => {
           });
         }
 
-        // Timeout: 3 minutes for popup flow (was 30s — too short for 2FA /
-        // slow networks, and on Windows postMessage from the callback popup
-        // can silently fail due to COOP / opener severing, leaving the only
-        // exit as this timeout firing mid-flow). 5 minutes for external-
-        // browser flow (user has to tab-switch, log in, consent — takes
-        // much longer in practice). The connecting-side poller (see the
-        // useEffect below `handleDisconnect`) is the authoritative safety
-        // net — this timeout just bounds the Connecting… indicator.
+        // 3min popup / 5min external-browser; bounds the Connecting indicator, safety-net poller is the real exit.
         const timeoutMs = useExternal ? 300_000 : 180_000;
         setTimeout(() => {
           clearInterval(statusPoller);
@@ -932,8 +825,7 @@ const SubscriptionCards: React.FC = () => {
         body: JSON.stringify({ provider: providerId }),
       });
     } catch {}
-    // Wait briefly for 9Router to process, then refresh both the
-    // subscription status and the chat model picker.
+    // Wait briefly for 9Router to process, then refresh subscription status + model picker.
     setTimeout(() => {
       fetchStatus();
       refreshPickerModels();
@@ -941,18 +833,7 @@ const SubscriptionCards: React.FC = () => {
     }, 500);
   };
 
-  // Safety-net poller that runs whenever a connect attempt is in flight.
-  // The handleConnect flow's own statusPoller exits as soon as isActive is
-  // seen, and its 3-minute timeout unconditionally clears `connecting` —
-  // but on Windows the OAuth popup's postMessage path can fail silently
-  // (COOP severs opener, Defender interferes, etc.), so the ONLY way out
-  // of "Connecting…" becomes that timeout, which flips the card back to
-  // "Connect" even when the backend exchange succeeded. This separate
-  // poller watches the same status endpoint every 4s and clears the
-  // Connecting state the moment 9Router reports the provider isActive,
-  // whether that's via Method 1 (postMessage → frontend exchange), the
-  // 9Router callback page's Method 4 (server-side exchange), or the Codex
-  // listener's new server-side exchange.
+  // 4s safety-net poller while connecting; clears Connecting state whenever 9Router reports the provider isActive (handles Windows postMessage failures).
   useEffect(() => {
     if (!connecting) return;
     let cancelled = false;
@@ -972,12 +853,10 @@ const SubscriptionCards: React.FC = () => {
     };
     const id = setInterval(tick, 4000);
     return () => { cancelled = true; clearInterval(id); };
-    // refreshPickerModels is stable (no deps), fetchStatus isn't used here
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connecting]);
 
   if (!status) {
-    // Initial loading — show skeleton cards
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         {SUBSCRIPTION_PROVIDERS.map(p => (
@@ -1030,7 +909,6 @@ const SubscriptionCards: React.FC = () => {
   );
 };
 
-// ── Pixel Bar ──
 const PIXEL_SALMON = ['#C46B57', '#D4795F', '#E8927A', '#F0A088', '#F5B49E'];
 const PIXEL_BLUE = ['#445588', '#5577AA', '#6688BB', '#7799CC', '#88AADD'];
 
@@ -1055,7 +933,6 @@ const PixelBarOuter: React.FC<{ value: number; max: number; width?: number; pale
   );
 };
 
-// ── Usage Stats Component ──
 const UsageStats: React.FC = () => {
   const c = useClaudeTokens();
   const [stats, setStats] = useState<any>(null);
@@ -1068,7 +945,6 @@ const UsageStats: React.FC = () => {
   }, []);
 
   if (!stats) {
-    // Skeleton loading state
     const skeletonPulse = {
       animation: 'skeleton-pulse 1.5s ease-in-out infinite',
       '@keyframes skeleton-pulse': { '0%, 100%': { opacity: 0.5 }, '50%': { opacity: 0.25 } },
@@ -1156,7 +1032,6 @@ const UsageStats: React.FC = () => {
   const maxToolCount = toolEntries.length > 0 ? Math.max(...toolEntries.map(([, c]) => c)) : 1;
   const statusEntries = Object.entries(stats.status_breakdown || {}) as [string, string][];
 
-  // Pixel bar helper that passes tokens
   const PixelBar: React.FC<{ value: number; max: number; width?: number; palette?: string[] }> = (props) => (
     <PixelBarOuter {...props} tokens={c} />
   );
@@ -1175,7 +1050,6 @@ const UsageStats: React.FC = () => {
 
   return (
     <Box sx={{ mb: 2.5 }}>
-      {/* Row 1: Core metrics */}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, mb: 1 }}>
         <Box sx={cardSx}>
           <Typography sx={labelSx}>Total Sessions</Typography>
@@ -1189,8 +1063,8 @@ const UsageStats: React.FC = () => {
           <Typography sx={valueSx}>{formatCost(stats.total_cost_usd)}</Typography>
           <Typography sx={subSx}>
             {isSubscription
-              ? `${formatCost(stats.avg_cost_per_session)} avg · saved with your subscription`
-              : costSourceLabel ? `${formatCost(stats.avg_cost_per_session)} avg · ${costSourceLabel}` : 'no cost data'}
+              ? `${formatCost(stats.avg_cost_per_session)} avg, saved with your subscription`
+              : costSourceLabel ? `${formatCost(stats.avg_cost_per_session)} avg, ${costSourceLabel}` : 'no cost data'}
           </Typography>
         </Box>
         <Box sx={cardSx}>
@@ -1209,7 +1083,6 @@ const UsageStats: React.FC = () => {
         </Box>
       </Box>
 
-      {/* Row 2: Time + efficiency + tokens */}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, mb: 1.5 }}>
         <Box sx={cardSx}>
           <Typography sx={labelSx}>Total Run Time</Typography>
@@ -1237,15 +1110,13 @@ const UsageStats: React.FC = () => {
           </Typography>
           <Typography sx={subSx}>
             {stats.total_prompt_tokens || stats.total_completion_tokens
-              ? `${formatTokens(stats.total_prompt_tokens || 0)} in · ${formatTokens(stats.total_completion_tokens || 0)} out`
+              ? `${formatTokens(stats.total_prompt_tokens || 0)} in, ${formatTokens(stats.total_completion_tokens || 0)} out`
               : providerEntries.map(([p]) => p).join(', ') || 'none'}
           </Typography>
         </Box>
       </Box>
 
-      {/* Model + Provider + Tool breakdown */}
       <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
-        {/* Models & Providers */}
         <Box sx={{ ...cardSx, p: 2 }}>
           <Typography sx={{ ...labelSx, mb: 1.5 }}>Models Used</Typography>
           {modelEntries.length > 0 ? modelEntries.map(([model, count]) => {
@@ -1264,7 +1135,6 @@ const UsageStats: React.FC = () => {
           }) : <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>No sessions yet</Typography>}
         </Box>
 
-        {/* Tools */}
         <Box sx={{ ...cardSx, p: 2 }}>
           <Typography sx={{ ...labelSx, mb: 1.5 }}>Top Tools</Typography>
           {toolEntries.length > 0 ? toolEntries.map(([tool, count]) => {
@@ -1291,7 +1161,7 @@ const UsageStats: React.FC = () => {
 const API_KEY_STEPS = [
   {
     title: 'Open the Anthropic Console',
-    detail: 'Visit console.anthropic.com — create a free account if you don\'t have one yet.',
+    detail: 'Visit console.anthropic.com; create a free account if you don\'t have one yet.',
     link: 'https://console.anthropic.com',
   },
   {
@@ -1323,9 +1193,7 @@ const Settings: React.FC = () => {
 
   const modesList = useMemo(() => Object.values(modes), [modes]);
 
-  // Model picker source — same state as the in-session ChatInput picker, so
-  // Settings shows exactly the models gated-in by the user's connected
-  // providers / subscriptions (OpenSwarm Pro, Anthropic, OpenAI, Google, ...).
+  // Model picker source matches the in-session ChatInput picker, so Settings reflects connected providers.
   const modelsByProvider = useAppSelector((s) => s.models.byProvider);
   const modelsLoaded = useAppSelector((s) => s.models.loaded);
 
@@ -1354,11 +1222,7 @@ const Settings: React.FC = () => {
   const installing = useAppSelector((s) => s.update.installing);
 
   const initialTab = useAppSelector((s) => s.settings.initialTab);
-  // Persisted in-flight edits — survive modal close so the user can pop
-  // out to the dashboard / a doc / wherever and pick up where they left
-  // off without being prompted to "save or discard." Cleared on actual
-  // save (in the slice's updateSettings.fulfilled) or via the explicit
-  // "Discard changes" button.
+  // In-flight edits persisted to Redux so they survive modal close; cleared on save or explicit Discard.
   const draft = useAppSelector((s) => s.settings.draft);
   const draftTab = useAppSelector((s) => s.settings.draftTab);
   const TAB_VALUES = ['general', 'models', 'usage', 'commands'] as const;
@@ -1370,20 +1234,13 @@ const Settings: React.FC = () => {
   );
   const [form, setForm] = useState<AppSettings>({ ...settings, ...(draft || {}) });
 
-  // Re-seed the form whenever the signed-in user changes. Without this,
-  // switching accounts left `form` holding the previous user's snapshot
-  // while Redux `settings` got reloaded for the new user, so the
-  // dirty-detector (form != settings) lit up the Save / Discard footer
-  // even though the user hadn't touched anything. Watching user_id +
-  // user_email handles sign-out, sign-in, and sign-in-as-different-user
-  // in one effect.
+  // Re-seed form on user change; otherwise the dirty detector falsely lights up Save/Discard.
   useEffect(() => {
     setForm({ ...settings });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.user_id, settings.user_email]);
 
-  // When the modal opens with a requested tab (e.g., from the warning
-  // banner's "Configure models" link), switch to it.
+  // Switch to requested tab when modal opens (e.g. from the "Configure models" banner link).
   useEffect(() => {
     if (initialTab && (TAB_VALUES as readonly string[]).includes(initialTab)) {
       setActiveTab(initialTab as SettingsTab);
@@ -1405,24 +1262,14 @@ const Settings: React.FC = () => {
   }, [open, dispatch]);
 
   useEffect(() => {
-    // On open, restore the user's last tab if they had unsaved edits;
-    // otherwise default to General. The caller's explicit initialTab
-    // (e.g. openSettingsModal('models') from the warning banner) wins
-    // over both — the separate initialTab effect above handles that.
+    // On open, restore the last tab from draft; explicit initialTab is handled by the effect above.
     if (open && !initialTab) {
       setActiveTab(isValidTab(draftTab) ? draftTab : 'general');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialTab]);
 
-  // Sync form to Redux settings on modal open / first load only — NOT on
-  // every settings change. Including `settings` in the deps causes any
-  // background dispatch that touches state.data (the SignInGate's 2s
-  // fetchSettings poll, the window-focus refetch in SettingsLoader, the
-  // updateSettings response, etc.) to wipe the user's in-flight edits
-  // mid-typing — that's the "save button flashes and the key disappears"
-  // report from issue #25. Spreads any preserved draft over settings so
-  // unsaved edits resurface after a close → reopen cycle.
+  // Sync form on modal open + first load only; including `settings` in deps wipes in-flight edits on background fetches (issue #25).
   useEffect(() => {
     if (open && loaded) {
       setForm({ ...settings, ...(draft || {}) });
@@ -1430,11 +1277,7 @@ const Settings: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, loaded]);
 
-  // Persist in-flight edits to Redux so they survive modal close. Compares
-  // against `settings` rather than the previous draft so closing+reopening
-  // a clean form doesn't keep a phantom draft alive. Runs after every
-  // commit where form/activeTab changed; React batches keystrokes so the
-  // overhead is one dispatch per render, not per character.
+  // Persist in-flight edits to Redux; compares to `settings` so a clean reopen doesn't keep a phantom draft.
   useEffect(() => {
     if (!open || !loaded) return;
     const dirty = JSON.stringify(form) !== JSON.stringify(settings);
@@ -1484,19 +1327,13 @@ const Settings: React.FC = () => {
     setSaved(true);
   };
 
-  // Closing Settings is now non-destructive — the draft persists in
-  // Redux so unsaved edits resurface on reopen. The old "Save or
-  // discard?" prompt was dropped because it interrupted the user every
-  // time they wanted to step out (e.g. to look up a value on the
-  // dashboard). Explicit discard lives on a button next to Save.
+  // Non-destructive close; draft persists in Redux. Explicit discard lives on its own button.
   const handleRequestClose = useCallback(() => {
     dispatch(closeSettingsModal());
     onboardingBus.emit('settings:closed');
   }, [dispatch]);
 
-  // Explicit discard — fires from the "Discard changes" button. Wipes
-  // the draft so the form snaps back to saved settings; modal stays
-  // open so the user can verify the reset before closing.
+  // Explicit discard wipes the draft so form snaps back to saved settings; modal stays open for verification.
   const handleConfirmDiscard = useCallback(() => {
     setConfirmDiscard(false);
     setForm({ ...settings });
@@ -1624,11 +1461,9 @@ const Settings: React.FC = () => {
       {activeTab === 'general' ? (
       <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
 
-        {/* ── Account ── */}
         <Typography sx={sectionSx}>Account</Typography>
         <AccountCard />
 
-        {/* ── Agent Defaults ── */}
         <Typography sx={sectionSx}>Agent Defaults</Typography>
 
         <Box sx={rowSx}>
@@ -1852,7 +1687,6 @@ const Settings: React.FC = () => {
           />
         </Box>
 
-        {/* ── Interface ── */}
         <Typography sx={{ ...sectionSx, mt: 3 }}>Interface</Typography>
 
         <Box sx={inlineRowSx}>
@@ -2022,7 +1856,6 @@ const Settings: React.FC = () => {
           />
         </Box>
 
-        {/* ── Browser ── */}
         <Typography sx={{ ...sectionSx, mt: 3 }}>Browser</Typography>
 
         <Box sx={rowLastSx}>
@@ -2049,7 +1882,6 @@ const Settings: React.FC = () => {
           </Box>
         </Box>
 
-        {/* ── Advanced ── */}
         <Typography sx={{ ...sectionSx, mt: 3 }}>Advanced</Typography>
 
         <Box sx={inlineRowLastSx}>
@@ -2067,7 +1899,6 @@ const Settings: React.FC = () => {
           />
         </Box>
 
-        {/* ── About ── */}
         <Typography sx={{ ...sectionSx, mt: 3 }}>About</Typography>
 
         <Box sx={rowSx}>
@@ -2075,7 +1906,7 @@ const Settings: React.FC = () => {
             <Box>
               <Typography sx={labelSx}>Version</Typography>
               <Typography sx={{ ...descSx, fontFamily: c.font.mono }}>
-                {appVersion ?? '—'}
+                {appVersion ?? '-'}
               </Typography>
             </Box>
           </Box>
@@ -2179,8 +2010,6 @@ const Settings: React.FC = () => {
           )}
         </Box>
 
-        {/* Restart the onboarding tour. Wipes local progress so the
-            Get-Started panel re-opens at step 1 with no completed steps. */}
         <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Box>
             <Typography sx={{ ...labelSx, mb: 0.25 }}>Onboarding tour</Typography>
@@ -2197,12 +2026,7 @@ const Settings: React.FC = () => {
               try {
                 window.localStorage.removeItem('openswarm.onboarding.v2');
               } catch { /* ignore */ }
-              // Soft reset via Redux — wipes completedSteps, opens the
-              // expanded panel at step 1. No reload needed; the slice's
-              // resetTour reducer handles everything in-memory and the
-              // localStorage-mirror middleware re-persists the new state.
               dispatch(resetTour());
-              // Close the settings modal so the user sees the panel.
               dispatch(closeSettingsModal());
               onboardingBus.emit('settings:closed');
             }}
@@ -2223,7 +2047,6 @@ const Settings: React.FC = () => {
       ) : activeTab === 'models' ? (
       <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, gap: 2.5, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
 
-          {/* ── OPENSWARM PRO (managed) ── */}
           <Box data-onboarding="settings-pro-section" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
             <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
               One Subscription, No Setup
@@ -2236,20 +2059,18 @@ const Settings: React.FC = () => {
             <OpenSwarmProCard />
           </Box>
 
-          {/* ── USE EXISTING SUBSCRIPTIONS ── */}
           <Box data-onboarding="settings-external-subs" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
             <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, mt: 1 }}>
               Or Use Your Existing Subscriptions
             </Typography>
 
             <Typography sx={{ ...descSx, mb: 0 }}>
-              Already paying for Claude, ChatGPT, or Gemini? Connect your subscription — no API key needed, no extra cost.
+              Already paying for Claude, ChatGPT, or Gemini? Connect your subscription, no API key needed, no extra cost.
             </Typography>
 
             <SubscriptionCards />
           </Box>
 
-          {/* ── API KEYS ── */}
           <Box data-onboarding="settings-api-keys" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
             <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, mt: 1 }}>
               Or Connect With API Keys
@@ -2259,7 +2080,6 @@ const Settings: React.FC = () => {
               Pay per use. Each key is stored locally on your device.
             </Typography>
 
-          {/* Anthropic */}
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography sx={labelSx}>Anthropic</Typography>
@@ -2299,7 +2119,6 @@ const Settings: React.FC = () => {
             </Box>
           </Box>
 
-          {/* OpenAI */}
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography sx={labelSx}>OpenAI</Typography>
@@ -2339,7 +2158,6 @@ const Settings: React.FC = () => {
             </Box>
           </Box>
 
-          {/* Google */}
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography sx={labelSx}>Google</Typography>
@@ -2379,7 +2197,6 @@ const Settings: React.FC = () => {
             </Box>
           </Box>
 
-          {/* OpenRouter */}
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography sx={labelSx}>OpenRouter</Typography>
@@ -2419,7 +2236,6 @@ const Settings: React.FC = () => {
             </Box>
           </Box>
 
-          {/* Custom Providers — OpenAI-compatible endpoints (Ollama Cloud, Together AI, local Ollama, etc.) */}
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.25 }}>
               <Typography sx={labelSx}>Custom Providers</Typography>
@@ -2445,7 +2261,7 @@ const Settings: React.FC = () => {
               })()}
             </Box>
             <Typography sx={{ ...descSx, mb: 1.25 }}>
-              Add OpenAI-compatible endpoints — Ollama Cloud, Together, Groq, local Ollama, anything that speaks /v1/chat/completions.
+              Add OpenAI-compatible endpoints (Ollama Cloud, Together, Groq, local Ollama, anything that speaks /v1/chat/completions).
             </Typography>
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
@@ -2477,12 +2293,7 @@ const Settings: React.FC = () => {
                 const nameMissing = !cp.name?.trim();
                 const urlMissing = !cp.base_url?.trim();
                 const modelsMissing = filledModelCount === 0;
-                // api_key is optional — local OpenAI-compatible servers
-                // (LM Studio, Ollama, llama.cpp, vLLM, etc.) usually run
-                // without auth. Backend substitutes a placeholder when
-                // blank so 9Router still gets a valid connection. Only
-                // hosted providers (Together, Groq, OpenRouter via Custom)
-                // need a real key.
+                // api_key is optional (local LM Studio/Ollama/llama.cpp/vLLM run without auth); hosted providers need a real key.
                 const isReady = !nameMissing && !urlMissing && !modelsMissing;
                 const dupeNameWithEarlier = list.findIndex((other, i) =>
                   i < idx && (other.name || '').trim().toLowerCase() === (cp.name || '').trim().toLowerCase() && (cp.name || '').trim() !== ''
@@ -2525,7 +2336,7 @@ const Settings: React.FC = () => {
                           width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
                           bgcolor: isReady ? c.status.success : c.status.warning,
                         }} />
-                        {isReady ? 'Ready' : `Incomplete · add ${missingLabels.join(', ')}`}
+                        {isReady ? 'Ready' : `Incomplete, add ${missingLabels.join(', ')}`}
                       </Typography>
                       <IconButton
                         onClick={removeProvider}
@@ -2592,7 +2403,7 @@ const Settings: React.FC = () => {
                       </Typography>
                       {((cp.models || []).length === 0) ? (
                         <Typography sx={{ fontSize: '0.7rem', color: c.text.muted, fontStyle: 'italic', px: 0.5 }}>
-                          No models yet — add the model IDs this endpoint serves.
+                          No models yet, add the model IDs this endpoint serves.
                         </Typography>
                       ) : (
                         (cp.models || []).map((m, mIdx) => (
@@ -2684,10 +2495,7 @@ const Settings: React.FC = () => {
 
       {(activeTab === 'general' || activeTab === 'models') && (
       <DialogActions sx={{ borderTop: `1px solid ${c.border.subtle}`, px: 3, py: 1.5, justifyContent: 'space-between' }}>
-        {/* Left: explicit "Discard changes" — only surfaces when there
-            are unsaved edits. Closing the modal no longer prompts; the
-            draft persists in Redux. This button is the only way to
-            actively wipe the draft. */}
+        {/* Left: explicit Discard; only path to wipe the persisted draft. */}
         <Box>
           {hasChanges && (
             <Button

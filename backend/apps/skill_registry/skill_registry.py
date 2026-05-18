@@ -43,7 +43,7 @@ def _parse_frontmatter(raw: str) -> tuple[dict, str]:
 async def _fetch_skill_paths(client: httpx.AsyncClient) -> list[tuple[str, str]]:
     """Fetch the marketplace.json manifest and return (skill_folder, plugin_name) pairs.
 
-    Uses raw.githubusercontent.com — no GitHub API needed, no rate limiting.
+    Uses raw.githubusercontent.com; no GitHub API needed, no rate limiting.
     """
     resp = await client.get(MANIFEST_URL)
     resp.raise_for_status()

@@ -50,7 +50,6 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
   const searchLoading = useAppSelector((s) => s.agents.historySearch.loading);
   const searchQuery = useAppSelector((s) => s.agents.historySearch.query);
 
-  // Debounced session/history search.
   useEffect(() => {
     if (!open) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -62,7 +61,6 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
     };
   }, [query, open, dispatch]);
 
-  // Reset on open + autofocus.
   useEffect(() => {
     if (open) {
       setQuery('');
@@ -75,9 +73,7 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
     setSelectedIndex(0);
   }, [query]);
 
-  // Build results: dashboards first, then sessions. Sessions come from
-  // `historySearch.results` (closed) plus active in-memory sessions
-  // (not in history yet).
+  // Dashboards then sessions; merges in-memory active sessions with historySearch.results.
   const results = useMemo<Result[]>(() => {
     const q = query.trim().toLowerCase();
     const dashboardResults: DashboardResult[] = Object.values(dashboards)
@@ -86,9 +82,7 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
       .slice(0, 5)
       .map((d) => ({ kind: 'dashboard', id: d.id, name: d.name }));
 
-    // Merge active in-memory sessions with history search results, dedupe by id.
     const sessionMap = new Map<string, SessionResult>();
-    // Active in-memory sessions
     for (const s of Object.values(sessions)) {
       if (q && !(s.name || '').toLowerCase().includes(q)) continue;
       sessionMap.set(s.id, {
@@ -100,8 +94,7 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
         closedAt: null,
       });
     }
-    // When the query is empty, fall back to recent history rather than the
-    // (potentially huge) history dump — matches what the user sees on init.
+    // Empty query falls back to recent history, not the full dump.
     const historyPool: HistorySession[] = q ? searchResults : Object.values(history).slice(0, 20);
     for (const h of historyPool) {
       if (sessionMap.has(h.id)) continue;
@@ -123,13 +116,10 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
     if (r.kind === 'dashboard') {
       navigate(`/dashboard/${r.id}`);
     } else {
-      // Session: navigate to its dashboard (if any), focus the card.
-      // For closed sessions, resume first so the card can render.
       if (r.dashboardId) {
         navigate(`/dashboard/${r.dashboardId}`);
         if (r.closedAt) {
-          // Closed history session — resume so it lands back in `sessions`
-          // and the dashboard layout can place a card for it.
+          // Closed history: resume so it lands in `sessions` and layout can place a card.
           dispatch(resumeSession({ sessionId: r.id })).then(() => {
             dispatch(setPendingFocusAgentId(r.id));
           });
@@ -137,9 +127,7 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
           dispatch(setPendingFocusAgentId(r.id));
         }
       } else if (r.closedAt) {
-        // No dashboard — just resume; the resumed session will land in some
-        // dashboard if it had one, otherwise it'll be orphan and we can't
-        // really "navigate" anywhere meaningful.
+        // Orphan closed session: resume; we can't navigate anywhere meaningful.
         dispatch(resumeSession({ sessionId: r.id }));
       }
     }
@@ -164,11 +152,9 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
 
   if (!open) return null;
 
-  // Group results visually. Sections collapse if empty.
   const dashSection = results.filter((r): r is DashboardResult => r.kind === 'dashboard');
   const sessSection = results.filter((r): r is SessionResult => r.kind === 'session');
 
-  // Map item index → flat results index for keyboard nav.
   const flatIndexOf = (r: Result) => results.indexOf(r);
   const isStillSearching = !!query.trim() && searchLoading && searchQuery !== query.trim();
 

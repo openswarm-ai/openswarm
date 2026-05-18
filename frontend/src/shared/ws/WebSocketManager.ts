@@ -24,7 +24,8 @@ import {
 } from '../state/agentsSlice';
 import { streamStart, streamDelta, streamEnd } from '../state/streamingSlice';
 import { addBrowserCardFromBackend, removeBrowserCard, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
-import { upsertRun } from '../state/workflowsSlice';
+import { upsertRun, ackRun, runWorkflowNow, openWorkflowCard } from '../state/workflowsSlice';
+import { addWorkflowCard } from '../state/dashboardLayoutSlice';
 import { getAuthToken } from '../config';
 import { notifyAgentCompletion } from '../notifications';
 
@@ -708,12 +709,53 @@ class WebSocketManager {
           // promoting these to the OS layer for scheduled runs.
           const w: any = (window as any).openswarm;
           if (w?.notify) {
-            const title = `${data.workflow_title || 'Workflow'} • ${data.status === 'success' ? 'done' : data.status}`;
+            // Varied notification copy. Picks deterministically by
+            // workflow_id + minute so different workflows get different
+            // tones, while a single workflow's notifications stay
+            // consistent within a few minutes.
+            const seed = ((data.workflow_id || '').length + Math.floor(Date.now() / 60000)) | 0;
+            const SUCCESS_TITLES = [
+              `${data.workflow_title || 'Workflow'} — done`,
+              `${data.workflow_title || 'Workflow'} just wrapped up`,
+              `Heads up: ${data.workflow_title || 'Workflow'} finished`,
+              `${data.workflow_title || 'Workflow'} is ready`,
+            ];
+            const FAILURE_TITLES = [
+              `${data.workflow_title || 'Workflow'} hit a snag`,
+              `${data.workflow_title || 'Workflow'} couldn't finish`,
+              `Something went sideways on ${data.workflow_title || 'Workflow'}`,
+            ];
+            const LATE_TITLES = [
+              `${data.workflow_title || 'Workflow'} caught up late`,
+              `${data.workflow_title || 'Workflow'} ran late but made it`,
+            ];
+            const pool = data.status === 'success' ? SUCCESS_TITLES
+              : data.status === 'failure' ? FAILURE_TITLES
+              : data.status === 'ran_late' ? LATE_TITLES
+              : [`${data.workflow_title || 'Workflow'} • ${data.status}`];
+            const title = pool[Math.abs(seed) % pool.length];
+            // Body copy adapts to platform: macOS gets inline action
+            // buttons (Looks good / Re-run / Adjust), so the body just
+            // tells the story. Windows + Linux don't show action
+            // buttons natively, so the body invites the body-click that
+            // opens the workflow (routed as 'open' to ack-equivalent).
+            const isMac = (typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform));
             const body = data.tier_kind && data.fallback
               ? `Would have ${data.tier_kind === 'call' ? 'called' : 'texted'} you. (Cloud SMS not wired yet.)`
-              : 'Tap to open the run.';
+              : data.status === 'success'
+                ? (isMac ? 'Tap to see what it did.' : 'Click to see what it did.')
+                : data.status === 'failure'
+                  ? (isMac ? 'Tap to see what went wrong.' : 'Click to see what went wrong.')
+                  : (isMac ? 'Tap to open the run.' : 'Click to open the run.');
             const deepLink = data.workflow_id ? `openswarm://workflow/${data.workflow_id}/run/${data.run_id || ''}` : undefined;
-            w.notify({ title, body, deepLink });
+            // Inline action buttons. Looks good = ack (cancel escalation).
+            // Re-run = trigger another run immediately. Adjust = open editor.
+            const actions = [
+              { text: 'Looks good', outcome: 'ack' },
+              { text: 'Re-run', outcome: 'rerun' },
+              { text: 'Adjust', outcome: 'edit' },
+            ];
+            w.notify({ title, body, deepLink, runId: data.run_id, workflowId: data.workflow_id, actions });
           }
         } catch { /* native notif optional */ }
         break;
@@ -814,6 +856,34 @@ class WebSocketManager {
 }
 
 import { WS_BASE } from '@/shared/config';
+
+// Subscribe once to native-notification action callbacks. The user
+// clicks "Looks good" → we cancel any pending escalation. "Re-run" →
+// fire a new manual run. "Adjust" → open the editor. "Open" (plain
+// notification click) → just open the workflow card. Subscription
+// happens at module import time so we never miss an early action.
+(() => {
+  try {
+    const w: any = (typeof window !== 'undefined') ? (window as any).openswarm : null;
+    if (!w?.onNotificationAction) return;
+    w.onNotificationAction(({ outcome, runId, workflowId }: { outcome: string; runId?: string; workflowId?: string }) => {
+      if (!workflowId) return;
+      if (outcome === 'ack' && runId) {
+        store.dispatch(ackRun(runId));
+        return;
+      }
+      if (outcome === 'rerun') {
+        store.dispatch(runWorkflowNow(workflowId));
+        return;
+      }
+      if (outcome === 'edit' || outcome === 'open') {
+        store.dispatch(addWorkflowCard({ workflowId }));
+        store.dispatch(openWorkflowCard({ workflowId, view: outcome === 'edit' ? 'edit' : 'saved', editFacet: outcome === 'edit' ? 'Schedule' : undefined }));
+        return;
+      }
+    });
+  } catch { /* native notifications optional */ }
+})();
 
 export const dashboardWs = new WebSocketManager(`${WS_BASE}/ws/dashboard`, { skipStreamEvents: true });
 

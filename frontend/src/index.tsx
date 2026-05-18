@@ -5,21 +5,10 @@ import ErrorBoundary from './app/components/ErrorBoundary';
 import { ensureAuthToken } from './shared/config';
 import { runStartupMigrations } from './shared/migrations';
 
-// Run launch-time migrations BEFORE anything else touches localStorage
-// or React state. The v1.0.31 migration force-clears auth + onboarding
-// state so every user signs in fresh and walks the new tour. Must run
-// before ensureAuthToken() reads from localStorage, otherwise the
-// stale token survives.
+// Must run before ensureAuthToken reads localStorage; v1.0.31 migration force-clears auth+onboarding so the stale token doesn't survive.
 runStartupMigrations();
 
-// Resolve the per-install auth token from Electron BEFORE first render
-// so the very first fetch/WS carries the Authorization header. The
-// token IPC is fast (synchronous file read in main process). We bound
-// the wait at 3s so a missing Electron bridge (e.g. running the React
-// app in a plain browser) doesn't hang forever — in that case
-// `getAuthToken()` returns '' and backend calls will 401, which is
-// the desired behavior (plain browsers can't be allowed to impersonate
-// the user).
+// 3s timeout so a missing Electron bridge (plain-browser dev) doesn't hang; 401 in that case is intentional.
 async function bootstrap() {
   try {
     await Promise.race([

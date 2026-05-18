@@ -279,13 +279,9 @@ const Modes: React.FC = () => {
                 border: `1px solid ${c.border.subtle}`,
                 borderRadius: 2,
                 boxShadow: c.shadow.sm,
-                // Promote each card to its own compositor layer so a
-                // hover-cross between cards in the grid only re-paints
-                // that one card's layer, not the whole grid.
+                // Own compositor layer per card so hover-cross re-paints one card, not the whole grid.
                 willChange: 'transform',
-                // Animate ONLY border-color on hover (cheap). Removing
-                // the box-shadow animation kills the per-frame CPU
-                // paint that fired on every hover-cross.
+                // Hover animates only border-color; box-shadow animation caused per-frame CPU paint.
                 '&:hover': { borderColor: mode.color },
                 transition: 'border-color 0.2s',
               }}
@@ -408,7 +404,6 @@ const Modes: React.FC = () => {
             maxRows={8}
           />
 
-          {/* Tools toggle + multi-select */}
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
               <Checkbox
@@ -476,7 +471,6 @@ const Modes: React.FC = () => {
             </Select>
           </FormControl>
 
-          {/* Default Folder */}
           <Box>
             <Typography sx={{ color: c.text.secondary, fontSize: '0.85rem', mb: 0.75 }}>
               Default Folder

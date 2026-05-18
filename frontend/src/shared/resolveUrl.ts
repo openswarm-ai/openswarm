@@ -1,14 +1,4 @@
-/**
- * Resolves raw URL-bar input into a navigable URL.
- *
- * Priority:
- *  1. Already has a scheme (http://, https://, file://, etc.) → pass through
- *  2. Starts with / or ~ → file path, prefix with file://
- *  3. localhost (with optional port/path) → http://
- *  4. IP address (with optional port/path) → http://
- *  5. No spaces + contains a dot followed by a 2+ char TLD → domain, prefix https://
- *  6. Everything else → Google search
- */
+/** Resolve raw URL-bar input to a navigable URL (scheme passthrough, file paths, domains, Google fallback). */
 export function resolveInput(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return trimmed;

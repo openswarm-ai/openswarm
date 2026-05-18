@@ -12,10 +12,8 @@ CORS(app)
 def api_get_structure():
     print("GET /get_structure")
     scanned_dir=update_debug_toggles(save_to_file=True)
-    # print("\n\nPS scanned_dir: ", scanned_dir)
     output = dir_to_output_format(scanned_dir)
     output = json.dumps(output, ensure_ascii=False, indent=4)
-    # print("output: ", output)
     return Response(output, mimetype='application/json')
 
 @app.route('/push_structure', methods=['POST'])
@@ -23,7 +21,6 @@ def api_push_structure():
     print("POST /push_structure")
     data = request.get_json()
     data = data['projectStructure']
-    # print(data)
     with open(DEBUG_TOGGLE_FILE, 'w', encoding='utf-8') as file:
         json.dump(data, file, indent=4)
     with open(NEEDS_RESYNC_FILE, 'w') as f:
@@ -35,10 +32,8 @@ def api_reset_color():
     print("POST /reset_color")
     scanned_dir=update_debug_toggles(save_to_file=False)
     scanned_dir.reset_colors()
-    # print("RS: scanned_dir: ", scanned_dir)
     output = dir_to_output_format(scanned_dir)
     output = json.dumps(output, ensure_ascii=False, indent=4)
-    # print("RS: output: ", output)
     return Response(output, mimetype='application/json')
 
 

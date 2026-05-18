@@ -73,7 +73,7 @@ def _hash_tool_call(tool_name: str, tool_input: dict, result: dict) -> tuple[str
     """Build a stable hash key for a tool call, including its result.
 
     Including the result hash means that legitimate progress (same input,
-    different output — e.g. BrowserScroll on a long feed) does NOT count
+    different output; e.g. BrowserScroll on a long feed) does NOT count
     as a loop. Only same-input + same-output is treated as stuck.
     """
     try:
@@ -108,7 +108,7 @@ def _detect_loop(
 _LOOP_WARNING_TEXT = (
     "LOOP DETECTED: You have called this tool with these exact parameters and "
     "gotten the same result {count} times in a row. STOP retrying this approach "
-    "— it is not working. Try a fundamentally different strategy: "
+    ",  it is not working. Try a fundamentally different strategy: "
     "(1) check the page state with BrowserScreenshot or BrowserGetText, "
     "(2) try a different selector or a different tool, "
     "(3) use BrowserPressKey for keyboard shortcuts if the site supports them, "
@@ -121,7 +121,7 @@ def _validate_message_pairing(messages: list[dict]) -> bool:
     message in the same list. Returns False if there's an orphan, which means
     the cached history would 400 if sent to the API.
 
-    This is the last line of defense against cache corruption — if it ever
+    This is the last line of defense against cache corruption; if it ever
     returns False on a resume, we drop the cache and start fresh rather than
     crash on the next API call.
     """
@@ -145,7 +145,7 @@ def _validate_message_pairing(messages: list[dict]) -> bool:
 
 
 def _is_fresh_user_message(msg: dict) -> bool:
-    """A 'fresh' user message starts a new turn — string content or a list
+    """A 'fresh' user message starts a new turn; string content or a list
     that contains no tool_result blocks. These are the only safe cut points
     because they don't reference any prior assistant tool_use blocks."""
     if msg.get("role") != "user":
@@ -165,7 +165,7 @@ def _summarize_messages(messages: list[dict]) -> str:
 
     Extracts the original user task, a count of tool calls by name with their
     key parameters, the last few ReportProgress brain states, and the most
-    recent assistant text. No LLM call required — this is purely structural
+    recent assistant text. No LLM call required; this is purely structural
     extraction from the existing message history.
     """
     if not messages:
@@ -256,7 +256,7 @@ def _trim_history_by_turns(messages: list[dict], max_messages: int) -> list[dict
     function avoids that by:
 
     1. Walking forward to find a clean turn boundary (a fresh user-text
-       message that starts a new turn — no tool_result content).
+       message that starts a new turn; no tool_result content).
     2. Summarizing everything BEFORE that boundary into a single user-text
        message and prepending it to the kept tail.
     3. If no clean boundary exists at all, returning the original history
@@ -285,7 +285,7 @@ def _trim_history_by_turns(messages: list[dict], max_messages: int) -> list[dict
     # Second pass: if no cut point gets us under the cap (e.g. the current
     # turn alone is bigger than max_messages), use the LATEST clean cut point
     # available. The tail will still exceed the cap, but it's the smallest
-    # safe history we can produce — and any compaction is better than none.
+    # safe history we can produce; and any compaction is better than none.
     if cut_index is None:
         for i in range(len(messages) - 1, 0, -1):
             if _is_fresh_user_message(messages[i]):
@@ -293,7 +293,7 @@ def _trim_history_by_turns(messages: list[dict], max_messages: int) -> list[dict
                 break
 
     if cut_index is None:
-        # No clean cut anywhere in the history. Return original — better to
+        # No clean cut anywhere in the history. Return original; better to
         # exceed the cap than to corrupt the conversation.
         return list(messages)
 
@@ -326,7 +326,7 @@ BROWSER_TOOLS_SCHEMA = [
                 "working_memory": {
                     "type": "string",
                     "description": (
-                        "Short notes about what you've learned about this site so far — "
+                        "Short notes about what you've learned about this site so far; "
                         "selectors that work, keyboard shortcuts, layout quirks, what "
                         "you've tried that failed. Carry this forward across turns."
                     ),
@@ -459,7 +459,7 @@ BROWSER_TOOLS_SCHEMA = [
             "[2]<link \"Settings\">, etc. Use this BEFORE BrowserClickIndex. This is "
             "the PREFERRED way to discover clickable elements on hostile sites "
             "(Tinder, Instagram, TikTok) where CSS selectors fail because the page "
-            "uses unlabeled <div>s — the accessibility tree sees roles and names "
+            "uses unlabeled <div>s; the accessibility tree sees roles and names "
             "even when raw HTML doesn't expose them. Much more reliable than "
             "BrowserGetElements (which uses CSS selectors)."
         ),
@@ -476,7 +476,7 @@ BROWSER_TOOLS_SCHEMA = [
             "Uses native OS-level mouse events (event.isTrusted=true) so it works "
             "on sites that filter out synthetic JS events. Always call "
             "BrowserListInteractives first to get a fresh index list. If the click "
-            "returns 'index no longer valid', the page changed — re-list and retry."
+            "returns 'index no longer valid', the page changed; re-list and retry."
         ),
         "input_schema": {
             "type": "object",
@@ -496,7 +496,7 @@ BROWSER_TOOLS_SCHEMA = [
             "is executed in order, with the URL captured before/after each one. "
             "If the URL changes mid-batch (the page navigated), the rest of the "
             "batch is aborted and you get a partial result. Use this when you "
-            "have a known sequence — typing then pressing Enter, swiping multiple "
+            "have a known sequence; typing then pressing Enter, swiping multiple "
             "times, clicking through pagination. Max 5 actions per batch.\n\n"
             "Sub-action types and their params:\n"
             "- click_index: { index: int }\n"
@@ -537,7 +537,7 @@ BROWSER_TOOLS_SCHEMA = [
         "description": (
             "Press a keyboard key (or key combination) on the page using a real native "
             "input event. Use this for keyboard shortcuts when JS-dispatched events get "
-            "ignored — sites like Tinder, Slack, Notion, Gmail listen for trusted key "
+            "ignored; sites like Tinder, Slack, Notion, Gmail listen for trusted key "
             "events. Examples: 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'Tab', "
             "'Space', single letters like 'a'. Prefer this over BrowserEvaluate with "
             "dispatchEvent for keyboard shortcuts."
@@ -579,7 +579,7 @@ BROWSER_TOOLS_SCHEMA = [
         "name": "RequestHumanIntervention",
         "description": (
             "Request the user's help when you encounter an obstacle you cannot solve "
-            "programmatically — captchas, login prompts, cookie consent walls, "
+            "programmatically; captchas, login prompts, cookie consent walls, "
             "two-factor authentication, or any blocking popup. The agent will pause "
             "until the user resolves the issue and clicks Continue."
         ),
@@ -590,7 +590,7 @@ BROWSER_TOOLS_SCHEMA = [
                     "type": "string",
                     "description": (
                         "One short sentence describing the obstacle. Keep it under "
-                        "15 words. Example: 'Login required — please sign in to X/Twitter.'"
+                        "15 words. Example: 'Login required; please sign in to X/Twitter.'"
                     ),
                 },
                 "instruction": {
@@ -624,7 +624,7 @@ ACTION_MAP = {
 
 SYSTEM_PROMPT = (
     "You are a website-agnostic browser automation agent. You can operate on ANY "
-    "website the user is signed into — social media, dating apps, email, productivity "
+    "website the user is signed into; social media, dating apps, email, productivity "
     "tools, dashboards, ecommerce, anything. Assume the user has already logged in.\n\n"
 
     "## Required output structure: ReportProgress before every action\n"
@@ -654,36 +654,36 @@ SYSTEM_PROMPT = (
     "If this is a continuation of an earlier conversation on the same browser, the "
     "messages above already contain everything you've tried, what worked, what failed, "
     "and the page state. READ THAT HISTORY before acting. Do NOT take a fresh screenshot "
-    "or re-explore the DOM if you already know what's on screen — just act. Only re-orient "
+    "or re-explore the DOM if you already know what's on screen; just act. Only re-orient "
     "if the page has clearly changed (after navigation, after a multi-second wait, or if "
     "your last action mutated the page in unexpected ways).\n\n"
 
     "## Try multiple strategies, learn from failures\n"
-    "Sites vary wildly. When one approach fails, switch tactics — don't retry the same "
+    "Sites vary wildly. When one approach fails, switch tactics; don't retry the same "
     "thing. The escalation ladder, fastest to slowest:\n"
-    "1. **Keyboard shortcuts via BrowserPressKey** — fastest and most reliable on sites "
+    "1. **Keyboard shortcuts via BrowserPressKey**; fastest and most reliable on sites "
     "that support them (Tinder swipes, Gmail navigation, Slack message jump, etc.). "
     "Always check if the site shows keyboard hints in the UI before falling back to clicks. "
     "BrowserPressKey sends real native events that pass the `event.isTrusted` check, so "
     "it works where dispatchEvent in BrowserEvaluate silently fails.\n"
-    "2. **Accessibility tree via BrowserListInteractives + BrowserClickIndex** — the "
+    "2. **Accessibility tree via BrowserListInteractives + BrowserClickIndex**; the "
     "accessibility tree sees roles and names that the raw DOM doesn't, even on sites "
     "like Tinder, Instagram, and TikTok that use unlabeled <div>s with click handlers. "
     "Call BrowserListInteractives to get a numbered list (`[1]<button \"Like\">`, "
     "`[2]<link \"Settings\">`), then BrowserClickIndex with the number. The click uses "
     "native OS-level mouse events so it works where DOM .click() doesn't. THIS IS YOUR "
-    "GO-TO STRATEGY for unlabeled or hostile sites — try this BEFORE BrowserGetElements.\n"
-    "3. **Semantic CSS selectors** — `button[aria-label='X']`, `[role='button']`, "
+    "GO-TO STRATEGY for unlabeled or hostile sites; try this BEFORE BrowserGetElements.\n"
+    "3. **Semantic CSS selectors**; `button[aria-label='X']`, `[role='button']`, "
     "`a[href*='...']`. Try these via BrowserGetElements + BrowserClick when the site "
     "actually has semantic HTML.\n"
-    "4. **Text-based JS query** — when both of the above fail, use BrowserEvaluate to "
+    "4. **Text-based JS query**; when both of the above fail, use BrowserEvaluate to "
     "find elements by visible text: `Array.from(document.querySelectorAll('*')).find(el => el.textContent.trim() === 'Like')`.\n"
-    "5. **Coordinate-based fallback** — last resort: take a screenshot, identify the "
+    "5. **Coordinate-based fallback**; last resort: take a screenshot, identify the "
     "button visually, then click by approximate coords.\n\n"
 
     "## Batch known sequences with BrowserBatch\n"
-    "When you have a known sequence of actions — typing then pressing Enter, "
-    "swiping multiple times, clicking through pagination — emit them all in a "
+    "When you have a known sequence of actions; typing then pressing Enter, "
+    "swiping multiple times, clicking through pagination; emit them all in a "
     "single BrowserBatch call instead of one tool per turn. The batch executes "
     "sub-actions sequentially and aborts if the URL changes mid-batch (so you "
     "won't operate on stale state). Max 5 sub-actions per batch.\n"
@@ -703,21 +703,21 @@ SYSTEM_PROMPT = (
     "- Do NOT call the same failing tool twice with identical parameters. If selector "
     "X failed, try a DIFFERENT selector or a DIFFERENT strategy.\n"
     "- For repeated actions (swiping through profiles, going through inbox messages), "
-    "use BrowserPressKey if available — it's an order of magnitude faster than DOM clicks.\n\n"
+    "use BrowserPressKey if available; it's an order of magnitude faster than DOM clicks.\n\n"
 
     "## When you genuinely cannot proceed\n"
     "Use RequestHumanIntervention for:\n"
     "- Login walls (the user thinks they're logged in but the session expired)\n"
     "- Captchas, 2FA prompts, age verification gates\n"
     "- Anything genuinely ambiguous about user intent\n"
-    "Don't use it for normal tool failures — try a different approach first.\n\n"
+    "Don't use it for normal tool failures; try a different approach first.\n\n"
 
     "## Tool reference\n"
     "- BrowserScreenshot: visual snapshot. Use sparingly, not after every action.\n"
     "- BrowserGetText: returns up to 15000 chars of visible text. Useful for reading "
     "content without an image.\n"
     "- BrowserScroll: handles nested scroll containers (Notion, Gmail). Returns "
-    "atTop/atBottom — stop looping when scroll delta is 0.\n"
+    "atTop/atBottom; stop looping when scroll delta is 0.\n"
     "- BrowserGetElements: enumerate interactive elements with selectors.\n"
     "- BrowserClick / BrowserType: standard DOM interaction.\n"
     "- BrowserPressKey: native key events (preferred for shortcuts).\n"
@@ -730,7 +730,7 @@ SYSTEM_PROMPT = (
 
 MAX_TURNS = 40
 
-# Tools that count as "action tools" — calling any of these in a turn requires
+# Tools that count as "action tools"; calling any of these in a turn requires
 # the model to also call ReportProgress in the same turn (after the first
 # turn). Read-only tools and meta tools are exempt.
 _ACTION_TOOLS_REQUIRING_REPORT = {
@@ -906,17 +906,17 @@ async def run_browser_agent(
     # When the parent session is running on a non-Claude model (e.g. gpt-5.4),
     # the browser agent inherits it and we route through 9Router's prefix.
     # Tool-use fidelity for browser-specific tools (BrowserNavigate, click,
-    # type, etc.) through 9Router's claude→openai translator is UNVERIFIED —
+    # type, etc.) through 9Router's claude→openai translator is UNVERIFIED , 
     # if translation is poor, the user should manually switch this session
     # back to Claude in the model picker.
     if _find_builtin_model(model) is not None:
         api_model = resolve_model_id_for_sdk(model, browser_settings)
     else:
-        # Unknown model string — fall back to whatever aux model is available
+        # Unknown model string; fall back to whatever aux model is available
         try:
             api_model, _ = await resolve_aux_model(browser_settings, preferred_tier="haiku")
         except ValueError:
-            # Nothing connected at all — surface a clear error so the caller
+            # Nothing connected at all; surface a clear error so the caller
             # (parent agent) sees it in the tool result instead of crashing
             # on a 400 from 9Router.
             session.status = "error"
@@ -953,13 +953,13 @@ async def run_browser_agent(
     # Resume prior conversation on this browser if we have one cached. This
     # lets the sub-agent skip the "take a screenshot to figure out where I am"
     # cycle every time the parent issues a new task. Defensively validate
-    # the cache — if it's somehow corrupted (orphaned tool_use_ids), drop
+    # the cache; if it's somehow corrupted (orphaned tool_use_ids), drop
     # it and start fresh rather than crash on the next API call.
     prior_messages = _browser_history.get(browser_id) or []
     if prior_messages and not _validate_message_pairing(prior_messages):
         logger.warning(
             f"[browser-agent {session_id}] cached history for {browser_id} has "
-            f"orphaned tool_use_ids — dropping cache and starting fresh"
+            f"orphaned tool_use_ids; dropping cache and starting fresh"
         )
         _browser_history.pop(browser_id, None)
         prior_messages = []
@@ -967,7 +967,7 @@ async def run_browser_agent(
     action_log: list[dict] = []
     final_screenshot: str | None = None
 
-    # Loop detection state — sliding window of recent state-mutating tool calls
+    # Loop detection state; sliding window of recent state-mutating tool calls
     recent_tool_calls: list[tuple[str, str, str]] = []
     loop_trigger_count = 0
 
@@ -1094,7 +1094,7 @@ async def run_browser_agent(
                     logger.error(
                         f"[browser-agent {session_id}] hit "
                         f"{MAX_CONSECUTIVE_VIOLATIONS} consecutive ReportProgress "
-                        f"violations — aborting to prevent runaway loop"
+                        f"violations; aborting to prevent runaway loop"
                     )
                     # Surface a user-visible error message so the frontend
                     # shows something coherent instead of just stopping.
@@ -1113,7 +1113,7 @@ async def run_browser_agent(
                     })
                     break
             else:
-                # Reset on a clean turn — only CONSECUTIVE violations
+                # Reset on a clean turn; only CONSECUTIVE violations
                 # count toward the limit. A single bad turn followed by
                 # a good one shouldn't kill the agent.
                 consecutive_violations = 0
@@ -1128,7 +1128,7 @@ async def run_browser_agent(
                     cancelled = True
                     break
 
-                # Handle ReportProgress — no-op execution that just records the
+                # Handle ReportProgress; no-op execution that just records the
                 # model's brain state and streams it to the dashboard.
                 if tu.name == "ReportProgress":
                     eval_prev = tu.input.get("evaluation_previous", "")
@@ -1163,7 +1163,7 @@ async def run_browser_agent(
                     rejection_text = (
                         "REJECTED: You called an action tool without first calling "
                         "ReportProgress in the same turn. ReportProgress is REQUIRED "
-                        "before every batch of action tools — it's how you reflect "
+                        "before every batch of action tools; it's how you reflect "
                         "on what just happened and articulate your next goal. Try "
                         "again: emit ReportProgress and your action tool(s) in the "
                         "same response."
@@ -1189,7 +1189,7 @@ async def run_browser_agent(
                     })
                     continue
 
-                # Handle RequestHumanIntervention — pause and wait for user
+                # Handle RequestHumanIntervention; pause and wait for user
                 if tu.name == "RequestHumanIntervention":
                     problem = tu.input.get("problem", "")
                     instruction = tu.input.get("instruction", "")
@@ -1341,7 +1341,7 @@ async def run_browser_agent(
             if loop_trigger_count >= _LOOP_HARD_CAP:
                 logger.warning(
                     f"[browser-agent {session_id}] hit loop hard cap "
-                    f"({_LOOP_HARD_CAP}) — force-exiting"
+                    f"({_LOOP_HARD_CAP}); force-exiting"
                 )
                 break
 
@@ -1376,7 +1376,7 @@ async def run_browser_agent(
 
         # Persist conversation history so the next BrowserAgent call on this
         # browser can resume rather than re-orient. Trim to the most recent
-        # _MAX_HISTORY_MESSAGES turns to keep token usage bounded — but
+        # _MAX_HISTORY_MESSAGES turns to keep token usage bounded; but
         # never split a tool_use ↔ tool_result pair across the cut, or the
         # next API request will 400.
         _browser_history[browser_id] = _trim_history_by_turns(

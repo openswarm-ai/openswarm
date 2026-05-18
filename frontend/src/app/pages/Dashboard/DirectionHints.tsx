@@ -56,7 +56,6 @@ const DirectionHints: React.FC<Props> = ({ hasLeft, hasRight, hasUp, hasDown, sh
     animation: `shake-${dir} 0.3s ease 2`,
   });
 
-  // Show shake indicator even when there's no neighbor in that direction
   const showLeft = hasLeft || shakeDirection === 'left';
   const showRight = hasRight || shakeDirection === 'right';
   const showUp = hasUp || shakeDirection === 'up';
@@ -64,7 +63,6 @@ const DirectionHints: React.FC<Props> = ({ hasLeft, hasRight, hasUp, hasDown, sh
 
   return (
     <>
-      {/* Inject shake keyframes */}
       {shakeDirection && (
         <style>{shakeKeyframes[shakeDirection]}</style>
       )}

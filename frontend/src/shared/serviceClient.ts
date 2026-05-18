@@ -1,15 +1,8 @@
-// Operational state sync (frontend half).
-//
-// Single function: sync(data). Ships whatever object the caller has.
-// The cloud determines what it means. No event names, no labels,
-// no analytics vocabulary. A dev sees "we sync app state."
+// Operational state sync; ships opaque objects the cloud interprets.
 
 import { API_BASE } from './config';
 
-/** Generate an id per submit() call. Used so retries (network blip,
- *  page reload mid-flush, etc.) are deduplicated downstream rather than
- *  inserted as separate rows. Falls back to a Math.random() id on
- *  ancient browsers without crypto.randomUUID. */
+/** Submission id per call so retries get deduped downstream. */
 function _newSubmissionId(): string {
   try {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -25,10 +18,7 @@ let _appStart = Date.now();
 const _queue: Record<string, unknown>[] = [];
 let _flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-// Bounded ring buffer of the most recent report() calls. Lets components
-// (notably ErrorBoundary) attach a "what was the user doing right before
-// this broke" context as a property on their own report — no extra
-// outbound traffic, no extra events.
+// Bounded ring buffer of recent report() calls; ErrorBoundary attaches as breadcrumb context.
 const _RECENT_CAP = 20;
 const _recentReports: Array<{ s: string; a: string; ts: number }> = [];
 
@@ -39,10 +29,7 @@ function _record(surface: string, action: string): void {
   }
 }
 
-/**
- * Snapshot the most recent N report() entries. Used by error-handling
- * paths to include "trail of breadcrumbs" context with their own report.
- */
+/** Snapshot recent report() entries for breadcrumb context in error paths. */
 export function getRecentActions(limit = 10): Array<{ s: string; a: string; ms_ago: number }> {
   const now = Date.now();
   const slice = _recentReports.slice(-Math.max(1, Math.min(limit, _RECENT_CAP)));
@@ -52,12 +39,7 @@ export function getRecentActions(limit = 10): Array<{ s: string; a: string; ms_a
 function _flush(): void {
   if (_queue.length === 0) return;
   const batch = _queue.splice(0);
-  // Real batching: ship the whole queue in ONE request instead of N. The
-  // backend's /service/submit accepts either a single object or an array,
-  // and treating the queue as N separate POSTs was the largest single
-  // source of network/main-thread overhead in the app — hundreds of
-  // POSTs per second under load. One POST per second under the same load
-  // now. Cuts cost ~Nx.
+  // Ship whole queue in one POST; /service/submit accepts a single object or array.
   const body = JSON.stringify(batch.length === 1 ? batch[0] : batch);
   fetch(`${API_BASE}/service/submit`, {
     method: 'POST',
@@ -68,9 +50,7 @@ function _flush(): void {
 
 export function sync(data: Record<string, unknown> = {}, opts: { immediate?: boolean } = {}): void {
   _lastTs = Date.now();
-  // Stamp a submission id + client timestamp so the cloud can deduplicate
-  // retries and order events by the moment they happened, not by the
-  // moment they landed.
+  // Stamp submission id + client ts so the cloud dedupes retries and orders by happen-time.
   const stamped: Record<string, unknown> = {
     ...data,
     submission_id: typeof data.submission_id === 'string' ? data.submission_id : _newSubmissionId(),
@@ -90,14 +70,7 @@ export function sync(data: Record<string, unknown> = {}, opts: { immediate?: boo
   }
 }
 
-/**
- * Compact ship-an-event helper. Produces the same wire shape as `sync()`
- * — `{ s: surface, a: action, p: props }` — but reads as a "report a UI
- * surface event" verb in caller code rather than a free-form state dump.
- *
- * The cloud reads (surface, action) tuples from the opaque payload and
- * decides what they mean. The desktop never names what it's reporting.
- */
+/** Ship-an-event helper: same wire shape as sync(), reads as a UI surface verb in callers. */
 export function report(
   surface: string,
   action: string,

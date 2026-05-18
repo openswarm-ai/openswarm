@@ -10,8 +10,8 @@ import httpx
 
 from backend.apps.agents.tools.base import BaseTool, ToolContext
 
-_HTTP_TIMEOUT = 30  # seconds
-_MAX_OUTPUT_BYTES = 250 * 1024  # ~250 KB — covers ~95% of articles/wikis/docs
+_HTTP_TIMEOUT = 30
+_MAX_OUTPUT_BYTES = 250 * 1024  # ~250 KB covers ~95% of articles/wikis/docs.
 _USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -25,22 +25,13 @@ def _truncate(text: str, limit: int = _MAX_OUTPUT_BYTES) -> str:
 
 
 def _strip_html(raw_html: str) -> str:
-    """Naive but effective HTML → plain-text conversion."""
-    # Remove script/style blocks
+    """Naive but effective HTML to plain-text conversion."""
     text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", raw_html, flags=re.DOTALL | re.IGNORECASE)
-    # Remove HTML tags
     text = re.sub(r"<[^>]+>", " ", text)
-    # Decode HTML entities
     text = html.unescape(text)
-    # Collapse whitespace
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
-
-
-# ───────────────────────────────────────────────────────────────────────────
-# WebSearchTool
-# ───────────────────────────────────────────────────────────────────────────
 
 
 class WebSearchTool(BaseTool):
@@ -96,8 +87,6 @@ class WebSearchTool(BaseTool):
 
         body = resp.text
 
-        # Parse result blocks – DuckDuckGo wraps each result in
-        # <div class="result ..."> ... </div>
         result_blocks = re.findall(
             r'<div[^>]*class="[^"]*result[^"]*"[^>]*>(.*?)</div>\s*(?=<div[^>]*class="[^"]*result|$)',
             body,
@@ -109,14 +98,13 @@ class WebSearchTool(BaseTool):
             if len(entries) >= num_results:
                 break
 
-            # Title + URL — handle both class-before-href and href-before-class
+            # Handle both class-before-href and href-before-class attribute orders.
             link_match = re.search(
                 r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
                 block,
                 flags=re.DOTALL,
             )
             if not link_match:
-                # Try reversed attribute order
                 link_match = re.search(
                     r'<a[^>]*href="([^"]*)"[^>]*class="[^"]*result__a[^"]*"[^>]*>(.*?)</a>',
                     block,
@@ -128,7 +116,6 @@ class WebSearchTool(BaseTool):
             raw_url = html.unescape(link_match.group(1))
             title = _strip_html(link_match.group(2)).strip()
 
-            # Snippet
             snippet_match = re.search(
                 r'<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>',
                 block,
@@ -136,7 +123,7 @@ class WebSearchTool(BaseTool):
             )
             snippet = _strip_html(snippet_match.group(1)).strip() if snippet_match else ""
 
-            # DuckDuckGo wraps URLs through a redirect; try to extract the real URL
+            # DDG wraps URLs in a redirect; extract the real one.
             real_url_match = re.search(r"uddg=([^&]+)", raw_url)
             if real_url_match:
                 from urllib.parse import unquote
@@ -150,11 +137,6 @@ class WebSearchTool(BaseTool):
             entries.append(entry)
 
         return "\n\n".join(entries)
-
-
-# ───────────────────────────────────────────────────────────────────────────
-# WebFetchTool
-# ───────────────────────────────────────────────────────────────────────────
 
 
 class WebFetchTool(BaseTool):
@@ -202,10 +184,7 @@ class WebFetchTool(BaseTool):
         is_html = "html" in content_type or resp.text.strip().startswith("<!")
 
         if is_html:
-            # Prefer trafilatura for article/main-content extraction — strips
-            # nav, footer, ads, sidebars and returns the primary text. Falls
-            # back to regex HTML-strip if trafilatura can't extract (rare
-            # pages: pure apps, login walls, heavily JS-rendered content).
+            # Prefer trafilatura for main-content extraction; fall back to regex strip on apps/login walls/JS-heavy pages.
             text: str | None = None
             try:
                 import trafilatura  # type: ignore

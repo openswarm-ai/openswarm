@@ -1,6 +1,4 @@
-// Visual gesture helpers — drop a transient DOM node, animate it, clean up.
-// These don't trigger any product code; they just render eye-candy that
-// makes the cursor's "intent" legible (a click ripple, a drag-rect).
+// Transient visual gesture helpers: click ripple, drag-rect, glow.
 
 export function clickRipple(x: number, y: number, color: string): void {
   const SIZE = 28;
@@ -46,7 +44,7 @@ export function animateDragSelect(rect: DragRect, color: string, durationMs = 60
       'width: 0px',
       'height: 0px',
       `border: 1.5px dashed ${color}`,
-      `background: ${color}1a`, // ~10% alpha
+      `background: ${color}1a`,
       'pointer-events: none',
       'z-index: 10499',
       'border-radius: 4px',
@@ -69,9 +67,7 @@ export function animateDragSelect(rect: DragRect, color: string, durationMs = 60
   });
 }
 
-// Soft glow rect overlaid on a target element. Used by highlight_section to
-// draw the user's eye to a region (e.g. settings-pro-section) without
-// taking a click. Caller is responsible for calling the returned cleanup.
+/** Soft glow rect over a target (no click); caller must invoke the returned cleanup. */
 export function spawnGlowRect(target: HTMLElement, color: string): () => void {
   const rect = target.getBoundingClientRect();
   const pad = 6;
@@ -100,7 +96,7 @@ export function spawnGlowRect(target: HTMLElement, color: string): () => void {
   };
 }
 
-// Wait helper used between ops. Avoids `setTimeout` everywhere.
+/** Promise-wrapped setTimeout for use between ops. */
 export function sleep(ms: number): Promise<void> {
   return new Promise((r) => window.setTimeout(r, ms));
 }

@@ -15,27 +15,15 @@ export interface AgentMessage {
   forced_tools?: string[];
   images?: Array<{ data: string; media_type: string }>;
   hidden?: boolean;
-  // Client-generated id used for optimistic-bubble dedupe. Set on the
-  // optimistic message we synthesize in `sendMessage.pending` and on the
-  // server echo (round-tripped via the POST body); the addMessage reducer
-  // uses it to find and replace the optimistic placeholder.
+  /** Round-tripped optimistic-bubble id; addMessage dedupes the echo against the placeholder. */
   client_message_id?: string;
-  // Frontend-only lifecycle marker for optimistic messages. 'pending' until
-  // the server echo lands; 'failed' if the POST rejected. Confirmed messages
-  // (i.e. ones echoed back from the server) drop this field entirely.
+  /** Frontend-only optimistic lifecycle; dropped on server-echoed messages. */
   optimistic_status?: 'pending' | 'failed';
-  // Server-stamped duration (ms) and approximate token count for the
-  // message's content. Today only thinking messages set these — the
-  // persisted ThinkingBubble reads them so "Thought for Ns · M tokens"
-  // survives reload instead of decaying to "Thoughts".
+  /** Server-stamped duration/token counts; today only thinking messages set these. */
   elapsed_ms?: number;
   tokens?: number;
-  // Server-stamped input-side token count for the turn (fresh
-  // input + cache_creation + cache_read). Populated on thinking
-  // messages so the pill can show "Thought for Ns · M in / K out"
-  // — which is the only honest answer to "how big was this turn".
+  /** Input-side token count for the turn (fresh + cache_creation + cache_read). */
   input_tokens?: number;
-  // tool count drives the "3 tools used" segment on the thinking pill.
   tool_count?: number;
 }
 
@@ -54,8 +42,7 @@ export interface MessageBranch {
   created_at: string;
 }
 
-// StreamingMessage type moved to streamingSlice. Import from there if you
-// need the shape directly.
+// StreamingMessage moved to streamingSlice; re-exported for back-compat.
 export type { StreamingMessage } from './streamingSlice';
 
 export interface ToolGroupMeta {
@@ -86,10 +73,7 @@ export interface AgentSession {
   pending_approvals: ApprovalRequest[];
   branches: Record<string, MessageBranch>;
   active_branch_id: string;
-  // streamingMessage lives in `state.streaming.bySession[id]` now;
-  // read it via the selectors in streamingSlice. Kept off this type so
-  // that any reader still trying to access it gets a compile error and
-  // is migrated to the new location.
+  // streamingMessage lives in state.streaming.bySession[id]; see streamingSlice.
   target_directory?: string | null;
   tool_group_meta: Record<string, ToolGroupMeta>;
   dashboard_id?: string;
@@ -104,17 +88,9 @@ export interface AgentSession {
   mcp_suggestions?: Array<{ id: string; title: string; description: string; reason?: string }>;
   mcp_suggestions_is_vague?: boolean;
   compacted_through_msg_id?: string | null;
-  // Transient frontend-only WS connection state. Independent of
-  // `status` (which describes the agent run itself). When the WS
-  // drops we set this to 'reconnecting' so the UI can render a
-  // subtle indicator without faking a terminal status. Cleared back
-  // to 'live' on resume_ack. Never persisted to the backend.
+  /** Frontend-only WS state, decoupled from session.status so reconnects don't fake terminal states. */
   connection_state?: 'live' | 'reconnecting';
-  // Aux-LLM-generated verb-phrase describing what the model is doing
-  // on the current turn ("Auditing the pull request", "Drafting your
-  // email"). Set by agent:turn_label, scoped to the turn that produced
-  // it via turn_id. ThinkingBubble swaps in this label as soon as it
-  // arrives, then back to the heuristic when the turn ends.
+  /** Aux-LLM verb-phrase for the current turn; ThinkingBubble swaps in then back when turn ends. */
   turn_label?: { label: string; turn_id: string } | null;
 }
 
@@ -158,12 +134,7 @@ interface AgentsState {
   loading: boolean;
   historySearch: HistorySearchState;
   trackedNotificationIds: string[];
-  // Maps the temporary frontend draft id minted by createDraftSession to the
-  // real backend session id that replaces it once launchAndSendFirstMessage
-  // fulfills. Lets components that bound to the draft id (App Builder /
-  // ViewEditor in particular) find their new session without falling back
-  // to the global `activeSessionId` — which would silently leak whatever
-  // agent the user last interacted with from the dashboard.
+  // Draft session id => real backend id; bound components find their session without leaking activeSessionId.
   draftLaunchMap: Record<string, string>;
 }
 
@@ -221,11 +192,7 @@ function _genOptimisticId(): string {
 export const sendMessage = createAsyncThunk(
   'agents/sendMessage',
   async ({ sessionId, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, hidden, selectedBrowserIds }: SendMessagePayload, { dispatch }) => {
-    // Generate an optimistic id up-front and dispatch the synchronous
-    // bubble *before* awaiting the network. The reducer below
-    // (sendMessage.pending) handles the same path, but doing it here
-    // gives us access to the id we'll round-trip to the server for
-    // dedupe on echo.
+    // Mint client id and dispatch optimistic bubble before awaiting the network; id round-trips for echo dedupe.
     const clientMessageId = _genOptimisticId();
     dispatch(addOptimisticMessage({
       sessionId,
@@ -308,12 +275,7 @@ export const fetchSession = createAsyncThunk(
   async (sessionId: string, { rejectWithValue }) => {
     const res = await fetch(`${AGENTS_API}/sessions/${sessionId}`);
     if (!res.ok) {
-      // 404 is the common case: AgentChat is rehydrating from a URL hash
-      // that points at a session the user deleted (or that never made it
-      // to disk after a crash). Surface a structured rejection so the
-      // .rejected reducer can purge the stale id from `state.sessions`
-      // instead of leaving it as a phantom entry that the next mount
-      // will re-fetch right back into a 404.
+      // 404: rehydrating a deleted/crashed session; structured reject lets .rejected purge state.
       return rejectWithValue({ sessionId, status: res.status });
     }
     const session = await res.json();
@@ -645,14 +607,12 @@ const agentsSlice = createSlice({
         }
       }
       const existing = state.sessions[action.payload.id];
-      // Don't let a stale "running" message overwrite a terminal status
+      // Don't let stale "running" overwrite terminal status.
       const terminal = ['stopped', 'error'] as const;
       if (existing && terminal.includes(existing.status as any) && action.payload.status === 'running') {
         return;
       }
-      // Preserve local pending_approvals if the server payload has none but
-      // the frontend has some (avoids race where backend clears approvals
-      // before the frontend processes the removal).
+      // Preserve local pending_approvals when server payload has none (race on removal).
       const mergedApprovals = existing?.pending_approvals?.length && !action.payload.pending_approvals?.length
         ? existing.pending_approvals
         : action.payload.pending_approvals ?? [];
@@ -687,9 +647,7 @@ const agentsSlice = createSlice({
       state,
       action: PayloadAction<{ sessionId: string; state: 'live' | 'reconnecting' }>
     ) {
-      // Transient WS-layer indicator. Decoupled from session.status
-      // so a network blip never masquerades as a run terminating —
-      // status keeps reflecting the agent's actual lifecycle.
+      // Transient WS state, decoupled from session.status so blips don't mask the agent lifecycle.
       const session = state.sessions[action.payload.sessionId];
       if (session) {
         session.connection_state = action.payload.state;
@@ -700,18 +658,13 @@ const agentsSlice = createSlice({
       const session = state.sessions[action.payload.sessionId];
       if (!session) return;
       const incoming = action.payload.message;
-      // Optimistic-bubble dedupe: if this echo carries a client_message_id
-      // and we have an optimistic placeholder with the same id, replace it
-      // with the server version (preserving server's id, dropping the
-      // optimistic_status marker so the bubble renders as confirmed).
+      // Optimistic-bubble dedupe by client_message_id.
       if (incoming.client_message_id) {
         const optIdx = session.messages.findIndex(
           (m) => m.client_message_id === incoming.client_message_id && m.optimistic_status === 'pending',
         );
         if (optIdx >= 0) {
           session.messages[optIdx] = { ...incoming, optimistic_status: undefined };
-          // streamingMessage cleanup is handled by streamingSlice's
-          // extraReducers listening to this action.
           return;
         }
       }
@@ -721,13 +674,9 @@ const agentsSlice = createSlice({
       } else {
         session.messages.push(incoming);
       }
-      // streamingMessage cleanup is handled by streamingSlice's extraReducers.
     },
 
-    // Synchronous "you sent a message" bubble dispatched from the
-    // sendMessage thunk before the network round-trip. The placeholder
-    // carries a client_message_id which the server echo (agent:message)
-    // will round-trip back; addMessage dedupes against it.
+    // Synchronous "you sent a message" placeholder; client_message_id round-trips for echo dedupe.
     addOptimisticMessage(
       state,
       action: PayloadAction<{
@@ -744,8 +693,7 @@ const agentsSlice = createSlice({
       const { sessionId, clientMessageId, prompt, contextPaths, forcedTools, attachedSkills, images, hidden } = action.payload;
       const session = state.sessions[sessionId];
       if (!session) return;
-      // Hidden messages (e.g. continuation prompts the model fires
-      // internally) shouldn't render an optimistic bubble.
+      // Hidden messages (e.g. internal continuation prompts) skip the optimistic bubble.
       if (hidden) return;
       session.messages.push({
         id: clientMessageId,
@@ -775,10 +723,7 @@ const agentsSlice = createSlice({
       if (msg) msg.optimistic_status = 'failed';
     },
 
-    // Backend emits agent:context_status with reason="compacted" when the
-    // auto-compaction routine collapses older turns into a summary. We
-    // mirror compacted_through_msg_id locally so the renderer can drop a
-    // chip in the transcript right after that message.
+    // Mirror compacted_through_msg_id from agent:context_status so the renderer can drop a chip.
     recordCompaction(
       state,
       action: PayloadAction<{ sessionId: string; throughMsgId: string | null }>,
@@ -788,8 +733,7 @@ const agentsSlice = createSlice({
       session.compacted_through_msg_id = action.payload.throughMsgId;
     },
 
-    // Aux-LLM-generated turn label. The pill renderer prefers this over
-    // the static "Thinking…" verb when present.
+    // Aux-LLM turn label; pill renderer prefers this over the static "Thinking..." verb.
     setTurnLabel(
       state,
       action: PayloadAction<{ sessionId: string; turnId: string; label: string }>,
@@ -805,12 +749,7 @@ const agentsSlice = createSlice({
       session.turn_label = null;
     },
 
-    // streamStart / streamDelta / streamEnd live in streamingSlice now.
-    // Mutating per-character on `session.streamingMessage` previously
-    // changed the top-level `sessions` dict reference 30Hz × N agents,
-    // forcing Dashboard (subscribed to sessions) to re-render at the same
-    // rate. Keeping the streaming text in a separate slice keeps the
-    // sessions dict stable during streaming.
+    // streamStart/Delta/End live in streamingSlice; keeps sessions dict stable during streaming.
 
     addApprovalRequest(
       state,
@@ -1043,9 +982,7 @@ const agentsSlice = createSlice({
         const fetchedIds = new Set(action.payload.map((s) => s.id));
         const activeStatuses = new Set(['running', 'waiting_approval']);
 
-        // Remove stale sessions that belong to this dashboard fetch but
-        // are no longer returned by the server — keep sessions from other
-        // dashboards, drafts, tracked notifications, and active sessions.
+        // Strip stale fetched sessions; keep other dashboards, drafts, tracked, and active sessions.
         for (const [id, existing] of Object.entries(state.sessions)) {
           if (fetchedIds.has(id)) continue;
           if (existing.status === 'draft') continue;
@@ -1137,10 +1074,7 @@ const agentsSlice = createSlice({
         if (session) {
           session.status = 'stopped';
           session.pending_approvals = [];
-          // streamingMessage cleanup is handled by streamingSlice via
-          // clearStreamingForSession. We dispatch it explicitly here
-          // because stopAgent.fulfilled isn't one of the action types
-          // we listen for in streamingSlice's extraReducers.
+          // streamingMessage cleanup is via clearStreamingForSession (not in streamingSlice's extraReducers).
         }
       })
       .addCase(handleApproval.fulfilled, (state, action) => {
@@ -1151,8 +1085,7 @@ const agentsSlice = createSlice({
         }
       })
       .addCase(handleApproval.rejected, (_state, action) => {
-        // Approval stays in state so the user can retry.
-        // The request was never delivered to the backend.
+        // Approval stays in state so the user can retry; request never reached the backend.
         console.error('Approval request failed:', action.error.message);
       })
       .addCase(switchBranch.fulfilled, (state, action) => {
@@ -1236,11 +1169,7 @@ const agentsSlice = createSlice({
         if (!state.expandedSessionIds.includes(session.id)) {
           state.expandedSessionIds.push(session.id);
         }
-        // Keep this session pinned across the next fetchSessions strip.
-        // Without this, an in-flight fetchSessions that returned before the
-        // resume races with the resume reducer and removes the just-resumed
-        // session (since closed/stopped sessions don't survive the strip
-        // unless they're in trackedNotificationIds, drafts, or active).
+        // Pin across the next fetchSessions strip so an in-flight fetch can't drop the just-resumed session.
         if (!state.trackedNotificationIds.includes(session.id)) {
           state.trackedNotificationIds.push(session.id);
         }
@@ -1255,12 +1184,7 @@ const agentsSlice = createSlice({
         };
       })
       .addCase(fetchSession.rejected, (state, action) => {
-        // Stale-id cleanup: if the backend returned 404, the session no
-        // longer exists — strip it from state so AgentChat can short-
-        // circuit to a "session not found" view instead of looping the
-        // same dead fetch on every remount. Also clears activeSessionId
-        // if it was pointing at the dead id, so the dashboard doesn't
-        // keep highlighting a ghost.
+        // Stale-id cleanup on 404/410: strip so AgentChat short-circuits instead of looping the dead fetch.
         const payload = action.payload as { sessionId?: string; status?: number } | undefined;
         const sessionId = payload?.sessionId;
         if (!sessionId) return;

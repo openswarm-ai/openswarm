@@ -1,6 +1,6 @@
 import React from 'react';
 
-/** Cute slime with × eyes and a red error badge — error / warning illustration. */
+/** Slime illustration with X eyes and red badge for errors/warnings. */
 export const ErrorSlime: React.FC<{ size?: number }> = ({ size = 22 }) => (
   <svg width={size} height={size} viewBox="0 0 28 28" fill="none" style={{ flexShrink: 0 }}>
     <path

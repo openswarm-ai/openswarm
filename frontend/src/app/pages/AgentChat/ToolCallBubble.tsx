@@ -30,17 +30,11 @@ const GoogleServiceIcon: React.FC<{ service: string; size?: number }> = ({ servi
   if (service === 'gmail') {
     return (
       <svg width={size} height={size} viewBox="0 0 24 10" fill="none" style={{ flexShrink: 0 , marginBottom: '6px'}}>
-        {/* Left blue bar */}
         <path d="M2 6.5V18a2 2 0 002 2h1V8l-3-1.5z" fill="#4285F4"/>
-        {/* Right green bar */}
         <path d="M22 6.5V18a2 2 0 01-2 2h-1V8l3-1.5z" fill="#34A853"/>
-        {/* Red M chevron */}
         <path d="M5 8v12h2V10.2L12 14l5-3.8V20h2V8l-7 5.25L5 8z" fill="#EA4335"/>
-        {/* Top-left blue triangle */}
         <path d="M4 4a2 2 0 00-2 2.5L5 8V4H4z" fill="#4285F4"/>
-        {/* Top-right yellow triangle */}
         <path d="M20 4a2 2 0 012 2.5L19 8V4h1z" fill="#FBBC04"/>
-        {/* Top red V */}
         <path d="M19 4H5v4l7 5.25L19 8V4z" fill="#EA4335"/>
       </svg>
     );
@@ -172,9 +166,6 @@ export function parseMcpToolName(rawName: string): McpToolInfo {
   if (!m) return { isMcp: false, serverSlug: '', action: '', service: '', displayName: rawName };
   const serverSlug = m[1];
   const action = m[2];
-  // Sentence case: first word capitalized, rest lowercase. Reads "Get
-  // message details" not "Get Message Details" — the Linear/Notion/Stripe
-  // convention. Title Case feels marketing-y on every row.
   const spaced = action.replace(/_/g, ' ').toLowerCase();
   const display = spaced.charAt(0).toUpperCase() + spaced.slice(1);
 
@@ -213,9 +204,6 @@ function getInputSummary(toolName: string, input: any): string {
 
     const n = toolName.toLowerCase();
     if (isBashTool(toolName)) {
-      // Verb is in the tool label ("Deleted", "Pulled from git", …);
-      // surface only the target so the row reads "Deleted foo.ts" instead
-      // of leaking the full shell command. Raw command stays in the body.
       return bashCommandDetail(input.command || '');
     }
     if (n === 'read' || n === 'write' || n === 'edit' || n === 'multiedit' || n === 'strreplace')
@@ -231,7 +219,7 @@ function getInputSummary(toolName: string, input: any): string {
     if (n === 'webfetch') return prettyUrl(input.url || '');
     if (n === 'todoread' || n === 'todowrite') return '';
     if (n === 'ls') return prettyPath(input.path || '.');
-    if (n === 'mcpactivate') return ''; // label already says "Connecting to X"
+    if (n === 'mcpactivate') return '';
     if (n === 'mcpsearch' || n === 'outputsearch') return quoteQuery(input.query || '');
     if (n === 'outputactivate') return input.output_id || '';
     if (n === 'renderoutput') return input.output_id || '';
@@ -1182,17 +1170,12 @@ const McpResultCard: React.FC<{ parsed: ParsedMcpResult; compact?: boolean }> = 
   if (service === 'calendar') return <CalendarCard data={data} hideHeader={compact} />;
   if (service === 'drive' || service === 'sheets') return <DriveCard data={data} />;
 
-  // Plain-text MCP results (our openswarm-web DDG search, fetch, etc.) arrive
-  // as `[{type:"text", text:"..."}]` which the parser extracts into `rawText`
-  // but leaves `data` empty. Render the rawText directly so users see the
-  // actual tool output instead of "(empty response)". Display is capped —
-  // the model still receives the full payload, only the UI preview is
-  // trimmed so a 250 KB fetch doesn't blow up the chat bubble.
+  // Plain-text MCP results: render rawText capped at 6000 chars (model still sees full payload).
   const hasData = data && Object.keys(data).length > 0;
   if (!hasData && rawText && rawText.trim()) {
     const DISPLAY_CAP = 6000;
     const preview = rawText.length > DISPLAY_CAP
-      ? rawText.slice(0, DISPLAY_CAP) + `\n… (${rawText.length - DISPLAY_CAP} more chars — model received full output)`
+      ? rawText.slice(0, DISPLAY_CAP) + `\n… (${rawText.length - DISPLAY_CAP} more chars; model received full output)`
       : rawText;
     return (
       <Box sx={{ px: 1.5, py: 1 }}>
@@ -1429,8 +1412,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
     const promptPrefix = getPromptPrefix(toolName);
     const shortAction = mcpInfo.isMcp ? getMcpShortAction(mcpInfo) : toolName;
 
-    // mcpCompact rows live inside a ToolGroup whose header already shows
-    // the brand + count, so the row uses the verb form, not the brand.
     const mcpVerbLabel = (() => {
       const lbl = getToolLabel(toolName, call.id);
       return result && !isDenied ? lbl.past : lbl.present;
@@ -1468,7 +1449,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
               transition: 'border-color 0.3s, box-shadow 0.3s',
             } as any}
           >
-            {/* Header */}
             <Box
               onClick={toggle}
               sx={{
@@ -1586,7 +1566,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
               )}
             </Box>
 
-            {/* Expanded body — markdown rendered, not terminal */}
             <Collapse in={expanded && hasResponse}>
               <Box
                 sx={{
@@ -1979,7 +1958,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
             transition: 'border-color 0.3s, box-shadow 0.3s',
           } as any}
         >
-          {/* Header */}
           <Box
             onClick={toggle}
             sx={{
@@ -2011,7 +1989,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
               }}
             >
               {(() => {
-                // call.id seeds the variant pool so re-renders are stable.
                 const { present, past } = getToolLabelWithInput(toolName, input, call.id);
                 return result && !isDenied ? past : present;
               })()}
@@ -2091,7 +2068,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
             )}
           </Box>
 
-          {/* Unified terminal body */}
           <Collapse in={showBody}>
             <Box
               sx={{
@@ -2107,7 +2083,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
                 },
               }}
             >
-              {/* Prompt + command */}
               <pre
                 style={{
                   margin: 0,
@@ -2142,7 +2117,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
                 )}
               </pre>
 
-              {/* Browser agent inline feed */}
               {isBrowserAgent && sessionId && (
                 <BrowserAgentInlineFeed
                   parentSessionId={sessionId}
@@ -2150,7 +2124,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
                 />
               )}
 
-              {/* Output */}
               {parsedResult && parsedResult.type === 'mcp' ? (
                 <McpResultCard parsed={parsedResult} />
               ) : parsedResult ? (
@@ -2191,7 +2164,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
                 </pre>
               ) : null}
 
-              {/* Pending indicator when waiting for result (skip for browser agent — feed replaces it) */}
               {!parsedResult && isPending && !isStreaming && !isBrowserAgent && (
                 <Box sx={{ px: 1.5, pb: 1, pt: 0.5 }}>
                   <Box

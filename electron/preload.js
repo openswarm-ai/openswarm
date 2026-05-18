@@ -104,6 +104,13 @@ const { contextBridge, ipcRenderer } = require('electron');
     enableTray: (_value) => Promise.resolve(true),
     getActiveRuns: () => ipcRenderer.invoke('workflows:get-active'),
     notify: (payload) => ipcRenderer.invoke('workflows:notify', payload),
+    // Subscribed by WebSocketManager so notification button clicks
+    // (Looks good / Re-run / Adjust / Open) route back into the app.
+    onNotificationAction: (cb) => {
+      const listener = (_event, payload) => cb(payload);
+      ipcRenderer.on('workflow:notification-action', listener);
+      return () => ipcRenderer.removeListener('workflow:notification-action', listener);
+    },
 
     // OAuth popup callback. Fires when any child webContents navigates to
     // localhost:20128/callback?code=... — main.js watches for this and

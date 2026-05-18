@@ -36,10 +36,6 @@ _TMPROOT = tempfile.mkdtemp(prefix="openswarm-v2-invariants-")
 os.environ.setdefault("OPENSWARM_DATA_DIR", _TMPROOT)
 
 
-# ---------------------------------------------------------------------------
-# Fixture: build a fake ToolDefinition without touching disk.
-# ---------------------------------------------------------------------------
-
 def _fake_tool(
     name: str,
     *,
@@ -60,13 +56,10 @@ def _fake_tool(
     )
 
 
-# ===========================================================================
-# Group A — MCP activation gate (the non-bypassable ToolSearch invariant)
-# ===========================================================================
 # The product invariant: NO MCP tool is callable until the model has
 # explicitly searched + activated the server, and the user has approved
 # the activation. The gate lives at the dispatch layer in
-# `_build_mcp_servers` — even if the prompt rules are ignored, the SDK
+# `_build_mcp_servers`; even if the prompt rules are ignored, the SDK
 # never sees the unactivated server.
 
 
@@ -82,7 +75,6 @@ async def test_gate_blocks_when_active_mcps_empty():
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools), \
          patch("backend.apps.agents.agent_manager.refresh_google_token", new=AsyncMock(return_value=True)):
         mgr = AgentManager()
-        # allowed_tools includes mcp:Gmail, but active_mcps is empty
         result = await mgr._build_mcp_servers(
             allowed_tools=["mcp:Gmail", "mcp:Slack", "mcp:Notion"],
             active_mcps=[],
@@ -185,11 +177,9 @@ async def test_gate_stress_random_activations():
         fake_tools = [_fake_tool(raw_names[i]) for i in connected_idx]
         connected_sanitized = [server_pool[i] for i in connected_idx]
 
-        # active set is a random subset of connected
         active_n = random.randint(0, len(connected_sanitized))
         active = random.sample(connected_sanitized, active_n)
 
-        # allowed_tools mirrors raw names of connected
         allowed = [f"mcp:{raw_names[i]}" for i in connected_idx]
 
         with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools), \
@@ -202,20 +192,11 @@ async def test_gate_stress_random_activations():
                 active_mcps=active,
             )
             keys = set(result.keys())
-            # MUST: keys ⊆ active ∩ connected
             allowed_set = set(active) & set(connected_sanitized)
             assert keys.issubset(allowed_set), (
                 f"GATE BREACH: {keys - allowed_set} leaked through "
                 f"(active={active}, connected={connected_sanitized})"
             )
-
-
-# ===========================================================================
-# Group B — needs_fresh_session soft-restart
-# ===========================================================================
-# When MCPActivate fires mid-session, the bundled CLI doesn't re-read
-# mcp_servers from a fork. We force a fresh sdk_session_id so the new
-# server's tools actually reach the model.
 
 
 def test_needs_fresh_session_field_default_false():
@@ -239,7 +220,7 @@ def test_needs_fresh_session_serializes_round_trip():
 
 
 def test_legacy_session_json_loads_without_field():
-    """Old session JSONs predate the field — Pydantic must fill in default."""
+    """Old session JSONs predate the field; Pydantic must fill in default."""
     from backend.apps.agents.models import AgentSession
     legacy = {
         "id": "old", "name": "legacy", "model": "sonnet", "mode": "agent",
@@ -247,7 +228,6 @@ def test_legacy_session_json_loads_without_field():
     }
     s = AgentSession.model_validate(legacy)
     assert s.needs_fresh_session is False
-    # extras silently absorbed → can't be a regression hazard
     legacy_with_ghost = {**legacy, "answer_tokens": 999, "thought_signature": "abc=="}
     s2 = AgentSession.model_validate(legacy_with_ghost)
     assert s2.id == "old"
@@ -256,10 +236,8 @@ def test_legacy_session_json_loads_without_field():
 def test_mcp_activate_sets_fresh_session_when_history_exists():
     """The gate logic at main.py: if sdk_session_id exists, set needs_fresh_session=True."""
     from backend.apps.agents.models import AgentSession
-    # Mid-session: sdk already locked in
     s = AgentSession(id="mid", name="t", model="sonnet", mode="agent")
     s.sdk_session_id = "claude-session-existing"
-    # Simulate the gate handler logic
     if s.sdk_session_id:
         s.needs_fresh_session = True
     assert s.needs_fresh_session is True
@@ -269,7 +247,6 @@ def test_mcp_activate_skips_fresh_session_on_first_turn():
     """First-turn activation: no sdk_session_id yet, so needs_fresh_session stays False."""
     from backend.apps.agents.models import AgentSession
     s = AgentSession(id="fresh", name="t", model="sonnet", mode="agent")
-    # No sdk_session_id yet
     if s.sdk_session_id:
         s.needs_fresh_session = True
     assert s.needs_fresh_session is False
@@ -285,9 +262,6 @@ def test_active_mcps_append_idempotent():
     assert s.active_mcps.count("gmail") == 1
 
 
-# ===========================================================================
-# Group C — Pydantic Message backward compat (no ghost fields, legacy loads)
-# ===========================================================================
 
 
 def test_message_no_ghost_fields():
@@ -300,7 +274,7 @@ def test_message_no_ghost_fields():
 
 
 def test_message_legacy_payload_with_ghost_fields_still_loads():
-    """Old session JSONs may carry the deleted fields — Pydantic must ignore them."""
+    """Old session JSONs may carry the deleted fields; Pydantic must ignore them."""
     from backend.apps.agents.models import Message
     legacy = {
         "id": "m1",
@@ -312,10 +286,8 @@ def test_message_legacy_payload_with_ghost_fields_still_loads():
         "input_tokens": 1234,
     }
     m = Message.model_validate(legacy)
-    # Fields that survived are preserved
     assert m.tool_count == 3
     assert m.input_tokens == 1234
-    # Ghost fields don't blow up + don't leak into re-dump
     redumped = m.model_dump(mode="json")
     assert "answer_tokens" not in redumped
     assert "thought_signature" not in redumped
@@ -358,9 +330,6 @@ def test_message_round_trip_50_iterations():
         assert m2.elapsed_ms == m.elapsed_ms
 
 
-# ===========================================================================
-# Group D — resolve_aux_model Gemini route (the gemini-3.1-flash-lite-preview fix)
-# ===========================================================================
 
 
 @pytest.mark.asyncio
@@ -464,11 +433,10 @@ async def test_resolve_aux_model_openrouter_primary_prefers_or():
 @pytest.mark.asyncio
 async def test_resolve_aux_model_openrouter_priority_after_subs():
     """In the default cascade (no primary_api), Claude/Codex/Gemini subs
-    win over OR — OR is metered while subs are sub-covered free."""
+    win over OR; OR is metered while subs are sub-covered free."""
     from backend.apps.agents.providers import registry
     from backend.apps.settings.models import AppSettings
     settings = AppSettings()
-    # Both Codex and OR connected — Codex (free via sub) should win.
     with patch("backend.apps.nine_router.is_running", return_value=True), \
          patch("backend.apps.nine_router.get_providers",
                new=AsyncMock(return_value=[
@@ -477,14 +445,6 @@ async def test_resolve_aux_model_openrouter_priority_after_subs():
                ])):
         model_id, _ = await registry.resolve_aux_model(settings)
         assert model_id == "cx/gpt-5.4-mini", f"got {model_id}"
-
-
-# ===========================================================================
-# Group E — 9Router-streamed 401 detection
-# ===========================================================================
-# 9Router sometimes returns upstream auth failures AS the assistant's
-# reply text, not as an exception. We detect the pattern in the stream
-# handler to substitute a friendly bubble.
 
 
 def test_router_auth_pattern_codex():
@@ -520,7 +480,7 @@ def test_router_auth_pattern_does_not_falsely_match_normal_text():
         "Here are your recent emails: ...",
         "I found 3 results for your search.",
         "Sorry, I don't have access to that file.",
-        "401 Unauthorized — wait this is a code example I'm explaining",  # tricky
+        "401 Unauthorized; wait this is a code example I'm explaining",  # tricky
     ]
     for text in benign_replies:
         lower = text.lower()
@@ -537,7 +497,6 @@ def test_is_auth_error_classifier():
     """The classifier at agent_manager.py:_is_auth_error covers many shapes."""
     from backend.apps.agents.agent_manager import _is_auth_error
 
-    # Real shapes that must be caught
     matches = [
         Exception("Error 401: invalid_api_key"),
         Exception("Got 403 from upstream"),
@@ -550,7 +509,6 @@ def test_is_auth_error_classifier():
     for e in matches:
         assert _is_auth_error(e), f"should match: {e}"
 
-    # Non-auth errors must not match
     non_matches = [
         Exception("Connection timeout"),
         Exception("Rate limit exceeded"),
@@ -567,14 +525,6 @@ def test_is_auth_error_with_stderr_tail():
     e = Exception("Command failed with exit code 1")
     stderr = "...\n[codex/gpt-5.5] [401]: Provided authentication token is expired"
     assert _is_auth_error(e, extra_text=stderr)
-
-
-# ===========================================================================
-# Group F — MCP_SERVER_BRAND coverage
-# ===========================================================================
-# Every server slug we surface to the user via MCPSearch / connected_servers
-# should have a brand entry, otherwise the UI falls back to the kebab-case
-# id ("microsoft-365" instead of "Microsoft 365").
 
 
 def test_mcp_brand_covers_curated_servers():
@@ -627,19 +577,13 @@ def test_sanitize_server_name_strips_special_chars():
     assert _sanitize_server_name("a__b") == "a-b"
 
 
-# ===========================================================================
-# Group G — mcp_meta_server activation backend handler
-# ===========================================================================
 
 
 def test_mcp_activate_handler_unknown_server():
     """Unknown server name → status='unknown_server' with the valid list."""
-    # We test the response shape independently of the FastAPI plumbing.
-    # The handler is a closure inside main.py:mcp_meta_handler, so we
-    # instead exercise the contract: invalid name surfaces alternatives.
     from backend.apps.tools_lib.tools_lib import _sanitize_server_name
     valid = {"gmail", "slack", "google-workspace"}
-    requested = "Gmail"  # raw, needs sanitize
+    requested = "Gmail"
     sanitized = _sanitize_server_name(requested)
     if sanitized in valid:
         status = "would_activate"
@@ -649,7 +593,7 @@ def test_mcp_activate_handler_unknown_server():
 
 
 def test_active_mcps_persistence_on_session():
-    """active_mcps survives session.model_dump() round-trip — critical for resume."""
+    """active_mcps survives session.model_dump() round-trip; critical for resume."""
     from backend.apps.agents.models import AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     s.active_mcps = ["gmail", "slack"]
@@ -658,9 +602,6 @@ def test_active_mcps_persistence_on_session():
     assert rehydrated.active_mcps == ["gmail", "slack"]
 
 
-# ===========================================================================
-# Group H — long-context error classifier
-# ===========================================================================
 
 
 def test_long_context_pattern_caught():
@@ -690,10 +631,7 @@ def test_transient_capacity_patterns():
     ]
     for t in transients:
         assert _TRANSIENT_CAPACITY_PATTERNS.search(t), f"transient missed: {t!r}"
-        # Importantly: must NOT also match non-transient (no double-classification)
-        # except for the fuzzy edge cases. Spot-check a couple:
         if "429" in t and "rate_limit" in t.lower():
-            # rate_limit_error is transient; non-transient should not match this exact text
             assert not _NON_TRANSIENT_PATTERNS.search(t)
 
 
@@ -703,9 +641,6 @@ def test_long_context_does_not_match_normal_429():
     assert not _NON_TRANSIENT_PATTERNS.search("Error 429: rate_limit_error")
 
 
-# ===========================================================================
-# Group I — Mode reconciliation (regression guard)
-# ===========================================================================
 
 
 def test_chat_mode_not_in_builtins():
@@ -726,9 +661,6 @@ def test_active_mcps_default_factory_creates_new_list():
     assert s2.active_mcps == [], "active_mcps must not share state across sessions"
 
 
-# ===========================================================================
-# Group J — Concurrent gate stress (real production risk: simultaneous turns)
-# ===========================================================================
 
 
 @pytest.mark.asyncio
@@ -752,9 +684,6 @@ async def test_concurrent_gate_calls_isolated():
         assert set(empty.keys()) == set()
 
 
-# ===========================================================================
-# Group K — pending_continuation auto-restart
-# ===========================================================================
 
 
 def test_pending_continuation_default_false():
@@ -776,19 +705,12 @@ def test_pending_continuation_serializes():
 
 
 def test_compact_threshold_default():
-    """compact_threshold_pct default of 0.65 — drift here breaks Phase 2 compaction."""
+    """compact_threshold_pct default of 0.65; drift here breaks Phase 2 compaction."""
     from backend.apps.agents.models import AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     assert s.compact_threshold_pct == 0.65
     assert s.context_soft_cap_pct == 0.90
     assert s.context_window == 200_000
-
-
-# ===========================================================================
-# Group L — Sentence-case display (the parseMcpToolName fix)
-# ===========================================================================
-# This is technically a frontend behavior, but we mirror the rule in
-# Python so the backend's MCPSearch results don't leak Title Case either.
 
 
 def test_sentence_case_rule():
@@ -807,9 +729,6 @@ def test_sentence_case_rule():
         assert sentence_case(raw) == expected
 
 
-# ===========================================================================
-# Group M — Bash command verb extraction (frontend logic, mirrored)
-# ===========================================================================
 
 
 def test_bash_verb_extraction_strips_env_prefix():
@@ -848,9 +767,6 @@ def test_bash_command_detail_path_basename():
         assert basename(raw) == expected
 
 
-# ===========================================================================
-# Group N — Pydantic AppSettings invariants
-# ===========================================================================
 
 
 def test_app_settings_defaults():
@@ -874,9 +790,6 @@ def test_custom_provider_round_trip():
     assert s2.custom_providers[0].name == "MyCorp"
 
 
-# ===========================================================================
-# Group O — Tool gate stress with denied permissions
-# ===========================================================================
 
 
 @pytest.mark.asyncio
@@ -887,7 +800,6 @@ async def test_gate_partially_denied_tool_blocked():
         "_tool_descriptions": {"send_email": "Send email"},
         "send_email": "deny",
     })
-    # Build a minimal class that has the perms_dict shape _is_fully_denied expects
     assert _is_fully_denied(fake) in (True, False)
 
 
@@ -903,13 +815,9 @@ async def test_gate_handles_missing_refresh_token_gracefully():
             allowed_tools=["mcp:MyApiTool"],
             active_mcps=["myapitool"],
         )
-        # It should be present (configured + activated + not denied)
         assert "myapitool" in result
 
 
-# ===========================================================================
-# Group P — resolve_aux_model failover logic
-# ===========================================================================
 
 
 @pytest.mark.asyncio
@@ -922,10 +830,9 @@ async def test_aux_failover_anthropic_to_codex():
     settings.openswarm_proxy_url = "https://api.openswarm.test"
     with patch("backend.apps.nine_router.is_running", return_value=True), \
          patch("backend.apps.nine_router.get_providers",
-               new=AsyncMock(return_value=[])):  # nothing connected
-        # primary_api=codex but codex not connected → cascade to Pro/anthropic
+               new=AsyncMock(return_value=[])):
         model_id, base = await registry.resolve_aux_model(settings, primary_api="codex")
-        assert "haiku" in model_id  # fallthrough hit Anthropic Pro path
+        assert "haiku" in model_id
         assert base == "https://api.openswarm.test"
 
 
@@ -953,14 +860,10 @@ async def test_aux_returns_sonnet_when_preferred_tier_set():
         assert "sonnet" in model_id
 
 
-# ===========================================================================
-# Group Q — get_api_type / model id resolution
-# ===========================================================================
 
 
 def test_get_api_type_openai():
     from backend.apps.agents.providers.registry import get_api_type
-    # gpt-5.4 maps to codex (the OpenAI-via-Codex-subscription api family)
     api = get_api_type("gpt-5.4")
     assert api in ("openai", "codex"), f"unexpected: {api}"
 
@@ -977,9 +880,6 @@ def test_find_builtin_model_returns_dict_for_known():
     assert sonnet.get("api") == "anthropic"
 
 
-# ===========================================================================
-# Group R — context window
-# ===========================================================================
 
 
 def test_get_context_window_known_model():
@@ -992,11 +892,6 @@ def test_get_context_window_unknown_returns_default():
     from backend.apps.agents.providers.registry import get_context_window
     cw = get_context_window("Unknown", "fake-model")
     assert cw == 128_000
-
-
-# ---------------------------------------------------------------------------
-# Custom OpenAI-compatible providers (Ollama Cloud, Together, etc.)
-# ---------------------------------------------------------------------------
 
 
 def test_custom_provider_value_synthesises_route_api_entry():
@@ -1044,7 +939,6 @@ def test_custom_provider_lookup_finds_entry_by_slug():
     assert cp is not None and cp.name == "Ollama Cloud"
     cp2 = _find_custom_provider_for_value(s, "custom/together-ai/meta-llama/llama-3-70b")
     assert cp2 is not None and cp2.name == "Together AI"
-    # Unknown slug → None.
     assert _find_custom_provider_for_value(s, "custom/nonexistent/whatever") is None
 
 
@@ -1066,7 +960,7 @@ def test_get_context_window_custom_provider_value_format():
 
 
 def test_custom_provider_slug_is_url_safe():
-    """The slug must be alnum-and-dash only — it's used both as the 9Router
+    """The slug must be alnum-and-dash only; it's used both as the 9Router
     prefix and as a URL path segment. Spaces, slashes, and special chars
     must all be folded to dashes."""
     from backend.apps.agents.providers.registry import _custom_provider_slug_for_lookup
@@ -1079,11 +973,8 @@ def test_custom_provider_slug_is_url_safe():
 def test_custom_provider_slug_unicode_collapses_safely():
     """Unicode names are folded to ASCII-safe dashes; emojis/accents drop."""
     from backend.apps.agents.providers.registry import _custom_provider_slug_for_lookup
-    # Accented chars get stripped (regex is [a-zA-Z0-9-] only).
     assert _custom_provider_slug_for_lookup("Tögether AI 🚀") == "t-gether-ai"
-    # Pure-emoji name → fallback "custom".
     assert _custom_provider_slug_for_lookup("🚀💎") == "custom"
-    # Trailing/leading dashes get stripped.
     assert _custom_provider_slug_for_lookup("---weird---") == "weird"
 
 
@@ -1097,7 +988,6 @@ def test_custom_provider_slug_does_not_collide_with_routing_prefixes():
     assert entry is not None
     routed = entry["model_id"]
     assert routed == "cp-cc/whatever"
-    # cp-cc is NOT cc/ — startswith check would have to match the exact slash.
     assert not routed.startswith(("cc/", "cx/", "gc/", "ag/", "gemini/", "openrouter/"))
 
 
@@ -1117,7 +1007,6 @@ def test_custom_provider_models_with_special_chars():
     for v in cases:
         e = _find_builtin_model(v)
         assert e is not None, f"failed: {v}"
-        # Bare-model portion is everything after first slash after the slug.
         rest = v[len("custom/"):]
         slug, _, bare = rest.partition("/")
         assert e["model_id"] == f"cp-{slug}/{bare}", f"bad routing for {v}: {e['model_id']}"
@@ -1125,7 +1014,7 @@ def test_custom_provider_models_with_special_chars():
 
 def test_custom_provider_value_with_invalid_format_returns_none():
     """Malformed picker values (no slug, no model) must not synthesise a
-    bogus entry — they should miss _find_builtin_model entirely so the
+    bogus entry; they should miss _find_builtin_model entirely so the
     dispatch loop falls through to the 'unknown model' branch."""
     from backend.apps.agents.providers.registry import _find_builtin_model
     assert _find_builtin_model("custom/") is None
@@ -1134,7 +1023,7 @@ def test_custom_provider_value_with_invalid_format_returns_none():
 
 
 def test_custom_provider_get_api_type_returns_custom():
-    """get_api_type drives the dispatch branch in agent_manager.py — must
+    """get_api_type drives the dispatch branch in agent_manager.py; must
     return 'custom' (not 'anthropic' default fallback) for a custom value."""
     from backend.apps.agents.providers.registry import get_api_type
     assert get_api_type("custom/ollama/gpt-oss:120b") == "custom"
@@ -1188,7 +1077,7 @@ def test_custom_provider_get_anthropic_client_routes_cp_to_9router():
 
 def test_custom_provider_two_providers_get_distinct_slugs():
     """Two custom providers with different display names must produce
-    two different slugs / routing prefixes — otherwise 9Router will route
+    two different slugs / routing prefixes; otherwise 9Router will route
     both to whichever connection was created last."""
     from backend.apps.agents.providers.registry import _custom_provider_slug_for_lookup
     a = _custom_provider_slug_for_lookup("Ollama Cloud")
@@ -1203,7 +1092,7 @@ def test_custom_provider_slug_collision_after_sanitize():
     The dedupe-by-name UI check guards against same-string entries; this
     test just documents that post-slug collisions DO collide and the
     UI-level uniqueness check (in Settings.tsx) is the right enforcement
-    layer — backend resolution would always pick the first match."""
+    layer; backend resolution would always pick the first match."""
     from backend.apps.agents.providers.registry import _custom_provider_slug_for_lookup
     assert _custom_provider_slug_for_lookup("Ollama Cloud") == \
            _custom_provider_slug_for_lookup("ollama-cloud") == \
@@ -1221,22 +1110,18 @@ def test_list_models_includes_complete_custom_providers_excludes_incomplete():
     from unittest.mock import patch
 
     cfg = AppSettings(custom_providers=[
-        # Complete — should appear.
         CustomProvider(
             name="Ollama Cloud", base_url="https://ollama.com/v1", api_key="x",
             models=[{"value": "gpt-oss:120b", "label": "gpt-oss:120b"}],
         ),
-        # Empty base_url — should NOT appear.
         CustomProvider(
             name="Broken", base_url="", api_key="y",
             models=[{"value": "model-a", "label": "model-a"}],
         ),
-        # No models — should NOT appear.
         CustomProvider(
             name="Empty", base_url="https://example.com/v1", api_key="z",
             models=[],
         ),
-        # Empty name — should NOT appear.
         CustomProvider(
             name="", base_url="https://example.com/v1", api_key="z",
             models=[{"value": "x", "label": "x"}],
@@ -1252,7 +1137,6 @@ def test_list_models_includes_complete_custom_providers_excludes_incomplete():
     assert len(groups["Ollama Cloud"]) == 1
     assert groups["Ollama Cloud"][0]["value"] == "custom/ollama-cloud/gpt-oss:120b"
     assert groups["Ollama Cloud"][0]["billing_kind"] == "api_key"
-    # None of the incomplete entries' names create a group.
     assert "Broken" not in groups
     assert "Empty" not in groups
 
@@ -1319,7 +1203,7 @@ def test_custom_provider_context_window_falls_back_to_default():
 
 def test_custom_provider_resolve_aux_model_unaffected():
     """resolve_aux_model is the one-shot LLM call path. Custom providers
-    are NOT in its decision tree — Haiku/9Router/OR fallbacks should still
+    are NOT in its decision tree; Haiku/9Router/OR fallbacks should still
     fire. Custom providers are deliberately not used for aux because we
     don't know if they support tool calling well enough."""
     import asyncio
@@ -1329,7 +1213,6 @@ def test_custom_provider_resolve_aux_model_unaffected():
         anthropic_api_key="sk-ant-test",
         custom_providers=[CustomProvider(name="Foo", base_url="https://x/v1", api_key="k")],
     )
-    # Should pick Anthropic Haiku, not anything custom.
     rid, base = asyncio.run(resolve_aux_model(s, preferred_tier="haiku"))
     assert "haiku" in rid.lower()
     assert not rid.startswith("cp-")
@@ -1347,20 +1230,15 @@ def test_custom_provider_with_very_long_name_still_works():
     assert entry["model_id"] == f"cp-{slug}/some-model"
 
 
-# ===========================================================================
-# 9Router sync stress tests — async, mocked HTTP layer
-# ===========================================================================
-
-
 def _make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=None):
     """Build a mock httpx.AsyncClient that simulates 9Router's HTTP API.
     Tracks state across requests so we can assert idempotency.
-    Returns (mock_client_class, state_dict) — state_dict is mutated by calls."""
+    Returns (mock_client_class, state_dict); state_dict is mutated by calls."""
     from unittest.mock import AsyncMock, MagicMock
     state = {
         "nodes": list(initial_nodes or []),
         "connections": list(initial_conns or []),
-        "calls": [],  # list of (method, url, json) tuples
+        "calls": [],
         "next_id": 1,
     }
     fail = fail_endpoints or set()
@@ -1404,7 +1282,6 @@ def _make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=No
 
     async def _put(url, json=None, **kw):
         state["calls"].append(("PUT", url, json))
-        # /api/provider-nodes/<id>
         for n in state["nodes"]:
             if url.endswith(f"/provider-nodes/{n['id']}"):
                 n.update(json or {})
@@ -1424,7 +1301,6 @@ def _make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=No
         for n in list(state["nodes"]):
             if url.endswith(f"/provider-nodes/{n['id']}"):
                 state["nodes"].remove(n)
-                # Cascade-delete connections.
                 state["connections"] = [
                     c for c in state["connections"] if c.get("provider") != n["id"]
                 ]
@@ -1461,7 +1337,6 @@ def test_sync_custom_providers_silently_noop_when_9router_down():
     from backend.apps.settings.models import CustomProvider
 
     with upatch("backend.apps.nine_router.is_running", return_value=False):
-        # Should not raise even with malformed/empty input.
         asyncio.run(sync_custom_providers([]))
         asyncio.run(sync_custom_providers([
             CustomProvider(name="X", base_url="https://x/v1", api_key="k"),
@@ -1483,7 +1358,6 @@ def test_sync_custom_providers_creates_node_and_connection_for_new_provider():
                           api_key="key1", models=[]),
         ]))
 
-    # Should have POSTed exactly one node and one connection.
     posts = [c for c in state["calls"] if c[0] == "POST"]
     assert len(posts) == 2, f"expected 2 POSTs, got {len(posts)}: {posts}"
     node_post = next(c for c in posts if "/provider-nodes" in c[1])
@@ -1530,20 +1404,18 @@ def test_sync_custom_providers_updates_existing_node_in_place():
         asyncio.run(sync_custom_providers([
             CustomProvider(
                 name="Together AI",
-                base_url="https://api.together.xyz/v1",  # unchanged URL
-                api_key="new-key",  # changed key
+                base_url="https://api.together.xyz/v1",
+                api_key="new-key",
                 models=[],
             ),
         ]))
 
-    # Should PUT the node, PATCH the connection. NO new POSTs.
     posts = [c for c in state["calls"] if c[0] == "POST"]
     puts = [c for c in state["calls"] if c[0] == "PUT"]
     patches = [c for c in state["calls"] if c[0] == "PATCH"]
     assert posts == [], f"expected no new nodes/conns, got {posts}"
     assert len(puts) >= 1, f"expected node PUT, got {puts}"
     assert len(patches) >= 1, f"expected conn PATCH, got {patches}"
-    # And the apiKey should be the new one in the patched payload.
     assert patches[0][2]["apiKey"] == "new-key"
 
 
@@ -1562,10 +1434,9 @@ def test_sync_custom_providers_deletes_orphaned_managed_nodes():
             "prefix": "cp-oldprovider",
             "type": "openai-compatible",
         },
-        # An UNMANAGED node — should never be deleted.
         {
             "id": "node-user-created",
-            "name": "Manual Setup",   # no suffix
+            "name": "Manual Setup",
             "prefix": "manual",
             "type": "openai-compatible",
         },
@@ -1574,7 +1445,7 @@ def test_sync_custom_providers_deletes_orphaned_managed_nodes():
     with upatch("backend.apps.nine_router.is_running", return_value=True), \
          upatch("backend.apps.nine_router.httpx.AsyncClient", MockClient), \
          upatch("backend.apps.nine_router.get_providers", new=lambda: _async_return([])):
-        asyncio.run(sync_custom_providers([]))  # empty list → delete all managed
+        asyncio.run(sync_custom_providers([]))
 
     deletes = [c for c in state["calls"] if c[0] == "DELETE"]
     deleted_urls = [c[1] for c in deletes]
@@ -1608,7 +1479,7 @@ def test_sync_custom_providers_skips_incomplete_entries():
 
 def test_sync_custom_providers_handles_node_post_failure_without_crashing():
     """If 9Router rejects the node POST (e.g. duplicate prefix), don't
-    crash the whole sync — log and move on to the next provider."""
+    crash the whole sync; log and move on to the next provider."""
     import asyncio
     from unittest.mock import patch as upatch
     from backend.apps.nine_router import sync_custom_providers
@@ -1618,7 +1489,6 @@ def test_sync_custom_providers_handles_node_post_failure_without_crashing():
     with upatch("backend.apps.nine_router.is_running", return_value=True), \
          upatch("backend.apps.nine_router.httpx.AsyncClient", MockClient), \
          upatch("backend.apps.nine_router.get_providers", new=lambda: _async_return([])):
-        # Should NOT raise.
         asyncio.run(sync_custom_providers([
             CustomProvider(name="A", base_url="https://a/v1", api_key="k1"),
             CustomProvider(name="B", base_url="https://b/v1", api_key="k2"),
@@ -1643,7 +1513,6 @@ def test_sync_custom_providers_three_distinct_providers_create_three_nodes():
             CustomProvider(name="Groq", base_url="https://api.groq.com/openai/v1", api_key="k3"),
         ]))
 
-    # Should have POSTed 3 nodes + 3 connections = 6 POSTs.
     posts = [c for c in state["calls"] if c[0] == "POST"]
     assert len(posts) == 6, f"expected 6 POSTs (3 nodes + 3 conns), got {len(posts)}"
 
@@ -1661,15 +1530,11 @@ def _async_return(value):
     return _f()
 
 
-# ===========================================================================
-# Group S — calculate_cost regression tests
-# ===========================================================================
 
 
 def test_calculate_cost_anthropic_sonnet():
     """Sonnet $3/M input + $15/M output."""
     from backend.apps.agents.providers.registry import calculate_cost
-    # 1M input, 1M output → $18 expected (3 + 15)
     cost = calculate_cost("Anthropic", "sonnet", 1_000_000, 1_000_000)
     assert 17 <= cost <= 19
 
@@ -1686,9 +1551,6 @@ def test_calculate_cost_unknown_model_returns_zero():
     assert cost == 0.0
 
 
-# ===========================================================================
-# Group T — Mode definitions
-# ===========================================================================
 
 
 def test_agent_mode_no_explicit_tools():
@@ -1719,9 +1581,6 @@ def test_view_builder_mode_has_default_folder():
     assert vb.default_folder is not None
 
 
-# ===========================================================================
-# Group U — Stress: gate handles 100 sequential calls without state leak
-# ===========================================================================
 
 
 @pytest.mark.asyncio
@@ -1740,9 +1599,6 @@ async def test_gate_100_sequential_calls_no_leak():
                 f"iteration {i}: expected {set(active)}, got {set(result.keys())}"
 
 
-# ===========================================================================
-# Group V — Discord shim entrypoint sanity
-# ===========================================================================
 
 
 def test_discord_shim_main_callable():
@@ -1753,13 +1609,9 @@ def test_discord_shim_main_callable():
 
 def test_discord_shim_package_importable():
     import backend.apps.discord_mcp_shim
-    # Empty __init__ now; just confirm the package imports without error
     assert backend.apps.discord_mcp_shim is not None
 
 
-# ===========================================================================
-# Group W — Tools/web.py (live MCP for DDG search)
-# ===========================================================================
 
 
 def test_web_tools_classes_inherit_basetool():
@@ -1783,9 +1635,6 @@ def test_web_fetch_tool_has_name_and_schema():
     assert isinstance(tool.get_schema(), dict)
 
 
-# ===========================================================================
-# Group X — ToolGroupMeta + caching
-# ===========================================================================
 
 
 def test_tool_group_meta_round_trip():
@@ -1804,9 +1653,6 @@ def test_tool_group_meta_default_is_refined_false():
     assert m.is_refined is False
 
 
-# ===========================================================================
-# Group Y — MessageBranch invariants
-# ===========================================================================
 
 
 def test_session_has_main_branch_by_default():
@@ -1826,19 +1672,16 @@ def test_branch_serialization():
     assert s2.branches["alt"].parent_branch_id == "main"
 
 
-# ===========================================================================
-# Group Z — End-to-end: realistic session lifecycle
-# ===========================================================================
 
 
 @pytest.mark.asyncio
 async def test_e2e_session_lifecycle_with_mcp_activation():
     """
     Walk a session through the realistic flow:
-      1. Fresh session (active_mcps empty) — gate blocks all MCPs
-      2. MCPActivate('gmail') — set fresh_session, append to active_mcps
-      3. Continue turn — gate now passes gmail through
-      4. Persist & re-load — state survives
+      1. Fresh session (active_mcps empty); gate blocks all MCPs
+      2. MCPActivate('gmail'); set fresh_session, append to active_mcps
+      3. Continue turn; gate now passes gmail through
+      4. Persist & re-load; state survives
     """
     from backend.apps.agents.agent_manager import AgentManager
     from backend.apps.agents.models import AgentSession
@@ -1848,21 +1691,18 @@ async def test_e2e_session_lifecycle_with_mcp_activation():
         mgr = AgentManager()
         s = AgentSession(id="e2e", name="End-to-end", model="sonnet", mode="agent")
 
-        # Step 1: fresh, gate blocks everything
         result = await mgr._build_mcp_servers(
             allowed_tools=["mcp:Gmail", "mcp:Slack"],
             active_mcps=s.active_mcps,
         )
         assert result == {}
 
-        # Step 2: simulate MCPActivate
         s.active_mcps.append("gmail")
         s.sdk_session_id = "claude-existing"
         if s.sdk_session_id:
             s.needs_fresh_session = True
         s.pending_continuation = True
 
-        # Step 3: continuation turn — gate passes gmail
         result = await mgr._build_mcp_servers(
             allowed_tools=["mcp:Gmail", "mcp:Slack"],
             active_mcps=s.active_mcps,
@@ -1870,7 +1710,6 @@ async def test_e2e_session_lifecycle_with_mcp_activation():
         assert "gmail" in result
         assert "slack" not in result
 
-        # Step 4: persist + reload
         dumped = json.dumps(s.model_dump(mode="json"))
         s2 = AgentSession.model_validate(json.loads(dumped))
         assert s2.active_mcps == ["gmail"]
@@ -1919,7 +1758,7 @@ def test_session_agent_active_ms_round_trip():
 
 
 def test_session_agent_active_ms_accumulates_via_dict_update():
-    """Simulates two turns adding to the bucket — the production accumulator
+    """Simulates two turns adding to the bucket; the production accumulator
     pattern in agent_manager._on_result."""
     from backend.apps.agents.models import AgentSession
     s = AgentSession(name="t", model="sonnet", mode="agent")
@@ -1932,14 +1771,11 @@ def test_session_agent_active_ms_accumulates_via_dict_update():
 
 
 def test_session_time_per_model_records_switch():
-    """Simulates a model switch mid-session — each model accumulates its
+    """Simulates a model switch mid-session; each model accumulates its
     own bucket."""
     from backend.apps.agents.models import AgentSession
     s = AgentSession(name="t", model="haiku", mode="agent")
-    # Turn 1 on haiku
     s.time_per_model[s.model] = int(s.time_per_model.get(s.model, 0)) + 1200
-    # User switches to sonnet
     s.model = "sonnet"
-    # Turn 2 on sonnet
     s.time_per_model[s.model] = int(s.time_per_model.get(s.model, 0)) + 8400
     assert s.time_per_model == {"haiku": 1200, "sonnet": 8400}

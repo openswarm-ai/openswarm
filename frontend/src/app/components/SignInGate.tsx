@@ -1,26 +1,4 @@
-// Mandatory sign-in gate. Two paths to identity:
-//
-//   1. Continue with Google → cloud OAuth handoff (existing).
-//      Opens https://api.openswarm.com/api/auth/google/start in the OS
-//      browser; the cloud's bearer-handoff page POSTs the bearer back to
-//      this desktop's local /api/auth/signin-activate. settings.user_id
-//      flips non-null and the gate self-dismisses (SignInGateLoader's
-//      poll picks up the change within ~2s).
-//
-//   2. Email magic link. Two-stage:
-//        - Stage 1: user enters their email, we POST /api/auth/email/start.
-//          Cloud mints a 6-digit code, stores its hash, sends it via Resend.
-//        - Stage 2: user pastes the code, we POST /api/auth/email/verify.
-//          On success the cloud upserts the users row, mints a bearer with
-//          source='email', returns the same handoff shape as Google, and
-//          the desktop's existing signin-activate path takes it from there.
-//
-// No password. Each sign-in (first or returning) requires reading a fresh
-// code from the inbox. Slightly more friction than a stored-password fast
-// path, but it eliminates the "someone with just my email signs in as me"
-// worry and means there's no credential to store, leak, or rotate.
-//
-// No "Skip for now" — sign-in is mandatory.
+// Mandatory sign-in gate; Google OAuth handoff or email magic-link (6-digit code per sign-in).
 
 import React, { useState } from 'react';
 import {
@@ -82,9 +60,7 @@ export default function SignInGate(): JSX.Element {
     }
     setBusy(true);
 
-    // "Failed to fetch" or 404 here means the cloud build doesn't have the
-    // magic-link routes yet. Surface a single friendly hint instead of the
-    // raw network error.
+    // 404/"Failed to fetch" = cloud build lacks magic-link routes; surface a friendly hint.
     const EMAIL_UNAVAILABLE_MSG =
       "Email sign-in isn't available on this build yet. Please use Continue with Google for now, or update OpenSwarm.";
 
@@ -145,8 +121,7 @@ export default function SignInGate(): JSX.Element {
       }
       const data = (await res.json()) as { bearer?: string; user_id?: string; user_email?: string };
       if (!data.bearer) throw new Error('Server did not return a bearer.');
-      // Hand the bearer to the local backend the same way Google's
-      // handoff page does, so the rest of the app converges identically.
+      // Hand bearer to local backend like Google's handoff page so the app converges identically.
       const activate = await fetch(`${API_BASE}/auth/signin-activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -160,8 +135,7 @@ export default function SignInGate(): JSX.Element {
         const text = await activate.text().catch(() => '');
         throw new Error(text || `Local activate failed (${activate.status})`);
       }
-      // SignInGateLoader's polling picks up the new user_id within 2s
-      // and unmounts this gate. Nothing else to do.
+      // SignInGateLoader's 2s poll picks up new user_id and unmounts the gate.
     } catch (err) {
       setErrMsg((err as Error).message || 'Verification failed.');
     } finally {

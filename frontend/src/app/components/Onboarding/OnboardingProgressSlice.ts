@@ -1,7 +1,4 @@
-// Redux slice mirroring the persisted onboarding-v2 state. A thin
-// subscriber in OnboardingRoot writes back to localStorage on change
-// (debounced 200ms) so the in-memory state is the source of truth at
-// runtime and disk is just for resume-after-restart.
+// Mirrors persisted onboarding-v2 state; OnboardingRoot debounce-writes to localStorage on change.
 
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
@@ -13,8 +10,7 @@ export type PanelMode = 'pill' | 'expanded' | 'roadmap' | 'hidden';
 export interface PerStepState {
   lastViewedAt: number;
   videoWatched?: boolean;
-  // For multi-choice steps: which option the user picked (used for branching
-  // and analytics).
+  /** Multi-choice answers per opId; drives branching and analytics. */
   multiChoiceAnswers?: Record<string, string>;
 }
 
@@ -26,25 +22,13 @@ export interface OnboardingProgressState {
   panelMode: PanelMode;
   dismissedAt: number | null;
   perStepState: Record<string, PerStepState>;
-  // Runtime-only — not persisted. True while AC is actively executing a
-  // step's ops. The panel hides chrome and the user can't open the roadmap
-  // mid-flow without first cancelling.
+  /** Runtime-only; true while AC is executing a step's ops. */
   running: boolean;
-  // Set on first launch detection so we don't re-init from defaults on
-  // every mount.
+  /** Set on first-launch detection so we don't re-init defaults on every mount. */
   initialized: boolean;
-  // Set briefly when a step completes so the panel can render a one-time
-  // strike-through + celebration animation before transitioning to the
-  // next step. Cleared by clearJustCompleted (the panel calls this from
-  // a 1500ms timeout after the animation plays).
+  /** Brief celebration marker; clearJustCompleted clears it ~1.5s after the animation. */
   justCompletedStepId: string | null;
-  // True after the user explicitly restarts the tour from Settings.
-  // Suppresses skipIf-based auto-marking for the rest of this tour run
-  // so the user gets a true fresh experience even if their prior data
-  // (existing skills, sessions, configured tools) would otherwise
-  // satisfy the predicates. False during normal first-launch detection
-  // so legitimately upgrading v1.0.29 users still see their already-
-  // configured pieces correctly pre-marked.
+  /** True after explicit restart-from-Settings; suppresses skipIf so the tour feels fresh. */
   disableSkipIf: boolean;
 }
 
@@ -86,9 +70,7 @@ const initialState: OnboardingProgressState = {
   startedAt: 0,
   completedSteps: [],
   currentStepId: null,
-  // Default to expanded — users land on the dashboard with the full
-  // step card visible so they see the next milestone + video preview
-  // without having to click into the pill first.
+  // Default expanded so users see next milestone + video preview on dashboard land.
   panelMode: 'expanded',
   dismissedAt: null,
   perStepState: {},
@@ -123,7 +105,6 @@ const slice = createSlice({
       state.disableSkipIf = Boolean(action.payload.disableSkipIf);
     },
     hydrate(state, action: PayloadAction<OnboardingProgressState>) {
-      // Replace from localStorage on launch.
       Object.assign(state, action.payload, { running: false, initialized: true });
     },
     setPanelMode(state, action: PayloadAction<PanelMode>) {
@@ -145,8 +126,7 @@ const slice = createSlice({
     markStepCompleted(state, action: PayloadAction<string>) {
       if (!state.completedSteps.includes(action.payload)) {
         state.completedSteps.push(action.payload);
-        // Trigger the celebration / strike-through animation. The panel
-        // listens for this and clears it ~1.5s later via clearJustCompleted.
+        // Triggers celebration anim; panel clears via clearJustCompleted after ~1.5s.
         state.justCompletedStepId = action.payload;
       }
     },
@@ -176,11 +156,7 @@ const slice = createSlice({
       state.perStepState = {};
       state.running = false;
       state.startedAt = Date.now();
-      // Tour was explicitly restarted — give the user a true fresh
-      // experience by suppressing skipIf for the rest of this run.
-      // Otherwise residual data (existing skills installed during a
-      // prior tour, leftover seed-orchestration-demo agents, etc)
-      // would auto-mark steps complete the moment Redux state ticks.
+      // Explicit restart: suppress skipIf so residual prior-tour data can't auto-mark.
       state.disableSkipIf = true;
     },
   },

@@ -6,7 +6,7 @@
 #
 # Run this once before packaging (CI / publish.sh / publish-win.ps1).
 # Local dev installs that skip this step transparently fall through to
-# live `npm install` — the archive is purely an optimization.
+# live `npm install`; the archive is purely an optimization.
 
 set -e
 

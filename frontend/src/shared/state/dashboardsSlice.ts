@@ -117,9 +117,7 @@ const dashboardsSlice = createSlice({
       .addCase(createDashboard.fulfilled, (state, action) => {
         state.items[action.payload.id] = action.payload;
       })
-      // Optimistic: update name immediately on dispatch so the sidebar
-      // entry / picker label swaps with no perceptible lag. Server confirms
-      // on .fulfilled (rare correction); .rejected rolls back to previousName.
+      // Optimistic rename: swap label on dispatch; .rejected rolls back to previousName.
       .addCase(renameDashboard.pending, (state, action) => {
         const { id, name } = action.meta.arg;
         if (state.items[id]) {

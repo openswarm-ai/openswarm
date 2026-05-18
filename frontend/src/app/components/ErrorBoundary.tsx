@@ -2,11 +2,11 @@ import React from 'react';
 import { report, getRecentActions } from '@/shared/serviceClient';
 
 interface Props {
-  /** Friendly title for the fallback card. Default: "Something broke." */
+  /** Title for the fallback card. */
   title?: string;
-  /** Optional reset hook — if provided, the Reload button calls this instead of reloading the window. */
+  /** If provided, Reload calls this instead of reloading the window. */
   onReset?: () => void;
-  /** Where the boundary lives, for support ("root" | "page:tools" | etc.). */
+  /** Where the boundary lives, for support ("root", "page:tools", etc.). */
   scope?: string;
   children: React.ReactNode;
 }
@@ -15,11 +15,7 @@ interface State {
   error: Error | null;
 }
 
-/**
- * Catches uncaught render errors so a single broken component doesn't
- * black out the whole app. Stack stays visible so users can copy/paste
- * it to support; the cloud gets a fire-and-forget operational report.
- */
+/** Catches uncaught render errors; fallback shows stack, cloud gets a fire-and-forget report. */
 class ErrorBoundary extends React.Component<Props, State> {
   state: State = { error: null };
 
@@ -34,12 +30,9 @@ class ErrorBoundary extends React.Component<Props, State> {
         message: String(error?.message || error).slice(0, 500),
         stack: String(error?.stack || '').slice(0, 2000),
         component_stack: String(info?.componentStack || '').slice(0, 2000),
-        // Last 10 user-surface actions before the boundary tripped, so the
-        // backend can correlate the crash with what the user just did.
         recent_actions: getRecentActions(10),
       });
     } catch {}
-    // surface in dev so developers can read the stack
     if (typeof console !== 'undefined' && console.error) {
       console.error('[ErrorBoundary]', error, info);
     }
@@ -55,7 +48,6 @@ class ErrorBoundary extends React.Component<Props, State> {
   };
 
   handleResetState = () => {
-    // best-effort: clear any localStorage we own + reload
     try {
       const keys = Object.keys(localStorage);
       for (const k of keys) {
@@ -127,7 +119,7 @@ class ErrorBoundary extends React.Component<Props, State> {
         <div style={card}>
           <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 600 }}>{title}</h2>
           <p style={{ margin: '0 0 16px', color: '#9c9a92', fontSize: 14, lineHeight: 1.5 }}>
-            We caught it before it crashed everything. The error is below — copy it
+            We caught it before it crashed everything. The error is below; copy it
             if you want to share. Reload usually fixes it.
           </p>
           <div>

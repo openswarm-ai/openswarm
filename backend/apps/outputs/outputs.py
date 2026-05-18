@@ -139,7 +139,7 @@ def _inject_token_into_relative_urls(html: str, token: str) -> str:
     relative `<link href="styles.css">` / `<script src="x.js">`, so without
     this rewrite the sub-resource fetch lands at the auth middleware with no
     credentials and gets a 401. Idempotent: skips URLs that already carry a
-    `token=` param. Skips absolute URLs (CDN, data:, etc.) — see prefix list.
+    `token=` param. Skips absolute URLs (CDN, data:, etc.); see prefix list.
     """
     if not token:
         return html
@@ -222,7 +222,7 @@ def load_output(output_id: str) -> Output | None:
 # descend into. Without this skip-list the workspace endpoint reads
 # `node_modules/` (300 MB of MUI source, when it's a real dir and not a
 # symlink), `.venv/` (10k+ Python files from the hardlinked cache),
-# `__pycache__/`, `dist/`, `.git/`, etc — every 2 seconds while the
+# `__pycache__/`, `dist/`, `.git/`, etc; every 2 seconds while the
 # agent is active. Result: backend CPU pegged on JSON-serializing
 # auto-generated chunks the frontend will then throw away. The frontend
 # already filters these for display; this skip is the real fix.
@@ -253,14 +253,14 @@ _WALK_MAX_FILE_BYTES = 256 * 1024
 def _walk_directory(folder: str) -> dict[str, str]:
     """Walk a directory tree and return {relative_path: content} for all
     text files the user is actually authoring. Skips build/install
-    directories AND truncates oversize files — both critical for the
+    directories AND truncates oversize files; both critical for the
     polling endpoint, which is called every 2 s while the agent is
     writing code and would otherwise serialize hundreds of MB per poll."""
     files: dict[str, str] = {}
     if not os.path.isdir(folder):
         return files
     for root, dirs, filenames in os.walk(folder):
-        # Mutate `dirs` in place — that's how os.walk skips a subtree.
+        # Mutate `dirs` in place; that's how os.walk skips a subtree.
         # Doing it here means we never even stat the children, so a
         # 10k-file `.venv/` costs ~one stat (on the dir itself) instead
         # of 10k.
@@ -275,7 +275,7 @@ def _walk_directory(folder: str) -> dict[str, str]:
             # mis-parsed.
             rel_path = os.path.relpath(full_path, folder).replace(os.sep, "/")
             try:
-                # Stat first — cheap, lets us skip giant files without
+                # Stat first; cheap, lets us skip giant files without
                 # opening + reading them.
                 size = os.path.getsize(full_path)
                 if size > _WALK_MAX_FILE_BYTES:
@@ -315,7 +315,7 @@ async def serve_workspace_file(workspace_id: str, filepath: str, _d: str = ""):
         content = _inject_data_into_html(content, input_json, result_json, backend_url_json)
         # Iframe sub-resource fetches (<link>, <script src>, <img>) drop the
         # parent's ?token= query string, so rewrite the HTML to put the token
-        # back on every relative URL — otherwise sub-resources 401.
+        # back on every relative URL; otherwise sub-resources 401.
         content = _inject_token_into_relative_urls(content, get_auth_token())
 
     mime, _ = mimetypes.guess_type(filepath)
@@ -387,7 +387,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
       openswarm-ai/webapp-template snapshot (React + Vite + TS frontend
       with an optional FastAPI backend) into the workspace, allocates a
       free FRONTEND_PORT and writes it into both `.env` and
-      `.env.example`. BACKEND_PORT stays NONE — the agent opts in with
+      `.env.example`. BACKEND_PORT stays NONE; the agent opts in with
       `bash backend_init.sh`. Runtime spawn flips to `bash run.sh` and
       the preview pane points at `http://localhost:{FRONTEND_PORT}/`.
       `body.files` is ignored in this mode; the snapshot is the source
@@ -399,7 +399,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
     # An explicit non-empty `files` payload means the caller has flat-mode
     # content to write (a saved legacy Output being reseeded). Don't
     # clobber that with the React template even if template_mode is the
-    # new default — the migration helper has its own path for that.
+    # new default; the migration helper has its own path for that.
     effective_mode = body.template_mode
     if body.files:
         effective_mode = "flat"
@@ -408,7 +408,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
         # Idempotency guard: re-seeding an existing webapp_template
         # workspace would clobber the agent's edits (the helper uses
         # dirs_exist_ok=True + copytree). If `run.sh` already exists,
-        # the workspace was seeded on a previous visit — skip the file
+        # the workspace was seeded on a previous visit; skip the file
         # copy and only re-derive the frontend port from .env.
         from backend.apps.outputs.runtime import _find_free_port, _read_env_value
         already_seeded = os.path.exists(os.path.join(folder, "run.sh"))
@@ -421,7 +421,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
         else:
             frontend_port = _find_free_port()
             seed_webapp_template_workspace(folder, frontend_port)
-            # SKILL.md still goes in workspace root — agent reads it for
+            # SKILL.md still goes in workspace root; agent reads it for
             # context. Live content (user-editable via Skills page) is
             # injected into the system prompt regardless.
             with open(os.path.join(folder, "SKILL.md"), "w") as f:
@@ -434,7 +434,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
         # the Apps sidebar the moment the user kicks off generation.
         # Previously the record only landed when the editor's autosave
         # fired, which itself was gated on `files['index.html']` being
-        # non-empty (a flat-template invariant) — meaning React+Vite
+        # non-empty (a flat-template invariant); meaning React+Vite
         # apps that navigated-away mid-build had no way back. The record
         # is a thin pointer (name + workspace_id); the workspace itself
         # remains the source of truth for the code.
@@ -466,7 +466,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
             "already_seeded": already_seeded,
         }
 
-    # Legacy flat path — unchanged.
+    # Legacy flat path; unchanged.
     if body.files:
         for rel_path, content in body.files.items():
             full_path = os.path.normpath(os.path.join(folder, rel_path))
@@ -568,7 +568,7 @@ async def runtime_restart(workspace_id: str):
     from backend.apps.outputs.runtime import manager as runtime_manager
     # Restart only if something's attached; otherwise this is a no-op
     # silently (a hard-reload click while the runtime was already torn
-    # down — we'd rather not silently respawn an orphan).
+    # down; we'd rather not silently respawn an orphan).
     rt = runtime_manager.get(workspace_id)
     if rt:
         await runtime_manager.restart(workspace_id, os.path.abspath(folder))
@@ -589,7 +589,7 @@ async def write_workspace_file(workspace_id: str, filepath: str, body: dict):
     folder_norm = os.path.normpath(folder)
     full_path = os.path.normpath(os.path.join(folder, filepath))
     # `startswith(folder_norm + os.sep)` (not just folder_norm) so a workspace
-    # `abc-123` can't be tricked into writing into a sibling `abc-1234-evil` —
+    # `abc-123` can't be tricked into writing into a sibling `abc-1234-evil` , 
     # prefix-string collision rather than path-component containment. Today's
     # UUID-format ids make the collision unlikely in practice, but the check
     # is one character and immunizes future id schemes.
@@ -795,7 +795,7 @@ async def execute_output(body: OutputExecute):
         # HITL gate: collect warnings up front. If the caller hasn't opted
         # in via force=True AND the code touches anything outside the safe
         # allowlist, return the warnings + the code itself so the UI can
-        # show a preview dialog. No subprocess is spawned on this path —
+        # show a preview dialog. No subprocess is spawned on this path , 
         # zero-cost when warnings exist, identical-to-before when they
         # don't.
         if not body.force:

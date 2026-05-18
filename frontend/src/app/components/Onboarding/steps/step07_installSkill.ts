@@ -10,10 +10,7 @@ export const step07: OnboardingStep = {
   description: 'Teach agents how to handle specific tasks.',
   videoSrc: './onboarding-videos/v2/07.mp4',
   videoDurationLabel: '0:24',
-  // Narrowed from hasAnySkillInstalled → hasPdfSkillInstalled so a
-  // user who's installed any *other* skill still gets walked through
-  // the PDF-install demo (which is what the step's targets + popups
-  // are pointed at).
+  // Narrowed to PDF so other-skill users still walk through this demo.
   skipIf: hasPdfSkillInstalled,
   ops: [
     { kind: 'move_to', target: S.sidebarSkills },

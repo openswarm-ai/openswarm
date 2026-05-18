@@ -6,12 +6,10 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 export type TerminalSource = 'frontend' | 'backend' | 'runtime';
 
 export interface TerminalLine {
-  // Monotonic id so React keys are stable even if the same text is
-  // logged twice in a row (which is common — heartbeat tickers, etc.).
+  // Monotonic id so React keys stay stable when the same text logs twice (heartbeat tickers etc.).
   id: number;
   source: TerminalSource;
-  // For frontend lines, level is the console method (log/warn/error/info/debug).
-  // For backend lines, it's "stdout" / "stderr". For runtime status lines, "info".
+  // frontend: console method; backend: "stdout"/"stderr"; runtime: "info".
   level: string;
   text: string;
 }
@@ -21,12 +19,12 @@ interface Props {
 }
 
 const PREFIX_COLORS: Record<TerminalSource, string> = {
-  frontend: '#60a5fa', // blue — comes from the user-facing app
-  backend: '#34d399',  // green — comes from backend.py stdout
-  runtime: '#a78bfa',  // purple — comes from our runtime manager itself
+  frontend: '#60a5fa', // blue: user app
+  backend: '#34d399',  // green: backend.py stdout
+  runtime: '#a78bfa',  // purple: runtime manager
 };
 
-const STDERR_COLOR = '#f87171'; // red — surfaces stderr / console.error / runtime errors
+const STDERR_COLOR = '#f87171'; // red: stderr, console.error, runtime errors
 
 function colorForLine(line: TerminalLine): string {
   if (line.source === 'backend' && line.level === 'stderr') return STDERR_COLOR;
@@ -46,10 +44,7 @@ const TerminalPanel: React.FC<Props> = ({ lines }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
 
-  // Auto-scroll to the bottom on new lines, but only if the user wasn't
-  // mid-scroll-up reading older content. The threshold (32px) tolerates
-  // sub-pixel rounding and the brief mid-update positions react-virtual
-  // and friends produce.
+  // Stick to bottom on new lines unless the user scrolled up; 32px tolerates sub-pixel rounding.
   const onScroll = () => {
     const el = containerRef.current;
     if (!el) return;
@@ -89,7 +84,7 @@ const TerminalPanel: React.FC<Props> = ({ lines }) => {
       >
         {lines.length === 0 ? (
           <Typography sx={{ color: '#8b949e', fontFamily: c.font.mono, fontSize: '0.78rem', fontStyle: 'italic' }}>
-            Waiting for output… backend stdout/stderr and the running app's console.log will show here.
+            Waiting for output... backend stdout/stderr and the running app's console.log will show here.
           </Typography>
         ) : (
           lines.map((line) => (

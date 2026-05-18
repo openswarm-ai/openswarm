@@ -24,6 +24,7 @@ import {
   openWorkflowCard as openWorkflowCardAction,
   rekeyOpenCard,
   runWorkflowNow,
+  updateWorkflow,
   updateWorkflowCard,
   type Workflow,
 } from '@/shared/state/workflowsSlice';
@@ -102,6 +103,21 @@ const WorkflowCard: React.FC<Props> = ({
   const [runStarting, setRunStarting] = useState(false);
   const [runToast, setRunToast] = useState<string | null>(null);
   const [editDirty, setEditDirty] = useState(false);
+  // First-success celebration: one tiny burst the first time the
+  // workflow ever reaches success. We track the celebration in localStorage
+  // keyed by workflow id so we don't repeat it across reloads.
+  const [celebrate, setCelebrate] = useState(false);
+  useEffect(() => {
+    if (!workflow || !runs || runs.length === 0) return;
+    const successes = runs.filter((r) => r.status === 'success');
+    if (successes.length !== 1) return;
+    const key = `openswarm:first-success:${workflow.id}`;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(key)) return;
+    setCelebrate(true);
+    try { localStorage.setItem(key, '1'); } catch { /* private mode etc. */ }
+    const t = window.setTimeout(() => setCelebrate(false), 2200);
+    return () => window.clearTimeout(t);
+  }, [workflow?.id, runs]);
 
   // Lazy-load runs whenever a view that needs them is open. Saved view
   // uses runs for the live-fill connector + step duration estimates;
@@ -468,7 +484,32 @@ const WorkflowCard: React.FC<Props> = ({
                 label="Schedule this task"
                 icon={<ScheduleIcon sx={{ fontSize: 16 }} />}
                 active={false}
-                onClick={() => dispatch(updateWorkflowCard({ workflowId, patch: { view: 'edit', editFacet: 'Schedule' } }))}
+                onClick={() => {
+                  // One-click arming: flip the master toggle ON with a
+                  // sensible default (daily 9am if there's nothing set
+                  // yet), then jump to the editor so the user can tweak.
+                  // Saves the extra "open editor → flip toggle → save"
+                  // dance for the common case.
+                  const sched = workflow.schedule;
+                  const next = {
+                    ...sched,
+                    enabled: true,
+                    // If the workflow has never had a schedule, day-1 9am
+                    // is the friendliest default. If we already had one
+                    // (re-enabling after a pause), keep the user's prior
+                    // settings untouched.
+                    repeat_unit: sched.repeat_unit || 'day',
+                    repeat_every: sched.repeat_every || 1,
+                    hour: sched.hour || 9,
+                    minute: sched.minute || 0,
+                  };
+                  dispatch(updateWorkflow({
+                    id: workflow.id,
+                    patch: { schedule: next as any },
+                    ifMatch: workflow.updated_at || null,
+                  }));
+                  dispatch(updateWorkflowCard({ workflowId, patch: { view: 'edit', editFacet: 'Schedule' } }));
+                }}
               />
             </Box>
           )}
@@ -556,6 +597,27 @@ const WorkflowCard: React.FC<Props> = ({
           }}
         />
       ))}
+      {/* First-success celebration. Tiny CSS-only sparkle so we don't
+          pull in a confetti library. ~2s self-clears via the effect. */}
+      {celebrate && (
+        <Box sx={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 30 }}>
+          <Box sx={{
+            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            fontSize: '1.4rem', fontWeight: 700, color: c.accent.primary,
+            bgcolor: c.bg.surface, px: 1.2, py: 0.5, borderRadius: 999,
+            boxShadow: c.shadow.md,
+            animation: 'first-success-pop 1.4s ease-out forwards',
+            '@keyframes first-success-pop': {
+              '0%':   { opacity: 0, transform: 'translate(-50%,-50%) scale(0.6)' },
+              '20%':  { opacity: 1, transform: 'translate(-50%,-50%) scale(1.08)' },
+              '60%':  { opacity: 1, transform: 'translate(-50%,-50%) scale(1.0)' },
+              '100%': { opacity: 0, transform: 'translate(-50%,-50%) scale(1.0)' },
+            },
+          }}>
+            🎉 First success
+          </Box>
+        </Box>
+      )}
       {/* Toast for run outcomes that need explaining beyond the History
           row (cost cap, "previous run still active," etc.). Auto-hides
           after 6s; user can click anywhere to dismiss. */}

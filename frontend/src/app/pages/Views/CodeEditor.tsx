@@ -66,7 +66,6 @@ const CodeEditor: React.FC<Props> = ({ value, onChange, language, placeholder })
       view.destroy();
       viewRef.current = null;
     };
-    // Recreate the editor when extensions change (language/theme switch)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extensions]);
 

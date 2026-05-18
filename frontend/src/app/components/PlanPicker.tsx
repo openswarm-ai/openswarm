@@ -15,15 +15,14 @@ import {
   CheckoutSource,
 } from '@/shared/subscription/checkout';
 
-// Pricing table. Keep in sync with the Stripe price IDs configured on
-// api.openswarm.com. Annual is shown as the monthly-equivalent rate with a
-// "billed annually" subtitle, mirroring Anthropic's pricing page copy.
+// Pricing table; keep in sync with Stripe price IDs on api.openswarm.com.
 interface PlanDef {
   id: OpenSwarmPlan;
   name: string;
   tagline: string;
   monthly: number;
-  annual: number; // billed monthly equivalent when paid annually
+  /** Monthly-equivalent when billed annually. */
+  annual: number;
   featuresHeader: string;
   features: string[];
   recommended?: boolean;
@@ -78,15 +77,11 @@ interface PlanPickerProps {
   defaultPlan?: OpenSwarmPlan;
   defaultInterval?: BillingInterval;
   compact?: boolean;
-  // The user's current or most-recent tier, if any. Drives the CTA text on
-  // each card: same-tier → "Resubscribe", higher-tier → "Upgrade",
-  // lower-tier → "Downgrade". When undefined the user is a new customer and
-  // every card says "Subscribe".
+  /** User's current tier; drives Resubscribe/Upgrade/Downgrade CTA copy. */
   currentPlan?: OpenSwarmPlan;
   onSubscribed?: (plan: OpenSwarmPlan) => void;
 }
 
-// Tier ordering for upgrade/downgrade comparison.
 const TIER_RANK: Record<OpenSwarmPlan, number> = {
   pro: 1,
   pro_plus: 2,
@@ -133,15 +128,13 @@ const PlanPicker: React.FC<PlanPickerProps> = ({
     report('subscription', 'billing_interval_toggled', { source, interval: next });
   };
 
-  // Typography scale — scaled down in compact mode (MessageBubble modal) but
-  // still keeping the same visual hierarchy (plan name ≈ price size).
+  // Typography scale: smaller in compact mode (modal), same hierarchy.
   const sz = compact
     ? { name: '1.35rem', price: '2rem', tagline: '0.78rem', features: '0.78rem', cta: '0.82rem', micro: '0.7rem', sub: '0.68rem', hdr: '0.72rem', suffix: '0.78rem' }
     : { name: '1.75rem', price: '2.4rem', tagline: '0.85rem', features: '0.85rem', cta: '0.88rem', micro: '0.72rem', sub: '0.72rem', hdr: '0.78rem', suffix: '0.85rem' };
 
   return (
     <Box sx={{ width: '100%' }}>
-      {/* Billing interval toggle — annual selected by default */}
       <Box sx={{ display: 'flex', justifyContent: 'center', mb: compact ? 2 : 2.5 }}>
         <ToggleButtonGroup
           value={interval}
@@ -167,11 +160,10 @@ const PlanPicker: React.FC<PlanPickerProps> = ({
           }}
         >
           <ToggleButton value="monthly">Monthly</ToggleButton>
-          <ToggleButton value="annual">Annual · save 15%</ToggleButton>
+          <ToggleButton value="annual">Annual, save 15%</ToggleButton>
         </ToggleButtonGroup>
       </Box>
 
-      {/* Plan cards — grid in regular mode, stacked column in compact */}
       <Box
         sx={{
           display: 'grid',
@@ -200,14 +192,13 @@ const PlanPicker: React.FC<PlanPickerProps> = ({
                 transition: 'border-color 0.15s, background 0.15s',
               }}
             >
-              {/* Name + "your plan" indicator */}
               <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.8, mb: 0.4 }}>
                 <Typography sx={{ fontSize: sz.name, fontWeight: 700, color: c.text.primary, lineHeight: 1.1 }}>
                   {plan.name}
                 </Typography>
                 {isDefault && (
                   <Typography sx={{ fontSize: sz.micro, color: c.text.muted, fontWeight: 500 }}>
-                    · your plan
+                    your plan
                   </Typography>
                 )}
               </Box>
@@ -216,7 +207,6 @@ const PlanPicker: React.FC<PlanPickerProps> = ({
                 {plan.tagline}
               </Typography>
 
-              {/* Price row — big number + /mo */}
               <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5, mb: 0.2 }}>
                 <Typography sx={{ fontSize: sz.price, fontWeight: 700, color: c.text.primary, lineHeight: 1 }}>
                   ${price}
@@ -229,9 +219,6 @@ const PlanPicker: React.FC<PlanPickerProps> = ({
                 {interval === 'annual' ? 'billed annually' : 'billed monthly'}
               </Typography>
 
-              {/* CTA moved ABOVE features — Anthropic pattern. Filled accent
-                  for the recommended tier, outlined for the others; no
-                  separate RECOMMENDED badge needed. */}
               <Button
                 onClick={() => handleSubscribe(plan.id)}
                 disabled={pending !== null}
@@ -251,15 +238,13 @@ const PlanPicker: React.FC<PlanPickerProps> = ({
                 {isPending ? (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7 }}>
                     <CircularProgress size={14} sx={{ color: 'inherit' }} />
-                    <span>Opening…</span>
+                    <span>Opening...</span>
                   </Box>
                 ) : (
                   ctaLabel(plan.id, plan.name, currentPlan)
                 )}
               </Button>
 
-              {/* Microcopy row under every CTA — matches Anthropic's
-                  reassurance-under-the-big-button pattern. */}
               <Typography
                 sx={{
                   fontSize: sz.micro,
@@ -270,13 +255,12 @@ const PlanPicker: React.FC<PlanPickerProps> = ({
                 }}
               >
                 {isRecommended
-                  ? 'Most popular · cancel anytime'
+                  ? 'Most popular, cancel anytime'
                   : plan.id === 'ultra'
-                    ? 'No commitment · cancel anytime'
+                    ? 'No commitment, cancel anytime'
                     : 'Cancel anytime'}
               </Typography>
 
-              {/* Divider + cumulative features — "Everything in Pro, plus:" */}
               <Box
                 sx={{
                   borderTop: `1px solid ${c.border.subtle}`,

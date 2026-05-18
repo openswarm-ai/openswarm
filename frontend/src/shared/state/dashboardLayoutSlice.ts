@@ -2,20 +2,12 @@ import { createSlice, createAsyncThunk, PayloadAction, createAction } from '@red
 import { launchAndSendFirstMessage } from './agentsSlice';
 import { API_BASE } from '@/shared/config';
 
-// Cross-slice listener: when agentsSlice's fetchSession thunk rejects
-// with a 404/410, the session is gone server-side. We strip the card
-// from layout here so AgentChat doesn't keep re-mounting + re-fetching
-// the same dead id in a loop (the visible "404 spam" in dev logs).
-// Matching the rejected-thunk action type literally avoids a circular
-// import on the thunk's reject metadata.
+// fetchSession 404/410 strips the layout card to stop AgentChat remount-loop. Matched by string to avoid circular import.
 const fetchSessionRejectedAction = createAction<
   { sessionId?: string; status?: number } | undefined
 >('agents/fetchSession/rejected');
 
-// Cascade: when a workflow is deleted from the hub, drop its canvas
-// layout entry too. Otherwise the "Make workflow" tether keeps drawing
-// to where the card used to live, pointing at empty space. Matched by
-// string to dodge the circular import with workflowsSlice.
+// Cascade workflow delete to layout so the "Make workflow" tether stops pointing at empty space.
 const deleteWorkflowFulfilledAction = createAction<string>('workflows/delete/fulfilled');
 
 const DASHBOARDS_API = `${API_BASE}/dashboards`;
@@ -70,9 +62,7 @@ export interface BrowserCardPosition {
   width: number;
   height: number;
   zOrder: number;
-  // Agent session id that spawned this browser. null/undefined for
-  // user-created. Used to auto-remove the browser when its owner agent
-  // reaches a terminal completed/error state.
+  /** Agent session that spawned this browser; auto-removed when its owner reaches terminal state. */
   spawned_by?: string | null;
 }
 
@@ -86,8 +76,7 @@ export interface WorkflowCardPosition {
   source_session_id?: string | null;
 }
 
-// Singleton per dashboard. There's only one Workflows Hub card open at a
-// time (the calendar + sidebar view), so it doesn't need an id keyspace.
+/** Singleton per dashboard; only one Workflows Hub card open at a time. */
 export interface WorkflowsHubPosition {
   x: number;
   y: number;
@@ -126,17 +115,11 @@ export interface DashboardLayoutState {
   nextZOrder: number;
   loading: boolean;
   initialized: boolean;
-  // Transient signal: when a new browser card is created via addBrowserCard
-  // (link click, "+ Browser" button, pending URL flow), the reducer sets this
-  // to the new card's id. Dashboard.tsx watches it and pans/zooms the canvas
-  // to center on the new card, then dispatches clearPendingFocusBrowserId.
+  /** Transient: new browser card id; Dashboard pans/zooms to it then clears via clearPendingFocusBrowserId. */
   pendingFocusBrowserId: string | null;
   pendingFocusNoteId: string | null;
   pendingFocusWorkflowId: string | null;
-  // Transient flag: when openWorkflowsHub creates/raises the singleton hub
-  // card, set to true so Dashboard.tsx can pan/zoom-to-fit on the new card.
-  // Without this, the hub spawns at an open grid cell which may be far
-  // from the user's current pan, and "click Expand" looks like a no-op.
+  /** Transient: signals Dashboard to pan/zoom to the singleton Workflows Hub on open. */
   pendingFocusWorkflowsHub: boolean;
 }
 
@@ -295,18 +278,7 @@ export function findOpenGridCell(
   }
 }
 
-// Like findOpenGridCell but biased to stay near a proposed (x,y) anchor.
-// Used when the backend hands us a card with a position that's already
-// occupied (sub-agent or sub-browser spawning on top of its parent or a
-// sibling). Spirals outward from the anchor on a grid, snapping to
-// cell-aligned positions so the result still looks intentional, not
-// dropped from orbit. Caps the spiral search at ~1000 cells to avoid
-// pathological work in adversarial layouts — falls back to
-// findOpenGridCell after that.
-//
-// Cost: O(rects × cells_scanned). Spawn events are rare (not per-frame),
-// so this only runs when a new card appears. Typical scan resolves in
-// <10 cells, well below the cap. No perf impact on steady-state UI.
+/** findOpenGridCell variant biased toward an (x,y) anchor; spiral search capped at ring=32. */
 export function findOpenSpotNear(
   anchorX: number,
   anchorY: number,
@@ -316,7 +288,7 @@ export function findOpenSpotNear(
 ): { x: number; y: number } {
   const cellW = DEFAULT_CARD_W + GRID_GAP;
   const cellH = DEFAULT_CARD_H + GRID_GAP;
-  // Snap the anchor to the nearest grid cell so all cards align cleanly.
+  // Snap the anchor to the nearest grid cell so cards align.
   const baseCol = Math.round((anchorX - GRID_ORIGIN.x) / cellW);
   const baseRow = Math.round((anchorY - GRID_ORIGIN.y) / cellH);
 
@@ -327,7 +299,6 @@ export function findOpenSpotNear(
     return !occupiedRects.some((r) => rectsOverlap(candidate, r));
   };
 
-  // Try the anchor itself first.
   if (cellFree(baseCol, baseRow)) {
     return {
       x: GRID_ORIGIN.x + baseCol * cellW,
@@ -335,18 +306,14 @@ export function findOpenSpotNear(
     };
   }
 
-  // Spiral search: expand rings around the anchor. Each ring r covers
-  // the perimeter of a (2r+1)×(2r+1) square. First free cell wins,
-  // preferring right/down (read order) within each ring for stability.
+  // Spiral by ring perimeter; right/down preference for stability.
   const MAX_RING = 32;
   for (let r = 1; r <= MAX_RING; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
-        // Only perimeter of this ring (interior was scanned in r-1).
         if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
         const col = baseCol + dx;
         const row = baseRow + dy;
-        // Don't place above the grid origin.
         if (col < 0 || row < 0) continue;
         if (cellFree(col, row)) {
           return {
@@ -358,8 +325,6 @@ export function findOpenSpotNear(
     }
   }
 
-  // Pathological — full canvas occupied near anchor. Fall back to the
-  // global first-empty scan so we never return an overlap.
   return findOpenGridCell(occupiedRects, newW, newH);
 }
 
@@ -399,14 +364,7 @@ const dashboardLayoutSlice = createSlice({
         y: number;
         width: number;
         height: number;
-        // Optional: which existing sessions are currently expanded
-        // (showing their full chat history). Without this, the collision
-        // check uses each card's STORED height — which is the collapsed
-        // value — even when the card is currently rendering at the
-        // expanded ~620px. Result: new sub-agent cards spawn into the
-        // collapsed footprint but overlap the visually expanded one.
-        // Caller (Dashboard.tsx) passes the current expanded set so
-        // the collision math matches what the user actually sees.
+        /** Currently-expanded sessions; collision math uses rendered (not stored) heights. */
         expandedSessionIds?: string[];
       }>
     ) {
@@ -608,7 +566,6 @@ const dashboardLayoutSlice = createSlice({
         height: DEFAULT_BROWSER_CARD_H,
         zOrder: state.nextZOrder++,
       };
-      // Signal Dashboard.tsx to pan/zoom and highlight this new card.
       state.pendingFocusBrowserId = id;
     },
 
@@ -621,13 +578,7 @@ const dashboardLayoutSlice = createSlice({
       if (state.browserCards[card.browser_id]) return;
       const w = card.width || DEFAULT_BROWSER_CARD_W;
       const h = card.height || DEFAULT_BROWSER_CARD_H;
-      // Collision-resolve the backend-proposed position. Backend agents
-      // often spawn sub-browsers at the parent's coordinates or at a
-      // default (0,0) — without this guard, the new card lands on top
-      // of an existing one and the user sees a single card with
-      // multiple titles fighting for the z-index. Bias toward the
-      // proposed position so the spawn still LOOKS related to wherever
-      // the agent intended.
+      // Resolve collisions while biasing toward the proposed position so the spawn looks related.
       const rects = collectOccupiedRects(state);
       const pos = findOpenSpotNear(card.x, card.y, rects, w, h);
       state.browserCards[card.browser_id] = {
@@ -675,7 +626,6 @@ const dashboardLayoutSlice = createSlice({
     ) {
       const { workflowId, sourceSessionId, expandedSessionIds } = action.payload;
       if (state.workflowCards[workflowId]) {
-        // Already on the canvas; just raise it and signal focus.
         state.workflowCards[workflowId].zOrder = state.nextZOrder++;
         state.pendingFocusWorkflowId = workflowId;
         return;
@@ -731,9 +681,7 @@ const dashboardLayoutSlice = createSlice({
       delete state.workflowCards[action.payload];
     },
 
-    // When a draft workflow is saved, the temporary `draft-...` id is
-    // replaced by the real workflow id from the server. Rekey the layout
-    // entry in-place so the card doesn't visibly hop position.
+    // Rekey draft- id to the server-assigned id without visually hopping the card.
     rekeyWorkflowCard(
       state,
       action: PayloadAction<{ oldId: string; newId: string }>,
@@ -1124,7 +1072,6 @@ const dashboardLayoutSlice = createSlice({
         state.notes = action.payload.notes || {};
         state.persistedExpandedSessionIds = action.payload.expandedSessionIds;
 
-        // Ensure all cards have a zOrder and compute nextZOrder from persisted data
         let maxZ = 0;
         for (const c of Object.values(state.cards)) {
           if (!c.zOrder) c.zOrder = 0;
@@ -1153,11 +1100,7 @@ const dashboardLayoutSlice = createSlice({
         state.initialized = true;
       })
       .addCase(fetchSessionRejectedAction, (state, action) => {
-        // 404/410 means the session is permanently gone from the
-        // backend; remove its card so AgentChat doesn't keep remounting
-        // and re-fetching it in a loop. Same id, same dead path. Other
-        // failure modes (network blip, 500) leave the card in place
-        // because the next fetch may succeed.
+        // 404/410 means permanent; strip the card. Other failure modes leave it (next fetch may succeed).
         const payload = action.payload;
         if (!payload?.sessionId) return;
         if (payload.status !== 404 && payload.status !== 410) return;

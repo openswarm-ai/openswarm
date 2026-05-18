@@ -103,9 +103,7 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
     [workspacePath],
   );
 
-  // Honor Settings → default_model + default_thinking_level. createDraftSession's
-  // hardcoded 'sonnet' / undefined-thinking would otherwise win and force every
-  // Skill Builder draft onto Sonnet + Auto thinking.
+  // Honor settings default_model + default_thinking_level; createDraftSession's hardcoded sonnet/auto would otherwise override.
   const defaultModel = useAppSelector((s) => s.settings.data.default_model);
   const defaultThinkingLevel = useAppSelector((s) => s.settings.data.default_thinking_level);
   const settingsLoaded = useAppSelector((s) => s.settings.loaded);
@@ -116,7 +114,6 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
     const wsId = `skill-ws-${Date.now().toString(36)}`;
     setStableWorkspaceId(wsId);
 
-    // Resolve provider from the model registry (mirrors ChatInput.tsx provider map).
     const PROVIDER_MAP: Record<string, string> = {
       anthropic: 'anthropic',
       'openswarm pro': 'anthropic',
@@ -168,13 +165,12 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
 
   useEffect(() => {
     if (draftCreated.current) return;
-    // Wait for settings + model registry so we don't snapshot stale 'sonnet'.
+    // Wait for settings + model registry; otherwise we'd snapshot stale sonnet.
     if (!settingsLoaded || !modelsLoaded) return;
     draftCreated.current = true;
     initSession();
   }, [initSession, settingsLoaded, modelsLoaded]);
 
-  // Poll workspace for updates
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPollRef = useRef<string>('');
 
@@ -200,7 +196,7 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
         setCurrentPreview(preview);
         onSkillPreview(preview);
       }
-    } catch { /* ignore polling errors */ }
+    } catch {}
   }, [stableWorkspaceId, onSkillPreview]);
 
   useEffect(() => {
@@ -212,7 +208,6 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
     };
   }, [expanded, pollWorkspace]);
 
-  // Final poll when agent finishes
   const prevAgentActive = useRef(false);
   useEffect(() => {
     if (prevAgentActive.current && !isAgentActive) {
@@ -303,7 +298,6 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
         overflow: 'hidden',
       }}
     >
-      {/* Left resize handle */}
       <Box
         onPointerDown={(e) => onResizeStart('left', e)}
         onPointerMove={onResizeMove}
@@ -321,7 +315,6 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
           '&:hover::after, &:active::after': { bgcolor: c.accent.primary },
         }}
       />
-      {/* Top resize handle */}
       <Box
         onPointerDown={(e) => onResizeStart('top', e)}
         onPointerMove={onResizeMove}
@@ -339,7 +332,6 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
           '&:hover::after, &:active::after': { bgcolor: c.accent.primary },
         }}
       />
-      {/* Top-left corner resize handle */}
       <Box
         onPointerDown={(e) => onResizeStart('corner', e)}
         onPointerMove={onResizeMove}
@@ -351,7 +343,6 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
         }}
       />
 
-      {/* Header */}
       <Box
         sx={{
           display: 'flex',
@@ -420,7 +411,6 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
         </Tooltip>
       </Box>
 
-      {/* Chat area */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {effectiveSessionId ? (
           <AgentChat

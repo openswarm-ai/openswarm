@@ -66,7 +66,7 @@ const RichPromptEditor: React.FC<RichPromptEditorProps> = ({
 
   const isLabelFloating = focused || hasContent;
 
-  // Sync external value → editor on mount / when value changes externally
+  // Sync external value to editor on mount / when value changes externally.
   const lastEmittedRef = useRef<string | null>(null);
   useEffect(() => {
     const editor = editorRef.current;

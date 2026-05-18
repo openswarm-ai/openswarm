@@ -106,11 +106,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const [mode, setMode] = useState(defaultMode || 'agent');
     const [model, setModel] = useState(defaultModel || 'sonnet');
     const [thinkingLevel, setThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high' | 'auto'>(defaultThinkingLevel || 'auto');
-    // Snap to the persisted Settings defaults as soon as they arrive from the
-    // backend. Without the settingsLoaded guard, the effect fires against the
-    // Redux initialState ('sonnet') before the real default has loaded, and
-    // the settingsApplied flag then locks out the real default for the rest
-    // of the session — so new chats spawn under the stale value.
+    // Without settingsLoaded guard, effect fires against Redux initial 'sonnet' before real default loads, locking out the real default for the session.
     const settingsApplied = useRef(false);
     useEffect(() => {
       if (settingsLoaded && !settingsApplied.current) {
@@ -120,9 +116,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         settingsApplied.current = true;
       }
     }, [settingsLoaded, defaultMode, defaultModel, defaultThinkingLevel]);
-    // Reset to the current Settings defaults each time the toolbar reopens
-    // for a new compose session, so the user's in-session model/mode picks
-    // don't leak into the next new-chat draft.
+    // Reset defaults on each new compose session so in-session picks don't leak into the next new-chat draft.
     const prevInputOpen = useRef(false);
     useEffect(() => {
       if (settingsLoaded && inputOpen && !prevInputOpen.current) {
@@ -133,10 +127,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       prevInputOpen.current = inputOpen;
     }, [inputOpen, settingsLoaded, defaultMode, defaultModel, defaultThinkingLevel]);
 
-    // Picking a model/mode/thinking-level in the toolbar writes through to
-    // the global default. Without this, the reopen-reset effect above
-    // would snap back to the old default the next time the user opens the
-    // toolbar, ignoring what they last picked.
+    // Writes toolbar picks through to global default; otherwise the reopen-reset effect would snap back next open.
     const promoteToDefault = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
       const current = store.getState().settings;
       if (!current.loaded) return;
@@ -402,11 +393,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         style={{
           display: 'flex',
           flexDirection: 'column',
-          // When the schedule popover is open the chips render OUTSIDE the
-          // popover's own card (Figma image #30). The toolbar wrapper must
-          // drop its own card chrome in that mode so we don't end up with a
-          // double-card sandwich; the popover supplies its own surface +
-          // border + shadow.
+          // Drop toolbar card chrome when popover is open so we don't double-card; popover supplies its own surface.
           background: historyOpen ? 'transparent' : c.bg.surface,
           border: historyOpen ? '1px solid transparent' : `1px solid ${c.border.subtle}`,
           borderRadius: `${c.radius.xl}px`,
@@ -414,20 +401,12 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           padding: isExpanded ? '6px' : '5px',
           userSelect: 'none' as const,
           overflow: inputOpen || newAgentBounce || historyOpen ? 'visible' : 'hidden',
-          // When historyOpen, width is owned by SchedulePopover (POPOVER_W
-          // constant) so Search and Schedule modes share an identical
-          // fixed pixel width. Leave width=undefined here so framer-motion
-          // measures the popover's intrinsic size and animates to it.
+          // historyOpen: width owned by SchedulePopover; leave undefined so framer-motion measures intrinsic size.
           width: viewPickerOpen ? 580 : historyOpen ? undefined : isExpanded ? 540 : undefined,
         }}
       >
         {inputOpen ? (
-          // data-onboarding-scope="dock" lets the AC's per-agent-selector
-          // resolver prefer this chat input (the new-agent dock that
-          // appears after clicking +) over any existing agent-card's
-          // chat input. Without this, AC would route to the most
-          // recently-spawned agent-card, which is usually the wrong
-          // target on step 5/6 (where the "new agent" is the dock draft).
+          // data-onboarding-scope="dock" makes AC's per-agent resolver prefer this dock chat input over existing agent cards.
           <div
             data-onboarding-scope="dock"
             style={{ width: '100%', minHeight: 56, paddingBottom: 0, marginBottom: -4 }}
@@ -465,9 +444,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 handleCloseHistory();
               }}
               onExpand={() => {
-                // Expand → spawn the Workflows Hub as a canvas card and close
-                // the popover. The hub is a singleton per dashboard so a
-                // second Expand just brings the existing card forward.
+                // Singleton per dashboard, second Expand brings the existing card forward.
                 dispatch(openWorkflowsHub({ expandedSessionIds: [] }));
                 handleCloseHistory();
               }}

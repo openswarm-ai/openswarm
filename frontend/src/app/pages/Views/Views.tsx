@@ -10,9 +10,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ViewCard from './ViewCard';
 import { Skeleton } from '@/app/components/Loading';
 import ViewRunDialog from './ViewRunDialog';
-// ViewEditor pulls in CodeMirror (~600KB minified) and 1600+ lines of
-// form scaffolding. Landing on /apps to browse the grid shouldn't pay
-// that cost; lazy so the chunk only loads when the user opens an editor.
+// Lazy: pulls CodeMirror (~600KB) + 1600 lines of form scaffolding, only needed when an editor opens.
 const ViewEditor = lazy(() => import('./ViewEditor'));
 
 const Views: React.FC = () => {

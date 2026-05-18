@@ -5,12 +5,7 @@ const CAPTURE_HEIGHT = 800;
 const JPEG_QUALITY = 0.7;
 const LOAD_TIMEOUT_MS = 4000;
 
-// Workspace file keys are stored relative to the workspace root with no
-// leading `./` or `/` — but agent-written HTML routinely references its
-// siblings as `./style.css` or `/style.css`. Without normalizing here,
-// `files[href]` lookup misses and the iframe renders unstyled, producing
-// the broken thumbnails (text-only Markdown Editor, layoutless Calculator,
-// etc.) you'd otherwise see on the Apps page.
+// Normalize agent-written `./foo` and `/foo` references against workspace keys (which are root-relative).
 function lookupFile(href: string, files: Record<string, string>): string | null {
   const candidates = [href, href.replace(/^\.\//, ''), href.replace(/^\//, '')];
   for (const k of candidates) {
@@ -19,10 +14,7 @@ function lookupFile(href: string, files: Record<string, string>): string | null 
   return null;
 }
 
-/**
- * Inline local CSS/JS references so multi-file views render in a single srcdoc.
- * External URLs (http://, https://, //) are left untouched.
- */
+/** Inline local CSS/JS into a single srcdoc; external URLs are left as-is. */
 function inlineResources(html: string, files: Record<string, string>): string {
   let result = html;
 
@@ -76,13 +68,7 @@ window.OUTPUT_BACKEND_RESULT = null;
   return `${injection}\n${frontendCode}`;
 }
 
-/**
- * Renders a view in a hidden iframe, captures a JPEG screenshot,
- * and returns a base64 data URL. Returns null on failure.
- *
- * Pass the full `files` map for multi-file views so local CSS/JS
- * references are inlined into the srcdoc before rendering.
- */
+/** Render a view in a hidden iframe and return a base64 JPEG thumbnail, or null on failure. */
 export async function captureViewThumbnail(
   frontendCode: string,
   inputData: Record<string, any> = {},

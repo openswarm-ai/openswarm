@@ -9,12 +9,12 @@ export interface ModelOption {
   version?: string;
   context_window: number;
   reasoning?: boolean;
-  // Optional picker-UX fields from list_models.
   input_cost_per_1m?: number;
   output_cost_per_1m?: number;
   is_free?: boolean;
   max_completion_tokens?: number | null;
-  tiers?: [number, number, number];  // (intelligence, speed, cost), 1-5.
+  /** (intelligence, speed, cost), 1-5. */
+  tiers?: [number, number, number];
   billing_kind?: 'paid' | 'subscription' | 'free' | 'api_key';
 }
 
@@ -32,7 +32,6 @@ export const fetchModels = createAsyncThunk('models/fetchModels', async () => {
   const res = await fetch(`${AGENTS_API}/models`);
   if (!res.ok) throw new Error('Failed to fetch models');
   const data = await res.json();
-  // API returns { models: { provider: [...] } }
   const models = data.models || data;
   return models as Record<string, ModelOption[]>;
 });
@@ -48,7 +47,7 @@ const modelsSlice = createSlice({
         state.loaded = true;
       })
       .addCase(fetchModels.rejected, (state) => {
-        // Mark as loaded even on failure so we fall back to hardcoded options
+        // Mark loaded even on failure so callers fall back to hardcoded options.
         state.loaded = true;
       });
   },

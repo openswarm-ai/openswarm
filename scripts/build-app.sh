@@ -74,7 +74,7 @@ fi
 # at runtime `uvx` errors with "Could not find the `uv` binary at either of:
 # .../uv-bin/uv  .../uv-bin/uv" if `uv` is missing. So we must ship both,
 # even though only Google Workspace MCP uses uvx as its `command`. A prior
-# revision tried to save ~30MB by shipping only uvx — that broke MCP boot
+# revision tried to save ~30MB by shipping only uvx; that broke MCP boot
 # on fresh Macs. Don't repeat the mistake.
 UV_BIN_DIR="$PROJECT_ROOT/backend/uv-bin"
 mkdir -p "$UV_BIN_DIR"
@@ -116,7 +116,7 @@ mkdir -p "$MCP_BUNDLE_DIR"
 # Single-file CJS bundles. Output path is mcp-bundles/<output>.js. Use for
 # packages that don't read sibling files at runtime. The import.meta.url
 # polyfill is applied uniformly because nearly every modern ESM package
-# uses createRequire(import.meta.url) somewhere in its dependency tree —
+# uses createRequire(import.meta.url) somewhere in its dependency tree;
 # without the polyfill, esbuild's ESM->CJS transform leaves import.meta.url
 # as undefined and the bundle crashes at module load.
 build_mcp_bundle_single() {
@@ -152,7 +152,7 @@ build_mcp_bundle_single() {
 # `extras` is a space-separated list of "src=dst" pairs relative to node_modules
 # and the bundle dir respectively (e.g. "@softeria/ms-365-mcp-server/dist/endpoints.json=dist/endpoints.json").
 # `external` is a comma-separated list of npm package names to leave unbundled
-# (e.g. "keytar" — the SDK gracefully degrades when keytar can't be imported).
+# (e.g. "keytar"; the SDK gracefully degrades when keytar can't be imported).
 build_mcp_bundle_dir() {
     local pkg_name="$1"
     local entry_subpath="$2"
@@ -174,7 +174,7 @@ build_mcp_bundle_dir() {
         local entry="node_modules/$entry_subpath"
         if [[ ! -f "$entry" ]]; then echo "ERROR: $pkg_name entry not found at $entry" >&2; exit 1; fi
 
-        # Stripped sibling package.json — the SDK reads packageJson.version.
+        # Stripped sibling package.json; the SDK reads packageJson.version.
         # Critically OMIT "type":"module" so Node treats the CJS bundle correctly.
         local sdk_version
         sdk_version=$(node -e "console.log(require('./node_modules/$pkg_name/package.json').version)")
@@ -195,7 +195,7 @@ build_mcp_bundle_dir() {
 
         local external_args=""
         if [[ -n "$external" ]]; then
-            # Portable comma-split (works in bash and zsh) — `read -ra` is bash-only.
+            # Portable comma-split (works in bash and zsh); `read -ra` is bash-only.
             local _old_ifs="$IFS"
             IFS=','
             local ext
@@ -244,7 +244,7 @@ npm install
 npm run build
 
 if [[ ! -f "$PROJECT_ROOT/frontend/dist/index.html" ]]; then
-    echo "ERROR: Frontend build failed — dist/index.html not found"
+    echo "ERROR: Frontend build failed; dist/index.html not found"
     exit 1
 fi
 echo "Frontend build complete."
@@ -272,7 +272,7 @@ mkdir -p "$STAGING_DIR"
 bash "$PROJECT_ROOT/scripts/fetch-router.sh" "$STAGING_DIR/router"
 
 if [[ ! -f "$STAGING_DIR/router/server.js" ]]; then
-    echo "ERROR: Router fetch failed — server.js not found in staged dir"
+    echo "ERROR: Router fetch failed; server.js not found in staged dir"
     exit 1
 fi
 echo "Router staged."
@@ -281,11 +281,11 @@ echo ""
 # Step 3b: Bundle a real Node.js binary so 9Router and MCP servers don't
 # fall back to ELECTRON_RUN_AS_NODE on user machines without system node.
 # Two wins:
-#   1. Dock cleanliness — Electron-as-Node fallback is the second probable
+#   1. Dock cleanliness; Electron-as-Node fallback is the second probable
 #      source of the bouncing "exec" icon next to OpenSwarm on fresh Macs
 #      (Python.app wrapping addresses the first). Real node is a clean
 #      background process that LaunchServices never registers in the dock.
-#   2. Cold-start speed — re-execing the OpenSwarm Electron binary as Node
+#   2. Cold-start speed; re-execing the OpenSwarm Electron binary as Node
 #      pays the full Electron startup cost (~5-15s on first launch incl.
 #      Gatekeeper/XProtect verification), then more for the Next.js server
 #      to boot. Real node starts in ~50ms. Shrinks the splash window
@@ -294,7 +294,7 @@ echo ""
 # Pinned to Node 20 LTS (NODE_MODULE_VERSION 115). 9router 0.3.60 has zero
 # native bindings (sql.js, not better-sqlite3), so any Node 18+ works
 # regardless. The bundled MCP servers (mcp-bundles/) are esbuild outputs
-# with target=node22 — Node 20 covers the syntax + builtins they use.
+# with target=node22; Node 20 covers the syntax + builtins they use.
 echo "[3b/5] Bundling Node.js runtime..."
 NODE_VERSION="v20.18.1"
 NODE_STAGE_DIR="$STAGING_DIR/node"
@@ -320,7 +320,7 @@ download_node_for_arch() {
     local tmp; tmp=$(mktemp -d)
     curl -fsSL --progress-bar -o "$tmp/node.tar.gz" "$url"
     tar xzf "$tmp/node.tar.gz" -C "$tmp"
-    # Ship just the `node` binary. We don't need npm/npx/corepack at runtime —
+    # Ship just the `node` binary. We don't need npm/npx/corepack at runtime,
     # all router + MCP code is pre-bundled. ~50 MB per arch -> ~25 MB after
     # gzip/dmg compression.
     cp "$tmp/node-${NODE_VERSION}-darwin-${arch}/bin/node" "$out_dir/bin/node"
@@ -341,7 +341,7 @@ else
     elif [[ "$HOST_ARCH" == "x86_64" ]]; then
         download_node_for_arch x64
     else
-        echo "WARNING: unknown host arch $HOST_ARCH — skipping node bundle (will fall back to ELECTRON_RUN_AS_NODE)"
+        echo "WARNING: unknown host arch $HOST_ARCH; skipping node bundle (will fall back to ELECTRON_RUN_AS_NODE)"
     fi
 fi
 echo ""
@@ -350,7 +350,7 @@ echo ""
 # create on a fresh user install decompresses (~3 s) instead of running a
 # live `npm install` (~22 s). The backend's _try_extract_bundled_archive
 # is sha-tagged + falls through cleanly if the archive is missing or
-# stale, so this step is purely an optimization — skip silently if the
+# stale, so this step is purely an optimization; skip silently if the
 # template snapshot or npm aren't available.
 if [[ -f "$PROJECT_ROOT/backend/apps/outputs/webapp_template/frontend/package.json" ]] \
    && command -v npm >/dev/null 2>&1; then
@@ -398,7 +398,7 @@ SHIP_OAUTH_BASE_URL="${OPENSWARM_OAUTH_BASE_URL_OVERRIDE:-https://api.openswarm.
 GOOGLE_CLIENT_ID_SHIP="${GOOGLE_OAUTH_CLIENT_ID:-}"
 GOOGLE_CLIENT_SECRET_SHIP="${GOOGLE_OAUTH_CLIENT_SECRET:-}"
 if [[ -z "$GOOGLE_CLIENT_ID_SHIP" || -z "$GOOGLE_CLIENT_SECRET_SHIP" ]]; then
-    echo "ERROR: GOOGLE_OAUTH_CLIENT_ID/SECRET missing in $ENV_FILE — required for Google MCP."
+    echo "ERROR: GOOGLE_OAUTH_CLIENT_ID/SECRET missing in $ENV_FILE; required for Google MCP."
     exit 1
 fi
 mkdir -p "$STAGING_DIR/backend"

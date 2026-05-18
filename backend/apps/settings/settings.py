@@ -37,10 +37,7 @@ async def settings_lifespan():
         import asyncio as _asyncio
 
         async def _boot_router_then_sync():
-            """Start 9Router (if any apikey-routed provider is configured)
-            then push our key-based connections into it. Sequential because
-            sync_* helpers no-op when 9Router isn't running yet — running
-            them post-boot guarantees the connections actually land."""
+            """Boot 9Router then push key-based connections (sequential: sync helpers no-op pre-boot)."""
             needs_router = any([
                 getattr(s, "google_api_key", None),
                 getattr(s, "openai_api_key", None),
@@ -76,13 +73,7 @@ settings = SubApp("settings", settings_lifespan)
 
 
 def _migrate_legacy_fields(raw: dict) -> dict:
-    """Translate deprecated field names/values so they survive into the new schema.
-
-    Pre-launch scaffolding used `connection_mode="managed"` and
-    `openswarm_auth_token`; production names are `"openswarm-pro"` and
-    `openswarm_bearer_token`. Zero known users are affected, but keep the
-    mapping for safety.
-    """
+    """Translate deprecated pre-launch field names ('managed', 'openswarm_auth_token') into production schema."""
     if raw.get("connection_mode") == "managed":
         raw["connection_mode"] = "openswarm-pro"
     if "openswarm_auth_token" in raw and "openswarm_bearer_token" not in raw:
@@ -102,26 +93,19 @@ def load_settings() -> AppSettings:
     return AppSettings()
 
 
-# Single threading.Lock guards every write to SETTINGS_FILE — protects against
-# corruption from two requests racing through the file system. Async callers
-# offload the actual write to the default thread pool (run_in_executor), so
-# the lock works for both sync and thread-pool execution paths.
+# threading.Lock guards every SETTINGS_FILE write; works for sync paths and async run_in_executor paths.
 _settings_write_lock = threading.Lock()
 
 
 def _atomic_write_settings(payload: dict) -> None:
-    """Internal: serialise payload to SETTINGS_FILE atomically.
-    Always called via save_settings* — don't invoke directly."""
+    """Atomic SETTINGS_FILE write; call via save_settings*, not directly."""
     with _settings_write_lock:
         os.makedirs(DATA_DIR, exist_ok=True)
         fd, tmp = tempfile.mkstemp(prefix=".settings.", suffix=".tmp", dir=DATA_DIR)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=2)
-            # On Windows, os.replace can transiently fail with PermissionError
-            # if Defender or another reader holds the destination open. One
-            # retry after a short backoff handles every real-world case
-            # without masking genuine permission bugs.
+            # Windows: Defender can briefly lock the destination; one retry handles every real case.
             for attempt in range(2):
                 try:
                     os.replace(tmp, SETTINGS_FILE)
@@ -139,24 +123,17 @@ def _atomic_write_settings(payload: dict) -> None:
 
 
 def save_settings(settings_obj: AppSettings) -> None:
-    """Synchronously persist settings atomically. Thread-safe.
-    Use from sync paths (analytics collector, lifespans). Async callers should
-    prefer save_settings_async to avoid blocking the event loop on Windows
-    where Defender scans can stretch the write to 50-200ms."""
+    """Sync atomic persist; thread-safe. Async callers should prefer save_settings_async (Defender can stretch writes to 50-200ms)."""
     _atomic_write_settings(settings_obj.model_dump())
 
 
 async def save_settings_async(settings_obj: AppSettings) -> None:
-    """Async-safe atomic save. Runs the file I/O in the default thread pool
-    so the FastAPI event loop stays responsive while the write completes.
-    Shares the threading.Lock with the sync variant for safe interleaving."""
+    """Async atomic save via thread pool; shares the lock with the sync variant."""
     payload = settings_obj.model_dump()
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _atomic_write_settings, payload)
 
 
-# Backward-compat alias. Existing sync callers (analytics collector, analytics
-# lifespan) continue to work; new async callers should use save_settings_async.
 def _save_settings(settings_obj: AppSettings) -> None:
     save_settings(settings_obj)
 
@@ -172,14 +149,12 @@ async def update_settings(body: AppSettings):
 
     old = load_settings()
 
-    # Sync the settings state (secrets stripped).
     secret_keys = {"anthropic_api_key", "openai_api_key", "google_api_key", "openrouter_api_key",
                    "claude_subscription_token", "openai_subscription_token", "gemini_subscription_token",
                    "openswarm_bearer_token", "installation_id"}
     safe = {k: v for k, v in body.model_dump().items() if k not in secret_keys}
     _sync(safe)
 
-    # Identify user in service-sync when profile is set/changed
     if (body.user_email and body.user_email != getattr(old, "user_email", None)) or \
        (body.user_name and body.user_name != getattr(old, "user_name", None)):
         from backend.apps.service.client import identify as _identify
@@ -227,8 +202,7 @@ async def update_settings(body: AppSettings):
         except Exception:
             pass
 
-    # Boot+sync runs off the request path — ensure_running() can take 5min
-    # on first install (npm pull) and would freeze the event loop.
+    # Off the request path: ensure_running() can take 5min on first install (npm pull) and would freeze the loop.
     if google_changed or openai_changed or openrouter_changed or custom_providers_changed:
         async def _boot_and_sync_keys(
             google_key: str | None,
@@ -275,12 +249,7 @@ async def update_settings(body: AppSettings):
             any_keyed_added,
         ))
 
-    # When openswarm-pro mode or bearer token changes, register a `claude`
-    # apikey connection in 9Router that proxies through our cloud. This
-    # makes the CLI's built-in WebSearch work on non-Claude primaries for
-    # Pro users — the CLI's Anthropic delegation path now has a working
-    # Claude route via 9Router, instead of hitting "no credentials for
-    # provider: claude".
+    # On pro-mode/bearer change, register a `claude` apikey connection in 9Router so CLI WebSearch works on non-Claude primaries.
     pro_mode_old = getattr(old, "connection_mode", None) == "openswarm-pro"
     pro_mode_new = getattr(body, "connection_mode", None) == "openswarm-pro"
     bearer_old = getattr(old, "openswarm_bearer_token", None)
@@ -305,25 +274,13 @@ class AppThemeOverridePayload(BaseModel):
 
 @settings.router.get("/app-theme-override")
 async def get_app_theme_override():
-    """Cross-app theme preference for App Builder workspaces.
-
-    Returns the current override (or `null` for follow-system). Apps
-    served from the template fetch this on mount so a toggle inside
-    any one app sticks across every future app the user builds. Each
-    app workspace runs on its own vite port (separate localStorage
-    origin), so the backend is the only place this can live."""
+    """Cross-app theme preference for App Builder workspaces; backend-held because each app uses its own localStorage origin."""
     return {"mode": load_settings().app_template_theme_override}
 
 
 @settings.router.put("/app-theme-override")
 async def put_app_theme_override(body: AppThemeOverridePayload):
-    """MERGE the theme override into AppSettings. The general PUT
-    /api/settings endpoint replaces the whole AppSettings object —
-    sending a partial body there would default every secret-bearing
-    field (api keys, subscription tokens), which logs the user out
-    and pops the SignInGate. This dedicated endpoint mutates only
-    `app_template_theme_override` and leaves every other field
-    untouched."""
+    """MERGE the override; the general PUT /api/settings replaces the whole object and would blank secrets, logging the user out."""
     current = load_settings()
     current.app_template_theme_override = body.mode
     await save_settings_async(current)

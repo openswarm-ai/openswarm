@@ -22,12 +22,7 @@ interface Props {
   onMinimapPan: (panX: number, panY: number) => void;
 }
 
-// Persist the minimap open/closed state across reloads so a user who
-// toggles it on doesn't lose their preference. Default is OFF — most
-// users don't have enough cards on the canvas for the minimap to add
-// value, and it occupies real estate. The onboarding tip in step 5/6
-// surfaces the toggle so users discover it when they DO have enough on
-// the canvas to benefit.
+// Default OFF: most users don't have enough cards for the minimap to add value; onboarding tip surfaces the toggle later.
 const MINIMAP_PREF_KEY = 'openswarm.canvas.minimap_open';
 function readMinimapPref(): boolean {
   if (typeof window === 'undefined') return false;
@@ -47,13 +42,12 @@ const CanvasControls: React.FC<Props> = ({ zoom, actions, onFitToView, onTidy, m
     try {
       window.localStorage.setItem(MINIMAP_PREF_KEY, String(next));
     } catch {
-      /* private mode etc — not fatal */
+      /* private mode etc, not fatal */
     }
   };
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.75 }}>
-      {/* Minimap panel — sits above the toolbar */}
       {minimapOpen && (
         <Box
           sx={{
@@ -70,7 +64,6 @@ const CanvasControls: React.FC<Props> = ({ zoom, actions, onFitToView, onTidy, m
         </Box>
       )}
 
-      {/* Toolbar */}
       <Box
         sx={{
           display: 'flex',

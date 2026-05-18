@@ -9,11 +9,12 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   closeWorkflowCard,
   createWorkflow,
+  updateWorkflow,
   type Workflow,
   type WorkflowRun,
 } from '@/shared/state/workflowsSlice';
 import { removeWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
-import { ScheduleChip, PermissionChip, CostChip, humanDuration, routingFor } from './workflowVisuals';
+import { ScheduleChip, PermissionChip, CostChip, humanDuration, routingFor, StreakBadge } from './workflowVisuals';
 import StepList from './StepList';
 
 export function statusColor(s: string, c: ReturnType<typeof useClaudeTokens>): string {
@@ -123,7 +124,37 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
 
 export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Workflow; steps: Workflow['steps']; runs?: WorkflowRun[]; activeRunId?: string | null }) {
   const c = useClaudeTokens();
+  const dispatch = useAppDispatch();
   const connectionMode = useAppSelector((s) => (s as { settings?: { data?: { connection_mode?: string } } }).settings?.data?.connection_mode);
+  // Habit suggestion: 3+ manual runs in the last 7 days on a workflow
+  // that isn't scheduled → quietly offer to schedule it. One click flips
+  // the schedule on at the most common time. Auto-disappears once the
+  // user enables a schedule.
+  const habitSuggestion = useMemo(() => {
+    if (workflow.schedule.enabled) return null;
+    if (!runs || runs.length < 3) return null;
+    const cutoff = Date.now() - 7 * 86400000;
+    const recent = runs.filter((r) => r.triggered_by === 'manual' && new Date(r.started_at).getTime() >= cutoff);
+    if (recent.length < 3) return null;
+    // Pick the most common hour-of-day as the seed.
+    const hourCounts: Record<number, number> = {};
+    for (const r of recent) {
+      const h = new Date(r.started_at).getHours();
+      hourCounts[h] = (hourCounts[h] || 0) + 1;
+    }
+    const sorted = Object.entries(hourCounts).sort((a, b) => b[1] - a[1]);
+    const topHour = Number(sorted[0][0]);
+    const formatted = topHour < 12 ? `${topHour === 0 ? 12 : topHour}am` : `${topHour === 12 ? 12 : topHour - 12}pm`;
+    return { hour: topHour, label: `daily ${formatted}`, count: recent.length };
+  }, [workflow.schedule.enabled, runs]);
+  const enableHabit = useCallback(() => {
+    if (!habitSuggestion) return;
+    dispatch(updateWorkflow({
+      id: workflow.id,
+      patch: { schedule: { ...workflow.schedule, enabled: true, repeat_unit: 'day', repeat_every: 1, hour: habitSuggestion.hour, minute: 0 } as any },
+      ifMatch: workflow.updated_at || null,
+    }));
+  }, [habitSuggestion, dispatch, workflow.id, workflow.schedule, workflow.updated_at]);
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
       {/* Pill chips replace the two text rows. Same info, glanceable. */}
@@ -131,9 +162,26 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
         <ScheduleChip workflow={workflow} />
         <PermissionChip workflow={workflow} />
         <CostChip workflow={workflow} connectionMode={connectionMode} />
+        <StreakBadge runs={runs} />
         <Box sx={{ flex: 1 }} />
         <AuditTraceLink workflowId={workflow.id} />
       </Box>
+      {habitSuggestion && (
+        <Box sx={{
+          display: 'flex', alignItems: 'center', gap: 0.75,
+          px: 1, py: 0.5,
+          borderRadius: `${c.radius.md}px`,
+          bgcolor: c.accent.primary + '14',
+          border: `1px solid ${c.accent.primary}40`,
+        }}>
+          <Typography sx={{ flex: 1, fontSize: '0.78rem', color: c.text.primary }}>
+            You&apos;ve run this {habitSuggestion.count}× this week. Schedule it {habitSuggestion.label}?
+          </Typography>
+          <Box onClick={enableHabit} role="button" sx={{ fontSize: '0.74rem', fontWeight: 700, color: c.accent.primary, cursor: 'pointer', px: 0.5, '&:hover': { textDecoration: 'underline' } }}>
+            Yes →
+          </Box>
+        </Box>
+      )}
       <Typography sx={{ fontSize: '0.88rem', color: c.text.secondary, lineHeight: 1.5, mt: 0.5 }}>{workflow.description}</Typography>
       <StepList workflow={workflow} steps={steps} runs={runs} activeRunId={activeRunId} />
     </Box>

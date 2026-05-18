@@ -45,7 +45,7 @@ def install_sync_sink():
         cs = body.get("client_state") or {}
         payload = body.get("d") or body.get("payload") or {}
 
-        # Infer a synthetic kind from payload shape — same dispatch logic
+        # Infer a synthetic kind from payload shape; same dispatch logic
         # as the cloud uses in production.
         if "status" in payload and "messages" in payload:
             status = payload.get("status", "unknown")
@@ -147,7 +147,7 @@ def manager():
 
 
 # ---------------------------------------------------------------------------
-# 1. record() — legacy shim correctness
+# 1. record(); legacy shim correctness
 # ---------------------------------------------------------------------------
 
 class TestRecordBasics:
@@ -175,7 +175,7 @@ class TestRecordBasics:
 
 
 # ---------------------------------------------------------------------------
-# 2. Multi-message session — close fires exactly once
+# 2. Multi-message session; close fires exactly once
 # ---------------------------------------------------------------------------
 
 class TestMultiMessageSession:

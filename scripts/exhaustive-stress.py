@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Exhaustive HTTP-level verification of every scheduled-tasks behavior.
-
-Runs against a live backend on :8324. Exits non-zero on any failure.
-Each assertion prints one line: PASS/FAIL + sentence describing the
-behavior tested. We're going wide here — every endpoint, every field,
-every edge case I can drive over HTTP.
-"""
+"""Exhaustive HTTP verification of scheduled-tasks behavior; runs against live :8324, exits non-zero on failure."""
 
 from __future__ import annotations
 import json
@@ -55,10 +49,10 @@ def http(method: str, path: str, body=None, raw: bool = False, extra_headers=Non
 def ok(label: str, cond: bool, info: str = ""):
     global fail_count
     if cond:
-        print(f"  {GREEN}PASS{RESET} {label}{DIM}{(' — ' + info) if info else ''}{RESET}")
+        print(f"  {GREEN}PASS{RESET} {label}{DIM}{('; ' + info) if info else ''}{RESET}")
     else:
         fail_count += 1
-        print(f"  {RED}FAIL{RESET} {label}{(' — ' + info) if info else ''}")
+        print(f"  {RED}FAIL{RESET} {label}{('; ' + info) if info else ''}")
 
 
 def section(title: str):
@@ -442,7 +436,7 @@ ok("missing If-Match still accepted (legacy clients)", code == 200)
 section("21. /run surfaces cost-cap skipped status")
 code, r = http("POST", "/create", fresh_wf(title="cap-immediate", cost_cap_usd_monthly=0.01))
 cap_id = r["id"]; created_ids.append(cap_id)
-# Run once and produce a real-looking run via the legacy 0-cost path —
+# Run once and produce a real-looking run via the legacy 0-cost path , 
 # the cap is checked against actual recorded cost_usd. Without a way to
 # inject a $5 run here we just verify the field surfaces correctly when
 # the cap is 0 (which should always exceed). With 0 the executor's >=

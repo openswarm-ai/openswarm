@@ -6,17 +6,17 @@ const SETTINGS_API = `${API_BASE}/settings`;
 export const DEFAULT_SYSTEM_PROMPT =
   `You are a personal AI assistant running inside OpenSwarm.\n\n` +
   `## Tool Priority\n` +
-  `When a dedicated MCP tool exists for a task, use it directly — do not use the browser for things MCP tools can handle.\n` +
+  `When a dedicated MCP tool exists for a task, use it directly. Do not use the browser for things MCP tools can handle.\n` +
   `Priority order:\n` +
-  `1. MCP tools first (Reddit, Google Workspace, etc.) — fastest and most reliable\n` +
-  `2. WebSearch / WebFetch — for general web lookups without a dedicated MCP\n` +
-  `3. BrowserAgent — only when you need to visually interact with a website, fill forms, or do something no other tool can handle\n\n` +
+  `1. MCP tools first (Reddit, Google Workspace, etc.); fastest and most reliable\n` +
+  `2. WebSearch / WebFetch for general web lookups without a dedicated MCP\n` +
+  `3. BrowserAgent only when you need to visually interact with a website, fill forms, or do something no other tool can handle\n\n` +
   `## Tool Call Style\n` +
-  `Default: do not narrate routine tool calls — just call the tool.\n` +
+  `Default: do not narrate routine tool calls. Just call the tool.\n` +
   `Narrate only when it helps: multi-step work, complex problems, or when the user explicitly asks.\n` +
   `Keep narration brief. Use plain language.\n\n` +
   `## Interaction Style\n` +
-  `Be direct and action-oriented. Do not ask clarifying questions unless genuinely ambiguous — ` +
+  `Be direct and action-oriented. Do not ask clarifying questions unless genuinely ambiguous; ` +
   `make reasonable assumptions and act. If you need to ask, use the AskUserQuestion tool.\n` +
   `Do not over-explain what you are about to do. Just do it and show the results.`;
 
@@ -31,7 +31,8 @@ export interface SubscriptionUsage {
   requests_in_window: number;
   plan_limit: number;
   window_hours: number;
-  window_ends_at: number;       // unix ms
+  /** unix ms */
+  window_ends_at: number;
 }
 
 export interface AppSettings {
@@ -54,23 +55,18 @@ export interface AppSettings {
   expand_new_chats_in_dashboard: boolean;
   auto_reveal_sub_agents: boolean;
   dev_mode: boolean;
-  // Optional managed-subscription state (surfaces only when user has
-  // subscribed via the cloud). Mirrors AppSettings on the backend.
+  /** Managed subscription state; surfaces only when user has subscribed via cloud. */
   connection_mode?: 'own_key' | 'openswarm-pro';
   openswarm_bearer_token?: string | null;
   openswarm_proxy_url?: string | null;
   openswarm_subscription_plan?: string | null;
   openswarm_subscription_expires?: string | null;
   openswarm_usage_cached?: SubscriptionUsage | null;
-  // Identity (v1.0.29+). Populated after a successful Google sign-in via
-  // /api/auth/signin-activate. Stripe checkout also populates these because
-  // the cloud's bearer-mint always returns user info.
+  /** Identity populated by /api/auth/signin-activate; Stripe checkout also fills these. */
   user_id?: string | null;
   user_email?: string | null;
   signin_method?: 'google' | 'stripe' | null;
-  // Anonymous device identifier. Generated locally on first run, persists
-  // across launches. Used to bind cloud OAuth flows to this install and to
-  // stitch anonymous → authenticated PostHog Persons after sign-in.
+  /** Anonymous device id (first-run generated); stitches anon to authed PostHog Persons. */
   installation_id?: string | null;
 }
 
@@ -100,13 +96,7 @@ interface SettingsState {
   modalOpen: boolean;
   /** When non-null, Settings opens to this tab instead of 'general'. */
   initialTab: string | null;
-  /**
-   * In-flight form edits, preserved across modal close/reopen so the user
-   * can step away from Settings (browse the dashboard, open a doc, etc.)
-   * and come back to find their typing intact. `null` means the form is in
-   * sync with `data` — no unsaved edits. Cleared automatically on a
-   * successful save, or explicitly via clearDraft.
-   */
+  /** In-flight form edits preserved across modal close/reopen; null = synced with `data`. */
   draft: AppSettings | null;
   /** Tab the user was on when they closed the modal with unsaved edits. */
   draftTab: string | null;
@@ -174,9 +164,7 @@ export const browseDirectories = createAsyncThunk(
   }
 );
 
-// POST /api/subscription/activate — called after the desktop catches an
-// openswarm://auth?token=... deep link. Validates + persists on the backend,
-// then refreshes settings so the Settings UI flips to "Pro" mode.
+/** POST /api/subscription/activate after catching openswarm://auth deep link; flips UI to Pro. */
 export const activateSubscription = createAsyncThunk(
   'settings/activateSubscription',
   async (payload: ActivateSubscriptionPayload, { dispatch }) => {
@@ -186,18 +174,12 @@ export const activateSubscription = createAsyncThunk(
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error((await res.text()) || 'Activation failed');
-    // Pull the fresh settings so UI reflects connection_mode + plan.
     await dispatch(fetchSettings());
     return (await res.json()) as { ok: boolean; plan: string };
   }
 );
 
-// POST /api/auth/signin-activate — called after the desktop catches the
-// bearer from a Google OAuth / magic-link sign-in flow. Validates the
-// bearer with the cloud (checks signature + user_id + email) and persists
-// it locally as a free-tier identity. The same backend route also handles
-// "user signed in AND has an active subscription" — plan/expires are set
-// when the cloud returns them.
+/** POST /api/auth/signin-activate after catching Google OAuth/magic-link bearer; persists identity. */
 export const activateSignin = createAsyncThunk(
   'settings/activateSignin',
   async (payload: ActivateSigninPayload, { dispatch }) => {
@@ -218,8 +200,7 @@ export const activateSignin = createAsyncThunk(
   },
 );
 
-// POST /api/auth/signout — revokes the cloud-side bearer and clears local
-// identity fields. Brings the user back to the sign-in gate.
+/** POST /api/auth/signout; revokes cloud bearer, clears local identity, returns to sign-in gate. */
 export const signOut = createAsyncThunk(
   'settings/signOut',
   async (_: void, { dispatch }) => {
@@ -230,8 +211,7 @@ export const signOut = createAsyncThunk(
   },
 );
 
-// POST /api/subscription/disconnect — clears bearer + reverts to own_key.
-// Doesn't cancel the Stripe subscription (that's the Portal).
+/** POST /api/subscription/disconnect; clears bearer, reverts to own_key. Doesn't cancel Stripe. */
 export const disconnectSubscription = createAsyncThunk(
   'settings/disconnectSubscription',
   async (_: void, { dispatch }) => {
@@ -254,13 +234,7 @@ const settingsSlice = createSlice({
       state.modalOpen = false;
       state.initialTab = null;
     },
-    /**
-     * Persist the user's in-flight form edits + active tab so they survive
-     * modal close. Settings.tsx calls this on every form mutation (React's
-     * batching keeps it cheap). When the form matches saved data, callers
-     * pass null/clearDraft to drop the marker — `hasChanges` then reads
-     * false correctly.
-     */
+    /** Persist in-flight form edits + tab so they survive modal close; clearDraft drops the marker. */
     setDraft(state, action: PayloadAction<{ form: AppSettings; tab: string }>) {
       state.draft = action.payload.form;
       state.draftTab = action.payload.tab;
@@ -278,13 +252,7 @@ const settingsSlice = createSlice({
       .addCase(fetchSettings.fulfilled, (state, action) => {
         state.loading = false;
         state.loaded = true;
-        // Belt-and-suspenders: skip the assignment when the payload is
-        // byte-identical to what we already have. The SignInGate's 2s poll
-        // would otherwise flip the `state.data` reference on every tick,
-        // re-running every effect that depends on `s.settings.data` —
-        // including form-sync useEffects elsewhere in the tree. Cheap on
-        // a small object, prevents an entire class of "polling wipes my
-        // form" bugs without needing every consumer to be defensive.
+        // Skip ref-assignment when byte-identical; prevents SignInGate 2s poll from re-firing every effect.
         const next = JSON.stringify(action.payload);
         const prev = JSON.stringify(state.data);
         if (next !== prev) {
@@ -297,8 +265,7 @@ const settingsSlice = createSlice({
       })
       .addCase(updateSettings.fulfilled, (state, action) => {
         state.data = action.payload;
-        // Save consumes the draft — clear it so the next modal-open
-        // doesn't restore stale edits over freshly-saved values.
+        // Save consumes the draft so reopening doesn't restore stale edits.
         state.draft = null;
         state.draftTab = null;
       })

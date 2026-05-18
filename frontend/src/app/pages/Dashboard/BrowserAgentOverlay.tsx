@@ -70,10 +70,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Check if the parent agent session is still running. If so, the overlay
-  // stays alive even when this browser-agent sub-task completes — the parent
-  // may send another BrowserAgent call momentarily. Only treat the overlay
-  // as "done" when both the browser-agent session AND the parent are terminal.
+  // Parent session may send another BrowserAgent call; treat overlay as done only when both sub-task and parent are terminal.
   const parentStatus = useAppSelector((state) => {
     if (!session.parent_session_id) return null;
     return state.agents.sessions[session.parent_session_id]?.status ?? null;
@@ -82,11 +79,8 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
 
   const isRunning = session.status === 'running' || session.status === 'waiting_approval';
   const browserDone = session.status === 'completed' || session.status === 'error' || session.status === 'stopped';
-  // Streaming message lives in its own slice; see streamingSlice.ts.
   const streamingMessage = useStreamingMessage(session.id);
-  // Only truly "done" (fade + hide) when the parent is also finished.
-  // While the parent is still active, the overlay stays visible in a
-  // "waiting for next task" state between sub-tasks.
+  // Only fade+hide when parent is finished too; otherwise show a "waiting" state between sub-tasks.
   const isDone = browserDone && !parentStillActive;
 
   const intervention = session.pending_approvals?.find(
@@ -107,7 +101,6 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
     }
   }, [session.id]);
 
-  // Reset skip input when intervention resolves
   useEffect(() => {
     if (!intervention) {
       setShowSkipInput(false);
@@ -166,8 +159,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
   const expandedH = Math.min(Math.floor(browserHeight * 0.6), browserHeight - 24);
 
   const panelW = intervention ? Math.min(340, browserWidth - 24) : expanded ? expandedW : collapsedW;
-  // When intervention is active, auto-size to fit content instead of a
-  // fixed height — otherwise the Done button gets clipped below the fold.
+  // Intervention auto-sizes to fit content; fixed height would clip the Done button.
   const panelH = intervention ? undefined : expanded ? expandedH : collapsedH;
 
   if (hidden) return null;
@@ -298,7 +290,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
         )}
       </Box>
 
-      {/* Body — intervention prompt OR scrollable action log */}
+      {/* Body: intervention prompt OR scrollable action log */}
       {intervention ? (
         <Box sx={{ flex: 1, px: 1.25, py: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
           <Typography sx={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.5 }}>
@@ -366,7 +358,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
                   color: '#000',
                 }}
               >
-                Done — continue
+                Done, continue
               </Button>
               <Button
                 size="small"

@@ -19,12 +19,11 @@ class LogConfig:
         for name, level in self.MODES.items():
             logging.addLevelName(level, name.upper())
         self.logger = logging.getLogger('custom_logger')
-        self.logger.propagate = False  # Prevent log propagation
+        self.logger.propagate = False
         handler = logging.StreamHandler()
         formatter = logging.Formatter('%(message)s')
         handler.setFormatter(formatter)
 
-        # Remove existing handlers to prevent duplicate logging
         if self.logger.hasHandlers():
             self.logger.handlers.clear()
 
@@ -39,7 +38,6 @@ class LogConfig:
 
     def set_debug_mode(self, mode):
         current_mode = get_log_mode()
-        # print(f"Setting debug mode from {current_mode} -> to {mode}")
         if mode not in self.MODES: raise ValueError(f"Invalid mode: {mode}")
         set_log_mode(mode)
         self.logger.setLevel(self.MODES[mode])

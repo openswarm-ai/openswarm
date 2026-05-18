@@ -3,18 +3,10 @@ const host = window.location.hostname || 'localhost';
 
 export const API_BASE = `http://${host}:${port}/api`;
 export const WS_BASE = `ws://${host}:${port}`;
-// Must match openswarm-cloud's PUBLIC_BASE_URL (fly.toml) and the redirect
-// URI registered on the Google OAuth client. The historical `.ai` value
-// resolved to NXDOMAIN — fine while no frontend caller used it directly,
-// but the v1.0.29 sign-in gate is the first frontend caller that
-// constructs URLs from this constant, so the typo had to go.
+// Must match openswarm-cloud's PUBLIC_BASE_URL (fly.toml) and the Google OAuth redirect URI.
 export const OPENSWARM_DEFAULT_PROXY_URL = 'https://api.openswarm.com';
 
-// Per-install auth token. Fetched from Electron's main process via the
-// preload contextBridge. We cache it after first resolution so every
-// API/WS call is synchronous. On Electron hot-reload the token rotates;
-// call `refreshAuthToken()` from a 4401 WS handler to pick up a new
-// one without a full page reload.
+// Per-install token from Electron preload; cached after first resolve. Call refreshAuthToken() on 4401.
 let _authTokenCache: string = '';
 let _authTokenPromise: Promise<string> | null = null;
 
@@ -35,33 +27,15 @@ export async function refreshAuthToken(): Promise<string> {
   return _authTokenCache;
 }
 
-// Resolve-once helper: the first call kicks off the IPC request; any
-// concurrent calls reuse the same promise. Frontend bootstrap awaits
-// this before the first API call so the token is ready.
+/** Resolve auth token once; concurrent callers share the same promise. */
 export function ensureAuthToken(): Promise<string> {
   if (_authTokenPromise) return _authTokenPromise;
   _authTokenPromise = refreshAuthToken();
   return _authTokenPromise;
 }
 
-// Install a global fetch interceptor so every fetch(API_BASE + ...)
-// call site gets the Authorization header without touching each site.
-// Covers the analytics, settings, agents, dashboards, etc. fetches.
-// Only applies to requests that target our own API_BASE — pass-through
-// for every other URL (3rd-party APIs, asset CDNs, etc.).
-//
-// Layered on top of the auth-injection: a tiny in-flight dedupe + 1s
-// success cache for GETs. The onboarding flow + dashboard load fire the
-// same `GET /api/agents/sessions/<id>` / `GET /api/skills/list` /
-// `GET /api/skills/workspace/<id>` two-to-five times in quick
-// succession when components mount near-simultaneously — without
-// dedupe we paid a full roundtrip every time. With this in place the
-// second-through-Nth call inside a 1 s window either piggybacks on
-// the in-flight promise OR reads a freshly-cached Response. Cache is
-// keyed by `METHOD URL`, scoped to GET only (mutations always fall
-// through), and a Response.clone() per consumer keeps each caller's
-// body stream independent. Non-2xx responses are NOT cached so a
-// transient 5xx can't poison the next click.
+// Global fetch interceptor: attaches bearer for our API + dedupes/caches GETs in a 1s window.
+// Cache is keyed `METHOD URL`, GET-only (mutations pass through); non-2xx never cached.
 const _inflightFetches = new Map<string, Promise<Response>>();
 const _cachedFetches = new Map<string, { resp: Response; expiresAt: number }>();
 const _GET_CACHE_TTL_MS = 1000;
@@ -74,11 +48,9 @@ function _installAuthFetchInterceptor() {
   window.fetch = async function patchedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     try {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
-      // Only attach token for our own API. Everything else flows through.
       const isOurApi = url.startsWith(API_BASE) || url.startsWith(`http://${host}:${port}/`);
       if (!isOurApi) return originalFetch(input, init);
 
-      // Don't override an explicit Authorization the caller already set.
       const existingHeaders = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
       const callerSetAuth = existingHeaders.has('Authorization') || existingHeaders.has('authorization');
 
@@ -96,9 +68,7 @@ function _installAuthFetchInterceptor() {
         ?? (input instanceof Request ? input.method : 'GET')
       ).toUpperCase();
 
-      // Only GET is safe to dedupe + cache. POST/PUT/PATCH/DELETE have
-      // side effects — collapsing two intentional calls (e.g. user
-      // double-clicked Send) would be wrong, so we always pass through.
+      // Only GET is safe to dedupe/cache; mutations could collapse intentional double-clicks.
       if (method !== 'GET') {
         return originalFetch(input, finalInit);
       }
@@ -140,9 +110,5 @@ function _installAuthFetchInterceptor() {
   };
 }
 
-// Call immediately on module load — config.ts is imported by the main
-// entry point, so this runs before any component-level fetch.
 _installAuthFetchInterceptor();
-// Kick off token resolution in the background so it's warm by the
-// time the first request goes out.
 ensureAuthToken();

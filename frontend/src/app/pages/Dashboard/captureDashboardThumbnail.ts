@@ -6,11 +6,7 @@ interface AllCards {
   browserCards: Record<string, BrowserCardPosition>;
 }
 
-/**
- * Captures a screenshot of the dashboard viewport using Electron's native
- * capturePage API. Captures the viewport as-is (current pan/zoom) to avoid
- * mutating the DOM transform and causing visible flashes.
- */
+/** Screenshots the dashboard viewport via Electron capturePage, leaving pan/zoom untouched. */
 export async function captureDashboardThumbnail(
   viewportEl: HTMLDivElement,
   _contentEl: HTMLDivElement,

@@ -1,20 +1,14 @@
-// Onboarding v2 — step / op / advance-condition schema.
-//
-// Steps are pure data: a sequence of ACOps (cursor primitives) interleaved
-// with wait_user gates that block until an AdvanceCondition fires. The
-// runtime in ../ac/acRuntime.ts is the only place that knows how to
-// execute these; step files import only this module.
+// Onboarding-v2 step/op/advance-condition schema; ../ac/acRuntime.ts is the only executor.
 
 import type { RootState } from '@/shared/state/store';
 
-export type Selector = string; // matches data-onboarding="<v>" or data-select-type="<v>"
+/** Matches data-onboarding="<v>" or data-select-type="<v>". */
+export type Selector = string;
 
 export type ACMultiChoiceOption = {
   id: string;
   label: string;
-  // Optional branching — if present, picking this option queues additional
-  // ops to run before the rest of the step's ops continue. Lets one step
-  // diverge based on user choice without splitting into N steps.
+  /** If set, queue extra ops on selection so one step can branch without splitting. */
   thenOps?: ACOp[];
 };
 
@@ -26,10 +20,7 @@ export type ACOp =
   | {
       kind: 'type_into';
       target: Selector;
-      // String for static text; function for runtime branching (e.g. step
-      // 3 picks YouTube prompt if isYoutubeEnabled, else a web-research
-      // fallback). Evaluated once at op-execution time against current
-      // Redux state — not reactive to subsequent state changes.
+      /** Static string or function evaluated once at op-execution; not reactive to subsequent state. */
       text: string | ((state: RootState) => string);
       speedMs?: number;
     }
@@ -37,11 +28,7 @@ export type ACOp =
   | { kind: 'drag_select'; target: Selector }
   | { kind: 'wait_user'; condition: AdvanceCondition; hint?: string; timeoutMs?: number }
   | { kind: 'delay'; ms: number }
-  // Poll a raw CSS selector (not a data-onboarding shorthand) until it
-  // appears in the DOM, up to `timeoutMs`. Used by step 8 to wait for
-  // the App Builder's scoped chat-input to mount before typing into it
-  // (previously a fixed 1500ms delay that under-fit slow cold-starts
-  // and over-fit warm ones).
+  /** Poll a raw CSS selector until it mounts, up to timeoutMs (step 8 uses for App Builder chat-input). */
   | { kind: 'wait_for_dom'; css: string; timeoutMs?: number }
   | { kind: 'outro' };
 
@@ -60,22 +47,18 @@ export interface StepDependency {
 export interface OnboardingStep {
   id: string;
   stage: StepStage;
-  index: number; // 1..N (currently 1..8)
+  /** 1..N (currently 1..8). */
+  index: number;
   title: string;
   description: string;
   videoSrc?: string;
-  videoDurationLabel?: string; // e.g. "0:24" — shown in the panel preview chip
+  /** Shown in the panel preview chip, e.g. "0:24". */
+  videoDurationLabel?: string;
   ops: ACOp[];
   dependsOn?: StepDependency[];
-  // skipIf is evaluated on launch (and on each Show me click) to mark a step
-  // already-done without running its flow. Lets existing v1.0.29 users
-  // upgrade and have already-completed milestones pre-checked.
+  /** Mark a step already-done at launch / Show me click without running its flow. */
   skipIf?: (state: RootState) => boolean;
-  // True if the step's ops target dashboard-toolbar elements (+, browser,
-  // chat input, send, element-selection toggle, apps button). The runtime
-  // auto-prepends a "click into a dashboard" hop when the user isn't
-  // already on a #/dashboards/:id route. Without this, every "Show me"
-  // from the actions/skills/apps pages would hang on a missing target.
+  /** True when ops target dashboard-toolbar elements; runtime auto-prepends a click-into-dashboard hop. */
   requiresDashboard?: boolean;
 }
 

@@ -1,13 +1,4 @@
-// Docked top-right panel. Three visible states:
-//   - 'pill'     — small "Finish setup X/N · Continue →" pill
-//   - 'expanded' — full card with title/desc/video preview/Show me + See all todos
-//   - 'roadmap'  — full 10-step modal (delegated to OnboardingRoadmapModal)
-//   - 'hidden'   — user-dismissed; only re-shows via Settings → Restart tour
-//
-// When a step completes, we render a one-time celebration overlay (check
-// icon + strike-through over the title) for ~1500ms before crossfading to
-// the next step's card. justCompletedStepId in Redux drives this; the
-// useEffect below clears it on a timer.
+/** Docked top-right panel; states: pill, expanded, roadmap, hidden. */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -30,13 +21,9 @@ import { cursorStore } from './ac/cursorStore';
 import OnboardingRoadmapModal from './OnboardingRoadmapModal';
 
 const PANEL_WIDTH = 420;
-// Long enough to register the strike-through + check, short enough that
-// it doesn't feel like waiting before the next step appears.
 const CELEBRATION_MS = 900;
 
-// Tiny cursor-arrow SVG that mirrors the shape rendered by AgenticCursor
-// so the AC visually appears to "come to life" out of this icon when the
-// user clicks Show me.
+/** Mirrors AgenticCursor's shape so AC visually "comes to life" out of this icon on Show me click. */
 const CursorIconSmall: React.FC<{ size?: number; color: string }> = ({
   size = 14,
   color,
@@ -67,16 +54,11 @@ const OnboardingPanel: React.FC = () => {
   const infoBtnRef = useRef<HTMLButtonElement | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
 
-  // Cursor icon inside the "Show me" button — used to calculate the AC
-  // spawn point so the cursor visually flies out of this exact icon.
+  // AC spawn point flies out of this icon.
   const cursorIconRef = useRef<HTMLSpanElement | null>(null);
-  // Cooldown for the Show me button so rapid double-clicks don't fire
-  // multiple parallel step starts (each one re-triggering backend
-  // seed/launch calls that already have an in-flight predecessor).
+  // Cooldown so rapid double-clicks don't fire parallel step starts; each one re-triggers in-flight backend seed/launch calls.
   const lastShowMeClickRef = useRef<number>(0);
 
-  // Resolve current step. Prefer explicit currentStepId; fall back to
-  // first uncompleted step.
   const currentStep = useMemo(() => {
     const explicit = progress.currentStepId
       ? findStepById(progress.currentStepId)
@@ -85,8 +67,7 @@ const OnboardingPanel: React.FC = () => {
     return STEPS.find((s) => !progress.completedSteps.includes(s.id)) ?? null;
   }, [progress.currentStepId, progress.completedSteps]);
 
-  // Stage-relative progress counts. Spec mockup shows "Get started 1/6"
-  // (per-stage), not "1/10" (overall). The pill keeps overall.
+  // Stage-relative (panel) vs overall (pill).
   const stageOf = currentStep?.stage ?? 'get_started';
   const stageSteps = useMemo(
     () => STEPS.filter((s) => s.stage === stageOf),
@@ -99,60 +80,33 @@ const OnboardingPanel: React.FC = () => {
   const total = STEPS.length;
   const done = progress.completedSteps.length;
 
-  // Celebration banner — strike-through + check on the just-completed
-  // step. Timer lives INSIDE CelebrationView so it can't be cancelled
-  // by parent OnboardingPanel re-renders or AnimatePresence remounts.
-  // Removed the parent-level useEffect that was here; it was vulnerable
-  // to a "rapid re-render → cleanup → new timer → repeat" loop where
-  // the celebration would never actually clear.
+  // Timer lives inside CelebrationView so parent re-renders can't cancel it.
   const justDoneStepId = progress.justCompletedStepId;
   const justDoneStep = justDoneStepId ? findStepById(justDoneStepId) : null;
 
   const handleShowMe = async () => {
     if (!currentStep) return;
-    // Click cooldown — without this, rapid double-clicks fire startStep
-    // twice. Each invocation calls cancelStep() then starts fresh, but
-    // any in-flight async ops (seed-orchestration-demo, agent launch,
-    // etc) keep running because cancelStep only aborts the controller,
-    // not pending backend fetches. Result: multiple stub agents
-    // created, multiple agents launched, panel state thrashing. 600ms
-    // is short enough not to feel laggy, long enough to absorb the
-    // user's "is it broken" reflex re-click.
+    // 600ms cooldown: cancelStep doesn't kill in-flight backend fetches so spam would launch parallel sessions.
     const now = Date.now();
     if (now - lastShowMeClickRef.current < 600) return;
     lastShowMeClickRef.current = now;
 
-    // If running flag is stuck at true (a prior step's runStep ended
-    // without resetting it — possible after an unhandled error or HMR
-    // cycle), forcibly cancel and reset before starting fresh. This
-    // unsticks the "Show me does nothing" case without forcing the
-    // user to reload the app.
+    // Unstick a stale "running" flag from a prior unhandled error or HMR; yield a tick so reset lands first.
     if (progress.running) {
       onboardingDirector.cancelStep();
       progress.setRunning(false);
-      // Yield a tick so the running=false dispatch lands before we
-      // start the new step (otherwise the runtime's first dispatch
-      // races with the reset).
       await new Promise<void>((r) => window.setTimeout(r, 0));
     }
     const iconEl = cursorIconRef.current;
     const rect = iconEl?.getBoundingClientRect();
-    // Sanity-check the rect: if the panel is mid-transition (Framer's
-    // exit animation hasn't completed), getBoundingClientRect can return
-    // (0,0,0,0) — which would land the cursor at the top-left corner
-    // (over the macOS traffic lights). Fall back to a sensible
-    // top-right anchor when the rect looks degenerate.
+    // Mid-transition rects can be 0,0,0,0; fall back to a top-right anchor.
     const validRect =
       rect && (rect.width > 0 || rect.height > 0) && (rect.left > 0 || rect.top > 0);
     const spawnPoint = validRect
       ? { x: rect!.left + rect!.width / 2, y: rect!.top + rect!.height / 2 }
       : { x: window.innerWidth - 80, y: 110 };
     report('show_me_clicked', { step_id: currentStep.id });
-    // Watchdog: if AC fails to become visible within 2s of Show me
-    // (acRef.current was null after an HMR cycle, fadeIn silently
-    // rejected, etc), the panel stays hidden because nothing resets
-    // `running`. Check the cursorStore — if visible is still false,
-    // recover so the panel comes back instead of stranding the user.
+    // 2s watchdog recovers the panel if AC never becomes visible (HMR / silent rejection).
     const watchedStepId = currentStep.id;
     window.setTimeout(() => {
       const acVisible = cursorStore.get().visible;
@@ -168,12 +122,7 @@ const OnboardingPanel: React.FC = () => {
   if (!currentStep && !justDoneStep) return null;
   if (progress.panelMode === 'hidden') return null;
 
-  // While AC is actively walking the user through a step, the panel
-  // would otherwise sit on top of targets in the top-right corner
-  // (Skills install button, "+ New app" on the Apps page, the Apps
-  // toolbar button, etc). Slide it off-screen with a small fade so the
-  // cursor has a clean canvas; it animates back when the step outros.
-  // motion.div handles both directions of the transition.
+  // Slide panel off-screen while AC runs so it doesn't sit on top of top-right targets (Skills install, "+ New app", etc).
   const panelHidden = progress.running;
 
   return (
@@ -187,11 +136,7 @@ const OnboardingPanel: React.FC = () => {
         transition={{ type: 'spring', stiffness: 280, damping: 32 }}
         sx={{
           position: 'fixed',
-          // 38px title bar (drag region with traffic lights / OpenSwarm logo)
-          // + 6px breathing room. Sits just below the title bar — clear of
-          // the logo in the right corner but tighter to it than the
-          // previous 54px so the pill doesn't visually float away from
-          // the chrome.
+          // 38px title bar + 6px breathing room.
           top: 44,
           right: 16,
           zIndex: 1200,
@@ -277,10 +222,6 @@ const OnboardingPanel: React.FC = () => {
                   overflow: 'hidden',
                 }}
               >
-                {/* Header — stage label + minimize + progress bar. No
-                    bottom border anymore: the progress bar IS the
-                    visual divider between header and body, no need for
-                    a second separator line below it. */}
                 <Box
                   sx={{
                     px: 1.6,
@@ -347,8 +288,6 @@ const OnboardingPanel: React.FC = () => {
                   </Box>
                 </Box>
 
-                {/* Body — celebration overlay or current step. AnimatePresence
-                    crossfades between them so step transitions feel smooth. */}
                 <Box sx={{ position: 'relative' }}>
                   <AnimatePresence mode="wait" initial={false}>
                     {justDoneStep ? (
@@ -407,9 +346,7 @@ const OnboardingPanel: React.FC = () => {
         </AnimatePresence>
       </Box>
 
-      {/* Floating "?" info popover, anchored to the info icon. Renders
-          OUTSIDE the panel container so it can extend to the left without
-          clipping. */}
+      {/* Rendered outside the panel container so it can extend left without clipping. */}
       {infoOpen && currentStep && (
         <InfoPopover
           stepId={currentStep.id}
@@ -445,10 +382,7 @@ const StepCardBody: React.FC<StepCardProps> = ({
   onToggleInfo,
   running,
 }) => {
-  // Click-to-zoom on the demo video. Lives at the card level so the
-  // overlay is portaled out (full viewport) regardless of how the panel
-  // is positioned. Auto-collapses on step change so a leftover overlay
-  // from step N doesn't linger into step N+1.
+  // Auto-collapses on step change so a leftover overlay from step N doesn't linger into step N+1.
   const [videoExpanded, setVideoExpanded] = useState(false);
   useEffect(() => {
     setVideoExpanded(false);
@@ -516,10 +450,7 @@ const StepCardBody: React.FC<StepCardProps> = ({
               width: '100%',
               height: '100%',
               objectFit: 'cover',
-              // The source recordings have baked-in black side bars
-              // (recorded at a wider canvas than the OpenSwarm window
-              // actually filled). Scaling up + overflow:hidden on the
-              // parent crops them off the visible thumbnail area.
+              // Source recordings have baked-in black side bars; scale + parent overflow:hidden crops them off.
               transform: 'scale(1.0)',
               transformOrigin: 'center',
               pointerEvents: 'none',
@@ -572,9 +503,6 @@ const StepCardBody: React.FC<StepCardProps> = ({
         <ButtonBase
           onClick={onOpenRoadmap}
           sx={{
-            // mlAuto: pushes the help icon (next sibling) to the far
-            // right while keeping "See all todos" tucked next to Show
-            // me. Visual rhythm: [Show me]  See all todos ............ ?
             fontSize: 12.5,
             fontWeight: 500,
             color: c.text.secondary,
@@ -599,11 +527,6 @@ const StepCardBody: React.FC<StepCardProps> = ({
         </IconButton>
       </Box>
     </Box>
-    {/* Click-zoom overlay — portaled to body so it covers the full
-        viewport regardless of how the panel is positioned. Lives as a
-        sibling of the main card Box rather than as a child so the card
-        Box's children list stays a clean array of static elements
-        (helps React's children-validation in dev). */}
     {videoExpanded && step.videoSrc
       ? createPortal(
           <Box
@@ -681,18 +604,12 @@ interface CelebrationProps {
 const CelebrationView: React.FC<CelebrationProps> = ({ step, accent }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
-  // Self-clearing timer: lives with the component instance and
-  // dispatches clearJustCompleted on mount. Because this component
-  // ONLY mounts when justCompletedStepId is set and unmounts when
-  // it's cleared, the timer fires exactly once per celebration.
-  // Cannot be cancelled by parent re-renders.
+  // Self-clearing timer fires once per celebration; cannot be cancelled by parent re-renders.
   useEffect(() => {
     const t = window.setTimeout(() => {
       dispatch(clearJustCompleted());
     }, CELEBRATION_MS);
     return () => window.clearTimeout(t);
-    // Empty deps = fires once on mount, cleans up on unmount. The
-    // dispatch ref is stable per redux store.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
@@ -804,8 +721,6 @@ const InfoPopover: React.FC<InfoPopoverProps> = ({ stepId, anchorRef, onClose, t
       if (!r) return;
       const POPOVER_W = 280;
       const POPOVER_H = 240;
-      // Anchor below-and-to-the-left of the info button so the popover
-      // sits to the LEFT of the panel — matches figma image #66.
       const top = Math.min(r.bottom + 8, window.innerHeight - POPOVER_H - 8);
       const left = Math.max(8, r.right - POPOVER_W);
       setPos({ top, left });
@@ -815,12 +730,10 @@ const InfoPopover: React.FC<InfoPopoverProps> = ({ stepId, anchorRef, onClose, t
     return () => window.removeEventListener('resize', calc);
   }, [anchorRef]);
 
-  // Click-away listener.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const t = e.target as Node;
       if (anchorRef.current?.contains(t)) return;
-      // If click landed inside the popover, leave it open.
       const pop = document.getElementById('onboarding-info-popover');
       if (pop?.contains(t)) return;
       onClose();

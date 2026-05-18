@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 # Re-vendor openswarm-ai/webapp-template into backend/apps/outputs/webapp_template/.
 #
-# Idempotent — wipes the existing vendored dir and re-clones at the pinned ref.
-# Strips files we don't want shipped (LICENSE, README.md, .gitignore — we
-# author our own minimal .gitignore inside the snapshot). Applies our two
-# patches:
-#   1. backend/run.sh: pip-install $OPENSWARM_DEBUGGER_PATH if set, before
-#      the existing `pip install -e .` — resolves the `swarm-debug` dep
-#      from OpenSwarm's bundled debugger/ package instead of PyPI (where
-#      it doesn't exist).
+# Idempotent: wipes the existing vendored dir and re-clones at the pinned ref.
+# Strips files we don't want shipped (LICENSE, README.md, .gitignore; we author our own minimal .gitignore). Applies two patches:
+#   1. backend/run.sh: pip-install $OPENSWARM_DEBUGGER_PATH before the existing `pip install -e .` to resolve the `swarm-debug` dep from OpenSwarm's bundled debugger/.
 #   2. Add our own backend_init.sh at the snapshot root.
 #
 # Update REF to bump the pinned snapshot. CI / a future test could compare
@@ -39,7 +34,7 @@ cp -R "$TMP/clone/." "$DEST/"
 # Patch 1: backend/run.sh installs OpenSwarm's local debugger/ before the
 # template's own `pip install -e .` so `from swarm_debug import debug` in
 # the template's backend code resolves to our bundled package (the PyPI
-# `swarm-debug` doesn't exist — our local package registers as `debug`
+# `swarm-debug` doesn't exist; our local package registers as `debug`
 # and exposes both `debug` and `swarm_debug` module names via setup.py
 # py_modules).
 RUN_SH="$DEST/backend/run.sh"
@@ -69,7 +64,7 @@ awk '
     { print }
 ' "$PYPROJECT" > "$PYPROJECT.tmp" && mv "$PYPROJECT.tmp" "$PYPROJECT"
 
-# Patch 1c: vite.config.ts — pin host to 127.0.0.1 (so our IPv4-only
+# Patch 1c: vite.config.ts: pin host to 127.0.0.1 (so our IPv4-only
 # bind poller in runtime.py:_await_frontend_bind() actually sees the
 # bound socket on macOS, where `localhost` can resolve to ::1), disable
 # Vite's `open: true` browser auto-launch (preview belongs in the
@@ -116,7 +111,7 @@ dist/
 build/
 EOF
 
-# Patch 3: backend_init.sh — copied verbatim into every new workspace.
+# Patch 3: backend_init.sh, copied verbatim into every new workspace.
 # We author this ourselves (not upstream) because the user spec says the
 # agent runs it to *bring in* the backend dir on demand; the initial seed
 # leaves backend/ out.
@@ -126,7 +121,7 @@ cat > "$DEST/backend_init.sh" <<'EOF'
 #
 # Idempotent. The workspace is seeded frontend-only (no backend/ dir,
 # BACKEND_PORT=NONE). Run this script when your App needs server-side
-# code — it copies the master template's backend/ into the workspace
+# code; it copies the master template's backend/ into the workspace
 # and flips BACKEND_PORT in both .env files to a free port.
 #
 # After running this, hard-reload the preview (right-click the reload
@@ -138,7 +133,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
 if [[ ! -f .env ]]; then
-    echo "ERROR: .env not found at $HERE — is this the workspace root?" >&2
+    echo "ERROR: .env not found at $HERE. Is this the workspace root?" >&2
     exit 1
 fi
 
@@ -149,12 +144,12 @@ source .env
 set +a
 
 if [[ "${BACKEND_PORT:-NONE}" != "NONE" ]]; then
-    echo "Backend already enabled on port $BACKEND_PORT — nothing to do." >&2
+    echo "Backend already enabled on port $BACKEND_PORT, nothing to do." >&2
     exit 0
 fi
 
 if [[ -d ./backend ]]; then
-    echo "ERROR: ./backend/ already exists but BACKEND_PORT=NONE — your" >&2
+    echo "ERROR: ./backend/ already exists but BACKEND_PORT=NONE; your" >&2
     echo "       workspace is in an inconsistent state. Either delete" >&2
     echo "       ./backend/ and re-run, or set BACKEND_PORT manually." >&2
     exit 1

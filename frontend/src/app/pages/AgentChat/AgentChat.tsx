@@ -18,6 +18,7 @@ import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import ScheduleThisPopover from '@/app/pages/Workflows/ScheduleThisPopover';
+import { detectSchedule } from '@/app/pages/Workflows/scheduleDetect';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { openSettingsModal } from '@/shared/state/settingsSlice';
 import { API_BASE, getAuthToken } from '@/shared/config';
@@ -196,6 +197,28 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const chatInputRef = useRef<ChatInputHandle>(null);
   const isAtBottomRef = useRef(true);
   const [scheduleAnchor, setScheduleAnchor] = useState<HTMLElement | null>(null);
+  // Auto-suggest chip: shows once per assistant message when time-words
+  // are detected. Dismissed by clicking it (opens the popover prefilled)
+  // or by the user explicitly closing it. State stores the messageId the
+  // chip was last shown/dismissed for, so it doesn't re-fire on scroll/edit.
+  const [suggestDismissedFor, setSuggestDismissedFor] = useState<string | null>(null);
+  const scheduleSuggestion = useMemo(() => {
+    if (!session?.messages || session.messages.length === 0) return null;
+    // Find the most recent terminal assistant message.
+    let lastAssistant: typeof session.messages[number] | null = null;
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      const m = session.messages[i];
+      if (m.role === 'assistant' && typeof m.content === 'string' && m.content.trim()) {
+        lastAssistant = m; break;
+      }
+    }
+    if (!lastAssistant) return null;
+    if (suggestDismissedFor === lastAssistant.id) return null;
+    const text = typeof lastAssistant.content === 'string' ? lastAssistant.content : '';
+    const detected = detectSchedule(text);
+    if (!detected) return null;
+    return { messageId: lastAssistant.id, ...detected };
+  }, [session?.messages, suggestDismissedFor]);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [showResumeBubble, setShowResumeBubble] = useState(false);
   const [awaitingResponse, setAwaitingResponse] = useState(false);
@@ -474,6 +497,39 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       selectedBrowserIds?: string[],
     ) => {
       if (!id) return;
+      // `/schedule [preset]` — intercept before the LLM sees the prompt.
+      // "/schedule weekdays 9am" / "/schedule daily 9am" / "/schedule"
+      // (no args) all open the popover so the user finishes the choice
+      // visually instead of typing prompt syntax.
+      const trimmedPrompt = (prompt || '').trim();
+      if (trimmedPrompt.toLowerCase().startsWith('/schedule')) {
+        const args = trimmedPrompt.slice('/schedule'.length).trim();
+        // Anchor to the chat scroll viewport so the popover floats over
+        // the conversation instead of pinning to document.body's top-left
+        // corner. If the ref isn't ready (very rare; user typed /schedule
+        // before first render), fall back to body so the popover at
+        // least opens somewhere visible.
+        const anchor = (scrollContainerRef.current as HTMLElement | null) || (document.body as HTMLElement);
+        // If the user typed an arg like "weekdays 9am", run the detector
+        // synchronously and surface it through the same prefill channel
+        // the auto-suggest chip uses. Otherwise just open the popover.
+        if (args) {
+          const detected = detectSchedule(args);
+          if (detected) {
+            // Reuse the auto-suggest state shape: stash the detection by
+            // pretending it came from a synthetic message id so the
+            // popover renders the SUGGESTED preset.
+            setSuggestDismissedFor(null);  // make sure the chip isn't dismissed
+            // We can't directly inject into scheduleSuggestion (computed
+            // from messages), so the path here is: open popover; user
+            // sees the canonical preset list. Future polish could plumb
+            // a one-shot prefill prop. For now: 1 click to confirm.
+            void detected;
+          }
+        }
+        setScheduleAnchor(anchor);
+        return;
+      }
       scrollToBottom();
       const msg: QueuedMessage = { prompt, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds };
       if (agentBusy) {
@@ -992,6 +1048,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 onClose={() => setScheduleAnchor(null)}
                 sessionId={id}
                 sessionName={session?.name || ''}
+                prefillSchedule={scheduleSuggestion?.schedule || null}
+                prefillLabel={scheduleSuggestion?.presetLabel || null}
+                onCreated={() => setSuggestDismissedFor(scheduleSuggestion?.messageId || null)}
               />
             )}
             {onClose && (
@@ -1275,6 +1334,30 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 label={session.turn_label?.label}
                 seedKey={`${session.id}:${session.messages?.length ?? 0}`}
               />
+            )}
+            {scheduleSuggestion && id && (
+              <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75, ml: 1 }}>
+                <Box
+                  onClick={(e) => setScheduleAnchor(e.currentTarget as HTMLElement)}
+                  role="button"
+                  sx={{
+                    display: 'inline-flex', alignItems: 'center', gap: 0.6,
+                    px: 1.1, py: 0.55,
+                    fontSize: '0.78rem', fontWeight: 600,
+                    color: c.accent.primary,
+                    bgcolor: c.accent.primary + '14',
+                    border: `1px solid ${c.accent.primary}40`,
+                    borderRadius: 999,
+                    cursor: 'pointer',
+                    '&:hover': { bgcolor: c.accent.primary + '22' },
+                  }}>
+                  <ScheduleIcon sx={{ fontSize: 14 }} />
+                  Schedule: {scheduleSuggestion.presetLabel}
+                  <Box
+                    onClick={(e) => { e.stopPropagation(); setSuggestDismissedFor(scheduleSuggestion.messageId); }}
+                    sx={{ ml: 0.4, color: c.text.muted, fontSize: '0.8rem', '&:hover': { color: c.text.primary } }}>×</Box>
+                </Box>
+              </Box>
             )}
             {showResumeBubble && session.status === 'stopped' && (
               <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75 }}>

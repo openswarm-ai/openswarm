@@ -73,7 +73,7 @@ def _delete_session_file(session_id: str):
 
 
 # Patterns that indicate an upstream transient problem (overload / rate limit /
-# infra blip) — safe to silently retry with backoff. Checked against the
+# infra blip); safe to silently retry with backoff. Checked against the
 # stringified exception from claude_agent_sdk / Claude CLI.
 _TRANSIENT_CAPACITY_PATTERNS = re.compile(
     r"(?:\b(?:429|500|502|503|504|529)\b"
@@ -89,7 +89,7 @@ _TRANSIENT_CAPACITY_PATTERNS = re.compile(
 )
 
 # Patterns that look rate-limit-ish but are actually non-transient (user quota,
-# auth, context-window tier gate). Must NOT retry — upgrading, reauthing, or
+# auth, context-window tier gate). Must NOT retry; upgrading, reauthing, or
 # trimming context is required. The long-context-required variant is what
 # Anthropic returns when an OAuth Pro/Max account ships a request whose input
 # exceeds the 200K standard tier and would need the "extra usage" tier; the
@@ -151,7 +151,7 @@ def _is_auth_error(exc: BaseException, extra_text: str = "") -> bool:
 
 def _is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> bool:
     # The Claude CLI's underlying ProcessError stringifies to a generic
-    # "Command failed with exit code 1 / Check stderr output for details" —
+    # "Command failed with exit code 1 / Check stderr output for details" , 
     # the real cause (rate_limit_error / No pool capacity available / 429
     # / overloaded) only surfaces in the subprocess's stderr stream, which
     # we capture via the SDK's `stderr` callback and pass in as extra_text.
@@ -165,7 +165,7 @@ def _is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> bo
     if _TRANSIENT_CAPACITY_PATTERNS.search(combined):
         return True
     # Pool-exhaustion copy from the OpenSwarm proxy ("No pool capacity
-    # available. Try again shortly.") — matches the capacity family too.
+    # available. Try again shortly."); matches the capacity family too.
     if re.search(r"no\s+pool\s+capacity", combined, re.IGNORECASE):
         return True
     return False
@@ -250,7 +250,7 @@ def _ensure_cwd_git_repo(cwd: str, home: str | None = None) -> None:
     repo with one empty commit so worktree add always has something to
     anchor on.
 
-    Safe to call on every request — does nothing if cwd is already a
+    Safe to call on every request; does nothing if cwd is already a
     valid repo (real project, previous init, or inside a parent repo).
     """
     try:
@@ -269,7 +269,7 @@ def _ensure_cwd_git_repo(cwd: str, home: str | None = None) -> None:
         import subprocess as _sp_git
         # Case A: cwd is inside some git repo (possibly parent). Verify
         # HEAD resolves. If the enclosing repo is broken (e.g. a stray
-        # `.git` in $HOME with no commits — which makes workspaces
+        # `.git` in $HOME with no commits; which makes workspaces
         # under ~/.openswarm/workspaces/ inherit a broken HEAD), we
         # need to init a fresh repo AT cwd so it shadows the parent.
         _inside = _sp_git.run(
@@ -288,7 +288,7 @@ def _ensure_cwd_git_repo(cwd: str, home: str | None = None) -> None:
                 return  # parent repo is healthy, leave it alone
             # Parent repo exists but HEAD is broken.
             if os.path.isdir(os.path.join(cwd, ".git")):
-                # .git is directly here — commit to fix it.
+                # .git is directly here; commit to fix it.
                 _sp_git.run(
                     ["git", "-c", "user.email=openswarm@local",
                      "-c", "user.name=OpenSwarm",
@@ -301,7 +301,7 @@ def _ensure_cwd_git_repo(cwd: str, home: str | None = None) -> None:
             # Init our own repo at cwd so it shadows the broken parent.
             # Fall through to Case B.
 
-        # Case B: cwd is not a git repo at all (or parent is broken) —
+        # Case B: cwd is not a git repo at all (or parent is broken) , 
         # init + empty commit here.
         _sp_git.run(
             ["git", "init", "-q", "-b", "main"],
@@ -383,8 +383,8 @@ class AgentManager:
         """Build the mcp_servers dict for ClaudeAgentOptions from installed MCP tools.
 
         Filtering is two-stage:
-          1. allowed_tools (mode/session permission) — same as before.
-          2. active_mcps (per-session activation gate) — NEW. When this list is
+          1. allowed_tools (mode/session permission); same as before.
+          2. active_mcps (per-session activation gate); NEW. When this list is
              provided (non-None), only MCP servers whose sanitized name appears
              in it are forwarded to the SDK. Empty list means zero MCPs ship.
              None means legacy / non-gated path (used by sessions created
@@ -394,7 +394,7 @@ class AgentManager:
         invariant "all MCP actions only via ToolSearch": the model can only
         reach an MCP server's tools if the user has approved MCPActivate for
         that server, which appends to session.active_mcps. The model cannot
-        bypass this by ignoring prompt instructions — the SDK simply receives
+        bypass this by ignoring prompt instructions; the SDK simply receives
         no MCP definition for unactivated servers.
 
         Servers whose every sub-tool is denied are skipped entirely.
@@ -418,7 +418,7 @@ class AgentManager:
 
             server_name = _sanitize_server_name(tool.name)
             if active_set is not None and server_name not in active_set:
-                logger.info(f"[MCP-DEBUG] GATED {server_name}: not in session.active_mcps — model must call MCPActivate first")
+                logger.info(f"[MCP-DEBUG] GATED {server_name}: not in session.active_mcps; model must call MCPActivate first")
                 continue
 
             if _is_fully_denied(tool):
@@ -482,10 +482,10 @@ class AgentManager:
                 lines.append(
                     f"  IMPORTANT: When calling tools from this server that require an email "
                     f"parameter (e.g. user_google_email, user_email), always use "
-                    f"\"{tool.connected_account_email}\" automatically — do NOT ask the user."
+                    f"\"{tool.connected_account_email}\" automatically; do NOT ask the user."
                 )
 
-            # Discord guild scoping — hard restriction. The bot may technically
+            # Discord guild scoping; hard restriction. The bot may technically
             # be in other servers (across other OpenSwarm users), but this
             # specific user only authorized these guild IDs.
             if tool.name.lower() == "discord":
@@ -597,7 +597,7 @@ class AgentManager:
         return [card.get("browser_id", "") for card in browser_cards.values() if card.get("browser_id")]
 
     def _build_mcp_registry_summary(self, allowed_tools: list[str], active_mcps: list[str]) -> str | None:
-        """Compact registry of installed MCP servers — one line per server.
+        """Compact registry of installed MCP servers; one line per server.
 
         This is the visible surface that drives the activation gate: the model
         sees which servers exist and what they're for, but cannot call any
@@ -606,7 +606,7 @@ class AgentManager:
         MCPSearch (to find the right one) and then MCPActivate, which fires a
         HITL prompt; on approve, the server's tools become callable next turn.
 
-        Schemas are NOT included here — that's the whole point. A 30-server
+        Schemas are NOT included here; that's the whole point. A 30-server
         registry costs ~1KB; the previous full-schema dump cost ~30-80KB.
         """
         all_tools = load_all_tools()
@@ -632,7 +632,7 @@ class AgentManager:
                 # Fall back to a generic blurb keyed on the tool name so the
                 # model still has *some* signal to MCPSearch against.
                 desc = f"{tool.name} integration"
-            line = f"- `{server_name}` — {desc}"
+            line = f"- `{server_name}`; {desc}"
             if server_name in active_set:
                 active_lines.append(line)
             else:
@@ -657,15 +657,15 @@ class AgentManager:
         sections.append(
             "1. If the user's request needs a server below that isn't Active, "
             "your FIRST tool call must be MCPSearch or MCPActivate. Ignore any "
-            "`mcp__*__authenticate` helpers — those are legacy shims; always go "
+            "`mcp__*__authenticate` helpers; those are legacy shims; always go "
             "through MCPActivate."
         )
         sections.append(
-            "2. After MCPActivate returns, end the turn — a follow-up turn fires "
+            "2. After MCPActivate returns, end the turn; a follow-up turn fires "
             "automatically with the new tools available."
         )
         sections.append(
-            "3. Don't ask 'should I activate X?' first — MCPActivate already "
+            "3. Don't ask 'should I activate X?' first; MCPActivate already "
             "triggers an approval prompt."
         )
         sections.append("")
@@ -760,7 +760,7 @@ class AgentManager:
             path = cp.get("path", "")
             cp_type = cp.get("type", "file")
             if not path or not os.path.exists(path):
-                sections.append(f"[Context: {path} — not found]")
+                sections.append(f"[Context: {path}; not found]")
                 continue
             if cp_type == "file" and os.path.isfile(path):
                 try:
@@ -770,14 +770,14 @@ class AgentManager:
                         f"<context_file path=\"{path}\">\n{content}\n</context_file>"
                     )
                 except Exception as e:
-                    sections.append(f"[Context: {path} — error reading: {e}]")
+                    sections.append(f"[Context: {path}; error reading: {e}]")
             elif cp_type == "directory" and os.path.isdir(path):
                 tree_lines = self._build_dir_tree(path, max_depth=4)
                 sections.append(
                     f"<context_directory path=\"{path}\">\n{chr(10).join(tree_lines)}\n</context_directory>"
                 )
             else:
-                sections.append(f"[Context: {path} — type mismatch]")
+                sections.append(f"[Context: {path}; type mismatch]")
         return "\n\n".join(sections)
 
     def _build_dir_tree(self, root: str, max_depth: int = 4, prefix: str = "") -> list[str]:
@@ -826,7 +826,7 @@ class AgentManager:
                 line += f"\n  (MCP server: {server})"
             email = tool_to_email.get(name)
             if email:
-                line += f"\n  (connected account: {email} — use this for any email parameter)"
+                line += f"\n  (connected account: {email}; use this for any email parameter)"
             lines.append(line)
 
         return (
@@ -913,7 +913,7 @@ class AgentManager:
     #     and old user/assistant pairs before the next query() call
     #   - context_soft_cap_pct (default 0.90): pre-send hard guard. After
     #     compaction, if still over, LRU-trim active_mcps
-    #   - >= 1.0 hits the proxy/Anthropic 200K ceiling — friendly card
+    #   - >= 1.0 hits the proxy/Anthropic 200K ceiling; friendly card
     #     surfaces from the catch-all
     # ------------------------------------------------------------------
 
@@ -930,7 +930,7 @@ class AgentManager:
         """Programmatic, no-LLM summary of a message slice. Mirrors the
         shape of browser_agent._summarize_messages: extracts the original
         user task, counts tool calls, captures the last assistant text.
-        Cheap, deterministic, and never makes a network call — so
+        Cheap, deterministic, and never makes a network call; so
         compaction itself adds zero latency to the user's turn.
         """
         if not messages:
@@ -988,7 +988,7 @@ class AgentManager:
 
         Returns True if a new summary was produced. Mutates session state:
         sets compacted_through_msg_id and emits a context_status event.
-        Never modifies session.messages — originals stay around for the
+        Never modifies session.messages; originals stay around for the
         UI drawer; only the history *sent to the SDK* is trimmed (handled
         in _build_history_prefix lookups).
         """
@@ -999,7 +999,7 @@ class AgentManager:
         if len(msgs) < 4:
             return False
         # Summarize everything up to (but not including) the last 6
-        # messages — that window keeps recent intent visible to the
+        # messages; that window keeps recent intent visible to the
         # model so it doesn't lose its train of thought right after
         # compaction.
         cutoff = max(0, len(msgs) - 6)
@@ -1017,7 +1017,7 @@ class AgentManager:
         inline replacement plus the on-disk path (or None if untouched).
 
         Storage is session-scoped under data/sessions/<session_id>/blobs/
-        — never honors caller-supplied paths (defense against path
+       ; never honors caller-supplied paths (defense against path
         traversal). The inline replacement keeps the first 4KB so the
         model retains some signal about what was returned.
         """
@@ -1044,7 +1044,7 @@ class AgentManager:
         head = serialized[:4_000]
         replacement = (
             f"{head}\n\n"
-            f"[truncated — full output ({len(serialized)} chars) saved to {blob_path}. "
+            f"[truncated; full output ({len(serialized)} chars) saved to {blob_path}. "
             f"Ask the user or run a follow-up tool call if you need the rest.]"
         )
         return replacement, blob_path
@@ -1114,7 +1114,7 @@ class AgentManager:
         # explicitly in builtin_permissions.json). Bash defaults to "ask"
         # because every other builtin is sandboxed by domain (Read/Write
         # touch files but not the shell, browser tools touch a webview),
-        # whereas Bash is a full local shell — and the agent receives
+        # whereas Bash is a full local shell; and the agent receives
         # untrusted text from MCP tools (Gmail, WebFetch, browsing) that
         # can carry prompt injection. Without this, a poisoned email
         # could silently `rm -rf` the user. Users who want the old
@@ -1129,7 +1129,7 @@ class AgentManager:
         # narrow set of files a prompt-injected agent would use to exfil
         # or persist (SSH keys, shell rc files, env files, cloud creds,
         # system dirs). Normal in-project / in-workspace / in-Downloads
-        # edits never match — keeping the prompt-fatigue surface tiny.
+        # edits never match; keeping the prompt-fatigue surface tiny.
         import fnmatch as _fnmatch
 
         _SENSITIVE_PATH_PATTERNS = (
@@ -1154,7 +1154,7 @@ class AgentManager:
             except Exception:
                 return False
             # Normalize to forward slashes so the patterns match on Windows
-            # too — `os.path.normpath` produces backslashes on Windows
+            # too; `os.path.normpath` produces backslashes on Windows
             # (`C:\Users\eric\.ssh\authorized_keys`), and fnmatch treats
             # `/` in the pattern as a literal character. Without this,
             # every sensitive-path gate would silently no-op on Windows
@@ -1169,6 +1169,31 @@ class AgentManager:
 
         _PATH_GATED_TOOLS = ("Write", "Edit", "NotebookEdit")
 
+        # OS-level scheduling across macOS/Linux/Windows. Agent must
+        # not install cron entries, launchd plists, Windows scheduled
+        # tasks, or PowerShell ScheduledTask cmdlets behind the user's
+        # back; the native OpenSwarm scheduler is the platform-visible
+        # path. Word-bounded so we don't flag stray strings in echo etc.
+        import re as _re_sched
+        _OS_SCHED_RE = _re_sched.compile(
+            r"\b("
+            r"crontab|launchctl|launchd|schtasks|systemd-run|"
+            r"systemctl\s+--user.*timer|at\s+\d|at\s+now|at\s+-f|"
+            # Windows PowerShell scheduled-task cmdlets:
+            r"Register-ScheduledTask|New-ScheduledTask|Set-ScheduledTask|"
+            r"Register-ScheduledJob|New-ScheduledJob"
+            r")\b",
+            _re_sched.IGNORECASE,
+        )
+
+        def _looks_like_os_scheduling(tool_input) -> bool:
+            if not isinstance(tool_input, dict):
+                return False
+            cmd = str(tool_input.get("command") or "")
+            if not cmd:
+                return False
+            return bool(_OS_SCHED_RE.search(cmd))
+
         def _extract_target_path(tool_name: str, tool_input) -> str:
             if not isinstance(tool_input, dict):
                 return ""
@@ -1180,7 +1205,17 @@ class AgentManager:
             """Flip a permissive policy to 'ask' when the target path is
             sensitive. Defense in depth: even if the user has Write set to
             always_allow for productivity, a prompt-injected agent writing
-            to ~/.ssh/authorized_keys or ~/.zshrc gets surfaced for review."""
+            to ~/.ssh/authorized_keys or ~/.zshrc gets surfaced for review.
+
+            Also: Bash invocations that look like OS-level scheduling
+            (crontab, launchctl, schtasks, at, systemd-run --on-calendar)
+            are flipped to 'ask' regardless of permission policy. The
+            agent should use OpenSwarm's native scheduler for any
+            recurring task; we don't want it silently installing cron
+            entries the platform can't see, audit, or stop.
+            """
+            if tool_name == "Bash" and _looks_like_os_scheduling(tool_input):
+                return "ask"
             if policy != "always_allow" or tool_name not in _PATH_GATED_TOOLS:
                 return policy
             if _is_sensitive_write_path(_extract_target_path(tool_name, tool_input)):
@@ -1328,7 +1363,6 @@ class AgentManager:
 
             raw_response = input_data.get("tool_response", "")
 
-            # Track individual tool execution
             hook_tool_name_early = input_data.get("tool_name", "")
             if hook_tool_name_early:
                 _is_mcp = "__" in hook_tool_name_early
@@ -1360,7 +1394,6 @@ class AgentManager:
                         slot["total_ms"] = slot.get("total_ms", 0) + elapsed_ms
                         slot["max_ms"] = max(slot.get("max_ms", 0), elapsed_ms)
 
-                # Determine tool success
                 _tool_success = True
                 if isinstance(raw_response, str):
                     _tool_success = not (raw_response.startswith("Error") or raw_response.startswith("Traceback"))
@@ -1469,7 +1502,7 @@ class AgentManager:
                 #     re-expand.
                 # If a subagent ever needs a parent activation, the user
                 # must approve it explicitly via MCPActivate inside the
-                # subagent session — same gate as a fresh top-level chat.
+                # subagent session; same gate as a fresh top-level chat.
                 sub_session = AgentSession(
                     id=sub_session_id,
                     name=sub_name,
@@ -1526,7 +1559,7 @@ class AgentManager:
             _, mode_sys_prompt, _ = self._resolve_mode(session.mode)
             # MCP servers and their tool inventories are intentionally NOT
             # injected into the system prompt. The CLI's deferred-tool pool
-            # already exposes them by name via ToolSearch — eagerly listing
+            # already exposes them by name via ToolSearch; eagerly listing
             # connected MCPs (with account emails, full tool enumerations,
             # etc.) here would defeat the deferral and leak knowledge of
             # every connected integration into every turn. The model
@@ -1537,7 +1570,7 @@ class AgentManager:
             #   need to ask which account to use, or pass it explicitly.
             # - Discord guild-id "hard restriction" is gone as a prompt
             #   instruction. Enforce that at the Discord MCP server's
-            #   tool-call layer instead — prompt rules are not a security
+            #   tool-call layer instead; prompt rules are not a security
             #   boundary.
             connected_tools_ctx = None
             browser_ctx = self._build_browser_context(session.dashboard_id, selected_browser_ids=selected_browser_ids)
@@ -1568,6 +1601,24 @@ class AgentManager:
 
             mcp_registry_ctx = self._build_mcp_registry_summary(session.allowed_tools, session.active_mcps)
             global_settings = load_settings()
+            # Scheduling nudge: the agent has a ScheduleWorkflow tool +
+            # CRUD friends, and should proactively offer to schedule
+            # recurring work via AskUserQuestion. The block below is
+            # short on purpose so it doesn't crowd the context window;
+            # the per-tool description carries the full protocol.
+            schedule_ctx = (
+                "<scheduling_guidance>\n"
+                "After completing a substantive task, if the work looks "
+                "repeatable (the user said 'every', 'each', 'daily', "
+                "'weekly', 'morning', 'before standup', or you just did "
+                "the same sequence twice in this session), offer to "
+                "schedule it. Use AskUserQuestion to confirm cadence, "
+                "then ScheduleWorkflow to create it. Never reach for "
+                "crontab, launchctl, or schtasks; always use the native "
+                "scheduler so the user can see, pause, and edit it. "
+                "Don't ask after trivial one-off requests.\n"
+                "</scheduling_guidance>"
+            )
             composed_prompt = self._compose_system_prompt(
                 global_settings.default_system_prompt,
                 mode_sys_prompt,
@@ -1576,6 +1627,7 @@ class AgentManager:
                 browser_ctx,
                 mcp_registry_ctx,
             )
+            composed_prompt = (composed_prompt + "\n\n" + schedule_ctx) if composed_prompt else schedule_ctx
 
             if session.mode == "view-builder":
                 # Read the LIVE skill content rather than a frozen-at-import
@@ -1658,6 +1710,27 @@ class AgentManager:
                     "type": "stdio",
                 }
 
+            # Always-on schedule server. Exposes ScheduleWorkflow +
+            # CRUD tools so the agent can offer to schedule recurring
+            # work via the native scheduler (visible, auditable) rather
+            # than reaching for cron/launchctl. Tool descriptions tell
+            # the agent to AskUserQuestion FIRST to confirm cadence.
+            schedule_server_path = os.path.join(
+                os.path.dirname(__file__), "schedule_mcp_server.py"
+            )
+            from backend.auth import get_auth_token as _get_auth_token_sched
+            mcp_servers["openswarm-schedule"] = {
+                "command": sys.executable,
+                "args": [schedule_server_path],
+                "env": {
+                    "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
+                    "OPENSWARM_AUTH_TOKEN": _get_auth_token_sched(),
+                    "OPENSWARM_PARENT_SESSION_ID": session.id,
+                    "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
+                },
+                "type": "stdio",
+            }
+
             # Always-on meta-MCP server. Exposes MCPList / MCPSearch /
             # MCPActivate so the model can discover and activate user MCPs at
             # runtime. The activation gate (active_mcps filter in
@@ -1682,7 +1755,7 @@ class AgentManager:
             # The CLI's built-in WebSearch/WebFetch wraps Anthropic's
             # web_search_20250305. For non-Claude primaries the CLI
             # delegates execution back to Anthropic via
-            # ANTHROPIC_SMALL_FAST_MODEL — needs an Anthropic credential
+            # ANTHROPIC_SMALL_FAST_MODEL; needs an Anthropic credential
             # or it 401s. We register our DDG-backed MCP only for users
             # with no Anthropic path; Anthropic's hosted search is
             # higher-quality so we prefer it whenever it's reachable.
@@ -1707,7 +1780,7 @@ class AgentManager:
                 pass
 
             # When the primary is non-Claude we deliberately don't count
-            # OpenSwarm Pro as an Anthropic path — using the Pro pool for
+            # OpenSwarm Pro as an Anthropic path; using the Pro pool for
             # WebSearch on a GPT/Gemini session would drain it for the
             # user's Claude turns. The user's GPT/Gemini subscription
             # serves their non-Claude turns at zero cost to us.
@@ -1721,7 +1794,7 @@ class AgentManager:
             # connection unless the user separately set up one. The CLI's
             # built-in WebSearch delegates to Anthropic Haiku, which falls
             # through 9Router to whichever connection serves anthropic/...
-            # ids — usually OpenRouter — and 401s. Force the openswarm-web
+            # ids; usually OpenRouter; and 401s. Force the openswarm-web
             # MCP to register so WebSearch always cascades through our own
             # /api/web/search (Gemini → OpenAI → DuckDuckGo).
             _is_custom_session = _api_type_for_session == "custom"
@@ -1729,7 +1802,7 @@ class AgentManager:
             # if the conversation primary IS Claude. Pre-fix: any user
             # with an Anthropic key set OR on OpenSwarm Pro skipped the
             # openswarm-web MCP registration and the CLI's built-in
-            # WebSearch routed to Anthropic Haiku — which on a Codex
+            # WebSearch routed to Anthropic Haiku; which on a Codex
             # /Gemini session drained the Pro pool's Haiku quota for
             # WebSearch calls, even though the conversation primary
             # (Codex/Gemini) supports native search via its own credits.
@@ -1770,7 +1843,7 @@ class AgentManager:
                     "type": "stdio",
                 }
                 logger.info(
-                    f"[MCP-DEBUG] Primary {_m} has no reliable native web search — "
+                    f"[MCP-DEBUG] Primary {_m} has no reliable native web search; "
                     f"registering openswarm-web (DDG search + trafilatura fetch, free)"
                 )
 
@@ -1808,7 +1881,7 @@ class AgentManager:
                     if name == "openswarm-web":
                         # Expose our DDG-backed web tools under an MCP prefix.
                         # Honor existing WebSearch/WebFetch permission policy
-                        # — if the user disabled them in Settings, don't offer
+                        #; if the user disabled them in Settings, don't offer
                         # the MCP variants either.
                         for wt in ("WebSearch", "WebFetch"):
                             policy = _builtin_perms.get(wt, "always_allow")
@@ -1847,14 +1920,14 @@ class AgentManager:
 
             # Tell the model directly which web tools work for this session.
             # The Claude Code CLI's deferred-tool registry still advertises bare
-            # `WebSearch` and `WebFetch` even when we've stripped them above —
+            # `WebSearch` and `WebFetch` even when we've stripped them above , 
             # frontier models (Claude/GPT-5/Gemini Pro) intuit the namespaced
             # MCP variant from context, but smaller open-source models (gpt-oss
             # via Ollama, smaller Llama/Qwen, etc.) thrash on the deferred-tool
             # handshake (saw 2+ minutes of repeated `ToolSearch(select:WebSearch)`
             # → empty matches → retry). Naming the working tool here cuts that
             # to a single direct call. Only injected when (a) we registered the
-            # web MCP, AND (b) the user hasn't disabled the policy — matches
+            # web MCP, AND (b) the user hasn't disabled the policy; matches
             # the same gate the MCP allowlist uses, so disabling WebSearch in
             # Settings still wins.
             _web_tools_available = _need_web_mcp and (
@@ -1867,21 +1940,21 @@ class AgentManager:
                     "This session does NOT have the built-in `WebSearch` / "
                     "`WebFetch` tools (they delegate to Anthropic Haiku, which "
                     "isn't reachable on this primary). Use the MCP-backed "
-                    "equivalents instead — call them DIRECTLY, no ToolSearch "
+                    "equivalents instead; call them DIRECTLY, no ToolSearch "
                     "step needed:"
                 )
                 if "mcp__openswarm-web__WebSearch" in effective_allowed:
                     _hint_lines.append(
                         "- `mcp__openswarm-web__WebSearch(query: str, "
-                        "num_results?: int)` — DuckDuckGo search."
+                        "num_results?: int)`; DuckDuckGo search."
                     )
                 if "mcp__openswarm-web__WebFetch" in effective_allowed:
                     _hint_lines.append(
                         "- `mcp__openswarm-web__WebFetch(url: str, prompt?: "
-                        "str)` — fetch a URL and return readable text."
+                        "str)`; fetch a URL and return readable text."
                     )
                 _hint_lines.append(
-                    "Do not call `ToolSearch(select:WebSearch)` — bare "
+                    "Do not call `ToolSearch(select:WebSearch)`; bare "
                     "`WebSearch` is unavailable on this session and that path "
                     "will return empty matches."
                 )
@@ -1891,7 +1964,6 @@ class AgentManager:
                     f"{composed_prompt}\n\n{_web_hint}" if composed_prompt else _web_hint
                 )
 
-            # Log effective tool lists
             google_allowed = [t for t in effective_allowed if "google-workspace" in t]
             reddit_allowed = [t for t in effective_allowed if "reddit" in t]
             builtin_allowed = [t for t in effective_allowed if not t.startswith("mcp__")]
@@ -1962,14 +2034,14 @@ class AgentManager:
                 logger.info(f"[MCP-DEBUG] Using direct Anthropic API key (route=api) for {session.model}")
             elif _is_pinned_api_route and _api_route_provider == "openai" and getattr(global_settings, "openai_api_key", None):
                 # Goes through 9Router's Anthropic→OpenAI translator like
-                # other own-key routes — but we point OPENAI_BASE_URL at a
+                # other own-key routes; but we point OPENAI_BASE_URL at a
                 # tiny local pass-through (/api/openai-passthrough/v1) that
                 # renames max_tokens → max_completion_tokens before relaying
                 # to api.openai.com. OpenAI's GPT-5 family rejects max_tokens
                 # with HTTP 400, and 9Router 0.3.60 doesn't know about
                 # max_completion_tokens yet (its CLI<->OpenAI translator
                 # emits the legacy field). The pin on 0.3.60 is intentional
-                # (newer 9Router versions regress WebSearch — see
+                # (newer 9Router versions regress WebSearch; see
                 # nine_router.py comment) so we patch the boundary instead
                 # of bumping. Pre-fix: every gpt-5.* / gpt-5.* own-key
                 # session 400'd silently.
@@ -1994,7 +2066,7 @@ class AgentManager:
                         raise ValueError(
                             "9Router could not start. Custom OpenAI-compatible "
                             "providers need 9Router to translate the Anthropic "
-                            "protocol — install Node.js and restart the app."
+                            "protocol; install Node.js and restart the app."
                         )
                 from backend.apps.agents.providers.registry import _find_custom_provider_for_value
                 cp = _find_custom_provider_for_value(global_settings, session.model)
@@ -2005,14 +2077,14 @@ class AgentManager:
                 }
                 if cp:
                     # Local OpenAI-compatible servers (LM Studio, Ollama, ...)
-                    # often run with auth disabled — the user leaves api_key
+                    # often run with auth disabled; the user leaves api_key
                     # blank in Settings. The OpenAI-style SDK insists on a
                     # non-empty key; substitute a harmless placeholder so the
                     # CLI can issue requests. Servers that DO check auth always
                     # have a real key configured.
                     env["OPENAI_API_KEY"] = (cp.api_key or "").strip() or "no-auth-required"
                     env["OPENAI_BASE_URL"] = (cp.base_url or "")
-                # Pin subagent ids — without these, CLI's default Haiku 4.5
+                # Pin subagent ids; without these, CLI's default Haiku 4.5
                 # gets sent to the custom provider and 404s.
                 if global_settings.anthropic_api_key:
                     env["CLAUDE_CODE_SUBAGENT_MODEL"] = "claude-sonnet-4-6"
@@ -2054,7 +2126,7 @@ class AgentManager:
                     if not _9r_running():
                         raise ValueError(
                             "9Router could not start. OpenRouter routing requires "
-                            "Node.js — install it and restart the app, or pick a "
+                            "Node.js; install it and restart the app, or pick a "
                             "model that uses a direct API key (Anthropic, OpenAI, "
                             "or Google AI Studio)."
                         )
@@ -2139,12 +2211,12 @@ class AgentManager:
                     env["ANTHROPIC_SMALL_FAST_MODEL"] = _small_model
                     env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = _small_model
                 logger.info(
-                    f"[MCP-DEBUG] 9Router direct — subagent_model={_sub_model}, small_fast={_small_model}"
+                    f"[MCP-DEBUG] 9Router direct; subagent_model={_sub_model}, small_fast={_small_model}"
                 )
                 # ENABLE_TOOL_SEARCH=auto: without it, CLI's tengu_defer_all_bn4
                 # Statsig flag defers 16 tools with no way to load them on non-
                 # Anthropic networks. "auto" eagerly loads tools when schema
-                # budget fits in ~10% of context. Don't pass --bare — sets
+                # budget fits in ~10% of context. Don't pass --bare; sets
                 # CLAUDE_CODE_SIMPLE=1 which strips the system prompt scaffolding.
                 env["ENABLE_TOOL_SEARCH"] = "auto"
                 options_kwargs["env"] = env
@@ -2179,7 +2251,7 @@ class AgentManager:
                 "preset": "claude_code",
             }
             # exclude_dynamic_sections=True moves cwd/git/OS grounding out of
-            # the cached prefix and into the first user message — unlocks
+            # the cached prefix and into the first user message; unlocks
             # Anthropic prompt cache (~80% input-token cut, 13-31% faster TTFT).
             # Trade-off: grounding freezes at turn 1.
             if composed_prompt:
@@ -2209,7 +2281,7 @@ class AgentManager:
             try:
                 level = getattr(session, "thinking_level", "auto") or "auto"
                 # Trivially short prompts ("hi", "thanks") don't benefit from
-                # 5-30s of hidden reasoning. Override per-turn only — session
+                # 5-30s of hidden reasoning. Override per-turn only; session
                 # setting is untouched so the UI pill keeps reflecting the
                 # user's choice.
                 _prompt_len = len((prompt or "").strip())
@@ -2274,7 +2346,7 @@ class AgentManager:
                         prompt_content.insert(0, {"type": "text", "text": history})
 
             # Compaction trigger (Phase 2). Driven by live ctx_used ratio
-            # rather than turn count — fires when input_tokens/context_window
+            # rather than turn count; fires when input_tokens/context_window
             # crosses session.compact_threshold_pct (default 0.65). Cheap,
             # programmatic summarization (no aux LLM call) so this adds
             # zero latency on the user's turn.
@@ -2296,7 +2368,7 @@ class AgentManager:
                 # Use the most recent measurement (the prior turn's
                 # input_tokens) as the estimate. Conservative because the
                 # current turn's user prompt + any new history adds on top
-                # — but the first turn of a fresh session has tokens=0 so
+                #; but the first turn of a fresh session has tokens=0 so
                 # we only act once we've seen real numbers.
                 _est_tokens = session.tokens.get("input", 0)
                 _hard_cap = int(session.context_window * session.context_soft_cap_pct)
@@ -2354,7 +2426,7 @@ class AgentManager:
             _turn_thinking_text_parts: list[str] = []
             _turn_tool_count: int = 0
             _turn_started_ts: float | None = None
-            # Wall-clock turn duration (ms) — covers thinking + tool
+            # Wall-clock turn duration (ms); covers thinking + tool
             # execution + assistant text. Updated continuously as the
             # turn unfolds. Used for the "Thought for Ns" segment so
             # the duration reflects the entire user-visible wait, not
@@ -2363,14 +2435,14 @@ class AgentManager:
             # Total output tokens across every AssistantMessage in the
             # turn (thinking + visible text + tool-call JSON args). The
             # consolidated thinking pill's `tokens` segment uses this
-            # rather than thinking-text-only chars/3.6 — answers the
+            # rather than thinking-text-only chars/3.6; answers the
             # question "how much work did the model produce on this
             # turn" honestly. Populated from each AssistantMessage's
             # usage.output_tokens; fallback heuristic kicks in only
             # when usage is absent.
             _turn_output_tokens: int = 0
             # Running char counts for the streaming portions of the
-            # turn — used to grow the token estimate while assistant
+            # turn; used to grow the token estimate while assistant
             # text and tool-call JSON args are still streaming, BEFORE
             # the SDK has emitted a final usage.output_tokens count
             # for those blocks. Once the AssistantMessage lands with
@@ -2402,7 +2474,7 @@ class AgentManager:
             _first_event = True
             # True between the first non-ResultMessage of a turn and the
             # following ResultMessage; False at turn boundaries. The retry
-            # layer below only retries at boundaries — resuming mid-turn via
+            # layer below only retries at boundaries; resuming mid-turn via
             # sdk_session_id would risk duplicating user-visible output.
             _current_turn_emitted = False
 
@@ -2417,7 +2489,7 @@ class AgentManager:
 
             async def _emit_consolidated_thinking(force_provider_unavailable: bool = False) -> None:
                 """Build the running aggregate Message and broadcast it.
-                Safe to call multiple times — uses a stable per-turn id
+                Safe to call multiple times; uses a stable per-turn id
                 so the frontend dedupes by id and updates the bubble in
                 place.
 
@@ -2425,7 +2497,7 @@ class AgentManager:
                   1. Reasoning text exists (Anthropic happy path).
                   2. Upstream provider reported reasoning tokens via
                      9Router (best-effort path for GPT/Gemini).
-                  3. force_provider_unavailable=True — caller has
+                  3. force_provider_unavailable=True; caller has
                      determined this turn went through a translator that
                      doesn't carry reasoning content (cx/ or gc/), and
                      the user should see a "provider doesn't expose
@@ -2461,7 +2533,7 @@ class AgentManager:
                         and not force_provider_unavailable
                     ):
                         # No text, no upstream signal, and caller didn't
-                        # ask for the unavailable-pill — nothing to show.
+                        # ask for the unavailable-pill; nothing to show.
                         return
                 joined_text = "\n".join(_turn_thinking_text_parts)
                 # Total turn output token estimate. Combines two sources:
@@ -2471,7 +2543,7 @@ class AgentManager:
                 #   - chars/3.6 heuristic over the running streams of
                 #     thinking + assistant-text + tool-input JSON
                 #     (covers in-flight blocks the SDK hasn't billed
-                #     yet — i.e. the answer the user is currently
+                #     yet; i.e. the answer the user is currently
                 #     reading).
                 # Take the max so the number doesn't visually shrink as
                 # the SDK's authoritative count overtakes our running
@@ -2521,23 +2593,23 @@ class AgentManager:
                         pass
                 if _turn_thinking_msg_id is None:
                     _turn_thinking_msg_id = uuid4().hex
-                # Combined token total for the pill — input + output for
+                # Combined token total for the pill; input + output for
                 # the parent turn PLUS any work delegated to subagents
                 # (browser agents, invoke-agent forks) and tool MCP
                 # servers that produced their own usage on this turn.
                 # The user-visible answer to "how big is this turn" is
                 # the all-in sum, not just the primary's output. We sum
                 # every reachable source:
-                #   - parent's input  (session.tokens["input"] —
+                #   - parent's input  (session.tokens["input"] , 
                 #     ResultMessage.usage at line ~2886)
-                #   - parent's output (session.tokens["output"] — same
+                #   - parent's output (session.tokens["output"]; same
                 #     ResultMessage)
                 #   - every direct sub-session whose parent_session_id
                 #     points at this session (browser agents, sub-agent
                 #     forks, invoke-agent calls book their own usage at
-                #     subprocess return time — agent_manager.py:1365 +
+                #     subprocess return time; agent_manager.py:1365 +
                 #     browser_agent.py:1000-1001)
-                # This mirrors how billing accumulates per-turn — caches,
+                # This mirrors how billing accumulates per-turn; caches,
                 # tool MCP servers that talk to LLMs (e.g. summarizers),
                 # and subagent reasoning all show up under the parent's
                 # "session.tokens" once their result lands.
@@ -2566,7 +2638,7 @@ class AgentManager:
                     pass
 
                 # Fall back to cumulative if the baseline wasn't captured
-                # (degenerate empty turn — better than showing zero).
+                # (degenerate empty turn; better than showing zero).
                 if _turn_baseline_captured:
                     _parent_in = max(0, _cum_in - _turn_baseline_session_in)
                     _parent_out = max(0, _cum_out - _turn_baseline_session_out)
@@ -2655,7 +2727,7 @@ class AgentManager:
                     else:
                         _current_turn_emitted = True
                         # Stamp the turn's wall-clock start at the FIRST
-                        # non-Result message we see — this is when the
+                        # non-Result message we see; this is when the
                         # user actually started waiting. We use the same
                         # timestamp as the basis for "Thought for Ns"
                         # so the duration covers thinking + tool exec
@@ -2687,7 +2759,7 @@ class AgentManager:
                             # translator strips reasoning content (cx/, gc/,
                             # ag/, gemini/). Without this, the pill emits
                             # at turn end and lands BELOW the assistant
-                            # text in session.messages — visually wrong.
+                            # text in session.messages; visually wrong.
                             # Pre-emitting here gives the pill the same
                             # ordering as Anthropic's natural streaming
                             # path. Updates in place at turn end via the
@@ -2706,7 +2778,6 @@ class AgentManager:
                         logger.info(f"[MCP-DEBUG] First event received: {type(message).__name__}")
                         _first_event = False
 
-                    # Log system messages (MCP server status, errors, etc.)
                     if isinstance(message, SystemMessage):
                         raw = message.__dict__ if hasattr(message, '__dict__') else str(message)
                         logger.info(f"[MCP-DEBUG] SystemMessage: {raw}")
@@ -2742,7 +2813,7 @@ class AgentManager:
                                 # (GPT-5.3 Codex, Gemini 3 Pro/Flash, Claude
                                 # with extended thinking). Rendered as a
                                 # collapsible "thinking" message in the UI via
-                                # the existing stream infrastructure — the
+                                # the existing stream infrastructure; the
                                 # frontend already handles role="thinking" for
                                 # the DynamicIsland/agent card rendering.
                                 thinking_msg_id = uuid4().hex
@@ -2766,7 +2837,7 @@ class AgentManager:
                                 # consolidated thinking pill. The
                                 # AssistantMessage path (further down)
                                 # ALSO increments _turn_tool_count when
-                                # ToolUseBlocks fully arrive — but for
+                                # ToolUseBlocks fully arrive; but for
                                 # OpenAI/Gemini through 9Router the
                                 # AssistantMessage envelope is sometimes
                                 # incomplete, so this stream-level count
@@ -2774,7 +2845,7 @@ class AgentManager:
                                 # segment renders cross-provider. To
                                 # avoid double-counting we DON'T also
                                 # increment on AssistantMessage when
-                                # this code path already fired — see
+                                # this code path already fired; see
                                 # the dedupe at the AssistantMessage
                                 # block below.
                                 _turn_tool_count += 1
@@ -2824,7 +2895,7 @@ class AgentManager:
                             # If this was a thinking block, accumulate
                             # elapsed_ms server-side. We don't include
                             # per-block elapsed/tokens on the WS event
-                            # — the pill stays in "Thinking…" until the
+                            #; the pill stays in "Thinking…" until the
                             # AssistantMessage lands carrying the per-turn
                             # aggregate values.
                             if index in _thinking_block_starts:
@@ -2861,7 +2932,7 @@ class AgentManager:
                                 thinking_text = getattr(block, "thinking", None) or getattr(block, "text", None) or ""
                                 if thinking_text:
                                     new_thinking_parts.append(thinking_text)
-                                # Try multiple field-name variants — SDK
+                                # Try multiple field-name variants; SDK
                                 # versions and 9Router translations have
                                 # used `signature`, `thoughtSignature`,
                                 # and `thought_signature` over time.
@@ -2903,7 +2974,7 @@ class AgentManager:
                         # higher count.
                         if new_thinking_parts:
                             _turn_thinking_text_parts.extend(new_thinking_parts)
-                        # Latch the most recent thoughtSignature — Gemini
+                        # Latch the most recent thoughtSignature; Gemini
                         # only validates against the LATEST one in the
                         # conversation history, so older signatures from
                         # earlier think-steps in the same turn are
@@ -2959,7 +3030,7 @@ class AgentManager:
                                 if "codex/" in _lower_text or "[codex" in _lower_text:
                                     friendly = (
                                         "GPT subscription token expired. Open Settings → Models and click "
-                                        "Reconnect on the OpenAI / GPT row to refresh — should take ~10s, "
+                                        "Reconnect on the OpenAI / GPT row to refresh; should take ~10s, "
                                         "then send your message again."
                                     )
                                     reason = "codex_token_expired"
@@ -3024,7 +3095,7 @@ class AgentManager:
                         # ResultMessage carries the AUTHORITATIVE per-turn
                         # output_tokens count. Some providers (notably
                         # OpenAI/Gemini through 9Router) only populate
-                        # `usage.output_tokens` here — not on individual
+                        # `usage.output_tokens` here; not on individual
                         # AssistantMessages. Fold this into the running
                         # turn aggregate BEFORE emitting the final
                         # consolidated thinking message, so the bubble's
@@ -3034,7 +3105,7 @@ class AgentManager:
                             _result_usage = getattr(message, "usage", None) or {}
                             if isinstance(_result_usage, dict):
                                 _result_out = int(_result_usage.get("output_tokens", 0) or 0)
-                                # Take the max — if individual
+                                # Take the max; if individual
                                 # AssistantMessages already summed to a
                                 # larger number we trust that; otherwise
                                 # ResultMessage's count fills the gap.
@@ -3144,7 +3215,7 @@ class AgentManager:
                                     # provider (Ollama Cloud, Together, Groq,
                                     # local LMs, etc.). Pricing is unknowable
                                     # without per-provider rate tables that
-                                    # would rot fast — zero out instead of
+                                    # would rot fast; zero out instead of
                                     # showing the SDK's Anthropic-rate
                                     # estimate, which is meaningless here.
                                     _free_route = True
@@ -3233,7 +3304,7 @@ class AgentManager:
                         # we wait and restart. On resume the CLI re-runs the
                         # last turn from scratch (Anthropic doesn't persist
                         # in-progress responses), so the partial assistant
-                        # text / tool call we emitted is now orphaned — cap
+                        # text / tool call we emitted is now orphaned; cap
                         # it with stream_end and start the fresh turn under a
                         # new message id.
                         if stream_text_msg_id:
@@ -3291,8 +3362,8 @@ class AgentManager:
             # Long-context-required 429 fork: surface a friendly overflow event
             # so the frontend can render an actionable card ("Switch to Chat
             # mode" / "Start a fresh chat") instead of a raw error blob. The
-            # user can't recover by waiting — this is a tier-gate, not a rate
-            # limit — so the UX matters.
+            # user can't recover by waiting; this is a tier-gate, not a rate
+            # limit; so the UX matters.
             try:
                 _stderr_tail = "\n".join(_stderr_buffer[-50:])
             except Exception:
@@ -3301,7 +3372,7 @@ class AgentManager:
                 friendly_msg = (
                     "This conversation has grown too large for your account's "
                     "standard context window. Long-context requests require an "
-                    "upgraded tier — switch to Chat mode or start a fresh chat "
+                    "upgraded tier; switch to Chat mode or start a fresh chat "
                     "to continue."
                 )
                 error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
@@ -3319,16 +3390,16 @@ class AgentManager:
                 })
             elif _is_auth_error(e, extra_text=_stderr_tail):
                 # Three sub-cases the user can hit, with distinct fixes:
-                #   1. "No credentials for provider: claude" — user picked a
+                #   1. "No credentials for provider: claude"; user picked a
                 #      -cc route but doesn't have Claude Pro/Max connected
                 #      via 9Router. Tell them to either connect Claude
                 #      Pro/Max OR pick a non--cc model.
-                #   2. OpenSwarm Pro 401 — bearer expired. Reconnect.
-                #   3. Anthropic API key 401 — wrong key. Re-enter.
+                #   2. OpenSwarm Pro 401; bearer expired. Reconnect.
+                #   3. Anthropic API key 401; wrong key. Re-enter.
                 _model = (session.model or "").lower()
                 _combined = f"{e!s}\n{_stderr_tail}".lower()
                 # Codex/OpenAI subscription tokens rotate every ~2-3
-                # minutes — the user sees the rotation window as a 401
+                # minutes; the user sees the rotation window as a 401
                 # with "reset after 1m 59s" or similar. Don't ask them to
                 # reconnect; just tell them to wait it out and retry.
                 if (
@@ -3336,7 +3407,7 @@ class AgentManager:
                     and ("authentication token is expired" in _combined or "authentication token has expired" in _combined or "401" in _combined)
                 ):
                     friendly_msg = (
-                        "GPT subscription token just rotated — this is "
+                        "GPT subscription token just rotated; this is "
                         "automatic and resets every couple minutes. Send "
                         "your message again in ~1 minute and it'll go "
                         "through. (No need to reconnect anything.)"
@@ -3631,7 +3702,7 @@ class AgentManager:
         # Fire a background aux LLM call to generate a 3-6 word verb-phrase
         # describing this turn ("Auditing the pull request", "Drafting your
         # email"). The narrator pill swaps from its heuristic verb to this
-        # label as soon as it lands — usually ~500ms-1s into the turn,
+        # label as soon as it lands; usually ~500ms-1s into the turn,
         # which is exactly when "Thinking…" starts feeling generic.
         # Provider-agnostic via resolve_aux_model. Non-blocking; failure
         # is silent and the heuristic stays.
@@ -3643,15 +3714,12 @@ class AgentManager:
             except Exception:
                 pass
 
-        # Track context attachment patterns
         if context_paths or attached_skills or images or forced_tools:
             pass
 
-        # Track skill usage
         for skill in (attached_skills or []):
             pass
 
-        # Track first message sophistication
         is_first_message = sum(1 for m in session.messages if m.role == "user") == 1
         if is_first_message:
             pass
@@ -3876,7 +3944,7 @@ class AgentManager:
         Fires in the background while the actual turn streams. The pill
         renderer swaps from its heuristic verb to this label as soon as it
         arrives, then back to the heuristic if the call fails. Cost is
-        ~$0.0001 per turn at Haiku tier — trivial vs the perceived-quality
+        ~$0.0001 per turn at Haiku tier; trivial vs the perceived-quality
         win.
 
         Provider-agnostic per memory rule: uses `resolve_aux_model`
@@ -3953,13 +4021,13 @@ class AgentManager:
 
         Skips silently if the session doesn't exist, isn't on Anthropic,
         or has no Anthropic credentials. Skips if a real request is
-        already in flight on this session — Anthropic permits parallel
+        already in flight on this session; Anthropic permits parallel
         requests but it just wastes the warm.
         """
         session = self.sessions.get(session_id)
         if not session:
             return
-        # If a real run is in flight, the cache will be warmed by it —
+        # If a real run is in flight, the cache will be warmed by it , 
         # firing again is wasted tokens.
         existing = self.tasks.get(session_id)
         if existing and not existing.done():
@@ -4121,7 +4189,7 @@ class AgentManager:
         doesn't have one. Two paths previously sent close-events without
         a timestamp and made the cloud unable to compute duration_ms
         (which surfaced as duration_ms=null on 90% of session.ended events
-        — browser-agent and shutdown paths in particular):
+       ; browser-agent and shutdown paths in particular):
 
           1. browser_agent.py calls this without setting closed_at.
           2. shutdown_all_sessions() clears closed_at to None for the
@@ -4129,7 +4197,7 @@ class AgentManager:
 
         Fix is here at the bottleneck rather than at every caller so we
         can't miss a future call site. The on-disk session JSON keeps its
-        original (possibly None) closed_at — only the cloud-bound dump
+        original (possibly None) closed_at; only the cloud-bound dump
         gets the synthesized timestamp.
         """
         if close_reason == "mock" or getattr(session, "_mock_run", False):

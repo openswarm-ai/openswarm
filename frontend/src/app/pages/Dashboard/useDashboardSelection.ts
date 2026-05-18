@@ -205,8 +205,7 @@ export function useDashboardSelection(
         if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
         isDraggingMarqueeRef.current = true;
         document.body.style.userSelect = 'none';
-        // Disable pointer events on browser webviews/iframes for the
-        // duration of the drag so the cursor passes through them.
+        // Disable pointer events on webviews/iframes during drag so the cursor passes through.
         document.body.classList.add('dashboard-marquee-active');
       }
 
@@ -256,14 +255,7 @@ export function useDashboardSelection(
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [deselectAll]);
 
-  // Inject (once) a global CSS rule that makes browser webviews and iframes
-  // transparent to mouse events while a marquee drag is active. Without this,
-  // the Electron <webview> hit-tests the cursor at the OS level — when the
-  // cursor lands on an interactable element inside the browser (button,
-  // link, text), the webview steals the cursor and the marquee drag visually
-  // freezes until the cursor escapes. Setting `pointer-events: none` makes
-  // the cursor pass straight through, so the dashboard's mousemove handler
-  // continues to fire and the marquee keeps growing smoothly.
+  // One-time CSS: pointer-events:none on webviews/iframes during marquee, so Electron's OS hit-test doesn't steal the cursor mid-drag.
   useEffect(() => {
     const id = 'dashboard-marquee-style';
     if (document.getElementById(id)) return;

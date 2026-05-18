@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, Literal, Any
 from datetime import datetime
 from uuid import uuid4
@@ -15,11 +15,15 @@ class PermissionTier(BaseModel):
 
 class ScheduleConfig(BaseModel):
     enabled: bool = False
-    repeat_every: int = 1
+    # Bounds keep the scheduler from blowing up on malformed input. The
+    # FE clamps these too, but defense-in-depth: a misbehaving agent
+    # tool, an old JSON file, or a curl-wielding power user shouldn't
+    # be able to crash _next_fire_after by passing hour=99.
+    repeat_every: int = Field(default=1, ge=1, le=365)
     repeat_unit: Literal["day", "week", "month"] = "week"
     on_days: list[int] = Field(default_factory=list)
-    hour: int = 9
-    minute: int = 0
+    hour: int = Field(default=9, ge=0, le=23)
+    minute: int = Field(default=0, ge=0, le=59)
     # IANA zone name (e.g. "America/Los_Angeles") or "local" for legacy
     # records that predate explicit tz. storage._load_all_from_disk coerces
     # "local" to the host zone in memory; we leave it on disk until the
@@ -30,8 +34,22 @@ class ScheduleConfig(BaseModel):
     # disables once either is satisfied; scheduler._tick zeroes out
     # next_run_at and flips enabled=False so the UI reflects reality.
     ends_at: Optional[datetime] = None
-    max_runs: Optional[int] = None
-    runs_count: int = 0
+    max_runs: Optional[int] = Field(default=None, ge=1)
+    runs_count: int = Field(default=0, ge=0)
+
+    @field_validator("on_days")
+    @classmethod
+    def _clean_on_days(cls, v: list[int]) -> list[int]:
+        # Backend uses JS-style weekday (Sun=0..Sat=6). Drop entries
+        # outside that range so a malformed PATCH can't trip the
+        # scheduler later, and dedupe while preserving order.
+        seen: set[int] = set()
+        out: list[int] = []
+        for d in v or []:
+            if isinstance(d, int) and 0 <= d <= 6 and d not in seen:
+                seen.add(d)
+                out.append(d)
+        return out
 
 
 class ActionsConfig(BaseModel):
@@ -50,8 +68,8 @@ class Workflow(BaseModel):
     # (workflows.py:update_workflow setattr's raw dicts from body.model_dump
     # straight onto the cached Workflow). Without coercion the nested
     # schedule/steps/actions/permissions fields become plain dicts in
-    # memory, and every downstream call — scheduler tick, executor.execute,
-    # subsequent PATCHes — crashes on `.enabled` / `.text`.
+    # memory, and every downstream call; scheduler tick, executor.execute,
+    # subsequent PATCHes; crashes on `.enabled` / `.text`.
     model_config = ConfigDict(validate_assignment=True)
 
     id: str = Field(default_factory=lambda: uuid4().hex)

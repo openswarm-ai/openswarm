@@ -30,17 +30,25 @@ BUILTIN_TOOLS: list[BuiltinTool] = [
     BuiltinTool(name="EnterWorktree", description="Enter a git worktree for isolated work", category="system", deferred=True),
     BuiltinTool(name="TaskOutput", description="Read output from a background task", category="system", deferred=True),
     BuiltinTool(name="TaskStop", description="Stop a running background task", category="system", deferred=True),
-    BuiltinTool(name="CronCreate", description="Create a scheduled or recurring task", category="scheduling", deferred=True),
-    BuiltinTool(name="CronList", description="List all scheduled tasks", category="scheduling", deferred=True),
-    BuiltinTool(name="CronDelete", description="Delete a scheduled task", category="scheduling", deferred=True),
+    # CronCreate/List/Delete are kept for compatibility with the Claude
+    # Agent SDK's task system but are intentionally NOT how users in
+    # OpenSwarm should schedule recurring work. The native scheduler
+    # ("Schedule" button in any chat header, or /schedule slash command)
+    # gives the workflow a card on the canvas, a calendar entry, audit
+    # logs, cost caps, and a Pause-all toggle. Cron entries are invisible
+    # to the platform and survive uninstall. The descriptions below tell
+    # the agent so it picks the right path.
+    BuiltinTool(name="CronCreate", description="Schedule a one-off background task within the current session (NOT for recurring user workflows; use the user-visible 'Schedule' button / native workflow scheduler for anything the user wants to repeat on a real-world calendar)", category="scheduling", deferred=True),
+    BuiltinTool(name="CronList", description="List background tasks in the current session (NOT user-facing scheduled workflows; those live in the Workflows hub)", category="scheduling", deferred=True),
+    BuiltinTool(name="CronDelete", description="Delete a background task in the current session (NOT a user-facing scheduled workflow)", category="scheduling", deferred=True),
     # Agent tools
     BuiltinTool(name="Agent", display_name="CreateAgent", description="Spawn a sub-agent to handle a complex subtask", category="agents"),
     BuiltinTool(name="InvokeAgent", description="Invoke a copy of an existing agent with a new message, preserving full conversation context", category="agents"),
-    # Browser delegation tools (Layer 1 — what the main agent calls)
+    # Browser delegation tools (Layer 1; what the main agent calls)
     BuiltinTool(name="CreateBrowserAgent", description="Create a new browser and run a task on it", category="browser_delegation"),
     BuiltinTool(name="BrowserAgent", description="Delegate a browser task to an existing browser agent", category="browser_delegation"),
     BuiltinTool(name="BrowserAgents", description="Run multiple browser tasks in parallel on existing browsers", category="browser_delegation"),
-    # Browser action tools (Layer 2 — what the sub-agent executes)
+    # Browser action tools (Layer 2; what the sub-agent executes)
     BuiltinTool(name="BrowserScreenshot", description="Capture a screenshot of the browser page", category="browser_action"),
     BuiltinTool(name="BrowserNavigate", description="Navigate the browser to a URL", category="browser_action"),
     BuiltinTool(name="BrowserClick", description="Click an element by CSS selector", category="browser_action"),

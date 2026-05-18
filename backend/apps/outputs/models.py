@@ -127,7 +127,7 @@ class OutputExecute(BaseModel):
     # running if the backend code touches anything outside the safe
     # data-shaping allowlist. The UI shows those warnings to the user and
     # re-submits with force=True after they click "Run Anyway." This is
-    # a UX gate, not a security one — anyone holding the auth token can
+    # a UX gate, not a security one; anyone holding the auth token can
     # set force=True; the value is providing the user explicit visibility
     # of what's about to execute.
     force: bool = False

@@ -297,10 +297,6 @@ function serverToMcpConfig(srv: McpServer): Record<string, any> {
   return {};
 }
 
-// ---------------------------------------------------------------------------
-// ToolSection (reusable for Core / Extended built-in tool groups)
-// ---------------------------------------------------------------------------
-
 interface ToolSectionProps {
   label: string;
   icon: React.ReactElement;
@@ -464,9 +460,6 @@ const ToolSection: React.FC<ToolSectionProps> = ({
   );
 };
 
-// ---------------------------------------------------------------------------
-// Main Tools Page
-// ---------------------------------------------------------------------------
 
 const Tools: React.FC = () => {
   const c = useClaudeTokens();
@@ -496,24 +489,15 @@ const Tools: React.FC = () => {
   const [deferredSectionOpen, setDeferredSectionOpen] = useState(false);
   const [customSectionOpen, setCustomSectionOpen] = useState(true);
 
-  // Dropdown menu
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
 
-  // Registry browser
   const [registryOpen, setRegistryOpen] = useState(false);
   const [regQuery, setRegQuery] = useState('');
   const [regSort, setRegSort] = useState<'name' | 'stars'>('stars');
-  // Default 'curated' (Phase 2): the registry has thousands of community
-  // servers but most users only ever want the vetted set. Toggle to ''
-  // to see everything. The curated filter is purely client-side: the
-  // backend still returns the full list, we just hide the long tail.
+  // Default 'curated' hides the long tail; client-side filter, backend still returns the full list.
   const [regSource, setRegSource] = useState<'' | 'community' | 'google' | 'curated'>('curated');
 
-  // Curated whitelist for the default registry view (Phase 2). Matches
-  // the per-server search alias map in main.py (mcp-meta) so the same
-  // 9 servers we recommend in MCPSearch are the ones the user sees by
-  // default in the Tools registry. Toggle to "All" / "Community" to
-  // browse the long tail.
+  // Curated whitelist matches the MCPSearch alias map in main.py (mcp-meta).
   const CURATED_MCP_NAMES = useMemo(() => new Set([
     'google-workspace', 'microsoft-365', 'slack', 'discord',
     'notion', 'airtable', 'hubspot', 'reddit', 'youtube',
@@ -529,7 +513,6 @@ const Tools: React.FC = () => {
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity?: 'success' | 'error' }>({ open: false, message: '' });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // MCP config dialog state
   const [mcpConfigOpen, setMcpConfigOpen] = useState(false);
   const [mcpConfigServer, setMcpConfigServer] = useState<McpServer | null>(null);
   const [mcpAuthType, setMcpAuthType] = useState<'none' | 'env_vars'>('none');
@@ -537,21 +520,17 @@ const Tools: React.FC = () => {
   const [mcpConfigJson, setMcpConfigJson] = useState('');
   const [mcpConfigError, setMcpConfigError] = useState('');
 
-  // Expanded MCP tool permissions state
   const [expandedToolId, setExpandedToolId] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
 
-  // Integration toggle state
   const [integrationLoading, setIntegrationLoading] = useState<Record<string, boolean>>({});
 
-  // Device code login dialog state (M365)
   const [deviceCodeDialogOpen, setDeviceCodeDialogOpen] = useState(false);
   const [deviceCodeDialogToolId, setDeviceCodeDialogToolId] = useState<string | null>(null);
   const [deviceCode, setDeviceCode] = useState('');
   const [deviceCodeUrl, setDeviceCodeUrl] = useState('');
   const [deviceCodeStatus, setDeviceCodeStatus] = useState<'loading' | 'awaiting' | 'connected' | 'error'>('loading');
 
-  // Integration credentials dialog state
   const [credDialogOpen, setCredDialogOpen] = useState(false);
   const [credDialogToolId, setCredDialogToolId] = useState<string | null>(null);
   const [credDialogIntegration, setCredDialogIntegration] = useState<Integration | null>(null);
@@ -572,12 +551,12 @@ const Tools: React.FC = () => {
       } else if (existing && existing.enabled === false) {
         await dispatch(updateTool({ id: existing.id, enabled: true }));
         if (integration.authType === 'oauth2' && existing.auth_status !== 'connected') {
-          setSnackbar({ open: true, message: `Enabled ${integration.name} — connect your account to discover actions` });
+          setSnackbar({ open: true, message: `Enabled ${integration.name}, connect your account to discover actions` });
         } else {
-          setSnackbar({ open: true, message: `Enabled ${integration.name} — re-discovering actions…` });
+          setSnackbar({ open: true, message: `Enabled ${integration.name}, re-discovering actions…` });
           const discoverResult = await dispatch(discoverTools(existing.id));
           if (discoverTools.fulfilled.match(discoverResult)) {
-            setSnackbar({ open: true, message: `${integration.name} ready — actions discovered` });
+            setSnackbar({ open: true, message: `${integration.name} ready, actions discovered` });
           } else {
             const detail = (discoverResult as any).error?.message || 'discovery failed';
             setSnackbar({ open: true, message: `${integration.name}: ${detail}`, severity: 'error' });
@@ -596,15 +575,15 @@ const Tools: React.FC = () => {
         if (createTool.fulfilled.match(result)) {
           const newTool = result.payload;
           if (integration.authType === 'oauth2' || integration.authType === 'device_code') {
-            setSnackbar({ open: true, message: `Enabled ${integration.name} — connect your account to discover actions` });
+            setSnackbar({ open: true, message: `Enabled ${integration.name}, connect your account to discover actions` });
           } else {
-            setSnackbar({ open: true, message: `Enabled ${integration.name} — discovering actions…` });
+            setSnackbar({ open: true, message: `Enabled ${integration.name}, discovering actions…` });
             const discoverResult = await dispatch(discoverTools(newTool.id));
             if (discoverTools.fulfilled.match(discoverResult)) {
-              setSnackbar({ open: true, message: `${integration.name} ready — actions discovered` });
+              setSnackbar({ open: true, message: `${integration.name} ready, actions discovered` });
             } else {
               const detail = (discoverResult as any).error?.message
-                || `discovery failed — is ${integration.mcp_config.command || 'the server'} installed?`;
+                || `discovery failed; is ${integration.mcp_config.command || 'the server'} installed?`;
               setSnackbar({ open: true, message: `${integration.name}: ${detail}`, severity: 'error' });
             }
           }
@@ -622,7 +601,7 @@ const Tools: React.FC = () => {
       if (discoverTools.fulfilled.match(result)) {
         setSnackbar({ open: true, message: 'Actions discovered successfully' });
       } else {
-        const detail = (result as any).error?.message || 'Discovery failed — is the MCP server running?';
+        const detail = (result as any).error?.message || 'Discovery failed; is the MCP server running?';
         setSnackbar({ open: true, message: detail, severity: 'error' });
       }
     } finally {
@@ -693,7 +672,6 @@ const Tools: React.FC = () => {
     await dispatch(updateBuiltinPermissions(perms));
   };
 
-  // Built-in tool grouping
   const BROWSER_CATEGORIES = new Set(['browser_delegation', 'browser_action']);
   const coreTools = useMemo(() => builtinTools.filter((bt) => !bt.deferred && !BROWSER_CATEGORIES.has(bt.category)), [builtinTools]);
   const deferredTools = useMemo(() => builtinTools.filter((bt) => bt.deferred && !BROWSER_CATEGORIES.has(bt.category)), [builtinTools]);
@@ -740,8 +718,6 @@ const Tools: React.FC = () => {
   const toggleCategory = (cat: string) => setCollapsedCategories((p) => ({ ...p, [cat]: !p[cat] }));
   const toggleBuiltinExpand = (name: string) => setExpandedBuiltin((p) => (p === name ? null : name));
 
-  // --------------- Dropdown handlers ---------------
-
   const handleMenuOpen = (e: React.MouseEvent<HTMLElement>) => setMenuAnchor(e.currentTarget);
   const handleMenuClose = () => setMenuAnchor(null);
 
@@ -763,8 +739,6 @@ const Tools: React.FC = () => {
     dispatch(searchRegistry({ q: '', limit: 20, offset: 0, sort: 'stars', source: '' }));
   };
 
-  // --------------- Tool CRUD ---------------
-
   const openEdit = (tool: ToolDefinition) => {
     setEditingId(tool.id);
     setForm({ name: tool.name, description: tool.description, command: tool.command });
@@ -779,11 +753,7 @@ const Tools: React.FC = () => {
 
   const handleDelete = async (id: string) => { await dispatch(deleteTool(id)); };
 
-  // --------------- Registry browser ---------------
-
-  // Translate the UI's "curated" pseudo-source into "" for the backend
-  // (which doesn't know that filter) — the curated whitelist is applied
-  // client-side via the regServers memo above.
+  // Translate UI "curated" pseudo-source to "" for the backend; the whitelist is applied client-side.
   const _backendSource = (s: '' | 'community' | 'google' | 'curated'): '' | 'community' | 'google' =>
     s === 'curated' ? '' : s;
 
@@ -865,7 +835,7 @@ const Tools: React.FC = () => {
         auth_type: 'oauth2',
         auth_status: 'configured',
       }));
-      setSnackbar({ open: true, message: `Installed "${f.name}" — click "Connect Google" to authorize` });
+      setSnackbar({ open: true, message: `Installed "${f.name}", click "Connect Google" to authorize` });
     } else if (hasConfig && mcpConfig.type === 'stdio') {
       const result = await dispatch(createTool({
         name: f.name,
@@ -878,13 +848,13 @@ const Tools: React.FC = () => {
       }));
       if (createTool.fulfilled.match(result)) {
         const newTool = result.payload;
-        setSnackbar({ open: true, message: `Installed "${f.name}" — discovering actions…` });
+        setSnackbar({ open: true, message: `Installed "${f.name}", discovering actions…` });
         const discoverResult = await dispatch(discoverTools(newTool.id));
         if (discoverTools.fulfilled.match(discoverResult)) {
-          setSnackbar({ open: true, message: `${f.name} ready — actions discovered` });
+          setSnackbar({ open: true, message: `${f.name} ready, actions discovered` });
         } else {
           const detail = (discoverResult as any).error?.message
-            || 'discovery failed — the MCP server may need setup first';
+            || 'discovery failed; the MCP server may need setup first';
           setSnackbar({ open: true, message: `${f.name}: ${detail}`, severity: 'error' });
         }
       }
@@ -934,7 +904,7 @@ const Tools: React.FC = () => {
         }
       }, 1000);
     } else {
-      setSnackbar({ open: true, message: 'OAuth failed — check that OAuth credentials are set in backend .env', severity: 'error' });
+      setSnackbar({ open: true, message: 'OAuth failed; check that OAuth credentials are set in backend .env', severity: 'error' });
     }
   };
 
@@ -953,10 +923,8 @@ const Tools: React.FC = () => {
       setDeviceCodeUrl(url);
       setDeviceCodeStatus('awaiting');
 
-      // Auto-open Microsoft login in a popup
       window.open(url, 'm365-login', 'width=500,height=700,left=200,top=100');
 
-      // Poll for completion
       const poll = setInterval(async () => {
         const statusResult = await dispatch(pollDeviceCodeStatus(toolId));
         if (pollDeviceCodeStatus.fulfilled.match(statusResult)) {
@@ -976,7 +944,6 @@ const Tools: React.FC = () => {
         }
       }, 2000);
 
-      // Stop polling after 5 minutes
       setTimeout(() => clearInterval(poll), 300000);
     } else {
       setDeviceCodeStatus('error');
@@ -1059,9 +1026,7 @@ const Tools: React.FC = () => {
 
   const handleDisconnectIntegration = async (toolId: string, integration: Integration) => {
     if (integration.authType === 'oauth2') {
-      // Revoke the token on Google's side (fire-and-forget)
       fetch(`${API_BASE}/tools/${toolId}/oauth/disconnect`, { method: 'POST' }).catch(() => {});
-      // Clear OAuth state via the existing update endpoint
       const result = await dispatch(updateTool({
         id: toolId,
         oauth_tokens: {},
@@ -1086,7 +1051,6 @@ const Tools: React.FC = () => {
 
   return (
     <Box sx={{ p: 3, height: '100%', overflow: 'auto' }}>
-      {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box>
           <Typography variant="h5" sx={{ color: c.text.primary, fontWeight: 700, mb: 0.5 }}>Action Library</Typography>
@@ -1120,7 +1084,6 @@ const Tools: React.FC = () => {
         </Box>
       </Box>
 
-      {/* Built-in Tool Sets */}
       <Box sx={{ mb: 3 }}>
         <Box
           onClick={() => setBuiltinSectionOpen((v) => !v)}
@@ -1134,17 +1097,14 @@ const Tools: React.FC = () => {
         <Collapse in={builtinSectionOpen} timeout={0} unmountOnExit>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1 }}>
 
-      {/* Core Tools */}
       {coreTools.length > 0 && (
         <ToolSection label="Core Actions" icon={<LockIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={coreTools.length} open={coreSectionOpen} onToggle={() => setCoreSectionOpen((v) => !v)} grouped={groupedCore} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} builtinPermissions={builtinPermissions} onPermissionChange={handleBuiltinPermissionChange} onCategoryPermissionChange={handleBuiltinCategoryPermissionChange} enabled={coreSectionEnabled} onEnabledChange={(v) => handleSectionEnabledChange(coreTools, v)} />
       )}
 
-      {/* Extended Tools */}
       {deferredTools.length > 0 && (
         <ToolSection label="Extended Actions" icon={<HourglassEmptyIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={deferredTools.length} open={deferredSectionOpen} onToggle={() => setDeferredSectionOpen((v) => !v)} grouped={groupedDeferred} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} deferred builtinPermissions={builtinPermissions} onPermissionChange={handleBuiltinPermissionChange} onCategoryPermissionChange={handleBuiltinCategoryPermissionChange} enabled={deferredSectionEnabled} onEnabledChange={(v) => handleSectionEnabledChange(deferredTools, v)} />
       )}
 
-      {/* Apps */}
       {outputs.length > 0 && (
         <Card sx={{ bgcolor: c.bg.surface, border: `1px solid ${viewsSectionOpen && viewsSectionEnabled ? c.accent.primary : c.border.subtle}`, borderRadius: 2, boxShadow: c.shadow.sm, '&:hover': { borderColor: c.accent.primary, boxShadow: '0 0 0 1px rgba(174,86,48,0.12)' }, transition: 'border-color 0.2s, box-shadow 0.2s' }}>
           <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
@@ -1226,7 +1186,6 @@ const Tools: React.FC = () => {
         </Card>
       )}
 
-      {/* Browser */}
       {browserTools.length > 0 && (
         <Card sx={{ bgcolor: c.bg.surface, border: `1px solid ${browserSectionOpen && browserSectionEnabled ? c.accent.primary : c.border.subtle}`, borderRadius: 2, boxShadow: c.shadow.sm, '&:hover': { borderColor: c.accent.primary, boxShadow: '0 0 0 1px rgba(174,86,48,0.12)' }, transition: 'border-color 0.2s, box-shadow 0.2s' }}>
           <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
@@ -1275,7 +1234,6 @@ const Tools: React.FC = () => {
                 </Box>
               </Box>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                {/* Delegation group */}
                 {browserDelegationTools.length > 0 && (() => {
                   const delegationPolicies = browserDelegationTools.map((t) => builtinPermissions[t.name] || 'always_allow');
                   const groupPolicy = delegationPolicies.every((p) => p === 'always_allow') ? 'always_allow'
@@ -1323,7 +1281,6 @@ const Tools: React.FC = () => {
                   );
                 })()}
 
-                {/* Browser Actions group */}
                 {browserActionTools.length > 0 && (() => {
                   const actionPolicies = browserActionTools.map((t) => builtinPermissions[t.name] || 'always_allow');
                   const groupPolicy = actionPolicies.every((p) => p === 'always_allow') ? 'always_allow'
@@ -1380,7 +1337,6 @@ const Tools: React.FC = () => {
         </Collapse>
       </Box>
 
-      {/* Custom Tool Sets */}
       <Box sx={{ mb: 2 }}>
         <Box onClick={() => setCustomSectionOpen((v) => !v)} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, cursor: 'pointer', userSelect: 'none', '&:hover .section-arrow': { color: c.text.secondary } }}>
           {customSectionOpen ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} />}
@@ -1516,9 +1472,7 @@ const Tools: React.FC = () => {
                     (tool.command || '').toLowerCase().includes('youtube');
                   const isSubredditsForReddit =
                     isReddit && /subreddit/i.test(serviceName);
-                  // For YouTube the permission marker lands on the FIRST
-                  // service group (whatever it's called) since the YouTube
-                  // integration doesn't have a specific drill-down.
+                  // YouTube marker lands on the first service group since YouTube has no drill-down.
                   const showPermissionMarker =
                     isSubredditsForReddit || (isYoutube && isFirstGroup);
 
@@ -1632,13 +1586,7 @@ const Tools: React.FC = () => {
 
                 const isDisabled = tool.enabled === false;
 
-                // Defensive Reddit detection: ig.id is the canonical key but
-                // depends on Integration metadata matching tool.name exactly.
-                // If a tool was installed under a different name shape (e.g.
-                // legacy install, manual MCP add), the lookup fails and
-                // ig?.id === 'reddit' is false. Fall back to tool.name and
-                // tool.command lowercase checks so the data-onboarding hooks
-                // still attach and onboarding click_target waits can resolve.
+                // Defensive Reddit detection so onboarding hooks still attach when ig.id lookup fails (legacy/manual installs).
                 const isReddit =
                   ig?.id === 'reddit' ||
                   tool.name?.toLowerCase() === 'reddit' ||
@@ -1881,7 +1829,6 @@ const Tools: React.FC = () => {
         </Collapse>
       </Box>
 
-      {/* Create/Edit Tool Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: { bgcolor: c.bg.surface, backgroundImage: 'none', borderRadius: 4, border: `1px solid ${c.border.subtle}` } }}>
         <DialogTitle sx={{ color: c.text.primary, fontWeight: 600 }}>{editingId ? 'Edit Tool' : 'New Tool'}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
@@ -1895,7 +1842,6 @@ const Tools: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Registry Browser Dialog */}
       <Dialog
         open={registryOpen}
         onClose={() => setRegistryOpen(false)}
@@ -2205,7 +2151,6 @@ const Tools: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* MCP Config Dialog */}
       <Dialog
         open={mcpConfigOpen}
         onClose={() => setMcpConfigOpen(false)}
@@ -2308,7 +2253,6 @@ const Tools: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Microsoft 365 Device Code Login Dialog */}
       <Dialog
         open={deviceCodeDialogOpen}
         onClose={() => { if (deviceCodeStatus !== 'loading') setDeviceCodeDialogOpen(false); }}
@@ -2367,7 +2311,6 @@ const Tools: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Integration Credentials Dialog */}
       <Dialog
         open={credDialogOpen}
         onClose={() => setCredDialogOpen(false)}
@@ -2389,7 +2332,7 @@ const Tools: React.FC = () => {
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
           {credDialogIntegration?.id === 'slack' ? (
             <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.5, bgcolor: c.bg.secondary, px: 2, py: 1.5, borderRadius: 2, border: `1px solid ${c.border.subtle}` }}>
-              Click <strong>Sign in with Slack</strong> below — a Slack window will open. Sign in normally and the window will close automatically once you reach your workspace.
+              Click <strong>Sign in with Slack</strong> below; a Slack window will open. Sign in normally and the window will close automatically once you reach your workspace.
             </Typography>
           ) : (
             <>
@@ -2428,7 +2371,6 @@ const Tools: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Install success snackbar */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={3000}

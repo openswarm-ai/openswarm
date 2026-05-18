@@ -1,4 +1,3 @@
-// store/tempStateSlice.ts
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 interface TempState {

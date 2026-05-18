@@ -10,11 +10,11 @@ export interface BrowserActivityState {
   active: boolean;
   action: BrowserAction | null;
   detail: string | null;
-  /** The action that just completed — stays set briefly for exit animations */
+  /** Action that just completed; stays briefly for exit animations. */
   lastAction: BrowserAction | null;
-  /** Increments on each new action — use as React key to restart CSS animations */
+  /** Increments per new action; use as React key to restart CSS animations. */
   actionSeq: number;
-  /** Viewport-relative click coordinates (0-1 range) for positioning the click ripple */
+  /** Viewport-relative click coords (0-1) for positioning the click ripple. */
   coords: { xPercent: number; yPercent: number } | null;
 }
 

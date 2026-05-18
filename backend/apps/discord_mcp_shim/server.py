@@ -228,7 +228,7 @@ def _call(
     locally so the user gets a clear error instead of an opaque 401.
     """
     if not INSTALL_ID:
-        return 0, "OPENSWARM_INSTALL_ID env var not set — cannot call Discord proxy"
+        return 0, "OPENSWARM_INSTALL_ID env var not set; cannot call Discord proxy"
 
     url = f"{PROXY_BASE}/api/discord{path}"
     if query:
@@ -282,7 +282,7 @@ def _check_guild(guild_id: str) -> str | None:
 
     The set is sourced from OPENSWARM_DISCORD_GUILD_IDS env var (CSV) which
     tools_lib.py populates from the tool's oauth_tokens.guilds. If the env
-    var is empty (no guild authorization yet), allow all — agent shouldn't
+    var is empty (no guild authorization yet), allow all; agent shouldn't
     be able to spawn this MCP without an OAuth flow having happened.
     """
     if not ALLOWED_GUILDS:

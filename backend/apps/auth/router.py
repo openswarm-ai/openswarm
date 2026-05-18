@@ -15,7 +15,7 @@ POST /api/auth/signout
   identity fields. Brings the user back to the sign-in gate.
 
 POST /api/auth/identity-status {install_id?}
-  Local proxy to cloud /api/me/identity-status — drives the gate's
+  Local proxy to cloud /api/me/identity-status; drives the gate's
   soft-vs-hard decision. Wraps it in our local backend so the renderer
   doesn't need to know the cloud URL.
 """
@@ -88,8 +88,8 @@ async def signin_activate(body: SigninActivateRequest):
 
     The bearer-handoff page (cloud lib/authMint.ts → bearerHandoffPage())
     POSTs to this endpoint after a Google OAuth or magic-link flow. We
-    re-validate the bearer with the cloud — never just trust whatever
-    arrives at the localhost endpoint — then write user_id + email +
+    re-validate the bearer with the cloud; never just trust whatever
+    arrives at the localhost endpoint; then write user_id + email +
     signin_method to settings so the renderer can dismiss the gate.
     """
     if not body.token or len(body.token) < 16:
@@ -134,7 +134,7 @@ async def signin_activate(body: SigninActivateRequest):
     # If the user happens to be a paying customer too (Stripe + sign-in
     # share a user row by email), surface plan/expires so the chat picker
     # exposes Pro models. Free-tier signups land here with plan="free"
-    # and expires=null — connection_mode stays own_key.
+    # and expires=null; connection_mode stays own_key.
     if isinstance(plan, str) and plan != "free":
         settings_obj.connection_mode = "openswarm-pro"
         settings_obj.openswarm_bearer_token = body.token
@@ -145,7 +145,7 @@ async def signin_activate(body: SigninActivateRequest):
     else:
         # Free-tier: still store the bearer so future API calls can identify
         # the user (used by /api/me/profile, /api/auth/signout). Do NOT flip
-        # connection_mode — that's reserved for paid plans only so chat
+        # connection_mode; that's reserved for paid plans only so chat
         # routing keeps using own_key/BYO.
         settings_obj.openswarm_bearer_token = body.token
         settings_obj.openswarm_proxy_url = proxy
@@ -199,7 +199,7 @@ async def signout():
     #      the previous identity's Claude account; resuming against the new
     #      bearer would 404 or 401 because the new account has no record
     #      of that thread. Wiping it forces the SDK to start a fresh thread
-    #      on next send (transcript replay still works — only the SDK's
+    #      on next send (transcript replay still works; only the SDK's
     #      server-side resume cache is reset).
     # Best-effort: failures here shouldn't block the sign-out itself.
     try:
@@ -266,10 +266,10 @@ async def identity_status():
             "hard_gate": False,
         }
 
-    # Not signed in — defer to cloud for install-age + grace-window math.
+    # Not signed in; defer to cloud for install-age + grace-window math.
     install_id = getattr(settings_obj, "installation_id", None)
     if not install_id:
-        # No install_id yet (very fresh install before first sync) — hard gate.
+        # No install_id yet (very fresh install before first sync); hard gate.
         return {"authed": False, "hard_gate": True, "install_age_days": 0, "deadline_ts": None}
 
     proxy = _proxy_url()
@@ -290,6 +290,6 @@ async def identity_status():
     except httpx.HTTPError as e:
         logger.debug("identity-status cloud fetch failed: %s", e)
 
-    # Cloud unreachable — fail open with soft gate so a flaky network
+    # Cloud unreachable; fail open with soft gate so a flaky network
     # doesn't lock the user out. Renderer will retry on next mount.
     return {"authed": False, "hard_gate": False, "install_age_days": 0, "deadline_ts": None}

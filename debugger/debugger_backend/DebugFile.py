@@ -13,9 +13,7 @@ class DebugFile(File):
         self.directory = directory  # Reference to parent directory
 
     def to_dict(self):
-        """
-        Converts the DebugFile object to a dictionary format.
-        """
+        """Convert the DebugFile to a dict."""
         return {
             "name": os.path.basename(self.filename),
             "color": self.color,
@@ -26,9 +24,7 @@ class DebugFile(File):
 
     @classmethod
     def from_dict(cls, file_dict, directory):
-        """
-        Creates a DebugFile object from a dictionary loaded from JSON.
-        """
+        """Build a DebugFile from a JSON-loaded dict."""
         filename = os.path.join(directory.path, file_dict["name"])
         return cls(
             filename=filename,

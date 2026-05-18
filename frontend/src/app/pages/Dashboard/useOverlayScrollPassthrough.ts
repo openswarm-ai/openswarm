@@ -1,16 +1,6 @@
 import { useRef, useEffect } from 'react';
 
-/**
- * Attaches a native wheel listener to an overlay element that forwards scroll
- * events to whatever scrollable content sits beneath it, while still letting
- * the overlay capture pointer events (click / drag).  Pinch-zoom (ctrl/meta +
- * wheel) is left alone so the canvas zoom still works.
- *
- * Handles two cases:
- *  1. Regular DOM scrollable containers — uses `scrollBy` directly.
- *  2. Electron `<webview>` elements — executes JS inside the webview to scroll
- *     the element at the cursor position.
- */
+/** Forwards wheel events through an overlay to the content beneath while keeping overlay click/drag; passes pinch-zoom. */
 export function useOverlayScrollPassthrough(active: boolean) {
   const ref = useRef<HTMLDivElement>(null);
 

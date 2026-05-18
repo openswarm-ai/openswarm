@@ -7,15 +7,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import { useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
-// Drawer triggered by /context slash command. Shows what the model
-// actually sees this session: active MCPs, active Outputs, ctx%, cache
-// hit rate, compaction state. Pure-frontend — reads off the slice that
-// agent:context_update keeps fresh.
-//
-// The trigger is a window CustomEvent dispatched from the slash command
-// handler in ChatInput.tsx. Keeping it event-driven avoids prop-drilling
-// through the whole AgentChat tree.
-
+/** /context drawer: shows session MCPs, ctx%, cache hits, compaction. Opened via window CustomEvent from ChatInput's slash handler. */
 export default function ContextDrawer() {
   const c = useClaudeTokens();
   const [openFor, setOpenFor] = useState<string | null>(null);
@@ -77,7 +69,7 @@ export default function ContextDrawer() {
           </Box>
         </Box>
 
-        <Section title="Active MCP servers" emptyText="None — model must MCPSearch + MCPActivate to use one">
+        <Section title="Active MCP servers" emptyText="None; model must MCPSearch + MCPActivate to use one">
           {(session.active_mcps || []).map((m) => (
             <Pill key={m} label={m} color={c.accent.primary} />
           ))}
@@ -96,13 +88,13 @@ export default function ContextDrawer() {
 
         <Section title="Tips" emptyText="">
           <Typography variant="caption" sx={{ color: c.text.secondary, display: 'block', mb: 0.5 }}>
-            • <code>/compact</code> — summarize old turns now
+            • <code>/compact</code>: summarize old turns now
           </Typography>
           <Typography variant="caption" sx={{ color: c.text.secondary, display: 'block', mb: 0.5 }}>
-            • <code>/clear</code> — fresh SDK session, keep chat history visible
+            • <code>/clear</code>: fresh SDK session, keep chat history visible
           </Typography>
           <Typography variant="caption" sx={{ color: c.text.secondary, display: 'block' }}>
-            • <code>/context</code> — open this drawer
+            • <code>/context</code>: open this drawer
           </Typography>
         </Section>
       </Box>

@@ -38,8 +38,7 @@ const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
   { dir: 'se', sx: { bottom: -EDGE_THICKNESS / 2, right: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
 ];
 
-// Hand-tuned palette — distinct enough to skim across, gentle on the eye in
-// both light and dark themes (notes use a single bg per color in either).
+// Hand-tuned palette: distinct enough to skim, gentle in both themes.
 const NOTE_PALETTE: Record<NoteColor, { bg: string; border: string; text: string }> = {
   yellow: { bg: '#FBE89C', border: '#E0C95A', text: '#3a2e0a' },
   pink:   { bg: '#F8C3D0', border: '#DB94A6', text: '#3a131e' },
@@ -82,7 +81,6 @@ const NoteCard: React.FC<Props> = ({
   const dispatch = useAppDispatch();
   const palette = NOTE_PALETTE[color] || NOTE_PALETTE.yellow;
 
-  // ---- Drag (whole note via header) ----
   const DRAG_THRESHOLD = 3;
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; startPanX: number; startPanY: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -100,7 +98,7 @@ const NoteCard: React.FC<Props> = ({
 
   useEffect(() => {
     if (autoFocus && textareaRef.current) {
-      // Defer to next frame so the card has mounted in the right position.
+      // Defer so the card has mounted in its final position.
       const t = setTimeout(() => textareaRef.current?.focus(), 50);
       return () => clearTimeout(t);
     }
@@ -177,7 +175,6 @@ const NoteCard: React.FC<Props> = ({
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
   }, [dispatch, noteId, onDragEnd]);
 
-  // ---- Resize ----
   const resizeRef = useRef<{
     dir: ResizeDir; startX: number; startY: number;
     origX: number; origY: number; origW: number; origH: number;
@@ -267,10 +264,8 @@ const NoteCard: React.FC<Props> = ({
         top: displayY,
         width: displayW,
         height: displayH,
-        // contain: reflow inside this note doesn't shake the dashboard.
+        // contain + willChange: own compositor layer so paint stays scoped (see AgentCard for full rationale).
         contain: 'layout style',
-        // Own compositor layer so hover/paint invalidations stay
-        // contained to this note. See AgentCard for full rationale.
         willChange: 'transform',
         borderRadius: `${c.radius.md}px`,
         bgcolor: palette.bg,
@@ -290,7 +285,7 @@ const NoteCard: React.FC<Props> = ({
         '&:hover .note-controls': { opacity: 1 },
       }}
     >
-      {/* Drag header — thin strip at the top */}
+      {/* Drag header */}
       <Box
         onPointerDown={handleDragPointerDown}
         onPointerMove={handleDragPointerMove}

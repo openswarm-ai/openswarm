@@ -1,10 +1,4 @@
-"""Centralised path definitions for the OpenSwarm backend.
-
-In dev mode (default) data lives under ``backend/data/``.
-When packaged as a desktop app, Electron sets ``OPENSWARM_PACKAGED=1`` and
-data is stored in a platform-appropriate location
-(``~/Library/Application Support/OpenSwarm/data/`` on macOS).
-"""
+"""Path definitions: dev under backend/data/, packaged under platform app-support."""
 
 import os
 import sys
@@ -35,11 +29,7 @@ SKILLS_WORKSPACE_DIR = os.path.join(DATA_ROOT, "skills_workspace")
 DASHBOARD_LAYOUT_DIR = os.path.join(DATA_ROOT, "dashboard_layout")
 BUILTIN_PERMISSIONS_PATH = os.path.join(DATA_ROOT, "builtin_permissions.json")
 
-# Per-install auth token for the localhost WS + HTTP API. Regenerated
-# every backend start. Only code running as the current OS user (Electron
-# main process, our Python MCP subprocesses, the Claude Code CLI we
-# spawn) can read this file. Webpages loaded in any browser on the
-# machine cannot — which is the whole point. See auth.py.
+# Per-install auth token for the localhost API; see auth.py.
 AUTH_TOKEN_FILE = os.path.join(DATA_ROOT, "auth.token")
 
 BACKEND_DIR = _BACKEND_DIR

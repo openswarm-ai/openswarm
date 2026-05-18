@@ -50,7 +50,7 @@ if [[ "$HOST_ARCH" != "arm64" ]]; then
     echo "WARNING: Host arch is $HOST_ARCH, not arm64. The DMG will still be" >&2
     echo "  built for arm64 because we're invoking electron-builder with" >&2
     echo "  --mac --arm64 explicitly, but the bundled python-env / node will" >&2
-    echo "  be x64 — wrong arch for an M4 Mac. Run this on an arm64 host." >&2
+    echo "  be x64, wrong arch for an M4 Mac. Run this on an arm64 host." >&2
     exit 1
 fi
 

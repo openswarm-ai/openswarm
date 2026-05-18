@@ -1,16 +1,4 @@
-"""Per-workspace persistent backend runtime.
-
-Each App (workspace) has at most one long-running `backend.py` subprocess
-managed by `AppRuntime`. Lifetime is reference-counted via the module-level
-`manager` singleton: when the first ViewEditor / DashboardViewCard /
-TerminalPanel attaches to a workspace, the process is spawned; when the
-last detaches, it's terminated. Multiple subscribers share the same
-process and the same in-memory log ring buffer.
-
-This replaces the old one-shot `execute_backend_code` model for the
-"backend serves real HTTP endpoints" use case. The one-shot path stays
-around (see `executor.py`) for legacy `/api/outputs/execute` callers.
-"""
+"""Per-workspace persistent backend.py runtime; one AppRuntime per workspace, refcounted by manager singleton."""
 
 import asyncio
 import logging
@@ -25,70 +13,28 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-# Recent log lines kept in memory per runtime. Lets a Terminal tab that
-# opens mid-session replay the context that was already printed instead
-# of seeing a blank pane. 2000 lines ≈ a few hundred KB at worst —
-# bounded and predictable.
+# 2000 lines per runtime; lets a Terminal tab opened mid-session replay context. ~few hundred KB at worst.
 _LOG_BUFFER_LINES = 2000
 
-# Seconds to wait after SIGTERM before escalating to SIGKILL. Most
-# well-behaved Python servers shut down well under a second; this is the
-# upper bound before we move on so a wedged process can't block a
-# workspace tear-down forever.
+# SIGTERM grace; well-behaved servers shut down under a second so 3s is enough.
 _TERMINATE_GRACE_SECONDS = 3
 
-# How long we'll wait for Vite (or whatever frontend server bash run.sh
-# spawns) to bind on FRONTEND_PORT before giving up and reporting the
-# frontend as "not ready." Covers cold-start `npm install` (~60-90s on
-# typical hardware for the template's dependency set) plus the Vite
-# bind itself. After this we keep the runtime running — the user can
-# check the Terminal pane to see what went wrong — but stop blocking
-# the preview pane on a port that may never come up.
+# 180s covers npm install (60-90s on typical hardware) plus the Vite bind.
 _FRONTEND_BIND_TIMEOUT_SECONDS = 180
-# Drop from 0.5 → 0.08 because that 500ms window was ENTIRELY user-visible
-# preview latency — after Vite actually binds we'd wait up to half a second
-# before noticing and emitting runtime:status to the editor. 80ms TCP
-# probes are cheap (async open_connection on localhost, no DNS, no
-# handshake to a real upstream) and shave the perceived cold-start by
-# roughly half a second. The asyncio.open_connection call has its own
-# 500ms connect timeout for the failure case so a wedged listener won't
-# turn this into a tight CPU loop.
+# 80ms probe: dropping from 500ms was pure user-visible preview latency win; cheap on localhost.
 _FRONTEND_BIND_POLL_INTERVAL = 0.08
 
 
-# Process-wide mutex that serializes new-mode workspace boots so only
-# ONE vite optimizeDeps run is in flight at a time. Acquired in
-# `AppRuntime.start` (new-mode branch only) BEFORE the run.sh spawn,
-# released by `_await_frontend_bind` the instant vite emits its
-# "frontend ready" log line — or by the timeout / failure paths.
-#
-# Why a module-level asyncio.Lock and not part of AppRuntimeManager:
-# the lock has to be acquired BEFORE the runtime is registered in
-# manager.runtimes (which happens inside manager.attach's own
-# `_lock`), and we can't hold both locks at once without inviting
-# deadlock. Lifting to the module keeps the two locks fully
-# independent — the manager lock guards the runtime dict, this one
-# guards "is anyone currently mid-MUI-bundle?"
+# Module-level lock so only ONE vite optimizeDeps runs at a time; must be acquired before manager._lock to avoid deadlock with manager.attach.
 _vite_boot_lock = asyncio.Lock()
 
-# Number of idle (zero-attachment) runtimes the manager keeps alive in
-# its LRU before reaping the oldest. Trades memory for instant
-# switch-back: clicking a previously-opened App reattaches to an
-# already-running vite + uvicorn instead of paying the ~1-2s spawn
-# cost. Bumped beyond 1 because the typical "App Builder" user keeps
-# 2-3 in-progress apps and ping-pongs between them.
+# Idle runtimes kept in LRU; trades memory for instant switch-back, beyond 1 because typical users ping-pong 2-3 apps.
 _MAX_IDLE_RUNTIMES = 3
 
-# Cap on recent error lines kept per workspace runtime. The agent only
-# needs a snapshot of "what broke since my last write" — older errors
-# get dropped. 50 is enough to catch a babel error message + its stack
-# trace + a couple of related warnings without bloating the context.
+# Cap on recent error lines the agent gets; 50 is enough for babel error + stack + a few warnings.
 _RECENT_ERRORS_MAX = 50
 
-# Regex that matches lines we want to surface back to the agent. Picks
-# up the common JS/TS/Python build-error formats vite, babel, tsc, and
-# uvicorn emit. Kept narrow on purpose so routine info logs and
-# deprecation warnings don't pollute the agent's context.
+# Narrow regex for build errors (vite, babel, tsc, uvicorn); keeps routine logs out of agent context.
 import re as _re
 _ERROR_PATTERNS = _re.compile(
     r"(?:"
@@ -114,10 +60,10 @@ def _suspend_process_tree(proc: Optional[asyncio.subprocess.Process]) -> None:
     PROCESS GROUP (negative PID) when the child is a session leader,
     so vite + uvicorn + their npm/python subchildren all pause together.
 
-    No-op on Windows (SIGSTOP has no equivalent — the `OpenProcessToken` +
+    No-op on Windows (SIGSTOP has no equivalent; the `OpenProcessToken` +
     `NtSuspendProcess` route works but isn't worth the win32 surface
     here; idle Windows runtimes just stay running, which is the current
-    behavior). Failures here are swallowed — if the process already died
+    behavior). Failures here are swallowed; if the process already died
     a stop signal is meaningless."""
     if proc is None or os.name == "nt":
         return
@@ -126,7 +72,7 @@ def _suspend_process_tree(proc: Optional[asyncio.subprocess.Process]) -> None:
             return
         os.kill(proc.pid, signal.SIGSTOP)
     except (ProcessLookupError, PermissionError, OSError):
-        # Already-dead or out-of-permission — both safe to ignore.
+        # Already-dead or out-of-permission; both safe to ignore.
         pass
 
 
@@ -184,7 +130,7 @@ def _find_free_port() -> int:
 def _is_new_mode(workspace_path: str) -> bool:
     """A workspace is "new-mode" (webapp-template scaffold) if it has a
     `run.sh` at its root. Old-mode workspaces are flat `index.html`-only
-    apps that pre-date the template swap — they're served by OpenSwarm's
+    apps that pre-date the template swap; they're served by OpenSwarm's
     own `/api/outputs/workspace/{ws}/serve/...` FastAPI route and have an
     optional `backend.py` we spawn directly.
 
@@ -211,7 +157,7 @@ def _read_env_value(env_path: str, key: str) -> Optional[str]:
                 if k.strip() != key:
                     continue
                 v = v.strip()
-                # Strip an inline `# comment`. Naive — bash semantics are
+                # Strip an inline `# comment`. Naive; bash semantics are
                 # more permissive, but values we write don't contain `#`.
                 if "#" in v:
                     v = v.split("#", 1)[0].rstrip()
@@ -262,7 +208,7 @@ class AppRuntime:
         self.process: Optional[asyncio.subprocess.Process] = None
         self.log_buffer: deque[LogLine] = deque(maxlen=_LOG_BUFFER_LINES)
         self._subscribers: set[LogSubscriber] = set()
-        # Recent build/runtime errors scraped from stderr — drained by
+        # Recent build/runtime errors scraped from stderr; drained by
         # the agent's post-tool hook after Write/Edit so the agent sees
         # vite/babel/uvicorn errors in its next turn and can self-fix
         # instead of leaving the user with a red iframe overlay.
@@ -314,7 +260,7 @@ class AppRuntime:
           without waiting for the subprocess to print anything.
 
         - **Old-mode** (no `run.sh`): spawn `python -u backend.py` if
-          present, with `PORT` env var. This is the legacy path —
+          present, with `PORT` env var. This is the legacy path , 
           unchanged so flat-index.html apps keep working.
 
         Returns True if a process is running after this call. False is
@@ -344,7 +290,7 @@ class AppRuntime:
                     ok = await self._start_new_mode()
                     if not ok:
                         # Spawn failed before the bind-poll task was
-                        # created — release synchronously so we don't
+                        # created; release synchronously so we don't
                         # wedge the next workspace.
                         _vite_boot_lock.release()
                     return ok
@@ -358,14 +304,14 @@ class AppRuntime:
         fp_raw = _read_env_value(env_path, "FRONTEND_PORT")
         bp_raw = _read_env_value(env_path, "BACKEND_PORT")
         # FRONTEND_PORT is allocated by seed_workspace; should always be
-        # a number. If missing, log + fall back to a fresh allocation —
+        # a number. If missing, log + fall back to a fresh allocation , 
         # rare edge case (workspace seeded by an older OpenSwarm).
         try:
             self.frontend_port = int(fp_raw) if fp_raw else _find_free_port()
         except ValueError:
             self.frontend_port = _find_free_port()
         # BACKEND_PORT may be the literal string "NONE" (frontend-only
-        # app — the common case) or a number once `backend_init.sh` has
+        # app; the common case) or a number once `backend_init.sh` has
         # run. Only populate self.port when there's a real backend.
         if bp_raw and bp_raw != "NONE":
             try:
@@ -407,7 +353,7 @@ class AppRuntime:
             self.process = None
             return False
         backend_note = f" + backend on {self.port}" if self.port else ""
-        self._broadcast(LogLine("runtime", f"[runtime] bash run.sh started — frontend on {self.frontend_port}{backend_note} (pid {self.process.pid})"))
+        self._broadcast(LogLine("runtime", f"[runtime] bash run.sh started; frontend on {self.frontend_port}{backend_note} (pid {self.process.pid})"))
         self._stdout_task = asyncio.create_task(self._pipe_stream(self.process.stdout, "stdout"))
         self._stderr_task = asyncio.create_task(self._pipe_stream(self.process.stderr, "stderr"))
         self._wait_task = asyncio.create_task(self._await_exit())
@@ -425,7 +371,7 @@ class AppRuntime:
         `frontend_url` property reads.
 
         Also responsible for releasing the module-level `_vite_boot_lock`
-        — every exit path (success, process death, hard timeout) MUST
+       ; every exit path (success, process death, hard timeout) MUST
         release exactly once so the next queued workspace can start its
         own vite spawn. A try/finally on the lock guarantees that even
         an exception in the poll body doesn't strand the lock holding."""
@@ -451,7 +397,7 @@ class AppRuntime:
             port = self.frontend_port
             deadline = asyncio.get_event_loop().time() + _FRONTEND_BIND_TIMEOUT_SECONDS
             while asyncio.get_event_loop().time() < deadline:
-                # Stop polling if the process died — pointless to keep
+                # Stop polling if the process died; pointless to keep
                 # checking a port nothing will bind.
                 if self.process is None or self.process.returncode is not None:
                     return
@@ -472,7 +418,7 @@ class AppRuntime:
                         f"[runtime] frontend ready at http://127.0.0.1:{port}/",
                     ))
                     # Release the vite-boot mutex the INSTANT vite is
-                    # ready — the next queued workspace can start its
+                    # ready; the next queued workspace can start its
                     # own bundle now even though we'll keep streaming
                     # logs for this one.
                     _release_boot_lock()
@@ -480,12 +426,12 @@ class AppRuntime:
                 except (OSError, asyncio.TimeoutError):
                     pass
                 await asyncio.sleep(_FRONTEND_BIND_POLL_INTERVAL)
-            # Timed out — keep the runtime up (Terminal might show useful
+            # Timed out; keep the runtime up (Terminal might show useful
             # errors) but surface why the preview never appeared.
             self._broadcast(LogLine(
                 "runtime",
                 f"[runtime] frontend did NOT bind on port {port} after "
-                f"{_FRONTEND_BIND_TIMEOUT_SECONDS}s — check the Terminal "
+                f"{_FRONTEND_BIND_TIMEOUT_SECONDS}s; check the Terminal "
                 f"for npm/vite errors.",
             ))
         finally:
@@ -502,7 +448,7 @@ class AppRuntime:
         self.port = _find_free_port()
         env = self._spawn_env_base()
         env["PORT"] = str(self.port)
-        env["BACKEND_PORT"] = str(self.port)  # alias — both common names work
+        env["BACKEND_PORT"] = str(self.port)  # alias; both common names work
         try:
             # -u forces unbuffered stdout/stderr so the Terminal pane
             # sees lines in real time, not whenever Python decides to
@@ -537,7 +483,7 @@ class AppRuntime:
         async with self._lock:
             if not self.process or self.process.returncode is not None:
                 # Still cancel the bind poller in case stop() races a
-                # never-launched runtime — defensive no-op otherwise.
+                # never-launched runtime; defensive no-op otherwise.
                 if self._frontend_ready_task and not self._frontend_ready_task.done():
                     self._frontend_ready_task.cancel()
                 return
@@ -578,7 +524,7 @@ class AppRuntime:
 
     def _broadcast(self, line: LogLine) -> None:
         self.log_buffer.append(line)
-        # Snapshot subscribers — they can self-remove during dispatch.
+        # Snapshot subscribers; they can self-remove during dispatch.
         for cb in list(self._subscribers):
             try:
                 cb(line)
@@ -587,7 +533,7 @@ class AppRuntime:
 
     def _maybe_capture_error(self, text: str) -> None:
         """If a stderr/stdout line matches a known build-error pattern,
-        record it for the next agent-tool drain. Tests every line —
+        record it for the next agent-tool drain. Tests every line , 
         cheap (single regex search) and only the matching ones land in
         the buffer."""
         if _ERROR_PATTERNS.search(text):
@@ -622,7 +568,7 @@ class AppRuntimeManager:
     Reference-counts attachments so we don't kill a backend when one
     Terminal closes while another is still subscribed. First attach
     spawns; final detach moves the runtime into an LRU idle pool
-    instead of stopping it immediately — so re-clicking a recent App
+    instead of stopping it immediately; so re-clicking a recent App
     is instant. The oldest runtime gets reaped once the pool exceeds
     _MAX_IDLE_RUNTIMES."""
 
@@ -638,14 +584,14 @@ class AppRuntimeManager:
 
     async def attach(self, workspace_id: str, workspace_path: str) -> AppRuntime:
         revived = False
-        # Defined here so every code path below leaves it bound — the
+        # Defined here so every code path below leaves it bound; the
         # revive-idle branch used to skip the assignment, leaving the
         # post-lock `if dead is not None:` check throwing UnboundLocalError.
         dead: Optional[AppRuntime] = None
         async with self._lock:
             rt = self.runtimes.get(workspace_id)
             if rt is None:
-                # Maybe the runtime is sitting idle in the LRU — revive
+                # Maybe the runtime is sitting idle in the LRU; revive
                 # it without paying the spawn cost again.
                 idle_rt = self._idle_lru.pop(workspace_id, None)
                 if idle_rt is not None and idle_rt.running:
@@ -658,7 +604,7 @@ class AppRuntimeManager:
                     _resume_process_tree(rt.process)
                 else:
                     if idle_rt is not None:
-                        # Stale idle entry — process died while idling.
+                        # Stale idle entry; process died while idling.
                         # Drop and spawn a fresh one below; old one
                         # gets stopped outside the lock.
                         dead = idle_rt
@@ -667,7 +613,7 @@ class AppRuntimeManager:
             else:
                 # Workspace paths shouldn't change for a given id, but if
                 # somehow they did (e.g. the user moved the workspace
-                # folder), trust the latest caller — they have the
+                # folder), trust the latest caller; they have the
                 # current truth.
                 rt.workspace_path = workspace_path
             self._attached[workspace_id] = self._attached.get(workspace_id, 0) + 1
@@ -694,7 +640,7 @@ class AppRuntimeManager:
             if rt is None:
                 return
             # If the process is already dead, no point keeping it
-            # around — just clean up. Otherwise move to the LRU AND
+            # around; just clean up. Otherwise move to the LRU AND
             # SIGSTOP the process tree so it consumes 0% CPU while
             # idle. The matching SIGCONT lives in attach() above.
             if not rt.running:
@@ -736,7 +682,7 @@ class AppRuntimeManager:
         """If `file_path` falls under one of the live workspace
         runtimes' workspace_path, drain that workspace's recent
         build/runtime errors. Returns [] if no workspace owns the path
-        or no errors are queued — caller can treat empty as 'all clear'.
+        or no errors are queued; caller can treat empty as 'all clear'.
         Used by agent_manager's post-tool hook so the agent sees vite /
         babel / uvicorn errors right after a Write/Edit completes."""
         if not file_path:
@@ -745,7 +691,7 @@ class AppRuntimeManager:
             abs_path = os.path.abspath(file_path)
         except Exception:
             return []
-        # Walk both active and idle runtimes — the user might have
+        # Walk both active and idle runtimes; the user might have
         # navigated away from the workspace mid-build, but the agent
         # could still be editing files; the LRU keeps the runtime alive
         # for ~3 idle slots.

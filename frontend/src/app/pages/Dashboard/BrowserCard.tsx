@@ -79,10 +79,7 @@ const chromeUserAgent = navigator.userAgent
   .replace(/\s*Electron\/\S+/, '')
   .replace(/\s*OpenSwarm\/\S+/, '');
 
-// Read from the sync exposure first (set at preload boot, always present
-// by the time modules evaluate). Fall back to the async `openswarm` API
-// for backward compatibility. If you see `<openswarm:webview-preload>`
-// logs in the terminal, this attached; if you don't, it didn't.
+// Sync exposure set at preload boot; async API fallback for older builds.
 const webviewPreloadPath: string | undefined = isElectron
   ? ((window as any).__OPENSWARM_WEBVIEW_PRELOAD__
       || (window as any).openswarm?.getWebviewPreloadPath?.())
@@ -150,10 +147,7 @@ const BrowserCard: React.FC<Props> = ({
   const lastAction = activity.lastAction;
 
   const [tabLocalStates, setTabLocalStates] = useState<Record<string, TabLocalState>>({});
-  // Electron webviews can't trigger the OS platform authenticator (see
-  // webview-preload.js for the WebAuthn shim). When the preload catches a
-  // passkey call it sends `ipc-message` "passkey-detected"; we surface a
-  // modal so the user knows why the sign-in didn't work.
+  // Electron webviews can't trigger OS platform auth; preload sends "passkey-detected" and we explain via modal.
   const [passkeyDialogOpen, setPasskeyDialogOpen] = useState(false);
   const updateTabLocal = useCallback((tabId: string, update: Partial<TabLocalState>) => {
     setTabLocalStates((prev) => {
@@ -175,7 +169,6 @@ const BrowserCard: React.FC<Props> = ({
     setUrlBarValue(activeUrl);
   }, [activeUrl, activeTabId]);
 
-  // ---- Webview ref management ----
   const webviewMap = useRef<Map<string, WebviewElement>>(new Map());
   const initializedTabs = useRef(new Set<string>());
   const tabBarRef = useRef<HTMLDivElement>(null);
@@ -201,12 +194,7 @@ const BrowserCard: React.FC<Props> = ({
         const targetUrl = tab.url;
         const doLoad = () => {
           wv.loadURL(targetUrl).catch(() => {});
-          // Lock the guest's pinch/page zoom at 1.0 so ctrl+wheel inside the
-          // webview never triggers Chromium's in-page zoom — the guest
-          // preload forwards the gesture to the host, where the dashboard
-          // canvas zoom takes over (issue #27). Without this lock, certain
-          // pages (or trackpad pinch on macOS) can still nudge the in-page
-          // zoom even when the wheel-event preventDefault fires.
+          // Lock guest zoom at 1.0 so ctrl+wheel never triggers Chromium's in-page zoom; canvas zoom takes over (issue #27).
           try {
             (wv as any).setVisualZoomLevelLimits?.(1, 1);
             (wv as any).setZoomFactor?.(1);
@@ -226,26 +214,11 @@ const BrowserCard: React.FC<Props> = ({
       };
 
       const onIpcMessage = (e: any) => {
-        // Was previously logging every ipc-message. The preload forwards
-        // every guest-page console call as `webview-console`, so popular
-        // sites (anything with analytics, telemetry, dev hot reload, etc.)
-        // produced hundreds of host-side console.warn calls per second,
-        // each blocking the main thread when DevTools is open. That was
-        // the dominant cause of the "click-then-jump" lag on dashboards
-        // with browser cards. Drop the unconditional log; ipc channels
-        // we actually care about are handled in the branches below.
+        // No unconditional log; forwarded webview-console messages were causing 100s of host warns/sec and main-thread stalls.
         if (e?.channel === 'passkey-detected') {
           setPasskeyDialogOpen(true);
         } else if (e?.channel === 'canvas-wheel-zoom') {
-          // ctrl/meta+wheel inside the webview — the guest preload caught
-          // it and forwarded the deltas + guest-local cursor coords. Convert
-          // guest coords → document coords using the webview's bounding rect,
-          // then dispatch a CustomEvent on window. useCanvasControls listens
-          // for this and runs the same zoom-around-cursor math its wheel
-          // handler uses. We do NOT dispatch a synthetic WheelEvent from the
-          // <webview> element — that bubble path turned out to be
-          // unreliable through Electron's GuestView, which is why ctrl+wheel
-          // over a selected browser was still getting eaten.
+          // Convert guest coords to doc coords and dispatch a CustomEvent; synthetic WheelEvent bubble was unreliable through GuestView.
           const payload = e.args?.[0] || {};
           const wvRect = wv.getBoundingClientRect();
           const docX = wvRect.left + (payload.clientX ?? 0);
@@ -281,10 +254,7 @@ const BrowserCard: React.FC<Props> = ({
         }
       };
 
-      // When a webview popup spawns while the app is in document fullscreen,
-      // Chromium's compositor shifts to the popup and the parent surface goes
-      // black with no fullscreenchange event. Drop fullscreen first so the
-      // popup renders normally and stays interactive.
+      // Exit fullscreen before popup spawns; Chromium compositor shifts and parent surface goes black silently otherwise.
       const onNewWindow = () => {
         if (document.fullscreenElement) {
           document.exitFullscreen().catch(() => {});
@@ -317,7 +287,6 @@ const BrowserCard: React.FC<Props> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabIdKey, browserId, dispatch, updateTabLocal]);
 
-  // ---- Navigation (active tab) ----
   const navigate = useCallback((targetUrl: string) => {
     const finalUrl = resolveInput(targetUrl);
     setUrlBarValue(finalUrl);
@@ -357,7 +326,6 @@ const BrowserCard: React.FC<Props> = ({
     dispatch(removeBrowserCard(browserId));
   }, [dispatch, browserId]);
 
-  // ---- Tab management ----
   const handleAddTab = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     dispatch(addBrowserTab({ browserId, url: browserHomepage }));
@@ -372,7 +340,6 @@ const BrowserCard: React.FC<Props> = ({
     dispatch(setActiveBrowserTab({ browserId, tabId }));
   }, [dispatch, browserId]);
 
-  // ---- Tab drag reorder ----
   const tabDragRef = useRef<{
     tabId: string;
     startX: number;
@@ -452,7 +419,6 @@ const BrowserCard: React.FC<Props> = ({
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
   }, [handleSwitchTab]);
 
-  // ---- Card drag via tab bar background ----
   const DRAG_THRESHOLD = 3;
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; startPanX: number; startPanY: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -517,7 +483,7 @@ const BrowserCard: React.FC<Props> = ({
     if (didDrag.current) {
       let finalX = dragState.current.origX + dx;
       let finalY = dragState.current.origY + dy;
-      // Snap to 24px grid (hold Shift to bypass)
+      // Snap to 24px grid (Shift bypasses).
       if (!e.shiftKey) {
         finalX = Math.round(finalX / 24) * 24;
         finalY = Math.round(finalY / 24) * 24;
@@ -538,7 +504,6 @@ const BrowserCard: React.FC<Props> = ({
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
   }, [dispatch, browserId, onDragEnd]);
 
-  // ---- Resize ----
   const resizeRef = useRef<{
     dir: ResizeDir; startX: number; startY: number;
     origX: number; origY: number; origW: number; origH: number;
@@ -600,7 +565,6 @@ const BrowserCard: React.FC<Props> = ({
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   }, [computeResize, dispatch, browserId]);
 
-  // ---- Display calculations ----
   const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
   const mdDy = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dy : 0;
   const displayX = localResize?.x ?? localDragPos?.x ?? (cardX + mdDx);
@@ -616,7 +580,6 @@ const BrowserCard: React.FC<Props> = ({
   const accentHover = c.accent.hover;
   const accentRgb = accentColor.replace('#', '').match(/.{2}/g)?.map(h => parseInt(h, 16)).join(',') || '189,100,57';
 
-  // ---- Glow state ----
   const glowingBrowserCards = useAppSelector((s) => s.dashboardLayout.glowingBrowserCards);
   const isGlowingFromRedux = !!glowingBrowserCards[browserId];
 
@@ -714,9 +677,7 @@ const BrowserCard: React.FC<Props> = ({
         }),
       }}
     >
-      {/* Selection overlay – only covers header area so webview stays interactive */}
 
-      {/* Rotating gradient border glow for element selection / streaming */}
       {showGlow && !agentActive && (
         <Box
           sx={{
@@ -745,7 +706,6 @@ const BrowserCard: React.FC<Props> = ({
         />
       )}
 
-      {/* Animated border glow (top edge overlay) */}
       {agentActive && (
         <Box
           sx={{
@@ -766,7 +726,6 @@ const BrowserCard: React.FC<Props> = ({
         />
       )}
 
-      {/* ====== Tab bar / drag handle ====== */}
       <Box
         ref={tabBarRef}
         onPointerDown={handleDragPointerDown}
@@ -787,7 +746,6 @@ const BrowserCard: React.FC<Props> = ({
           overflow: 'hidden',
         }}
       >
-        {/* Scrollable tab strip */}
         <Box
           sx={{
             display: 'flex',
@@ -842,7 +800,6 @@ const BrowserCard: React.FC<Props> = ({
                   }),
                 }}
               >
-                {/* Favicon / loading spinner */}
                 <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, width: 14, height: 14, justifyContent: 'center' }}>
                   {tls?.loading ? (
                     <CircularProgress size={10} thickness={5} sx={{ color: accentColor }} />
@@ -858,7 +815,6 @@ const BrowserCard: React.FC<Props> = ({
                   )}
                 </Box>
 
-                {/* Title */}
                 <Typography
                   sx={{
                     flex: 1,
@@ -875,7 +831,6 @@ const BrowserCard: React.FC<Props> = ({
                   {tab.title || 'New Tab'}
                 </Typography>
 
-                {/* Close tab */}
                 <Box
                   className="tab-close"
                   onClick={(e: React.MouseEvent) => handleCloseTab(tab.id, e)}
@@ -900,7 +855,6 @@ const BrowserCard: React.FC<Props> = ({
             );
           })}
 
-          {/* Add tab (+) button */}
           <Box
             onClick={handleAddTab}
             onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
@@ -1082,7 +1036,7 @@ const BrowserCard: React.FC<Props> = ({
         />
       )}
 
-      {/* ====== Browser body — multiple webviews stacked ====== */}
+      {/* Browser body: stacked webviews */}
       <Box sx={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {isElementSelectMode && (
           <Box sx={{ position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none' }} />
@@ -1134,7 +1088,7 @@ const BrowserCard: React.FC<Props> = ({
           </DialogTitle>
           <DialogContent sx={{ pb: 1 }}>
             <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary, lineHeight: 1.5 }}>
-              Sorry — OpenSwarm doesn't support passkeys. Please sign in with a password or another method.
+              Sorry, OpenSwarm doesn't support passkeys. Please sign in with a password or another method.
             </Typography>
           </DialogContent>
           <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -1180,15 +1134,13 @@ const BrowserCard: React.FC<Props> = ({
               }}
             >
               <Typography sx={{ fontSize: '0.68rem', color: c.status.warning }}>
-                iframe mode — some sites may not load. Use the Electron build for full browser support.
+                iframe mode: some sites may not load. Use the Electron build for full browser support.
               </Typography>
             </Box>
           </Box>
         )}
 
-        {/* ===== Action micro-animations ===== */}
-
-        {/* Camera flash — screenshot */}
+        {/* Camera flash: screenshot */}
         {(agentAction === 'screenshot' || lastAction === 'screenshot') && (
           <Box
             key={`flash-${activity.actionSeq}`}
@@ -1207,7 +1159,7 @@ const BrowserCard: React.FC<Props> = ({
           />
         )}
 
-        {/* Scanning line — get_text */}
+        {/* Scanning line: get_text */}
         {agentAction === 'get_text' && (
           <Box
             sx={{

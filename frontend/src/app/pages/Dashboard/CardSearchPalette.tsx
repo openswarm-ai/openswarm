@@ -33,7 +33,6 @@ const CardSearchPalette: React.FC<Props> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Build searchable items
   const items = useMemo((): CardSearchItem[] => {
     const result: CardSearchItem[] = [];
     for (const card of Object.values(cards)) {

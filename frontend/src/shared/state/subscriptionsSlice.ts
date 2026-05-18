@@ -21,27 +21,14 @@ export interface SubscriptionsState {
   status: SubscriptionStatus | null;
 }
 
-// Minimal slice-shape — used by selectors so the slice doesn't import
-// from store.ts (would create a circular dependency with the configured
-// store, even type-only).
+// Minimal slice shape for selectors; avoids circular type import from store.ts.
 type WithSubscriptions = { subscriptions: SubscriptionsState };
 
 const initialState: SubscriptionsState = {
   status: null,
 };
 
-// Mirrors `GET /agents/subscriptions/status` into Redux so the onboarding
-// gate (and any other consumer) can react to OAuth-driven subscription
-// connections — the actual tokens live in 9Router-managed storage, not in
-// settings.data, so this slice is the only frontend signal that an
-// "external subscription" has been hooked up.
-//
-// `preserveTransient` keeps a previously-seen `running: true` state when a
-// refresh comes back with `running: false`. The backend's `is_running()`
-// probe has a short sync timeout that can be exceeded while 9Router is
-// streaming inference, producing false negatives that would otherwise
-// flip the Settings cards into a "Starting subscription service..."
-// spinner mid-session.
+/** Mirror /agents/subscriptions/status into Redux; preserveTransient debounces is_running() false negatives. */
 export const fetchSubscriptionStatus = createAsyncThunk(
   'subscriptions/fetchStatus',
   async (opts: { preserveTransient?: boolean } | undefined, { getState }) => {
@@ -74,9 +61,7 @@ const subscriptionsSlice = createSlice({
 
 export const { setSubscriptionStatus } = subscriptionsSlice.actions;
 
-// Pulls the connections array out of the polymorphic `providers` shape
-// (`{ connections: [...] }` for the modern response, bare array for the
-// legacy one). Returns [] for the loading state.
+/** Unwraps the polymorphic `providers` shape (modern object vs legacy array). */
 export function selectSubscriptionConnections(
   state: WithSubscriptions,
 ): SubscriptionConnection[] {

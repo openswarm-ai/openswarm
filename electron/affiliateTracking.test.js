@@ -1,22 +1,4 @@
-// End-to-end tests for the desktop-side affiliate / referral handshake.
-//
-// We stand up an in-process HTTP server that implements the same contract
-// as openswarm-cloud's /api/install/{mint,bind,lookup} endpoints (in-memory
-// state, no SQLite). The Electron module's polling code talks to this
-// server over real fetch over real loopback TCP, which is as realistic as
-// it gets without booting the actual cloud Hono app.
-//
-// We then drive both halves of the flow:
-//   * The "user clicks Download on the landing page" half: mint() to get an
-//     install_token, stash it where the test's "welcome page" simulator can
-//     find it.
-//   * The "user installs the app" half: maybeRunFirstLaunchHandshake() with
-//     a fake shell that captures the welcome URL, then we simulate the
-//     welcome page by calling /api/install/bind from the test before the
-//     poll loop times out.
-//
-// Polling cadence is squeezed via env vars (OPENSWARM_AFFILIATE_POLL_*) so
-// the suite finishes in milliseconds instead of seconds.
+// E2E tests for the desktop affiliate handshake against an in-process mock cloud.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -26,17 +8,13 @@ const os = require("node:os");
 const http = require("node:http");
 const crypto = require("node:crypto");
 
-// Force the tracking module to use tight polling well before requiring it,
-// because the constants are read at module-load time.
+// Polling envs must be set before require: constants read at module load.
 process.env.OPENSWARM_AFFILIATE_POLL_INTERVAL_MS = "20";
 process.env.OPENSWARM_AFFILIATE_POLL_MAX_ATTEMPTS = "30";
 
 const affiliateTracking = require("./affiliateTracking");
 
-// --- in-memory mock cloud --------------------------------------------------
-
 function makeMockCloud() {
-  // Mirrors the install_tokens table.
   const tokens = new Map();
 
   const server = http.createServer((req, res) => {
@@ -120,8 +98,6 @@ function makeMockCloud() {
   });
 }
 
-// --- fake shell ------------------------------------------------------------
-
 function makeFakeShell() {
   const opened = [];
   return {
@@ -132,8 +108,6 @@ function makeFakeShell() {
     },
   };
 }
-
-// --- temp-dir helper -------------------------------------------------------
 
 function makeTempUserDataDir() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openswarm-affiliate-test-"));
@@ -148,7 +122,6 @@ function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// Prefer the actual install_token = call the bind endpoint with it.
 async function simulateWelcomePageBind(cloudUrl, installToken, appInstallId) {
   const res = await fetch(`${cloudUrl}/api/install/bind`, {
     method: "POST",
@@ -173,10 +146,6 @@ function appInstallIdFromWelcomeUrl(url) {
   return u.searchParams.get("app_install_id");
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 test("first launch: opens welcome URL and binds ref via poll loop", async () => {
   const cloud = await makeMockCloud();
   try {
@@ -186,11 +155,8 @@ test("first launch: opens welcome URL and binds ref via poll loop", async () => 
     process.env.OPENSWARM_AFFILIATE_LANDING_URL = "https://landing.test";
     process.env.OPENSWARM_AFFILIATE_CLOUD_URL = cloud.url;
 
-    // 1. Pre-mint a token at the cloud as if the user had clicked Download
-    //    on the landing page.
     const installToken = await mintTokenFromCloud(cloud.url, "haik-test");
 
-    // 2. Run the desktop's first-launch handshake.
     await affiliateTracking.maybeRunFirstLaunchHandshake({
       shell,
       userDataDir,
@@ -198,8 +164,6 @@ test("first launch: opens welcome URL and binds ref via poll loop", async () => 
       isPackaged: true,
     });
 
-    // 3. The shell should have been told to open the welcome URL with the
-    //    freshly generated app_install_id.
     assert.equal(shell.opened.length, 1, "exactly one browser open");
     assert.ok(
       shell.opened[0].startsWith("https://landing.test/welcome?app_install_id="),
@@ -209,20 +173,17 @@ test("first launch: opens welcome URL and binds ref via poll loop", async () => 
     const appInstallId = appInstallIdFromWelcomeUrl(shell.opened[0]);
     assert.ok(appInstallId && appInstallId.length > 8, "app_install_id present in URL");
 
-    // 4. install.json on disk now has the app_install_id but no ref yet.
     const stateFile = path.join(userDataDir, "install.json");
     let state = readJson(stateFile);
     assert.equal(state.app_install_id, appInstallId);
     assert.equal(state.ref, null);
     assert.ok(state.first_launch_at > 0);
 
-    // 5. Simulate the welcome page completing the bind.
     const bindResult = await simulateWelcomePageBind(cloud.url, installToken, appInstallId);
     assert.equal(bindResult.status, 200);
     assert.equal(bindResult.body.ref, "haik-test");
 
-    // 6. Wait for the poll loop to pick up the bind. Poll cadence is
-    //    20ms × 30 attempts = ~600ms upper bound; we wait up to 1s.
+    // Poll budget: 20ms * 30 attempts ~= 600ms; wait up to 1s.
     let final = null;
     for (let i = 0; i < 50; i++) {
       await delay(50);
@@ -243,8 +204,6 @@ test("returning launch: no-op when ref already bound", async () => {
     const shell = makeFakeShell();
     process.env.OPENSWARM_AFFILIATE_CLOUD_URL = cloud.url;
 
-    // Seed install.json as if first launch already happened and a ref
-    // was bound a few minutes ago.
     fs.writeFileSync(
       path.join(userDataDir, "install.json"),
       JSON.stringify({
@@ -278,8 +237,6 @@ test("returning launch within grace window: silent re-poll, no second browser po
     const shell = makeFakeShell();
     process.env.OPENSWARM_AFFILIATE_CLOUD_URL = cloud.url;
 
-    // Pre-mint a token + seed install.json as if first launch happened
-    // but the user never completed the welcome page handshake yet.
     const appInstallId = "grace-app-install-id-abcdef0123";
     fs.writeFileSync(
       path.join(userDataDir, "install.json"),
@@ -293,7 +250,6 @@ test("returning launch within grace window: silent re-poll, no second browser po
     );
 
     const installToken = await mintTokenFromCloud(cloud.url, "grace-ref");
-    // Simulate a late welcome bind (user finally clicked through).
     await simulateWelcomePageBind(cloud.url, installToken, appInstallId);
 
     await affiliateTracking.maybeRunFirstLaunchHandshake({
@@ -303,10 +259,8 @@ test("returning launch within grace window: silent re-poll, no second browser po
       isPackaged: true,
     });
 
-    // Specifically NO browser pop-up the second time around.
     assert.equal(shell.opened.length, 0, "no second browser open");
 
-    // Wait for the silent re-poll to pick up the bind.
     const stateFile = path.join(userDataDir, "install.json");
     let state = null;
     for (let i = 0; i < 50; i++) {
@@ -346,7 +300,6 @@ test("returning launch outside grace window: skipped entirely", async () => {
     });
 
     assert.equal(shell.opened.length, 0, "no browser open after grace window");
-    // Give the poll loop time to NOT run.
     await delay(200);
     const state = readJson(path.join(userDataDir, "install.json"));
     assert.equal(state.ref, null, "no ref bound");
@@ -392,7 +345,6 @@ test("dev mode: skipped unless OPENSWARM_AFFILIATE_FORCE=1", async () => {
 test("install.json write is atomic-ish (temp + rename)", async () => {
   const userDataDir = makeTempUserDataDir();
   affiliateTracking._writeState(userDataDir, { app_install_id: "atomic-test-1234567890", ref: "x" });
-  // After write, the temp file shouldn't be left behind.
   const files = fs.readdirSync(userDataDir);
   assert.ok(files.includes("install.json"));
   assert.ok(!files.some((f) => f.endsWith(".tmp")), "no leftover temp file");
@@ -412,10 +364,8 @@ test("readState returns {} when install.json is corrupt", () => {
 });
 
 test("poll loop respects max attempts and gives up", async () => {
-  // No cloud server at all — every poll attempt fails (ECONNREFUSED).
   const userDataDir = makeTempUserDataDir();
   const shell = makeFakeShell();
-  // Point at a port nothing's listening on.
   process.env.OPENSWARM_AFFILIATE_CLOUD_URL = "http://127.0.0.1:1";
 
   await affiliateTracking.maybeRunFirstLaunchHandshake({
@@ -425,7 +375,7 @@ test("poll loop respects max attempts and gives up", async () => {
     isPackaged: true,
   });
 
-  // Wait long enough for all attempts to fail. 20ms × 30 = 600ms.
+  // 20ms * 30 = 600ms upper bound; wait 900ms.
   await delay(900);
   const state = readJson(path.join(userDataDir, "install.json"));
   assert.equal(state.ref, null, "no ref after exhausted polls");

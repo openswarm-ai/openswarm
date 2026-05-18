@@ -16,7 +16,6 @@ class Debugleton:
     sync_lock: threading.Lock
 
     def __new__(cls, *args, **kwargs):
-        # Double-checked locking for thread-safe singleton creation
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -32,27 +31,18 @@ class Debugleton:
                     print("\033[38;5;120m|\t...Project Scanned\t|\033[0m")
                     print("\033[38;5;120m|\tDEBUGLETON INIT DONE\t|\033[0m")
                     print("\033[38;5;120m---------------------------------\n\033[0m")
-        #         else: print("DEBUGLETON Already initialized INNER")
-        # else: print("DEBUGLETON Already initialized OUTER")
         return cls._instance
-    
+
 
     def sync_to_saved(self, is_first_sync=False):
-        # print(f"[sync_to_saved]: START")
         if not is_first_sync: self.sync_lock.acquire()
-        # print(f"[sync_to_saved]: Acquired sync lock")
         self.dir = update_debug_toggles(save_to_file=False)
-        # print(f"Synced to saved dir: {self.dir}")
         self.abspaths, self.instances = self.dir.get_ordered_abspaths_and_instances()
-        # print(f"Synced to abspaths: {self.abspaths}")
         with open(NEEDS_RESYNC_FILE, 'w') as f:
             f.write('0')
         if not is_first_sync: self.sync_lock.release()
-        # print(f"[sync_to_saved]: Released sync lock")
-        # print(f"[sync_to_saved]: END")
 
     def needs_resync(self):
-        # print(f"[needs_resync]: START")
         num_tries = 0
         while self.is_syncing():
             print(f"Waiting for Debugleton to sync... ({num_tries})")
@@ -67,8 +57,6 @@ class Debugleton:
                       """)
         with open(NEEDS_RESYNC_FILE, 'r') as f:
                 does_need_resync = True if f.read().strip() == '1' else False
-        # if does_need_resync: print("Resyncing Debugleton...")
-        # print(f"[needs_resync]: END")
         return does_need_resync
     
     def is_syncing(self):
@@ -76,7 +64,6 @@ class Debugleton:
 
     def find_file_info(self, filepath: str):
         filepath = filepath.lower()
-        # print(f"Finding file info for {filepath}")
         if self.needs_resync():
             self.sync_to_saved()
         try:

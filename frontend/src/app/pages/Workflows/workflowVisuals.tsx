@@ -3,10 +3,15 @@
 // auto-classifier. Kept as plain functions/components so individual views
 // can compose without owning the styling.
 
-import React from 'react';
+import React, { useState } from 'react';
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import Popover from '@mui/material/Popover';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import { useAppDispatch } from '@/shared/hooks';
+import { updateWorkflow } from '@/shared/state/workflowsSlice';
 import ScheduleIcon from '@mui/icons-material/ScheduleRounded';
 import NotificationsIcon from '@mui/icons-material/NotificationsRounded';
 import SmsIcon from '@mui/icons-material/SmsRounded';
@@ -162,24 +167,97 @@ export function PermissionChip({ workflow }: { workflow: Workflow }) {
 
 export function ScheduleChip({ workflow }: { workflow: Workflow }) {
   const c = useClaudeTokens();
+  const dispatch = useAppDispatch();
   const enabled = workflow.schedule.enabled;
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  // Inline edit: time + AM/PM only. Anything richer should open the
+  // full editor. Saves on change with optimistic updated_at If-Match.
+  const sched = workflow.schedule;
+  const patchSched = (patch: Partial<typeof sched>) => {
+    const next = { ...sched, ...patch };
+    dispatch(updateWorkflow({
+      id: workflow.id,
+      patch: { schedule: next as any },
+      ifMatch: workflow.updated_at || null,
+    }));
+  };
   return (
-    <Tooltip title={enabled ? `Schedule: ${scheduleShort(workflow.schedule)} (${workflow.schedule.timezone === 'local' ? 'system tz' : workflow.schedule.timezone})` : 'Not scheduled'}>
-      <Box sx={{
-        display: 'inline-flex', alignItems: 'center', gap: 0.4,
-        fontSize: '0.74rem', fontWeight: 600,
-        color: enabled ? c.accent.primary : c.text.muted,
-        bgcolor: enabled ? c.accent.primary + '14' : c.bg.elevated,
-        border: `1px solid ${enabled ? c.accent.primary + '40' : c.border.subtle}`,
-        px: 0.85, py: 0.3, borderRadius: 999,
-      }}>
-        <ScheduleIcon sx={{ fontSize: 13 }} />
-        {scheduleShort(workflow.schedule)}
-        {enabled && workflow.schedule.repeat_unit === 'week' && (
-          <WeekdayDots on_days={workflow.schedule.on_days} />
-        )}
-      </Box>
-    </Tooltip>
+    <>
+      <Tooltip title={enabled ? `Click to tweak time. Full editor lives in the Edit tab.` : 'Not scheduled'}>
+        <Box
+          onClick={(e) => enabled && setAnchor(e.currentTarget as HTMLElement)}
+          role={enabled ? 'button' : undefined}
+          sx={{
+            display: 'inline-flex', alignItems: 'center', gap: 0.4,
+            fontSize: '0.74rem', fontWeight: 600,
+            color: enabled ? c.accent.primary : c.text.muted,
+            bgcolor: enabled ? c.accent.primary + '14' : c.bg.elevated,
+            border: `1px solid ${enabled ? c.accent.primary + '40' : c.border.subtle}`,
+            px: 0.85, py: 0.3, borderRadius: 999,
+            cursor: enabled ? 'pointer' : 'default',
+            '&:hover': enabled ? { bgcolor: c.accent.primary + '22' } : undefined,
+          }}>
+          <ScheduleIcon sx={{ fontSize: 13 }} />
+          {scheduleShort(workflow.schedule)}
+          {enabled && workflow.schedule.repeat_unit === 'week' && (
+            <WeekdayDots on_days={workflow.schedule.on_days} />
+          )}
+        </Box>
+      </Tooltip>
+      <Popover
+        open={Boolean(anchor)}
+        anchorEl={anchor}
+        onClose={() => setAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}>
+        <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 220 }}>
+          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em' }}>
+            QUICK TIME EDIT
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Select
+              size="small"
+              value={((sched.hour + 11) % 12) + 1}
+              onChange={(e) => {
+                const h12 = Number(e.target.value);
+                const isPm = sched.hour >= 12;
+                patchSched({ hour: (h12 % 12) + (isPm ? 12 : 0) });
+              }}
+              sx={{ fontSize: '0.78rem', '& .MuiSelect-select': { py: 0.4 } }}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                <MenuItem key={h} value={h}>{h}</MenuItem>
+              ))}
+            </Select>
+            <Typography sx={{ fontSize: '0.85rem' }}>:</Typography>
+            <Select
+              size="small"
+              value={sched.minute}
+              onChange={(e) => patchSched({ minute: Number(e.target.value) })}
+              sx={{ fontSize: '0.78rem', '& .MuiSelect-select': { py: 0.4 } }}>
+              {[0, 15, 30, 45].map((m) => (
+                <MenuItem key={m} value={m}>{String(m).padStart(2, '0')}</MenuItem>
+              ))}
+            </Select>
+            <Select
+              size="small"
+              value={sched.hour < 12 ? 'AM' : 'PM'}
+              onChange={(e) => {
+                const wasPm = sched.hour >= 12;
+                const willBePm = e.target.value === 'PM';
+                if (wasPm === willBePm) return;
+                patchSched({ hour: willBePm ? sched.hour + 12 : sched.hour - 12 });
+              }}
+              sx={{ fontSize: '0.78rem', '& .MuiSelect-select': { py: 0.4 } }}>
+              <MenuItem value="AM">AM</MenuItem>
+              <MenuItem value="PM">PM</MenuItem>
+            </Select>
+          </Box>
+          <Typography sx={{ fontSize: '0.68rem', color: c.text.ghost, mt: 0.25 }}>
+            Saved as you change.
+          </Typography>
+        </Box>
+      </Popover>
+    </>
   );
 }
 
@@ -315,6 +393,41 @@ export function RunSparkline({ runs, max = 10 }: { runs: WorkflowRun[]; max?: nu
             bgcolor: statusDotColor(r.status as LastRunStatus, c),
           }} />
         ))}
+      </Box>
+    </Tooltip>
+  );
+}
+
+// ---------- Streak badge ----------
+
+// Count consecutive successful runs at the head of the runs list.
+// `runs[0]` is the most recent run, so we walk forward until we hit a
+// non-success. Returns 0 when no streak is active.
+export function successStreak(runs: WorkflowRun[] | undefined): number {
+  if (!runs || runs.length === 0) return 0;
+  let n = 0;
+  for (const r of runs) {
+    if (r.status === 'success' || r.status === 'ran_late') n += 1;
+    else break;
+  }
+  return n;
+}
+
+export function StreakBadge({ runs }: { runs: WorkflowRun[] | undefined }) {
+  const c = useClaudeTokens();
+  const n = successStreak(runs);
+  if (n < 3) return null;
+  return (
+    <Tooltip title={`${n} successful runs in a row.`}>
+      <Box sx={{
+        display: 'inline-flex', alignItems: 'center', gap: 0.3,
+        fontSize: '0.72rem', fontWeight: 700,
+        color: c.status.warning || '#f59e0b',
+        bgcolor: (c.status.warningBg || c.bg.elevated),
+        border: `1px solid ${(c.status.warning || '#f59e0b') + '60'}`,
+        px: 0.7, py: 0.2, borderRadius: 999,
+      }}>
+        🔥 {n}
       </Box>
     </Tooltip>
   );

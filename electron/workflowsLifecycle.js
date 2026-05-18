@@ -125,16 +125,38 @@ function drainOnQuit(maxSeconds = 30) {
 }
 
 // Native OS notification. Falls back silently when Notification isn't
-// supported (some Linux setups, headless test envs).
-function showNativeNotification({ title, body, deepLink }) {
+// supported (some Linux setups, headless test envs). When `actions` is
+// provided AND we're on macOS, attaches button actions so the user can
+// ack/re-run/open without the app taking focus. Routes the chosen
+// outcome back to the renderer via an IPC channel that the renderer's
+// WebSocketManager already listens for.
+function showNativeNotification({ title, body, deepLink, runId, workflowId, actions }) {
   if (!Notification || !Notification.isSupported()) return null;
   try {
-    const n = new Notification({ title: title || 'OpenSwarm', body: body || '', silent: false });
-    if (deepLink) {
-      n.on('click', () => {
+    const opts = { title: title || 'OpenSwarm', body: body || '', silent: false };
+    const platformActions = Array.isArray(actions) && process.platform === 'darwin'
+      ? actions.map((a) => ({ type: 'button', text: a.text }))
+      : undefined;
+    if (platformActions && platformActions.length) opts.actions = platformActions;
+    const n = new Notification(opts);
+    const route = (outcome) => {
+      try {
+        const { BrowserWindow } = require('electron');
+        const wins = BrowserWindow.getAllWindows();
+        const wc = wins[0]?.webContents;
+        if (wc) wc.send('workflow:notification-action', { outcome, runId, workflowId, deepLink });
+      } catch (_) {}
+    };
+    n.on('action', (_event, idx) => {
+      const a = (actions || [])[idx];
+      if (a) route(a.outcome);
+    });
+    n.on('click', () => {
+      if (deepLink) {
         try { shell.openExternal(deepLink); } catch (_) {}
-      });
-    }
+      }
+      route('open');
+    });
     n.show();
     return n;
   } catch (_) {
@@ -153,7 +175,19 @@ function getLoginItem() {
 
 function setLoginItem(value) {
   try {
-    app.setLoginItemSettings({ openAtLogin: Boolean(value), openAsHidden: true });
+    // openAsHidden is macOS-only; on Windows the equivalent is passing
+    // a --hidden arg and having main.js suppress the initial window
+    // when the arg is present. Linux uses a .desktop file in
+    // ~/.config/autostart/ which Electron writes for us via this same
+    // call (no extra plumbing needed).
+    const opts = {
+      openAtLogin: Boolean(value),
+      openAsHidden: true,
+    };
+    if (process.platform === 'win32') {
+      opts.args = ['--hidden'];
+    }
+    app.setLoginItemSettings(opts);
     return Boolean(value);
   } catch (_) { return false; }
 }

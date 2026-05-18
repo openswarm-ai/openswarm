@@ -18,10 +18,58 @@ from backend.apps.workflows import storage, scheduler, executor, audit, escalati
 logger = logging.getLogger(__name__)
 
 
+def _scan_cron_for_openswarm() -> list[str]:
+    """Surface OS-level scheduled-task entries that reference us.
+
+    macOS + Linux: read `crontab -l`. Windows: query `schtasks` for any
+    task whose command/path contains 'openswarm'. Best-effort across all
+    three; any failure (no tool installed, permission denied, parse
+    error) just returns []. Surfaced to the FE so the Workflows hub can
+    offer a one-click migration banner to convert into native workflows.
+    """
+    import subprocess
+    import platform as _platform
+    findings: list[str] = []
+    if _platform.system() == "Windows":
+        try:
+            proc = subprocess.run(
+                ["schtasks", "/query", "/fo", "CSV", "/v"],
+                capture_output=True, text=True, timeout=4,
+            )
+            if proc.returncode != 0:
+                return []
+            for line in (proc.stdout or "").splitlines():
+                if "openswarm" in line.lower() and not line.lstrip().startswith('"#'):
+                    findings.append(line.strip())
+        except Exception:
+            return []
+        return findings
+    # macOS + Linux
+    try:
+        proc = subprocess.run(
+            ["crontab", "-l"],
+            capture_output=True, text=True, timeout=2,
+        )
+        if proc.returncode != 0:
+            return []
+        out = proc.stdout or ""
+        return [line.strip() for line in out.splitlines() if "openswarm" in line.lower() and not line.strip().startswith("#")]
+    except Exception:
+        return []
+
+
+_cron_findings: list[str] = []
+
+
 @asynccontextmanager
 async def workflows_lifespan():
     storage.init()
     await scheduler.start()
+    # Cheap one-shot scan for prior cron entries that reference us. We
+    # don't migrate automatically; the FE shows a banner with a "Convert
+    # to OpenSwarm scheduled tasks" button so the user is in control.
+    global _cron_findings
+    _cron_findings = _scan_cron_for_openswarm()
     try:
         yield
     finally:
@@ -144,6 +192,14 @@ async def resume_all_schedules():
 @workflows.router.get("/paused")
 async def get_paused_state():
     return {"paused": storage.get_paused()}
+
+
+@workflows.router.get("/cron/findings")
+async def cron_findings():
+    """Cron entries we found at startup that reference OpenSwarm. The
+    FE renders a one-time banner inviting users to convert them; we
+    return the raw lines so the user can verify before migrating."""
+    return {"entries": list(_cron_findings)}
 
 
 @workflows.router.get("/cloud/sms/status")

@@ -71,10 +71,7 @@ export const ElementSelectionProvider: React.FC<{ children: React.ReactNode }> =
       if (existing.some((e) => e.id === el.id)) return prev;
       return { ...prev, [ownerId]: [...existing, el] };
     });
-    // Same onboarding-bus emit as addElementForOwner. Drag-select goes
-    // through THIS path (via useDomElementSelector → ctx.addSelectedElement),
-    // not addElementForOwner — so without this branch, step 5 / 6's
-    // wait-for-attached event never fires when the user actually drags.
+    // Drag-select also emits agent:attached_to_browser; addElementForOwner alone misses this path.
     if (el.semanticType === 'browser-card' || el.semanticType === 'agent-card') {
       onboardingBus.emit('agent:attached_to_browser');
     }
@@ -115,11 +112,7 @@ export const ElementSelectionProvider: React.FC<{ children: React.ReactNode }> =
       if (existing.some((e) => e.semanticData?.selectId === el.semanticData?.selectId)) return prev;
       return { ...prev, [ownerId]: [...existing, el] };
     });
-    // Surface the attachment to the onboarding bus. Step 5 ("have an
-    // agent use the browser") and step 6 ("have an agent control other
-    // agents") both wait on this event after the user repeats the
-    // drag-select gesture. Both element kinds (browser-card / agent-card)
-    // resolve the same wait — the runtime doesn't differentiate.
+    // Onboarding steps 5/6 wait on agent:attached_to_browser; both kinds resolve the same wait.
     if (
       el.semanticType === 'browser-card' ||
       el.semanticType === 'agent-card'

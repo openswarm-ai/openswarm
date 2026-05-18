@@ -150,11 +150,7 @@ const MessageActionBar: React.FC<Props> = ({
   );
 };
 
-// Action bar callbacks are inline arrow functions from AgentChat (closing
-// over the per-message msg.id), so default memo equality fails on every
-// parent render. Compare by callback presence + branch-nav primitives
-// instead. The closures themselves are stable in EFFECT because they're
-// keyed off msg.id, which is invariant for a given MessageBubble.
+// Callbacks are per-message inline arrows; compare by presence + branch-nav primitives since closures are msg-id-keyed.
 export default React.memo(MessageActionBar, (prev, next) => (
   prev.role === next.role
   && !!prev.onCopy === !!next.onCopy

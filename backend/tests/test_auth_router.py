@@ -1,6 +1,6 @@
 """Smoketests for the desktop-side auth subapp.
 
-These tests don't hit the real cloud — they patch httpx so we can simulate
+These tests don't hit the real cloud; they patch httpx so we can simulate
 each cloud response and assert the local persistence + identify-status
 logic is right across every gate-dismissal path the renderer cares about.
 """
@@ -80,7 +80,7 @@ def test_signin_activate_persists_user_id(client, reset_settings):
 
 def test_signin_activate_paid_user_flips_pro_mode(client, reset_settings):
     """A signed-in user who already has a Stripe subscription should also
-    flip into openswarm-pro routing — covers the Google-then-Stripe and
+    flip into openswarm-pro routing; covers the Google-then-Stripe and
     Stripe-then-Google merge cases."""
     fake_response = AsyncMock()
     fake_response.status_code = 200
@@ -127,7 +127,7 @@ def test_signin_activate_invalid_token_returns_401(client, reset_settings):
 
 
 def test_signin_activate_short_token_rejected_locally(client, reset_settings):
-    """Short tokens rejected before we even hit the cloud — saves a round trip."""
+    """Short tokens rejected before we even hit the cloud; saves a round trip."""
     r = client.post(
         "/api/auth/signin-activate",
         json={"token": "short", "signin_method": "google"},
@@ -136,7 +136,7 @@ def test_signin_activate_short_token_rejected_locally(client, reset_settings):
 
 
 # ---------------------------------------------------------------------------
-# /api/auth/identity-status — gate-state for the renderer
+# /api/auth/identity-status; gate-state for the renderer
 # ---------------------------------------------------------------------------
 
 def test_identity_status_signed_in_user_returns_authed_true(client, reset_settings):

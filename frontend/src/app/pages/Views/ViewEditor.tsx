@@ -45,22 +45,7 @@ import { onboardingBus } from '@/app/components/Onboarding/eventBus';
 
 const WORKSPACE_API = `${API_BASE}/outputs/workspace`;
 
-// ---- App-Builder cold-start placeholder -----------------------------------
-//
-// On a fresh app the workspace needs npm/vite + (optionally) uvicorn to
-// finish booting before the preview iframe has anything to render. That's
-// ~60-90s the first time. The old placeholder was a static spinner + a
-// jargon-heavy "Cold start can take 60-90 seconds. Check the Terminal tab
-// to follow npm install + Vite startup output..." — non-devs read that as
-// Cold-start placeholder. Shows the same Bayer-dither pixel-blast
-// shader as the webapp_template's `index.html` splash and its placeholder
-// `pages/index.tsx`, so the visual is continuous across all three
-// phases (desktop pre-Vite, inline-HTML splash, React-rendered home).
-// Earlier revisions used a progress bar + rotating "Brewing..." copy;
-// the bar was always fake (no real progress signal) and the rotation
-// felt more anxious than calming. A single continuous animation reads
-// as "background brewing, nothing to worry about" without lying about
-// progress.
+// Cold-start splash: same Bayer-dither shader as the template's index.html for visual continuity across boot phases.
 const InstallPlaceholder: React.FC = () => {
   const c = useClaudeTokens();
   return (
@@ -108,13 +93,7 @@ const InstallPlaceholder: React.FC = () => {
   );
 };
 
-// File-tree noise defaults. VSCode's equivalent `files.exclude` hides
-// the same set (plus a few more) — we apply by basename anywhere in
-// the path so e.g. `frontend/node_modules` and `frontend/dist` are
-// both filtered out. User can flip `showHidden` to bypass. Anything
-// the agent legitimately writes lives in `src/`, `public/`,
-// `backend/`, `package.json`, `vite.config.ts`, `.env`, `README.md`
-// — none of those collide with this set.
+// File-tree noise: filtered by basename anywhere in the path; `showHidden` bypasses.
 const HIDDEN_PATH_SEGMENTS = new Set<string>([
   'node_modules',
   '.vite-cache',
@@ -125,12 +104,7 @@ const HIDDEN_PATH_SEGMENTS = new Set<string>([
   '__pycache__',
   '.venv',
 ]);
-// Workspace state poll cadence. While the agent is actively writing
-// files we want a snappy 2s so the file tree / code panes stay in
-// sync. Once the agent goes idle there's no reason to keep hammering
-// `/api/outputs/workspace/<ws>` every 2s — bump to 15s. The
-// agent-status effect snaps a one-shot poll on every active→idle
-// transition, so we don't miss the FINAL file write at quiescence.
+// Poll fast while agent is writing; slow while idle. A one-shot poll fires on active->idle transition to catch the last write.
 const POLL_INTERVAL_ACTIVE_MS = 2000;
 const POLL_INTERVAL_IDLE_MS = 15000;
 
@@ -326,41 +300,20 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
 
   const [activeTab, setActiveTab] = useState(TAB_PREVIEW);
   const [activeFile, setActiveFile] = useState('index.html');
-  // When false, HIDDEN_PATH_SEGMENTS get filtered out of the file tree.
-  // Persisted to the workspace's localStorage so toggle survives reload.
   const [showHidden, setShowHidden] = useState(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Skip preview reloads when nothing the user can SEE changed.
-  // The iframe renders index.html; if a save only touched SKILL.md or
-  // other non-rendered files, there's no point reloading the iframe —
-  // the visible content is identical and we'd just flash the empty
-  // "Ready" placeholder during the reload-blank-moment. Tracking the
-  // last reloaded snapshot of index.html lets us short-circuit those.
-  // Combined with the trailing-edge debounce below, the iframe only
-  // reloads when (a) index.html actually changed AND (b) the agent
-  // has stopped writing for >600ms — usually 0-1 reloads per generation.
+  // Only reload the iframe when index.html actually changed AND the agent has paused writing for 600ms; saves to SKILL.md etc don't flash the preview.
   const previewReloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastReloadedIndexHtmlRef = useRef<string>(initialFiles['index.html'] ?? '');
   const PREVIEW_RELOAD_DEBOUNCE_MS = 600;
   const savingRef = useRef(false);
-  // Terminal pane state. Persistent app-backend stdout/stderr arrives via
-  // the runtime WS; the running app's console.log/warn/error arrives via
-  // ipc-message from the webview-preload bridge. Both feed into a single
-  // chronological buffer here so the user sees interleaved [FRONTEND] /
-  // [BACKEND] / [RUNTIME] lines.
+  // Runtime WS feeds backend stdout/stderr; webview-preload ipc-message feeds frontend console.* into the same chronological buffer.
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([]);
   const terminalLineIdRef = useRef(0);
   const TERMINAL_BUFFER_CAP = 5000; // trim FIFO past this so we don't grow unbounded
 
   const previewRef = useRef<ViewPreviewHandle>(null);
-  // `iframePainted` is true once the embedded app's first navigation
-  // has fired its `load` event PLUS a 300 ms grace for React/Vue/etc.
-  // to commit its first paint. Used to keep the cold-start placeholder
-  // overlaid on top of the iframe until the user-visible content is
-  // actually on screen — otherwise vite reporting "ready" → placeholder
-  // unmount → iframe-still-loading-its-bundle reads as a grey flash.
-  // Resets whenever the serve URL changes (new app, vite restart) so
-  // each load has its own placeholder lifecycle.
+  // True ~300ms after iframe `load`; keeps placeholder up until SPA actually paints, resets on URL change.
   const [iframePainted, setIframePainted] = useState(false);
 
   const SIDEBAR_MIN = 280;
@@ -393,17 +346,11 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
 
   const [initialDraftId, setInitialDraftId] = useState<string | null>(null);
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
-  // Reuse the workspace_id stored on the Output if present so we don't seed a
-  // fresh folder every time the editor remounts (which would orphan the agent's
-  // in-progress edits and lose chat continuity). Only mint a new id for first-
-  // time outputs that don't yet have one persisted.
+  // Reuse the Output's workspace_id across remounts so we don't orphan agent edits or chat history.
   const [stableWorkspaceId] = useState(() => output?.workspace_id || `ws-${Date.now().toString(36)}`);
   const draftCreated = useRef(false);
 
-  // Honor the user's Settings → default_model + default_thinking_level.
-  // Without this, createDraftSession's hardcoded 'sonnet' / undefined-thinking
-  // fallbacks win and App Builder always opens on Sonnet + Auto thinking
-  // regardless of what the user picked in Settings.
+  // Honor Settings default_model + default_thinking_level (else createDraftSession's hardcoded 'sonnet' wins).
   const defaultModel = useAppSelector((s) => s.settings.data.default_model);
   const defaultThinkingLevel = useAppSelector((s) => s.settings.data.default_thinking_level);
   const settingsLoaded = useAppSelector((s) => s.settings.loaded);
@@ -412,14 +359,11 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
 
   useEffect(() => {
     if (draftCreated.current) return;
-    // Wait for settings + model registry before seeding the draft, otherwise
-    // we'd snapshot the Redux initial 'sonnet' default and ignore the user's pick.
+    // Wait for settings + models else we'd snapshot Redux's initial 'sonnet' over the user's choice.
     if (!settingsLoaded || !modelsLoaded) return;
     draftCreated.current = true;
 
-    // Resolve provider from the model registry. Group names mirror the
-    // provider map in ChatInput.tsx (Anthropic / OpenSwarm Pro → 'anthropic',
-    // Google → 'gemini', xAI/Meta/etc → 'openrouter').
+    // Provider map mirrors ChatInput.tsx grouping.
     const PROVIDER_MAP: Record<string, string> = {
       anthropic: 'anthropic',
       'openswarm pro': 'anthropic',
@@ -441,12 +385,8 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     }
 
     (async () => {
-      // Reattach branch: this Output already has a session + workspace from a
-      // prior visit. Skip seeding (would clobber any in-progress edits the
-      // agent made) and skip createDraftSession (would orphan the live session).
-      // Just resolve the workspace path and tell AgentChat which session to bind to.
+      // Reattach: Output has an existing session + workspace; skip seeding/draft so we don't clobber agent state.
       if (output?.session_id && output?.workspace_id) {
-        // Resolve the workspace path first (best-effort; chat works without it).
         let resolvedWorkspacePath: string | null = null;
         try {
           const res = await fetch(`${WORKSPACE_API}/${output.workspace_id}`);
@@ -459,32 +399,21 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
           }
         } catch { /* path is best-effort */ }
 
-        // Verify the persisted session still exists on the backend before
-        // binding to it. The id can become stale (backend data wiped,
-        // sessions cleared, different OpenSwarm install) — without this
-        // check we'd hand AgentChat a non-existent id and the chat pane
-        // would be stuck on "Initializing agent…" forever. On 200 we
-        // bind; on 404 we fall through to seed a fresh draft session
-        // attached to the same workspace (preserves app code on disk;
-        // only the chat history is lost — acceptable trade).
+        // Verify session still exists; ids go stale across reinstalls/data wipes and AgentChat would hang on "Initializing agent..."
         let sessionStillExists = false;
         try {
           const sr = await fetch(`${API_BASE}/agents/sessions/${output.session_id}`);
           sessionStillExists = sr.ok;
-        } catch { /* network blip — treat as missing */ }
+        } catch { /* network blip, treat as missing */ }
 
         if (sessionStillExists) {
-          // Pull the latest session state from the backend so the chat
-          // catches up on anything the agent did while the user was on
-          // another tab.
+          // Catch up on anything the agent did while we were on another tab.
           dispatch(fetchSession(output.session_id));
           setInitialDraftId(output.session_id);
           return;
         }
 
-        // Stale linkage. Clear it from the Output so future opens skip
-        // the 404 round-trip, then fall through to createDraftSession
-        // with the same workspace.
+        // Stale link: clear it so future opens skip the 404 round-trip, then fall through.
         if (output.id) {
           try {
             await dispatch(updateOutput({ id: output.id, session_id: null })).unwrap();
@@ -519,42 +448,12 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
         });
         const data = await res.json();
         setWorkspacePath(data.path);
-        // Backend creates an Output record at seed time for
-        // webapp_template workspaces (workspace_id wired up, name
-        // "Untitled App"). Adopt that id NOW so:
-        //  1. The Apps sidebar refresh below shows the in-progress app
-        //     immediately — users who navigate away can find it again.
-        //  2. Later autosaves take the updateOutput branch (using
-        //     `output?.id ?? createdIdRef.current`) instead of trying
-        //     to recreate.
-        // Old flat-mode seeds don't return output_id; that path keeps
-        // its previous behavior (create-on-first-autosave).
+        // Adopt the backend-minted output_id so the Apps sidebar shows the app and later autosaves hit updateOutput.
         if (typeof data?.output_id === 'string' && data.output_id) {
           createdIdRef.current = data.output_id;
           setCreatedId(data.output_id);
-          // Refresh the Apps list so the new app shows up in the sidebar
-          // before the user navigates away from /apps/new.
           dispatch(fetchOutputs());
-          // Replace /apps/new in the URL with /apps/{output_id} so a
-          // reload (or back-button return) lands back on the same
-          // workspace instead of spinning up yet another fresh seed.
-          //
-          // CRITICAL: bypass React Router (`navigate()`) and use the
-          // raw `window.history.replaceState` instead. Views.tsx
-          // renders <ViewEditor key={editingOutput?.id ?? 'new'} />
-          // — a React-Router-driven path change from /apps/new to
-          // /apps/<id> would flip that key, React would UNMOUNT this
-          // ViewEditor and MOUNT a new one, AgentChat's chat-input DOM
-          // node would get a new identity, and the onboarding wizard's
-          // type_into would silently fire into the now-detached old
-          // input (no text lands, hasContent stays false, send button
-          // never renders, wizard burns 15 s on waitForSelector and
-          // throws into the recovery popup). window.history.replaceState
-          // changes the URL without triggering Views' re-render, so
-          // ViewEditor stays mounted and the chat-input the wizard
-          // already found is the same one it types into. On hard
-          // reload React Router reads the live URL fresh, so the
-          // back-button / reload behavior is preserved.
+          // CRITICAL: use window.history.replaceState, NOT navigate(). Views.tsx keys ViewEditor on output id; React Router would unmount/remount, the onboarding wizard would type into a detached input and burn 15s on waitForSelector.
           if (window.location.hash.includes('/apps/new')) {
             const newHash = window.location.hash.replace(
               '/apps/new',
@@ -563,10 +462,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
             try {
               window.history.replaceState(null, '', newHash);
             } catch {
-              // Fallback to React Router nav if the history API rejects
-              // (extremely unusual; mostly defensive). Accepts the
-              // remount cost in that edge case rather than dropping
-              // the URL update entirely.
+              // Defensive: history API rejection accepts the remount cost rather than dropping the URL update.
               navigate(`/apps/${data.output_id}`, { replace: true });
             }
           }
@@ -593,17 +489,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     })();
   }, [dispatch, output, stableWorkspaceId, settingsLoaded, modelsLoaded, defaultModel, defaultThinkingLevel, modelsByProvider]);
 
-  // Resolve our bound session id strictly through our own pointers:
-  //   1. initialDraftId is the draft we created OR the real id reattached
-  //      from output.session_id.
-  //   2. If the draft was launched in the meantime, the real id lives in
-  //      draftLaunchMap — promote to that.
-  // We deliberately do NOT fall back to state.agents.activeSessionId here.
-  // activeSessionId is a global pointer that any dashboard click, child
-  // chat, or sibling App Builder can clobber, so falling back to it bled
-  // unrelated agents' chats into the App Builder while a session was
-  // still loading (e.g. JobFinder's transcript showing inside the
-  // Chatbot app builder).
+  // Resolve via our own pointers only; falling back to activeSessionId bled unrelated agents' chats into the wrong builder.
   const launchedFromDraft = useAppSelector((state) =>
     initialDraftId ? state.agents.draftLaunchMap[initialDraftId] : undefined,
   );
@@ -615,9 +501,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     return null;
   });
 
-  // Once a draft has been replaced by a real launched session, promote
-  // initialDraftId so subsequent renders bypass the map lookup and we
-  // stay on the real id even if draftLaunchMap is later cleaned up.
+  // Promote draftId to the real session id so we survive draftLaunchMap cleanup.
   useEffect(() => {
     if (launchedFromDraft && initialDraftId && launchedFromDraft !== initialDraftId) {
       setInitialDraftId(launchedFromDraft);
@@ -679,15 +563,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     if (!workspaceId) return;
     const interval = isAgentActive ? POLL_INTERVAL_ACTIVE_MS : POLL_INTERVAL_IDLE_MS;
 
-    // Visibility-gate the poll loop. When the App Builder tab is
-    // hidden (user navigated to Dashboard / Skills / Actions / a
-    // different Electron window), there's no UI to update — but the
-    // interval would otherwise keep hitting `/api/outputs/workspace`
-    // every 2s, blocking the foreground backend's other endpoints.
-    // On `hidden` we clear the timer entirely; on `visible` we fire
-    // one immediate poll (to catch up on whatever the agent wrote
-    // while we were away) then restart the interval. Reuses the
-    // existing isAgentActive-driven cadence.
+    // Visibility-gate the poll so a hidden tab doesn't keep hammering /api/outputs/workspace and starving the foreground.
     const startPoll = () => {
       if (pollRef.current) return;
       pollWorkspace();
@@ -720,9 +596,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     prevAgentActive.current = isAgentActive;
   }, [isAgentActive, workspaceId, pollWorkspace]);
 
-  // Hold the latest session status in a ref so the unmount cleanup can read it
-  // at teardown time (the cleanup closure would otherwise capture a stale value
-  // from when the effect first ran).
+  // Ref so the unmount cleanup reads the live status, not a stale closure value.
   const sessionStatusRef = useRef<string | null>(null);
   sessionStatusRef.current = agentStatus;
   const isLaunchedRef = useRef(false);
@@ -730,22 +604,14 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
 
   useEffect(() => {
     return () => {
-      // Only garbage-collect drafts the user abandoned without launching. Once
-      // a session is launched, the agent runs on the backend independent of
-      // the frontend — leave the Redux entry alive so navigating away doesn't
-      // wipe in-progress work or chat history.
+      // GC only abandoned drafts; launched sessions live on the backend independently.
       if (initialDraftId && sessionStatusRef.current === 'draft' && !isLaunchedRef.current) {
         dispatch(removeDraftSession(initialDraftId));
       }
     };
   }, [initialDraftId, dispatch]);
 
-  // Persist session_id + workspace_id onto the saved Output the moment the
-  // session goes from draft to launched. Without this, reopening the App later
-  // would have no way to find its in-progress session and would seed a fresh one.
-  // Use `createdId` (state) not `createdIdRef.current` so the effect re-fires
-  // after autosave creates the Output for a brand-new app. `output` prop is a
-  // parent snapshot that doesn't refresh, so we dedup via a ref.
+  // Persist session_id + workspace_id on draft->launched so reopens find the in-progress session; deduped via ref since `output` prop is a stale snapshot.
   const persistedLinkageRef = useRef<string | null>(null);
   useEffect(() => {
     const eid = output?.id ?? createdId;
@@ -815,18 +681,11 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
         savedId = created.id;
         createdIdRef.current = savedId;
         setCreatedId(savedId);
-        // First successful create = the App Builder agent finished
-        // generating an app. Step 8's "wait for app to land" listens for
-        // this. Subsequent saves don't fire — only the initial creation
-        // matters for onboarding.
+        // Step 8 onboarding waits on this; only fires on first create.
         onboardingBus.emit('app:generation_done');
       }
       savedRef.current = true;
-      // Trailing-edge debounce + content-changed gate. Only triggers
-      // a real iframe reload when the agent has gone quiet AND the
-      // file the iframe actually renders (index.html) changed since
-      // the last reload. Eliminates the "Ready" empty-state flash
-      // entirely for non-rendered file writes (SKILL.md, etc).
+      // Reload iframe only when agent has paused AND index.html actually changed; skips "Ready" flash on non-rendered writes.
       if (previewReloadTimerRef.current) {
         clearTimeout(previewReloadTimerRef.current);
       }
@@ -853,8 +712,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
         level,
         text,
       });
-      // FIFO trim — keep the tail. Past TERMINAL_BUFFER_CAP, the head is
-      // ancient and not what the user is reading.
+      // FIFO trim: drop the ancient head past TERMINAL_BUFFER_CAP.
       if (next.length > TERMINAL_BUFFER_CAP) {
         return next.slice(next.length - TERMINAL_BUFFER_CAP);
       }
@@ -866,11 +724,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     appendTerminalLine('frontend', level, text);
   }, [appendTerminalLine]);
 
-  // Reload button context menu — left-click is a soft reload (reloads
-  // the webview only); right-click opens this menu, which adds a Hard
-  // Reload that also restarts the persistent backend subprocess.
-  // Useful when backend.py has a Python-level error you can only clear
-  // by stopping and re-spawning the process.
+  // Right-click adds Hard Reload (also restarts the backend subprocess for Python-error recovery).
   const [reloadMenuAnchor, setReloadMenuAnchor] = useState<HTMLElement | null>(null);
   const handleHardReload = useCallback(async () => {
     setReloadMenuAnchor(null);
@@ -888,59 +742,19 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     previewRef.current?.reload();
   }, [workspaceId]);
 
-  // Persistent backend lifecycle. Once we know the workspaceId:
-  //   1. POST /runtime/start so the workspace's runtime (bash run.sh
-  //      for new-mode webapp-template workspaces; python backend.py for
-  //      legacy flat workspaces) gets spawned.
-  //   2. Open the runtime WS to stream [BACKEND]/[RUNTIME] stdout/stderr
-  //      into the Terminal pane AND surface the frontend_url for new-
-  //      mode workspaces (so the preview pane can point at Vite's dev
-  //      server instead of our legacy /serve/ endpoint).
-  //   3. On unmount, POST /runtime/stop. Multiple editors on the same
-  //      workspace share the runtime (ref-counted server-side); detach
-  //      is a no-op until the last subscriber leaves.
+  // Runtime lifecycle: /runtime/start, stream stdout/stderr + frontend_url via WS, /runtime/stop on unmount (ref-counted server-side).
   const runtimeWsRef = useRef<WebSocket | null>(null);
-  // Where the preview pane should point. New-mode workspaces report a
-  // frontend_url via runtime:status; until it arrives (or for old-mode
-  // workspaces that never set it), we fall back to the legacy
-  // /api/outputs/workspace/{ws}/serve/ endpoint below.
+  // New-mode workspaces report frontend_url via runtime:status; fall back to the legacy /serve/ endpoint until it arrives.
   const [frontendUrl, setFrontendUrl] = useState<string | null>(null);
-  // Track new-mode separately so the preview pane can show a
-  // "Installing dependencies…" placeholder while Vite is still booting
-  // instead of trying to load the legacy /serve/index.html path (which
-  // 404s — new-mode workspaces have no `index.html` at root, only
-  // `frontend/index.html` reachable via Vite).
+  // Track new-mode separately so we can show "Installing..." instead of loading the 404ing legacy /serve/index.html.
   const [isNewModeRuntime, setIsNewModeRuntime] = useState(false);
-  // Latched flag: true once the user has visited a tab that needs the
-  // runtime (Preview / Terminal) for the current workspace. Only goes
-  // true → reset to false ONLY when the workspace changes. Tab flips
-  // back to Code DON'T reset it, so the lifecycle effect that depends
-  // on it doesn't tear down on Preview → Code → Preview. This used to
-  // be a ref (`runtimeStartedRef`) but refs don't trigger re-renders,
-  // and the lifecycle effect couldn't react to the flip without
-  // running activeTab through its dep array — which is exactly what
-  // caused the cleanup-on-tab-switch bug.
+  // Latched: only flips true (resets on workspace change). Must be state, not a ref, so the lifecycle effect's deps react to it without depending on activeTab (caused tear-down on tab switch).
   const [runtimeShouldRun, setRuntimeShouldRun] = useState(false);
   useEffect(() => {
     setRuntimeShouldRun(false);
   }, [workspaceId]);
 
-  // Split into two effects so a tab switch never tears down the
-  // running workspace. The original single useEffect included
-  // `activeTab` in its dep array — the early `if (runtimeStartedRef…
-  // return` skipped re-starting, but the CLEANUP from the prior run
-  // still executed, POSTing /runtime/stop and clearing both
-  // frontendUrl and isNewModeRuntime to null. With those reset, the
-  // showInstallPlaceholder gate (`isNewModeRuntime && !frontendUrl`)
-  // collapsed to false, workspaceServeUrl fell back to the legacy
-  // /api/outputs/workspace/<ws>/serve/index.html path which 404s for
-  // new-mode workspaces → the iframe rendered the raw
-  // `{"detail":"File not found"}` JSON. The fix is to drive Effect A
-  // (lifecycle) off a STATE flag that ONLY ever flips true → never
-  // back to false on tab change, and to let Effect B (one-shot
-  // trigger) watch activeTab. State flips are visible to React's
-  // dep checker; ref mutations aren't, so a state flag is the right
-  // primitive here.
+  // Two effects so tab switches don't tear down the runtime; depending on activeTab here caused cleanup-on-switch which 404'd the iframe.
   useEffect(() => {
     if (!workspaceId || !runtimeShouldRun) return;
     let cancelled = false;
@@ -999,12 +813,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     };
   }, [workspaceId, runtimeShouldRun, appendTerminalLine]);
 
-  // Effect B — one-shot trigger. The first time the user lands on a
-  // tab that actually needs the runtime (Preview or Terminal), flip
-  // runtimeShouldRun true. Effect A picks that up and fires
-  // /runtime/start. After the flip, switching back to Code does NOT
-  // flip it false — the runtime stays warm because the LRU pool
-  // keeps it alive and tab flips should be free.
+  // One-shot trigger: first visit to Preview/Terminal flips runtimeShouldRun true; never flips back.
   useEffect(() => {
     if (!workspaceId) return;
     if (runtimeShouldRun) return;
@@ -1013,48 +822,24 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     setRuntimeShouldRun(true);
   }, [workspaceId, activeTab, runtimeShouldRun, TAB_PREVIEW, TAB_TERMINAL]);
 
-  // Preview URL: prefer the new-mode Vite dev server when the runtime
-  // reports one; otherwise fall back to the legacy serve endpoint.
-  // For new-mode workspaces where Vite hasn't bound yet (npm install
-  // still running), `workspaceServeUrl` is undefined and the preview
-  // pane renders the "Installing dependencies…" placeholder below
-  // instead of falling back to the legacy /serve/ path (which 404s —
-  // new-mode workspaces have no `index.html` at root).
+  // Prefer the Vite dev server URL; fall back to legacy /serve/. New-mode pre-Vite renders the install placeholder (legacy URL 404s).
   const showInstallPlaceholder = isNewModeRuntime && !frontendUrl;
   const workspaceServeUrl = showInstallPlaceholder
     ? undefined
     : (frontendUrl ?? (workspaceId ? `${SERVE_BASE}/workspace/${workspaceId}/serve/index.html` : undefined));
 
-  // Reset the paint-tracking flag when the iframe's source URL changes —
-  // each new URL is a fresh load and the placeholder needs to stay up
-  // until THAT URL's content paints, not whatever paint happened last
-  // time.
+  // Reset paint tracking on URL change so the placeholder stays up for the new load.
   useEffect(() => {
     setIframePainted(false);
   }, [workspaceServeUrl]);
 
-  // Called by ViewPreview when its iframe (or webview) fires the `load`
-  // event for a real serveUrl. We delay flipping the painted flag by
-  // 300 ms, the `load` event fires when the HTML doc has loaded but
-  // SPA bundles (React/Vue/etc) need a beat to mount and paint, so an
-  // immediate flip would re-introduce the grey flash we're trying to
-  // kill.
+  // 300ms after iframe `load` because SPA bundles need a beat to mount, otherwise the grey flash returns.
   const onIframeContentLoad = useCallback(() => {
     const t = window.setTimeout(() => setIframePainted(true), 300);
     return () => window.clearTimeout(t);
   }, []);
 
-  // Placeholder lifecycle. Keep the InstallPlaceholder mounted across
-  // transient gate flips (runtime WS reporting is_new_mode:true with
-  // a still-null frontend_url, then null→URL a beat later) so the
-  // PixelBlast canvas keeps rendering continuously. If we let React
-  // unmount the placeholder Box each time the gate flips false, the
-  // GL context is rebuilt on the next flip and the user reads the
-  // fresh canvas as the animation restarting from t=0 (even though
-  // PIXEL_BLAST_EPOCH keeps uTime mathematically continuous, the
-  // user can't perceive that without a reference frame). Always
-  // fade via opacity, then unmount only after the 400 ms fade-out
-  // has actually completed.
+  // Keep PixelBlast mounted across transient gate flips; unmounting rebuilds the GL context and the user reads it as the animation restarting.
   const placeholderVisible = showInstallPlaceholder || !iframePainted;
   const [placeholderMounted, setPlaceholderMounted] = useState(placeholderVisible);
   useEffect(() => {
@@ -1066,16 +851,9 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     return () => window.clearTimeout(t);
   }, [placeholderVisible]);
 
-  // VSCode-style default `files.exclude`: hide build/install noise from
-  // the file tree by default. With the symlinked node_modules + vite's
-  // per-workspace .vite-cache, an unfiltered tree renders hundreds of
-  // MUI/icons chunks the agent + user have no reason to look at. They
-  // can still be opened via the Workspace folder in Finder if needed.
-  // Single-source-of-truth predicate so the file list, tree, and
-  // open-file routing all agree on what counts as visible.
+  // VSCode-style files.exclude predicate; single source of truth for list/tree/open-file routing.
   const isHiddenPath = useCallback((p: string): boolean => {
     if (showHidden) return false;
-    // Treat exact basenames + any nested occurrence as hidden.
     const segments = p.split('/');
     for (const seg of segments) {
       if (HIDDEN_PATH_SEGMENTS.has(seg)) return true;
@@ -1185,14 +963,9 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
   return (
     <ElementSelectionProvider>
     <Box sx={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
-      {/* Left panel — AgentChat */}
+      {/* Left panel: AgentChat */}
       <Box
-        // data-onboarding-scope="app-builder" — the AC's per-agent
-        // selector resolver prefers this scope when it's mounted, so
-        // step 8's chat-input / chat-send-button / type_into all
-        // resolve inside the App Builder's AgentChat instance instead
-        // of falling through to whatever chat-input was last in DOM
-        // order (which led to AC typing into nothing visible).
+        // Scope name pins onboarding step 8's selectors to this AgentChat instance, not whatever was last in DOM order.
         data-onboarding-scope="app-builder"
         sx={{
           width: sidebarWidth,
@@ -1220,10 +993,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
         onPointerUp={onDragEnd}
         onPointerCancel={onDragEnd}
         sx={{
-          // 6px hit-target, but overlapped onto the seam via negative
-          // margins so the handle doesn't occupy its own visible column
-          // (would read as chunky dead space). Same pattern as the
-          // global sidebar handle in AppShell.
+          // 6px hit-target overlapped via negative margins so it doesn't take a visible column (same as AppShell sidebar handle).
           width: 6,
           marginLeft: '-3px',
           marginRight: '-3px',
@@ -1240,10 +1010,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
             left: '50%',
             transform: 'translateX(-50%)',
             width: 1,
-            // Truly invisible at rest. The earlier subtle border-color
-            // line crossed the chat-header's own borderBottom and the
-            // right panel's borderBottom and read as a thick T-shaped
-            // grey junction. Handle only appears on hover/active.
+            // Invisible at rest; otherwise the border line forms a T-junction with the chat header.
             bgcolor: 'transparent',
             transition: 'width 0.15s, background-color 0.15s',
           },
@@ -1265,10 +1032,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
             px: 1.5,
             py: 1,
             bgcolor: c.bg.secondary,
-            // Hairline below the header so the meta strip (App name +
-            // Description) reads as its own band against the tabs row
-            // underneath, instead of merging into one chunky block of
-            // bg.secondary. Half-pixel keeps it whisper-light.
+            // Hairline separates the meta strip from the tabs row.
             borderBottom: `0.5px solid ${c.border.subtle}`,
             flexShrink: 0,
             minHeight: 48,
@@ -1303,10 +1067,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
               '& .MuiInput-input': {
                 fontSize: '0.82rem',
                 color: c.text.muted,
-                // Match the App-name input's vertical padding so the
-                // two inputs occupy the same internal height — without
-                // this the baselines drift by a couple pixels even
-                // with `alignItems: baseline` on the parent.
+                // Match the App-name input's padding so baselines align.
                 py: 0.25,
               },
               '& .MuiInput-underline:before': { borderColor: 'transparent' },
@@ -1321,10 +1082,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
           sx={{
             display: 'flex',
             alignItems: 'center',
-            // Drop the hard borderBottom — let bg-color step between
-            // this tab strip and the content below carry the
-            // separation. Claude Design's pane edges are nearly
-            // invisible, which is what makes them read as airy.
+            // No borderBottom; bg-color step carries the separation.
             bgcolor: c.bg.secondary,
             flexShrink: 0,
             px: 1.25,
@@ -1334,9 +1092,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
           <Tabs
             value={activeTab}
             onChange={(_, v) => setActiveTab(v)}
-            // Hide the underline indicator entirely — we're showing
-            // active state via background-fill pills instead, matching
-            // Claude Design's "Recent / Your designs" toggle pattern.
+            // No underline indicator; active state is bg-fill pills.
             TabIndicatorProps={{ sx: { display: 'none' } }}
             sx={{
               flex: 1,
@@ -1349,13 +1105,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
                 minWidth: 'auto',
                 fontSize: '0.8rem',
                 textTransform: 'none',
-                // Keep ONE weight across selected and unselected. Earlier
-                // revisions bumped from 500 to 600 on selection, which
-                // widened the glyphs by a couple px per character. With
-                // three pills sharing a flex row, that width change
-                // rippled outward and the whole tab strip visibly shifted
-                // on every click. Differentiating via bgcolor + text color
-                // alone keeps the layout pixel-locked.
+                // One weight across states; bumping on select widens glyphs and shifts the whole row.
                 fontWeight: 600,
                 color: c.text.tertiary,
                 px: 1.75,
@@ -1378,7 +1128,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
             <Tab disableRipple label="Terminal" value={TAB_TERMINAL} />
           </Tabs>
           {activeTab === TAB_PREVIEW && (
-            <Tooltip title="Reload preview · right-click for Hard Reload">
+            <Tooltip title="Reload preview; right-click for Hard Reload">
               <IconButton
                 size="small"
                 onClick={() => previewRef.current?.reload()}
@@ -1417,13 +1167,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
           {activeTab === TAB_PREVIEW && (
             <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
-              {/* Iframe always renders the moment we HAVE a URL — even
-                  while the install placeholder is still on top — so the
-                  embedded app's first paint completes BEFORE we fade
-                  the placeholder out. Otherwise the user sees a
-                  ~1-2 s window of blank/grey "iframe loaded but app
-                  hasn't painted yet" once `showInstallPlaceholder`
-                  flips false. */}
+              {/* Render iframe under the placeholder so its first paint completes before we fade the placeholder out. */}
               {(workspaceServeUrl || !showInstallPlaceholder) && (
                 <ViewPreview
                   ref={previewRef}
@@ -1435,12 +1179,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
                   onContentLoad={onIframeContentLoad}
                 />
               )}
-              {/* Overlay placeholder until the iframe has painted +
-                  a 300 ms grace for the SPA's first React commit.
-                  Stays mounted across transient gate flips (see
-                  placeholderMounted lifecycle above) so the
-                  PixelBlast canvas keeps running continuously;
-                  fades in and out via opacity, never via mount. */}
+              {/* Placeholder fades via opacity (never unmounts) so the PixelBlast canvas runs continuously. */}
               {placeholderMounted && (
                 <Box
                   sx={{

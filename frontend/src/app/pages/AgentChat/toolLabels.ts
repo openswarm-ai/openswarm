@@ -1,12 +1,9 @@
-// Tool labels, with variant pools so the transcript reads like a person.
-// Destructive ops (rm, git push, delete) stay flat. quirky on rm felt off.
-
 export interface ToolLabel {
   present: string;
   past: string;
 }
 
-// djb2. same seed always picks the same variant so rows don't flicker.
+// djb2 hash; same seed always picks the same variant so rows don't flicker.
 function _stableIndex(seed: string | undefined, n: number): number {
   if (n <= 1 || !seed) return 0;
   let h = 5381;
@@ -20,7 +17,7 @@ function _pick<T>(variants: T[], seed?: string): T {
   return variants[_stableIndex(seed, variants.length)];
 }
 
-// index 0 is the safe-default; single-entry pools = no seeded variation.
+// Index 0 is the safe default; single-entry pools mean no seeded variation.
 const VARIANTS: Record<string, ToolLabel[]> = {
   read: [
     { present: 'Reading', past: 'Read' },
@@ -157,7 +154,7 @@ const VARIANTS: Record<string, ToolLabel[]> = {
     { present: 'Browsing the toolbox', past: 'Browsed the toolbox' },
     { present: 'Rummaging the toolbox', past: 'Rummaged the toolbox' },
   ],
-  // brand-aware version lives in getToolLabelWithInput; this is the fallback.
+  // getToolLabelWithInput has the brand-aware version; this is the seedless fallback.
   mcpactivate: [
     { present: 'Connecting', past: 'Connected' },
     { present: 'Plugging in', past: 'Plugged in' },
@@ -270,7 +267,7 @@ const VARIANTS: Record<string, ToolLabel[]> = {
   ],
 };
 
-// keys match _sanitize_server_name in tools_lib.
+// Keys match backend _sanitize_server_name in tools_lib.
 const MCP_SERVER_BRAND: Record<string, string> = {
   'google-workspace': 'Google Workspace',
   'microsoft-365': 'Microsoft 365',
@@ -299,7 +296,7 @@ const MCP_SERVER_BRAND: Record<string, string> = {
   'openswarm-outputs-meta': 'views',
 };
 
-// most specific verb pattern wins, so order matters.
+// Order matters: most specific verb pattern wins.
 interface McpVerbVariant { present: string; past: string; }
 const MCP_VERB_PATTERNS: Array<{ match: RegExp; variants: McpVerbVariant[] }> = [
   { match: /^(send|new)_/, variants: [
@@ -341,7 +338,6 @@ const MCP_VERB_PATTERNS: Array<{ match: RegExp; variants: McpVerbVariant[] }> = 
       { present: 'Refining', past: 'Refined' },
       { present: 'Touching up', past: 'Touched up' },
   ]},
-  // delete = flat. don't be cute about deletions.
   { match: /^(delete|remove|cancel|archive)_/, variants: [
       { present: 'Deleting', past: 'Deleted' },
   ]},
@@ -406,7 +402,6 @@ const ACTION_OBJECTS: Array<{ match: RegExp; noun: string }> = [
   { match: /(?:^|_)(?:task|todo)/, noun: 'task' },
 ];
 
-// sentence case (Linear/Notion vibe). title case felt too marketing-y.
 function _humanizeName(name: string): string {
   const spaced = name.replace(/[-_]+/g, ' ').toLowerCase();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
@@ -419,7 +414,7 @@ function _labelForMcpTool(toolName: string, seed?: string): ToolLabel | null {
   const action = parts.slice(2).join('__').toLowerCase();
   const brand = MCP_SERVER_BRAND[server] || _humanizeName(server);
 
-  // our internal meta-MCPs go through VARIANTS so we don't render "tools: Mcpsearch".
+  // Internal meta-MCPs route through VARIANTS so we don't render "tools: Mcpsearch".
   if (server.startsWith('openswarm-')) {
     const builtin = VARIANTS[action];
     if (builtin) return _pick(builtin, seed);
@@ -443,7 +438,6 @@ function _labelForMcpTool(toolName: string, seed?: string): ToolLabel | null {
     return { present: `${verb.present} via ${brand}`, past: `${verb.past} via ${brand}` };
   }
 
-  // no verb match. fall back to brand: action.
   const human = _humanizeName(action.replace(/^_+|_+$/g, ''));
   return { present: `${brand}: ${human}`, past: `${brand}: ${human}` };
 }
@@ -459,7 +453,7 @@ export function getToolLabel(toolName: string, seed?: string): ToolLabel {
   return { present: `Running ${pretty}`, past: `Ran ${pretty}` };
 }
 
-// for tools where the input changes the label (MCPActivate, Bash).
+/** Per-input label override for tools whose meaning depends on input (MCPActivate, Bash). */
 export function getToolLabelWithInput(toolName: string, input: any, seed?: string): ToolLabel {
   if (!toolName) return { present: 'Working', past: 'Done' };
 
@@ -488,9 +482,6 @@ export function getToolLabelWithInput(toolName: string, input: any, seed?: strin
   return getToolLabel(toolName, seed);
 }
 
-// --- Bash verb extraction ---------------------------------------------------
-
-// rm and chmod don't get cute paraphrases for obvious reasons.
 const GIT_VERBS: Record<string, ToolLabel[]> = {
   commit: [
     { present: 'Committing', past: 'Committed' },
@@ -854,8 +845,6 @@ function _bashVerb(rawCmd: string, seed?: string): ToolLabel | null {
   if (typeof entry === 'function') return entry(sub, seed);
   return _pick<ToolLabel>(entry, seed);
 }
-
-// --- Path / URL prettifiers ------------------------------------------------
 
 export function prettyPath(p: string): string {
   if (!p) return '';

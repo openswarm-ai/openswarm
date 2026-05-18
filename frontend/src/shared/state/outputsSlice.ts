@@ -15,8 +15,7 @@ export interface Output {
   files: Record<string, string>;
   permission: string;
   thumbnail?: string | null;
-  // Linkage so reopening App Builder reattaches to the in-progress session
-  // and reuses the on-disk workspace folder instead of seeding a fresh one.
+  /** Linkage so reopening App Builder reattaches to the in-progress session and workspace. */
   session_id?: string | null;
   workspace_id?: string | null;
   created_at: string;
@@ -60,10 +59,7 @@ export interface OutputExecuteResult {
   stdout: string | null;
   stderr: string | null;
   error: string | null;
-  // Present when the backend AST validator flagged risky imports/calls and
-  // the caller didn't pass force=true. UI shows these alongside `code_preview`
-  // in a "review and Run Anyway" dialog; resubmitting with force:true bypasses
-  // the gate. Absent (undefined) on the happy path.
+  /** Set when AST validator flagged risky code without force=true; resubmit with force to bypass. */
   warnings?: string[] | null;
   code_preview?: string | null;
 }
@@ -121,8 +117,7 @@ export const deleteOutput = createAsyncThunk('outputs/delete', async (id: string
 
 export const executeOutput = createAsyncThunk(
   'outputs/execute',
-  // `force` opts past the AST warnings gate — only set after the user has
-  // seen the code preview in the run dialog and clicked Run Anyway.
+  // `force` opts past the AST warnings gate (Run Anyway in the dialog).
   async (body: { output_id: string; input_data: Record<string, any>; force?: boolean }) => {
     const res = await fetch(`${OUTPUTS_API}/execute`, {
       method: 'POST',

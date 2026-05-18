@@ -1,25 +1,8 @@
-// Bayer-dithering pixel-blast background. Same shader as the inline
-// splash in the webapp_template's index.html and the React component at
-// `webapp_template/frontend/src/components/PixelBlast.tsx`, so all three
-// "cold start" phases of an App preview look identical:
-//
-//   1. Desktop placeholder before Vite has bound (`<InstallPlaceholder>`
-//      in ViewEditor, before frontend_url arrives over the runtime WS).
-//   2. Inline `<canvas>` in `index.html`, painted before any JS bundle
-//      loads.
-//   3. React-rendered placeholder in `pages/index.tsx`, replaced when
-//      the agent overwrites that file.
-//
-// Plain WebGL2, no three.js / postprocessing.
+// Bayer-dithering pixel-blast background; same shader as webapp_template splash so cold-start phases match.
 
 import React, { useEffect, useRef } from 'react';
 
-// Module-level epoch so a fresh component mount picks up where the
-// previous mount left off in the noise field. Without this, every time
-// the user clicked away from a dashboard card and back the animation
-// reset to t=0, which read as a jarring "snap" instead of an ambient
-// loop. Captured once at module load; all instances of the component
-// share it.
+// Module-level epoch so remounts pick up where the previous mount left off in the noise loop.
 const PIXEL_BLAST_EPOCH = performance.now();
 
 interface PixelBlastProps {
@@ -85,12 +68,7 @@ float fbm2(vec2 uv, float t){
   return sum * 0.5 + 0.5;
 }
 void main(){
-  // Offset by a non-zero constant so y=0 and x=0 don't land on FBM
-  // singularities. Without this the noise function returns the same
-  // value along the screen center axes, which the Bayer threshold
-  // accents into a visible horizontal (or vertical) bright stripe.
-  // 137.5 is the golden-ratio angle in degrees, a classic
-  // "no-aliasing" constant for shader UVs.
+  // 137.5 (golden-ratio angle) offsets off the FBM singularities so the center axes don't bright-stripe.
   vec2 fragCoord = gl_FragCoord.xy - uResolution * 0.5 + vec2(137.5, 137.5);
   float aspectRatio = uResolution.x / uResolution.y;
   float cellPixelSize = 8.0 * uPixelSize;

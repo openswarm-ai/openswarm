@@ -20,8 +20,7 @@ export interface ScheduleConfig {
   minute: number;
   timezone: string;
   on_missed: 'skip' | 'run_once' | 'run_all';
-  // Optional end conditions. null on both = forever. The scheduler auto-
-  // disables once either threshold is crossed.
+  /** End conditions; null on both = forever. Scheduler auto-disables on threshold. */
   ends_at: string | null;
   max_runs: number | null;
   runs_count: number;
@@ -90,9 +89,7 @@ export interface WorkflowRun {
   triggered_by: 'schedule' | 'manual' | 'retry';
 }
 
-// Position lives in dashboardLayoutSlice.workflowCards now. This entry
-// only carries transient view state — which tab is open, draft contents
-// for unsaved cards, the currently inspected history run, etc.
+/** Transient view-only state per card; position lives in dashboardLayoutSlice.workflowCards. */
 export interface OpenCard {
   workflowId: string;
   sourceSessionId?: string | null;
@@ -139,11 +136,7 @@ export const createWorkflow = createAsyncThunk(
   },
 );
 
-// Optimistic concurrency: PATCH sends If-Match with the workflow's
-// updated_at. If the backend's record changed since we read it (another
-// window, a mid-edit background fire), the server returns 409 and the
-// caller can prompt to reload. Thunk uses rejectWithValue so the FE can
-// distinguish stale-write from network errors.
+// Optimistic concurrency via If-Match: server 409s on stale writes; rejectWithValue lets FE distinguish.
 export const updateWorkflow = createAsyncThunk<
   Workflow,
   { id: string; patch: Partial<Workflow>; ifMatch?: string | null },

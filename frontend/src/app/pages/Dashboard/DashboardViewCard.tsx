@@ -76,7 +76,6 @@ const DashboardViewCard: React.FC<Props> = ({
   const [inputData] = useState<Record<string, any>>(() => getDefault(output.input_schema));
   const [backendResult] = useState<Record<string, any> | null>(null);
 
-  // ---- Drag via header ----
   const DRAG_THRESHOLD = 3;
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; startPanX: number; startPanY: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -141,7 +140,7 @@ const DashboardViewCard: React.FC<Props> = ({
     if (didDrag.current) {
       let finalX = dragState.current.origX + dx;
       let finalY = dragState.current.origY + dy;
-      // Snap to 24px grid (hold Shift to bypass)
+      // Snap to 24px grid; Shift bypasses.
       if (!e.shiftKey) {
         finalX = Math.round(finalX / 24) * 24;
         finalY = Math.round(finalY / 24) * 24;
@@ -162,7 +161,6 @@ const DashboardViewCard: React.FC<Props> = ({
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
   }, [dispatch, output.id, onDragEnd]);
 
-  // ---- Resize ----
   const resizeRef = useRef<{
     dir: ResizeDir; startX: number; startY: number;
     origX: number; origY: number; origW: number; origH: number;
@@ -258,10 +256,8 @@ const DashboardViewCard: React.FC<Props> = ({
       }}
       sx={{
         position: 'absolute',
-        // contain: iframe app repaints don't shake the rest of the dashboard.
+        // contain + willChange: own compositor layer so paint stays scoped (see AgentCard for full rationale).
         contain: 'layout style',
-        // Own compositor layer so hover/paint invalidations stay
-        // contained to this card. See AgentCard for full rationale.
         willChange: 'transform',
         left: displayX,
         top: displayY,
@@ -307,14 +303,7 @@ const DashboardViewCard: React.FC<Props> = ({
         }),
       }}
     >
-      {/* No full-card overlay when selected. Earlier revisions used one to
-          enable "drag from anywhere" while the card was selected, but it
-          also blocked every pointer event from reaching the running app
-          inside the webview — making selected apps non-interactive, which
-          is the whole point of the dashboard. Drag now happens from the
-          header strip (zIndex 16 below) which is always grabbable; the
-          rest of the card passes pointer events through to the live app.
-          ref kept so useOverlayScrollPassthrough still has a no-op target. */}
+      {/* No full-card overlay: it blocked pointer events to the live app. Drag uses the header (zIndex 16); ref kept as a no-op for useOverlayScrollPassthrough. */}
       <Box
         ref={scrollOverlayRef}
         sx={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}
@@ -415,23 +404,7 @@ const DashboardViewCard: React.FC<Props> = ({
 
 export default React.memo(DashboardViewCard);
 
-// Preview body for an output card. Lives in the same file because it's
-// only used here; pulled out so the runtime-status WS lifecycle is tied
-// to the card's mount, not to a sibling element.
-//
-// Why this exists: old-mode flat outputs (output.files['index.html']
-// present) can render straight from `${SERVE_BASE}/${output.id}/serve/...`
-// — the legacy endpoint serves the files dict. New-mode webapp_template
-// outputs have an empty files dict (the real app lives in the workspace
-// dir behind Vite); their legacy serve URL 404s with
-// `{"detail":"File not found in output"}`. We attach to the workspace's
-// runtime, wait for runtime:status to surface a frontend_url, and point
-// the webview at the live Vite server instead.
-//
-// While Vite is booting (cold npm install, slow disk) the placeholder
-// shows so the user doesn't see the 404 JSON. Old-mode outputs without a
-// workspace_id never spawn a runtime — they just render the legacy URL
-// like they always did, so there's zero regression for existing apps.
+// Old-mode outputs render the legacy serve URL; new-mode webapp_template outputs attach to a runtime and point the webview at Vite once frontend_url arrives.
 const DashboardOutputPreview: React.FC<{
   previewRef: React.Ref<ViewPreviewHandle>;
   output: Output;
@@ -451,10 +424,7 @@ const DashboardOutputPreview: React.FC<{
     isNewMode,
   });
 
-  // While the runtime WS is still hydrating (first ~400ms after mount,
-  // or until status frame arrives — whichever's first), render a blank
-  // body instead of the booting placeholder. Prevents a "Starting
-  // preview…" flash on warm runtimes where status was already known.
+  // Blank body during hydration so warm runtimes don't flash "Starting preview..."
   if (isHydrating && !frontendUrl) {
     return <Box sx={{ width: '100%', height: '100%' }} />;
   }

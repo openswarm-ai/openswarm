@@ -30,13 +30,13 @@ NINE_ROUTER_V1 = f"{NINE_ROUTER_URL}/v1"
 # cross-provider WebSearch: the CLI's WebSearch call from Codex/Gemini
 # primaries used to route cleanly through 9Router's translator and hit
 # Anthropic's server-side web_search (returning real results), but later
-# translator changes broke that path — non-Claude primaries now see
+# translator changes broke that path; non-Claude primaries now see
 # "claude-haiku-4-5-20251001 unavailable" or hallucinated output.
 # Pinning to 0.3.60 restores v1.0.25 behavior.
 #
 # Note: 0.3.60-0.4.20 ALL emit `max_tokens` (not max_completion_tokens)
 # when translating Anthropic→OpenAI, which OpenAI's GPT-5 family rejects.
-# The fix lives in our /api/openai-passthrough proxy — see openai_passthrough.py
+# The fix lives in our /api/openai-passthrough proxy; see openai_passthrough.py
 # and sync_openai_api_key for how the translation lane is rerouted via an
 # `openai-compatible` provider-node that honors `baseUrl`.
 NINE_ROUTER_NPM_VERSION = "0.3.60"
@@ -75,16 +75,12 @@ def _find_9router_dir() -> str | None:
     _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
 
     if _is_packaged:
-        # Packaged Electron app — router is in extraResources
         import sys
-        # In packaged mode, backend is at <resources>/backend/
-        # So router is at <resources>/router/
         _resources = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         _candidate = os.path.join(_resources, "router")
         if os.path.isdir(_candidate):
             return _candidate
     else:
-        # Dev mode — router is at project root
         _backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         _project_root = os.path.dirname(_backend_dir)
         _candidate = os.path.join(_project_root, "router")
@@ -103,7 +99,7 @@ def _gpt5_patch_path() -> str | None:
     every gpt-5* own-key session 400's because OpenAI rejects the legacy
     field name and 9router (every version including 0.4.20) emits it.
 
-    Returns None if the file is missing — `subprocess.Popen` would fail
+    Returns None if the file is missing; `subprocess.Popen` would fail
     on `node --require <missing-path>`, so the caller drops the flag and
     spawns 9router unpatched (failure mode = identical to pre-patch
     baseline; GPT-5 still 400's but everything else works).
@@ -121,14 +117,14 @@ def _find_node() -> str | None:
     """Find a Node.js binary (works in both dev and packaged mode).
 
     Priority order:
-      1. OPENSWARM_NODE_PATH — set by electron/main.js when a real Node
+      1. OPENSWARM_NODE_PATH; set by electron/main.js when a real Node
          binary is bundled in extraResources. Always preferred on user
          machines because it (a) avoids the bouncing "exec" Dock icon
          that ELECTRON_RUN_AS_NODE produces on fresh Macs and (b) starts
-         in ~50ms vs Electron-as-Node's 5–15s cold-start, shrinking the
+         in ~50ms vs Electron-as-Node's 5, 15s cold-start, shrinking the
          splash window the user stares at.
-      2. System `node` on PATH — dev convenience.
-      3. ELECTRON_RUN_AS_NODE fallback — last resort. Only hits this on
+      2. System `node` on PATH; dev convenience.
+      3. ELECTRON_RUN_AS_NODE fallback; last resort. Only hits this on
          packaged builds that for some reason shipped without the bundled
          node payload.
     """
@@ -163,7 +159,7 @@ def _ensure_router_cached() -> str | None:
     """Ensure the npm 9router package is installed in the dev cache.
 
     Returns the absolute path to `app/server.js` on success, or None if
-    npm isn't available or the install fails. Idempotent — returns
+    npm isn't available or the install fails. Idempotent; returns
     immediately when the server file already exists.
 
     Running `node app/server.js` directly (instead of `npx 9router`)
@@ -178,7 +174,7 @@ def _ensure_router_cached() -> str | None:
 
     npm = shutil.which("npm")
     if not npm:
-        logger.warning("npm not found — install Node.js to auto-start 9Router in dev.")
+        logger.warning("npm not found; install Node.js to auto-start 9Router in dev.")
         return None
 
     try:
@@ -242,7 +238,7 @@ async def ensure_running():
     _9router_dir = _find_9router_dir()
 
     if _is_packaged and _9router_dir:
-        # Packaged mode — run the pre-built standalone server staged at
+        # Packaged mode; run the pre-built standalone server staged at
         # <resources>/router/server.js by scripts/fetch-router.sh at build time.
         standalone_server = os.path.join(_9router_dir, "server.js")
         if not os.path.exists(standalone_server):
@@ -253,7 +249,7 @@ async def ensure_running():
 
         node = _find_node()
         if not node:
-            logger.warning("Node.js not found — cannot start 9Router in packaged mode.")
+            logger.warning("Node.js not found; cannot start 9Router in packaged mode.")
             return
 
         logger.info("Starting 9Router (production) on port %d...", NINE_ROUTER_PORT)
@@ -268,7 +264,7 @@ async def ensure_running():
             env["ELECTRON_RUN_AS_NODE"] = "1"
 
     else:
-        # Dev mode — install the pinned 9router npm package into a local
+        # Dev mode; install the pinned 9router npm package into a local
         # cache the first time run.sh boots, then spawn `node app/server.js`
         # directly on subsequent launches. Bypassing the package's cli.js
         # avoids its menu-bar tray icon (which users confusingly quit,
@@ -280,7 +276,7 @@ async def ensure_running():
 
         node = _find_node()
         if not node:
-            logger.warning("Node.js not found — cannot start 9Router in dev mode.")
+            logger.warning("Node.js not found; cannot start 9Router in dev mode.")
             return
 
         logger.info(
@@ -298,7 +294,7 @@ async def ensure_running():
     # By default, 9Router's stdout/stderr go to /dev/null (Next.js dev mode
     # is extremely chatty and floods the openswarm console otherwise). When
     # debugging is needed, set OPENSWARM_DEBUG_9ROUTER=1 in the environment
-    # before launching the backend — output will then be appended to
+    # before launching the backend; output will then be appended to
     # backend/data/9router.log line-buffered, which can be `tail -f`'d.
     if os.environ.get("OPENSWARM_DEBUG_9ROUTER"):
         _log_path = os.path.join(
@@ -323,7 +319,6 @@ async def ensure_running():
             env=env,
         )
 
-        # Wait up to 30 seconds for startup (production standalone is faster)
         timeout = 20 if _is_packaged else 30
         for _ in range(timeout * 2):
             await asyncio.sleep(0.5)
@@ -352,10 +347,6 @@ def stop():
         logger.info("9Router stopped")
 
 
-# ---------------------------------------------------------------------------
-# API proxy helpers — call 9Router's API from OpenSwarm
-# ---------------------------------------------------------------------------
-
 async def get_usage_stats(period: str = "all") -> dict | None:
     """Get usage statistics from 9Router."""
     try:
@@ -378,8 +369,8 @@ async def get_latest_reasoning_tokens(model_hint: str | None = None) -> int | No
     in reverse chronological order with full token breakdowns including
     `reasoning_tokens` (OpenAI's `completion_tokens_details.reasoning_tokens`)
     and `thoughtsTokenCount` (Gemini's). For Anthropic via 9Router this
-    field will be absent/zero — Anthropic doesn't break out reasoning
-    tokens in its API response — so callers get None and should fall
+    field will be absent/zero; Anthropic doesn't break out reasoning
+    tokens in its API response; so callers get None and should fall
     back to the heuristic.
     """
     if not is_running():
@@ -393,9 +384,6 @@ async def get_latest_reasoning_tokens(model_hint: str | None = None) -> int | No
             if r.status_code != 200:
                 return None
             data = r.json()
-            # Endpoint returns either {requests: [...]} or {data: [...]} —
-            # be defensive about the shape since 9Router has rolled out
-            # multiple variants.
             requests = data.get("requests") or data.get("data") or []
             for req in requests:
                 tokens = req.get("tokens") or req.get("usage") or {}
@@ -415,7 +403,7 @@ async def get_latest_reasoning_tokens(model_hint: str | None = None) -> int | No
 async def get_providers() -> list[dict]:
     """Get all providers and their connection status from 9Router.
 
-    9Router's GET /api/providers returns `{"connections": [...]}` — we
+    9Router's GET /api/providers returns `{"connections": [...]}`; we
     unwrap so callers always see a plain list of connection dicts.
     """
     try:
@@ -432,21 +420,11 @@ async def get_providers() -> list[dict]:
     return []
 
 
-# ---------------------------------------------------------------------------
-# API-key connection sync (Gemini AI Studio, etc.)
-# ---------------------------------------------------------------------------
-#
-# 9Router supports both OAuth (e.g. gemini-cli) and direct API-key auth
-# (provider="gemini", authType="apikey"). The two hit different Google
-# quotas — OAuth uses the Code Assist free tier which is aggressively
-# rate-limited (429s on Gemini 3 Pro/Flash even for paid-subscription
-# users), while an AI Studio API key uses the generativelanguage.googleapis.com
-# quota which is independent and far higher.
-#
-# We expose `google_api_key` in settings; this helper mirrors it into
-# 9Router's provider-connections list so the API-key path is preferred
-# when a key is set. On removal, we delete the key-based connection so
-# 9Router falls back to whatever OAuth connection the user still has.
+# API-key auth (provider="gemini", authType="apikey") and OAuth hit different
+# Google quotas: OAuth uses the Code Assist free tier (aggressively rate-limited;
+# 429s on Gemini 3 Pro/Flash even for paid users), while an AI Studio API key
+# uses generativelanguage.googleapis.com (independent and far higher). We mirror
+# google_api_key into 9Router so the API-key path is preferred when a key is set.
 
 NINE_ROUTER_KEYED_NAME = "AI Studio (OpenSwarm-managed)"
 NINE_ROUTER_OPENAI_KEYED_NAME = "OpenAI (OpenSwarm-managed)"
@@ -533,7 +511,7 @@ async def sync_openai_api_key(api_key: str | None) -> None:
     `baseUrl` field on the connection. Only the `openai-compatible-*`
     provider-node type honors `baseUrl` (verified statically against
     9Router's compiled bundle). So we register our OpenAI lane AS an
-    openai-compatible node — same upstream protocol, different routing.
+    openai-compatible node; same upstream protocol, different routing.
 
     Why we route through openai-passthrough at all: OpenAI's GPT-5 family
     rejects the legacy `max_tokens` parameter with HTTP 400, but every
@@ -565,7 +543,6 @@ async def _sync_openai_compat_node(api_key: str | None) -> None:
     base_url = f"http://127.0.0.1:{port}/api/openai-passthrough/v1"
     managed_name = f"OpenAI{NINE_ROUTER_CUSTOM_NAME_SUFFIX}"
 
-    # List existing managed nodes — we own the prefix `cp-openai`.
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"{NINE_ROUTER_API}/provider-nodes")
@@ -578,7 +555,6 @@ async def _sync_openai_compat_node(api_key: str | None) -> None:
         None,
     )
 
-    # Tear down when api_key is cleared.
     if not api_key:
         if existing_node:
             try:
@@ -623,7 +599,6 @@ async def _sync_openai_compat_node(api_key: str | None) -> None:
         logger.warning(f"9Router OpenAI compat node sync failed: {e}")
         return
 
-    # Connection record carrying the api key, scoped to this provider node.
     try:
         existing_conn = await _find_keyed_connection(node_id, managed_name)
         conn_payload = {
@@ -657,19 +632,10 @@ async def sync_openrouter_api_key(api_key: str | None) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Custom OpenAI-compatible providers (Ollama Cloud, Together AI, local Ollama, etc.)
-# ---------------------------------------------------------------------------
-#
-# 9Router supports arbitrary OpenAI-compatible endpoints via "provider nodes"
-# (POST /api/provider-nodes with type="openai-compatible"). Each node gets a
-# unique provider id like `openai-compatible-chat-<rand>` and a user-defined
-# `prefix`. At request time, model_id `<prefix>/<bare_model>` routes to that
-# node's baseUrl, with auth from a connection of the node's provider type.
-#
-# We mirror settings.custom_providers[] into 9Router with prefix `cp-<slug>`,
-# letting us address each provider as `cp-<slug>/<model_id>` without colliding
-# with the user's primary OpenAI key (different provider type).
+# 9Router exposes arbitrary OpenAI-compatible endpoints via "provider nodes"
+# (POST /api/provider-nodes, type="openai-compatible"). model_id <prefix>/<model>
+# routes to that node's baseUrl. We mirror settings.custom_providers[] with
+# prefix `cp-<slug>` so they don't collide with the user's primary OpenAI key.
 
 NINE_ROUTER_CUSTOM_NAME_SUFFIX = " (OpenSwarm-managed)"
 
@@ -711,19 +677,14 @@ async def sync_custom_providers(providers: list) -> None:
 
     seen_prefixes: set[str] = set()
     for cp in providers or []:
-        # Tolerate both Pydantic instances and plain dicts.
         name = getattr(cp, "name", None) or (cp.get("name") if isinstance(cp, dict) else None) or ""
         base_url = getattr(cp, "base_url", None) or (cp.get("base_url") if isinstance(cp, dict) else None) or ""
         api_key = getattr(cp, "api_key", None) or (cp.get("api_key") if isinstance(cp, dict) else None) or ""
         if not name.strip() or not base_url.strip():
             continue
-        # Local OpenAI-compatible servers (LM Studio, Ollama, vLLM, llama.cpp,
-        # text-generation-webui, etc.) ship with auth disabled by default —
-        # they ignore the Authorization header entirely. But 9Router still
-        # creates the connection with `authType: "apikey"` and would send a
-        # blank Bearer if api_key is "", which some servers reject as a
-        # malformed header. Substitute a harmless placeholder when blank;
-        # servers that DO require auth always have api_key set anyway.
+        # Local OpenAI-compat servers (LM Studio, Ollama, etc.) reject a blank
+        # Bearer header even with auth disabled. Substitute a placeholder; real
+        # auth deployments always have api_key set.
         api_key = api_key.strip() or "no-auth-required"
         slug = _custom_provider_slug(name)
         prefix = f"cp-{slug}"
@@ -765,7 +726,6 @@ async def sync_custom_providers(providers: list) -> None:
             logger.warning(f"9Router custom node {prefix} sync failed: {e}")
             continue
 
-        # Ensure a connection exists for this provider node carrying the apikey.
         try:
             existing_conn = await _find_keyed_connection(node_id, managed_name)
             conn_payload = {
@@ -793,8 +753,7 @@ async def sync_custom_providers(providers: list) -> None:
         except Exception as e:
             logger.warning(f"9Router custom connection {prefix} sync failed: {e}")
 
-    # Drop managed nodes that no longer correspond to any settings entry.
-    # DELETE on a node cascades to its connections.
+    # Drop managed nodes no longer in settings; DELETE cascades to connections.
     for prefix, node in managed_by_prefix.items():
         if prefix in seen_prefixes:
             continue
@@ -818,13 +777,13 @@ async def sync_openswarm_pro_as_claude(bearer_token: str | None, proxy_url: str 
     path for openswarm-pro users, so the search fails with
     "no credentials for provider: claude". With this sync, 9Router sees
     the OpenSwarm-Pro-backed Claude connection and routes the search
-    call through our cloud — same quota the user's Pro subscription
+    call through our cloud; same quota the user's Pro subscription
     already covers, no extra cost."""
     if not is_running():
         return
 
     # 9Router's POST /api/providers only accepts direct-API provider ids
-    # for apikey auth — `claude` is the subscription/IDE id, `anthropic`
+    # for apikey auth; `claude` is the subscription/IDE id, `anthropic`
     # is the direct-API id. Use `anthropic`.
     existing = await _find_keyed_connection("anthropic", NINE_ROUTER_CLAUDE_PRO_NAME)
     try:
@@ -865,31 +824,15 @@ async def sync_openswarm_pro_as_claude(bearer_token: str | None, proxy_url: str 
         logger.warning(f"9Router OpenSwarm-Pro Claude sync failed: {e}")
 
 
-# ---------------------------------------------------------------------------
-# Per-provider OAuth redirect URIs
-# ---------------------------------------------------------------------------
-#
-# Each upstream OAuth client is registered with the identity provider against
-# a specific redirect URI. Anthropic's Claude Code client is lenient — any
-# `http://localhost:*/callback` works — so we can use 9Router's built-in
-# callback page at port 20128 for it. OpenAI's Codex client is NOT: it's
-# registered with `http://localhost:1455/auth/callback` and OpenAI rejects
-# any other redirect_uri with `unknown_error` at the auth page. Google's
-# Gemini CLI client accepts arbitrary localhost URIs so we keep 20128 there.
-#
-# For Codex specifically we spawn a one-shot HTTP listener on port 1455
-# below that serves a callback page mirroring 9Router's callback page —
-# postMessage to window.opener, BroadcastChannel fan-out, then close. This
-# lets the frontend reuse its existing Claude/Anthropic flow unchanged
-# (window.open popup + postMessage handler in Settings.tsx).
+# OpenAI's Codex OAuth client is registered with a fixed redirect URI
+# `http://localhost:1455/auth/callback` and rejects any other with `unknown_error`.
+# Anthropic and Google's clients accept arbitrary localhost callbacks (we use
+# 9Router's 20128 callback page). For Codex we spawn a one-shot listener on
+# 1455 that serves the same postMessage/BroadcastChannel/localStorage relay so
+# the frontend's existing popup + msgHandler flow works unchanged.
 
 _CODEX_CALLBACK_PORT = 1455
 _CODEX_CALLBACK_PATH = "/auth/callback"
-
-# Minimal callback page inlined as bytes. Mirrors 9router/src/app/callback/
-# page.js:27-55 — posts the OAuth data to window.opener via postMessage,
-# BroadcastChannel, and localStorage so whatever detection path the caller
-# is using will fire. Served to the Electron popup that OAuth redirects to.
 _CODEX_CALLBACK_HTML = b"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Authorization Complete</title>
 <style>body{font-family:-apple-system,system-ui,sans-serif;background:#111;color:#eee;
@@ -930,7 +873,7 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
 
     Serves GET /auth/callback with _CODEX_CALLBACK_HTML. After serving the
     callback (or after `timeout` seconds with no callback) the listener
-    closes itself in a background task. Safe to call even if 1455 is busy —
+    closes itself in a background task. Safe to call even if 1455 is busy , 
     logs the collision and returns None so start_oauth can still proceed and
     surface whatever error OpenAI returns.
 
@@ -940,7 +883,7 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
     stuck on "Connecting…" until the 30s timeout fires. Exchanging here
     (the same pattern backend/main.py uses for the Gemini callback) makes
     the connection land in 9Router's DB regardless of whether the UI's
-    postMessage listener ever gets notified — the Settings / OnboardingModal
+    postMessage listener ever gets notified; the Settings / OnboardingModal
     status pollers then pick it up within a couple seconds.
     """
 
@@ -951,7 +894,6 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
             # Read the request line ("GET /auth/callback?... HTTP/1.1\r\n")
             raw_request_line = await asyncio.wait_for(reader.readline(), timeout=5.0)
             request_line = raw_request_line.decode("latin-1", errors="replace").strip()
-            # Drain headers so the browser's request is fully consumed
             while True:
                 line = await asyncio.wait_for(reader.readline(), timeout=5.0)
                 if not line or line in (b"\r\n", b"\n"):
@@ -1024,7 +966,6 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
                 await writer.drain()
                 callback_served.set()
             else:
-                # Unrelated request (favicon, preflight) — 404 and move on
                 writer.write(
                     b"HTTP/1.1 404 Not Found\r\n"
                     b"Content-Length: 0\r\n"
@@ -1043,7 +984,7 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
     try:
         server = await asyncio.start_server(_handle, "127.0.0.1", _CODEX_CALLBACK_PORT)
     except OSError as e:
-        # Port already in use — probably another Codex connect attempt still
+        # Port already in use; probably another Codex connect attempt still
         # running, or an actual Codex CLI process holding 1455. Log and bail.
         logger.warning(
             f"Could not start Codex callback listener on port {_CODEX_CALLBACK_PORT}: {e}. "
@@ -1074,38 +1015,15 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
     return server
 
 
-# Providers that cannot use the in-Electron `window.open` popup flow and
-# must be opened in the user's system browser instead.
-#
-# Google enforces an "Embedded WebView Restrictions" policy on its OAuth
-# consent pages that uses JS-based fingerprinting, not just user-agent
-# sniffing. We tried defeating it with a combination of Chrome UA spoof +
-# sandboxed webPreferences + fresh session partition + a preload script
-# that patches navigator.webdriver/plugins/mimeTypes/languages/chrome and
-# overrides navigator.permissions.query — it was still rejected. Google's
-# detection is a moving target and actively adversarial. The supported
-# workaround (and what Google recommends for Desktop app OAuth) is to run
-# the flow in the user's real browser via shell.openExternal.
-#
-# When a provider is in this set the frontend calls
-# window.openswarm.openExternal (shell.openExternal) instead of
-# window.open, and the callback lands on OpenSwarm's own
-# /api/subscriptions/callback endpoint (backend/main.py:138) which
-# exchanges the code and serves a "Connected!" page. Detection on the
-# OpenSwarm side happens via the existing status poller on the
-# Settings page.
-# Providers that hand off to the user's default browser instead of using
-# our embedded Electron popup:
-# - gemini-cli, antigravity: Google blocks embedded browsers wholesale
-#   ("Your browser is not supported anymore") — no UA spoof defeats it.
-# - codex: OpenAI's auth.openai.com renders blank inside our popup on
-#   some users' machines (likely a mix of newer embed detection and
-#   regional access checks) and the system browser surfaces the real
-#   error rather than a silent blank window. Also what RFC 8252 mandates
-#   for native-app OAuth, so this is the correct long-term shape anyway.
-#   Codex's callback URL is special-cased below to stay on localhost:1455
-#   (OpenAI's hardcoded redirect URI) — the listener catches the system
-#   browser's redirect just like it caught the popup's.
+# Providers whose OAuth flow MUST run in the user's real browser via
+# shell.openExternal, not the in-Electron window.open popup:
+# - gemini-cli, antigravity: Google's Embedded WebView Restrictions policy uses
+#   JS-fingerprint detection that no UA spoof defeats. RFC 8252 and Google's
+#   own Desktop-app OAuth guidance both prescribe the system browser.
+# - codex: auth.openai.com renders blank in our popup on some machines (newer
+#   embed detection + regional checks); system browser surfaces the real error.
+# The callback for gemini-cli/antigravity lands on /api/subscriptions/callback
+# and runs the exchange server-side; codex uses its fixed 1455 listener.
 _EXTERNAL_BROWSER_PROVIDERS: set[str] = {"gemini-cli", "antigravity", "codex"}
 
 
@@ -1133,7 +1051,7 @@ def _callback_uri_for_provider(provider: str) -> str:
     Most providers accept 9Router's built-in callback page at port 20128.
     Two special cases:
     - Codex/OpenAI's OAuth client is bound to a fixed
-      http://localhost:1455/auth/callback URI — handled by
+      http://localhost:1455/auth/callback URI; handled by
       _start_codex_callback_listener above.
     - Gemini/Google's OAuth consent page rejects embedded browsers, so we
       route the callback through OpenSwarm's backend endpoint at
@@ -1155,7 +1073,6 @@ async def start_oauth(provider: str) -> dict:
     For authorization_code providers (claude, codex, gemini-cli): returns {authUrl, codeVerifier, state}
     """
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Try device-code flow first
         try:
             r = await client.get(f"{NINE_ROUTER_API}/oauth/{provider}/device-code")
             if r.status_code == 200:
@@ -1171,12 +1088,6 @@ async def start_oauth(provider: str) -> dict:
         except Exception:
             pass
 
-        # Authorization code flow. Most providers accept 9Router's own
-        # callback page at port 20128, but Codex's OAuth client is bound
-        # to a fixed http://localhost:1455/auth/callback URI — spawn an
-        # in-process listener on that port before returning the auth URL,
-        # so the popup can redirect there after login and relay the code
-        # back to the frontend via postMessage (same flow as Claude).
         callback_url = _callback_uri_for_provider(provider)
         if provider == "codex":
             await _start_codex_callback_listener()

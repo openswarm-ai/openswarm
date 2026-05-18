@@ -6,21 +6,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { DURATION_MS, EASE, pulseKeyframes } from '@/shared/styles/motionTokens';
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion';
 
-/**
- * Unified loading primitives. Three components, one aesthetic.
- *
- *   <Skeleton variant="card|line|circle" width height />
- *     For full-component / full-page loads. Replaces decorative spinners.
- *
- *   <InlineSpinner size />
- *     For inline button states + OAuth waits. Spinner = "I'm doing it now".
- *
- *   <EmptyState icon title hint />
- *     For "nothing here yet" empty lists. Replaces ad-hoc "Loading..." text.
- *
- * `delayMs` (Skeleton + EmptyState): don't show until N ms have elapsed.
- * Prevents the flash-of-skeleton on fast loads (<100ms common case).
- */
+/** Loading primitives: Skeleton (block load), InlineSpinner (inline waits), EmptyState (no-items). */
 
 interface SkeletonProps {
   variant?: 'card' | 'line' | 'circle' | 'custom';
@@ -88,7 +74,7 @@ interface EmptyStateProps {
   icon?: React.ReactNode;
   title: string;
   hint?: string;
-  /** Show after N ms — keeps "Loading..." flash off fast paths */
+  /** Show after N ms; keeps "Loading..." flash off fast paths. */
   delayMs?: number;
 }
 

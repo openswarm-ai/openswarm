@@ -14,10 +14,7 @@ from backend.config.paths import MODES_DIR as DATA_DIR
 @asynccontextmanager
 async def modes_lifespan():
     os.makedirs(DATA_DIR, exist_ok=True)
-    # One-time migration: Chat was merged into Ask. Remove a stale built-in
-    # chat.json if it still has its is_builtin=True signature so users don't
-    # see two near-identical modes in the picker. Leave alone if a user has
-    # diverged it (we don't want to wipe customizations).
+    # Migration: Chat merged into Ask; drop a stale built-in chat.json but leave customized copies alone.
     chat_path = os.path.join(DATA_DIR, "chat.json")
     if os.path.exists(chat_path):
         try:

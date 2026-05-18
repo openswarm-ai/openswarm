@@ -36,9 +36,14 @@ interface Props {
   sessionName: string;
   // Hook so the caller can show "Workflow created" feedback inline.
   onCreated?: (workflowId: string) => void;
+  // Auto-suggest path: when the caller detected time-words and wants to
+  // pre-fill the popover with that exact schedule, the first preset
+  // shown becomes "Use suggestion: <label>" and is set as the default.
+  prefillSchedule?: ScheduleConfig | null;
+  prefillLabel?: string | null;
 }
 
-export default function ScheduleThisPopover({ anchorEl, onClose, sessionId, sessionName, onCreated }: Props) {
+export default function ScheduleThisPopover({ anchorEl, onClose, sessionId, sessionName, onCreated, prefillSchedule, prefillLabel }: Props) {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const [title, setTitle] = useState<string>(sessionName || 'Untitled');
@@ -156,6 +161,29 @@ export default function ScheduleThisPopover({ anchorEl, onClose, sessionId, sess
           sx={{ flex: 1, fontSize: '0.85rem', color: c.text.primary, border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.md}px`, px: 0.75, py: 0.3 }}
         />
       </Box>
+      {prefillSchedule && prefillLabel && (
+        <Box
+          role="button"
+          onClick={() => submit({
+            label: prefillLabel,
+            hint: 'Detected from your conversation',
+            build: () => prefillSchedule as Partial<ScheduleConfig>,
+          })}
+          sx={{
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+            px: 1, py: 0.7, borderRadius: `${c.radius.md}px`,
+            mb: 0.5,
+            border: `1px solid ${c.accent.primary}55`,
+            bgcolor: c.accent.primary + '14',
+            cursor: busy ? 'wait' : 'pointer',
+            opacity: busy ? 0.5 : 1,
+            '&:hover': { bgcolor: c.accent.primary + '22' },
+          }}>
+          <Typography sx={{ fontSize: '0.78rem', fontWeight: 700, color: c.accent.primary, letterSpacing: '0.04em' }}>SUGGESTED</Typography>
+          <Typography sx={{ fontSize: '0.86rem', fontWeight: 600, color: c.text.primary }}>{prefillLabel}</Typography>
+          <Typography sx={{ fontSize: '0.72rem', color: c.text.muted }}>Detected from your last reply</Typography>
+        </Box>
+      )}
       {PRESETS.map((p) => (
         <Box
           key={p.label}

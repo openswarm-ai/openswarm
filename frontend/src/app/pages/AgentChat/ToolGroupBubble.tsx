@@ -153,13 +153,7 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
               {deniedCount} denied
             </Typography>
           )}
-          {/* Fixed-width fraction + count chip so the header row stops
-              reflowing as the count climbs from 9 → 10 → 11 → 12 during
-              parallel tool execution. Without min-widths, every digit-
-              boundary nudges the header text wider, which shifts the
-              chevron, which shifts the entire transcript below. The
-              tabular-nums + minWidth pair locks both the fraction and
-              the chip to a stable size for any 1-3 digit count. */}
+          {/* Fixed-width fraction + count chip; tabular-nums + minWidth stop digit-boundary reflow as count climbs in parallel. */}
           {allDone && completedCount > 0 && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, minWidth: 44, justifyContent: 'flex-end' }}>
               <CheckCircleOutlineIcon sx={{ fontSize: 12, color: c.status.success }} />
@@ -196,7 +190,6 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
           <Box
             sx={{
               borderTop: `0.5px solid ${c.border.medium}`,
-              // 140ms fade so rows don't pop in.
               '& > *': {
                 animation: 'toolRowFadeIn 140ms ease-out',
               },
