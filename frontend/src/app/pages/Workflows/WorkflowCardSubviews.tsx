@@ -3,6 +3,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Popover from '@mui/material/Popover';
 import Tooltip from '@mui/material/Tooltip';
+import InputBase from '@mui/material/InputBase';
 import HistoryIcon from '@mui/icons-material/HistoryToggleOffRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -10,11 +11,12 @@ import {
   closeWorkflowCard,
   createWorkflow,
   updateWorkflow,
+  updateWorkflowCard,
   type Workflow,
   type WorkflowRun,
 } from '@/shared/state/workflowsSlice';
 import { removeWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
-import { ScheduleChip, PermissionChip, CostChip, humanDuration, routingFor, StreakBadge } from './workflowVisuals';
+import { CostChip, humanDuration, routingFor, StreakBadge } from './workflowVisuals';
 import StepList from './StepList';
 
 export function statusColor(s: string, c: ReturnType<typeof useClaudeTokens>): string {
@@ -48,23 +50,43 @@ export function formatRunDate(iso: string): string {
   } catch { return iso; }
 }
 
-export function ActionBtn({ label, tone, disabled, onClick }: { label: string; tone: 'muted' | 'success'; disabled?: boolean; onClick: () => void }) {
+type ActionBtnTone = 'muted' | 'success' | 'danger';
+
+export function ActionBtn({ label, tone, disabled, onClick, icon }: { label: string; tone: ActionBtnTone; disabled?: boolean; onClick: () => void; icon?: 'trash' | 'check' }) {
   const c = useClaudeTokens();
-  const isSuccess = tone === 'success';
+  // Tone -> color triple. Matches target #58/#63 styling:
+  //   success  = green pill (Save)
+  //   danger   = red/pink pill (Discard)
+  //   muted    = neutral pill (Undo)
+  const palette = tone === 'success'
+    ? { color: c.status.success, bg: c.status.successBg, border: c.status.success + '60', hover: c.status.success + '30' }
+    : tone === 'danger'
+      ? { color: c.status.error, bg: c.status.errorBg, border: c.status.error + '60', hover: c.status.error + '30' }
+      : { color: c.text.secondary, bg: c.bg.secondary, border: c.border.subtle, hover: c.bg.elevated };
   return (
     <Box
       onClick={disabled ? undefined : onClick}
       role="button"
       sx={{
-        fontSize: '0.85rem', fontWeight: 600, px: 1.25, py: 0.55,
-        borderRadius: `${c.radius.md}px`,
+        // Compact pill matching target #58/#63. Smaller padding + smaller
+        // glyphs so the buttons stop overshadowing the step body.
+        display: 'inline-flex', alignItems: 'center', gap: 0.4,
+        fontSize: '0.78rem', fontWeight: 600,
+        px: 1, py: 0.35,
+        borderRadius: 999,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        color: isSuccess ? c.status.success : c.text.secondary,
-        bgcolor: isSuccess ? c.status.successBg : c.bg.secondary,
-        border: `1px solid ${isSuccess ? c.status.success + '60' : c.border.subtle}`,
+        color: palette.color,
+        bgcolor: palette.bg,
+        border: `1px solid ${palette.border}`,
         opacity: disabled ? 0.5 : 1,
-        '&:hover': { bgcolor: isSuccess ? c.status.success + '30' : c.bg.elevated },
+        '&:hover': { bgcolor: palette.hover },
       }}>
+      {icon === 'trash' && (
+        <Box component="span" sx={{ display: 'inline-flex', fontSize: 12, lineHeight: 1 }}>{'\u{1F5D1}'}</Box>
+      )}
+      {icon === 'check' && (
+        <Box component="span" sx={{ display: 'inline-flex', fontSize: 12, lineHeight: 1 }}>{'✓'}</Box>
+      )}
       {label}
     </Box>
   );
@@ -80,8 +102,20 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const [busy, setBusy] = useState(false);
-  const title = (initialDraft?.title as string) || 'Email summary request';
-  const description = (initialDraft?.description as string) || "This is an ai generated description of the workflow that gets auto generated after you click complete on the last step. It's used when we wrap workflows as tool calls for other agents to invoke";
+  // Title + description live in the openCard draft so the parent header
+  // (which renders the inline-editable title) and PreviewView body (which
+  // renders the inline-editable description + steps) stay in sync. On
+  // Save we pull whatever's currently in the draft, falling back to the
+  // initialDraft passed at mount time.
+  const card = useAppSelector((s) => s.workflows.openCards[workflowId]);
+  const liveDraft = (card?.draft ?? initialDraft ?? {}) as Partial<Workflow>;
+  const title = (liveDraft.title as string) || 'New workflow';
+  const description = (liveDraft.description as string) || '';
+  // Track step text edits locally so the textarea stays uncontrolled-ish
+  // (no remote round-trip on every keystroke). On Save we pass the
+  // edited values through.
+  const [editedSteps, setEditedSteps] = useState<Workflow['steps'] | null>(null);
+  const liveSteps = editedSteps || steps;
 
   const onSave = useCallback(async () => {
     if (busy) return;
@@ -90,7 +124,7 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
       const result = await dispatch(createWorkflow({
         title,
         description,
-        steps: steps.map((s) => ({ id: s.id, text: s.text })),
+        steps: liveSteps.map((s) => ({ id: s.id, text: s.text })),
         source_session_id: sourceSessionId,
         use_synced_prompt: true,
       } as Partial<Workflow>));
@@ -99,33 +133,125 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
     } finally {
       setBusy(false);
     }
-  }, [busy, dispatch, title, description, steps, sourceSessionId, onSaved]);
+  }, [busy, dispatch, title, description, liveSteps, sourceSessionId, onSaved]);
 
   const onDiscard = useCallback(() => {
     dispatch(closeWorkflowCard(workflowId));
     dispatch(removeWorkflowCard(workflowId));
   }, [dispatch, workflowId]);
 
+  const onChangeDescription = useCallback((value: string) => {
+    dispatch(updateWorkflowCard({ workflowId, patch: { draft: { ...liveDraft, description: value } } }));
+  }, [dispatch, workflowId, liveDraft]);
+
+  const onChangeStep = useCallback((idx: number, value: string) => {
+    const next = (liveSteps || []).slice();
+    if (!next[idx]) return;
+    next[idx] = { ...next[idx], text: value };
+    setEditedSteps(next);
+  }, [liveSteps]);
+
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-      <Box sx={{ flex: 1, fontSize: '0.88rem', color: c.text.secondary, lineHeight: 1.5 }}>{description}</Box>
-      <StepList steps={steps} framed />
-      {/* Save sits on the right; "Throw away" sits on the LEFT separated
-          by a flex spacer so a panicked user can't fat-finger the
-          destructive option while reaching for Save. */}
-      <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
-        <ActionBtn label="Throw away" tone="muted" onClick={onDiscard} />
-        <Box sx={{ flex: 1 }} />
-        <ActionBtn label="Save" tone="success" onClick={onSave} disabled={busy} />
+    // minHeight: 100% so the bottom-right Discard/Save cluster pins to
+    // the bottom of the card body, not just below the last step. Without
+    // this, mt:auto has nothing to push against and the buttons floated
+    // up next to step 1 (image #68 bug).
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, minHeight: '100%' }}>
+      <InputBase
+        multiline
+        minRows={1}
+        value={description}
+        placeholder="Describe what this workflow does."
+        onChange={(e) => onChangeDescription(e.target.value)}
+        sx={{
+          fontSize: '0.92rem', color: c.text.secondary, lineHeight: 1.55,
+          border: `1px solid transparent`, borderRadius: `${c.radius.md}px`,
+          px: 0.5, py: 0.25,
+          '&:hover': { borderColor: c.border.subtle },
+          '&.Mui-focused': { borderColor: c.border.medium },
+          '& textarea::placeholder': { color: c.text.ghost, opacity: 1 },
+        }}
+      />
+      <StepList steps={liveSteps} framed onChangeStep={onChangeStep} />
+      {/* Bottom-right cluster: Discard then Save, both pill-shaped with
+          their respective trash + check glyphs. Matches target #58 / #63.
+          mt:auto = pinned to the bottom of the flex column regardless of
+          how little content lives above. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1, mt: 'auto' }}>
+        <ActionBtn label="Discard" tone="danger" icon="trash" onClick={onDiscard} />
+        <ActionBtn label="Save" tone="success" icon="check" onClick={onSave} disabled={busy} />
       </Box>
     </Box>
   );
+}
+
+// Render the workflow's permission tiers as a flat prose line so the
+// SavedView reads like a sentence, not a chip salad. Mirrors target #54.
+function describePermissions(workflow: Workflow): string {
+  const tiers = workflow.permissions || [];
+  if (tiers.length === 0) return 'Notify me in Open Swarm';
+  const parts: string[] = [];
+  for (const t of tiers) {
+    if (t.kind === 'notify') parts.push('notify in app');
+    else if (t.kind === 'text') parts.push('text');
+    else if (t.kind === 'call') parts.push('call');
+  }
+  return `First ${parts.join(', then ')}`;
+}
+
+function describeSchedule(workflow: Workflow): string {
+  const s = workflow.schedule;
+  if (!s.enabled) return 'Not scheduled';
+  const h12 = ((s.hour + 11) % 12) + 1;
+  const ampm = s.hour < 12 ? 'am' : 'pm';
+  const time = s.minute === 0 ? `${h12}${ampm}` : `${h12}:${String(s.minute).padStart(2, '0')}${ampm}`;
+  if (s.repeat_unit === 'day') return s.repeat_every === 1 ? `Every day at ${time}` : `Every ${s.repeat_every} days at ${time}`;
+  if (s.repeat_unit === 'month') return s.repeat_every === 1 ? `Every month at ${time}` : `Every ${s.repeat_every} months at ${time}`;
+  if (s.on_days.length === 5 && [1,2,3,4,5].every((d) => s.on_days.includes(d))) return `Weekdays at ${time}`;
+  if (s.on_days.length === 2 && [0,6].every((d) => s.on_days.includes(d))) return `Weekends at ${time}`;
+  if (s.on_days.length === 1) {
+    const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return `Every ${labels[s.on_days[0]]} at ${time}`;
+  }
+  return `Weekly at ${time}`;
 }
 
 export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Workflow; steps: Workflow['steps']; runs?: WorkflowRun[]; activeRunId?: string | null }) {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const connectionMode = useAppSelector((s) => (s as { settings?: { data?: { connection_mode?: string } } }).settings?.data?.connection_mode);
+  void c; void connectionMode;
+
+  // Inline step-1 edit per target image #63: the first framed step is
+  // editable in place; once the user touches it the Discard/Save buttons
+  // surface at the bottom right. Saving issues a steps PATCH against
+  // the workflow.
+  const [localFirstStep, setLocalFirstStep] = useState<string | null>(null);
+  const [savingFirst, setSavingFirst] = useState(false);
+  const firstStepDirty = localFirstStep != null && steps[0] && localFirstStep !== steps[0].text;
+  const editableSteps = firstStepDirty && steps[0]
+    ? [{ ...steps[0], text: localFirstStep! }, ...steps.slice(1)]
+    : steps;
+  const onChangeFirstStep = useCallback((idx: number, text: string) => {
+    if (idx !== 0) return;
+    setLocalFirstStep(text);
+  }, []);
+  const onSaveFirstStep = useCallback(async () => {
+    if (!firstStepDirty || savingFirst || !steps[0]) return;
+    setSavingFirst(true);
+    try {
+      const nextSteps = [{ ...steps[0], text: localFirstStep! }, ...steps.slice(1)];
+      await dispatch(updateWorkflow({
+        id: workflow.id,
+        patch: { steps: nextSteps },
+        ifMatch: workflow.updated_at || null,
+      }));
+      setLocalFirstStep(null);
+    } finally {
+      setSavingFirst(false);
+    }
+  }, [firstStepDirty, savingFirst, steps, localFirstStep, dispatch, workflow.id, workflow.updated_at]);
+  const onDiscardFirstStep = useCallback(() => setLocalFirstStep(null), []);
   // Habit suggestion: 3+ manual runs in the last 7 days on a workflow
   // that isn't scheduled → quietly offer to schedule it. One click flips
   // the schedule on at the most common time. Auto-disappears once the
@@ -155,17 +281,33 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
       ifMatch: workflow.updated_at || null,
     }));
   }, [habitSuggestion, dispatch, workflow.id, workflow.schedule, workflow.updated_at]);
+  // Audit trigger lazy-loads the edit log; only show it when the
+  // workflow has actually been edited. Skips the noisy "0 edits" link
+  // on freshly created cards. We trigger the fetch on mount once so the
+  // "edits"/no-edits decision is honest by the time the user reads.
+  // minHeight: 100% lets the bottom-right cluster pin to the bottom of
+  // the card body via mt:auto below.
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-      {/* Pill chips replace the two text rows. Same info, glanceable. */}
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5 }}>
-        <ScheduleChip workflow={workflow} />
-        <PermissionChip workflow={workflow} />
-        <CostChip workflow={workflow} connectionMode={connectionMode} />
-        <StreakBadge runs={runs} />
-        <Box sx={{ flex: 1 }} />
-        <AuditTraceLink workflowId={workflow.id} />
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, minHeight: '100%' }}>
+      {/* Prose lines per target #54: "Scheduled:" + "Permissions:".
+          Reads like a sentence the user can skim instead of a pill row
+          that needs hovering to decode. Cost stays as a small inline
+          chip on the right when there's anything to say. */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap' }}>
+          <Typography sx={{ fontSize: '0.88rem', fontWeight: 700, color: c.text.primary }}>Scheduled:</Typography>
+          <Typography sx={{ fontSize: '0.88rem', color: c.text.secondary }}>{describeSchedule(workflow)}</Typography>
+          <Box sx={{ flex: 1 }} />
+          {workflow.cost_estimate && workflow.cost_estimate.fires_per_month > 0 && (
+            <CostChip workflow={workflow} connectionMode={connectionMode} />
+          )}
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75 }}>
+          <Typography sx={{ fontSize: '0.88rem', fontWeight: 700, color: c.text.primary }}>Permissions:</Typography>
+          <Typography sx={{ fontSize: '0.88rem', color: c.text.secondary }}>{describePermissions(workflow)}</Typography>
+        </Box>
       </Box>
+      <StreakBadgeRow runs={runs} />
       {habitSuggestion && (
         <Box sx={{
           display: 'flex', alignItems: 'center', gap: 0.75,
@@ -178,12 +320,47 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
             You&apos;ve run this {habitSuggestion.count}× this week. Schedule it {habitSuggestion.label}?
           </Typography>
           <Box onClick={enableHabit} role="button" sx={{ fontSize: '0.74rem', fontWeight: 700, color: c.accent.primary, cursor: 'pointer', px: 0.5, '&:hover': { textDecoration: 'underline' } }}>
-            Yes →
+            Yes
           </Box>
         </Box>
       )}
-      <Typography sx={{ fontSize: '0.88rem', color: c.text.secondary, lineHeight: 1.5, mt: 0.5 }}>{workflow.description}</Typography>
-      <StepList workflow={workflow} steps={steps} runs={runs} activeRunId={activeRunId} />
+      {workflow.description && (
+        <Typography sx={{ fontSize: '0.92rem', color: c.text.secondary, lineHeight: 1.55, mt: 0.5 }}>
+          {workflow.description}
+        </Typography>
+      )}
+      <StepList
+        workflow={workflow}
+        steps={editableSteps}
+        runs={runs}
+        activeRunId={activeRunId}
+        framed
+        onChangeStep={onChangeFirstStep}
+      />
+      {/* Bottom-right cluster matching target image #63. Discard + Save
+          only surface when the user has actually edited the first step
+          inline; otherwise we don't crowd the card with idle buttons. */}
+      {firstStepDirty ? (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1, mt: 'auto' }}>
+          <ActionBtn label="Discard" tone="danger" icon="trash" onClick={onDiscardFirstStep} />
+          <ActionBtn label={savingFirst ? 'Saving…' : 'Save'} tone="success" icon="check" disabled={savingFirst} onClick={onSaveFirstStep} />
+        </Box>
+      ) : (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 'auto' }}>
+          <AuditTraceLink workflowId={workflow.id} />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+// Splits StreakBadge out so the SavedView body doesn't have to ferry
+// the runs array through both the chip row (gone) and the step list.
+function StreakBadgeRow({ runs }: { runs?: WorkflowRun[] }) {
+  if (!runs || runs.length === 0) return null;
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+      <StreakBadge runs={runs} />
     </Box>
   );
 }
@@ -196,6 +373,31 @@ function AuditTraceLink({ workflowId }: { workflowId: string }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [entries, setEntries] = useState<Array<{ ts: string; who: string; diff: Record<string, { before: unknown; after: unknown }> }> | null>(null);
   const [loading, setLoading] = useState(false);
+  // Probe the audit log once on mount so we can hide the trigger entirely
+  // when there are no edits (item #21 in target #54 diff). Fire-and-forget;
+  // a failure leaves entries=null which renders nothing.
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { API_BASE, getAuthToken } = await import('@/shared/config');
+        const tok = (() => { try { return getAuthToken(); } catch { return ''; } })();
+        const res = await fetch(`${API_BASE}/workflows/${encodeURIComponent(workflowId)}/audit?limit=5`, {
+          headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+        });
+        const data = await res.json();
+        if (alive) setEntries(Array.isArray(data?.entries) ? data.entries : []);
+      } catch {
+        if (alive) setEntries([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, [workflowId]);
+  // The popover open handler must be declared BEFORE the conditional
+  // return below; otherwise React sees a different hook-count between
+  // the "loading" render (returns early) and the "loaded with entries"
+  // render (calls useCallback), which triggers the "Rendered more hooks
+  // than during the previous render" crash.
   const open = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
     setAnchor(e.currentTarget);
     if (entries !== null) return;
@@ -214,6 +416,8 @@ function AuditTraceLink({ workflowId }: { workflowId: string }) {
       setLoading(false);
     }
   }, [entries, workflowId]);
+  // Hide entirely until we know whether there are edits to surface.
+  if (entries === null || entries.length === 0) return null;
   const close = () => setAnchor(null);
   const count = entries?.length ?? 0;
   return (

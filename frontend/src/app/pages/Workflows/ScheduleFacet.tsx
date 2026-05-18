@@ -6,6 +6,11 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Switch from '@mui/material/Switch';
 import Tooltip from '@mui/material/Tooltip';
+import RepeatIcon from '@mui/icons-material/RepeatRounded';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmptyRounded';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import BedtimeIcon from '@mui/icons-material/BedtimeOutlined';
+import NotificationsIcon from '@mui/icons-material/NotificationsNoneRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchCloudSmsStatus, type Workflow, type ScheduleConfig, type PermissionTier } from '@/shared/state/workflowsSlice';
@@ -195,10 +200,12 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
         <AppOpenStatusBadge info={appOpen} hour={s.hour} minute={s.minute} onFix={fixAppOpen} />
       )}
 
-      {/* Row 3: repeat + timezone. */}
-      <Typography sx={{ fontSize: BODY_FS, fontWeight: 700, color: c.text.primary, mt: 0.5 }}>When should this workflow run?</Typography>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-        <Typography sx={{ fontSize: BODY_FS, color: c.text.secondary }}>Repeat every</Typography>
+      {/* Row 3: repeat + timezone. Icon replaces the "When should this
+          workflow run?" prose; the inputs read self-evidently. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: 0.5 }}>
+        <Tooltip title="How often this runs">
+          <RepeatIcon sx={{ fontSize: 16, color: c.text.muted }} />
+        </Tooltip>
         <InputBase
           type="number"
           value={s.repeat_every}
@@ -216,8 +223,7 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
         </Select>
       </Box>
       {s.repeat_unit === 'week' && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, pl: 2, flexWrap: 'wrap' }}>
-          <Typography sx={{ fontSize: HINT_FS, color: c.text.muted }}>on</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, pl: 2.5, flexWrap: 'wrap' }}>
           {WEEKDAY_LABEL.map((label, idx) => {
             const active = s.on_days.includes(idx);
             return (
@@ -230,8 +236,7 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
           })}
         </Box>
       )}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, pl: 2 }}>
-        <Typography sx={{ fontSize: HINT_FS, color: c.text.muted }}>at</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, pl: 2.5 }}>
         {/* 12-hour picker; backend stores 0..23 but the UI uses 1..12+AM/PM
             so users can't accidentally schedule "3" thinking it's 3pm and
             get a 3am run. */}
@@ -282,8 +287,10 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
       )}
 
       {/* Row 4: end condition. */}
-      <Typography sx={{ fontSize: BODY_FS, fontWeight: 700, color: c.text.primary, mt: 0.5 }}>For how long?</Typography>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pl: 2, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.5, flexWrap: 'wrap' }}>
+        <Tooltip title="How long this should keep running">
+          <HourglassEmptyIcon sx={{ fontSize: 16, color: c.text.muted }} />
+        </Tooltip>
         <Select
           size="small"
           value={endKind}
@@ -345,8 +352,10 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
       <CostRow workflow={draft} draftSched={s} onCapChange={(v) => setDraft({ ...draft, cost_cap_usd_monthly: v })} />
 
       {/* Row 6: action surface (freeze). */}
-      <Typography sx={{ fontSize: BODY_FS, fontWeight: 700, color: c.text.primary, mt: 0.5 }}>What can the agent do while it runs?</Typography>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pl: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.5 }}>
+        <Tooltip title="What the agent is allowed to do while it runs">
+          <LockOutlinedIcon sx={{ fontSize: 16, color: c.text.muted }} />
+        </Tooltip>
         <Select
           size="small"
           value={draft.actions.freeze ? 'scoped' : 'full'}
@@ -368,8 +377,10 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
           today, so we don't expose a "run every missed time" option that
           we couldn't honor. If the backend gains real replay support
           later, add the third option back. */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pl: 2, mt: 0.25 }}>
-        <Typography sx={{ fontSize: HINT_FS, color: c.text.muted }}>If your computer was asleep when a run was due:</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.25 }}>
+        <Tooltip title="What to do if your computer was asleep when a run was due">
+          <BedtimeIcon sx={{ fontSize: 16, color: c.text.muted }} />
+        </Tooltip>
         <Select
           size="small"
           value={s.on_missed === 'run_all' ? 'run_once' : s.on_missed}
@@ -381,7 +392,10 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
       </Box>
 
       {/* Row 8: permission tiers. */}
-      <Typography sx={{ fontSize: BODY_FS, fontWeight: 700, color: c.text.primary, mt: 0.5 }}>How should the agent ask for your permission?</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+        <NotificationsIcon sx={{ fontSize: 16, color: c.text.muted }} />
+        <Typography sx={{ fontSize: HINT_FS, color: c.text.muted }}>When the agent needs your OK</Typography>
+      </Box>
       {(draft.permissions || []).map((tier, idx) => (
         <PermissionRow
           key={idx}
@@ -513,7 +527,7 @@ function PermissionRow({ idx, tier, cloudSmsEnabled, onChange, onRemove }: {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, pl: 2, position: 'relative' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-        <Typography sx={{ fontSize: HINT_FS, color: c.text.muted }}>↳ and if I don&apos;t respond after</Typography>
+        <Typography sx={{ fontSize: HINT_FS, color: c.text.muted }}>after</Typography>
         <InputBase
           type="number"
           value={tier.after_minutes}
@@ -531,7 +545,7 @@ function PermissionRow({ idx, tier, cloudSmsEnabled, onChange, onRemove }: {
           {tier.kind !== 'call' && <MenuItem value="text">Text me</MenuItem>}
           {tier.kind === 'call' && <MenuItem value="call">Call me</MenuItem>}
         </Select>
-        <Typography sx={{ fontSize: HINT_FS, color: c.text.muted }}>at this number</Typography>
+        <Typography sx={{ fontSize: HINT_FS, color: c.text.muted }}>at</Typography>
         <InputBase
           value={tier.phone || ''}
           placeholder="+1 (000) 123 4567"

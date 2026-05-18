@@ -204,20 +204,25 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const [suggestDismissedFor, setSuggestDismissedFor] = useState<string | null>(null);
   const scheduleSuggestion = useMemo(() => {
     if (!session?.messages || session.messages.length === 0) return null;
-    // Find the most recent terminal assistant message.
-    let lastAssistant: typeof session.messages[number] | null = null;
+    // The asker is the user, not the agent. Parsing the assistant reply
+    // means hour-shaped numbers in any list ("3 new messages", "May 16",
+    // "$50 offer") get misread as the schedule hour. Use the most recent
+    // user prompt as the source of truth, fall back to the assistant
+    // only if no user message has time-words.
+    let chosen: typeof session.messages[number] | null = null;
     for (let i = session.messages.length - 1; i >= 0; i--) {
       const m = session.messages[i];
-      if (m.role === 'assistant' && typeof m.content === 'string' && m.content.trim()) {
-        lastAssistant = m; break;
+      if (m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
+        const det = detectSchedule(m.content);
+        if (det) { chosen = m; break; }
       }
     }
-    if (!lastAssistant) return null;
-    if (suggestDismissedFor === lastAssistant.id) return null;
-    const text = typeof lastAssistant.content === 'string' ? lastAssistant.content : '';
+    if (!chosen) return null;
+    if (suggestDismissedFor === chosen.id) return null;
+    const text = typeof chosen.content === 'string' ? chosen.content : '';
     const detected = detectSchedule(text);
     if (!detected) return null;
-    return { messageId: lastAssistant.id, ...detected };
+    return { messageId: chosen.id, ...detected };
   }, [session?.messages, suggestDismissedFor]);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [showResumeBubble, setShowResumeBubble] = useState(false);

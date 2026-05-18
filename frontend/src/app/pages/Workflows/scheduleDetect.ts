@@ -17,8 +17,12 @@ const HOUR_WORDS: Record<string, number> = {
   morning: 9, noon: 12, afternoon: 14, evening: 18, night: 21, midnight: 0,
 };
 
-// Match "9am" / "9 a.m." / "10:30 PM" / "at 7" (defaults am).
-const HOUR_RE = /\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\b/i;
+// Match "9am" / "9 a.m." / "10:30 PM" / "at 7am" — but ONLY when there's
+// either an explicit am/pm suffix or an "at " prefix. Plain digits with
+// no time context ("3 new messages", "May 16", "$50 offer") used to slip
+// through and we'd misread them as the schedule hour. Anchoring on
+// `(am|pm)` OR `at ` blocks that.
+const HOUR_RE = /\b(?:at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?|(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.))\b/i;
 
 const DAY_RE = /\b(sun|mon|tue|wed|thu|fri|sat)(?:day)?s?\b/gi;
 const DAY_MAP: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
@@ -45,17 +49,17 @@ export function detectSchedule(text: string): DetectedSchedule | null {
   }
   const hm = t.match(HOUR_RE);
   if (hm) {
-    const raw = parseInt(hm[1], 10);
-    const m = hm[2] ? parseInt(hm[2], 10) : 0;
-    const ampm = (hm[3] || '').toLowerCase();
+    // The two branches of HOUR_RE give us hour/minute/ampm in either
+    // capture group 1-3 (the "at H" branch) or 4-6 (the "Ham/pm" branch).
+    const rawStr = hm[1] || hm[4];
+    const minStr = hm[2] || hm[5];
+    const ampm = (hm[3] || hm[6] || '').toLowerCase();
+    const raw = rawStr ? parseInt(rawStr, 10) : NaN;
+    const m = minStr ? parseInt(minStr, 10) : 0;
     let h = raw;
     if (ampm.startsWith('p') && h < 12) h += 12;
     if (ampm.startsWith('a') && h === 12) h = 0;
-    // Only accept the regex hit if it's a plausible hour AND we didn't
-    // already get a confident word-based hour. Words win because "every
-    // morning at 9" should be 9am, not the literal "9" with no ampm
-    // bumped into pm.
-    if (h >= 0 && h < 24) {
+    if (Number.isFinite(h) && h >= 0 && h < 24) {
       if (!presetTimeWord) { hour = h; minute = m; }
     }
   }

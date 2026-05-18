@@ -10,7 +10,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import type { Workflow } from '@/shared/state/workflowsSlice';
 import { runWorkflowNow, deleteWorkflow, updateWorkflow, openWorkflowCard } from '@/shared/state/workflowsSlice';
 import { addWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
-import { WEEKDAY_LABEL, WEEKDAY_LABEL_SHORT, addDays, sameDay, startOfMonthGrid, startOfWeek, fireTimesWithin, formatTime, formatHourLabel } from './scheduleUtils';
+import { WEEKDAY_FULL, WEEKDAY_LABEL_SHORT, addDays, sameDay, startOfMonthGrid, startOfWeek, fireTimesWithin, formatTime, formatHourLabel } from './scheduleUtils';
 
 interface Props {
   view: 'Week' | 'Month' | 'List';
@@ -99,52 +99,59 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflows, view, dayKey]);
 
-  const SLOT_H = compact ? 28 : 36;
-  const ROW_LABEL = compact ? '0.72rem' : '0.78rem';
-  const DAY_NUM = compact ? '0.85rem' : '0.95rem';
-  const DAY_LABEL = compact ? '0.7rem' : '0.78rem';
-  const EVENT_FS = compact ? '0.72rem' : '0.82rem';
+  const SLOT_H = compact ? 32 : 44;
+  const ROW_LABEL = compact ? '0.7rem' : '0.74rem';
+  const DAY_NUM = compact ? '0.95rem' : '1.15rem';
+  const DAY_LABEL = compact ? '0.66rem' : '0.72rem';
+  const EVENT_FS = compact ? '0.7rem' : '0.78rem';
 
   if (view === 'Week') {
     const start = startOfWeek(today);
     const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
     const HOURS = HOURS_24;
+    // Prefer the short zone name ("PDT", "EST", "JST") so the label
+    // reads in plain English instead of "GMT-7". formatToParts is wide-
+    // supported; if it ever fails we degrade silently rather than show
+    // a confusing fallback.
     const TZ_LABEL = (() => {
       try {
-        const offset = -new Date().getTimezoneOffset() / 60;
-        return `GMT${offset >= 0 ? '+' : ''}${offset.toString().padStart(2, '0').replace('.', ':')}`;
+        const parts = new Intl.DateTimeFormat('en', { timeZoneName: 'short' }).formatToParts(new Date());
+        return parts.find((p) => p.type === 'timeZoneName')?.value || '';
       } catch { return ''; }
     })();
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', color: c.text.secondary }}>
-        {/* Day headers — full names in roomy, single letter in compact */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', gap: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2 }}>
+        {/* Day headers: muted weekday caps; today's date gets the filled circle */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', gap: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, pb: 0.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', pr: 1, pb: 0.5 }}>
             {!compact && (
-              <Typography sx={{ fontSize: '0.66rem', color: c.text.ghost, fontWeight: 500 }}>{TZ_LABEL}</Typography>
+              <Typography sx={{ fontSize: '0.62rem', color: c.text.ghost, fontWeight: 500 }}>{TZ_LABEL}</Typography>
             )}
           </Box>
           {days.map((d) => {
             const isToday = sameDay(d, today);
             return (
               <Box key={d.toISOString()} sx={{ textAlign: 'center', pb: 0.5 }}>
-                <Typography sx={{ fontSize: DAY_LABEL, color: isToday ? c.accent.primary : c.text.muted, fontWeight: 700, letterSpacing: '0.06em', lineHeight: 1.3 }}>
+                <Typography sx={{ fontSize: DAY_LABEL, color: c.text.muted, fontWeight: 600, letterSpacing: '0.08em', lineHeight: 1.3, textTransform: 'uppercase' }}>
                   {WEEKDAY_LABEL_SHORT[d.getDay()]}
                 </Typography>
-                <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: compact ? 28 : 34, height: compact ? 28 : 34, borderRadius: '50%', bgcolor: isToday ? c.accent.primary : 'transparent', color: isToday ? '#fff' : c.text.primary, fontWeight: 700, fontSize: DAY_NUM, mt: 0.25 }}>{d.getDate()}</Box>
+                <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: compact ? 30 : 38, height: compact ? 30 : 38, borderRadius: '50%', bgcolor: isToday ? c.accent.primary : 'transparent', color: isToday ? '#fff' : c.text.primary, fontWeight: isToday ? 700 : 500, fontSize: DAY_NUM, mt: 0.25 }}>{d.getDate()}</Box>
               </Box>
             );
           })}
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', borderTop: `1px solid ${c.border.subtle}` }}>
-          {HOURS.map((hour) => (
+          {HOURS.map((hour, hourIdx) => (
             <React.Fragment key={hour}>
+              {/* Hour label sits inside its row (top-aligned) rather than
+                  straddling the line above it; that way the first row
+                  doesn't clip "12 AM" and the labels never drift when the
+                  body scrolls. Apple Calendar does the same. */}
               <Box sx={{
                 height: SLOT_H, fontSize: ROW_LABEL,
                 color: c.text.ghost, fontWeight: 500,
-                textAlign: 'right', pr: 1,
-                position: 'relative', top: -7,  // tuck label so it sits on the gridline, not in the cell
-                borderTop: `1px solid ${c.border.subtle}`,
+                textAlign: 'right', pr: 1, pt: 0.25,
+                borderTop: hourIdx === 0 ? 'none' : `1px solid ${c.border.subtle}`,
               }}>
                 {formatHourLabel(hour)}
               </Box>
@@ -173,7 +180,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
                         ifMatch: wf.updated_at || null,
                       }));
                     }}
-                    sx={{ height: SLOT_H, borderLeft: `1px solid ${c.border.subtle}`, borderTop: `1px solid ${c.border.subtle}`, position: 'relative' }}>
+                    sx={{ height: SLOT_H, borderLeft: `1px solid ${c.border.subtle}`, borderTop: hourIdx === 0 ? 'none' : `1px solid ${c.border.subtle}`, position: 'relative' }}>
                     <EventStack
                       events={evs}
                       onSelectWorkflow={onSelectWorkflow}
@@ -194,38 +201,45 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
   if (view === 'Month') {
     const start = startOfMonthGrid(today);
     const cells = Array.from({ length: 35 }, (_, i) => addDays(start, i));
+    const accent = c.accent.primary;
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', mb: 0.5 }}>
+        {/* Sticky weekday header so it stays visible even when the
+            calendar body scrolls. Slightly bigger + tinted bg so it
+            reads cleanly in both light and dark themes. */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, borderBottom: `1px solid ${c.border.subtle}`, py: 0.6 }}>
           {WEEKDAY_LABEL_SHORT.map((l, i) => (
-            <Typography key={`${l}-${i}`} sx={{ textAlign: 'center', fontSize: DAY_LABEL, color: c.text.muted, fontWeight: 600, letterSpacing: '0.06em' }}>{l}</Typography>
+            <Typography key={`${l}-${i}`} sx={{ textAlign: 'center', fontSize: '0.74rem', color: c.text.secondary, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</Typography>
           ))}
         </Box>
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0, borderLeft: `1px solid ${c.border.subtle}` }}>
           {cells.map((d) => {
             const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
             const evs = eventsByDay.map.get(key) || [];
             const isToday = sameDay(d, today);
             const inMonth = d.getMonth() === today.getMonth();
             return (
-              <Box key={d.toISOString()} sx={{ minHeight: compact ? 64 : 88, borderRight: `1px solid ${c.border.subtle}`, borderBottom: `1px solid ${c.border.subtle}`, p: 0.5, opacity: inMonth ? 1 : 0.45, position: 'relative', overflow: 'hidden' }}>
+              <Box key={d.toISOString()} sx={{ minHeight: compact ? 70 : 96, borderRight: `1px solid ${c.border.subtle}`, borderBottom: `1px solid ${c.border.subtle}`, p: 0.5, position: 'relative', overflow: 'hidden', bgcolor: inMonth ? 'transparent' : c.bg.elevated }}>
                 <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 22, height: 22, borderRadius: '50%', bgcolor: isToday ? c.accent.primary : 'transparent', color: isToday ? '#fff' : c.text.secondary, fontWeight: isToday ? 700 : 500, fontSize: DAY_NUM, px: 0.5 }}>{d.getDate()}</Box>
+                  {/* Out-of-month dates still need to be legible (Apple
+                      Calendar shows them in a muted shade, not invisible).
+                      Color tweak instead of opacity so dark themes stay
+                      readable. */}
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 22, height: 22, borderRadius: '50%', bgcolor: isToday ? accent : 'transparent', color: isToday ? '#fff' : inMonth ? c.text.primary : c.text.ghost, fontWeight: isToday ? 700 : 500, fontSize: '0.82rem', px: 0.5 }}>{d.getDate()}</Box>
                 </Box>
-                {evs.slice(0, compact ? 3 : 5).map((e, idx) => (
+                {evs.slice(0, compact ? 3 : 4).map((e, idx) => (
                   <Box
                     key={`${e.workflow.id}-${idx}`}
                     onClick={() => onSelectWorkflow?.(e.workflow.id)}
                     onContextMenu={(ev) => { ev.preventDefault(); setCtxMenu({ x: ev.clientX, y: ev.clientY, workflow: e.workflow }); }}
-                    sx={{ mt: 0.3, display: 'flex', alignItems: 'center', gap: 0.4, fontSize: EVENT_FS, color: c.text.secondary, cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', '&:hover': { color: c.accent.primary } }}>
-                    <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: c.accent.primary, flexShrink: 0 }} />
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                      {formatTime(e.date.getHours(), e.date.getMinutes())} {e.workflow.title}
-                    </span>
+                    sx={{ mt: 0.3, display: 'flex', alignItems: 'center', gap: 0.5, fontSize: EVENT_FS, color: c.text.primary, cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', '&:hover': { color: accent } }}>
+                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
+                    <span style={{ color: c.text.muted, flexShrink: 0 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: 500 }}>{e.workflow.title}</span>
                   </Box>
                 ))}
-                {evs.length > (compact ? 3 : 5) && (
-                  <Typography sx={{ fontSize: EVENT_FS, color: c.text.muted, mt: 0.3 }}>+{evs.length - (compact ? 3 : 5)} more</Typography>
+                {evs.length > (compact ? 3 : 4) && (
+                  <Typography sx={{ fontSize: EVENT_FS, color: c.text.muted, mt: 0.3, pl: 1.4 }}>+{evs.length - (compact ? 3 : 4)} more</Typography>
                 )}
               </Box>
             );
@@ -236,34 +250,63 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     );
   }
 
-  const upcoming: { date: Date; events: { workflow: Workflow; date: Date }[] }[] = [];
+  // Apple-Calendar-style list: big day number + weekday on the left, a
+  // vertical colored bar separating it from events on the right. Today
+  // renders even with no events (shows a "No events today" placeholder)
+  // so the list doesn't feel empty for new users.
+  const upcoming: { date: Date; events: { workflow: Workflow; date: Date }[]; isToday: boolean }[] = [];
   for (let i = 0; i < 14; i += 1) {
     const day = addDays(today, i);
     const key = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
     const arr = eventsByDay.map.get(key) || [];
-    if (arr.length) upcoming.push({ date: day, events: arr });
+    const isToday = sameDay(day, today);
+    if (arr.length || isToday) upcoming.push({ date: day, events: arr, isToday });
   }
+  const accent = c.accent.primary;
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.lg}px`, overflow: 'hidden', bgcolor: c.bg.surface }}>
       {upcoming.length === 0 && (
-        <Typography sx={{ fontSize: '0.85rem', color: c.text.muted, textAlign: 'center', py: 2 }}>No scheduled workflows</Typography>
+        <Typography sx={{ fontSize: '0.85rem', color: c.text.muted, textAlign: 'center', py: 3 }}>No scheduled workflows</Typography>
       )}
-      {upcoming.map(({ date, events }) => (
-        <Box key={date.toISOString()} sx={{ display: 'flex', gap: 1.25 }}>
-          <Box sx={{ width: 52, flexShrink: 0, textAlign: 'center', borderRight: `1px solid ${c.border.subtle}`, pr: 0.75 }}>
-            <Typography sx={{ fontSize: '1.1rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.1 }}>{date.getDate()}</Typography>
-            <Typography sx={{ fontSize: '0.7rem', color: c.text.muted, fontWeight: 600 }}>{date.toLocaleString('en', { month: 'short' })}</Typography>
-            <Typography sx={{ fontSize: '0.7rem', color: c.text.muted }}>{WEEKDAY_LABEL[date.getDay()]}</Typography>
+      {upcoming.map(({ date, events, isToday }, rowIdx) => (
+        <Box
+          key={date.toISOString()}
+          sx={{
+            display: 'flex', alignItems: 'stretch',
+            borderTop: rowIdx === 0 ? 'none' : `1px dashed ${c.border.subtle}`,
+            minHeight: 64,
+          }}>
+          <Box sx={{ width: 96, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.75, pl: 2, pr: 1.25 }}>
+            <Typography sx={{ fontSize: '1.55rem', fontWeight: 600, color: isToday ? accent : c.text.primary, lineHeight: 1, letterSpacing: '-0.01em' }}>
+              {date.getDate()}
+            </Typography>
+            <Box>
+              <Typography sx={{ fontSize: '0.78rem', color: isToday ? accent : c.text.secondary, fontWeight: 500, lineHeight: 1.2 }}>
+                {date.toLocaleString('en', { month: 'short' })}
+              </Typography>
+              <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, lineHeight: 1.2 }}>{WEEKDAY_FULL[date.getDay()]}</Typography>
+            </Box>
           </Box>
-          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0.4 }}>
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', py: 1, pr: 2 }}>
+            {events.length === 0 && (
+              <Typography sx={{ fontSize: '0.85rem', color: c.text.ghost }}>No events today</Typography>
+            )}
             {events.map((e, idx) => (
               <Tooltip key={`${e.workflow.id}-${idx}`} title={<EventTooltipBody event={e} />} placement="right" arrow>
                 <Box
                   onClick={() => onSelectWorkflow?.(e.workflow.id)}
                   onContextMenu={(ev) => { ev.preventDefault(); setCtxMenu({ x: ev.clientX, y: ev.clientY, workflow: e.workflow }); }}
-                  sx={{ fontSize: '0.85rem', color: c.text.secondary, cursor: 'pointer', '&:hover': { color: c.accent.primary } }}>
-                  <strong style={{ color: c.text.primary }}>{e.workflow.title}</strong>
-                  <span style={{ color: c.text.muted, marginLeft: 8 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</span>
+                  sx={{
+                    display: 'flex', alignItems: 'center', gap: 1.25,
+                    py: 0.4,
+                    fontSize: '0.88rem', color: c.text.secondary, cursor: 'pointer',
+                    '&:hover .ev-title': { color: accent },
+                  }}>
+                  <Box sx={{ width: 3, alignSelf: 'stretch', minHeight: 22, bgcolor: accent, borderRadius: 1, flexShrink: 0 }} />
+                  <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                    <Typography className="ev-title" sx={{ fontSize: '0.9rem', fontWeight: 500, color: c.text.primary, lineHeight: 1.3 }}>{e.workflow.title}</Typography>
+                    <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, lineHeight: 1.3 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
+                  </Box>
                 </Box>
               </Tooltip>
             ))}
@@ -275,10 +318,9 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
   );
 }
 
-// Renders the events for a single calendar cell. Up to one pill is shown
-// inline; everything else collapses into a "+N" chip that opens a popover
-// with the full list, so the calendar stays readable at high schedule
-// density without truncating workflow titles.
+// Apple Calendar style event chip: 3px colored left-bar + faintly-tinted
+// background + readable text. One chip per cell with a "+N" badge for
+// overflow; clicking it opens a popover listing all events that hour.
 function EventStack({ events, onSelectWorkflow, eventFontSize, onContextWorkflow }: {
   events: { workflow: Workflow; date: Date }[];
   onSelectWorkflow?: (id: string) => void;
@@ -290,7 +332,12 @@ function EventStack({ events, onSelectWorkflow, eventFontSize, onContextWorkflow
   if (events.length === 0) return null;
   const first = events[0];
   const rest = events.slice(1);
+  const accent = c.accent.primary;
 
+  // Time string is part of the chip so a glance tells you both what and
+  // when, matching Apple's "Title, 1pm" pattern. Chip is slim (height ~22)
+  // not slot-stretching, since OpenSwarm events fire at a single instant.
+  const timeLabel = formatTime(first.date.getHours(), first.date.getMinutes());
   return (
     <>
       <Tooltip title={<EventTooltipBody event={first} />} placement="top" arrow>
@@ -304,18 +351,20 @@ function EventStack({ events, onSelectWorkflow, eventFontSize, onContextWorkflow
           onContextMenu={(e) => onContextWorkflow?.(first.workflow, e)}
           sx={{
             position: 'absolute',
-            left: 3, right: rest.length > 0 ? 28 : 3, top: 3, bottom: 3,
-            bgcolor: c.accent.primary + '1f',
-            color: c.accent.primary,
-            border: `1px solid ${c.accent.primary}`,
-            borderRadius: 999,
-            px: 1.1, py: 0,
-            fontSize: eventFontSize, fontWeight: 600,
+            left: 2, right: rest.length > 0 ? 24 : 2, top: 2,
+            height: 22,
+            bgcolor: accent + '14',
+            color: c.text.primary,
+            borderLeft: `3px solid ${accent}`,
+            borderRadius: '4px',
+            px: 0.65, py: 0,
+            fontSize: eventFontSize, fontWeight: 500,
             overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-            cursor: 'pointer', display: 'flex', alignItems: 'center',
-            '&:hover': { bgcolor: c.accent.primary + '33' },
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 0.5,
+            '&:hover': { bgcolor: accent + '22' },
           }}>
-          {first.workflow.title}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{first.workflow.title}</span>
+          <span style={{ color: 'inherit', opacity: 0.7, flexShrink: 0 }}>{timeLabel}</span>
         </Box>
       </Tooltip>
       {rest.length > 0 && (
@@ -324,14 +373,15 @@ function EventStack({ events, onSelectWorkflow, eventFontSize, onContextWorkflow
           role="button"
           sx={{
             position: 'absolute',
-            right: 3, top: 3, bottom: 3,
-            width: 22,
-            bgcolor: c.accent.primary,
-            color: '#fff',
-            borderRadius: 999,
+            right: 2, top: 2,
+            height: 22,
+            minWidth: 20, px: 0.4,
+            bgcolor: accent + '22',
+            color: accent,
+            borderRadius: '4px',
             fontSize: eventFontSize, fontWeight: 700,
             cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            '&:hover': { filter: 'brightness(1.1)' },
+            '&:hover': { bgcolor: accent + '33' },
           }}>
           +{rest.length}
         </Box>

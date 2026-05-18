@@ -18,23 +18,32 @@ export function FieldRow({ label, children, align }: { label: string; children: 
   );
 }
 
-export function ActionBtn({ label, tone, disabled, onClick }: { label: string; tone: 'muted' | 'success'; disabled?: boolean; onClick: () => void }) {
+type ActionBtnTone = 'muted' | 'success' | 'danger';
+
+export function ActionBtn({ label, tone, disabled, onClick, icon }: { label: string; tone: ActionBtnTone; disabled?: boolean; onClick: () => void; icon?: 'trash' | 'check' }) {
   const c = useClaudeTokens();
-  const isSuccess = tone === 'success';
+  const palette = tone === 'success'
+    ? { color: c.status.success, bg: c.status.successBg, border: c.status.success + '60', hover: c.status.success + '30' }
+    : tone === 'danger'
+      ? { color: c.status.error, bg: c.status.errorBg, border: c.status.error + '60', hover: c.status.error + '30' }
+      : { color: c.text.secondary, bg: c.bg.secondary, border: c.border.subtle, hover: c.bg.elevated };
   return (
     <Box
       onClick={disabled ? undefined : onClick}
       role="button"
       sx={{
+        display: 'inline-flex', alignItems: 'center', gap: 0.45,
         fontSize: LABEL_FS, fontWeight: 600, px: 1.25, py: 0.5,
-        borderRadius: `${c.radius.md}px`,
+        borderRadius: 999,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        color: isSuccess ? c.status.success : c.text.secondary,
-        bgcolor: isSuccess ? c.status.successBg : c.bg.secondary,
-        border: `1px solid ${isSuccess ? c.status.success + '60' : c.border.subtle}`,
+        color: palette.color,
+        bgcolor: palette.bg,
+        border: `1px solid ${palette.border}`,
         opacity: disabled ? 0.5 : 1,
-        '&:hover': { bgcolor: isSuccess ? c.status.success + '30' : c.bg.elevated },
+        '&:hover': { bgcolor: palette.hover },
       }}>
+      {icon === 'trash' && <Box component="span" sx={{ fontSize: 13, lineHeight: 1 }}>{'\u{1F5D1}'}</Box>}
+      {icon === 'check' && <Box component="span" sx={{ fontSize: 13, lineHeight: 1 }}>{'✓'}</Box>}
       {label}
     </Box>
   );

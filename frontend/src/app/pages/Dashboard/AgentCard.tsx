@@ -933,7 +933,7 @@ const AgentCard: React.FC<Props> = ({
                     if (steps.length === 0) return;
                     const draft: Partial<Workflow> = {
                       title: session.name || 'New workflow',
-                      description: 'Auto-generated from this chat. Edit anytime in Workflows.',
+                      description: '',
                       steps,
                       source_session_id: session.id,
                       dashboard_id: session.dashboard_id || null,

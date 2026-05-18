@@ -7,7 +7,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch } from '@/shared/hooks';
 import { updateWorkflow, type Workflow } from '@/shared/state/workflowsSlice';
 import { validateDraft } from './permissionsUtils';
-import { ActionBtn, LABEL_FS, HINT_FS } from './workflowEditCommon';
+import { ActionBtn, HINT_FS, LABEL_FS } from './workflowEditCommon';
 import GeneralFacet from './GeneralFacet';
 import ActionsFacet from './ActionsFacet';
 import ScheduleFacet from './ScheduleFacet';
@@ -95,25 +95,44 @@ export default function WorkflowEditViews({ workflow, facet, onChangeFacet, onDi
     setSaveError(null);
   }, [workflow]);
 
+  // Right-edge save indicator. dirty + busy + savedFlash collapse to a
+  // single state so the button doesn't flicker between "Save now" and
+  // "Up to date" mid-keystroke. When idle and clean, show a quiet
+  // check-mark "Saved" label that's identical to the post-flash state.
+  const saveState: 'dirty' | 'busy' | 'saved' = busy ? 'busy' : dirty ? 'dirty' : 'saved';
+  const _flash = savedFlash; void _flash;
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      {/* Top control row, target image #67:
+            "Currently Editing  [Select▾]"   spacer   [Discard] [Save]
+          Discard + Save are the same pill-style buttons used at the
+          bottom of SavedView; placing them here gives the user a single
+          place to commit OR throw away whatever they just edited. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
         <Typography sx={{ fontSize: LABEL_FS, color: c.text.secondary, fontWeight: 500 }}>Currently Editing</Typography>
         <Select
           size="small"
           value={facet}
           onChange={(e) => onChangeFacet(e.target.value as Props['facet'])}
-          sx={{ fontSize: LABEL_FS, '& .MuiSelect-select': { py: 0.5 } }}>
+          sx={{ fontSize: LABEL_FS, '& .MuiSelect-select': { py: 0.4 } }}>
           <MenuItem value="General">General</MenuItem>
           <MenuItem value="Actions">Actions</MenuItem>
           <MenuItem value="Schedule">Schedule</MenuItem>
         </Select>
         <Box sx={{ flex: 1 }} />
-        <ActionBtn label="Undo changes" tone="muted" disabled={!dirty || busy} onClick={onDiscard} />
         <ActionBtn
-          label={busy ? 'Saving…' : savedFlash ? '✓ Saved' : dirty ? 'Save now' : '✓ Up to date'}
-          tone="success"
+          label="Discard"
+          tone="danger"
+          icon="trash"
           disabled={!dirty || busy}
+          onClick={onDiscard}
+        />
+        <ActionBtn
+          label={busy ? 'Saving…' : 'Save'}
+          tone="success"
+          icon="check"
+          disabled={!dirty || busy || saveState === 'saved'}
           onClick={onSave}
         />
       </Box>

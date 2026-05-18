@@ -26,7 +26,7 @@ interface Props {
   onChangeStep?: (idx: number, text: string) => void;
 }
 
-const CIRCLE_SIZE = 28;
+const CIRCLE_SIZE = 24;
 // Vertical connector lives on the inner edge of the circle column; its
 // x-offset matches CIRCLE_SIZE/2 so it bisects the numbered circles.
 const CONNECTOR_X = CIRCLE_SIZE / 2;
@@ -81,20 +81,36 @@ export default function StepList({ workflow, steps, runs, activeRunId, framed, o
           const duration = workflow ? estimateStepDuration(workflow, runs, idx) : null;
           const isActive = activeStepIdx === idx;
           const isPast = activeStepIdx !== null && idx < activeStepIdx;
+          // Target #54: step 1 always gets the framed-box treatment so
+          // the eye lands on it (it reads as the "entry point" of the
+          // workflow), steps 2+ stay plain text. The disc fill follows
+          // the live run: active step gets the solid accent disc; past
+          // steps a tinted disc; the rest a quiet outlined circle. When
+          // no run is in flight, nothing is "active" so all discs stay
+          // outlined, including step 1.
+          const firstStep = idx === 0;
+          const frameThis = framed && firstStep;
+          // Target image #54: in framed mode, step 1's disc is a solid
+          // accent fill with white text (it's the "entry point"), steps
+          // 2+ are quiet outlined discs. During a live run the activeStepIdx
+          // takes over and overrides this baseline.
+          const primary = frameThis || isActive;
           return (
             <Box key={s.id} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25, position: 'relative' }}>
               <Box sx={{
                 width: CIRCLE_SIZE, height: CIRCLE_SIZE, borderRadius: '50%',
-                border: `1px solid ${isActive || isPast ? c.accent.primary : c.border.medium}`,
-                bgcolor: isActive ? c.accent.primary : isPast ? c.accent.primary + '22' : c.bg.surface,
-                color: isActive ? '#fff' : isPast ? c.accent.primary : c.text.secondary,
-                fontSize: '0.78rem', fontWeight: 700,
+                border: `1px solid ${primary || isPast ? c.accent.primary : c.border.medium}`,
+                bgcolor: primary ? c.accent.primary : isPast ? c.accent.primary + '22' : c.bg.surface,
+                color: primary ? '#fff' : isPast ? c.accent.primary : c.text.muted,
+                fontSize: '0.74rem', fontWeight: 600,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
                 position: 'relative', zIndex: 1,
+                lineHeight: 1,
+                fontVariantNumeric: 'tabular-nums',
                 transition: 'background 0.25s ease, color 0.25s ease',
               }}>
-                {Icon ? <Icon sx={{ fontSize: 14 }} /> : (idx + 1)}
+                {Icon ? <Icon sx={{ fontSize: 13 }} /> : (idx + 1)}
               </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
                 {onChangeStep ? (
@@ -105,20 +121,20 @@ export default function StepList({ workflow, steps, runs, activeRunId, framed, o
                     sx={{
                       width: '100%', resize: 'vertical',
                       fontFamily: 'inherit', fontSize: '0.92rem', color: c.text.primary,
-                      border: framed ? `1px solid ${idx === 0 ? c.border.medium : c.border.subtle}` : `1px solid transparent`,
+                      border: frameThis ? `1px solid ${c.border.medium}` : `1px solid transparent`,
                       borderRadius: `${c.radius.md}px`,
-                      bgcolor: framed ? c.bg.surface : 'transparent',
-                      px: 1.25, py: 0.75, lineHeight: 1.4,
+                      bgcolor: frameThis ? c.bg.surface : 'transparent',
+                      px: frameThis ? 1.25 : 0, py: frameThis ? 0.75 : 0.1, lineHeight: 1.45,
                       '&:focus': { outline: 'none', borderColor: c.accent.primary },
                     }}
                   />
                 ) : (
                   <Box sx={{
                     fontSize: '0.92rem', color: c.text.primary,
-                    border: framed ? `1px solid ${idx === 0 ? c.border.medium : c.border.subtle}` : 'none',
-                    borderRadius: framed ? `${c.radius.md}px` : 0,
-                    bgcolor: framed ? c.bg.surface : 'transparent',
-                    px: framed ? 1.25 : 0.5, py: framed ? 0.75 : 0.1,
+                    border: frameThis ? `1px solid ${c.border.medium}` : 'none',
+                    borderRadius: frameThis ? `${c.radius.md}px` : 0,
+                    bgcolor: frameThis ? c.bg.surface : 'transparent',
+                    px: frameThis ? 1.25 : 0, py: frameThis ? 0.75 : 0.1,
                     lineHeight: 1.45,
                   }}>
                     {s.text}

@@ -10,6 +10,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import SearchIcon from '@mui/icons-material/Search';
 import MenuIcon from '@mui/icons-material/Menu';
+import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
@@ -18,7 +19,10 @@ import {
   setWorkflowsHubPosition,
   setWorkflowsHubSize,
 } from '@/shared/state/dashboardLayoutSlice';
-import { openWorkflowCard, fetchPausedState, setPausedAll } from '@/shared/state/workflowsSlice';
+import { openWorkflowCard, fetchPausedState, setPausedAll, updateWorkflow, deleteWorkflow, runWorkflowNow } from '@/shared/state/workflowsSlice';
+import type { Workflow } from '@/shared/state/workflowsSlice';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
 import Switch from '@mui/material/Switch';
 import Tooltip from '@mui/material/Tooltip';
 import { useEffect } from 'react';
@@ -85,19 +89,25 @@ function TimeSavedBadge() {
   }
   if (count === 0) return null;
   const totalMin = count * 3;
-  const label = totalMin >= 60 ? `${(totalMin / 60).toFixed(1)} hrs back` : `${totalMin} min back`;
+  const hours = totalMin / 60;
+  // Show "X done · ~Y hrs" so the user gets both the run count and a
+  // sense of time. Dot-separator reads quieter than the old green pill.
+  const timeLabel = hours >= 1 ? `~${hours.toFixed(1)} hrs` : `~${totalMin} min`;
   return (
-    <Tooltip title={`${count} workflow runs completed for you. Quiet estimate of ~3 min saved per run vs. doing it by hand.`}>
+    <Tooltip title={`${count} workflow runs completed for you. Rough estimate of ~3 min saved per run vs. doing it by hand.`}>
       <Box sx={{
-        display: 'inline-flex', alignItems: 'center', gap: 0.4,
-        ml: 1, px: 0.85, py: 0.25,
+        display: 'inline-flex', alignItems: 'center', gap: 0.5,
+        ml: 1, px: 0.85, py: 0.2,
         fontSize: '0.74rem', fontWeight: 600,
-        color: c.status.success || c.accent.primary,
-        bgcolor: (c.status.success || c.accent.primary) + '14',
-        border: `1px solid ${(c.status.success || c.accent.primary) + '40'}`,
+        color: c.text.secondary,
+        bgcolor: 'transparent',
+        border: `1px solid ${c.border.subtle}`,
         borderRadius: 999,
       }}>
-        ✓ {label}
+        <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', bgcolor: (c.status.success || c.accent.primary) + '22', color: c.status.success || c.accent.primary, fontSize: 9, fontWeight: 800 }}>✓</Box>
+        <span style={{ color: c.text.primary }}>{count}</span>
+        <span style={{ color: c.text.muted }}>·</span>
+        <span style={{ color: c.text.secondary }}>{timeLabel} back</span>
       </Box>
     </Tooltip>
   );
@@ -122,9 +132,21 @@ const WorkflowsHubCard: React.FC<Props> = ({
   const [viewOpen, setViewOpen] = useState(false);
   const [refDate, setRefDate] = useState(new Date());
   const [search, setSearch] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Right-click on a sidebar row opens this menu pinned to the cursor.
+  // Mirrors the calendar pill context menu so the two surfaces feel
+  // consistent. closeMenu wipes both state + DOM-focus.
+  const [sidebarCtxMenu, setSidebarCtxMenu] = useState<{ x: number; y: number; workflow: Workflow } | null>(null);
+  const closeSidebarCtxMenu = useCallback(() => setSidebarCtxMenu(null), []);
 
-  const scheduled = useMemo(() => Object.values(workflows).filter((w) => w.schedule.enabled), [workflows]);
-  const unscheduled = useMemo(() => Object.values(workflows).filter((w) => !w.schedule.enabled), [workflows]);
+  // "Scheduled" = the workflow has a real cadence configured at any
+  // point (even if currently paused via the checkbox). Filtering by
+  // `enabled` would yank rows out from under the user the moment they
+  // unticked the box, which feels wrong. on_days/hour/minute being set
+  // is a good proxy for "user already configured this." Falls back to
+  // enabled flag for legacy records.
+  const scheduled = useMemo(() => Object.values(workflows).filter((w) => isSchedulable(w)), [workflows]);
+  const unscheduled = useMemo(() => Object.values(workflows).filter((w) => !isSchedulable(w)), [workflows]);
 
   const monthLabel = refDate.toLocaleString('en', { month: 'long', year: 'numeric' });
 
@@ -297,7 +319,11 @@ const WorkflowsHubCard: React.FC<Props> = ({
           flexShrink: 0,
         }}
       >
-        <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, color: c.accent.primary, fontSize: 14 }}>⚡</Box>
+        <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, color: c.accent.primary }}>
+          {/* CallSplit natively forks upward; rotated 90deg the fork
+              points right, matching the Workflows brand mark. */}
+          <CallSplitRoundedIcon sx={{ fontSize: 16, transform: 'rotate(90deg)' }} />
+        </Box>
         <Typography sx={{ flex: 1, fontWeight: 700, fontSize: '0.88rem', color: c.text.primary }}>Workflows</Typography>
         <IconButton
           size="small"
@@ -312,9 +338,11 @@ const WorkflowsHubCard: React.FC<Props> = ({
 
       {/* ===== Toolbar row (matches Figma image #8 header) ===== */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.65, px: 1.5, py: 0.7, borderBottom: `1px solid ${c.border.subtle}`, flexShrink: 0 }}>
-        <IconButton size="small" data-no-drag sx={{ p: 0.5, color: c.text.muted }}>
-          <MenuIcon sx={{ fontSize: 18 }} />
-        </IconButton>
+        <Tooltip title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
+          <IconButton size="small" data-no-drag onClick={() => setSidebarOpen((v) => !v)} sx={{ p: 0.5, color: sidebarOpen ? c.text.secondary : c.text.muted, '&:hover': { color: c.text.primary } }}>
+            <MenuIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
         <Box
           onClick={onNew}
           role="button"
@@ -403,6 +431,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
       {/* ===== Body: sidebar + main calendar ===== */}
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {/* Sidebar */}
+        {sidebarOpen && (
         <Box sx={{ width: 240, flexShrink: 0, borderRight: `1px solid ${c.border.subtle}`, display: 'flex', flexDirection: 'column' }}>
           <Box sx={{ px: 1.5, pt: 1.25, pb: 0.75 }}>
             <InputBase
@@ -415,16 +444,56 @@ const WorkflowsHubCard: React.FC<Props> = ({
           </Box>
           <MiniMonth refDate={refDate} onPick={setRefDate} />
           <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, pb: 1.5 }}>
-            <SidebarSection title="Scheduled workflows" items={scheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled />
-            <SidebarSection title="Un-scheduled workflows" items={unscheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled={false} />
+            <SidebarSection title="Scheduled workflows" items={scheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} />
+            <SidebarSection title="Un-scheduled workflows" items={unscheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled={false} onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} />
           </Box>
         </Box>
+        )}
 
         {/* Main calendar area */}
         <Box sx={{ flex: 1, minWidth: 0, overflow: 'auto', p: 1.5 }}>
           <ScheduleCalendar view={view} density="roomy" onSelectWorkflow={onSelectWorkflow} refDate={refDate} />
         </Box>
       </Box>
+
+      {/* Right-click menu shared across all sidebar workflow rows */}
+      <Menu
+        open={Boolean(sidebarCtxMenu)}
+        onClose={closeSidebarCtxMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={sidebarCtxMenu ? { top: sidebarCtxMenu.y, left: sidebarCtxMenu.x } : undefined}>
+        <MenuItem onClick={() => {
+          if (!sidebarCtxMenu) return;
+          dispatch(runWorkflowNow(sidebarCtxMenu.workflow.id));
+          closeSidebarCtxMenu();
+        }}>Run now</MenuItem>
+        <MenuItem onClick={() => {
+          if (!sidebarCtxMenu) return;
+          const wf = sidebarCtxMenu.workflow;
+          dispatch(updateWorkflow({
+            id: wf.id,
+            patch: { schedule: { ...wf.schedule, enabled: !wf.schedule.enabled } as any },
+            ifMatch: wf.updated_at || null,
+          }));
+          closeSidebarCtxMenu();
+        }}>{sidebarCtxMenu?.workflow.schedule.enabled ? 'Pause schedule' : 'Resume schedule'}</MenuItem>
+        <MenuItem onClick={() => {
+          if (!sidebarCtxMenu) return;
+          dispatch(addWorkflowCard({ workflowId: sidebarCtxMenu.workflow.id }));
+          dispatch(openWorkflowCard({ workflowId: sidebarCtxMenu.workflow.id, view: 'edit', editFacet: 'Schedule' }));
+          closeSidebarCtxMenu();
+        }}>Edit…</MenuItem>
+        <MenuItem
+          onClick={() => {
+            if (!sidebarCtxMenu) return;
+            const ok = window.confirm(`Delete "${sidebarCtxMenu.workflow.title}"? Scheduled runs will stop.`);
+            if (ok) dispatch(deleteWorkflow(sidebarCtxMenu.workflow.id));
+            closeSidebarCtxMenu();
+          }}
+          sx={{ color: c.status.error }}>
+          Delete
+        </MenuItem>
+      </Menu>
 
       {/* Resize handles */}
       {HANDLE_DEFS.map(({ dir, sx }) => (
@@ -473,14 +542,26 @@ function MiniMonth({ refDate, onPick }: { refDate: Date; onPick: (d: Date) => vo
   );
 }
 
-function SidebarSection({ title, items, onPick, scheduled }: {
+function SidebarSection({ title, items, onPick, scheduled, onContext }: {
   title: string;
-  items: { id: string; title: string; schedule: { enabled: boolean } }[];
+  items: Workflow[];
   onPick: (id: string) => void;
   scheduled: boolean;
+  onContext: (workflow: Workflow, e: React.MouseEvent) => void;
 }) {
   const c = useClaudeTokens();
+  const dispatch = useAppDispatch();
   const [open, setOpen] = useState(true);
+
+  const toggleEnabled = useCallback((wf: Workflow, e: React.MouseEvent) => {
+    e.stopPropagation();
+    dispatch(updateWorkflow({
+      id: wf.id,
+      patch: { schedule: { ...wf.schedule, enabled: !wf.schedule.enabled } as any },
+      ifMatch: wf.updated_at || null,
+    }));
+  }, [dispatch]);
+
   return (
     <Box sx={{ mt: 1.5 }}>
       <Box
@@ -498,18 +579,42 @@ function SidebarSection({ title, items, onPick, scheduled }: {
         <Box
           key={w.id}
           onClick={() => onPick(w.id)}
+          onContextMenu={(e) => { e.preventDefault(); onContext(w, e); }}
           data-no-drag
           sx={{ display: 'flex', alignItems: 'center', gap: 0.75, py: 0.4, pl: 0.5, color: c.text.primary, borderRadius: 0.5, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}>
           {scheduled ? (
-            <Box sx={{ width: 11, height: 11, border: `1.5px solid ${c.accent.primary}`, bgcolor: c.accent.primary, borderRadius: 0.25, flexShrink: 0 }} />
+            <Tooltip title={w.schedule.enabled ? 'Pause this schedule' : 'Resume this schedule'}>
+              <Box
+                onClick={(e) => toggleEnabled(w, e)}
+                sx={{
+                  width: 14, height: 14, borderRadius: '3px', flexShrink: 0,
+                  border: `1.5px solid ${w.schedule.enabled ? c.accent.primary : c.border.medium}`,
+                  bgcolor: w.schedule.enabled ? c.accent.primary : 'transparent',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', fontSize: 10, lineHeight: 1, fontWeight: 700,
+                  cursor: 'pointer',
+                  '&:hover': { borderColor: c.accent.primary },
+                }}>
+                {w.schedule.enabled ? '✓' : ''}
+              </Box>
+            </Tooltip>
           ) : (
             <AddIcon sx={{ fontSize: 13, color: c.text.muted, flexShrink: 0 }} />
           )}
-          <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.title}</Typography>
+          <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: scheduled && !w.schedule.enabled ? 'line-through' : 'none', opacity: scheduled && !w.schedule.enabled ? 0.6 : 1 }}>{w.title}</Typography>
         </Box>
       ))}
     </Box>
   );
+}
+
+function isSchedulable(w: Workflow): boolean {
+  if (w.schedule.enabled) return true;
+  // Heuristic: any prior config means the user already opened the
+  // Schedule facet and committed something. Pure defaults stay in
+  // "Un-scheduled" so brand-new workflows don't pollute the list.
+  const s = w.schedule;
+  return Boolean(s.on_days?.length || s.ends_at || s.max_runs || s.runs_count);
 }
 
 function match(title: string, query: string): boolean {

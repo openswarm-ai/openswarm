@@ -2,14 +2,20 @@ import React, { useCallback, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import InputBase from '@mui/material/InputBase';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
+import BookmarkIcon from '@mui/icons-material/BookmarkBorderRounded';
 import SearchIcon from '@mui/icons-material/Search';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonthRounded';
 import OpenInFullIcon from '@mui/icons-material/OpenInFullRounded';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import AddIcon from '@mui/icons-material/Add';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppSelector } from '@/shared/hooks';
 import ScheduleCalendar from './ScheduleCalendar';
+import { addDays, startOfWeek } from './scheduleUtils';
 
 type Mode = 'search' | 'schedule';
 
@@ -34,7 +40,32 @@ export default function SchedulePopover({
 }: Props) {
   const c = useClaudeTokens();
   const [calendarView, setCalendarView] = useState<'Week' | 'Month' | 'List'>('Week');
+  const [refDate, setRefDate] = useState<Date>(() => new Date());
   const workflows = useAppSelector((s) => s.workflows.items);
+
+  const periodLabel = useMemo(() => {
+    if (calendarView === 'Month') {
+      return refDate.toLocaleString('en', { month: 'long', year: 'numeric' });
+    }
+    if (calendarView === 'Week') {
+      const start = startOfWeek(refDate);
+      const end = addDays(start, 6);
+      const sameMonth = start.getMonth() === end.getMonth();
+      const startStr = start.toLocaleString('en', { month: 'short', day: 'numeric' });
+      const endStr = sameMonth
+        ? String(end.getDate())
+        : end.toLocaleString('en', { month: 'short', day: 'numeric' });
+      return `${startStr} – ${endStr}, ${end.getFullYear()}`;
+    }
+    return refDate.toLocaleString('en', { month: 'long', day: 'numeric', year: 'numeric' });
+  }, [refDate, calendarView]);
+
+  const onPrev = useCallback(() => {
+    setRefDate((d) => addDays(d, calendarView === 'Month' ? -28 : calendarView === 'Week' ? -7 : -1));
+  }, [calendarView]);
+  const onNext = useCallback(() => {
+    setRefDate((d) => addDays(d, calendarView === 'Month' ? 28 : calendarView === 'Week' ? 7 : 1));
+  }, [calendarView]);
 
   const workflowIconMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -101,12 +132,19 @@ export default function SchedulePopover({
                 <Typography sx={{ px: 1.5, py: 2.5, fontSize: '0.82rem', color: c.text.muted, textAlign: 'center' }}>{historyQuery ? 'No matching chats' : 'No chat history yet'}</Typography>
               )}
               {historyResults.map((entry) => {
-                const icon = workflowIconMap[entry.id];
+                const hasWorkflow = Boolean(workflowIconMap[entry.id]);
                 return (
                   <Box key={entry.id} onClick={() => onHistorySelect(entry.id)} sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.9, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}>
                     <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</Typography>
-                    {icon && (
-                      <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '4px', bgcolor: c.accent.primary + '22', color: c.accent.primary, fontSize: '0.7rem', fontWeight: 700 }}>{icon}</Box>
+                    {/* Only annotate chats that became saved workflows.
+                        A small workflow glyph reads as a tag, where the
+                        old single-letter chip read as a random initial. */}
+                    {hasWorkflow && (
+                      <Tooltip title="This chat is saved as a workflow">
+                        <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: '4px', color: c.text.muted }}>
+                          <BookmarkIcon sx={{ fontSize: 13 }} />
+                        </Box>
+                      </Tooltip>
                     )}
                     <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, flexShrink: 0, whiteSpace: 'nowrap' }}>{relTime(entry.closed_at)}</Typography>
                   </Box>
@@ -128,8 +166,25 @@ export default function SchedulePopover({
                 Expand
               </Box>
             </Box>
+            {/* Period nav: Today pill, prev/next chevrons, range label.
+                Apple Calendar pattern. Keeps the popover usable without
+                forcing a full Expand for date browsing. */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 1.5, pb: 0.75, flexShrink: 0 }}>
+              <Box
+                onClick={() => setRefDate(new Date())}
+                role="button"
+                sx={{
+                  fontSize: '0.78rem', fontWeight: 600, color: c.text.secondary,
+                  border: `1px solid ${c.border.subtle}`, px: 0.95, py: 0.3,
+                  borderRadius: `${c.radius.md}px`, cursor: 'pointer',
+                  '&:hover': { color: c.text.primary, borderColor: c.border.medium },
+                }}>Today</Box>
+              <IconButton size="small" onClick={onPrev} sx={{ p: 0.3, color: c.text.muted, '&:hover': { color: c.text.primary } }}><ChevronLeftIcon sx={{ fontSize: 17 }} /></IconButton>
+              <IconButton size="small" onClick={onNext} sx={{ p: 0.3, color: c.text.muted, '&:hover': { color: c.text.primary } }}><ChevronRightIcon sx={{ fontSize: 17 }} /></IconButton>
+              <Typography sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.primary, ml: 0.25 }}>{periodLabel}</Typography>
+            </Box>
             <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, py: 1, borderTop: `1px solid ${c.border.subtle}`, minHeight: 0 }}>
-              <ScheduleCalendar view={calendarView} density="roomy" onSelectWorkflow={onWorkflowSelect} />
+              <ScheduleCalendar view={calendarView} density="roomy" onSelectWorkflow={onWorkflowSelect} refDate={refDate} />
             </Box>
           </Box>
         )}

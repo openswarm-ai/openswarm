@@ -15,6 +15,7 @@ import HistoryIcon from '@mui/icons-material/HistoryRounded';
 import PlayArrowIcon from '@mui/icons-material/PlayArrowRounded';
 import ScheduleIcon from '@mui/icons-material/ScheduleRounded';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import InputBase from '@mui/material/InputBase';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
@@ -129,6 +130,24 @@ const WorkflowCard: React.FC<Props> = ({
       dispatch(fetchRuns(workflow.id));
     }
   }, [card?.view, workflow?.id, runs, dispatch]);
+
+  // Layout state (workflowCards in dashboardLayoutSlice) persists across
+  // app restarts; workflows.openCards in workflowsSlice does NOT — it's a
+  // transient view-state cache. On relaunch the user sees the workflow
+  // card position restored AND the source-chat tether redrawn, but the
+  // card body itself doesn't render because openCards is empty. Auto-
+  // create a Saved-view openCard once we know the workflow really exists
+  // server-side. Without this, the user sees only the orange tether arrow
+  // pointing at nothing.
+  useEffect(() => {
+    if (!workflow || card) return;
+    dispatch(openWorkflowCardAction({
+      workflowId: workflow.id,
+      sourceSessionId: workflow.source_session_id || null,
+      view: 'saved',
+      draft: null,
+    }));
+  }, [workflow?.id, card, dispatch]);
 
   // Keep wheel-scroll inside the card body instead of letting it bubble
   // up to the dashboard pan/zoom listener. Without this, scrolling the
@@ -350,11 +369,22 @@ const WorkflowCard: React.FC<Props> = ({
 
   if (!card) return null;
 
+  // A "running" run is one that's actively executing right now. While
+  // running, the card grows a subtle conic-gradient halo + a faint title
+  // pulse so a glance at the canvas tells you something's working.
+  const isRunning = (runs || []).some((r) => r.status === 'running') || workflow?.last_run_status === 'running';
+
+  // Hairline border for the default idle state (item #19 in target #54
+  // diff). Keeps the card feeling like a soft surface, not a fenced
+  // box. Highlighted / selected / running still bump up so feedback
+  // is unambiguous.
   const border = isHighlighted
     ? `2px solid ${c.accent.primary}`
     : isSelected
       ? '2px solid #3b82f6'
-      : `1px solid ${c.border.medium}`;
+      : isRunning
+        ? `1px solid ${c.accent.primary}80`
+        : `1px solid ${c.border.subtle}`;
 
   const shadow = isHighlighted
     ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
@@ -369,6 +399,7 @@ const WorkflowCard: React.FC<Props> = ({
       data-select-type="workflow-card"
       data-select-id={workflowId}
       data-select-meta={JSON.stringify({ name: title })}
+      data-running={isRunning ? 'true' : undefined}
       onPointerDownCapture={() => onBringToFront?.(workflowId, 'workflow')}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
@@ -386,7 +417,7 @@ const WorkflowCard: React.FC<Props> = ({
         top: displayY,
         width: displayW,
         height: displayH,
-        borderRadius: `${c.radius.lg}px`,
+        borderRadius: '14px',
         border,
         bgcolor: c.bg.surface,
         boxShadow: shadow,
@@ -395,17 +426,58 @@ const WorkflowCard: React.FC<Props> = ({
         zIndex: (isDragging || isResizing) ? 999999 : cardZOrder,
         transition: noTransition ? 'none' : 'box-shadow 0.4s ease, border 0.3s ease',
         '&:hover .resize-handle': { opacity: 1 },
+        // Running halo: conic-gradient sweep around the card border + a
+        // faint inner glow. Lives on ::before so the card body stays
+        // crisp and isn't redrawn each frame. Only renders when the
+        // data-running attribute is set (no perf cost when idle).
+        '&[data-running="true"]::before': {
+          content: '""',
+          position: 'absolute',
+          inset: -1,
+          borderRadius: '15px',
+          padding: '1.5px',
+          background: `conic-gradient(from 0deg, transparent 0deg, ${c.accent.primary} 60deg, transparent 120deg, transparent 240deg, ${c.accent.primary} 300deg, transparent 360deg)`,
+          WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+          WebkitMaskComposite: 'xor',
+          maskComposite: 'exclude',
+          animation: 'workflowRunSweep 2.4s linear infinite',
+          pointerEvents: 'none',
+          zIndex: 0,
+          opacity: 0.85,
+        },
+        '&[data-running="true"]::after': {
+          content: '""',
+          position: 'absolute',
+          inset: 0,
+          borderRadius: '14px',
+          background: `radial-gradient(120% 80% at 50% 0%, ${c.accent.primary}10 0%, transparent 60%)`,
+          animation: 'workflowRunPulse 2.4s ease-in-out infinite',
+          pointerEvents: 'none',
+          zIndex: 0,
+        },
+        '@keyframes workflowRunSweep': {
+          '0%':   { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
+        '@keyframes workflowRunPulse': {
+          '0%, 100%': { opacity: 0.5 },
+          '50%':      { opacity: 1 },
+        },
       }}
     >
-      {/* ===== Title bar / drag handle ===== */}
+      {/* ===== Title bar / drag handle =====
+          Matches target image #54 spec: drag-grip on the far left, then a
+          single bold title (no pill prefix), then a quiet close X. The
+          run-status indicator moved to the inline "Scheduled:" prose
+          below so the title row stays calm. Padding bumped from 1.1 to
+          1.4 vertical so the title has air around it. */}
       <Box
         onPointerDown={handleDragPointerDown}
         onPointerMove={handleDragPointerMove}
         onPointerUp={handleDragPointerUp}
         sx={{
           display: 'flex', alignItems: 'center', gap: 1,
-          px: 1.75, py: 1.1,
-          borderBottom: `1px solid ${c.border.subtle}`,
+          px: 2, py: 1.4,
           cursor: isDragging ? 'grabbing' : 'grab',
           touchAction: 'none', userSelect: 'none',
           flexShrink: 0,
@@ -413,30 +485,53 @@ const WorkflowCard: React.FC<Props> = ({
           position: 'relative',
         }}
       >
-        <DragIndicatorIcon sx={{ fontSize: 16, color: c.text.ghost }} />
-        <StatusDot status={workflow?.last_run_status} />
-        <Typography sx={{ flex: 1, fontWeight: 700, fontSize: '0.95rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {title}
-        </Typography>
+        <DragIndicatorIcon sx={{ fontSize: 18, color: c.text.muted }} />
+        {isDraft ? (
+          // Draft state: title is inline-editable. Patches the openCard's
+          // draft.title so PreviewView picks it up on Save. Saved cards
+          // keep the read-only Typography below.
+          <InputBase
+            data-no-drag
+            onPointerDown={(e) => e.stopPropagation()}
+            value={(card?.draft?.title as string) || ''}
+            placeholder="New workflow"
+            onChange={(e) => dispatch(updateWorkflowCard({ workflowId, patch: { draft: { ...(card?.draft || {}), title: e.target.value } } }))}
+            sx={{
+              flex: 1, fontWeight: 700, fontSize: '1rem', color: c.text.primary,
+              letterSpacing: '-0.005em',
+              '& input::placeholder': { color: c.text.muted, opacity: 1 },
+            }}
+          />
+        ) : (
+          <Typography sx={{ flex: 1, fontWeight: 700, fontSize: '1rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.005em' }}>
+            {title}
+          </Typography>
+        )}
         {runs && runs.length > 0 && <RunSparkline runs={runs} />}
         <IconButton
           size="small"
           data-no-drag
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           onPointerDown={(e) => e.stopPropagation()}
-          sx={{ p: 0.5, color: c.text.ghost, '&:hover': { color: c.status.error, bgcolor: c.status.errorBg } }}
+          sx={{ p: 0.5, color: c.text.secondary, '&:hover': { color: c.status.error, bgcolor: c.status.errorBg } }}
         >
-          <CloseIcon sx={{ fontSize: 16 }} />
+          <CloseIcon sx={{ fontSize: 17 }} />
         </IconButton>
       </Box>
 
-      {/* ===== Action bar ===== */}
+      {/* ===== Action bar =====
+          Target #54 puts Run / Edit / History flush left and "Schedule
+          this task" flush right on the SAME row. We use justifyContent
+          + a flex spacer instead of wrap, so narrow widths shrink the
+          action group rather than dropping Schedule onto a second line.
+          Run is the only accent-colored button (it's the verb users
+          actually do) but its border weight matches the siblings. */}
       {!isDraft && workflow && (
-        <Box sx={{ display: 'flex', gap: 0.6, px: 2, py: 1, borderBottom: `1px solid ${c.border.subtle}`, flexWrap: 'wrap', flexShrink: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 2, pb: 1.25, pt: 0, flexShrink: 0 }}>
           <TabBtn
             label={runStarting ? 'Starting…' : 'Run'}
             icon={<PlayArrowIcon sx={{ fontSize: 16 }} />}
-            active={card.view === 'saved'}
+            active={false}
             accent
             breathe={!runStarting && isStaleSinceLastRun(workflow)}
             breatheTooltip="Haven't run this in a few days. Click to run it now."
@@ -478,8 +573,9 @@ const WorkflowCard: React.FC<Props> = ({
             active={card.view === 'history' || card.view === 'history_detail'}
             onClick={() => dispatch(updateWorkflowCard({ workflowId, patch: { view: 'history' } }))}
           />
+          <Box sx={{ flex: 1 }} />
           {!workflow.schedule.enabled && (
-            <Box sx={{ ml: 'auto' }}>
+            <Box>
               <TabBtn
                 label="Schedule this task"
                 icon={<ScheduleIcon sx={{ fontSize: 16 }} />}
@@ -520,14 +616,15 @@ const WorkflowCard: React.FC<Props> = ({
           Crossfades between Run/Edit/History tabs so the swap doesn't
           read as a "jump". Outer box is the scrollable viewport; the
           animated child changes per `card.view`. */}
-      <Box ref={bodyScrollRef} data-no-drag sx={{ flex: 1, p: 2, overflowY: 'auto', minHeight: 0, position: 'relative', overscrollBehavior: 'contain' }}>
+      <Box ref={bodyScrollRef} data-no-drag sx={{ flex: 1, p: 2, overflowY: 'auto', minHeight: 0, position: 'relative', overscrollBehavior: 'contain', display: 'flex', flexDirection: 'column' }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={card.view}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -2 }}
-            transition={{ duration: 0.14, ease: 'easeOut' }}>
+            transition={{ duration: 0.14, ease: 'easeOut' }}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {card.view === 'preview' && (
           <PreviewView
             workflowId={workflowId}
@@ -656,15 +753,30 @@ function TabBtn({ label, icon, active, accent, breathe, breatheTooltip, dot, dot
       role="button"
       data-no-drag
       sx={{
+        // Consistent visual weight across Run/Edit/History per target
+        // #54: identical padding + border thickness, matched 32px row
+        // height. `accent` (Run only) gets the colored text + tinted bg
+        // so it reads as the primary verb without screaming "selected".
+        // Tabs no longer flip the bg on `active`; the body view itself
+        // tells the user where they are.
         display: 'inline-flex', alignItems: 'center', gap: 0.5,
-        px: 1.1, py: 0.5,
+        px: 1.25, py: 0.5,
+        minHeight: 32,
         fontSize: '0.82rem', fontWeight: 600,
-        color: active ? c.accent.primary : c.text.secondary,
-        bgcolor: active || accent ? c.accent.primary + '14' : 'transparent',
-        border: `1px solid ${active || accent ? c.accent.primary + '40' : c.border.subtle}`,
+        whiteSpace: 'nowrap',
+        color: accent ? c.accent.primary : c.text.secondary,
+        bgcolor: accent ? c.accent.primary + '14' : 'transparent',
+        border: `1px solid ${accent ? c.accent.primary + '50' : c.border.medium}`,
         borderRadius: `${c.radius.md}px`,
         cursor: 'pointer', userSelect: 'none',
-        '&:hover': { bgcolor: c.accent.primary + '10' },
+        '&:hover': { bgcolor: accent ? c.accent.primary + '22' : c.bg.elevated, borderColor: accent ? c.accent.primary : c.text.muted },
+        // Active just nudges the border + bg, doesn't repaint the whole
+        // button. Mirrors macOS segmented-control behavior.
+        ...(active && {
+          color: c.text.primary,
+          bgcolor: c.bg.elevated,
+          borderColor: c.border.medium,
+        }),
         // Subtle "ready" breath when a stale workflow's Run button hasn't
         // been touched in over 24h. ~3% scale + glow swell, slow enough
         // to read as ambient rather than urgent. Tooltip is on so users

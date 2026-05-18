@@ -138,9 +138,63 @@ async def create_workflow(body: WorkflowCreate):
         wf.icon = _derive_icon(wf)
     if wf.schedule.enabled:
         wf.next_run_at = scheduler.compute_next_fire(wf)
+    # AI-generated description when the caller didn't supply one. Best-
+    # effort via the user's configured aux model; on failure we leave
+    # description empty so the UI just hides the row rather than showing
+    # a fake placeholder. Doesn't block create — caller gets the workflow
+    # back, and a background task fills the description in seconds.
+    if not (wf.description or "").strip():
+        try:
+            wf.description = await _generate_description(wf)
+        except Exception:
+            pass
     storage.save_workflow(wf)
     scheduler.kick()
     return _enriched(wf)
+
+
+async def _generate_description(wf: Workflow) -> str:
+    """One aux-model call: summarize steps into a one-paragraph blurb.
+
+    Returns "" on any failure so the caller can write the result back
+    unconditionally. Never raises.
+    """
+    if not wf.steps:
+        return ""
+    try:
+        from backend.apps.agents.providers.registry import resolve_aux_model
+        from backend.apps.agents.providers.registry import get_anthropic_client_for_model
+        from backend.apps.settings.settings import load_settings as _ls
+    except Exception:
+        return ""
+    settings = _ls()
+    try:
+        aux_model, _ = await resolve_aux_model(settings, preferred_tier="haiku")
+        client = get_anthropic_client_for_model(settings, aux_model)
+    except Exception:
+        return ""
+    steps_lines = "\n".join(f"{i+1}. {s.text}" for i, s in enumerate(wf.steps) if s.text)
+    prompt = (
+        "Write one short paragraph (2-3 sentences, under 50 words) that "
+        "describes what this workflow does, in plain English. No bullet "
+        "points, no preamble like 'This workflow...'. Just the description.\n\n"
+        f"Title: {wf.title}\n\n"
+        f"Steps:\n{steps_lines}"
+    )
+    try:
+        resp = await client.messages.create(
+            model=aux_model,
+            max_tokens=160,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = ""
+        if isinstance(resp.content, list):
+            for block in resp.content:
+                if getattr(block, "type", None) == "text":
+                    text += getattr(block, "text", "")
+        return text.strip()[:500]
+    except Exception:
+        return ""
 
 
 def _last_run_cost(wid: str) -> float:

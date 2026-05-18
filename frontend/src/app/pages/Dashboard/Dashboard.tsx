@@ -1694,6 +1694,13 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       const hasReal = wc.workflow_id in workflowItems;
       const hasDraft = wc.workflow_id in workflowOpenCards;
       if (!hasReal && !hasDraft) continue;
+      // The "Make workflow" tether is a draft-time affordance: it shows
+      // the user which chat the new workflow card came out of. Once the
+      // workflow is saved (openCard transitions to 'saved' view), the
+      // user has committed and the visual link can retire. Per user
+      // feedback on image #70.
+      const openCard = workflowOpenCards[wc.workflow_id];
+      if (openCard && openCard.view !== 'preview') continue;
 
       let srcX = src.x, srcY = src.y;
       let dstX = wc.x, dstY = wc.y;
@@ -1838,7 +1845,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
           }}
         />
 
-        {sessionList.length === 0 && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0 ? (
+        {sessionList.length === 0 && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0 && Object.keys(workflowCards).length === 0 && !workflowsHub ? (
           <Box
             sx={{
               position: 'absolute',
@@ -1909,7 +1916,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                     markerHeight="10"
                     orient="auto"
                   >
-                    <path d="M 0 1 L 10 5 L 0 9 z" fill={c.accent.primary} opacity={0.8} />
+                    <path d="M 0 1 L 10 5 L 0 9 z" fill={c.accent.primary} />
                   </marker>
                 </defs>
                 {tethers.map((t) => (
@@ -1937,7 +1944,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                       strokeWidth={2}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      opacity={0.8}
                       markerEnd="url(#tether-arrow)"
                     />
                     {t.label && (

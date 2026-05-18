@@ -661,6 +661,13 @@ class AgentManager:
             "through MCPActivate."
         )
         sections.append(
+            "1a. NEVER call any tool whose name begins with `mcp__claude_ai_` "
+            "(claude.ai-connected partner shims). They bypass the OpenSwarm "
+            "gate and don't share auth with this app. If the user wants Gmail/"
+            "Calendar/Drive, the equivalent OpenSwarm server is listed below; "
+            "activate that one via MCPActivate instead."
+        )
+        sections.append(
             "2. After MCPActivate returns, end the turn; a follow-up turn fires "
             "automatically with the new tools available."
         )
@@ -1629,6 +1636,27 @@ class AgentManager:
             )
             composed_prompt = (composed_prompt + "\n\n" + schedule_ctx) if composed_prompt else schedule_ctx
 
+            # Pin the agent's notion of "now" to the host wall clock + zone
+            # so it can answer day-of-week questions, choose sensible
+            # cadences ("every Friday afternoon"), and avoid hallucinated
+            # dates. Location stays out of scope; only timezone is shared.
+            try:
+                from zoneinfo import ZoneInfo
+                from backend.apps.workflows.storage import _resolve_host_tz_name
+                tz_name = _resolve_host_tz_name()
+                now_local = datetime.now(ZoneInfo(tz_name))
+                tz_abbr = now_local.strftime("%Z") or tz_name
+                time_ctx = (
+                    "<current_time>\n"
+                    f"Today is {now_local.strftime('%A, %B %-d, %Y')}.\n"
+                    f"Local time: {now_local.strftime('%-I:%M %p')} {tz_abbr} ({tz_name}).\n"
+                    "Use this as ground truth for any date/time/day-of-week question.\n"
+                    "</current_time>"
+                )
+                composed_prompt = (composed_prompt + "\n\n" + time_ctx) if composed_prompt else time_ctx
+            except Exception:
+                pass
+
             if session.mode == "view-builder":
                 # Read the LIVE skill content rather than a frozen-at-import
                 # constant. The skill is registered as a built-in skill at
@@ -2269,6 +2297,17 @@ class AgentManager:
                 }
             if session.max_turns:
                 options_kwargs["max_turns"] = session.max_turns
+
+            # The claude_code preset auto-attaches the user's claude.ai-
+            # connected partner MCPs (`mcp__claude_ai_*`). Those bypass our
+            # MCPActivate gate, don't share OAuth state with the OpenSwarm
+            # Gmail/Calendar/Drive connectors the user actually configured
+            # here, and confuse the model into picking the partner shim
+            # instead of our vetted server. Hard-block them at the SDK
+            # layer so the model can't even attempt the call.
+            options_kwargs["disallowed_tools"] = [
+                "mcp__claude_ai_*",
+            ]
 
             if session.cwd:
                 # Pre-existing sessions may have workspaces that predate

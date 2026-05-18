@@ -111,6 +111,15 @@ export function fireTimesWithin(workflow: Workflow, from: Date, to: Date, cap = 
     if (!Number.isNaN(endsAt.getTime()) && endsAt.getTime() <= from.getTime()) return [];
     if (!Number.isNaN(endsAt.getTime()) && endsAt.getTime() < to.getTime()) to = endsAt;
   }
+  // Don't paint fires for days that predate the workflow itself. A
+  // workflow created this Wednesday shouldn't show pills on Sun/Mon/Tue
+  // of the same week. created_at is an ISO string; only floor on success.
+  if (workflow.created_at) {
+    const createdAt = new Date(workflow.created_at);
+    if (!Number.isNaN(createdAt.getTime()) && createdAt.getTime() > from.getTime()) {
+      from = createdAt;
+    }
+  }
   if (sched.max_runs != null && sched.runs_count >= sched.max_runs) return [];
   const remainingRuns = sched.max_runs != null ? Math.max(0, sched.max_runs - sched.runs_count) : Infinity;
   const effectiveCap = Math.min(cap, remainingRuns);
