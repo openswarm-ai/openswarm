@@ -83,6 +83,13 @@ _bot_tool_id: Optional[str] = None  # set when running in bot mode, for /authori
 # stays flat over long-running sessions.
 _recent_self_sent: collections.deque[int] = collections.deque(maxlen=64)
 
+# Per-chat agent session reuse for conversational continuity. When the user
+# follows up in the same chat, the same agent picks up the thread — saves
+# the ~1-2s cold-start tax and gives the agent memory of the prior turn.
+# Sessions expire after 10 minutes of inactivity so memory doesn't grow.
+_chat_sessions: dict[int, dict] = {}
+_SESSION_IDLE_TTL_S = 10 * 60
+
 
 async def _respond(event_or_client, text: str, chat_id=None):
     """Wrapper around respond/send_message that records the message id so the
@@ -298,70 +305,126 @@ async def _handle_status(event) -> None:
     await _respond(event,"Running:\n" + "\n".join(lines))
 
 
+def _gc_chat_sessions(now: float) -> None:
+    """Drop chat sessions idle past the TTL so memory stays bounded."""
+    stale = [cid for cid, info in _chat_sessions.items() if now - info["last_activity"] > _SESSION_IDLE_TTL_S]
+    for cid in stale:
+        _chat_sessions.pop(cid, None)
+
+
+def _count_assistant_messages(session_id: str) -> int:
+    """Count assistant-role messages in the persisted session transcript.
+    Used as a turn-completion signal — when this number increases past the
+    pre-send snapshot, we know the agent finished THIS message's turn."""
+    try:
+        from backend.config.paths import SESSIONS_DIR
+        import json as _json
+        path = Path(SESSIONS_DIR) / f"{session_id}.json"
+        if not path.exists():
+            return 0
+        with open(path) as f:
+            data = _json.load(f)
+        messages = data.get("messages") or data.get("transcript") or []
+        return sum(1 for m in messages if m.get("role") == "assistant" and m.get("content"))
+    except Exception:
+        return 0
+
+
 async def _handle_task(event, prompt: str) -> None:
-    """Spawn an agent, show Telegram's native typing indicator while it runs,
-    send back the agent's reply as a normal-looking message. Feels like a
-    real text conversation — no session IDs, no status banners."""
+    """Send the user's prompt to an agent — reusing the per-chat session if
+    one is alive, else launching fresh. Native Telegram typing indicator
+    while the turn runs; the agent's reply comes back as a normal-looking
+    chat message. No session IDs, no status banners."""
     from backend.apps.agents.agent_manager import agent_manager
     from backend.apps.agents.models import AgentConfig
 
-    config = AgentConfig(
-        name=f"telegram: {prompt[:48]}",
-        mode="agent",
-        # Sonnet is 2-3x faster than Opus and easily handles "summarize my
-        # inbox" / "send a quick DM" style chat tasks. Telegram-from-phone
-        # users are expecting text-message snappiness, not deep reasoning.
-        model="sonnet",
-        system_prompt=TELEGRAM_SYSTEM_PROMPT,
-        # Default allowed_tools (Read/Edit/Write/Bash/Glob/Grep/AskUserQuestion)
-        # plus the connected MCPs so the agent can use Telegram, Instagram,
-        # LinkedIn, GitHub as needed when invoked from this entry point.
-        allowed_tools=[
-            "Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion",
-            "mcp:Telegram", "mcp:Instagram", "mcp:LinkedIn", "mcp:GitHub",
-        ],
-    )
-    try:
-        session = await agent_manager.launch_agent(config)
-    except Exception as exc:  # noqa: BLE001
-        await _respond(event, f"Sorry, I couldn't get started: {exc}")
-        return
+    chat_id = event.chat_id
+    now = asyncio.get_event_loop().time()
+    _gc_chat_sessions(now)
+
+    # Try to reuse an existing agent for this chat. Skip reuse if the prior
+    # session errored — start fresh so the user gets out of the failure mode.
+    session_id: Optional[str] = None
+    existing = _chat_sessions.get(chat_id)
+    if existing:
+        prior = agent_manager.get_session(existing["session_id"])
+        if prior is not None and prior.status != "error":
+            session_id = existing["session_id"]
+
+    if session_id is None:
+        config = AgentConfig(
+            name=f"telegram: {prompt[:48]}",
+            mode="agent",
+            # Sonnet is 2-3x faster than Opus and easily handles "summarize my
+            # inbox" / "send a quick DM" style chat tasks. Telegram-from-phone
+            # users are expecting text-message snappiness, not deep reasoning.
+            model="sonnet",
+            system_prompt=TELEGRAM_SYSTEM_PROMPT,
+            # Default allowed_tools (Read/Edit/Write/Bash/Glob/Grep/AskUserQuestion)
+            # plus the connected MCPs so the agent can use Telegram, Instagram,
+            # LinkedIn, GitHub as needed when invoked from this entry point.
+            allowed_tools=[
+                "Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion",
+                "mcp:Telegram", "mcp:Instagram", "mcp:LinkedIn", "mcp:GitHub",
+            ],
+        )
+        try:
+            session = await agent_manager.launch_agent(config)
+            session_id = session.id
+        except Exception as exc:  # noqa: BLE001
+            await _respond(event, f"Sorry, I couldn't get started: {exc}")
+            return
+
+    _chat_sessions[chat_id] = {"session_id": session_id, "last_activity": now}
+
+    # Snapshot assistant message count so we can tell when THIS turn's reply
+    # has actually been written to the transcript (not the previous turn's).
+    pre_count = _count_assistant_messages(session_id)
 
     try:
-        await agent_manager.send_message(session.id, prompt)
+        await agent_manager.send_message(session_id, prompt)
     except Exception as exc:  # noqa: BLE001
         await _respond(event, f"Sorry, I couldn't pass that to the agent: {exc}")
         return
 
     # Telegram-native "typing..." indicator while the agent works. Telethon's
     # action() context manager auto-refreshes every 5s so the indicator stays
-    # alive for long-running tasks. No fake status message, no session id —
-    # the user just sees the typing dots like in any normal chat.
+    # alive for long-running tasks. The poll watches BOTH session status AND
+    # assistant message count — needed because reused sessions are already
+    # in a terminal status at send time, so status alone can't tell us
+    # whether THIS turn finished.
     final = None
-    try:
-        async with _client.action(event.chat_id, "typing"):
-            deadline = asyncio.get_event_loop().time() + _TASK_TIMEOUT_S
-            while asyncio.get_event_loop().time() < deadline:
-                await asyncio.sleep(_POLL_INTERVAL_S)
-                s = agent_manager.get_session(session.id)
-                if s is None:
-                    break
-                if s.status in ("completed", "stopped", "error"):
-                    final = s
-                    break
-    except Exception as exc:  # noqa: BLE001
-        # Action context blew up for some reason — still wait for the agent
-        # to finish before replying.
-        logger.warning(f"telegram-bot: typing action failed, polling without indicator: {exc}")
+
+    async def _poll_for_turn():
+        nonlocal final
         deadline = asyncio.get_event_loop().time() + _TASK_TIMEOUT_S
         while asyncio.get_event_loop().time() < deadline:
             await asyncio.sleep(_POLL_INTERVAL_S)
-            s = agent_manager.get_session(session.id)
+            s = agent_manager.get_session(session_id)
             if s is None:
-                break
-            if s.status in ("completed", "stopped", "error"):
+                return
+            if s.status == "error":
                 final = s
-                break
+                return
+            # Turn is done when (a) status is terminal AND (b) assistant
+            # message count grew past the pre-send snapshot.
+            if s.status in ("completed", "stopped"):
+                if _count_assistant_messages(session_id) > pre_count:
+                    final = s
+                    return
+
+    try:
+        async with _client.action(chat_id, "typing"):
+            await _poll_for_turn()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"telegram-bot: typing action failed, polling without indicator: {exc}")
+        await _poll_for_turn()
+
+    # Refresh activity timestamp so the session stays alive for follow-ups.
+    _chat_sessions[chat_id] = {
+        "session_id": session_id,
+        "last_activity": asyncio.get_event_loop().time(),
+    }
 
     if final is None:
         await _respond(
