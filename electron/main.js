@@ -1773,8 +1773,17 @@ function resolveBin(name) {
 
 const LINKEDIN_PROFILE_DIR = path.join(os.homedir(), '.linkedin-mcp', 'profile');
 
+// The linkedin-scraper-mcp server's _auth_ready() check requires THREE things
+// in ~/.linkedin-mcp/, not just the Patchright profile/Cookies db. If any are
+// missing it quarantines the profile to invalid-state-<timestamp>/ and auto
+// re-runs --login (which would pop an external Chromium). We satisfy all three:
+//   1. ~/.linkedin-mcp/profile/                  (via add_cookies)
+//   2. ~/.linkedin-mcp/cookies.json              (portable JSON export)
+//   3. ~/.linkedin-mcp/source-state.json         (SourceState dataclass schema)
+// See stickerdaniel/linkedin-mcp-server/session_state.py for the schema.
 const LINKEDIN_INJECT_SCRIPT = `
-import asyncio, json, sys, time
+import asyncio, json, sys, platform, uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 async def main():
@@ -1782,16 +1791,46 @@ async def main():
     raw = sys.stdin.read()
     payload = json.loads(raw)
     cookies = payload["cookies"]
-    profile_dir = Path(payload["profile_dir"]).expanduser()
+    profile_dir = Path(payload["profile_dir"]).expanduser().resolve()
     profile_dir.mkdir(parents=True, exist_ok=True)
+
     async with async_playwright() as p:
         ctx = await p.chromium.launch_persistent_context(
             user_data_dir=str(profile_dir),
             headless=True,
         )
         await ctx.add_cookies(cookies)
+        all_cookies = await ctx.cookies()
+        linkedin_cookies = [c for c in all_cookies if "linkedin.com" in c.get("domain", "")]
         await ctx.close()
-    print(json.dumps({"ok": True, "count": len(cookies)}))
+
+    auth_root = profile_dir.parent
+    auth_root.mkdir(parents=True, exist_ok=True)
+
+    cookies_path = auth_root / "cookies.json"
+    cookies_path.write_text(json.dumps(linkedin_cookies, indent=2))
+    try: cookies_path.chmod(0o600)
+    except Exception: pass
+
+    os_map = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}
+    arch_map = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}
+    os_name = os_map.get(platform.system(), platform.system().lower() or "unknown")
+    arch = arch_map.get(platform.machine().lower(), platform.machine().lower() or "unknown")
+
+    source_state = {
+        "version": 1,
+        "source_runtime_id": f"{os_name}-{arch}-host",
+        "login_generation": str(uuid.uuid4()),
+        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        "profile_path": str(profile_dir),
+        "cookies_path": str(cookies_path),
+    }
+    state_path = auth_root / "source-state.json"
+    state_path.write_text(json.dumps(source_state, indent=2))
+    try: state_path.chmod(0o600)
+    except Exception: pass
+
+    print(json.dumps({"ok": True, "count": len(linkedin_cookies)}))
 
 try:
     asyncio.run(main())
@@ -1873,6 +1912,21 @@ ipcMain.handle('linkedin-connect', async (_event, payload) => {
   if (!toolId) {
     return { ok: false, error: 'linkedin-connect: missing toolId from caller' };
   }
+
+  // Clear any quarantined profiles from prior failed attempts. The MCP server
+  // moves a profile to invalid-state-<timestamp>/ whenever its _auth_ready()
+  // check fails; left to pile up they take real disk space and confuse later
+  // debugging.
+  try {
+    const authRoot = path.join(os.homedir(), '.linkedin-mcp');
+    if (fs.existsSync(authRoot)) {
+      for (const entry of fs.readdirSync(authRoot)) {
+        if (entry.startsWith('invalid-state-')) {
+          fs.rmSync(path.join(authRoot, entry), { recursive: true, force: true });
+        }
+      }
+    }
+  } catch (_) { /* best-effort cleanup */ }
 
   // Fast-path: if the persist partition already has a valid li_at from a
   // previous session, skip the BrowserWindow entirely and inject straight in.
