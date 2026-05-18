@@ -148,16 +148,16 @@ const INTEGRATIONS: Integration[] = [
     id: 'instagram',
     name: 'Instagram',
     description:
-      'Instagram DM outreach plus user/follower lookup, post engagement, and story reads. 25 tools from trypeggy/instagram_dm_mcp. Sign in with your Instagram username and password (personal accounts supported). NOTE: mass-DMing from personal accounts triggers Instagram anti-abuse detection; use sparingly on established accounts.',
+      'Instagram DM outreach plus user/follower lookup, post engagement, and story reads. 25 tools from ShawnMadadha/instagram_dm_mcp (a rate-limited fork of trypeggy/instagram_dm_mcp). Sign in with your Instagram username and password. First-time setup: run scripts/setup-instagram-mcp.sh. NOTE: mass-DMing from personal accounts triggers Instagram anti-abuse detection; per-tool rate limits are enforced by the server to protect your account.',
     mcp_config: {
       type: 'stdio',
-      command: '/usr/local/bin/python3.11',
-      args: ['/Users/shawnmadadha/dev/instagram_dm_mcp/src/mcp_server.py'],
+      command: 'bash',
+      args: ['-c', 'exec "$HOME/.openswarm/instagram-mcp/.venv/bin/python" "$HOME/.openswarm/instagram-mcp/src/mcp_server.py"'],
     },
     color: '#E4405F',
-    website: 'https://github.com/trypeggy/instagram_dm_mcp',
+    website: 'https://github.com/ShawnMadadha/instagram_dm_mcp',
     connectLabel: 'Connect Instagram',
-    connectInstructions: 'Sign in with the username and password of the Instagram account you want the agent to use. Credentials are stored locally in OpenSwarm and passed as env vars to the MCP server on launch. Instagram session is cached on disk after first successful login so you do not need to re-enter on every restart.',
+    connectInstructions: 'First-time on this machine: run `bash scripts/setup-instagram-mcp.sh` in a terminal. It installs the MCP server into ~/.openswarm/instagram-mcp/. Then sign in below with the Instagram username and password the agent should use. Credentials are stored locally in OpenSwarm; session files live in ~/.instagram_dm_mcp/sessions/ and are reused on every restart.',
     credentialFields: [
       { key: 'INSTAGRAM_USERNAME', label: 'Instagram Username', placeholder: 'your_handle (no @)', type: 'text' },
       { key: 'INSTAGRAM_PASSWORD', label: 'Instagram Password', placeholder: '••••••••', type: 'password' },
