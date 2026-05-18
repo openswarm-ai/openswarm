@@ -366,13 +366,18 @@ echo "[4/5] Snapshotting source directories..."
 rsync -a \
     --exclude='__pycache__' --exclude='**/__pycache__' \
     --exclude='*.pyc' --exclude='.venv' \
-    --exclude='data/tools' \
-    --exclude='data/outputs_workspace' \
-    --exclude='data/agent_history' --exclude='data/sessions' \
+    --exclude='/data' \
+    --exclude='/uv-bin' \
     --exclude='apps/outputs/webapp_template_cache' \
     --exclude='tests' --exclude='**/tests' \
     --exclude='/.env' --exclude='/.env.*' \
     "$PROJECT_ROOT/backend/" "$STAGING_DIR/backend/"
+# /data: backend/config/paths.py points DATA_ROOT at ~/Library/Application Support/OpenSwarm/data
+# in packaged mode and no code seeds from the bundle, so the entire shipped
+# backend/data/ tree was dead weight (and was leaking the dev machine's
+# auth.token + install_id + dev session artifacts).
+# /uv-bin: source dir holds the universal binary so `bash run.sh` works on either
+# host arch; we stage per-arch thin slices below so each DMG ships only its slice.
 # webapp_template_cache: a pre-built node_modules.tar.gz that gets shipped
 # to speed up first-app-create. Apple notarization extracts it and rejects
 # the build because upstream native binaries inside (esbuild, fsevents, etc.)
@@ -411,8 +416,20 @@ GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_CLIENT_ID_SHIP}
 GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET_SHIP}
 EOF
 echo "Staged production .env"
-# Create empty tools directory so the app has a place to write
-mkdir -p "$STAGING_DIR/backend/data/tools"
+
+# Per-arch slice of the universal uv/uvx for shipping. The source-tree uv-bin/
+# stays universal so dev (`bash run.sh`) works on either host arch; thinning
+# into staging means each per-arch DMG ships only its slice (~48 MB savings
+# vs the 97 MB universal binary the build used to put in both DMGs).
+echo "Slicing uv per-arch into staging..."
+for arch in arm64 x64; do
+    lipo_arch=$arch
+    [[ "$arch" == "x64" ]] && lipo_arch=x86_64
+    mkdir -p "$STAGING_DIR/uv-bin/$arch"
+    lipo "$UV_BIN_DIR/uv"  -thin "$lipo_arch" -output "$STAGING_DIR/uv-bin/$arch/uv"
+    lipo "$UV_BIN_DIR/uvx" -thin "$lipo_arch" -output "$STAGING_DIR/uv-bin/$arch/uvx"
+    chmod +x "$STAGING_DIR/uv-bin/$arch/uv" "$STAGING_DIR/uv-bin/$arch/uvx"
+done
 
 rsync -a \
     --exclude='__pycache__' --exclude='**/__pycache__' \

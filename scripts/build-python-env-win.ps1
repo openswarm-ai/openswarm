@@ -98,16 +98,31 @@ $ToStrip = @(
     (Join-Path $PythonEnvDir 'lib\python3.13\tkinter'),           # Tk GUI toolkit, same
     (Join-Path $PythonEnvDir 'lib\python3.13\ensurepip'),         # Pip bootstrap, backend never installs at runtime
     (Join-Path $PythonEnvDir 'lib\python3.13\turtledemo'),        # Educational drawing examples
+    (Join-Path $PythonEnvDir 'lib\python3.13\pydoc_data'),        # pydoc topics/keywords; only `help()` reads them
+    (Join-Path $PythonEnvDir 'lib\python3.13\_pyrepl'),           # Python 3.13 interactive REPL, never started in packaged app
     (Join-Path $PythonEnvDir 'share')                             # Man pages / desktop integration
 )
 foreach ($p in $ToStrip) {
     if (Test-Path $p) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
 }
+$Sp = Join-Path $PythonEnvDir 'lib\python3.13\site-packages'
+# pip itself: nothing in the packaged backend invokes it. uvx (used by
+# MCPs) is a self-contained installer; the App Builder picks SYSTEM
+# python via shutil.which (view_builder_templates.py:382), never this
+# bundled one; backend code only mentions "pip install" in error strings.
+Remove-Item -Recurse -Force (Join-Path $Sp 'pip') -ErrorAction SilentlyContinue
+Get-ChildItem -Path $Sp -Directory -Filter 'pip-*.dist-info' -ErrorAction SilentlyContinue `
+    | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+# Launcher .exe shims for the now-removed tools. Windows installs them under
+# Scripts\; ignore missing.
+foreach ($exe in @('pip.exe','pip3.exe','pip3.13.exe','idle3.exe','idle3.13.exe','pydoc3.exe','pydoc3.13.exe')) {
+    $p = Join-Path $PythonEnvDir "Scripts\$exe"
+    if (Test-Path $p) { Remove-Item -Force $p -ErrorAction SilentlyContinue }
+}
 
 # ----- Babel locale-data trim (~30 MB / ~900 files) -----
 # Babel ships 1,084 CLDR locale .dat files. Trafilatura's transitive dep
 # courlan/filters.py:184 calls Locale.parse(seg) on URL path segments. UnknownLocaleError IS caught at line 188, so stripped locales just skip language-filtering for that URL.
-$Sp = Join-Path $PythonEnvDir 'lib\python3.13\site-packages'
 $LocaleDir = Join-Path $Sp 'babel\locale-data'
 if (Test-Path $LocaleDir) {
     Write-Host "Trimming babel/locale-data..."

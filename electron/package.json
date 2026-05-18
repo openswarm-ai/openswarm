@@ -28,6 +28,7 @@
   "build": {
     "appId": "com.clusterlabs.openswarm",
     "productName": "OpenSwarm",
+    "electronLanguages": ["en"],
     "electronDownload": {
       "mirror": "https://github.com/castlabs/electron-releases/releases/download/v"
     },
@@ -125,8 +126,15 @@
         ]
       },
       {
-        "from": "build-staging/node",
-        "to": "node",
+        "from": "build-staging/node/${arch}",
+        "to": "node/${arch}",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "build-staging/uv-bin/${arch}",
+        "to": "backend/uv-bin",
         "filter": [
           "**/*"
         ]

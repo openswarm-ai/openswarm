@@ -127,6 +127,32 @@ rm -rf "$PYTHON_ENV_DIR/lib/python3.13/ensurepip"
 rm -rf "$PYTHON_ENV_DIR/lib/python3.13/turtledemo"
 # Man pages / desktop integration files.
 rm -rf "$PYTHON_ENV_DIR/share"
+# pip itself + launcher shims. Verified the packaged backend never invokes
+# pip: uvx (used by MCPs) is a self-contained installer; the App Builder's
+# view_builder_templates.py:382 picks SYSTEM python via shutil.which, never
+# this bundled one; backend code only mentions "pip install" in error-message
+# strings. `python -m venv` from this bundled env is also dead (ensurepip
+# already stripped above) but nothing calls it.
+rm -rf "$PYTHON_ENV_DIR/lib/python3.13/site-packages/pip" \
+       "$PYTHON_ENV_DIR/lib/python3.13/site-packages"/pip-*.dist-info
+rm -f "$PYTHON_ENV_DIR/bin/pip" "$PYTHON_ENV_DIR/bin/pip3" "$PYTHON_ENV_DIR/bin/pip3.13" \
+      "$PYTHON_ENV_DIR/bin/idle3" "$PYTHON_ENV_DIR/bin/idle3.13" \
+      "$PYTHON_ENV_DIR/bin/pydoc3" "$PYTHON_ENV_DIR/bin/pydoc3.13"
+# pydoc_data: keyword/topic tables consumed only by stdlib `pydoc` / `help()`.
+# Backend never starts a REPL or calls help().
+rm -rf "$PYTHON_ENV_DIR/lib/python3.13/pydoc_data"
+# _pyrepl: Python 3.13's new interactive REPL implementation. We never
+# spawn an interactive shell from the packaged build.
+rm -rf "$PYTHON_ENV_DIR/lib/python3.13/_pyrepl"
+# Tcl/Tk runtime shared libraries. python-build-standalone install_only_stripped
+# ships these even after the `tkinter` Python package is stripped. With the
+# `_tkinter` C extension absent (lib-dynload/ is empty in this build variant;
+# verified `find python-env -name '_tkinter*.so'` returns nothing), no code
+# path can load these libraries. PIL.ImageTk would import them but backend
+# only does `from PIL import Image`, never ImageTk.
+rm -rf "$PYTHON_ENV_DIR/lib/tcl8.6" "$PYTHON_ENV_DIR/lib/tk8.6" \
+       "$PYTHON_ENV_DIR/lib/itcl4.2.4" "$PYTHON_ENV_DIR/lib/thread2.8.9" \
+       "$PYTHON_ENV_DIR/lib/tcl8"
 
 # ----- Babel locale-data trim (~30 MB / ~900 files) -----
 # Babel ships 1,084 CLDR locale .dat files (~30 MB). Our backend doesn't use
