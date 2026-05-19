@@ -99,6 +99,7 @@ async def handle_approval(response: ApprovalResponse):
         "behavior": response.behavior,
         "message": response.message,
         "updated_input": response.updated_input,
+        "trust_pattern": response.trust_pattern,
     })
     return {"ok": True}
 

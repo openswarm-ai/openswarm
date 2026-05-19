@@ -126,16 +126,24 @@ class ConnectionManager:
     async def send_approval_request(
         self, session_id: str, request_id: str, tool_name: str, tool_input: dict,
         timeout: float = 600.0,
+        sensitive_pattern: str | None = None,
+        sensitive_label: str | None = None,
+        sensitive_why: str | None = None,
     ) -> dict:
         """Send an approval request and wait for the user's decision; 10-minute timeout prevents permanent park."""
         future = asyncio.get_event_loop().create_future()
         self.pending_futures[request_id] = future
 
-        await self.send_to_session(session_id, "agent:approval_request", {
+        payload: dict = {
             "request_id": request_id,
             "tool_name": tool_name,
             "tool_input": tool_input,
-        })
+        }
+        if sensitive_pattern:
+            payload["sensitive_pattern"] = sensitive_pattern
+            payload["sensitive_label"] = sensitive_label
+            payload["sensitive_why"] = sensitive_why
+        await self.send_to_session(session_id, "agent:approval_request", payload)
 
         try:
             result = await asyncio.wait_for(future, timeout=timeout)

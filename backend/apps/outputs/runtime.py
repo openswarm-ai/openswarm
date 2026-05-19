@@ -127,6 +127,94 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
+def _kill_descendant_tree(pid: int, sig_name: str = "TERM") -> None:
+    """Recursively signal every descendant of `pid`, leaves-first. The
+    webapp template's run.sh installs `trap cleanup EXIT` (no TERM), so a
+    plain SIGTERM to the bash wrapper exits bash silently and leaves
+    vite/uvicorn grandchildren reparented to PID 1, squatting on the
+    workspace's ports. Walking the tree ourselves bypasses the template's
+    signal-handling habits entirely. POSIX uses `pgrep -P` to enumerate
+    direct children; Windows is covered by `taskkill /T /F` (job-object
+    walk). All failures are swallowed; missing PIDs mean the process
+    already exited, which is the desired state anyway."""
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except Exception:
+            pass
+        return
+    try:
+        out = subprocess.run(
+            ["pgrep", "-P", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        children = [int(p) for p in out.stdout.split() if p.strip().isdigit()]
+    except Exception:
+        children = []
+    for child in children:
+        _kill_descendant_tree(child, sig_name)
+    sig = getattr(signal, f"SIG{sig_name}", signal.SIGTERM)
+    for child in children:
+        try:
+            os.kill(child, sig)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+
+def _is_port_free(port: int) -> bool:
+    """True if nothing currently holds a TCP listener on 127.0.0.1:port.
+    Cheap kernel-probe; resolves on bind success. Used as the cross-session
+    safety net: if a prior OpenSwarm run left a ghost subprocess holding
+    the .env-persisted FRONTEND_PORT, we detect it here and reallocate
+    rather than handing run.sh a port that will EADDRINUSE."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+
+
+def _write_env_value(env_path: str, key: str, value: str) -> None:
+    """Update KEY=VALUE in an existing `.env`, preserving every other
+    line. Creates the file if missing. Used when a persisted port collides
+    with a ghost from a prior session and we have to reallocate before
+    spawning run.sh."""
+    lines: list[str] = []
+    found = False
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            lines = []
+    for i, raw in enumerate(lines):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        k = stripped.split("=", 1)[0].strip()
+        if k == key:
+            lines[i] = f"{key}={value}\n"
+            found = True
+            break
+    if not found:
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] = lines[-1] + "\n"
+        lines.append(f"{key}={value}\n")
+    try:
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    except Exception:
+        logger.exception("failed writing %s=%s to %s", key, value, env_path)
+
+
 def _is_new_mode(workspace_path: str) -> bool:
     """A workspace is "new-mode" (webapp-template scaffold) if it has a
     `run.sh` at its root. Old-mode workspaces are flat `index.html`-only
@@ -304,12 +392,25 @@ class AppRuntime:
         fp_raw = _read_env_value(env_path, "FRONTEND_PORT")
         bp_raw = _read_env_value(env_path, "BACKEND_PORT")
         # FRONTEND_PORT is allocated by seed_workspace; should always be
-        # a number. If missing, log + fall back to a fresh allocation , 
-        # rare edge case (workspace seeded by an older OpenSwarm).
+        # a number. If missing, fall back to a fresh allocation (rare
+        # edge case: workspace seeded by an older OpenSwarm).
         try:
             self.frontend_port = int(fp_raw) if fp_raw else _find_free_port()
         except ValueError:
             self.frontend_port = _find_free_port()
+        # Port-collision safety net: if a ghost subprocess from a prior
+        # OpenSwarm run is still bound to the persisted port (force-quit,
+        # crash, OS killed the parent before stop_all could reap), Vite
+        # would EADDRINUSE silently. Re-probe and reallocate, then rewrite
+        # .env so the bash run.sh subprocess reads the new port.
+        if self.frontend_port and not _is_port_free(self.frontend_port):
+            new_port = _find_free_port()
+            self._broadcast(LogLine(
+                "runtime",
+                f"[runtime] persisted FRONTEND_PORT {self.frontend_port} is in use; reallocating to {new_port}",
+            ))
+            self.frontend_port = new_port
+            _write_env_value(env_path, "FRONTEND_PORT", str(new_port))
         # BACKEND_PORT may be the literal string "NONE" (frontend-only
         # app; the common case) or a number once `backend_init.sh` has
         # run. Only populate self.port when there's a real backend.
@@ -318,6 +419,16 @@ class AppRuntime:
                 self.port = int(bp_raw)
             except ValueError:
                 self.port = None
+            # Same collision check for the backend port; a leaked uvicorn
+            # from a prior session would otherwise block the new spawn.
+            if self.port and not _is_port_free(self.port):
+                new_port = _find_free_port()
+                self._broadcast(LogLine(
+                    "runtime",
+                    f"[runtime] persisted BACKEND_PORT {self.port} is in use; reallocating to {new_port}",
+                ))
+                self.port = new_port
+                _write_env_value(env_path, "BACKEND_PORT", str(new_port))
         else:
             self.port = None
 
@@ -488,10 +599,16 @@ class AppRuntime:
                     self._frontend_ready_task.cancel()
                 return
             try:
+                # Walk the descendant tree first so vite/uvicorn grandchildren
+                # die before bash exits and orphans them to PID 1. The webapp
+                # template's run.sh only traps EXIT, not TERM, so a flat
+                # SIGTERM to bash kills bash silently and leaves vite alive.
+                _kill_descendant_tree(self.process.pid, "TERM")
                 self.process.terminate()
                 try:
                     await asyncio.wait_for(self.process.wait(), timeout=_TERMINATE_GRACE_SECONDS)
                 except asyncio.TimeoutError:
+                    _kill_descendant_tree(self.process.pid, "KILL")
                     self.process.kill()
                     await self.process.wait()
             except ProcessLookupError:
@@ -712,6 +829,34 @@ class AppRuntimeManager:
             rt.workspace_path = workspace_path
         await rt.restart()
         return rt
+
+    async def stop_all(self) -> int:
+        """Terminate every active + idle workspace subprocess. Called on
+        FastAPI lifespan shutdown AND from Electron's pre-quit POST. Without
+        this, each `bash run.sh` (and its vite/uvicorn descendants) reparents
+        to PID 1 when the main backend dies, leaving ghost listeners on the
+        persisted FRONTEND_PORT/BACKEND_PORT that block the NEXT OpenSwarm
+        launch's app reload. Wakes any SIGSTOP'd idle entries before reaping
+        so they can run their own shutdown. Parallel via gather; with the
+        per-runtime 3s SIGTERM grace, worst case is one ~3s wait rather than
+        N*3s. Idempotent; safe to invoke from multiple shutdown paths."""
+        async with self._lock:
+            victims: list[AppRuntime] = []
+            for rt in list(self.runtimes.values()):
+                victims.append(rt)
+            for rt in list(self._idle_lru.values()):
+                _resume_process_tree(rt.process)
+                victims.append(rt)
+            self.runtimes.clear()
+            self._idle_lru.clear()
+            self._attached.clear()
+        if not victims:
+            return 0
+        await asyncio.gather(
+            *(rt.stop() for rt in victims),
+            return_exceptions=True,
+        )
+        return len(victims)
 
 
 manager = AppRuntimeManager()

@@ -33,6 +33,9 @@ export interface ApprovalRequest {
   tool_name: string;
   tool_input: Record<string, any>;
   created_at: string;
+  sensitive_pattern?: string | null;
+  sensitive_label?: string | null;
+  sensitive_why?: string | null;
 }
 
 export interface MessageBranch {
@@ -377,16 +380,18 @@ export const handleApproval = createAsyncThunk(
     behavior,
     message,
     updatedInput,
+    trustPattern,
   }: {
     requestId: string;
     behavior: 'allow' | 'deny';
     message?: string;
     updatedInput?: Record<string, any>;
+    trustPattern?: boolean;
   }) => {
     const res = await fetch(`${AGENTS_API}/approval`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ request_id: requestId, behavior, message, updated_input: updatedInput }),
+      body: JSON.stringify({ request_id: requestId, behavior, message, updated_input: updatedInput, trust_pattern: !!trustPattern }),
     });
     if (!res.ok) {
       throw new Error(`Approval request failed (${res.status})`);

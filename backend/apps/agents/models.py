@@ -20,12 +20,28 @@ class ApprovalRequest(BaseModel):
     tool_name: str
     tool_input: dict[str, Any]
     created_at: datetime = Field(default_factory=datetime.now)
+    # Set when this approval was triggered by the sensitive-path override
+    # rather than the user's normal "ask" policy. Three correlated fields:
+    #   - sensitive_pattern: the fnmatch pattern (canonical id; what we
+    #     persist into the trusted allowlist if the user opts in).
+    #   - sensitive_label: short human label (e.g. "SSH folder (~/.ssh)").
+    #   - sensitive_why: plain-English risk explanation; lets the modal
+    #     justify itself to a non-developer.
+    # All three None for ordinary "ask" approvals.
+    sensitive_pattern: Optional[str] = None
+    sensitive_label: Optional[str] = None
+    sensitive_why: Optional[str] = None
 
 class ApprovalResponse(BaseModel):
     request_id: str
     behavior: Literal["allow", "deny"]
     message: Optional[str] = None
     updated_input: Optional[dict[str, Any]] = None
+    # When the user checked "Always allow files like this" on a sensitive-
+    # path approval, the backend persists the matched fnmatch pattern
+    # (from ApprovalRequest.sensitive_pattern) to disk so future writes
+    # against the same pattern skip the modal.
+    trust_pattern: bool = False
 
 class Message(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)

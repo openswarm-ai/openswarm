@@ -26,7 +26,7 @@ OPENSWARM_OAUTH_BASE_URL = os.environ.get(
     "OPENSWARM_OAUTH_BASE_URL", "https://api.openswarm.com"
 ).rstrip("/")
 
-from backend.config.paths import BACKEND_DIR, DATA_ROOT, TOOLS_DIR as DATA_DIR, BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH
+from backend.config.paths import BACKEND_DIR, DATA_ROOT, TOOLS_DIR as DATA_DIR, BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH, TRUSTED_SENSITIVE_PATHS_PATH
 
 load_dotenv(os.path.join(BACKEND_DIR, ".env"))
 if os.environ.get("OPENSWARM_PACKAGED") == "1":
@@ -105,9 +105,49 @@ def save_builtin_permissions(perms: dict[str, str]):
         json.dump(perms, f, indent=2)
 
 
+def load_trusted_sensitive_paths() -> list[str]:
+    if not os.path.exists(TRUSTED_SENSITIVE_PATHS_PATH):
+        return []
+    try:
+        with open(TRUSTED_SENSITIVE_PATHS_PATH) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+    raw = data.get("patterns") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return []
+    return [p for p in raw if isinstance(p, str) and p]
+
+
+def save_trusted_sensitive_paths(patterns: list[str]):
+    os.makedirs(os.path.dirname(TRUSTED_SENSITIVE_PATHS_PATH), exist_ok=True)
+    seen: list[str] = []
+    for p in patterns:
+        if isinstance(p, str) and p and p not in seen:
+            seen.append(p)
+    with open(TRUSTED_SENSITIVE_PATHS_PATH, "w") as f:
+        json.dump({"patterns": seen}, f, indent=2)
+
+
 @tools_lib.router.get("/builtin/permissions")
 async def get_builtin_permissions():
     return {"permissions": load_builtin_permissions()}
+
+
+@tools_lib.router.get("/trusted-sensitive-paths")
+async def get_trusted_sensitive_paths():
+    """Patterns the user has opted into always-allow for sensitive-path writes."""
+    return {"patterns": load_trusted_sensitive_paths()}
+
+
+@tools_lib.router.put("/trusted-sensitive-paths")
+async def replace_trusted_sensitive_paths(body: dict):
+    """Replace the full list; Settings page uses this to revoke entries."""
+    incoming = body.get("patterns") or []
+    if not isinstance(incoming, list):
+        return {"patterns": load_trusted_sensitive_paths()}
+    save_trusted_sensitive_paths([p for p in incoming if isinstance(p, str) and p])
+    return {"patterns": load_trusted_sensitive_paths()}
 
 
 @tools_lib.router.put("/builtin/permissions")

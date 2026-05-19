@@ -543,6 +543,9 @@ class WebSocketManager {
               tool_name: data.tool_name,
               tool_input: data.tool_input,
               created_at: new Date().toISOString(),
+              sensitive_pattern: data.sensitive_pattern ?? null,
+              sensitive_label: data.sensitive_label ?? null,
+              sensitive_why: data.sensitive_why ?? null,
             },
           }));
         }

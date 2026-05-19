@@ -6,6 +6,9 @@ import TextField from '@mui/material/TextField';
 import Chip from '@mui/material/Chip';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import SendIcon from '@mui/icons-material/Send';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
@@ -160,7 +163,7 @@ function getMcpInputSummary(actionName: string, toolInput: Record<string, any>):
 
 interface Props {
   request: ApprovalRequest;
-  onApprove: (requestId: string, updatedInput?: Record<string, any>) => void;
+  onApprove: (requestId: string, updatedInput?: Record<string, any>, trustPattern?: boolean) => void;
   onDeny: (requestId: string, message?: string) => void;
 }
 
@@ -302,7 +305,7 @@ type Answers = Record<number, string | string[]>;
 
 export interface QuestionFormProps {
   request: ApprovalRequest;
-  onApprove: (requestId: string, updatedInput?: Record<string, any>) => void;
+  onApprove: (requestId: string, updatedInput?: Record<string, any>, trustPattern?: boolean) => void;
   onDeny: (requestId: string, message?: string) => void;
   compact?: boolean;
 }
@@ -561,12 +564,14 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
   const [denyMessage, setDenyMessage] = useState('');
   const [showDenyInput, setShowDenyInput] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [trustPattern, setTrustPattern] = useState(false);
 
   const parsed = useMemo(() => parseMcpToolName(request.tool_name), [request.tool_name]);
   const meta = useMcpToolMeta(parsed);
 
   const accentColor = meta.integration?.color || c.status.warning;
   const summary = parsed.isMcp ? getMcpInputSummary(parsed.actionName, request.tool_input) : '';
+  const isSensitive = !!request.sensitive_pattern;
 
   if (!parsed.isMcp) {
     return (
@@ -585,7 +590,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
             {getToolIcon(request.tool_name)}
           </Box>
           <Typography sx={{ color: c.status.warning, fontWeight: 700, fontSize: '0.85rem' }}>
-            Permission Required
+            {isSensitive ? 'Sensitive file' : 'Permission Required'}
           </Typography>
           <Chip
             label={request.tool_name}
@@ -602,9 +607,61 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
           />
         </Box>
 
+        {isSensitive && (
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 1,
+              alignItems: 'flex-start',
+              bgcolor: 'rgba(181,51,51,0.08)',
+              border: '1px solid rgba(181,51,51,0.25)',
+              borderRadius: 1.5,
+              px: 1.25,
+              py: 1,
+              mb: 1.25,
+            }}
+          >
+            <WarningAmberIcon sx={{ fontSize: 18, color: c.status.error, mt: 0.1, flexShrink: 0 }} />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.82rem', lineHeight: 1.3 }}>
+                This file is sensitive: {request.sensitive_label}
+              </Typography>
+              {request.sensitive_why && (
+                <Typography sx={{ color: c.text.secondary, fontSize: '0.78rem', lineHeight: 1.35, mt: 0.3 }}>
+                  {request.sensitive_why} OpenSwarm asks every time because a bad change here is hard to undo. Approve only if you asked for this.
+                </Typography>
+              )}
+            </Box>
+          </Box>
+        )}
+
         <Box sx={{ mb: 1.5 }}>
           <ToolPreview request={request} tokens={c} />
         </Box>
+
+        {isSensitive && (
+          <FormControlLabel
+            sx={{
+              mb: 1,
+              ml: 0,
+              alignItems: 'flex-start',
+              '& .MuiFormControlLabel-label': { fontSize: '0.78rem', color: c.text.secondary, lineHeight: 1.35, pt: 0.5 },
+            }}
+            control={
+              <Checkbox
+                size="small"
+                checked={trustPattern}
+                onChange={(e) => setTrustPattern(e.target.checked)}
+                sx={{ p: 0.5, color: c.text.tertiary, '&.Mui-checked': { color: c.status.warning } }}
+              />
+            }
+            label={
+              <>
+                Always allow files like this <strong>({request.sensitive_label})</strong>. You can change this later in Settings &rarr; Trusted file patterns.
+              </>
+            }
+          />
+        )}
 
         {showDenyInput && (
           <TextField
@@ -629,7 +686,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
           <Button
             variant="contained"
             startIcon={<CheckIcon />}
-            onClick={() => onApprove(request.id)}
+            onClick={() => onApprove(request.id, undefined, isSensitive && trustPattern)}
             sx={{ bgcolor: c.status.success, '&:hover': { bgcolor: '#1e4d15' }, fontWeight: 600, fontSize: '0.8rem' }}
           >
             Approve
@@ -856,7 +913,7 @@ interface ToolGroup {
 
 interface BatchApprovalBarProps {
   requests: ApprovalRequest[];
-  onApprove: (requestId: string, updatedInput?: Record<string, any>) => void;
+  onApprove: (requestId: string, updatedInput?: Record<string, any>, trustPattern?: boolean) => void;
   onDeny: (requestId: string, message?: string) => void;
 }
 
@@ -996,7 +1053,7 @@ interface GroupRowProps {
   group: ToolGroup;
   expanded: boolean;
   onToggle: () => void;
-  onApprove: (requestId: string, updatedInput?: Record<string, any>) => void;
+  onApprove: (requestId: string, updatedInput?: Record<string, any>, trustPattern?: boolean) => void;
   onDeny: (requestId: string, message?: string) => void;
   onApproveGroup: () => void;
   onDenyGroup: () => void;

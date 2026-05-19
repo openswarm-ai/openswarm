@@ -179,7 +179,20 @@ def _decode_data_param(d: str) -> tuple[str, str]:
 async def outputs_lifespan():
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(WORKSPACE_DIR, exist_ok=True)
-    yield
+    try:
+        yield
+    finally:
+        # Reap every per-app subprocess. Without this each `bash run.sh`
+        # (and its vite/uvicorn descendants) reparents to PID 1 when the
+        # main backend dies, leaving ghost listeners on the .env-pinned
+        # ports that block the next OpenSwarm launch's reload preview.
+        try:
+            from backend.apps.outputs.runtime import manager as runtime_manager
+            killed = await runtime_manager.stop_all()
+            if killed:
+                logger.info("outputs lifespan: reaped %d workspace runtimes on shutdown", killed)
+        except Exception:
+            logger.exception("outputs lifespan: stop_all failed")
 
 
 outputs = SubApp("outputs", outputs_lifespan)
@@ -578,6 +591,17 @@ async def runtime_restart(workspace_id: str):
 @outputs.router.get("/workspace/{workspace_id}/runtime/status")
 async def runtime_get_status(workspace_id: str):
     return _runtime_status_payload(workspace_id)
+
+
+@outputs.router.post("/shutdown-all")
+async def runtime_shutdown_all():
+    """Reap every workspace subprocess. Electron POSTs this during
+    will-quit so app subprocesses die BEFORE the main backend gets
+    SIGTERM'd; without it `bash run.sh` + its vite/uvicorn descendants
+    reparent to PID 1 and squat on .env-pinned ports forever."""
+    from backend.apps.outputs.runtime import manager as runtime_manager
+    killed = await runtime_manager.stop_all()
+    return {"ok": True, "killed": killed}
 
 
 @outputs.router.put("/workspace/{workspace_id}/file/{filepath:path}")

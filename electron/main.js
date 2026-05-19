@@ -985,20 +985,51 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
+// Ask the backend to reap every per-app subprocess (bash run.sh / vite /
+// uvicorn descendants) BEFORE we SIGTERM the backend itself. SIGTERM on
+// the backend PID doesn't propagate to those children, so without this
+// they reparent to PID 1 and squat on the workspace's .env-pinned ports,
+// breaking the NEXT launch's app reload. Fire-and-forget with a hard
+// timeout so a wedged backend can't block quit indefinitely.
+function postShutdownAllApps(timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    if (!backendPort) return resolve();
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: backendPort,
+      path: '/api/outputs/shutdown-all',
+      method: 'POST',
+      headers: authToken
+        ? { 'Authorization': `Bearer ${authToken}`, 'Content-Length': 0 }
+        : { 'Content-Length': 0 },
+      timeout: timeoutMs,
+    }, (res) => {
+      res.on('data', () => {});
+      res.on('end', resolve);
+    });
+    req.on('error', () => resolve());
+    req.on('timeout', () => { try { req.destroy(); } catch (_) {} resolve(); });
+    req.end();
+  });
+}
+
 let drainingForQuit = false;
 app.on('before-quit', async (event) => {
-  // Drain in-flight runs (up to 30s) so we don't destroy paid LLM work.
   if (drainingForQuit) return;
+  event.preventDefault();
+  drainingForQuit = true;
   try {
+    // Drain in-flight workflow runs (up to 30s) so we don't destroy paid LLM work.
     const active = await workflowsLifecycle.getActive();
     if (active && active.length > 0) {
-      event.preventDefault();
-      drainingForQuit = true;
       tray.setStatus({ activeTitle: active[0]?.title || 'workflow', paused: false });
       await workflowsLifecycle.drainOnQuit(30);
-      app.quit();
     }
   } catch (_) {}
+  try {
+    await postShutdownAllApps(2000);
+  } catch (_) {}
+  app.quit();
 });
 
 app.on('will-quit', () => {
