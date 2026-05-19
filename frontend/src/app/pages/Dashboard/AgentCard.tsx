@@ -295,6 +295,7 @@ const AgentCard: React.FC<Props> = ({
   const isDashboardActive = useDashboardActive();
   const hasApiKey = !!useAppSelector((s) => s.settings.data.anthropic_api_key);
   const modelsByProvider = useAppSelector((s) => s.models.byProvider);
+  const expandedSessionIds = useAppSelector((s) => s.agents.expandedSessionIds);
   // Curated picker label with a tidy fallback for unknowns.
   const friendlyModelLabel = useMemo(() => {
     const value = session.model;
@@ -945,6 +946,7 @@ const AgentCard: React.FC<Props> = ({
                     dispatch(addWorkflowCard({
                       workflowId: tempId,
                       sourceSessionId: session.id,
+                      expandedSessionIds,
                     }));
                     dispatch(openWorkflowCard({
                       workflowId: tempId,

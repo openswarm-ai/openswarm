@@ -1,6 +1,8 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import CheckIcon from '@mui/icons-material/Check';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 export const BODY_FS = '0.88rem';
@@ -42,8 +44,8 @@ export function ActionBtn({ label, tone, disabled, onClick, icon }: { label: str
         opacity: disabled ? 0.5 : 1,
         '&:hover': { bgcolor: palette.hover },
       }}>
-      {icon === 'trash' && <Box component="span" sx={{ fontSize: 13, lineHeight: 1 }}>{'\u{1F5D1}'}</Box>}
-      {icon === 'check' && <Box component="span" sx={{ fontSize: 13, lineHeight: 1 }}>{'✓'}</Box>}
+      {icon === 'trash' && <DeleteOutlineIcon sx={{ fontSize: 15 }} />}
+      {icon === 'check' && <CheckIcon sx={{ fontSize: 15 }} />}
       {label}
     </Box>
   );

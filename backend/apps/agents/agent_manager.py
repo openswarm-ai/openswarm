@@ -186,7 +186,6 @@ FULL_TOOLS = [
     "WebSearch", "WebFetch", "NotebookEdit", "TodoWrite",
     "EnterPlanMode", "ExitPlanMode", "EnterWorktree",
     "TaskOutput", "TaskStop",
-    "CronCreate", "CronList", "CronDelete",
     "InvokeAgent",
     "Agent",
     # ToolSearch is the loader the CLI uses to expose deferred tool schemas
@@ -666,6 +665,15 @@ class AgentManager:
             "gate and don't share auth with this app. If the user wants Gmail/"
             "Calendar/Drive, the equivalent OpenSwarm server is listed below; "
             "activate that one via MCPActivate instead."
+        )
+        sections.append(
+            "1b. NEVER call CronCreate, CronList, CronDelete, ScheduleWakeup, "
+            "PushNotification, RemoteTrigger, or any Task* tool. Those are "
+            "claude.ai Routines/Tasks; OpenSwarm has its own scheduler that "
+            "the user drives by clicking 'Schedule this task' on the chat "
+            "card. If the user asks to schedule something, do the work once, "
+            "then tell them to click that button. Do not propose a routine, "
+            "do not say 'I'll schedule it', do not call any scheduling tool."
         )
         sections.append(
             "2. After MCPActivate returns, end the turn; a follow-up turn fires "
@@ -2305,8 +2313,25 @@ class AgentManager:
             # here, and confuse the model into picking the partner shim
             # instead of our vetted server. Hard-block them at the SDK
             # layer so the model can't even attempt the call.
+            # claude.ai partner shims and claude.ai's Routines/Tasks
+            # product compete with OpenSwarm's own MCP gate and workflow
+            # scheduler. Block them at the SDK so the model can't reach
+            # for them even when it's tempted. OpenSwarm scheduling is
+            # user-initiated via the "Schedule this task" UI, not
+            # something the agent calls a tool to set up.
             options_kwargs["disallowed_tools"] = [
                 "mcp__claude_ai_*",
+                "Skill",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
+                "PushNotification",
+                "RemoteTrigger",
+                "ScheduleWakeup",
+                "TaskCreate",
+                "TaskGet",
+                "TaskList",
+                "TaskUpdate",
             ]
 
             if session.cwd:

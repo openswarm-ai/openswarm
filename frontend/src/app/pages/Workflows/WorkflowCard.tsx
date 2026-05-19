@@ -4,11 +4,6 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Snackbar from '@mui/material/Snackbar';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
-import Button from '@mui/material/Button';
 import CloseIcon from '@mui/icons-material/Close';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import HistoryIcon from '@mui/icons-material/HistoryRounded';
@@ -20,7 +15,6 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   closeWorkflowCard,
-  deleteWorkflow,
   fetchRuns,
   openWorkflowCard as openWorkflowCardAction,
   rekeyOpenCard,
@@ -30,15 +24,21 @@ import {
   type Workflow,
 } from '@/shared/state/workflowsSlice';
 import {
+  DEFAULT_CARD_H,
+  DEFAULT_CARD_W,
+  placeCard,
   rekeyWorkflowCard,
   removeWorkflowCard,
   setWorkflowCardPosition,
   setWorkflowCardSize,
 } from '@/shared/state/dashboardLayoutSlice';
+import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
+import { fetchSession } from '@/shared/state/agentsSlice';
 import { AnimatePresence, motion } from 'framer-motion';
 import WorkflowEditViews from './WorkflowEditViews';
 import { HistoryDetail, HistoryList, PreviewView, SavedView } from './WorkflowCardSubviews';
 import { StatusDot, RunSparkline, LastFiredHint, isStaleSinceLastRun } from './workflowVisuals';
+import { store } from '@/shared/state/store';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -99,6 +99,7 @@ const WorkflowCard: React.FC<Props> = ({
   const card = useAppSelector((s) => s.workflows.openCards[workflowId]);
   const workflow = useAppSelector((s) => s.workflows.items[workflowId]);
   const runs = useAppSelector((s) => s.workflows.runs[workflowId]);
+  const expandedSessionIds = useAppSelector((s) => s.agents.expandedSessionIds);
   // Transient "Starting…" label state on the Run button. See onClick handler
   // for the full rationale (avoid no-feedback flicker on fast manual runs).
   const [runStarting, setRunStarting] = useState(false);
@@ -329,34 +330,13 @@ const WorkflowCard: React.FC<Props> = ({
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   }, [computeResize, dispatch, workflowId]);
 
-  // ---- Close: drop transient view state AND remove from layout ----
-  // Two-step when the schedule is on: a quiet X would make the workflow
-  // a "ghost" (still firing on a hidden timer) which surprises users who
-  // mentally model X as "throw away." Confirm-then-act lets them choose
-  // between hiding the card and actually killing the schedule.
-  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
-  const hardClose = useCallback(() => {
+  // X just hides the card. Schedule keeps firing in the background; the
+  // user can re-open from the Workflows hub. A confirm dialog here was
+  // more friction than value (users clicked through it without reading).
+  const onClose = useCallback(() => {
     dispatch(closeWorkflowCard(workflowId));
     dispatch(removeWorkflowCard(workflowId));
   }, [dispatch, workflowId]);
-  const onClose = useCallback(() => {
-    if (workflow?.schedule?.enabled) {
-      setCloseConfirmOpen(true);
-      return;
-    }
-    hardClose();
-  }, [workflow?.schedule?.enabled, hardClose]);
-  const onConfirmHide = useCallback(() => {
-    setCloseConfirmOpen(false);
-    hardClose();
-  }, [hardClose]);
-  const onConfirmStopAndDelete = useCallback(async () => {
-    setCloseConfirmOpen(false);
-    if (workflow?.id) {
-      await dispatch(deleteWorkflow(workflow.id));
-    }
-    hardClose();
-  }, [dispatch, workflow?.id, hardClose]);
 
   // ---- Display calculations ----
   const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
@@ -369,9 +349,6 @@ const WorkflowCard: React.FC<Props> = ({
 
   if (!card) return null;
 
-  // A "running" run is one that's actively executing right now. While
-  // running, the card grows a subtle conic-gradient halo + a faint title
-  // pulse so a glance at the canvas tells you something's working.
   const isRunning = (runs || []).some((r) => r.status === 'running') || workflow?.last_run_status === 'running';
 
   // Hairline border for the default idle state (item #19 in target #54
@@ -399,7 +376,6 @@ const WorkflowCard: React.FC<Props> = ({
       data-select-type="workflow-card"
       data-select-id={workflowId}
       data-select-meta={JSON.stringify({ name: title })}
-      data-running={isRunning ? 'true' : undefined}
       onPointerDownCapture={() => onBringToFront?.(workflowId, 'workflow')}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
@@ -426,43 +402,6 @@ const WorkflowCard: React.FC<Props> = ({
         zIndex: (isDragging || isResizing) ? 999999 : cardZOrder,
         transition: noTransition ? 'none' : 'box-shadow 0.4s ease, border 0.3s ease',
         '&:hover .resize-handle': { opacity: 1 },
-        // Running halo: conic-gradient sweep around the card border + a
-        // faint inner glow. Lives on ::before so the card body stays
-        // crisp and isn't redrawn each frame. Only renders when the
-        // data-running attribute is set (no perf cost when idle).
-        '&[data-running="true"]::before': {
-          content: '""',
-          position: 'absolute',
-          inset: -1,
-          borderRadius: '15px',
-          padding: '1.5px',
-          background: `conic-gradient(from 0deg, transparent 0deg, ${c.accent.primary} 60deg, transparent 120deg, transparent 240deg, ${c.accent.primary} 300deg, transparent 360deg)`,
-          WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
-          WebkitMaskComposite: 'xor',
-          maskComposite: 'exclude',
-          animation: 'workflowRunSweep 2.4s linear infinite',
-          pointerEvents: 'none',
-          zIndex: 0,
-          opacity: 0.85,
-        },
-        '&[data-running="true"]::after': {
-          content: '""',
-          position: 'absolute',
-          inset: 0,
-          borderRadius: '14px',
-          background: `radial-gradient(120% 80% at 50% 0%, ${c.accent.primary}10 0%, transparent 60%)`,
-          animation: 'workflowRunPulse 2.4s ease-in-out infinite',
-          pointerEvents: 'none',
-          zIndex: 0,
-        },
-        '@keyframes workflowRunSweep': {
-          '0%':   { transform: 'rotate(0deg)' },
-          '100%': { transform: 'rotate(360deg)' },
-        },
-        '@keyframes workflowRunPulse': {
-          '0%, 100%': { opacity: 0.5 },
-          '50%':      { opacity: 1 },
-        },
       }}
     >
       {/* ===== Title bar / drag handle =====
@@ -664,7 +603,31 @@ const WorkflowCard: React.FC<Props> = ({
         {card.view === 'history' && workflow && (
           <HistoryList
             runs={runs || []}
-            onOpen={(run) => dispatch(updateWorkflowCard({ workflowId, patch: { view: 'history_detail', historyRunId: run.id } }))}
+            onOpen={async (run) => {
+              if (!run.session_id) {
+                dispatch(updateWorkflowCard({ workflowId, patch: { view: 'history_detail', historyRunId: run.id } }));
+                return;
+              }
+              const sid = run.session_id;
+              if (!store.getState().agents.sessions[sid]) {
+                try { await dispatch(fetchSession(sid)).unwrap(); } catch { /* fall back to detail */ }
+              }
+              if (!store.getState().agents.sessions[sid]) {
+                dispatch(updateWorkflowCard({ workflowId, patch: { view: 'history_detail', historyRunId: run.id } }));
+                return;
+              }
+              if (!store.getState().dashboardLayout.cards[sid]) {
+                dispatch(placeCard({
+                  sessionId: sid,
+                  x: cardX + cardWidth + 60,
+                  y: cardY,
+                  width: DEFAULT_CARD_W,
+                  height: DEFAULT_CARD_H,
+                  expandedSessionIds,
+                }));
+              }
+              dispatch(setPendingFocusAgentId(sid));
+            }}
           />
         )}
         {card.view === 'history_detail' && workflow && (
@@ -725,21 +688,6 @@ const WorkflowCard: React.FC<Props> = ({
         message={runToast || ''}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
-      {/* Ghost-protection dialog: only opens when an enabled-schedule
-          card is X'd out. Cancel keeps the card; "Hide card" closes
-          but leaves the schedule alive; "Stop & delete" wipes the
-          workflow entirely. */}
-      <Dialog open={closeConfirmOpen} onClose={() => setCloseConfirmOpen(false)}>
-        <DialogTitle>Close this workflow card?</DialogTitle>
-        <DialogContent>
-          The schedule will keep firing in the background even after you close this card. Choose what you want to happen.
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCloseConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={onConfirmHide}>Hide card (schedule keeps running)</Button>
-          <Button color="error" onClick={onConfirmStopAndDelete}>Stop &amp; delete</Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };

@@ -26,8 +26,6 @@ export default function WorkflowEditViews({ workflow, facet, onChangeFacet, onDi
   const dispatch = useAppDispatch();
   const [draft, setDraft] = useState<Workflow>(workflow);
   const [busy, setBusy] = useState(false);
-  // Save-feedback state. `savedFlash` flashes a checkmark for 1.4s then
-  // auto-clears; `saveError` carries a string the user can read.
   const [savedFlash, setSavedFlash] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -39,20 +37,9 @@ export default function WorkflowEditViews({ workflow, facet, onChangeFacet, onDi
   // a stale "you have unsaved changes" dot on the tab.
   useEffect(() => () => { onDirtyChange?.(false); }, [onDirtyChange]);
 
-  // Auto-save on a quiet idle. We debounce 800ms after the last edit so
-  // rapid typing doesn't fire dozens of PATCHes. Validation still gates
-  // the network call so bad drafts (empty phone, etc.) don't auto-save
-  // a broken state. Explicit Save still works for users who want it.
-  useEffect(() => {
-    if (!dirty || busy) return;
-    if (validateDraft(draft)) return; // skip auto-save while invalid
-    const handle = window.setTimeout(() => { onSaveRef.current?.(); }, 800);
-    return () => window.clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, dirty, busy]);
-  // onSave refs itself so the effect above doesn't depend on it.
-  const onSaveRef = React.useRef<(() => Promise<void>) | null>(null);
-
+  // Save is explicit only. The previous auto-save raced the Save button:
+  // the user toggled a field, autosave fired 800ms later, dirty went
+  // false, and a manual Save click became a no-op.
   const onSave = useCallback(async () => {
     if (busy || !dirty) return;
     const reason = validateDraft(draft);
@@ -72,6 +59,11 @@ export default function WorkflowEditViews({ workflow, facet, onChangeFacet, onDi
         ifMatch: workflow.updated_at || null,
       }));
       if (updateWorkflow.fulfilled.match(result)) {
+        // Rebase the draft on the server's echoed copy. Without this,
+        // `dirty` would stay true after Save (because updated_at differs)
+        // and the user would see a phantom "unsaved" state.
+        const saved = result.payload as Workflow;
+        if (saved) setDraft(saved);
         setSavedFlash(true);
         setTimeout(() => setSavedFlash(false), 1400);
       } else if (result.payload?.kind === 'stale') {
@@ -85,10 +77,6 @@ export default function WorkflowEditViews({ workflow, facet, onChangeFacet, onDi
       setBusy(false);
     }
   }, [busy, dirty, dispatch, workflow.id, workflow.updated_at, draft]);
-
-  // Keep the ref pointing at the latest onSave so the auto-save effect
-  // can call it without re-subscribing on every keystroke.
-  useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
 
   const onDiscard = useCallback(() => {
     setDraft(workflow);
@@ -109,32 +97,36 @@ export default function WorkflowEditViews({ workflow, facet, onChangeFacet, onDi
           Discard + Save are the same pill-style buttons used at the
           bottom of SavedView; placing them here gives the user a single
           place to commit OR throw away whatever they just edited. */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-        <Typography sx={{ fontSize: LABEL_FS, color: c.text.secondary, fontWeight: 500 }}>Currently Editing</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'nowrap', minWidth: 0 }}>
+        <Typography sx={{ fontSize: LABEL_FS, color: c.text.secondary, fontWeight: 500, flexShrink: 0 }}>Currently Editing</Typography>
         <Select
           size="small"
           value={facet}
           onChange={(e) => onChangeFacet(e.target.value as Props['facet'])}
-          sx={{ fontSize: LABEL_FS, '& .MuiSelect-select': { py: 0.4 } }}>
+          sx={{ fontSize: LABEL_FS, minWidth: 0, '& .MuiSelect-select': { py: 0.4 } }}>
           <MenuItem value="General">General</MenuItem>
           <MenuItem value="Actions">Actions</MenuItem>
           <MenuItem value="Schedule">Schedule</MenuItem>
         </Select>
-        <Box sx={{ flex: 1 }} />
-        <ActionBtn
-          label="Discard"
-          tone="danger"
-          icon="trash"
-          disabled={!dirty || busy}
-          onClick={onDiscard}
-        />
-        <ActionBtn
-          label={busy ? 'Saving…' : 'Save'}
-          tone="success"
-          icon="check"
-          disabled={!dirty || busy || saveState === 'saved'}
-          onClick={onSave}
-        />
+        <Box sx={{ flex: 1, minWidth: 0 }} />
+        <Box sx={{ display: 'inline-flex', flexShrink: 0 }}>
+          <ActionBtn
+            label="Discard"
+            tone="danger"
+            icon="trash"
+            disabled={!dirty || busy}
+            onClick={onDiscard}
+          />
+        </Box>
+        <Box sx={{ display: 'inline-flex', flexShrink: 0, minWidth: 80, justifyContent: 'center' }}>
+          <ActionBtn
+            label={busy ? 'Saving…' : 'Save'}
+            tone="success"
+            icon="check"
+            disabled={!dirty || busy || saveState === 'saved'}
+            onClick={onSave}
+          />
+        </Box>
       </Box>
 
       {saveError && (

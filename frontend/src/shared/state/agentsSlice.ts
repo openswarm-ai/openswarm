@@ -1000,6 +1000,8 @@ const agentsSlice = createSlice({
               ? existing.pending_approvals
               : s.pending_approvals ?? [],
             tool_group_meta: { ...existing?.tool_group_meta, ...s.tool_group_meta },
+            mcp_suggestions: existing?.mcp_suggestions ?? [],
+            mcp_suggestions_is_vague: existing?.mcp_suggestions_is_vague ?? false,
           };
           if (activeStatuses.has(s.status) && !state.trackedNotificationIds.includes(s.id)) {
             state.trackedNotificationIds.push(s.id);
@@ -1181,6 +1183,12 @@ const agentsSlice = createSlice({
           ...session,
           pending_approvals: session.pending_approvals ?? existing?.pending_approvals ?? [],
           tool_group_meta: session.tool_group_meta ?? existing?.tool_group_meta ?? {},
+          // mcp_suggestions live in client state only (the backend never
+          // returns them in the session payload). Preserve them across
+          // refresh so the suggestion banner stays put until the user
+          // dismisses it or activates one.
+          mcp_suggestions: existing?.mcp_suggestions ?? [],
+          mcp_suggestions_is_vague: existing?.mcp_suggestions_is_vague ?? false,
         };
       })
       .addCase(fetchSession.rejected, (state, action) => {

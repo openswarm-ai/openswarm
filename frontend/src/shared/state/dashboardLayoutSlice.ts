@@ -630,7 +630,12 @@ const dashboardLayoutSlice = createSlice({
         state.pendingFocusWorkflowId = workflowId;
         return;
       }
-      const rects = collectOccupiedRects(state, expandedSessionIds);
+      // Fall back to persistedExpandedSessionIds when the caller didn't
+      // wire the live list through. Without it, collectOccupiedRects sees
+      // every chat at its stored (collapsed) height, and a workflow
+      // spawned from an open chat lands on top of the visibly-tall card.
+      const expanded = expandedSessionIds ?? state.persistedExpandedSessionIds;
+      const rects = collectOccupiedRects(state, expanded);
       let posX: number, posY: number;
       const parentCard = sourceSessionId ? state.cards[sourceSessionId] : null;
       if (parentCard) {
