@@ -59,7 +59,14 @@ jobs:
           fi
           if [ -n "$BEFORE" ] && [ "$BEFORE" != "$AFTER" ]; then
             gitleaks detect --source . --redact --verbose --no-banner --log-opts="${BEFORE}..${AFTER}"
+          elif [ "$BEFORE" = "$AFTER" ]; then
+            # New-branch push pointing at an existing main commit: range
+            # is empty, nothing new to scan. Don't fall through to a full
+            # repo scan — that would re-flag every historical secret a
+            # past PR already cleared. Pass-through.
+            echo "No new commits on this branch vs main; skipping scan."
           else
-            # Couldn't establish a range — full scan as fallback.
+            # Truly couldn't establish a range (e.g. orphan branch with
+            # no shared history). Full scan is the only safe option.
             gitleaks detect --source . --redact --verbose --no-banner
           fi
