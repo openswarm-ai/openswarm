@@ -37,7 +37,12 @@ async def settings_lifespan():
         import asyncio as _asyncio
 
         async def _boot_router_then_sync():
-            """Boot 9Router then push key-based connections (sequential: sync helpers no-op pre-boot)."""
+            """Boot 9Router then push key-based connections (sequential: sync helpers no-op pre-boot).
+
+            9Router's /v1/models endpoint may respond before its /api/providers
+            endpoint is ready to accept connection registrations. We retry the
+            sync up to 3 times with a short delay to handle this race.
+            """
             needs_router = any([
                 getattr(s, "google_api_key", None),
                 getattr(s, "openai_api_key", None),
@@ -50,18 +55,47 @@ async def settings_lifespan():
                     await _9r_ensure()
                 except Exception as e:
                     logger.warning(f"9Router lifespan boot failed: {e}")
-            if getattr(s, "google_api_key", None):
-                await sync_gemini_api_key(s.google_api_key)
-            if getattr(s, "openai_api_key", None):
-                await sync_openai_api_key(s.openai_api_key)
-            if getattr(s, "openrouter_api_key", None):
-                await sync_openrouter_api_key(s.openrouter_api_key)
-            if getattr(s, "connection_mode", None) == "openswarm-pro":
-                bearer = getattr(s, "openswarm_bearer_token", None)
-                proxy = getattr(s, "openswarm_proxy_url", None) or "https://api.openswarm.com"
-                if bearer:
-                    await sync_openswarm_pro_as_claude(bearer, proxy)
-            await sync_custom_providers(getattr(s, "custom_providers", None) or [])
+
+            async def _sync_with_retry(max_attempts: int = 3):
+                for attempt in range(max_attempts):
+                    try:
+                        if getattr(s, "google_api_key", None):
+                            await sync_gemini_api_key(s.google_api_key)
+                        if getattr(s, "openai_api_key", None):
+                            await sync_openai_api_key(s.openai_api_key)
+                        if getattr(s, "openrouter_api_key", None):
+                            await sync_openrouter_api_key(s.openrouter_api_key)
+                        if getattr(s, "connection_mode", None) == "openswarm-pro":
+                            bearer = getattr(s, "openswarm_bearer_token", None)
+                            proxy = getattr(s, "openswarm_proxy_url", None) or "https://api.openswarm.com"
+                            if bearer:
+                                await sync_openswarm_pro_as_claude(bearer, proxy)
+                        await sync_custom_providers(getattr(s, "custom_providers", None) or [])
+
+                        # Verify at least one connection was registered
+                        import httpx as _hx
+                        try:
+                            r = await _hx.AsyncClient(timeout=3.0).get("http://localhost:20128/api/providers")
+                            if r.status_code == 200:
+                                data = r.json()
+                                conns = data.get("connections", []) if isinstance(data, dict) else data
+                                if len(conns) > 0:
+                                    logger.info(f"9Router sync complete: {len(conns)} connection(s) registered")
+                                    return
+                        except Exception:
+                            pass
+
+                        if attempt < max_attempts - 1:
+                            logger.warning(f"9Router sync attempt {attempt + 1}: no connections registered, retrying in 3s...")
+                            await _asyncio.sleep(3)
+                    except Exception as e:
+                        if attempt < max_attempts - 1:
+                            logger.warning(f"9Router sync attempt {attempt + 1} failed: {e}, retrying in 3s...")
+                            await _asyncio.sleep(3)
+                        else:
+                            logger.warning(f"9Router sync failed after {max_attempts} attempts: {e}")
+
+            await _sync_with_retry()
 
         _asyncio.create_task(_boot_router_then_sync())
     except Exception as e:

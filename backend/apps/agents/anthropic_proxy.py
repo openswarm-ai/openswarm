@@ -1,4 +1,20 @@
-"""Anthropic-format HTTP proxy splitting requests by model field; primary to 9Router, aux Claude to Pro proxy."""
+"""Lightweight Anthropic-format HTTP proxy.
+
+When a user is on openswarm-pro with a non-Claude primary (GPT/Gemini/etc.),
+the Claude Code CLI needs a single `ANTHROPIC_BASE_URL` that can serve BOTH:
+
+    1. the primary model calls (e.g. `cx/gpt-5` → must go to 9Router)
+    2. auxiliary Claude calls for subagents, WebSearch delegation
+       (e.g. `claude-haiku-4-5` → must go to OpenSwarm Pro's cloud proxy)
+
+9Router doesn't know about OpenSwarm Pro, and we don't want to maintain a
+custom 9Router provider-node for that. This proxy splits requests by the
+`model` field in the body and forwards each to the correct upstream.
+
+Mounted at `/api/anthropic-proxy`. Set `ANTHROPIC_BASE_URL` to
+`http://127.0.0.1:<backend-port>/api/anthropic-proxy` in the CLI env for
+Pro users with non-Claude primaries.
+"""
 
 import json
 import logging
@@ -32,30 +48,32 @@ _CLAUDE_MODEL_PREFIXES = (
 
 _GEMINI_MODEL_PREFIXES = ("gemini/", "gc/", "ag/")
 
-# Own-key Gemini ("gemini-3-flash-api" etc.) skips the gemini/ prefix; match bare names so $schema scrub still fires.
-_GEMINI_BARE_MODEL_PATTERNS = ("gemini-",)
+_OPENAI_MODEL_PREFIXES = ("gpt-", "cx/", "openai/", "o1", "o3", "o4")
 
-# Keys 9Router 0.3.60 misses that Gemini's function_declarations validator 400s on. Each was caught in prod.
+
+def _fix_openai_max_tokens(body: bytes) -> bytes:
+    """Rename max_tokens → max_completion_tokens for OpenAI models that require it."""
+    if not body:
+        return body
+    try:
+        parsed = json.loads(body)
+    except Exception:
+        return body
+    if isinstance(parsed, dict) and "max_tokens" in parsed and "max_completion_tokens" not in parsed:
+        parsed["max_completion_tokens"] = parsed.pop("max_tokens")
+        return json.dumps(parsed).encode("utf-8")
+    return body
+
+# Fields Gemini's function_declarations validator rejects. 9Router 0.3.60's
+# translator strips allOf/anyOf/oneOf/const-toplevel/required but misses these.
 _GEMINI_FORBIDDEN_SCHEMA_KEYS = {
     "$schema",
-    "$id",
-    "$ref",
-    "$defs",
-    "definitions",
     "additionalProperties",
     "propertyNames",
     "patternProperties",
     "exclusiveMinimum",
     "exclusiveMaximum",
-    "const",
-    "prefill",
-    "enumTitles",
-    "title",
-    "examples",
-    "default",
-    "readOnly",
-    "writeOnly",
-    "deprecated",
+    "const",  # nested const leaks through 9Router's top-level-only strip.
 }
 
 
@@ -73,41 +91,6 @@ def _scrub_gemini_schema(node):
             node[i] = _scrub_gemini_schema(v)
         return node
     return node
-
-
-# GPT-5.x rejects max_tokens; needs max_completion_tokens. Anthropic-format wire still emits max_tokens; we rename on the way out.
-_OPENAI_MAX_COMPLETION_TOKENS_MODELS = ("gpt-5",)
-
-
-def _is_openai_max_completion_tokens_model(model: str) -> bool:
-    """Match every shape a GPT-5 name might arrive in (bare, api-suffixed, openai/-prefixed, cx/-routed)."""
-    m = (model or "").strip().lower()
-    if not m:
-        return False
-    for prefix in ("openai/", "cx/", "openrouter/", "or:openai/", "cp/", "cp-"):
-        if m.startswith(prefix):
-            m = m[len(prefix):]
-            break
-    return any(m.startswith(p) for p in _OPENAI_MAX_COMPLETION_TOKENS_MODELS)
-
-
-def _scrub_request_for_openai_gpt5(body: bytes) -> bytes:
-    """Rename max_tokens to max_completion_tokens for GPT-5; bytes in/out, never raises."""
-    if not body:
-        return body
-    try:
-        parsed = json.loads(body)
-    except Exception:
-        return body
-    if not isinstance(parsed, dict):
-        return body
-    if "max_tokens" in parsed and "max_completion_tokens" not in parsed:
-        parsed["max_completion_tokens"] = parsed.pop("max_tokens")
-        return json.dumps(parsed).encode("utf-8")
-    if "max_tokens" in parsed and "max_completion_tokens" in parsed:
-        parsed.pop("max_tokens", None)
-        return json.dumps(parsed).encode("utf-8")
-    return body
 
 
 def _scrub_request_for_gemini(body: bytes) -> bytes:
@@ -130,7 +113,8 @@ def _scrub_request_for_gemini(body: bytes) -> bytes:
     return json.dumps(parsed).encode("utf-8")
 
 
-# Hop-by-hop headers or auth we replace with the upstream-specific value.
+# Headers we strip before forwarding — these change hop-by-hop or we
+# replace them with upstream-specific auth.
 _HOP_HEADERS = {
     "host",
     "content-length",
@@ -154,12 +138,12 @@ def _is_claude_model(model: str) -> bool:
 
 def _is_gemini_model(model: str) -> bool:
     m = (model or "").strip().lower()
-    if m.startswith(_GEMINI_MODEL_PREFIXES):
-        return True
-    # Bare-name match for own-key Gemini; excludes anthropic-routed gemini (those carry "/").
-    if "/" in m:
-        return False
-    return any(m.startswith(p) for p in _GEMINI_BARE_MODEL_PATTERNS)
+    return m.startswith(_GEMINI_MODEL_PREFIXES)
+
+
+def _is_openai_model(model: str) -> bool:
+    m = (model or "").strip().lower()
+    return m.startswith(_OPENAI_MODEL_PREFIXES)
 
 
 def _pick_upstream(model: str) -> tuple[str, dict[str, str]]:
@@ -168,12 +152,15 @@ def _pick_upstream(model: str) -> tuple[str, dict[str, str]]:
     s = load_settings()
 
     if _is_claude_model(model):
+        # Prefer Pro cloud proxy when configured.
         if getattr(s, "connection_mode", "own_key") == "openswarm-pro":
             bearer = getattr(s, "openswarm_bearer_token", "") or ""
             proxy = (getattr(s, "openswarm_proxy_url", "") or "https://api.openswarm.com").rstrip("/")
             if bearer and proxy:
                 return (proxy, {"Authorization": f"Bearer {bearer}"})
+        # Fall through — let 9Router handle it (maybe user has a real Claude sub).
 
+    # Default: 9Router for everything else (cx/, gc/, gh/, apikey-routed models).
     return ("http://127.0.0.1:20128", {"x-api-key": "9router"})
 
 
@@ -188,7 +175,7 @@ def _pick_upstream(model: str) -> tuple[str, dict[str, str]]:
     include_in_schema=False,
 )
 async def _healthcheck():
-    """CLI healthchecks the proxy root; return 200 so it doesn't 404."""
+    """CLI healthchecks the proxy root — return 200 so it doesn't 404."""
     return {"ok": True}
 
 
@@ -208,8 +195,9 @@ async def proxy(rest: str, request: Request):
 
     if _is_gemini_model(model):
         body = _scrub_request_for_gemini(body)
-    if _is_openai_max_completion_tokens_model(model):
-        body = _scrub_request_for_openai_gpt5(body)
+
+    if _is_openai_model(model):
+        body = _fix_openai_max_tokens(body)
 
     base_url, auth_headers = _pick_upstream(model)
 
@@ -217,7 +205,13 @@ async def proxy(rest: str, request: Request):
     for k, v in request.headers.items():
         if k.lower() in _HOP_HEADERS:
             continue
-        # CLI carries our install token as x-api-key; never forward (leak + shadows real upstream auth).
+        # The CLI we spawn carries our per-install auth token via
+        # `x-api-key` (we set `ANTHROPIC_API_KEY=<our_token>` on the
+        # spawn env, and the CLI forwards that value as x-api-key). We
+        # must NOT forward that header to the real upstream — it would
+        # leak our local token to api.openswarm.com / 9Router, AND it
+        # would shadow the real upstream auth (bearer or `9router`
+        # literal) that `_pick_upstream` wants to set. Strip it here.
         if k.lower() == "x-api-key":
             continue
         forward_headers[k] = v
