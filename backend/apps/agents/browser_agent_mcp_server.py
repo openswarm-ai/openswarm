@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""
-Stdio MCP server that exposes BrowserAgent and BrowserAgents delegation tools.
-
-Launched as a subprocess by the Claude Agent SDK. Proxies task delegation
-to the OpenSwarm backend via HTTP, which runs browser sub-agents.
-"""
+"""Stdio MCP server exposing BrowserAgent/BrowserAgents delegation tools."""
 
 import base64
 import json

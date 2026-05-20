@@ -1,28 +1,4 @@
-"""Tiny OpenAI-API pass-through with `max_tokens` → `max_completion_tokens`
-rename for GPT-5.x models.
-
-Why this exists
----------------
-OpenAI's GPT-5 family (gpt-5.4-mini, gpt-5.5, gpt-5.3-codex, etc.)
-rejects the legacy `max_tokens` parameter with HTTP 400:
-    "Unsupported parameter: 'max_tokens' is not supported with this model.
-     Use 'max_completion_tokens'."
-
-Anthropic's CLI emits requests in Anthropic format (which uses `max_tokens`),
-9Router 0.3.60 translates Anthropic→OpenAI and preserves `max_tokens`
-(it doesn't know about the GPT-5 change). We can't bump 9Router because
-0.3.60 is pinned to fix a separate WebSearch regression in the 0.3.x
-range (see backend/apps/nine_router.py:27-36).
-
-So we slot a thin proxy between 9Router and api.openai.com. The CLI is
-unaware: it sees its OPENAI_BASE_URL pointing at this local passthrough,
-not OpenAI. We rename the field for GPT-5 models and forward unchanged
-otherwise. Streaming + non-streaming both work because we proxy bytes.
-
-Mounted at `/api/openai-passthrough` and consumed by setting
-OPENAI_BASE_URL to `http://127.0.0.1:<port>/api/openai-passthrough/v1`
-in the CLI's spawn env (see agent_manager.py).
-"""
+"""Tiny OpenAI passthrough renaming max_tokens to max_completion_tokens for GPT-5; 9Router 0.3.60 is pinned and doesn't know the change."""
 
 import json
 import logging
@@ -45,8 +21,7 @@ async def openai_passthrough_lifespan():
 openai_passthrough = SubApp("openai-passthrough", openai_passthrough_lifespan)
 
 
-# Models that REQUIRE max_completion_tokens. Mirrors anthropic_proxy.py's
-# matcher but lives here so this module doesn't depend on that one.
+# Mirrors anthropic_proxy.py's GPT-5 matcher; duplicated to avoid the cross-module dep.
 _GPT5_PREFIXES = ("gpt-5",)
 _OPENAI_UPSTREAM = "https://api.openai.com/v1"
 _HOP_HEADERS = {
@@ -60,7 +35,6 @@ def _is_gpt5(model: str) -> bool:
     m = (model or "").strip().lower()
     if not m:
         return False
-    # Strip routing prefixes 9Router may have added.
     for prefix in ("openai/", "cx/", "openrouter/", "or:openai/", "cp/", "cp-"):
         if m.startswith(prefix):
             m = m[len(prefix):]
@@ -69,12 +43,7 @@ def _is_gpt5(model: str) -> bool:
 
 
 def _scrub_max_tokens(body: bytes) -> bytes:
-    """Rename max_tokens → max_completion_tokens for GPT-5 models.
-
-    Bytes-in/out, never raises. No-op if body isn't JSON, model isn't GPT-5,
-    or max_tokens isn't present. If both fields are present (unlikely),
-    drops the legacy field so OpenAI doesn't 400 on the conflict.
-    """
+    """Rename max_tokens to max_completion_tokens for GPT-5; bytes in/out, never raises."""
     if not body:
         return body
     try:
@@ -113,9 +82,7 @@ async def passthrough(rest: str, request: Request):
     if request.url.query:
         upstream_url = f"{upstream_url}?{request.url.query}"
 
-    # Stream upstream response body straight back to the caller. httpx's
-    # streaming context handles Server-Sent Events the CLI uses for chat
-    # completions without buffering the full response in memory.
+    # Stream upstream body back; httpx handles SSE without buffering the full response.
     client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=300.0, write=60.0, pool=30.0))
     try:
         upstream_req = client.build_request(

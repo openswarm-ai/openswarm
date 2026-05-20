@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""
-Stdio MCP server that exposes the InvokeAgent tool.
-
-Launched as a subprocess by the Claude Agent SDK. Proxies invocation
-requests to the OpenSwarm backend via HTTP, which forks the target
-agent session and runs it with the new message.
-"""
+"""Stdio MCP server exposing the InvokeAgent tool; proxies to /api/invoke-agent/run."""
 
 import json
 import sys
@@ -113,7 +107,7 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
 
     lines = [f"**Invoked Agent Result** (forked session: {forked_id})"]
     if source_name:
-        lines[0] = f"**Invoked Agent Result** — {source_name} (forked session: {forked_id})"
+        lines[0] = f"**Invoked Agent Result**; {source_name} (forked session: {forked_id})"
     if cost > 0:
         lines.append(f"*Cost: ${cost:.4f}*")
     lines.append("")

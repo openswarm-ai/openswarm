@@ -37,8 +37,7 @@ class MainApp:
                 yield
                 
         self.app = FastAPI(lifespan=lifespan)
-        
-        # Include all sub-app routers in the main app with their prefixes
+
         for sub_app in sub_apps:
             self.app.include_router(
                 sub_app.router, 

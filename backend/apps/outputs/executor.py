@@ -15,7 +15,7 @@ TIMEOUT_SECONDS = 30
 # can find ways around this (e.g. string-encoded imports via tricks the AST
 # validator can't see), but the allowlist kills the easy paths cheaply and
 # pairs with cwd=tempdir + minimal env so the blast radius is small even if
-# a payload slips past. Keep this list to "data shaping" libraries — no I/O,
+# a payload slips past. Keep this list to "data shaping" libraries; no I/O,
 # no networking, no subprocess.
 _ALLOWED_MODULES = frozenset({
     "json", "math", "re", "datetime", "collections", "itertools",
@@ -43,9 +43,9 @@ def get_code_warnings(code: str) -> list[str]:
     """Return human-readable warnings for AST-visible risks, without raising.
 
     Used by `/api/outputs/execute` to surface risks to the user in the run
-    dialog before executing — so a legit Output that needs `pandas` doesn't
+    dialog before executing; so a legit Output that needs `pandas` doesn't
     silently 500 with "import not allowed," it gets a "this Output uses
-    unsafe imports — review and click Run Anyway" affordance.
+    unsafe imports; review and click Run Anyway" affordance.
 
     Returns [] for code that's fully inside the allowlist. A syntax error
     is reported as a single warning rather than raised so the dialog can
@@ -97,7 +97,7 @@ def _validate_code_safety(code: str) -> None:
 
 
 # Env vars we always scrub from the subprocess, regardless of strict-vs-force.
-# These are the keys an attacker would actually want — install token, provider
+# These are the keys an attacker would actually want; install token, provider
 # API keys, cloud credentials. Everything else is local-machine convenience.
 _SCRUBBED_ENV_KEYS = frozenset({
     "OPENSWARM_AUTH_TOKEN",
@@ -120,13 +120,13 @@ def _minimal_env(force: bool = False) -> dict:
     """Build the env for the executor subprocess.
 
     Strict mode (force=False): only language essentials. AST-validated code
-    is data-shaping only — `import os` and `open()` are blocked, so the
+    is data-shaping only; `import os` and `open()` are blocked, so the
     subprocess can't read env vars or expand `~` anyway. Minimal env is
     correct here.
 
     Force mode (force=True): user has explicitly approved unsafe imports
     via the HITL preview. They expect the code to behave like a normal
-    Python process — read HOME, find files, etc. Inherit the real env
+    Python process; read HOME, find files, etc. Inherit the real env
     minus credentials, so an `open(os.path.expanduser("~/data.csv"))`
     actually works instead of silently misbehaving.
 
@@ -166,7 +166,7 @@ async def execute_backend_code(
     result to a global ``result`` dict.  User print() calls are captured
     separately from the result via an in-process StringIO redirect.
 
-    Security boundaries (defense in depth — none alone is sufficient):
+    Security boundaries (defense in depth; none alone is sufficient):
       1. AST allowlist on imports + blocked-builtin call list.
       2. Subprocess cwd = fresh temp dir (not the OpenSwarm process cwd).
       3. Subprocess env strips PATH, all *_TOKEN / *_API_KEY inheritance.
@@ -174,9 +174,9 @@ async def execute_backend_code(
          to catch AST-bypass tricks (e.g. metaclass shenanigans).
       5. 30s wall-clock timeout, killed on overrun.
 
-    `skip_validation=True` bypasses #1 — intended ONLY for callers that
+    `skip_validation=True` bypasses #1; intended ONLY for callers that
     have already surfaced the warnings to a user and gotten explicit
-    consent (the `/api/outputs/execute` HITL flow). #2–#5 always run.
+    consent (the `/api/outputs/execute` HITL flow). #2, #5 always run.
     """
 
     if not skip_validation:
@@ -186,7 +186,7 @@ async def execute_backend_code(
         "import json, sys, io, builtins\n"
         # Defense-in-depth: scrub dangerous attrs off `builtins` so
         # attribute-style accesses (metaclass.__subclasses__ chains) can't
-        # reach them. NOTE: __import__ is deliberately NOT scrubbed —
+        # reach them. NOTE: __import__ is deliberately NOT scrubbed , 
         # Python's `import` statement bytecode reads `__import__` from
         # builtins, so removing it makes EVERY import (including allowlisted
         # ones like `import math`) fail with "ImportError: __import__ not

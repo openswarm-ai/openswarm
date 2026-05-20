@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 def _read_app_version() -> str:
     # Preferred: Electron's main process injects this when spawning the
-    # backend (see electron/main.js — OPENSWARM_APP_VERSION). Always reliable
+    # backend (see electron/main.js; OPENSWARM_APP_VERSION). Always reliable
     # in packaged builds because it comes from app.getVersion() rather than
     # path-based file resolution.
     env_v = os.environ.get("OPENSWARM_APP_VERSION", "").strip()
@@ -42,7 +42,7 @@ def _read_app_version() -> str:
     # Fallback: read electron/package.json via relative path. Works in
     # `bash run.sh` dev mode where the repo layout is intact, but FAILS in
     # packaged dmg/exe builds because electron/package.json isn't shipped
-    # into Resources/ — which made every shipped install report
+    # into Resources/; which made every shipped install report
     # app_version="unknown" pre-fix. Kept for backward compatibility with
     # dev runs and as a safety net if the env var is ever unset.
     try:
@@ -120,7 +120,7 @@ async def _pulse_loop():
         if _pulse_count >= _pulse_batch_size:
             try:
                 from backend.apps.agents.agent_manager import agent_manager
-                # Compact field names — the wire stays small and the cloud
+                # Compact field names; the wire stays small and the cloud
                 # is the only place that knows what each key means.
                 svc.sync({
                     "a": len(agent_manager.sessions),       # active sessions
@@ -412,26 +412,26 @@ async def service_status():
 async def post_submit(body=Body(...)):
     """Accepts three body shapes for backward compatibility:
 
-    1. Frontend `report()` shape — flat `{s, a, p, submission_id, t}`.
+    1. Frontend `report()` shape; flat `{s, a, p, submission_id, t}`.
        This is what `frontend/src/shared/serviceClient.ts:report()` sends
        on every UI interaction. Pass through unchanged so the cloud sees
        it as a frontend.event.
 
-    2. Legacy `{kind, payload}` shape — used by older callers that wrapped
+    2. Legacy `{kind, payload}` shape; used by older callers that wrapped
        the payload in a kind+payload envelope before submitting. Unwrap
        and forward the payload.
 
-    3. Batched array — frontend collects up to 1s of events and sends them
+    3. Batched array; frontend collects up to 1s of events and sends them
        as a single JSON array to cut N POSTs/sec down to 1. Each item is
        processed exactly as if it had arrived as its own request.
 
     Pre-fix this endpoint required shape #2 and silently rejected shape #1
     with a 200 + `{ok:false}`, so every UI event from `report()` was
-    dropped — `frontend.event` count was 0 in production analytics.
+    dropped; `frontend.event` count was 0 in production analytics.
     """
     # Shape 3: batched array. Recurse per-item so single-item handling
     # logic stays in one place. Returns a single ok regardless of
-    # individual item shape — analytics calls aren't transactional.
+    # individual item shape; analytics calls aren't transactional.
     if isinstance(body, list):
         for item in body:
             if isinstance(item, dict):
@@ -446,7 +446,7 @@ async def post_submit(body=Body(...)):
         return {"ok": True}
     if not isinstance(body, dict):
         return {"ok": False, "error": "JSON object or array required"}
-    # Shape 1: frontend `report()` — flat {s, a, p, ...}
+    # Shape 1: frontend `report()`; flat {s, a, p, ...}
     if any(k in body for k in ("s", "a", "p")):
         svc.sync(body)
         return {"ok": True}

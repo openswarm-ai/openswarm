@@ -41,7 +41,7 @@ class SearchBody(BaseModel):
     num_results: int = Field(5, ge=1, le=10, description="Max results to return.")
     # Hint from the MCP server about which primary provider the session
     # is using. Lets us route to that provider's native search tool
-    # (Gemini googleSearch, OpenAI web_search_preview) when available —
+    # (Gemini googleSearch, OpenAI web_search_preview) when available , 
     # costs come out of the user's existing primary budget.
     primary: str | None = Field(None, description="Primary provider hint: 'gemini' | 'openai' | 'anthropic' | None")
 
@@ -53,7 +53,7 @@ class FetchBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Helper — extract plain text from a tool's structured output list
+# Helper; extract plain text from a tool's structured output list
 # ---------------------------------------------------------------------------
 
 
@@ -143,7 +143,7 @@ def _format_grounded_as_fetch(grounded: dict, url: str) -> str:
     if chunks:
         parts.append("\nCited sources:")
         for i, (title, uri) in enumerate(chunks[:5], start=1):
-            parts.append(f"  [{i}] {title} — {uri}")
+            parts.append(f"  [{i}] {title}; {uri}")
     return "\n".join(parts)
 
 
@@ -167,7 +167,7 @@ def _resolve_openai_api_key() -> str | None:
 
 
 # Cache of which 9Router subscriptions are connected. Refreshed via
-# `_refresh_9r_connected()` rather than hit on every search call —
+# `_refresh_9r_connected()` rather than hit on every search call , 
 # 9Router's /api/providers is fast but not free, and we already
 # query it from many places.
 _NINE_ROUTER_CONNECTED: set[str] = set()
@@ -196,7 +196,7 @@ async def _refresh_9r_connected() -> set[str]:
             }
         _NINE_ROUTER_CACHE_AT = now
     except Exception:
-        # Cache stays — best-effort.
+        # Cache stays; best-effort.
         pass
     return _NINE_ROUTER_CONNECTED
 
@@ -207,7 +207,7 @@ async def _gemini_grounded_via_9router(prompt: str, use_url_context: bool) -> di
     search call instead of needing a separate AI Studio API key.
 
     Routes through Anthropic-shape against 9Router's translator. We
-    request a tool result naturally — the translator surfaces grounded
+    request a tool result naturally; the translator surfaces grounded
     URIs as text + cited sources in the response body. Format-shape
     matches the existing `_gemini_grounded_call` so downstream
     `_format_grounded_as_search_results` works unchanged."""
@@ -482,14 +482,14 @@ async def search(body: SearchBody) -> dict:
         has_subscription = bool(connected & {"codex", "antigravity", "gemini-cli"})
         if not (gemini_key or openai_key or has_subscription):
             hint = (
-                "\n\n(DuckDuckGo returned no results — likely rate-limiting this IP. "
+                "\n\n(DuckDuckGo returned no results; likely rate-limiting this IP. "
                 "Connect Codex / Antigravity / Gemini CLI in Settings, or add an "
                 "OpenAI / Gemini API key, for reliable native search.)"
             )
         else:
             hint = (
                 "\n\n(DuckDuckGo returned no results and the connected providers "
-                "didn't return useful results either — try rephrasing the query.)"
+                "didn't return useful results either; try rephrasing the query.)"
             )
     return {
         "query": body.query,

@@ -1,25 +1,5 @@
 #!/usr/bin/env python3
-"""
-Stdio MCP server exposing `WebSearch` and `WebFetch` backed by the
-OpenSwarm backend's free DuckDuckGo + trafilatura implementation.
-
-Purpose: the Claude Code CLI's built-in `WebSearch` / `WebFetch` tools
-wrap Anthropic's server-side `web_search_20250305` / `web_fetch_20250807`
-which require a Claude credential somewhere (Claude subscription on
-9Router, openswarm-pro cloud proxy, or direct Anthropic API key). Users
-who only connect ChatGPT Plus or Gemini Advanced and don't have any
-Claude-backed credential get "No credentials for provider: claude" from
-the CLI and either see hallucinated or empty results.
-
-This server is registered by `agent_manager.py` only in that gap case.
-When it is registered, the built-in `WebSearch` / `WebFetch` are added
-to `disallowed_tools` so the model picks our MCP-prefixed versions.
-
-Proxies tool calls to the backend at /api/web/search and /api/web/fetch
-so the DDG / trafilatura logic lives in one place
-(`backend/apps/agents/tools/web.py`) and can be evolved without
-restarting the MCP subprocess.
-"""
+"""Stdio MCP server exposing WebSearch/WebFetch; registered only when no Claude credential is available."""
 
 import json
 import os
@@ -32,10 +12,7 @@ BACKEND_AUTH = os.environ.get("OPENSWARM_AUTH_TOKEN", "")
 SEARCH_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/web/search"
 FETCH_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/web/fetch"
 
-# Primary-provider hint set by agent_manager at spawn time. Lets the
-# backend pick the corresponding native search tool (googleSearch for
-# Gemini, web_search_preview for OpenAI) — so searches come out of the
-# budget the user is already paying for.
+# Primary-provider hint from agent_manager; backend picks the native search tool (googleSearch/web_search_preview) so searches use the user's existing budget.
 PRIMARY_HINT = os.environ.get("OPENSWARM_PRIMARY_API", "") or None
 
 TOOLS = [

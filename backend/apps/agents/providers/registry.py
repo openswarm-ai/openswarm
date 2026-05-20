@@ -251,7 +251,7 @@ async def fetch_openrouter_models(api_key: str | None) -> list[dict]:
             continue
         if isinstance(out_mods, list) and out_mods and "text" not in out_mods:
             continue
-        # Tools required — agent loop doesn't work without function calling.
+        # Tools required; agent loop doesn't work without function calling.
         params = m.get("supported_parameters") or []
         if not isinstance(params, list) or "tools" not in params:
             continue
@@ -329,7 +329,7 @@ _CUSTOM_VALUE_PREFIX = "custom/"
 
 
 def _custom_provider_slug_for_lookup(name: str) -> str:
-    """Mirror nine_router._custom_provider_slug — duplicated here to avoid
+    """Mirror nine_router._custom_provider_slug; duplicated here to avoid
     importing from nine_router (circular: nine_router imports from settings)."""
     import re
     s = re.sub(r"[^a-zA-Z0-9-]+", "-", (name or "").strip().lower()).strip("-")
@@ -355,7 +355,7 @@ def _find_builtin_model(short_name: str) -> dict | None:
     """Look up a model entry by its short `value`.
 
     OpenRouter entries (prefixed `or:<vendor>/<model>`) and custom-provider
-    entries (prefixed `custom/<slug>/<model_id>`) aren't in BUILTIN_MODELS —
+    entries (prefixed `custom/<slug>/<model_id>`) aren't in BUILTIN_MODELS , 
     they're synthesised on demand so the rest of the routing code can treat
     them like BUILTIN_MODELS entries."""
     for models in BUILTIN_MODELS.values():
@@ -520,7 +520,7 @@ async def resolve_aux_model(
         return ("cx/gpt-5.4-mini", base_url)
     if "gemini-cli" in connected:
         return ("gc/gemini-3.1-flash-lite-preview", base_url)
-    # OR is metered, hence last — saves OR-only users from "Untitled session" hell.
+    # OR is metered, hence last; saves OR-only users from "Untitled session" hell.
     if "openrouter" in connected:
         return (or_aux, base_url)
 
@@ -538,7 +538,7 @@ def get_context_window(provider: str, model: str, settings: AppSettings | None =
             if m["value"] == model:
                 return m.get("context_window", 128_000)
 
-    # Check custom providers — picker values are `custom/<slug>/<bare_model>`;
+    # Check custom providers; picker values are `custom/<slug>/<bare_model>`;
     # cp.models[].value stores the bare model id the user typed. Match the
     # bare-model tail against any custom provider's models list.
     if settings:
@@ -557,7 +557,7 @@ def get_context_window(provider: str, model: str, settings: AppSettings | None =
 
 
 # ---------------------------------------------------------------------------
-# Curated model tiers — Intelligence, Speed, Cost on a 1-5 scale
+# Curated model tiers; Intelligence, Speed, Cost on a 1-5 scale
 # ---------------------------------------------------------------------------
 #
 # Hand-tuned from public benchmarks + per-token pricing (knowledge cutoff
@@ -756,7 +756,7 @@ def _heuristic_tiers(label: str, output_cost_per_1m: float, reasoning: bool) -> 
     import re as _re
     out = output_cost_per_1m or 0.0
 
-    # Cost bucket — same 5-tier cost ladder as before.
+    # Cost bucket; same 5-tier cost ladder as before.
     if out < 0.5:
         cb = 1
     elif out < 2:
@@ -793,7 +793,7 @@ def _heuristic_tiers(label: str, output_cost_per_1m: float, reasoning: bool) -> 
     elif param_b > 0:
         size_tier = 1
     else:
-        size_tier = 0  # unknown — fall back to cost
+        size_tier = 0  # unknown; fall back to cost
 
     # Intelligence is the max of cost bucket and parsed size tier.
     # Cost is high-confidence for closed-source frontier; size is
@@ -802,7 +802,7 @@ def _heuristic_tiers(label: str, output_cost_per_1m: float, reasoning: bool) -> 
     intel = max(cb, size_tier)
     if reasoning and intel < 4:
         # Reasoning is a strong intelligence signal but only for
-        # genuinely smaller models — frontier closed-source already
+        # genuinely smaller models; frontier closed-source already
         # caps at 5, so don't double-count there.
         intel += 1
 
@@ -870,15 +870,15 @@ def compute_billing_kind(
     settings,
 ) -> str:
     """Return one of:
-        'subscription' — covered by an OAuth sub or Pro plan; hide cost row
-        'api_key'      — direct API-key path (Anthropic / OpenAI / Gemini)
-        'free'         — genuinely $0 per token (rate-limited OR :free tier)
-        'paid'         — per-token metering through OpenRouter; show pricing
+        'subscription'; covered by an OAuth sub or Pro plan; hide cost row
+        'api_key'     ; direct API-key path (Anthropic / OpenAI / Gemini)
+        'free'        ; genuinely $0 per token (rate-limited OR :free tier)
+        'paid'        ; per-token metering through OpenRouter; show pricing
 
     Why 'api_key' is split from 'paid': both meter per-token, but the user
     is paying a different counterparty. Letting the picker filter chips
     "API key" vs "Subscription" gives users a clear way to scope to their
-    billing relationship — direct API key vs OAuth subscription — instead
+    billing relationship; direct API key vs OAuth subscription; instead
     of conflating them under a generic "paid" bucket.
 
     Subscription paths:
@@ -913,7 +913,7 @@ def compute_billing_kind(
 
 COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     # (provider, model): (input_cost_per_1M, output_cost_per_1M)
-    # NOTE: `calculate_cost` is currently unused in the live path — real
+    # NOTE: `calculate_cost` is currently unused in the live path; real
     # cost numbers come from 9Router's usage stats. These entries are kept
     # so the table matches BUILTIN_MODELS and can
     # be used by any future native-loop path. Subscription-routed models
@@ -924,14 +924,14 @@ COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     ("Anthropic", "opus"): (5.0, 25.0),
     ("Anthropic", "opus-4-7"): (5.0, 25.0),
     ("Anthropic", "haiku"): (1.0, 5.0),
-    # OpenAI — Codex subscription path, user pays nothing per token
+    # OpenAI; Codex subscription path, user pays nothing per token
     ("OpenAI", "gpt-5.5"): (0.0, 0.0),
     ("OpenAI", "gpt-5.4"): (0.0, 0.0),
     ("OpenAI", "gpt-5.4-mini"): (0.0, 0.0),
     ("OpenAI", "gpt-5.3-codex"): (0.0, 0.0),
     ("OpenAI", "gpt-5.3-codex-high"): (0.0, 0.0),
     ("OpenAI", "gpt-5.3-codex-xhigh"): (0.0, 0.0),
-    # Google — Gemini CLI subscription path, user pays nothing per token
+    # Google; Gemini CLI subscription path, user pays nothing per token
     ("Google", "gemini-3.1-pro"): (0.0, 0.0),
     ("Google", "gemini-3.1-flash-lite"): (0.0, 0.0),
     ("Google", "gemini-3-pro"): (0.0, 0.0),

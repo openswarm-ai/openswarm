@@ -60,7 +60,7 @@ def _migrate_if_needed():
     if existing:
         return
 
-    logger.info("No dashboards found — running one-time migration")
+    logger.info("No dashboards found; running one-time migration")
 
     layout = DashboardLayout()
     if os.path.exists(OLD_LAYOUT_FILE):
@@ -203,7 +203,7 @@ async def seed_orchestration_demo(dashboard_id: str):
     agent for the user to attach to a new orchestrator. We seed a single
     completed-looking session that pretends to have done research on
     OpenSwarm, with messages mentioning what it found. The user then
-    drags it into a new agent and asks for a PDF report — which
+    drags it into a new agent and asks for a PDF report; which
     delegates back to this seeded agent.
     """
     _load(dashboard_id)  # validate dashboard exists
@@ -255,7 +255,7 @@ async def seed_orchestration_demo(dashboard_id: str):
                     "- A Hono cloud service handles auth, billing, and account pooling.\n"
                     "- Built-in browser cards let agents drive web pages directly.\n"
                     "- Skills and Apps let users teach the system new capabilities.\n\n"
-                    "Ready when you are — let me know what you'd like to do with this."
+                    "Ready when you are; let me know what you'd like to do with this."
                 ),
                 "timestamp": now.isoformat(),
                 "branch_id": "main",
