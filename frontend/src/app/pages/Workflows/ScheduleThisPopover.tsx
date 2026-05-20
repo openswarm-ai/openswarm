@@ -6,6 +6,7 @@
 // users who change their mind don't leave behind an orphan workflow.
 
 import React, { useCallback, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Popover from '@mui/material/Popover';
@@ -46,10 +47,20 @@ interface Props {
 export default function ScheduleThisPopover({ anchorEl, onClose, sessionId, sessionName, onCreated, prefillSchedule, prefillLabel }: Props) {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [title, setTitle] = useState<string>(sessionName || 'Untitled');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const workflows = useAppSelector((s) => s.workflows.items);
+  // Workflow cards only render inside the Dashboard canvas. When this
+  // popover is opened from somewhere else (Apps editor, etc.), Custom...
+  // would silently drop the user on a non-canvas page with no visible
+  // editor — see this session's chat history. Look up the session's
+  // dashboard so we can navigate there before opening the draft.
+  const sessionDashboardId = useAppSelector(
+    (s) => sessionId ? s.agents.sessions[sessionId]?.dashboard_id : null,
+  );
 
   // Dup-detect: a chat session can only sanely have one schedule attached.
   // If we find one already, offer "Open existing" instead of silently
@@ -107,8 +118,16 @@ export default function ScheduleThisPopover({ anchorEl, onClose, sessionId, sess
         schedule: { ...defaultSchedule() },
       } as Partial<Workflow>,
     }));
+    // If the user opened this popover from somewhere other than the
+    // dashboard canvas (e.g. the Apps editor), the draft card we just
+    // created is invisible because <WorkflowCard /> is only rendered on
+    // /dashboard/<id>. Navigate there so the user lands on the editable
+    // card. No-op when already on a dashboard route.
+    if (sessionDashboardId && !location.pathname.startsWith('/dashboard/')) {
+      navigate(`/dashboard/${sessionDashboardId}`);
+    }
     onClose();
-  }, [dispatch, sessionId, title, onClose]);
+  }, [dispatch, sessionId, title, onClose, sessionDashboardId, navigate, location.pathname]);
 
   const openExisting = useCallback(() => {
     if (!existing) return;

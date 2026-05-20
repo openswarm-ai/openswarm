@@ -87,6 +87,22 @@ class ConnectionManager:
             }
 
         if events:
+            # Drop already-resolved approval requests from the replay. The
+            # ring buffer holds every event we ever stamped, including the
+            # original `agent:approval_request`. Without this filter, a
+            # client that reconnects (e.g. after navigating away and back,
+            # which re-mounts AgentChat with last_seq=0) re-fires every
+            # past approval as if it were live, but the backing future was
+            # popped from pending_futures the moment the user answered, so
+            # the resurrected card is a dead no-op. Lifecycle is simple:
+            # send_approval_request() inserts into pending_futures BEFORE
+            # the event is stamped, and resolve_approval()/timeout/cancel
+            # all pop it; so "in pending_futures" is the authoritative
+            # is-still-live signal for the request_id. A process restart
+            # wipes pending_futures, which is correct because
+            # reconcile_on_startup also marks waiting_approval sessions as
+            # stopped so there's nothing to answer anyway.
+            events = self._filter_stale_approvals(events)
             for s in events:
                 try:
                     await websocket.send_text(s)
@@ -113,6 +129,28 @@ class ConnectionManager:
             "replayed": 0,
             "current_seq": newest if newest is not None else 0,
         }
+
+    def _filter_stale_approvals(self, events: list[str]) -> list[str]:
+        """Return events minus any `agent:approval_request` whose request_id
+        is no longer in pending_futures. JSON parse is per-event but replay
+        only runs on (re)connect, so it isn't a hot path.
+        """
+        alive = self.pending_futures
+        out: list[str] = []
+        for payload_str in events:
+            try:
+                parsed = json.loads(payload_str)
+            except (ValueError, TypeError):
+                out.append(payload_str)
+                continue
+            if parsed.get("event") != "agent:approval_request":
+                out.append(payload_str)
+                continue
+            data = parsed.get("data") or {}
+            request_id = data.get("request_id")
+            if request_id and request_id in alive:
+                out.append(payload_str)
+        return out
 
     async def broadcast_global(self, event: str, data: dict):
         """Send to all dashboard connections; bypasses seq_log (dashboard resumes via full state refetch)."""

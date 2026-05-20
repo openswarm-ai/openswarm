@@ -35,9 +35,23 @@ async def list_sessions(dashboard_id: str = ""):
 
 @agents.router.get("/sessions/{session_id}")
 async def get_session(session_id: str):
+    """Returns the session by id.
+
+    Falls back to a disk load when the session isn't in the in-memory
+    dict. Without this, any surface that queries a session before the
+    dashboard has restored it (Apps editor opened cold, deep link to a
+    chat, a workflow step inspecting an old session) hits a 404 even
+    though the JSON file is sitting on disk. The disk-load path is
+    O(1) memory hit after the first call: resume_session moves the
+    session into agent_manager.sessions and the next GET short-circuits
+    on the in-memory check.
+    """
     session = agent_manager.get_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        try:
+            session = await agent_manager.resume_session(session_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Session not found")
     return session.model_dump(mode="json")
 
 @agents.router.post("/launch")

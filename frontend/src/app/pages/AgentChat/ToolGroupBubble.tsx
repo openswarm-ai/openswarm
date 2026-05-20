@@ -3,11 +3,9 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
-import Chip from '@mui/material/Chip';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { AgentMessage, ToolGroupMeta } from '@/shared/state/agentsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { sanitizeSvgString } from '@/shared/sanitizeSvg';
@@ -153,34 +151,20 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
               {deniedCount} denied
             </Typography>
           )}
-          {/* Fixed-width fraction + count chip; tabular-nums + minWidth stop digit-boundary reflow as count climbs in parallel. */}
+          {/* Single fraction renders progress AND total; the green color
+              alone signals completion, and the fraction's denominator
+              makes the separate ×N chip redundant. tabular-nums +
+              minWidth keep the position stable as digits change. */}
           {allDone && completedCount > 0 && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, minWidth: 44, justifyContent: 'flex-end' }}>
-              <CheckCircleOutlineIcon sx={{ fontSize: 12, color: c.status.success }} />
-              <Typography sx={{ color: c.status.success, fontSize: '0.68rem', fontVariantNumeric: 'tabular-nums' }}>
-                {completedCount}/{group.callCount}
-              </Typography>
-            </Box>
+            <Typography sx={{ color: c.status.success, fontSize: '0.68rem', fontVariantNumeric: 'tabular-nums', fontFamily: c.font.mono, minWidth: 36, textAlign: 'right' }}>
+              {completedCount}/{group.callCount}
+            </Typography>
           )}
           {!allDone && pendingCount > 0 && (
             <Typography sx={{ color: c.text.tertiary, fontSize: '0.68rem', fontFamily: c.font.mono, fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>
               {completedCount}/{group.callCount}
             </Typography>
           )}
-          <Chip
-            label={`×${group.callCount}`}
-            size="small"
-            sx={{
-              height: 18,
-              minWidth: 36,
-              fontSize: '0.7rem',
-              fontWeight: 600,
-              bgcolor: c.bg.secondary,
-              color: c.text.muted,
-              fontVariantNumeric: 'tabular-nums',
-              '& .MuiChip-label': { px: 0.75 },
-            }}
-          />
           <IconButton size="small" sx={{ color: c.text.tertiary, p: 0.15 }}>
             {expanded ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
           </IconButton>

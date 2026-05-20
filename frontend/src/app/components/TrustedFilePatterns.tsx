@@ -75,7 +75,10 @@ export const TrustedFilePatterns: React.FC = () => {
     }
   }, [patterns, load]);
 
-  if (patterns === null) return null;
+  // Hide the whole section until the user actually has trusted patterns;
+  // an empty "no patterns yet" card was just visual bloat for the 99% case.
+  // The approval-time checkbox is what teaches the user this feature exists.
+  if (!patterns || patterns.length === 0) return null;
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -85,45 +88,39 @@ export const TrustedFilePatterns: React.FC = () => {
       <Typography sx={{ fontSize: '0.8rem', color: c.text.secondary, lineHeight: 1.45 }}>
         Files like SSH keys and shell startup files normally ask before each write, even when you've set Write to "always allow". Patterns you've chosen to always allow appear below. Remove one to start asking again.
       </Typography>
-      {patterns.length === 0 ? (
-        <Typography sx={{ fontSize: '0.78rem', color: c.text.tertiary, fontStyle: 'italic', mt: 0.5 }}>
-          No trusted patterns yet. You'll see a checkbox the first time the agent tries to write a sensitive file.
-        </Typography>
-      ) : (
-        <Box sx={{ display: 'flex', flexDirection: 'column', border: `1px solid ${c.border.subtle}`, borderRadius: 1.5, overflow: 'hidden', mt: 0.5 }}>
-          {patterns.map((pat, idx) => (
-            <Box
-              key={pat}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                px: 1.5,
-                py: 1,
-                borderTop: idx === 0 ? 'none' : `1px solid ${c.border.subtle}`,
-                bgcolor: c.bg.surface,
-              }}
-            >
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ fontSize: '0.82rem', color: c.text.primary, fontWeight: 500 }}>
-                  {PATTERN_LABELS[pat] || pat}
-                </Typography>
-                <Typography sx={{ fontSize: '0.72rem', color: c.text.tertiary, fontFamily: c.font.mono, mt: 0.15 }}>
-                  {pat}
-                </Typography>
-              </Box>
-              <IconButton
-                size="small"
-                onClick={() => revoke(pat)}
-                aria-label={`Remove ${PATTERN_LABELS[pat] || pat}`}
-                sx={{ color: c.text.tertiary, '&:hover': { color: c.status.error } }}
-              >
-                <DeleteOutlineIcon sx={{ fontSize: 18 }} />
-              </IconButton>
+      <Box sx={{ display: 'flex', flexDirection: 'column', border: `1px solid ${c.border.subtle}`, borderRadius: 1.5, overflow: 'hidden', mt: 0.5 }}>
+        {patterns.map((pat, idx) => (
+          <Box
+            key={pat}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              px: 1.5,
+              py: 1,
+              borderTop: idx === 0 ? 'none' : `1px solid ${c.border.subtle}`,
+              bgcolor: c.bg.surface,
+            }}
+          >
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ fontSize: '0.82rem', color: c.text.primary, fontWeight: 500 }}>
+                {PATTERN_LABELS[pat] || pat}
+              </Typography>
+              <Typography sx={{ fontSize: '0.72rem', color: c.text.tertiary, fontFamily: c.font.mono, mt: 0.15 }}>
+                {pat}
+              </Typography>
             </Box>
-          ))}
-        </Box>
-      )}
+            <IconButton
+              size="small"
+              onClick={() => revoke(pat)}
+              aria-label={`Remove ${PATTERN_LABELS[pat] || pat}`}
+              sx={{ color: c.text.tertiary, '&:hover': { color: c.status.error } }}
+            >
+              <DeleteOutlineIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Box>
+        ))}
+      </Box>
     </Box>
   );
 };

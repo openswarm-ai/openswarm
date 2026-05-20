@@ -727,6 +727,46 @@ class AgentManager:
 
         os.makedirs(effective_cwd, exist_ok=True)
 
+        # Canvas-chat App Builder launch: when the user picks "App Builder"
+        # mode from the chat-input dropdown (no preexisting workspace, no
+        # target_directory passed in), the legacy code path only created an
+        # empty folder, so the agent could write files but the app never
+        # showed up in the Apps sidebar (no Output row, which is what the
+        # sidebar reads). Mirror the /workspace/seed endpoint's behavior
+        # here: seed the React template + register an Output row with
+        # workspace_id = session_id. Idempotent; safe if the session is
+        # ever re-launched with the same id.
+        if config.mode == "view-builder" and not config.target_directory:
+            try:
+                from backend.apps.outputs.outputs import (
+                    ensure_webapp_workspace_seeded_and_registered,
+                    _load,
+                )
+                output_id = ensure_webapp_workspace_seeded_and_registered(
+                    workspace_id=session_id,
+                    folder=effective_cwd,
+                    session_id=session_id,
+                )
+                if output_id:
+                    # Broadcast the new row so the Apps sidebar lights up
+                    # immediately, even before the user clicks into it. The
+                    # row name is still the placeholder ("Untitled App") at
+                    # this point; the post-session meta-sync below fires a
+                    # second upsert with the real name once the agent has
+                    # written meta.json.
+                    try:
+                        new_output = _load(output_id)
+                        await ws_manager.broadcast_global("agent:output_upserted", {
+                            "output": new_output.model_dump(mode="json"),
+                        })
+                    except Exception:
+                        logger.exception("post-seed output_upserted broadcast failed")
+            except Exception:
+                logger.exception(
+                    "view-builder workspace seed/register failed; session will "
+                    "still launch but the app may not appear in Apps sidebar"
+                )
+
         # If the fallback chain landed on the user's home directory (no
         # project dir, no default_folder set), re-route to a dedicated
         # scratch workspace under ~/.openswarm/workspaces/<session_id>.
@@ -3712,6 +3752,31 @@ class AgentManager:
             })
         finally:
             if session_id in self.sessions:
+                # For canvas-launched App Builder sessions, the workspace
+                # folder IS the session_id (see launch_agent), so meta.json
+                # lives at outputs_workspace/<session_id>/meta.json. Read it
+                # and propagate name/description into the Output row before
+                # the terminal status fires; without this, the row stays
+                # "Untitled App" forever because no React component polls
+                # the file on the canvas path. Best-effort, only acts when
+                # the row's name is still the default placeholder.
+                if session.mode == "view-builder":
+                    try:
+                        from backend.apps.outputs.outputs import sync_output_from_meta_json, _load_all
+                        if sync_output_from_meta_json(session_id):
+                            # Broadcast the renamed row so the sidebar
+                            # flips from "Untitled App" to the real name
+                            # without waiting for the next mount.
+                            try:
+                                matching = [o for o in _load_all() if o.workspace_id == session_id]
+                                if matching:
+                                    await ws_manager.broadcast_global("agent:output_upserted", {
+                                        "output": matching[0].model_dump(mode="json"),
+                                    })
+                            except Exception:
+                                logger.exception("post-sync output_upserted broadcast failed")
+                    except Exception:
+                        logger.exception("post-session meta sync failed")
                 await ws_manager.send_to_session(session_id, "agent:status", {
                     "session_id": session_id,
                     "status": session.status,

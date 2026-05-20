@@ -131,7 +131,18 @@ export const executeOutput = createAsyncThunk(
 const outputsSlice = createSlice({
   name: 'outputs',
   initialState,
-  reducers: {},
+  reducers: {
+    /** Upsert an Output row from a server-pushed WS event (canvas-launched
+     * App Builder seeds the row on launch; meta-sync renames it at session
+     * end). Merges over existing fields so a row that already has agent-
+     * generated content doesn't lose anything from a partial server push.
+     */
+    upsertOutput(state, action: { payload: Output; type: string }) {
+      const incoming = action.payload;
+      const existing = state.items[incoming.id];
+      state.items[incoming.id] = existing ? { ...existing, ...incoming } : incoming;
+    },
+  },
   extraReducers: (builder) => {
     builder
       .addCase(fetchOutputs.pending, (state) => { state.loading = true; })
@@ -148,4 +159,5 @@ const outputsSlice = createSlice({
   },
 });
 
+export const { upsertOutput } = outputsSlice.actions;
 export default outputsSlice.reducer;
