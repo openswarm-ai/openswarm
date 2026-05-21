@@ -36,10 +36,36 @@ if os.environ.get("OPENSWARM_PACKAGED") == "1":
 @asynccontextmanager
 async def tools_lib_lifespan():
     os.makedirs(DATA_DIR, exist_ok=True)
+    _ensure_default_permissions()
     yield
 
 
 tools_lib = SubApp("tools", tools_lib_lifespan)
+
+
+# Bash defaults to "ask" because it can execute untrusted text from MCP tool
+# outputs (Gmail, WebFetch); every other built-in is sandboxed by domain.
+# Must match agent_manager._DEFAULTS so the Settings UI and the agent agree
+# on what "no policy set" means.
+_DEFAULT_BUILTIN_POLICIES = {"Bash": "ask"}
+
+
+def _ensure_default_permissions() -> None:
+    """Seed BUILTIN_PERMISSIONS_PATH so the user's Settings toggles persist
+    cleanly. Without this the file is missing on first run, load returns {},
+    every PUT-from-the-UI overwrites with the partial payload the click
+    sent, and the user never sees their preferred policy stick. Idempotent:
+    merges current defaults in for any tool missing from an existing file,
+    never clobbers a policy the user already set.
+    """
+    existing = load_builtin_permissions()
+    desired = {
+        t.name: _DEFAULT_BUILTIN_POLICIES.get(t.name, "always_allow")
+        for t in BUILTIN_TOOLS
+    }
+    merged = {**desired, **existing}
+    if merged != existing:
+        save_builtin_permissions(merged)
 
 # All providers go through the Fly cloud-proxy claim handoff. The
 # v1.0.28 local Google callback was retired in v1.0.29 once the prod
