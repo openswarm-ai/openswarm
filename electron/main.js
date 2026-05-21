@@ -1,6 +1,15 @@
 const { app, components, BrowserWindow, ipcMain, shell, session } = require('electron');
+// Platform-split auto-updater: electron-updater on Mac (full-featured: allowPrerelease, allowDowngrade, progress), Electron's built-in autoUpdater on Windows (required for Squirrel.Windows target; electron-updater dropped Squirrel support).
 let autoUpdater;
-try { autoUpdater = require('electron-updater').autoUpdater; } catch (_) {}
+let isSquirrelUpdater = false;
+try {
+  if (process.platform === 'win32') {
+    autoUpdater = require('electron').autoUpdater;
+    isSquirrelUpdater = true;
+  } else {
+    autoUpdater = require('electron-updater').autoUpdater;
+  }
+} catch (_) {}
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const os = require('os');
@@ -9,8 +18,8 @@ const getPort = require('get-port');
 const http = require('http');
 const affiliateTracking = require('./affiliateTracking');
 
-// Defender warmup: NSIS runs us with --prewarm right after install so Windows scans the bundled binaries while the user is already watching the installer instead of staring at a slow first launch.
-if (process.argv.includes('--prewarm') && process.platform === 'win32') {
+// Defender warmup helper. Touches bundled exes so Windows scans them now instead of on first launch.
+function _squirrelPrewarmTouch() {
   const touchExe = (rel) => {
     const full = path.join(process.resourcesPath, rel);
     try {
@@ -22,8 +31,26 @@ if (process.argv.includes('--prewarm') && process.platform === 'win32') {
   touchExe(path.join('python-env', 'python.exe'));
   touchExe(path.join('node', 'x64', 'node.exe'));
   touchExe(path.join('node', 'arm64', 'node.exe'));
+}
+
+// Legacy NSIS prewarm path (kept for any user still on 1.1.40 stable NSIS install).
+if (process.argv.includes('--prewarm') && process.platform === 'win32') {
+  _squirrelPrewarmTouch();
   process.exit(0);
 }
+
+// Squirrel.Windows lifecycle: app is invoked with --squirrel-* args during install/update/uninstall. Handle and exit fast; --squirrel-firstrun is the only one we let fall through to normal boot.
+(function handleSquirrelEvents() {
+  if (process.platform !== 'win32' || process.argv.length < 2) return;
+  const sq = process.argv[1];
+  if (sq === '--squirrel-install' || sq === '--squirrel-updated') {
+    _squirrelPrewarmTouch();
+    process.exit(0);
+  }
+  if (sq === '--squirrel-uninstall' || sq === '--squirrel-obsolete') {
+    process.exit(0);
+  }
+})();
 
 // Prevent duplicate instances. Without this, double-clicking the app icon
 // (or macOS auto-launch + manual launch overlapping) spawns two independent
@@ -741,15 +768,25 @@ function sendToRenderer(channel, ...args) {
 
 function setupAutoUpdater() {
   if (!autoUpdater) return;
-  // Silent background updates: download on detect, install on next quit.
-  // The OS gates the install on main-process exit (can't replace a
-  // running .app / locked .exe), so an active session is never disrupted.
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  // Renderer pushes the user's experimental-updates setting via IPC right after settings load.
-  autoUpdater.allowPrerelease = false;
-  // Lets us un-ship a bad release: re-flip GH 'latest' to an older one and users hop back to it.
-  autoUpdater.allowDowngrade = true;
+  if (isSquirrelUpdater) {
+    // Squirrel.Windows: setFeedURL to GH Releases /latest/download/ so Squirrel fetches RELEASES from there. allowPrerelease/allowDowngrade not supported by built-in autoUpdater; experimental users on Windows get only the latest stable until we wire a separate Squirrel feed for prereleases.
+    try {
+      autoUpdater.setFeedURL({ url: 'https://github.com/openswarm-ai/openswarm/releases/latest/download/' });
+    } catch (err) {
+      console.warn('[updater] Squirrel setFeedURL failed:', err && err.message);
+      return;
+    }
+  } else {
+    // Silent background updates: download on detect, install on next quit.
+    // The OS gates the install on main-process exit (can't replace a
+    // running .app / locked .exe), so an active session is never disrupted.
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    // Renderer pushes the user's experimental-updates setting via IPC right after settings load.
+    autoUpdater.allowPrerelease = false;
+    // Lets us un-ship a bad release: re-flip GH 'latest' to an older one and users hop back to it.
+    autoUpdater.allowDowngrade = true;
+  }
 
   autoUpdater.on('update-available', (info) => {
     console.log(`Update available: ${info.version}`);
@@ -1362,6 +1399,8 @@ ipcMain.handle('check-for-updates', async () => {
 
 ipcMain.handle('download-update', async () => {
   if (!autoUpdater) return { success: false, error: 'Updater not available' };
+  // Squirrel built-in autoUpdater auto-downloads on detect; no manual trigger needed.
+  if (isSquirrelUpdater) return { success: true };
   try {
     await autoUpdater.downloadUpdate();
     return { success: true };
@@ -1372,6 +1411,8 @@ ipcMain.handle('download-update', async () => {
 
 ipcMain.handle('set-allow-prerelease', async (_e, value) => {
   if (!autoUpdater) return { success: false, error: 'Updater not available' };
+  // Squirrel built-in autoUpdater has no allowPrerelease; experimental channel on Windows is a TODO once we wire a separate Squirrel feed URL.
+  if (isSquirrelUpdater) return { success: false, error: 'Experimental channel not yet supported on Windows Squirrel target' };
   const next = Boolean(value);
   if (autoUpdater.allowPrerelease === next) return { success: true, changed: false };
   autoUpdater.allowPrerelease = next;
@@ -1386,7 +1427,12 @@ ipcMain.handle('set-allow-prerelease', async (_e, value) => {
 
 ipcMain.handle('install-update', () => {
   if (!autoUpdater) return;
-  autoUpdater.quitAndInstall(false, true);
+  // Built-in autoUpdater on Windows takes no args; electron-updater on Mac takes (isSilent, isForceRunAfter).
+  if (isSquirrelUpdater) {
+    autoUpdater.quitAndInstall();
+  } else {
+    autoUpdater.quitAndInstall(false, true);
+  }
 });
 
 ipcMain.handle('capture-page', async (event, rect) => {

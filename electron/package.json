@@ -67,7 +67,7 @@
       "icon": "build/icon.ico",
       "target": [
         {
-          "target": "nsis",
+          "target": "squirrel",
           "arch": ["x64"]
         }
       ],
@@ -76,16 +76,8 @@
       "signingHashAlgorithms": ["sha256"],
       "signDlls": false
     },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "OpenSwarm",
-      "deleteAppDataOnUninstall": false,
-      "artifactName": "OpenSwarm-Setup-${arch}.${ext}",
-      "include": "build/installer-recovery.nsh"
+    "squirrelWindows": {
+      "iconUrl": "https://raw.githubusercontent.com/openswarm-ai/openswarm/main/electron/build/icon.ico"
     },
     "extraResources": [
       {
