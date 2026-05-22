@@ -518,6 +518,71 @@ async def propose_edit(workflow_id: str, body: dict):
     return out
 
 
+@workflows.router.post("/{workflow_id}/edit-agent-session")
+async def edit_agent_session(workflow_id: str):
+    """Create (or return existing) Edit Agent session for this workflow.
+
+    The Edit Agent is a real agent session that the user chats with to
+    iterate on the workflow (Image #38, #48). It has the workflow context
+    pre-loaded in its system prompt and the full default tool surface so
+    tool calls render as cards in the chat (Image #48: MCP Activation,
+    Gmail Query, etc.).
+
+    Singleton per workflow: re-entering edit mode reattaches to the same
+    session so the conversation persists. Frontend stores the returned
+    session_id in the workflow card's openCard state.
+    """
+    wf = storage.get_workflow(workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    # Track the edit-agent session id on the workflow record so the FE
+    # can find it after a reload. Persisted under a private namespace
+    # field added below; we attach it lazily so existing workflows don't
+    # need a migration.
+    existing_id = getattr(wf, "edit_agent_session_id", None) or None
+    if existing_id:
+        from backend.apps.agents.agent_manager import agent_manager
+        if existing_id in agent_manager.sessions:
+            return {"session_id": existing_id}
+        # In-memory miss but on disk it's still valid; fall through to
+        # rehydrate via launch_agent OR return id for the FE to fetch.
+        return {"session_id": existing_id}
+
+    from backend.apps.agents.models import AgentConfig
+    from backend.apps.agents.agent_manager import agent_manager
+    steps_lines = "\n".join(f"{i+1}. {(s.label or '').strip() or (s.text or '')[:60]}\n   Prompt: {s.text}" for i, s in enumerate(wf.steps))
+    system_prompt = (
+        f"You are the Edit Agent for the user's saved workflow \"{wf.title}\". "
+        f"Help the user iterate on it. The workflow's purpose: {wf.description or '(unspecified)'}.\n\n"
+        f"Current steps:\n{steps_lines}\n\n"
+        "When the user asks for a change, briefly confirm what you'll do, "
+        "then either edit the prompt text or test the workflow before suggesting "
+        "they Save. You have access to the full tool surface (Read, Edit, Write, "
+        "Bash, MCP servers, etc.) so you can run searches, look at files, or "
+        "activate integrations the user already has connected. To test the workflow "
+        "end-to-end, call TestWorkflow (it spawns a sibling Test Agent that runs "
+        "the latest draft). When you've made a concrete prompt change you're "
+        "confident about, tell the user clearly so they can apply it via the Save "
+        "button at the top of the card."
+    )
+    config = AgentConfig(
+        name=f"Edit Agent: {wf.title}",
+        model=wf.model or "sonnet",
+        mode=wf.mode or "agent",
+        provider=wf.provider or "anthropic",
+        system_prompt=system_prompt,
+        allowed_tools=[],
+        dashboard_id=wf.dashboard_id,
+    )
+    session = await agent_manager.launch_agent(config)
+    try:
+        setattr(wf, "edit_agent_session_id", session.id)
+        storage.save_workflow(wf)
+    except Exception:
+        logger.debug("could not persist edit_agent_session_id (legacy schema)", exc_info=True)
+    return {"session_id": session.id}
+
+
 @workflows.router.post("/{workflow_id}/test-run")
 async def test_run_workflow(workflow_id: str, body: dict):
     """Spawn a Test Agent session running the (possibly-unsaved) draft.

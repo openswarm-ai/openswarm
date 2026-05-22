@@ -103,6 +103,10 @@ class Workflow(BaseModel):
     last_run_id: Optional[str] = None
     next_run_at: Optional[datetime] = None
     cost_cap_usd_monthly: Optional[float] = None
+    # Sticky session id for the Edit Agent embedded in the workflow card
+    # (Image #38, #48). Optional so older workflows don't fail validation
+    # on rehydrate.
+    edit_agent_session_id: Optional[str] = None
 
 
 class WorkflowRun(BaseModel):

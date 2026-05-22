@@ -77,6 +77,8 @@ export interface Workflow {
   next_run_at: string | null;
   cost_cap_usd_monthly: number | null;
   cost_estimate?: CostEstimate;
+  /** Sticky session id for the Edit Agent embedded in the workflow card. */
+  edit_agent_session_id?: string | null;
 }
 
 export interface WorkflowRun {
