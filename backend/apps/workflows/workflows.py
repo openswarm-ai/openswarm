@@ -410,11 +410,10 @@ async def propose_edit(workflow_id: str, body: dict):
     """Aux-LLM-propose a single-step edit from a natural-language request.
 
     Powers the Edit Agent chat (Image #38). Frontend hands us the user's
-    message, the current draft steps, and optional failure-context (when
-    we're inside Fix-with-Agent). We respond with a reply string PLUS,
-    optionally, a `step_idx` + `new_text` that the FE shows as a
-    proposal card. The user clicks Apply to merge into their local draft;
-    nothing is persisted until they click Save in the header.
+    message, the current draft steps, optional failure-context (Fix-with-
+    Agent), AND the prior turns so the model has multi-turn memory. We
+    respond with a reply string PLUS, optionally, a `step_idx` + `new_text`
+    that the FE shows as a proposal card.
     """
     wf = storage.get_workflow(workflow_id)
     if not wf:
@@ -422,6 +421,7 @@ async def propose_edit(workflow_id: str, body: dict):
     message = (body or {}).get("message", "").strip()
     steps_in = (body or {}).get("steps") or []
     context = (body or {}).get("context") or None
+    history = (body or {}).get("history") or []
     if not message or not isinstance(steps_in, list):
         raise HTTPException(status_code=400, detail="Missing message or steps")
     try:
@@ -450,6 +450,20 @@ async def propose_edit(workflow_id: str, body: dict):
                 f"The error was: {err}\n"
                 f"Your proposed edit should specifically address that failure if possible."
             )
+    # Build history block so the model remembers prior turns. Each entry
+    # is {role, text}; we only carry assistant/user pairs (proposals get
+    # summarised inline so the assistant has context for follow-ups).
+    history_lines = []
+    if isinstance(history, list):
+        for h in history[-12:]:
+            if not isinstance(h, dict):
+                continue
+            role = str(h.get("role") or "").strip().lower()
+            text = str(h.get("text") or "").strip()
+            if role in ("user", "assistant") and text:
+                history_lines.append(f"{role.capitalize()}: {text}")
+    history_block = ("\n\nPrior conversation:\n" + "\n".join(history_lines)) if history_lines else ""
+
     prompt = (
         "You are an Edit Agent helping the user iterate on a saved automation "
         "workflow. The workflow's current steps are listed below. The user has "
@@ -464,8 +478,9 @@ async def propose_edit(workflow_id: str, body: dict):
         "- If the user is asking a question or for clarification, set step_idx=null and new_text=null.\n"
         "- If the user is asking to change a specific step, set step_idx (0-based) and new_text to the FULL replacement prompt for that step.\n"
         "- `explanation` describes the change in user-facing terms.\n"
-        "- Never invent new steps. Never remove steps. Only edit existing ones.\n\n"
-        f"Workflow steps:\n{steps_lines}{fix_context}\n\n"
+        "- Never invent new steps. Never remove steps. Only edit existing ones.\n"
+        "- Use prior conversation context to disambiguate follow-ups (e.g. \"yes do that\" should reference the last proposal).\n\n"
+        f"Workflow steps:\n{steps_lines}{fix_context}{history_block}\n\n"
         f"User: {message}"
     )
     try:

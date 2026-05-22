@@ -111,10 +111,30 @@ export default function EditAgentView({ workflow, steps, isFixMode = false }: Pr
     const text = draft.trim();
     if (!text || busy) return;
     setBusy(true);
+    // Capture history BEFORE pushing the user turn so the model doesn't
+    // see the just-submitted message twice (once in history, once as the
+    // current user message).
+    const turnsSnapshot = turns;
     setTurns((t) => [...t, { kind: 'user', text }]);
     setDraft('');
     try {
       const tok = (() => { try { return getAuthToken(); } catch { return ''; } })();
+      // Pull the prior conversation so the model has multi-turn memory.
+      // Proposals get folded into the history as "Assistant: proposed
+      // changing step N to ..." so follow-ups like "yes do that" resolve
+      // correctly. Cap to last 12 entries to keep payload tight.
+      const historyPayload = turnsSnapshot.flatMap((t) => {
+        if (t.kind === 'user') return [{ role: 'user', text: t.text }];
+        if (t.kind === 'assistant') return [{ role: 'assistant', text: t.text }];
+        if (t.kind === 'proposal') {
+          const verb = t.applied ? 'applied' : 'proposed';
+          return [{ role: 'assistant', text: `(${verb}) change step ${t.stepIdx + 1} to: ${t.after.slice(0, 200)}` }];
+        }
+        if (t.kind === 'fix-prefix') {
+          return [{ role: 'assistant', text: `Fixing step ${t.stepIdx + 1}: ${t.error.slice(0, 200)}` }];
+        }
+        return [];
+      });
       const res = await fetch(`${API_BASE}/workflows/${encodeURIComponent(workflow.id)}/propose-edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
@@ -122,6 +142,7 @@ export default function EditAgentView({ workflow, steps, isFixMode = false }: Pr
           message: text,
           steps: draftSteps.map((s) => ({ id: s.id, text: s.text, label: s.label || null })),
           context: isFixMode && fixSeed ? { failed_step: fixSeed.stepIdx, error: fixSeed.error } : null,
+          history: historyPayload,
         }),
       });
       if (!res.ok) {
