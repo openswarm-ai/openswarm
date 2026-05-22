@@ -5,10 +5,8 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Snackbar from '@mui/material/Snackbar';
 import CloseIcon from '@mui/icons-material/Close';
-import EditIcon from '@mui/icons-material/EditOutlined';
 import HistoryIcon from '@mui/icons-material/HistoryRounded';
 import PlayArrowIcon from '@mui/icons-material/PlayArrowRounded';
-import ScheduleIcon from '@mui/icons-material/ScheduleRounded';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import InputBase from '@mui/material/InputBase';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -458,27 +456,25 @@ const WorkflowCard: React.FC<Props> = ({
         </IconButton>
       </Box>
 
-      {/* ===== Action bar =====
-          Target #54 puts Run / Edit / History flush left and "Schedule
-          this task" flush right on the SAME row. We use justifyContent
-          + a flex spacer instead of wrap, so narrow widths shrink the
-          action group rather than dropping Schedule onto a second line.
-          Run is the only accent-colored button (it's the verb users
-          actually do) but its border weight matches the siblings. */}
+      {/* Action bar matches new design: History + Run flush-right (Edit moved to footer).
+          The flex spacer is the empty left side; History is a quiet text link, Run is the
+          accent pill. */}
       {isDraft && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 2, pb: 1.25, pt: 0, flexShrink: 0, opacity: 0.45, pointerEvents: 'none' }}>
-          <TabBtn label="Run" icon={<PlayArrowIcon sx={{ fontSize: 16 }} />} active={false} accent onClick={() => {}} />
-          <TabBtn label="Edit" icon={<EditIcon sx={{ fontSize: 16 }} />} active={false} onClick={() => {}} />
-          <TabBtn label="History" icon={<HistoryIcon sx={{ fontSize: 16 }} />} active={false} onClick={() => {}} />
           <Box sx={{ flex: 1 }} />
-          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, fontSize: '0.82rem', fontWeight: 500, color: c.text.secondary }}>
-            <ScheduleIcon sx={{ fontSize: 14 }} />
-            Schedule this task
-          </Box>
+          <TabBtn label="History" icon={<HistoryIcon sx={{ fontSize: 16 }} />} active={false} onClick={() => {}} />
+          <TabBtn label="Run" icon={<PlayArrowIcon sx={{ fontSize: 16 }} />} active={false} accent onClick={() => {}} />
         </Box>
       )}
       {!isDraft && workflow && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 2, pb: 1.25, pt: 0, flexShrink: 0 }}>
+          <Box sx={{ flex: 1 }} />
+          <TabBtn
+            label="History"
+            icon={<HistoryIcon sx={{ fontSize: 16 }} />}
+            active={card.view === 'history' || card.view === 'history_detail'}
+            onClick={() => dispatch(updateWorkflowCard({ workflowId, patch: { view: 'history' } }))}
+          />
           <TabBtn
             label={runStarting ? 'Starting…' : 'Run'}
             icon={<PlayArrowIcon sx={{ fontSize: 16 }} />}
@@ -493,9 +489,6 @@ const WorkflowCard: React.FC<Props> = ({
               try {
                 const result = await dispatch(runWorkflowNow(workflow.id));
                 await dispatch(fetchRuns(workflow.id));
-                // Detect skipped manual runs so the user gets a real
-                // explanation instead of a silent button-flicker. The
-                // most common skip today is the monthly cost cap.
                 if (runWorkflowNow.fulfilled.match(result)) {
                   const payload = result.payload;
                   if (payload.status === 'skipped' && payload.error) {
@@ -503,61 +496,11 @@ const WorkflowCard: React.FC<Props> = ({
                   }
                 }
               } finally {
-                // Hold the "Starting…" label briefly so the user sees the
-                // state change even on fast runs. Without this the button
-                // flickers and feels like nothing happened.
+                // Hold "Starting…" briefly so fast runs don't flicker invisibly.
                 setTimeout(() => setRunStarting(false), 600);
               }
             }}
           />
-          <TabBtn
-            label="Edit"
-            icon={<EditIcon sx={{ fontSize: 16 }} />}
-            active={card.view === 'edit'}
-            dot={editDirty}
-            dotTooltip="You have unsaved changes in this tab."
-            onClick={() => dispatch(updateWorkflowCard({ workflowId, patch: { view: 'edit', editFacet: card.editFacet || 'General' } }))}
-          />
-          <TabBtn
-            label="History"
-            icon={<HistoryIcon sx={{ fontSize: 16 }} />}
-            active={card.view === 'history' || card.view === 'history_detail'}
-            onClick={() => dispatch(updateWorkflowCard({ workflowId, patch: { view: 'history' } }))}
-          />
-          <Box sx={{ flex: 1 }} />
-          {!workflow.schedule.enabled && (
-            <Box
-              role="button"
-              data-no-drag
-              onClick={() => {
-                const sched = workflow.schedule;
-                const next = {
-                  ...sched,
-                  enabled: true,
-                  repeat_unit: sched.repeat_unit || 'day',
-                  repeat_every: sched.repeat_every || 1,
-                  hour: sched.hour || 9,
-                  minute: sched.minute || 0,
-                };
-                dispatch(updateWorkflow({
-                  id: workflow.id,
-                  patch: { schedule: next as any },
-                  ifMatch: workflow.updated_at || null,
-                }));
-                dispatch(updateWorkflowCard({ workflowId, patch: { view: 'edit', editFacet: 'Schedule' } }));
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              sx={{
-                display: 'inline-flex', alignItems: 'center', gap: 0.4,
-                fontSize: '0.82rem', fontWeight: 500,
-                color: c.text.secondary,
-                cursor: 'pointer',
-                '&:hover': { color: c.accent.primary },
-              }}>
-              <ScheduleIcon sx={{ fontSize: 14 }} />
-              Schedule this task
-            </Box>
-          )}
         </Box>
       )}
 
