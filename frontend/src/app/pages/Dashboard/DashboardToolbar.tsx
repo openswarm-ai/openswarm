@@ -6,9 +6,26 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Tooltip, { tooltipClasses } from '@mui/material/Tooltip';
 import Icon from '@mui/material/Icon';
 import { styled } from '@mui/material/styles';
-import ChatBubbleOutlineRounded from '@mui/icons-material/ChatBubbleOutlineRounded';
 import AddRounded from '@mui/icons-material/AddRounded';
 import HistoryRounded from '@mui/icons-material/HistoryRounded';
+
+// Custom rounded speech bubble with a small tail at the bottom-left,
+// outlined in currentColor with the bubble interior knocked out so the
+// orange button fill shows through. Matches Image #57 exactly; MUI's
+// rounded chat icons are either filled or tail-less.
+function ChatBubbleTeardrop(props: { sx?: { fontSize?: number } }) {
+  const size = props.sx?.fontSize ?? 18;
+  return (
+    <svg
+      width={size} height={size} viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" strokeWidth={1.8}
+      strokeLinecap="round" strokeLinejoin="round"
+      style={{ display: 'block' }}
+    >
+      <path d="M7 3.5 h10 a4 4 0 0 1 4 4 v7 a4 4 0 0 1 -4 4 h-8 l-3.2 3 v-3.2 a4 4 0 0 1 -2.8 -3.8 v-7 a4 4 0 0 1 4 -4 z" />
+    </svg>
+  );
+}
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import StickyNote2OutlinedIcon from '@mui/icons-material/StickyNote2Outlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
@@ -664,7 +681,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                   }),
                 }}
               >
-                <ChatBubbleOutlineRounded sx={{ fontSize: 18 }} />
+                <ChatBubbleTeardrop sx={{ fontSize: 18 }} />
               </Box>
             </WarmTooltip>
 
