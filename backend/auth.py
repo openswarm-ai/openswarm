@@ -312,6 +312,10 @@ _AUTH_EXEMPT_EXACT = {
     # cloud-validated bearer in the body is the actual auth mechanism.
     "/api/subscription/activate",
     "/api/auth/signin-activate",
+    # Browser-only dev mode (frontend on localhost without Electron preload)
+    # needs a valid install_id to start sign-in. This endpoint returns only
+    # that identifier (no secrets), so it's safe to expose without bearer auth.
+    "/api/settings/install-id",
     "/api/version",
     # Local Google OAuth token-endpoint proxy: hit by the
     # google-workspace-mcp subprocess we spawn. It doesn't (and can't

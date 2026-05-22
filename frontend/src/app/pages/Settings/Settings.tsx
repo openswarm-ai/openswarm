@@ -254,7 +254,33 @@ const AccountCard: React.FC = () => {
     const startUrl = proxyUrl.replace(/\/$/, '') + '/api/auth/google/start?' + params.toString();
     const api = (window as any).openswarm;
     if (api?.openExternal) api.openExternal(startUrl);
-    else window.open(startUrl, '_blank');
+    else {
+      const popup = window.open(startUrl, 'openswarm-google-signin', 'width=560,height=720');
+      const cloudOrigin = new URL(proxyUrl.replace(/\/$/, '')).origin;
+
+      const cleanup = () => {
+        window.removeEventListener('message', onMessage);
+        if (popup && !popup.closed) popup.close();
+      };
+
+      const onMessage = async (event: MessageEvent) => {
+        if (event.origin !== cloudOrigin) return;
+        const payload = event.data;
+        const callbackData = payload?.type === 'oauth_callback' ? payload.data : payload;
+        const token = callbackData?.token || callbackData?.bearer || callbackData?.access_token;
+        if (!token) return;
+        try {
+          await dispatch(activateSignin({ token, email: callbackData?.email || callbackData?.user_email || undefined, signin_method: 'google' })).unwrap();
+          cleanup();
+        } catch (err) {
+          cleanup();
+          console.error('[settings] Google sign-in activation failed:', err);
+        }
+      };
+
+      window.addEventListener('message', onMessage);
+      window.setTimeout(cleanup, 180000);
+    }
   };
 
   // Not signed in at all (no bearer, no user_id) — small inline CTA.

@@ -166,6 +166,19 @@ async def get_settings():
     return load_settings().model_dump()
 
 
+@settings.router.get("/install-id")
+async def get_install_id_public():
+    """Return a stable per-install identifier for OAuth start flows.
+
+    This route intentionally returns only `install_id` so browser-only dev
+    runs (no Electron preload token) can still initiate Google/email sign-in
+    without exposing the full settings payload.
+    """
+    from backend.config.install_id import get_install_id
+
+    return {"install_id": get_install_id()}
+
+
 @settings.router.put("")
 async def update_settings(body: AppSettings):
     from backend.apps.service.client import sync as _sync
