@@ -1792,6 +1792,23 @@ class AgentManager:
 
             mcp_registry_ctx = self._build_mcp_registry_summary(session.allowed_tools, session.active_mcps)
             global_settings = load_settings()
+            # Nudge the agent to surface ScheduleWorkflow proactively when
+            # the user's ask looks recurring. The per-tool description
+            # carries the full protocol; this is just the "when to think
+            # about it" signal so the agent doesn't ignore the surface.
+            schedule_ctx = (
+                "<scheduling_guidance>\n"
+                "After completing a substantive task, if the work looks "
+                "repeatable (the user said 'every', 'each', 'daily', "
+                "'weekly', 'morning', 'before standup', or you just did "
+                "the same sequence twice in this session), offer to "
+                "schedule it. Use AskUserQuestion to confirm cadence, "
+                "then ScheduleWorkflow to create it. Never reach for "
+                "crontab, launchctl, or schtasks; always use the native "
+                "scheduler so the user can see, pause, and edit it. "
+                "Don't ask after trivial one-off requests.\n"
+                "</scheduling_guidance>"
+            )
             composed_prompt = self._compose_system_prompt(
                 global_settings.default_system_prompt,
                 mode_sys_prompt,
@@ -1800,6 +1817,27 @@ class AgentManager:
                 browser_ctx,
                 mcp_registry_ctx,
             )
+            composed_prompt = (composed_prompt + "\n\n" + schedule_ctx) if composed_prompt else schedule_ctx
+
+            # Pin the agent's notion of "now" to the host wall clock + zone
+            # so it can answer day-of-week questions and pick sensible
+            # cadences ("every Friday afternoon") without hallucinating.
+            try:
+                from zoneinfo import ZoneInfo
+                from backend.apps.workflows.storage import _resolve_host_tz_name
+                tz_name = _resolve_host_tz_name()
+                now_local = datetime.now(ZoneInfo(tz_name))
+                tz_abbr = now_local.strftime("%Z") or tz_name
+                time_ctx = (
+                    "<current_time>\n"
+                    f"Today is {now_local.strftime('%A, %B %-d, %Y')}.\n"
+                    f"Local time: {now_local.strftime('%-I:%M %p')} {tz_abbr} ({tz_name}).\n"
+                    "Use this as ground truth for any date/time/day-of-week question.\n"
+                    "</current_time>"
+                )
+                composed_prompt = (composed_prompt + "\n\n" + time_ctx) if composed_prompt else time_ctx
+            except Exception:
+                pass
 
             if session.mode == "view-builder":
                 # Read the LIVE skill content rather than a frozen-at-import
@@ -1881,6 +1919,27 @@ class AgentManager:
                     },
                     "type": "stdio",
                 }
+
+            # Always-on schedule server. Exposes ScheduleWorkflow + CRUD
+            # tools so the agent can offer to schedule recurring work via
+            # the native scheduler (visible, auditable) rather than reach
+            # for cron/launchctl. Tool descriptions tell the agent to
+            # AskUserQuestion FIRST to confirm cadence with the user.
+            schedule_server_path = os.path.join(
+                os.path.dirname(__file__), "schedule_mcp_server.py"
+            )
+            from backend.auth import get_auth_token as _get_auth_token_sched
+            mcp_servers["openswarm-schedule"] = {
+                "command": sys.executable,
+                "args": [schedule_server_path],
+                "env": {
+                    "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
+                    "OPENSWARM_AUTH_TOKEN": _get_auth_token_sched(),
+                    "OPENSWARM_PARENT_SESSION_ID": session.id,
+                    "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
+                },
+                "type": "stdio",
+            }
 
             # Always-on meta-MCP server. Exposes MCPList / MCPSearch /
             # MCPActivate so the model can discover and activate user MCPs at
