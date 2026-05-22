@@ -32,6 +32,7 @@ import {
   setGlowingBrowserCards,
   removeViewCard,
   removeBrowserCard,
+  removeWorkflowCard,
   pasteBrowserCard,
   placeCard,
   setCardPosition,
@@ -40,6 +41,8 @@ import {
   setGlowingAgentCard,
   clearGlowingAgentCard,
   clearPendingFocusBrowserId,
+  clearPendingFocusWorkflowId,
+  clearPendingFocusWorkflowsHub,
   addNote,
   removeNote,
   clearPendingFocusNoteId,
@@ -49,6 +52,7 @@ import {
   GRID_GAP,
 } from '@/shared/state/dashboardLayoutSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
+import { fetchWorkflows, closeWorkflowCard } from '@/shared/state/workflowsSlice';
 import { generateDashboardName, updateDashboardThumbnail } from '@/shared/state/dashboardsSlice';
 import { dashboardWs } from '@/shared/ws/WebSocketManager';
 import { initBrowserCommandHandler } from '@/shared/browserCommandHandler';
@@ -60,10 +64,10 @@ import NoteCard from './NoteCard';
 import CanvasControls from './CanvasControls';
 import CardSearchPalette from './CardSearchPalette';
 import DirectionHints from './DirectionHints';
-// OnboardingWalkthrough was retired in v2 — the new OnboardingRoot/Panel
-// (mounted in Main.tsx) replaces it. Keeping this banner to prevent stale
-// imports from sneaking back in via auto-completion.
 import DashboardToolbar from './DashboardToolbar';
+import WorkflowCard from '@/app/pages/Workflows/WorkflowCard';
+import WorkflowsHubCard from '@/app/pages/Workflows/WorkflowsHubCard';
+import ConfigurePanelCard from '@/app/pages/Workflows/ConfigurePanelCard';
 import { captureDashboardThumbnail } from './captureDashboardThumbnail';
 import { useCanvasControls } from './useCanvasControls';
 import { useDashboardSelection } from './useDashboardSelection';
@@ -110,6 +114,11 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const cards = useAppSelector((state) => state.dashboardLayout.cards);
   const viewCards = useAppSelector((state) => state.dashboardLayout.viewCards);
   const browserCards = useAppSelector((state) => state.dashboardLayout.browserCards);
+  const workflowCards = useAppSelector((state) => state.dashboardLayout.workflowCards);
+  const workflowItems = useAppSelector((state) => state.workflows.items);
+  const workflowOpenCards = useAppSelector((state) => state.workflows.openCards);
+  const configurePanels = useAppSelector((state) => state.dashboardLayout.configurePanels);
+  const workflowsHub = useAppSelector((state) => state.dashboardLayout.workflowsHub);
   const notes = useAppSelector((state) => state.dashboardLayout.notes);
   const pendingFocusNoteId = useAppSelector((state) => state.dashboardLayout.pendingFocusNoteId);
   const layoutInitialized = useAppSelector((state) => state.dashboardLayout.initialized);
@@ -123,9 +132,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const outputsLoaded = useAppSelector((state) => state.outputs.loaded);
   const glowingAgentCards = useAppSelector((state) => state.dashboardLayout.glowingAgentCards);
   const glowingBrowserCards = useAppSelector((state) => state.dashboardLayout.glowingBrowserCards);
-  // sessions is the top-level dict; useMemo on its identity so sessionList
-  // is stable when sessions hasn't actually changed (RTK only swaps the dict
-  // ref when one of its values changes, so this is the right granularity).
+  // Memo on sessions identity; RTK only swaps the dict ref when a value changes, so sessionList stays stable.
   const sessionList = useMemo(() => Object.values(sessions), [sessions]);
 
   const contentBounds = useMemo(() => {
@@ -133,6 +140,8 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       ...Object.values(cards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
       ...Object.values(viewCards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
       ...Object.values(browserCards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
+      ...Object.values(workflowCards).map((c) => ({ x: c.x, y: c.y, w: c.width, h: c.height })),
+      ...(workflowsHub ? [{ x: workflowsHub.x, y: workflowsHub.y, w: workflowsHub.width, h: workflowsHub.height }] : []),
     ];
     if (allRects.length === 0) return undefined;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -143,7 +152,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       maxY = Math.max(maxY, r.y + r.h);
     }
     return { minX, minY, maxX, maxY };
-  }, [cards, viewCards, browserCards]);
+  }, [cards, viewCards, browserCards, workflowCards, workflowsHub]);
 
   const canvas = useCanvasControls(zoomSensitivity, contentBounds, isActive);
   const selection = useDashboardSelection(
@@ -152,6 +161,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     viewCards,
     browserCards,
     notes,
+    workflowCards,
   );
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -163,8 +173,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const [pendingSelectSessionId, setPendingSelectSessionId] = useState<string | null>(null);
   const [focusedCardId, setFocusedCardId] = useState<string | null>(null);
   const [newAgentBounce, setNewAgentBounce] = useState(false);
-  // Cleanup any leftover walkthrough localStorage from v1 — the v2 panel
-  // ignores it but it would otherwise hang around forever.
+  // Wipe leftover v1 walkthrough localStorage; v2 ignores it but it would persist forever.
   useEffect(() => {
     try {
       localStorage.removeItem('openswarm_walkthrough_pending');
@@ -213,23 +222,18 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const restoredExpandedRef = useRef(false);
   const canvasStateRef = useRef({ panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom });
   canvasStateRef.current = { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom };
-  // Stable getter — AgentCards read pan/zoom on demand during drag math.
+  // Stable getter so AgentCards read pan/zoom on demand during drag math.
   const getCanvasState = useCallback(() => canvasStateRef.current, []);
-  // Notify the currently dragging card (if any) that pan/zoom changed so
-  // it can re-pin to the cursor. useEffect rather than render-body
-  // dispatchEvent: side effects during render are a React anti-pattern
-  // and can fire twice in strict mode. Effect runs after commit, so
-  // exactly once per real pan/zoom delta.
+  // Effect (not render-body) fires the pan-changed event so dragging cards re-pin to cursor; safe in strict mode.
   useEffect(() => {
     window.dispatchEvent(new Event('openswarm:canvas-pan-changed'));
   }, [canvas.panX, canvas.panY, canvas.zoom]);
 
-  // ---- Edge panning during card drag ----
   const EDGE_ZONE = 60;
   const EDGE_MAX_SPEED = 8;
   const edgePanFrameRef = useRef<number | null>(null);
   const lastMousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  // Track pan at drag start so cards can compensate for edge-pan offset
+  // Track pan at drag start so cards can compensate for edge-pan offset.
   const dragStartPanRef = useRef<{ panX: number; panY: number }>({ panX: 0, panY: 0 });
 
   const stopEdgePan = useCallback(() => {
@@ -270,7 +274,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     edgePanFrameRef.current = requestAnimationFrame(tickEdgePan);
   }, [canvas.viewportRef, canvas.actions]);
 
-  // ---- Multi-drag coordination ----
   const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number } | null>(null);
   const [liveDragInfo, setLiveDragInfo] = useState<{ cardId: string; dx: number; dy: number } | null>(null);
   const activeDragCardRef = useRef<string | null>(null);
@@ -293,7 +296,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     if (mouseX !== undefined && mouseY !== undefined) {
       lastMousePosRef.current = { x: mouseX, y: mouseY };
     }
-    // Start edge panning only once actual dragging begins
     if (!edgePanStartedRef.current) {
       edgePanStartedRef.current = true;
       edgePanFrameRef.current = requestAnimationFrame(tickEdgePan);
@@ -322,7 +324,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     setLiveDragInfo(null);
   }, [selection, dispatch, stopEdgePan]);
 
-  // Helper: get a card's rect from Redux state (uses collapsed height for zoom calculation)
   const getCardRect = useCallback((id: string, type: CardType) => {
     const layoutState = store.getState().dashboardLayout;
     if (type === 'agent') {
@@ -341,11 +342,15 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       const n = layoutState.notes[id];
       if (!n) return undefined;
       return { x: n.x, y: n.y, width: n.width, height: n.height };
+    } else if (type === 'workflow') {
+      const wc = layoutState.workflowCards[id];
+      if (!wc) return undefined;
+      return { x: wc.x, y: wc.y, width: wc.width, height: wc.height };
     }
     return undefined;
   }, []);
 
-  // Delay single-click collapse so double-click can override
+  // Delay single-click collapse so double-click can override.
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleCardSelect = useCallback((id: string, type: CardType, shiftKey: boolean) => {
@@ -361,8 +366,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     const alreadyExpanded = type === 'agent' && expandedSessionIds.includes(id);
 
     if (alreadyExpanded) {
-      // Delay single-click collapse so double-click can override.
-      // Double-click handler (handleCardDoubleClick) clears clickTimerRef.
+      // Double-click handler clears this timer to override the single-click collapse.
       clickTimerRef.current = setTimeout(() => {
         clickTimerRef.current = null;
         dispatch(collapseSession(id));
@@ -370,7 +374,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       return;
     }
 
-    // Expand (if not already) + center + zoom + bring to front
     if (type === 'agent') {
       dispatch(expandSession(id));
     }
@@ -378,7 +381,16 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     setTimeout(() => {
       const rect = getCardRect(id, type);
       if (rect) canvas.actions.fitToCards([rect], 1.15, true, type === 'browser' ? 0.8 : undefined);
-      setTimeout(() => (document.activeElement as HTMLElement)?.blur?.(), 150);
+      setTimeout(() => {
+        // Don't blur if the focused element is an input/textarea/
+        // contentEditable inside the just-clicked card; the user is
+        // typing there and this blur kills the cursor mid-keystroke.
+        const active = document.activeElement as HTMLElement | null;
+        if (!active) return;
+        const tag = active.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || active.isContentEditable) return;
+        active.blur?.();
+      }, 150);
     }, 100);
   }, [selection, getCardRect, canvas.actions, dispatch, expandedSessionIds]);
 
@@ -386,7 +398,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     dispatch(bringToFront({ id, type }));
   }, [dispatch]);
 
-  // ---- Viewport event handlers (compose pan + marquee) ----
   const handleViewportMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 1) {
       canvas.handlers.onMouseDown(e);
@@ -402,8 +413,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     if (e.button !== 0) return;
     if (isCardTarget(e.target, e.currentTarget)) return;
 
-    // Canvas click — drop any lingering input focus so arrow-key nav
-    // works immediately without the user having to press Escape first.
+    // Drop lingering input focus so arrow-key nav works immediately.
     const active = document.activeElement as HTMLElement | null;
     const activeTag = active?.tagName;
     if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || (active as any)?.isContentEditable) {
@@ -435,7 +445,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     selection.handleCanvasMouseUp(e.nativeEvent);
   }, [canvas.handlers, selection]);
 
-  // Double-click empty canvas → fit all cards
   const handleViewportDoubleClick = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     if (isCardTarget(e.target, e.currentTarget)) return;
@@ -443,7 +452,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     canvas.actions.fitToView();
   }, [canvas.actions]);
 
-  // Double-click a card → always expand + center + zoom (cancels pending collapse from single-click)
   const handleCardDoubleClick = useCallback((id: string, type: CardType) => {
     report('dashboard', 'card_double_clicked', { card_type: type });
     if (clickTimerRef.current) {
@@ -458,11 +466,19 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     setTimeout(() => {
       const rect = getCardRect(id, type);
       if (rect) canvas.actions.fitToCards([rect], 1.15, true);
-      setTimeout(() => (document.activeElement as HTMLElement)?.blur?.(), 150);
+      setTimeout(() => {
+        // Don't blur if the focused element is an input/textarea/
+        // contentEditable inside the just-clicked card; the user is
+        // typing there and this blur kills the cursor mid-keystroke.
+        const active = document.activeElement as HTMLElement | null;
+        if (!active) return;
+        const tag = active.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || active.isContentEditable) return;
+        active.blur?.();
+      }, 150);
     }, 100);
   }, [getCardRect, canvas.actions, dispatch]);
 
-  // Track dashboard engagement time
   useEffect(() => {
     if (!dashboardId) return;
     const startTime = Date.now();
@@ -480,35 +496,26 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     hasFittedRef.current = false;
     restoredExpandedRef.current = false;
     dispatch(resetLayout());
-    // CRITICAL path: these populate the cards the user expects to see
-    // on first paint. Don't defer.
+    // First-paint critical: do not defer.
     dispatch(fetchSessions({ dashboardId }));
     dispatch(fetchLayout(dashboardId));
     const cleanupBrowserHandler = initBrowserCommandHandler();
-    // DEFERRABLE: history list (for the search palette) and outputs
-    // (for the apps panel) aren't on the first-paint path. Same for the
-    // dashboard WS connection (it carries cross-session events; opens
-    // ~100ms later costs nothing). Pushing these into the post-paint
-    // window measurably improves LCP because the initial render
-    // pipeline isn't competing with their thunks/network setup.
+    // Deferred: history, outputs, and dashboard WS are off the first-paint path; post-paint scheduling improves LCP.
     const idleHandle = (typeof window !== 'undefined' && (window as any).requestIdleCallback)
       ? (window as any).requestIdleCallback(() => {
           dispatch(fetchHistory({ dashboardId }));
           dispatch(fetchOutputs());
+          dispatch(fetchWorkflows(dashboardId));
           dashboardWs.connect();
         }, { timeout: 2000 })
       : window.setTimeout(() => {
           dispatch(fetchHistory({ dashboardId }));
           dispatch(fetchOutputs());
+          dispatch(fetchWorkflows(dashboardId));
           dashboardWs.connect();
         }, 200);
 
-    // Pre-warm Anthropic's prompt cache for sessions on this dashboard
-    // ~250ms after mount (debounced; AbortController cancels on
-    // dashboard switch). Fires a max_tokens=1 ping per session so the
-    // user's first real message hits a warm cache instead of paying
-    // cold-start TTFT. Cheap (~$0.0001/session) and non-blocking. Skips
-    // for non-Anthropic sessions server-side.
+    // Pre-warm Anthropic prompt cache ~250ms after mount so first message hits a warm cache; backend skips non-Anthropic sessions.
     const warmAbort = new AbortController();
     const warmTimer = setTimeout(async () => {
       try {
@@ -522,8 +529,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         );
         for (const s of dashSessions) {
           if (warmAbort.signal.aborted) break;
-          // Fire-and-forget — the endpoint always 200s and the side
-          // effect is invisible cache population.
+          // Fire-and-forget; endpoint always 200s and effect is invisible cache population.
           fetch(`${API_BASE}/agents/sessions/${s.id}/warm-cache`, {
             method: 'POST',
             signal: warmAbort.signal,
@@ -539,8 +545,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       warmAbort.abort();
       cleanupBrowserHandler();
       dashboardWs.disconnect();
-      // Cancel any not-yet-fired idle work; the cleanup handler can't
-      // run partially if the dashboard switches before idle fired.
+      // Cancel any unfired idle work so the cleanup handler can't run partially after dashboard switch.
       if (typeof window !== 'undefined') {
         const cancelIdle = (window as any).cancelIdleCallback;
         if (cancelIdle && typeof idleHandle === 'number') cancelIdle(idleHandle);
@@ -552,6 +557,8 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const pendingBrowserUrl = useAppSelector((state) => state.tempState.pendingBrowserUrl);
   const pendingFocusAgentId = useAppSelector((state) => state.tempState.pendingFocusAgentId);
   const pendingFocusBrowserId = useAppSelector((state) => state.dashboardLayout.pendingFocusBrowserId);
+  const pendingFocusWorkflowId = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowId);
+  const pendingFocusWorkflowsHub = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowsHub);
 
   useEffect(() => {
     if (!dashboardId) return;
@@ -564,10 +571,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     dispatch(clearPendingBrowserUrl());
   }, [pendingBrowserUrl, layoutInitialized, dispatch, expandedSessionIds]);
 
-  // Capture a thumbnail screenshot of the dashboard.
-  // Uses Electron's native capturePage for pixel-perfect results.
-  // Captures current viewport as-is (no DOM mutation) to avoid visual flashes.
-  // Re-captures when layout is saved (piggybacking on the save debounce).
+  // Native capturePage thumbnail; captures viewport as-is and piggybacks on the layout save debounce.
   const pendingThumbnailRef = useRef<string | null>(null);
   const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captureNow = useCallback(() => {
@@ -584,9 +588,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       || Object.keys(allCards.viewCards).length > 0
       || Object.keys(allCards.browserCards).length > 0;
     if (!hasCards) {
-      // Empty dashboard — queue a thumbnail clear (sent on exit alongside
-      // the existing capture-update path). Backend treats '' as "set to
-      // empty"; null in PUT body means "don't update".
+      // Empty dashboard: queue a thumbnail clear (backend treats '' as "set empty", null as "no change").
       pendingThumbnailRef.current = '';
       return;
     }
@@ -603,7 +605,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     return () => { if (captureTimerRef.current) clearTimeout(captureTimerRef.current); };
   }, [isActive, dashboardId, layoutInitialized, captureNow]);
 
-  // On exit, save the captured thumbnail to the backend
   useEffect(() => {
     if (!dashboardId) return;
     const exitingId = dashboardId;
@@ -641,18 +642,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     }, 350);
   }, [isActive, pendingFocusAgentId, layoutInitialized, dispatch, canvas.actions, handleHighlightCard]);
 
-  // Auto-focus a newly created browser card. The reducer that handles
-  // addBrowserCard sets pendingFocusBrowserId to the new card's id; this
-  // effect picks it up, pans/zooms the canvas to center on it, briefly
-  // highlights it, then clears the signal. Mirrors the pendingFocusAgentId
-  // pattern above so link clicks (intercepted in AppShell) get the same
-  // auto-focus behavior as the "+ Browser" toolbar button.
-  //
-  // Uses zoom=0.8 (the same value handleCardClick uses for browser cards
-  // at line ~344) instead of letting fitToCards auto-derive a zoom from
-  // padding. Browser cards are large (1280x800), so the auto-derived zoom
-  // would land around ~58% which feels too far back; 0.8 matches the
-  // "click on a browser to focus" experience the user expects.
+  // Auto-focus newly created browser card; zoom=0.8 matches the click-to-focus experience for 1280x800 cards.
   useEffect(() => {
     if (!isActive) return;
     if (!pendingFocusBrowserId || !layoutInitialized) return;
@@ -673,6 +663,45 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     }, 200);
   }, [isActive, pendingFocusBrowserId, layoutInitialized, dispatch, canvas.actions, handleHighlightCard]);
 
+  // Same pan/highlight choreography for newly-spawned workflow cards.
+  useEffect(() => {
+    if (!isActive) return;
+    if (!pendingFocusWorkflowId || !layoutInitialized) return;
+    const workflowId = pendingFocusWorkflowId;
+    dispatch(clearPendingFocusWorkflowId());
+    setTimeout(() => {
+      const card = store.getState().dashboardLayout.workflowCards[workflowId];
+      if (card) {
+        canvas.actions.fitToCards(
+          [{ x: card.x, y: card.y, width: card.width, height: card.height }],
+          1.15,
+          true,
+        );
+        handleHighlightCard(workflowId);
+      }
+    }, 200);
+  }, [isActive, pendingFocusWorkflowId, layoutInitialized, dispatch, canvas.actions, handleHighlightCard]);
+
+  // Pan/zoom to Workflows Hub on Expand; chained rAFs ensure fit runs after the hub div lands at its new coords.
+  useEffect(() => {
+    if (!isActive) return;
+    if (!pendingFocusWorkflowsHub || !layoutInitialized) return;
+    dispatch(clearPendingFocusWorkflowsHub());
+    const fit = () => {
+      const hub = store.getState().dashboardLayout.workflowsHub;
+      if (!hub) return;
+      canvas.actions.fitToCards(
+        [{ x: hub.x, y: hub.y, width: hub.width, height: hub.height }],
+        1.1,
+        true,
+      );
+    };
+    // Two rAFs (state to render, layout to settle) + fallback timeout for slow boots.
+    requestAnimationFrame(() => requestAnimationFrame(fit));
+    const fallback = setTimeout(fit, 300);
+    return () => clearTimeout(fallback);
+  }, [isActive, pendingFocusWorkflowsHub, layoutInitialized, dispatch, canvas.actions]);
+
   useEffect(() => {
     if (!layoutInitialized || restoredExpandedRef.current) return;
     restoredExpandedRef.current = true;
@@ -692,11 +721,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     dispatch(reconcileSessions({ sessionIds: dashboardSessionIds, expandedSessionIds }));
   }, [sessions, layoutInitialized, dispatch, dashboardId, expandedSessionIds]);
 
-  // Prune orphan view cards whose underlying output was deleted (e.g. via
-  // the Views page). Without this, the layout entry persists in the
-  // minimap and contentBounds even though DashboardViewCard renders
-  // nothing. Gated on outputsLoaded so we don't wipe valid cards during
-  // the brief window between fetchLayout returning and outputs finishing.
+  // Prune orphan view cards whose underlying output was deleted; gated on outputsLoaded to avoid wiping valid cards during fetch race.
   useEffect(() => {
     if (!layoutInitialized || !outputsLoaded) return;
     for (const outputId of Object.keys(viewCards)) {
@@ -704,20 +729,18 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     }
   }, [layoutInitialized, outputsLoaded, viewCards, outputs, dispatch]);
 
-  // ---- Auto-reveal / collapse / unreveal sub-agent cards ----
   const autoRevealedRef = useRef(new Set<string>());
   const prevSubStatusRef = useRef<Record<string, string>>({});
   const prevParentStatusRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
-    if (!isActive) return;  // Heavy logic — pause when dashboard is hidden
+    if (!isActive) return;  // Heavy logic; pause when dashboard is hidden.
     if (!layoutInitialized || !autoRevealSubAgents) return;
 
     const subSessions = Object.values(sessions).filter(
       (s) => (s.mode === 'sub-agent' || s.mode === 'invoked-agent') && s.parent_session_id,
     );
 
-    // 1) Auto-reveal newly spawned sub-agents (skip already-terminal ones on load)
     for (const sub of subSessions) {
       if (autoRevealedRef.current.has(sub.id)) continue;
       if (cards[sub.id]) {
@@ -756,11 +779,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         y: targetY,
         width: DEFAULT_CARD_W,
         height: DEFAULT_CARD_H,
-        // Pass the current expanded-session set so placeCard's
-        // collision check uses real visual heights (expanded cards
-        // render ~620px tall instead of their stored collapsed
-        // height). Without this, sub-agents spawn into space the
-        // parent card visually occupies.
+        // Pass expandedSessionIds so placeCard's collision check uses real visual heights (~620px expanded).
         expandedSessionIds,
       }));
       dispatch(expandSession(sub.id));
@@ -773,7 +792,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       }
     }
 
-    // 2) Auto-collapse sub-agents when they complete
     const TERMINAL = new Set(['completed', 'error', 'stopped']);
     for (const sub of subSessions) {
       const prev = prevSubStatusRef.current[sub.id];
@@ -785,7 +803,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     for (const sub of subSessions) { newSubStatuses[sub.id] = sub.status; }
     prevSubStatusRef.current = newSubStatuses;
 
-    // 3) Unreveal all sub-agent cards when parent finishes output
     const parentIds = new Set(subSessions.map((s) => s.parent_session_id!));
     for (const pid of parentIds) {
       const parent = sessions[pid];
@@ -816,13 +833,13 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   const pendingSaveRef = useRef<Parameters<typeof saveLayout>[0] | null>(null);
 
   useEffect(() => {
-    if (!isActive) return;  // Don't persist layout while dashboard is hidden — save buffers in pendingSaveRef and flushes on resume
+    if (!isActive) return;  // Don't persist while hidden; pendingSaveRef buffers and flushes on resume.
     if (!layoutInitialized || !dashboardId) return;
     if (skipInitialSave.current) {
       skipInitialSave.current = false;
       return;
     }
-    const payload = { dashboardId, cards, viewCards, browserCards, notes, expandedSessionIds };
+    const payload = { dashboardId, cards, viewCards, browserCards, workflowCards, configurePanels, workflowsHub, notes, expandedSessionIds };
     pendingSaveRef.current = payload;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -831,7 +848,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       saveTimerRef.current = null;
       captureNow();
     }, 500);
-  }, [isActive, cards, viewCards, browserCards, notes, expandedSessionIds, layoutInitialized, dashboardId, dispatch, captureNow]);
+  }, [isActive, cards, viewCards, browserCards, workflowCards, configurePanels, workflowsHub, notes, expandedSessionIds, layoutInitialized, dashboardId, dispatch, captureNow]);
 
   useEffect(() => {
     return () => {
@@ -901,6 +918,9 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
           dispatch(removeBrowserCard(id));
         } else if (type === 'note') {
           dispatch(removeNote(id));
+        } else if (type === 'workflow') {
+          dispatch(removeWorkflowCard(id));
+          dispatch(closeWorkflowCard(id));
         }
       }
       selection.deselectAll();
@@ -909,7 +929,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     return () => window.removeEventListener('keydown', handleDelete);
   }, [selection, dispatch]);
 
-  // Cmd+F to open card search palette
   useEffect(() => {
     const handleSearch = (e: KeyboardEvent) => {
       if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
@@ -1036,7 +1055,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     return () => window.removeEventListener('keydown', handlePaste);
   }, [dispatch, dashboardId, expandedSessionIds, selection]);
 
-  // ---- Arrow key card navigation (when zoomed in on a card) ----
   const findNearestCard = useCallback((
     currentId: string,
     direction: 'left' | 'right' | 'up' | 'down',
@@ -1051,6 +1069,9 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     for (const bc of Object.values(browserCards)) {
       allCardEntries.push({ id: bc.browser_id, type: 'browser', cx: bc.x + bc.width / 2, cy: bc.y + bc.height / 2 });
     }
+    for (const wc of Object.values(workflowCards)) {
+      allCardEntries.push({ id: wc.workflow_id, type: 'workflow', cx: wc.x + wc.width / 2, cy: wc.y + wc.height / 2 });
+    }
 
     const current = allCardEntries.find((c) => c.id === currentId);
     if (!current) return null;
@@ -1063,7 +1084,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       const dx = card.cx - current.cx;
       const dy = card.cy - current.cy;
 
-      // Filter to the correct half-plane
       let inDirection = false;
       let primary = 0;
       let secondary = 0;
@@ -1083,13 +1103,10 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     }
 
     return best ? { id: best.id, type: best.type } : null;
-  }, [cards, viewCards, browserCards]);
+  }, [cards, viewCards, browserCards, workflowCards]);
 
-  // Compute which directions have neighbors from the focused card
   const neighborDirections = useMemo(() => {
-    // Lowered the zoom floor from 0.9 to 0.4 so arrow nav still works
-    // when users zoom out to see the whole canvas. Below 0.4 the cards
-    // are too small to be a useful navigation target.
+    // Below zoom 0.4 cards are too small to be useful nav targets.
     if (!focusedCardId || canvas.zoom < 0.4) return { left: false, right: false, up: false, down: false };
     return {
       left: !!findNearestCard(focusedCardId, 'left'),
@@ -1099,30 +1116,23 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     };
   }, [focusedCardId, canvas.zoom, findNearestCard]);
 
-  // Shake animation state: direction + timer
   const [shakeDirection, setShakeDirection] = useState<'left' | 'right' | 'up' | 'down' | null>(null);
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Use refs for values read inside the keydown handler to avoid stale closures
+  // Refs avoid stale closures inside the keydown handler.
   const focusedCardIdRef = useRef(focusedCardId);
   focusedCardIdRef.current = focusedCardId;
   const canvasZoomRef = useRef(canvas.zoom);
   canvasZoomRef.current = canvas.zoom;
 
   useEffect(() => {
-    // Helper: is the currently-focused element a text-entry field the
-    // user is actively editing? We only want to suppress dashboard
-    // navigation when the user is genuinely typing, not just because an
-    // input somewhere happens to have focus from a click long ago.
+    // True only when the input has content; empty inputs don't need arrows so we repurpose them for nav.
     const isActivelyEditing = (target: EventTarget | null): boolean => {
       const el = (target as HTMLElement) || (document.activeElement as HTMLElement | null);
       if (!el) return false;
       const tag = el.tagName;
       const editable = (el as any).isContentEditable;
       if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !editable) return false;
-      // Only suppress when the input actually has content to navigate
-      // within. An empty input doesn't need arrow keys for cursor
-      // movement, so we can safely repurpose arrows for dashboard nav.
       const val = (el as HTMLInputElement | HTMLTextAreaElement).value;
       if (typeof val === 'string' && val.length === 0) return false;
       if (editable && (el.textContent ?? '').length === 0) return false;
@@ -1132,8 +1142,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     const handleKey = (e: KeyboardEvent) => {
       if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
 
-      // Escape blurs any active input and restores focus to the canvas —
-      // so you can quickly "unstick" keyboard focus and start navigating.
+      // Escape blurs active input so users can unstick focus and start navigating.
       if (e.key === 'Escape') {
         const active = document.activeElement as HTMLElement | null;
         const tag = active?.tagName;
@@ -1152,14 +1161,9 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         default: return;
       }
 
-      // Don't hijack arrows when the user is actually typing
       if (isActivelyEditing(e.target)) return;
-
-      // Lowered zoom floor from 0.9 → 0.4 so nav still works zoomed out
       if (canvasZoomRef.current < 0.4) return;
 
-      // If no card is focused, pick the front-most one as a fallback so
-      // nav works after the user clicked on empty canvas.
       let currentFocused = focusedCardIdRef.current;
       if (!currentFocused) {
         const anyCardId = Object.keys(cards)[0] || Object.keys(viewCards)[0] || Object.keys(browserCards)[0];
@@ -1172,7 +1176,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       const target = findNearestCard(currentFocused, direction);
 
       if (!target) {
-        // No card in that direction — shake
         if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
         setShakeDirection(direction);
         shakeTimerRef.current = setTimeout(() => {
@@ -1182,7 +1185,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         return;
       }
 
-      // Expand + navigate to target + bring to front
       report('dashboard', 'arrow_navigated', { direction, from_card: currentFocused, to_card: target.id });
       if (target.type === 'agent') {
         dispatch(expandSession(target.id));
@@ -1193,13 +1195,20 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       setTimeout(() => {
         const rect = getCardRect(target.id, target.type);
         if (rect) canvas.actions.fitToCards([rect], 1.15, true);
-        setTimeout(() => (document.activeElement as HTMLElement)?.blur?.(), 150);
+        setTimeout(() => {
+        // Don't blur if the focused element is an input/textarea/
+        // contentEditable inside the just-clicked card; the user is
+        // typing there and this blur kills the cursor mid-keystroke.
+        const active = document.activeElement as HTMLElement | null;
+        if (!active) return;
+        const tag = active.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || active.isContentEditable) return;
+        active.blur?.();
+      }, 150);
       }, 100);
     };
 
-    // Capture phase so we beat MUI Menus/Selects that also listen for
-    // arrows. We still bail early on isActivelyEditing, so this doesn't
-    // interfere with typing.
+    // Capture phase beats MUI Menus/Selects; isActivelyEditing early-return prevents interference with typing.
     window.addEventListener('keydown', handleKey, true);
     return () => window.removeEventListener('keydown', handleKey, true);
   }, [findNearestCard, getCardRect, canvas.actions, dispatch, isActive, cards, viewCards, browserCards]);
@@ -1309,14 +1318,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
             if (selectedBrowserIds.length === 1) {
               const bc = store.getState().dashboardLayout.browserCards[selectedBrowserIds[0]];
               if (bc) {
-                // Use placeCard (collision-aware) instead of
-                // setCardPosition (blind setter). The "left of the
-                // browser" anchor is the IDEAL spot — but if it's
-                // already taken by an existing chat (e.g. step 3's
-                // YouTube agent that's still on canvas when step 5
-                // creates a new chat for the same browser), placeCard
-                // cascades to the nearest free cell instead of
-                // stacking on top.
+                // placeCard cascades to a free cell if the ideal "left of browser" spot is taken.
                 dispatch(placeCard({
                   sessionId: realId,
                   x: bc.x - DEFAULT_CARD_W - GRID_GAP * 12,
@@ -1410,7 +1412,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     }, 200);
   }, [dispatch, expandedSessionIds, canvas.actions, handleHighlightCard]);
 
-  // Auto-clear pendingFocusNoteId after the note has had a chance to mount + autofocus.
   useEffect(() => {
     if (!pendingFocusNoteId) return;
     const t = setTimeout(() => dispatch(clearPendingFocusNoteId()), 800);
@@ -1433,7 +1434,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     });
   }, [dispatch, canvas.actions, handleHighlightCard, setAutoFocusSessionId]);
 
-  // Context-aware fit: if a card is selected, zoom to it; otherwise fit all
   const handleFitToView = useCallback(() => {
     report('dashboard', 'fit_to_view', { has_selection: selection.selectedIds.size > 0 });
     if (selection.selectedIds.size === 1) {
@@ -1466,10 +1466,9 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   }, [dispatch, canvas.actions]);
 
   useEffect(() => {
-    if (!isActive) return;  // Heavy geometry recalculation — pause when dashboard is hidden
+    if (!isActive) return;  // Heavy geometry recalculation; pause when dashboard is hidden.
     const DRIFT_THRESHOLD = 60;
 
-    // Group tethered sub-agent cards by source, only including those still in the spawn column
     const sourceToSiblings = new Map<string, string[]>();
     for (const [id, glow] of Object.entries(glowingAgentCards)) {
       const card = cards[id];
@@ -1501,13 +1500,12 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         cursor += h + GRID_GAP * 2;
       }
     }
-  // measuredHeightsTick in deps ensures we re-run once ResizeObserver reports
-  // the new height after a collapse (avoids stale-height no-ops)
+  // measuredHeightsTick in deps: re-run after ResizeObserver reports the post-collapse height.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, expandedSessionIds, glowingAgentCards, cards, dispatch, measuredHeightsTick]);
 
   useEffect(() => {
-    if (!isActive) return;  // Heavy geometry recalculation — pause when dashboard is hidden
+    if (!isActive) return;  // Heavy geometry recalculation; pause when dashboard is hidden.
     const DRIFT_THRESHOLD = 60;
 
     const sourceToSiblings = new Map<string, string[]>();
@@ -1603,16 +1601,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       };
     }).filter(Boolean) as Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }>;
 
-    // Build browser tethers from TWO sources and merge:
-    // 1. glowingBrowserCards — the short-lived "flash" when a browser is first assigned
-    // 2. Active browser-agent sessions — persistent as long as the agent runs
-    //
-    // Source #2 is the fix for tethers disappearing when the parent session
-    // completes a turn (which clears glowingBrowserCards even though the
-    // browser agent is still working). Source #1 covers the initial moment
-    // before the browser-agent session is fully created. Together they
-    // ensure the arrow is always visible when it should be.
-
+    // Browser tethers merge from two sources: glowingBrowserCards (initial flash) and active browser-agent sessions (persistent).
     type Anchor = { x: number; y: number; side: 'left' | 'right' | 'top' | 'bottom' };
 
     function browserTether(
@@ -1706,14 +1695,12 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       };
     }
 
-    // Source 1: glow-based (covers the initial flash before browser-agent session exists)
     const glowTethers = new Map<string, ReturnType<typeof browserTether>>();
     for (const [browserId, { sourceId, fading, label }] of Object.entries(glowingBrowserCards)) {
       const t = browserTether(browserId, sourceId, fading, label || '');
       if (t) glowTethers.set(browserId, t);
     }
 
-    // Source 2: active browser-agent sessions (persistent — survives parent turn completion)
     for (const s of sessionList) {
       if (s.mode !== 'browser-agent') continue;
       if (s.status !== 'running' && s.status !== 'waiting_approval') continue;
@@ -1725,9 +1712,150 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
 
     const browserTethers = Array.from(glowTethers.values()).filter(Boolean) as Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }>;
 
-    return [...agentTethers, ...browserTethers];
+    // Workflow tethers reuse the browser-tether anchor/elbow math; skip deleted workflows to avoid dangling arrows.
+    const workflowTethers: Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }> = [];
+    for (const wc of Object.values(workflowCards)) {
+      const sourceId = wc.source_session_id;
+      if (!sourceId) continue;
+      const src = cards[sourceId];
+      if (!src) continue;
+      // Defense-in-depth: layout entry can outlive its workflow when deleted from the hub.
+      const hasReal = wc.workflow_id in workflowItems;
+      const hasDraft = wc.workflow_id in workflowOpenCards;
+      if (!hasReal && !hasDraft) continue;
+      // The "Make workflow" tether is a draft-time affordance: it shows
+      // the user which chat the new workflow card came out of. Once the
+      // workflow is saved (openCard transitions to 'saved' view), the
+      // user has committed and the visual link can retire. Per user
+      // feedback on image #70.
+      const openCard = workflowOpenCards[wc.workflow_id];
+      if (openCard && openCard.view !== 'preview') continue;
+
+      let srcX = src.x, srcY = src.y;
+      let dstX = wc.x, dstY = wc.y;
+      if (liveDragInfo) {
+        if (liveDragInfo.cardId === sourceId) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
+        if (liveDragInfo.cardId === wc.workflow_id) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
+      }
+
+      const srcMeasured = measuredHeightsRef.current[sourceId];
+      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
+        ? Math.max(EXPANDED_CARD_MIN_H, src.height)
+        : src.height);
+
+      const srcCx = srcX + src.width / 2;
+      const dstCx = dstX + wc.width / 2;
+      const srcAnchors: Anchor[] = [
+        { x: srcX + src.width, y: srcY + srcH * 0.54, side: 'right' },
+        { x: srcX, y: srcY + srcH * 0.54, side: 'left' },
+        { x: srcCx, y: srcY, side: 'top' },
+        { x: srcCx, y: srcY + srcH, side: 'bottom' },
+      ];
+      const dstAnchors: Anchor[] = [
+        { x: dstX, y: dstY + wc.height * 0.54, side: 'left' },
+        { x: dstX + wc.width, y: dstY + wc.height * 0.54, side: 'right' },
+        { x: dstCx, y: dstY, side: 'top' },
+        { x: dstCx, y: dstY + wc.height, side: 'bottom' },
+      ];
+      let bestSrc = srcAnchors[0], bestDst = dstAnchors[0];
+      let bestDist = Infinity;
+      for (const sa of srcAnchors) {
+        for (const da of dstAnchors) {
+          const d = Math.hypot(sa.x - da.x, sa.y - da.y);
+          if (d < bestDist) { bestDist = d; bestSrc = sa; bestDst = da; }
+        }
+      }
+      const x1 = bestSrc.x, y1 = bestSrc.y;
+      const x2 = bestDst.x, y2 = bestDst.y;
+      const isVertical = (bestSrc.side === 'top' || bestSrc.side === 'bottom')
+        && (bestDst.side === 'top' || bestDst.side === 'bottom');
+      let pathD: string;
+      if (isVertical) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const midY = y1 + dy / 2;
+        const r = (Math.abs(dx) < 1 || Math.abs(dy) < ELBOW_RADIUS * 2)
+          ? 0
+          : Math.min(ELBOW_RADIUS, Math.abs(dx) / 2, Math.abs(dy) / 4);
+        const sx = dx >= 0 ? 1 : -1;
+        const sy = dy >= 0 ? 1 : -1;
+        pathD = [
+          `M ${x1},${y1}`,
+          `V ${midY - sy * r}`,
+          `Q ${x1},${midY} ${x1 + sx * r},${midY}`,
+          `H ${x2 - sx * r}`,
+          `Q ${x2},${midY} ${x2},${midY + sy * r}`,
+          `V ${y2}`,
+        ].join(' ');
+      } else {
+        pathD = elbowPath(x1, y1, x2, y2);
+      }
+      const midX = x1 + (x2 - x1) / 2;
+      const midY = y1 + (y2 - y1) / 2;
+      const labelX = isVertical ? midX : midX + (x2 - midX) * 0.15;
+      const labelY = isVertical ? midY + (y2 - midY) * 0.15 : y2;
+      workflowTethers.push({
+        key: `workflow-${wc.workflow_id}`,
+        path: pathD,
+        labelX,
+        labelY,
+        label: 'Make workflow',
+        fading: false,
+      });
+    }
+
+    // Configure-panel tethers: each open configure panel is anchored to its
+    // workflow card so the user always sees which workflow's action surface
+    // they're editing, even after dragging things around.
+    const configureTethers: Array<{ key: string; path: string; labelX: number; labelY: number; label: string; fading: boolean }> = [];
+    for (const p of Object.values(configurePanels)) {
+      const wc = workflowCards[p.workflow_id];
+      if (!wc) continue;
+      let srcX = wc.x, srcY = wc.y;
+      let dstX = p.x, dstY = p.y;
+      if (liveDragInfo) {
+        if (liveDragInfo.cardId === p.workflow_id) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
+      }
+      const srcCx = srcX + wc.width / 2;
+      const dstCx = dstX + p.width / 2;
+      const srcAnchors: Anchor[] = [
+        { x: srcX + wc.width, y: srcY + wc.height * 0.5, side: 'right' },
+        { x: srcX, y: srcY + wc.height * 0.5, side: 'left' },
+        { x: srcCx, y: srcY, side: 'top' },
+        { x: srcCx, y: srcY + wc.height, side: 'bottom' },
+      ];
+      const dstAnchors: Anchor[] = [
+        { x: dstX, y: dstY + p.height * 0.5, side: 'left' },
+        { x: dstX + p.width, y: dstY + p.height * 0.5, side: 'right' },
+        { x: dstCx, y: dstY, side: 'top' },
+        { x: dstCx, y: dstY + p.height, side: 'bottom' },
+      ];
+      let bestSrc = srcAnchors[0], bestDst = dstAnchors[0];
+      let bestDist = Infinity;
+      for (const sa of srcAnchors) {
+        for (const da of dstAnchors) {
+          const d = Math.hypot(sa.x - da.x, sa.y - da.y);
+          if (d < bestDist) { bestDist = d; bestSrc = sa; bestDst = da; }
+        }
+      }
+      const x1 = bestSrc.x, y1 = bestSrc.y;
+      const x2 = bestDst.x, y2 = bestDst.y;
+      const pathD = elbowPath(x1, y1, x2, y2);
+      const midX = x1 + (x2 - x1) / 2;
+      const midY = y1 + (y2 - y1) / 2;
+      configureTethers.push({
+        key: `configure-${p.workflow_id}`,
+        path: pathD,
+        labelX: midX,
+        labelY: midY,
+        label: 'Configure',
+        fading: false,
+      });
+    }
+
+    return [...agentTethers, ...browserTethers, ...workflowTethers, ...configureTethers];
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, configurePanels, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
 
   const dotSize = Math.max(1, 1.5 * canvas.zoom);
   const dotSpacing = 24 * canvas.zoom;
@@ -1736,7 +1864,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
     <>
     <DashboardSelectionOverlay />
     <Box sx={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-      {/* Floating header overlay */}
       <Box
         sx={{
           position: 'absolute',
@@ -1745,12 +1872,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
           right: 0,
           zIndex: 10,
           pointerEvents: 'none',
-          // p: 3 (24px) was leaving a chunky air gap between the sidebar
-          // edge and the dashboard header that read as "two disconnected
-          // panels" rather than one continuous surface. 0.75 (6px)
-          // tightens the inset so the header floats just inside the
-          // content area without losing its breathing room from the
-          // top-most pixel.
+          // 0.75 (6px) keeps the header tight against the sidebar; 24px read as two disconnected panels.
           p: 0.75,
           pb: 0,
           background: `linear-gradient(to bottom, ${c.bg.page} 60%, transparent)`,
@@ -1771,7 +1893,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         </Box>
       </Box>
 
-      {/* Canvas viewport */}
       <Box
         ref={canvas.viewportRef}
         onMouseDown={handleViewportMouseDown}
@@ -1791,7 +1912,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                 : 'default',
         }}
       >
-        {/* Dot grid background */}
         <Box
           sx={{
             position: 'absolute',
@@ -1803,7 +1923,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
           }}
         />
 
-        {sessionList.length === 0 && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0 ? (
+        {sessionList.length === 0 && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0 && Object.keys(workflowCards).length === 0 && !workflowsHub ? (
           <Box
             sx={{
               position: 'absolute',
@@ -1844,7 +1964,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
               position: 'relative',
             }}
           >
-            {/* Tether lines between branched cards */}
             {tethers.length > 0 && (
               <svg
                 style={{
@@ -1875,13 +1994,9 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                     markerHeight="10"
                     orient="auto"
                   >
-                    <path d="M 0 1 L 10 5 L 0 9 z" fill={c.accent.primary} opacity={0.8} />
+                    <path d="M 0 1 L 10 5 L 0 9 z" fill={c.accent.primary} />
                   </marker>
                 </defs>
-                <style>{`
-                  @keyframes tether-flow { to { stroke-dashoffset: -16; } }
-                  @keyframes tether-pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
-                `}</style>
                 {tethers.map((t) => (
                   <g
                     key={t.key}
@@ -1897,7 +2012,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                       strokeWidth={8}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      opacity={0.2}
+                      opacity={0.15}
                       filter="url(#tether-glow-f)"
                     />
                     <path
@@ -1907,20 +2022,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                       strokeWidth={2}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      opacity={0.65}
                       markerEnd="url(#tether-arrow)"
-                      style={{ animation: 'tether-pulse 2s ease-in-out infinite' }}
-                    />
-                    <path
-                      d={t.path}
-                      fill="none"
-                      stroke={c.accent.primary}
-                      strokeWidth={1.5}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeDasharray="8 8"
-                      opacity={0.9}
-                      style={{ animation: 'tether-flow 0.6s linear infinite' }}
                     />
                     {t.label && (
                       <g transform={`translate(${t.labelX},${t.labelY})`}>
@@ -2016,9 +2118,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                   exitTarget={exitTarget}
                   isSelected={isSel}
                   isHighlighted={highlightedCardId === sid}
-                  // Only selected cards need the live drag delta; passing
-                  // it to everyone broke memo equality for unselected
-                  // cards on every mouse-move during multi-drag.
+                  // Only selected cards get live drag delta; passing to all broke memo equality during multi-drag.
                   multiDragDelta={isSel ? multiDragDelta : null}
                   onCardSelect={handleCardSelect}
                   onDragStart={handleCardDragStart}
@@ -2089,6 +2189,48 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                 onBringToFront={handleBringToFront}
               />
             ))}
+            {workflowsHub && (
+              <WorkflowsHubCard
+                cardX={workflowsHub.x}
+                cardY={workflowsHub.y}
+                cardWidth={workflowsHub.width}
+                cardHeight={workflowsHub.height}
+                cardZOrder={workflowsHub.zOrder ?? 0}
+                zoom={canvas.zoom}
+                panX={canvas.panX}
+                panY={canvas.panY}
+              />
+            )}
+            {Object.values(workflowCards).map((wc) => (
+              <WorkflowCard
+                key={`workflow-${wc.workflow_id}`}
+                workflowId={wc.workflow_id}
+                cardX={wc.x}
+                cardY={wc.y}
+                cardWidth={wc.width}
+                cardHeight={wc.height}
+                cardZOrder={wc.zOrder ?? 0}
+                zoom={canvas.zoom}
+                panX={canvas.panX}
+                panY={canvas.panY}
+                isSelected={selection.isSelected(wc.workflow_id)}
+                isHighlighted={highlightedCardId === wc.workflow_id}
+                multiDragDelta={multiDragDelta}
+                onCardSelect={handleCardSelect}
+                onDragStart={handleCardDragStart}
+                onDragMove={handleCardDragMove}
+                onDragEnd={handleCardDragEnd}
+                onDoubleClick={handleCardDoubleClick}
+                onBringToFront={handleBringToFront}
+              />
+            ))}
+            {Object.values(configurePanels).map((p) => (
+              <ConfigurePanelCard
+                key={`configure-${p.workflow_id}`}
+                panel={p}
+                zOrder={1}
+              />
+            ))}
             {Object.values(notes).map((n) => (
               <NoteCard
                 key={`note-${n.note_id}`}
@@ -2115,7 +2257,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
                 onBringToFront={handleBringToFront}
               />
             ))}
-            {/* Marquee selection rectangle */}
             {selection.marquee && (
               <div
                 style={{
@@ -2136,7 +2277,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         )}
       </Box>
 
-      {/* Floating bottom toolbar */}
       <Box sx={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 10 }}>
         <DashboardToolbar
           ref={toolbarRef}
@@ -2154,7 +2294,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         />
       </Box>
 
-      {/* Arrow navigation hints when zoomed in on a card */}
       {focusedCardId && canvas.zoom >= 0.4 && (
         <DirectionHints
           hasLeft={neighborDirections.left}
@@ -2165,7 +2304,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         />
       )}
 
-      {/* Floating zoom controls + minimap */}
       <Box sx={{ position: 'absolute', bottom: 16, right: 16, zIndex: 10 }}>
         <CanvasControls
           zoom={canvas.zoom}
@@ -2186,7 +2324,6 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       </Box>
     </Box>
 
-    {/* Card search palette (Cmd+F) */}
     <CardSearchPalette
       open={searchPaletteOpen}
       onClose={() => setSearchPaletteOpen(false)}

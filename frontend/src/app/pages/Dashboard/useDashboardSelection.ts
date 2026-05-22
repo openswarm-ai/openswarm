@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
-import type { CardPosition, ViewCardPosition, BrowserCardPosition, NotePosition } from '@/shared/state/dashboardLayoutSlice';
+import type { CardPosition, ViewCardPosition, BrowserCardPosition, NotePosition, WorkflowCardPosition } from '@/shared/state/dashboardLayoutSlice';
 
-export type CardType = 'agent' | 'view' | 'browser' | 'note';
+export type CardType = 'agent' | 'view' | 'browser' | 'note' | 'workflow';
 
 export interface SelectedCard {
   id: string;
@@ -42,6 +42,7 @@ export function useDashboardSelection(
   viewCards: Record<string, ViewCardPosition>,
   browserCards: Record<string, BrowserCardPosition> = {},
   notes: Record<string, NotePosition> = {},
+  workflowCards: Record<string, WorkflowCardPosition> = {},
 ) {
   const [selectedIds, setSelectedIds] = useState<Map<string, CardType>>(new Map());
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
@@ -149,6 +150,19 @@ export function useDashboardSelection(
         }
       }
 
+      for (const wc of Object.values(workflowCards)) {
+        if (
+          rectsIntersect(rect, {
+            x: wc.x,
+            y: wc.y,
+            width: wc.width,
+            height: wc.height,
+          })
+        ) {
+          intersecting.set(wc.workflow_id, 'workflow');
+        }
+      }
+
       if (shiftKey) {
         const base = selectionBeforeMarqueeRef.current;
         const next = new Map(base);
@@ -164,7 +178,7 @@ export function useDashboardSelection(
 
       return intersecting;
     },
-    [cards, viewCards, browserCards, notes],
+    [cards, viewCards, browserCards, notes, workflowCards],
   );
 
   const handleCanvasMouseDown = useCallback(
@@ -191,8 +205,7 @@ export function useDashboardSelection(
         if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
         isDraggingMarqueeRef.current = true;
         document.body.style.userSelect = 'none';
-        // Disable pointer events on browser webviews/iframes for the
-        // duration of the drag so the cursor passes through them.
+        // Disable pointer events on webviews/iframes during drag so the cursor passes through.
         document.body.classList.add('dashboard-marquee-active');
       }
 
@@ -242,14 +255,7 @@ export function useDashboardSelection(
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [deselectAll]);
 
-  // Inject (once) a global CSS rule that makes browser webviews and iframes
-  // transparent to mouse events while a marquee drag is active. Without this,
-  // the Electron <webview> hit-tests the cursor at the OS level — when the
-  // cursor lands on an interactable element inside the browser (button,
-  // link, text), the webview steals the cursor and the marquee drag visually
-  // freezes until the cursor escapes. Setting `pointer-events: none` makes
-  // the cursor pass straight through, so the dashboard's mousemove handler
-  // continues to fire and the marquee keeps growing smoothly.
+  // One-time CSS: pointer-events:none on webviews/iframes during marquee, so Electron's OS hit-test doesn't steal the cursor mid-drag.
   useEffect(() => {
     const id = 'dashboard-marquee-style';
     if (document.getElementById(id)) return;

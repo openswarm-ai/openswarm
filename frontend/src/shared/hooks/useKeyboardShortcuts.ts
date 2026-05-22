@@ -10,20 +10,31 @@ export function useKeyboardShortcuts() {
 
   const handler = useCallback(
     (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isInput =
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable;
+      const target = e.target as HTMLElement | null;
+      const active = document.activeElement as HTMLElement | null;
+      // Double-guard: e.target AND document.activeElement. A bare-letter
+      // shortcut would otherwise fire if focus is on a wrapper Box and the
+      // child input never received it, kicking the user out mid-type.
+      const isInputLike = (el: HTMLElement | null) =>
+        !!el && (
+          el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.isContentEditable ||
+          !!el.closest('input, textarea, [contenteditable="true"]')
+        );
+      if (isInputLike(target) || isInputLike(active)) return;
 
-      if (isInput) return;
-
-      if (e.key === 'd' && !e.metaKey && !e.ctrlKey) {
+      // Mod-gated shortcuts only. Bare letters were footguns: typing the
+      // letter "d" anywhere outside a tagged input field used to navigate
+      // home, which surprised users typing workflow titles/descriptions.
+      if (e.key.toLowerCase() === 'd' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
         navigate('/');
         return;
       }
 
-      if (e.key === 'A' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      if (e.key === 'A' && e.shiftKey && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
         for (const session of Object.values(sessions)) {
           for (const req of session.pending_approvals) {
             dispatch(handleApproval({ requestId: req.id, behavior: 'allow' }));
@@ -32,7 +43,8 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      if (e.key === 'D' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      if (e.key === 'D' && e.shiftKey && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
         for (const session of Object.values(sessions)) {
           for (const req of session.pending_approvals) {
             dispatch(handleApproval({ requestId: req.id, behavior: 'deny' }));
@@ -41,7 +53,8 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      if (e.key >= '1' && e.key <= '9' && !e.metaKey && !e.ctrlKey) {
+      if (e.key >= '1' && e.key <= '9' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
         const idx = parseInt(e.key) - 1;
         const sessionList = Object.values(sessions).sort(
           (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()

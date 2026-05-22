@@ -15,6 +15,9 @@ import SearchIcon from '@mui/icons-material/Search';
 import { motion } from 'framer-motion';
 import ChatInput from '@/app/pages/AgentChat/ChatInput';
 import type { ContextPath } from '@/app/components/DirectoryBrowser';
+import SchedulePopover from '@/app/pages/Workflows/SchedulePopover';
+import { openWorkflowCard } from '@/shared/state/workflowsSlice';
+import { addWorkflowCard, openWorkflowsHub } from '@/shared/state/dashboardLayoutSlice';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -103,11 +106,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const [mode, setMode] = useState(defaultMode || 'agent');
     const [model, setModel] = useState(defaultModel || 'sonnet');
     const [thinkingLevel, setThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high' | 'auto'>(defaultThinkingLevel || 'auto');
-    // Snap to the persisted Settings defaults as soon as they arrive from the
-    // backend. Without the settingsLoaded guard, the effect fires against the
-    // Redux initialState ('sonnet') before the real default has loaded, and
-    // the settingsApplied flag then locks out the real default for the rest
-    // of the session — so new chats spawn under the stale value.
+    // Without settingsLoaded guard, effect fires against Redux initial 'sonnet' before real default loads, locking out the real default for the session.
     const settingsApplied = useRef(false);
     useEffect(() => {
       if (settingsLoaded && !settingsApplied.current) {
@@ -117,9 +116,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         settingsApplied.current = true;
       }
     }, [settingsLoaded, defaultMode, defaultModel, defaultThinkingLevel]);
-    // Reset to the current Settings defaults each time the toolbar reopens
-    // for a new compose session, so the user's in-session model/mode picks
-    // don't leak into the next new-chat draft.
+    // Reset defaults on each new compose session so in-session picks don't leak into the next new-chat draft.
     const prevInputOpen = useRef(false);
     useEffect(() => {
       if (settingsLoaded && inputOpen && !prevInputOpen.current) {
@@ -130,10 +127,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       prevInputOpen.current = inputOpen;
     }, [inputOpen, settingsLoaded, defaultMode, defaultModel, defaultThinkingLevel]);
 
-    // Picking a model/mode/thinking-level in the toolbar writes through to
-    // the global default. Without this, the reopen-reset effect above
-    // would snap back to the old default the next time the user opens the
-    // toolbar, ignoring what they last picked.
+    // Writes toolbar picks through to global default; otherwise the reopen-reset effect would snap back next open.
     const promoteToDefault = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
       const current = store.getState().settings;
       if (!current.loaded) return;
@@ -159,6 +153,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const [viewSearch, setViewSearch] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
     const [historyQuery, setHistoryQuery] = useState('');
+    const [popoverMode, setPopoverMode] = useState<'search' | 'schedule'>('search');
     const shortcut = useAppSelector((s) => s.settings.data.new_agent_shortcut);
     const outputs = useAppSelector((s) => s.outputs.items);
     const historySearch = useAppSelector((s) => s.agents.historySearch);
@@ -390,6 +385,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const placeholderItems: Array<{ icon: typeof StickyNote2OutlinedIcon; label: string; sub: string }> = [];
 
     return (
+      <>
       <MotionBox
         ref={containerRef}
         layout
@@ -397,23 +393,20 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         style={{
           display: 'flex',
           flexDirection: 'column',
-          background: c.bg.surface,
-          border: `1px solid ${c.border.subtle}`,
+          // Drop toolbar card chrome when popover is open so we don't double-card; popover supplies its own surface.
+          background: historyOpen ? 'transparent' : c.bg.surface,
+          border: historyOpen ? '1px solid transparent' : `1px solid ${c.border.subtle}`,
           borderRadius: `${c.radius.xl}px`,
-          boxShadow: c.shadow.lg,
+          boxShadow: historyOpen ? 'none' : c.shadow.lg,
           padding: isExpanded ? '6px' : '5px',
           userSelect: 'none' as const,
-          overflow: inputOpen || newAgentBounce ? 'visible' : 'hidden',
-          width: viewPickerOpen ? 580 : isExpanded ? 540 : undefined,
+          overflow: inputOpen || newAgentBounce || historyOpen ? 'visible' : 'hidden',
+          // historyOpen: width owned by SchedulePopover; leave undefined so framer-motion measures intrinsic size.
+          width: viewPickerOpen ? 580 : historyOpen ? undefined : isExpanded ? 540 : undefined,
         }}
       >
         {inputOpen ? (
-          // data-onboarding-scope="dock" lets the AC's per-agent-selector
-          // resolver prefer this chat input (the new-agent dock that
-          // appears after clicking +) over any existing agent-card's
-          // chat input. Without this, AC would route to the most
-          // recently-spawned agent-card, which is usually the wrong
-          // target on step 5/6 (where the "new agent" is the dock draft).
+          // data-onboarding-scope="dock" makes AC's per-agent resolver prefer this dock chat input over existing agent cards.
           <div
             data-onboarding-scope="dock"
             style={{ width: '100%', minHeight: 56, paddingBottom: 0, marginBottom: -4 }}
@@ -433,97 +426,31 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           </div>
         ) : historyOpen ? (
           <div style={{ width: '100%' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1 }}>
-              <SearchIcon sx={{ fontSize: 18, color: c.text.muted }} />
-              <InputBase
-                inputRef={historyInputRef}
-                value={historyQuery}
-                onChange={(e) => setHistoryQuery(e.target.value)}
-                placeholder="Search past chats..."
-                sx={{
-                  flex: 1,
-                  fontSize: '0.85rem',
-                  color: c.text.primary,
-                  fontFamily: c.font.sans,
-                  '& input::placeholder': { color: c.text.ghost, opacity: 1 },
-                }}
-              />
-              {historySearch.loading && historySearch.results.length === 0 && (
-                <CircularProgress size={16} sx={{ color: c.text.muted }} />
-              )}
-            </Box>
-            <Box
-              ref={historyListRef}
-              onScroll={handleHistoryScroll}
-              sx={{
-                maxHeight: 320,
-                overflow: 'auto',
-                borderTop: `1px solid ${c.border.subtle}`,
-                '&::-webkit-scrollbar': { width: 4 },
-                '&::-webkit-scrollbar-track': { background: 'transparent' },
-                '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 2 },
-                scrollbarWidth: 'thin',
-                scrollbarColor: `${c.border.medium} transparent`,
+            <SchedulePopover
+              mode={popoverMode}
+              onModeChange={setPopoverMode}
+              historyResults={historySearch.results.map((e) => ({ id: e.id, name: e.name, closed_at: e.closed_at }))}
+              historyLoading={historySearch.loading}
+              historyQuery={historyQuery}
+              onHistoryQueryChange={setHistoryQuery}
+              onHistorySelect={handleHistorySelect}
+              onNewChat={() => { handleCloseHistory(); onNewAgent(); }}
+              onWorkflowSelect={(wid) => {
+                dispatch(addWorkflowCard({ workflowId: wid }));
+                dispatch(openWorkflowCard({
+                  workflowId: wid,
+                  view: 'saved',
+                }));
+                handleCloseHistory();
               }}
-            >
-              {historySearch.results.length === 0 && !historySearch.loading ? (
-                <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
-                  <Typography sx={{ fontSize: '0.82rem', color: c.text.muted }}>
-                    {historyQuery ? 'No matching chats' : 'No chat history yet'}
-                  </Typography>
-                </Box>
-              ) : (
-                <>
-                  {historySearch.results.map((entry) => (
-                    <Box
-                      key={entry.id}
-                      onClick={() => handleHistorySelect(entry.id)}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 1.5,
-                        px: 1.5,
-                        py: 0.9,
-                        cursor: 'pointer',
-                        transition: 'background-color 0.1s',
-                        '&:hover': { bgcolor: c.bg.elevated },
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          fontSize: '0.82rem',
-                          fontWeight: 500,
-                          color: c.text.primary,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          flex: 1,
-                          minWidth: 0,
-                        }}
-                      >
-                        {entry.name}
-                      </Typography>
-                      <Typography
-                        sx={{
-                          fontSize: '0.7rem',
-                          color: c.text.ghost,
-                          flexShrink: 0,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {formatRelativeTime(entry.closed_at)}
-                      </Typography>
-                    </Box>
-                  ))}
-                  {historySearch.loading && historySearch.results.length > 0 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
-                      <CircularProgress size={16} sx={{ color: c.text.muted }} />
-                    </Box>
-                  )}
-                </>
-              )}
-            </Box>
+              onExpand={() => {
+                // Singleton per dashboard, second Expand brings the existing card forward.
+                dispatch(openWorkflowsHub({ expandedSessionIds: [] }));
+                handleCloseHistory();
+              }}
+              historyScrollRef={historyListRef as React.RefObject<HTMLDivElement>}
+              onHistoryScroll={handleHistoryScroll}
+            />
           </div>
         ) : viewPickerOpen ? (
           <div style={{ width: '100%' }}>
@@ -859,6 +786,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           </div>
         )}
       </MotionBox>
+      </>
     );
   },
 );
