@@ -121,7 +121,6 @@
       "frontend/src/app/pages/Settings/Settings.tsx",
       "frontend/src/app/pages/Skills/SkillBuilderChat.tsx",
       "frontend/src/app/pages/Skills/Skills.tsx",
-      "frontend/src/app/pages/Tools/Tools.tsx",
       "frontend/src/app/pages/Views/ViewEditor.tsx",
       "frontend/src/app/pages/Views/ViewPreview.tsx",
       "frontend/src/app/pages/Views/useIframeElementSelector.ts",
