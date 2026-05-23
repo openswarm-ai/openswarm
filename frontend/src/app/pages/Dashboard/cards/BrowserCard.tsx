@@ -47,7 +47,7 @@ import { useBrowserActivity } from '@/shared/useBrowserActivity';
 import { getActionLabel } from '@/shared/browserCommandHandler';
 import { resolveInput, isGoogleSearch } from '@/shared/resolveUrl';
 import BrowserAgentOverlay from './BrowserAgentOverlay';
-import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
+import { useOverlayScrollPassthrough } from '../useOverlayScrollPassthrough';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';

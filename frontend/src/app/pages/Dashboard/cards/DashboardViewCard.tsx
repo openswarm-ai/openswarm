@@ -15,7 +15,7 @@ import { API_BASE, getAuthToken } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ViewPreview, { ViewPreviewHandle } from '@/app/pages/Views/ViewPreview';
 import { getDefault } from '@/shared/inputSchemaDefaults';
-import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
+import { useOverlayScrollPassthrough } from '../useOverlayScrollPassthrough';
 import {
   useRuntimePreviewUrl,
   pickPreviewUrl,

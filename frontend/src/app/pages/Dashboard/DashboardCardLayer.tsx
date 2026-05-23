@@ -1,9 +1,9 @@
 import React, { type RefObject } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import AgentCard from './AgentCard';
-import DashboardViewCard from './DashboardViewCard';
-import BrowserCard from './BrowserCard';
-import NoteCard from './NoteCard';
+import AgentCard from './cards/AgentCard';
+import DashboardViewCard from './cards/DashboardViewCard';
+import BrowserCard from './cards/BrowserCard';
+import NoteCard from './cards/NoteCard';
 import {
   EXPANDED_CARD_MIN_H,
   DEFAULT_CARD_W,

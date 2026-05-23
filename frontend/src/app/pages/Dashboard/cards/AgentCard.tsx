@@ -31,7 +31,7 @@ import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import { parseMcpToolName, getMcpShortAction } from '@/shared/mcpToolMeta';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
-import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
+import { useOverlayScrollPassthrough } from '../useOverlayScrollPassthrough';
 import { useStreamingMessage } from '@/shared/state/streamingSlice';
 import { isCanvasInteractionActive, onCanvasInteractionEnd } from '@/shared/canvasInteractionState';
 
