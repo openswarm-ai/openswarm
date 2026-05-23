@@ -43,6 +43,12 @@ from backend.apps.agents.session_store import (
 )
 from backend.apps.agents.cloud_sync import _sync_session_close
 from backend.apps.agents.workspace_git import _detect_git_identity, _ensure_cwd_git_repo
+from backend.apps.agents.tool_catalog import (
+    FULL_TOOLS,
+    _get_all_known_tool_names,
+    _get_denied_tool_names,
+    _is_fully_denied,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,42 +100,6 @@ def _apply_context_window(session, settings=None) -> None:
             session.context_window = cw
     except Exception:
         logger.debug("context_window lookup failed; keeping existing value", exc_info=True)
-
-
-FULL_TOOLS = [
-    "Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion",
-    "WebSearch", "WebFetch", "NotebookEdit", "TodoWrite",
-    "EnterPlanMode", "ExitPlanMode", "EnterWorktree",
-    "TaskOutput", "TaskStop",
-    "CronCreate", "CronList", "CronDelete",
-    "InvokeAgent",
-    "Agent",
-    # ToolSearch is the loader the CLI uses to expose deferred tool schemas
-    # on demand. Must be in the allowedTools whitelist or the model can't
-    # call it, which means none of the deferred extended tools become
-    # reachable even when the CLI advertises them in the system prompt.
-    "ToolSearch",
-]
-
-def _get_denied_tool_names(tool) -> set[str]:
-    """Return the set of MCP sub-tool names whose permission is 'deny'."""
-    return {
-        key for key, value in tool.tool_permissions.items()
-        if not key.startswith("_") and value == "deny"
-    }
-
-
-def _get_all_known_tool_names(tool) -> set[str]:
-    """Return all known sub-tool names for an MCP tool (from _tool_descriptions)."""
-    return set(tool.tool_permissions.get("_tool_descriptions", {}).keys())
-
-
-def _is_fully_denied(tool) -> bool:
-    """True when every known sub-tool on this MCP server is set to 'deny'."""
-    known = _get_all_known_tool_names(tool)
-    if not known:
-        return False
-    return known <= _get_denied_tool_names(tool)
 
 
 def get_all_tool_names() -> list[str]:
