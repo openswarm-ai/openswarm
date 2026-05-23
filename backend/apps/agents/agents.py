@@ -1,7 +1,7 @@
 from backend.config.Apps import SubApp
 from backend.apps.agents.agent_manager import agent_manager
-from backend.apps.agents.ws_manager import ws_manager
-from backend.apps.agents.models import AgentConfig, ApprovalResponse
+from backend.apps.agents.core.ws_manager import ws_manager
+from backend.apps.agents.core.models import AgentConfig, ApprovalResponse
 from contextlib import asynccontextmanager
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
@@ -67,8 +67,8 @@ async def send_message(session_id: str, body: dict):
 
     # Run MCP-suggestion classifier in parallel with the agent launch; fails open.
     try:
-        from backend.apps.agents.mcp_preflight import run_preflight
-        from backend.apps.agents.ws_manager import ws_manager as _ws
+        from backend.apps.agents.core.mcp_preflight import run_preflight
+        from backend.apps.agents.core.ws_manager import ws_manager as _ws
 
         async def _emit_preflight():
             try:
@@ -271,7 +271,7 @@ async def compact_session(session_id: str):
         raise HTTPException(status_code=404, detail="session not found")
     fired = agent_manager._maybe_compact(session, force=True)
     if fired:
-        from backend.apps.agents.ws_manager import ws_manager
+        from backend.apps.agents.core.ws_manager import ws_manager
         try:
             await ws_manager.send_to_session(session_id, "agent:context_status", {
                 "session_id": session_id,
@@ -296,7 +296,7 @@ async def clear_session(session_id: str):
     session.compacted_through_msg_id = None
     session.tokens = {"input": 0, "output": 0}
     session.needs_fresh_session = True
-    from backend.apps.agents.ws_manager import ws_manager
+    from backend.apps.agents.core.ws_manager import ws_manager
     try:
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,

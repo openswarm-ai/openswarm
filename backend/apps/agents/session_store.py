@@ -1,7 +1,7 @@
 import json
 import os
 
-from backend.apps.agents.models import AgentSession
+from backend.apps.agents.core.models import AgentSession
 
 
 def _sessions_dir() -> str:

@@ -18,7 +18,7 @@ from backend.apps.oauth_state import (
 from backend.config.Apps import MainApp
 from backend.apps.health.health import health
 from backend.apps.agents.agents import agents
-from backend.apps.agents.ws_manager import ws_manager
+from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.skills.skills import skills
 from backend.apps.tools_lib.tools_lib import tools_lib
 from backend.apps.modes.modes import modes
@@ -175,7 +175,7 @@ async def websocket_session(websocket: WebSocket, session_id: str):
                 last_seq = int(payload.get("last_seq") or 0)
                 connection_uuid = payload.get("connection_uuid") or ""
                 ack = await ws_manager.replay_to(session_id, websocket, last_seq)
-                from backend.apps.agents.seq_log import seq_log as _sl
+                from backend.apps.agents.core.seq_log import seq_log as _sl
                 await websocket.send_text(json.dumps({
                     "event": "server:hello",
                     "session_id": session_id,
@@ -636,7 +636,7 @@ async def mcp_meta(action: str, request: Request):
         if session.sdk_session_id:
             session.needs_fresh_session = True
         try:
-            from backend.apps.agents.ws_manager import ws_manager as _ws
+            from backend.apps.agents.core.ws_manager import ws_manager as _ws
             await _ws.send_to_session(parent_session_id, "agent:status", {
                 "session_id": parent_session_id,
                 "status": session.status,
@@ -703,7 +703,7 @@ async def session_compact(session_id: str):
     options and ships the compacted prefix.
     """
     from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.agents.ws_manager import ws_manager as _ws
+    from backend.apps.agents.core.ws_manager import ws_manager as _ws
     session = agent_manager.sessions.get(session_id)
     if not session:
         return JSONResponse({"error": "session not found"}, status_code=404)
@@ -721,8 +721,8 @@ async def session_compact(session_id: str):
 async def session_clear(session_id: str):
     """Wipe the session's UI history AND its SDK convo state (/clear slash cmd, Reset history button)."""
     from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.agents.ws_manager import ws_manager as _ws
-    from backend.apps.agents.models import MessageBranch
+    from backend.apps.agents.core.ws_manager import ws_manager as _ws
+    from backend.apps.agents.core.models import MessageBranch
     session = agent_manager.sessions.get(session_id)
     if not session:
         return JSONResponse({"error": "session not found"}, status_code=404)

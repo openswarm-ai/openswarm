@@ -56,14 +56,14 @@ os.makedirs(_SEQ_DIR, exist_ok=True)
 @pytest.fixture(autouse=True)
 def _patch_persist_dir():
     """Force the seq_log to use our tmp dir so we can assert on disk state."""
-    from backend.apps.agents import seq_log as sl_mod
+    from backend.apps.agents.core import seq_log as sl_mod
 
     # Rebuild the singleton with our test dir.
     new_store = sl_mod.SeqLogStore(persist_dir=_SEQ_DIR)
     monkey = patch.object(sl_mod, "seq_log", new_store)
     monkey.start()
     # Also patch the symbol re-exported into ws_manager's import scope.
-    from backend.apps.agents import ws_manager as wm_mod
+    from backend.apps.agents.core import ws_manager as wm_mod
     wm_monkey = patch.object(wm_mod, "seq_log", new_store)
     wm_monkey.start()
     yield new_store
@@ -84,7 +84,7 @@ def _build_app(seq_log):
     so the test thread can drive event emission through the same
     event loop as the WS handler, avoiding the cross-loop hazards
     of `asyncio.run()` mid-test."""
-    from backend.apps.agents.ws_manager import ws_manager
+    from backend.apps.agents.core.ws_manager import ws_manager
 
     app = FastAPI()
 
@@ -150,7 +150,7 @@ async def _emit_run(session_id: str, n_events: int, terminate: str | None = "com
     fanning out the broadcast across multiple coroutines. The seq
     log must still order them strictly.
     """
-    from backend.apps.agents.ws_manager import ws_manager
+    from backend.apps.agents.core.ws_manager import ws_manager
 
     async def emit_chunk(start: int, count: int):
         for i in range(count):
@@ -518,7 +518,7 @@ def test_disconnect_does_not_touch_agent_task(_patch_persist_dir):
     this test will catch it. We import agent_manager lazily so the
     `tasks` dict starts empty; we register a sentinel task and confirm
     disconnect_session doesn't poke it."""
-    from backend.apps.agents.ws_manager import ws_manager
+    from backend.apps.agents.core.ws_manager import ws_manager
     # Insert a real Future into a parallel registry to mimic
     # `agent_manager.tasks[session_id]` and confirm ws_manager
     # never reaches into it. We don't import agent_manager (heavy);

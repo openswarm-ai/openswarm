@@ -3,7 +3,7 @@ import json
 import logging
 from fastapi import WebSocket
 
-from backend.apps.agents.seq_log import TERMINAL_STATUSES, seq_log
+from backend.apps.agents.core.seq_log import TERMINAL_STATUSES, seq_log
 
 logger = logging.getLogger(__name__)
 

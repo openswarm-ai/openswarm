@@ -9,10 +9,10 @@ from datetime import datetime
 from uuid import uuid4
 from typing import Optional
 
-from backend.apps.agents.models import (
+from backend.apps.agents.core.models import (
     AgentConfig, AgentSession, Message, MessageBranch, ApprovalRequest, ToolGroupMeta,
 )
-from backend.apps.agents.ws_manager import ws_manager
+from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.tools_lib.tools_lib import (
     _load_all as load_all_tools,
@@ -26,7 +26,7 @@ from backend.apps.tools_lib.tools_lib import (
     save_trusted_sensitive_paths,
 )
 from backend.config.paths import SESSIONS_DIR
-from backend.apps.agents.error_classify import (
+from backend.apps.agents.core.error_classify import (
     _NON_TRANSIENT_PATTERNS,
     _TRANSIENT_CAPACITY_PATTERNS,
     _is_auth_error,
@@ -48,7 +48,7 @@ from backend.apps.agents.tool_catalog import (
     _get_denied_tool_names,
     _is_fully_denied,
 )
-from backend.apps.agents.aux_llm import _safe_resp_text
+from backend.apps.agents.core.aux_llm import _safe_resp_text
 from backend.apps.agents.history_compaction import (
     _build_history_prefix,
     _get_branch_messages,

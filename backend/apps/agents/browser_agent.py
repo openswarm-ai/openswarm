@@ -38,8 +38,8 @@ from backend.apps.agents.browser_schema import (
     MODEL_MAP,
     SYSTEM_PROMPT,
 )
-from backend.apps.agents.models import AgentSession, ApprovalRequest, Message
-from backend.apps.agents.ws_manager import ws_manager
+from backend.apps.agents.core.models import AgentSession, ApprovalRequest, Message
+from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.tools_lib.tools_lib import load_builtin_permissions
 
 logger = logging.getLogger(__name__)

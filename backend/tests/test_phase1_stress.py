@@ -34,7 +34,7 @@ os.environ.setdefault("OPENSWARM_DATA_DIR", _TMPROOT)
 
 def test_message_round_trips_client_id():
     """The new field must default to None and survive model_dump."""
-    from backend.apps.agents.models import Message
+    from backend.apps.agents.core.models import Message
 
     m = Message(role="user", content="hi")
     assert m.client_message_id is None
@@ -52,7 +52,7 @@ def test_message_round_trips_client_id():
 
 def test_message_legacy_payload_without_client_id():
     """Older session JSON files won't have the field, must still load."""
-    from backend.apps.agents.models import Message
+    from backend.apps.agents.core.models import Message
 
     legacy = {
         "id": "abc",
@@ -68,7 +68,7 @@ def test_message_legacy_payload_without_client_id():
 def test_client_message_id_collision_resistance():
     """Many random client_message_ids must remain distinct values
     after serialization. Smoke-tests the field preservation in bulk."""
-    from backend.apps.agents.models import Message
+    from backend.apps.agents.core.models import Message
 
     seen: set[str] = set()
     for _ in range(500):
@@ -267,7 +267,7 @@ def test_notes_stress_many_round_trips():
 async def test_concurrent_send_message_unique_client_ids():
     """100 parallel Message constructions with unique client_message_ids
     must round-trip independently, no cross-talk on the dataclass."""
-    from backend.apps.agents.models import Message
+    from backend.apps.agents.core.models import Message
 
     async def make_one(i: int):
         cmi = f"opt-{i}-{random.randint(0, 1_000_000)}"

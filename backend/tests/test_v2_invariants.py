@@ -220,14 +220,14 @@ async def test_gate_stress_random_activations():
 
 def test_needs_fresh_session_field_default_false():
     """Brand-new sessions must default needs_fresh_session=False."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     assert s.needs_fresh_session is False
 
 
 def test_needs_fresh_session_serializes_round_trip():
     """Pydantic round-trip must preserve the flag for session.json persistence."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     s.needs_fresh_session = True
     s.sdk_session_id = "claude-session-abc-123"
@@ -240,7 +240,7 @@ def test_needs_fresh_session_serializes_round_trip():
 
 def test_legacy_session_json_loads_without_field():
     """Old session JSONs predate the field, Pydantic must fill in default."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     legacy = {
         "id": "old", "name": "legacy", "model": "sonnet", "mode": "agent",
         "status": "completed", "messages": [],
@@ -255,7 +255,7 @@ def test_legacy_session_json_loads_without_field():
 
 def test_mcp_activate_sets_fresh_session_when_history_exists():
     """The gate logic at main.py: if sdk_session_id exists, set needs_fresh_session=True."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     # Mid-session: sdk already locked in
     s = AgentSession(id="mid", name="t", model="sonnet", mode="agent")
     s.sdk_session_id = "claude-session-existing"
@@ -267,7 +267,7 @@ def test_mcp_activate_sets_fresh_session_when_history_exists():
 
 def test_mcp_activate_skips_fresh_session_on_first_turn():
     """First-turn activation: no sdk_session_id yet, so needs_fresh_session stays False."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(id="fresh", name="t", model="sonnet", mode="agent")
     # No sdk_session_id yet
     if s.sdk_session_id:
@@ -277,7 +277,7 @@ def test_mcp_activate_skips_fresh_session_on_first_turn():
 
 def test_active_mcps_append_idempotent():
     """Activating the same server twice doesn't dupe."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     s.active_mcps.append("gmail")
     if "gmail" not in s.active_mcps:
@@ -292,7 +292,7 @@ def test_active_mcps_append_idempotent():
 
 def test_message_no_ghost_fields():
     """answer_tokens + thought_signature must NOT be Message attributes anymore."""
-    from backend.apps.agents.models import Message
+    from backend.apps.agents.core.models import Message
     m = Message(role="thinking", content="x")
     dumped = m.model_dump(mode="json")
     assert "answer_tokens" not in dumped
@@ -301,7 +301,7 @@ def test_message_no_ghost_fields():
 
 def test_message_legacy_payload_with_ghost_fields_still_loads():
     """Old session JSONs may carry the deleted fields, Pydantic must ignore them."""
-    from backend.apps.agents.models import Message
+    from backend.apps.agents.core.models import Message
     legacy = {
         "id": "m1",
         "role": "thinking",
@@ -323,7 +323,7 @@ def test_message_legacy_payload_with_ghost_fields_still_loads():
 
 def test_message_kept_fields():
     """Verify the live fields remain on the model."""
-    from backend.apps.agents.models import Message
+    from backend.apps.agents.core.models import Message
     m = Message(
         role="thinking",
         content="x",
@@ -340,7 +340,7 @@ def test_message_kept_fields():
 
 def test_message_round_trip_50_iterations():
     """Stress: 50 randomized message round-trips."""
-    from backend.apps.agents.models import Message
+    from backend.apps.agents.core.models import Message
     for _ in range(50):
         roles = ["user", "assistant", "tool_call", "tool_result", "system", "thinking"]
         m = Message(
@@ -650,7 +650,7 @@ def test_mcp_activate_handler_unknown_server():
 
 def test_active_mcps_persistence_on_session():
     """active_mcps survives session.model_dump() round-trip, critical for resume."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     s.active_mcps = ["gmail", "slack"]
     dumped = json.dumps(s.model_dump(mode="json"))
@@ -719,7 +719,7 @@ def test_chat_mode_not_in_builtins():
 
 def test_active_mcps_default_factory_creates_new_list():
     """Defaults must use Field(default_factory=list), not [], to avoid shared mutation."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s1 = AgentSession(id="a", name="a", model="sonnet", mode="agent")
     s2 = AgentSession(id="b", name="b", model="sonnet", mode="agent")
     s1.active_mcps.append("gmail")
@@ -758,14 +758,14 @@ async def test_concurrent_gate_calls_isolated():
 
 
 def test_pending_continuation_default_false():
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     assert s.pending_continuation is False
     assert s.pending_continuation_prompt is None
 
 
 def test_pending_continuation_serializes():
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     s.pending_continuation = True
     s.pending_continuation_prompt = "[mcp:auto-continue] retry now"
@@ -777,7 +777,7 @@ def test_pending_continuation_serializes():
 
 def test_compact_threshold_default():
     """compact_threshold_pct default of 0.65, drift here breaks Phase 2 compaction."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     assert s.compact_threshold_pct == 0.65
     assert s.context_soft_cap_pct == 0.90
@@ -999,7 +999,7 @@ def test_apply_context_window_overwrites_default_for_opus_4_7():
     dataclass default for every model. _apply_context_window must pull
     the real 1M value from the registry for opus-4-7 / sonnet so the
     soft-cap trim and the % meter both reflect the real model cap."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     from backend.apps.agents.agent_manager import _apply_context_window
     s = AgentSession(id="x", name="t", model="opus-4-7", mode="agent")
     assert s.context_window == 200_000
@@ -1017,7 +1017,7 @@ def test_apply_context_window_silent_on_unknown_model():
     """Bad lookup must NEVER raise; sessions with unknown/custom models
     that aren't in the registry fall back to the 128k registry default
     without breaking session creation."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     from backend.apps.agents.agent_manager import _apply_context_window
     s = AgentSession(id="x", name="t", model="nonexistent-model-xyz", mode="agent")
     _apply_context_window(s)
@@ -1912,7 +1912,7 @@ def test_apply_context_window_respects_custom_provider_value():
     """Custom OpenAI-compatible models supply their own context_window
     via settings.custom_providers. _apply_context_window must look them
     up the same way get_context_window does."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     from backend.apps.agents.agent_manager import _apply_context_window
     from backend.apps.settings.models import AppSettings, CustomProvider
     s = AgentSession(id="x", name="t", provider="custom", model="custom/ollama/qwen2.5:7b", mode="agent")
@@ -2725,7 +2725,7 @@ def test_web_fetch_tool_has_name_and_schema():
 
 
 def test_tool_group_meta_round_trip():
-    from backend.apps.agents.models import ToolGroupMeta, AgentSession
+    from backend.apps.agents.core.models import ToolGroupMeta, AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     s.tool_group_meta["g1"] = ToolGroupMeta(id="g1", name="Reading files", svg="<svg/>", is_refined=True)
     d = s.model_dump(mode="json")
@@ -2735,7 +2735,7 @@ def test_tool_group_meta_round_trip():
 
 
 def test_tool_group_meta_default_is_refined_false():
-    from backend.apps.agents.models import ToolGroupMeta
+    from backend.apps.agents.core.models import ToolGroupMeta
     m = ToolGroupMeta(id="g", name="x")
     assert m.is_refined is False
 
@@ -2746,14 +2746,14 @@ def test_tool_group_meta_default_is_refined_false():
 
 
 def test_session_has_main_branch_by_default():
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     assert "main" in s.branches
     assert s.active_branch_id == "main"
 
 
 def test_branch_serialization():
-    from backend.apps.agents.models import AgentSession, MessageBranch
+    from backend.apps.agents.core.models import AgentSession, MessageBranch
     s = AgentSession(id="x", name="t", model="sonnet", mode="agent")
     s.branches["alt"] = MessageBranch(id="alt", parent_branch_id="main", fork_point_message_id="msg-1")
     d = s.model_dump(mode="json")
@@ -2777,7 +2777,7 @@ async def test_e2e_session_lifecycle_with_mcp_activation():
       4. Persist & re-load, state survives
     """
     from backend.apps.agents.agent_manager import AgentManager
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     fake_tools = [_fake_tool("Gmail"), _fake_tool("Slack")]
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools), \
          patch("backend.apps.agents.agent_manager.refresh_google_token", new=AsyncMock(return_value=True)):
@@ -2838,14 +2838,14 @@ async def test_e2e_50_random_activation_sequences():
 def test_session_agent_active_ms_default_zero_for_legacy():
     """A session loaded from JSON without `agent_active_ms` deserializes
     cleanly with default 0 (not None, not missing-key crash)."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(name="legacy", model="sonnet", mode="agent")
     assert s.agent_active_ms == 0
     assert s.time_per_model == {}
 
 
 def test_session_agent_active_ms_round_trip():
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(name="t", model="sonnet", mode="agent",
                      agent_active_ms=12345, time_per_model={"haiku": 1000, "sonnet": 11345})
     d = s.model_dump(mode="json")
@@ -2857,7 +2857,7 @@ def test_session_agent_active_ms_round_trip():
 def test_session_agent_active_ms_accumulates_via_dict_update():
     """Simulates two turns adding to the bucket, the production accumulator
     pattern in agent_manager._on_result."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(name="t", model="sonnet", mode="agent")
     s.agent_active_ms = (s.agent_active_ms or 0) + 1500
     s.time_per_model[s.model] = int(s.time_per_model.get(s.model, 0)) + 1500
@@ -2870,7 +2870,7 @@ def test_session_agent_active_ms_accumulates_via_dict_update():
 def test_session_time_per_model_records_switch():
     """Simulates a model switch mid-session, each model accumulates its
     own bucket."""
-    from backend.apps.agents.models import AgentSession
+    from backend.apps.agents.core.models import AgentSession
     s = AgentSession(name="t", model="haiku", mode="agent")
     # Turn 1 on haiku
     s.time_per_model[s.model] = int(s.time_per_model.get(s.model, 0)) + 1200

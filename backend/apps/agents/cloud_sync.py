@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from backend.apps.agents.models import AgentSession
+from backend.apps.agents.core.models import AgentSession
 from backend.apps.service.client import sync as _sync
 
 

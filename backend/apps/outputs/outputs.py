@@ -610,7 +610,7 @@ async def vibe_code(body: VibeCodeRequest):
             system=VIBE_CODE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
         )
-        from backend.apps.agents.aux_llm import _safe_resp_text
+        from backend.apps.agents.core.aux_llm import _safe_resp_text
         raw = _safe_resp_text(resp).strip()
         if not raw:
             return {

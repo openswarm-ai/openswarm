@@ -39,7 +39,7 @@ NINE_ROUTER_V1 = f"{NINE_ROUTER_URL}/v1"
 #
 # Note: 0.3.60-0.4.20 ALL emit `max_tokens` (not max_completion_tokens)
 # when translating Anthropic→OpenAI, which OpenAI's GPT-5 family rejects.
-# The fix lives in our /api/openai-passthrough proxy; see openai_passthrough.py
+# The fix lives in our /api/openai-passthrough proxy; see core/openai_passthrough.py
 # and sync_openai_api_key for how the translation lane is rerouted via an
 # `openai-compatible` provider-node that honors `baseUrl`.
 NINE_ROUTER_NPM_VERSION = "0.3.60"
