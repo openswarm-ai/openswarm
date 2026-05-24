@@ -8,6 +8,10 @@ interface Props {
   onReset?: () => void;
   /** Where the boundary lives, for support ("root", "page:tools", etc.). */
   scope?: string;
+  /** Render this instead of the full-screen card when set; pass `null` for a boundary that just quietly unmounts its subtree and leaves the rest of the app alone. */
+  fallback?: React.ReactNode;
+  /** Fired once when an error is caught, so a parent can react (e.g. dismiss the crashed feature) without the whole app going down. */
+  onError?: (error: Error, info: React.ErrorInfo) => void;
   children: React.ReactNode;
 }
 
@@ -33,6 +37,7 @@ class ErrorBoundary extends React.Component<Props, State> {
         recent_actions: getRecentActions(10),
       });
     } catch {}
+    try { this.props.onError?.(error, info); } catch {}
     if (typeof console !== 'undefined' && console.error) {
       console.error('[ErrorBoundary]', error, info);
     }
@@ -51,7 +56,8 @@ class ErrorBoundary extends React.Component<Props, State> {
     try {
       const keys = Object.keys(localStorage);
       for (const k of keys) {
-        if (k.startsWith('openswarm:') || k.startsWith('redux-')) {
+        // Both namespaces exist in the wild: colon (openswarm:foo) and dot (openswarm.onboarding.v2, openswarm.migrations.*). Match either or the reset silently misses onboarding state.
+        if (k.startsWith('openswarm:') || k.startsWith('openswarm.') || k.startsWith('redux-')) {
           localStorage.removeItem(k);
         }
       }
@@ -62,6 +68,9 @@ class ErrorBoundary extends React.Component<Props, State> {
   render() {
     const { error } = this.state;
     if (!error) return this.props.children;
+
+    // Caller opted into a quiet fallback (e.g. null): unmount the broken subtree, leave the rest of the app standing.
+    if (this.props.fallback !== undefined) return <>{this.props.fallback}</>;
 
     const title = this.props.title || 'Something broke.';
     const wrap: React.CSSProperties = {

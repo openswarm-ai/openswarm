@@ -20,6 +20,7 @@ import {
 import AppShell from './components/Layout/AppShell';
 import DashboardSelection from './pages/DashboardSelection/DashboardSelection';
 import ErrorBoundary from './components/ErrorBoundary';
+import { setPanelMode, disableOnboardingAfterCrash } from './components/Onboarding/OnboardingProgressSlice';
 const Skills = lazy(() => import('./pages/Skills/Skills'));
 const Tools = lazy(() => import('./pages/Tools/Tools'));
 const Modes = lazy(() => import('./pages/Modes/Modes'));
@@ -448,9 +449,11 @@ const ThemedApp: React.FC = () => {
                     </Routes>
                   </Suspense>
                 </ErrorBoundary>
-                <Suspense fallback={null}>
-                  <OnboardingRoot />
-                </Suspense>
+                <OnboardingErrorGuard>
+                  <Suspense fallback={null}>
+                    <OnboardingRoot />
+                  </Suspense>
+                </OnboardingErrorGuard>
               </DeepLinkListener>
             </UpdateListener>
             </DefaultModelGuard>
@@ -459,6 +462,30 @@ const ThemedApp: React.FC = () => {
         </ShortcutsProvider>
       </HashRouter>
     </MuiThemeProvider>
+  );
+};
+
+/**
+ * Onboarding must never be able to take the whole app down. It mounts beside the
+ * routes (not under them), so before this guard a render throw bubbled to the root
+ * boundary and blanked everything. Here we catch it locally: keep the dashboard
+ * alive (fallback null), report it under its own scope so the stack finally shows
+ * up in telemetry, and dismiss the tour in storage so the next launch doesn't drop
+ * the user straight back into the same crash. Settings > restart tour re-enables it.
+ */
+const OnboardingErrorGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const dispatch = useAppDispatch();
+  return (
+    <ErrorBoundary
+      scope="onboarding"
+      fallback={null}
+      onError={() => {
+        try { dispatch(setPanelMode('hidden')); } catch {}
+        disableOnboardingAfterCrash();
+      }}
+    >
+      {children}
+    </ErrorBoundary>
   );
 };
 

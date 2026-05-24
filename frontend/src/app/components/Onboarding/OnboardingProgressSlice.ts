@@ -65,6 +65,24 @@ export function persistToStorage(state: OnboardingProgressState): void {
   }
 }
 
+/** Persist a hidden-on-crash marker straight to storage. The error boundary unmounts OnboardingRoot, so its own debounced persist effect can't run; write here or the dismissal won't survive a reload and the user re-enters the crash. Settings > restart tour clears it. */
+export function disableOnboardingAfterCrash(): void {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    // Parse defensively: a corrupt value must not abort the write, or the dismiss never persists and the user re-enters the crash on reload.
+    let parsed: Record<string, unknown> = {};
+    if (raw) {
+      try { parsed = JSON.parse(raw) || {}; } catch { parsed = {}; }
+    }
+    parsed.version = SCHEMA_VERSION;
+    parsed.panelMode = 'hidden';
+    parsed.dismissedAt = Date.now();
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    /* localStorage unavailable */
+  }
+}
+
 const initialState: OnboardingProgressState = {
   version: SCHEMA_VERSION,
   startedAt: 0,

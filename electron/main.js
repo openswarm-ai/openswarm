@@ -143,6 +143,7 @@ let cachedUpdateStatus = { status: 'idle', info: null, error: null };
 let splashWindow = null;
 let mainWindowReady = false;
 let isQuittingFromSplash = false;  // guards against double-quit during error shutdown
+let rendererCrashTimes = [];       // timestamps of recent render-process-gone events; caps the auto-reload retry storm
 const recentBackendStderr = [];   // ring buffer (last ~60 lines) for splash error UI
 let splashDataUrlCache = null;
 
@@ -736,6 +737,30 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Renderer process death (GPU/native/OOM crash) is invisible to React error
+  // boundaries: the whole content process is gone, so JS never runs to catch
+  // anything. Without this the window just sits blank forever. Reload to
+  // recover, but cap retries so a deterministic crash-on-load can't pin the CPU
+  // in an infinite reload storm; after the cap we leave it so the splash/quit
+  // path can take over rather than thrash.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    const reason = details && details.reason;
+    if (reason === 'clean-exit') return;
+    // Don't fight the shutdown: the renderer dying mid-quit-drain is expected, reloading it then would resurrect a window we're trying to close.
+    if (drainingForQuit) return;
+    console.error('[main] renderer process gone:', reason);
+    const now = Date.now();
+    rendererCrashTimes = rendererCrashTimes.filter((t) => now - t < 60_000);
+    if (rendererCrashTimes.length >= 3) {
+      console.error('[main] renderer crashed 3x in 60s — not auto-reloading again');
+      return;
+    }
+    rendererCrashTimes.push(now);
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
+    } catch (_) {}
   });
 
   // Window-blur / window-focus tracking — analytics signal for "user
