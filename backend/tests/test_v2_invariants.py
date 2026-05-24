@@ -1943,3 +1943,17 @@ def test_session_time_per_model_records_switch():
     # Turn 2 on sonnet
     s.time_per_model[s.model] = int(s.time_per_model.get(s.model, 0)) + 8400
     assert s.time_per_model == {"haiku": 1200, "sonnet": 8400}
+
+
+def test_update_session_persists_model():
+    import asyncio
+
+    from backend.apps.agents.agent_manager import AgentManager
+    from backend.apps.agents.models import AgentSession
+
+    mgr = AgentManager()
+    mgr.sessions["s1"] = AgentSession(name="t", model="haiku", mode="agent")
+
+    asyncio.run(mgr.update_session("s1", model="sonnet"))
+
+    assert mgr.sessions["s1"].model == "sonnet"

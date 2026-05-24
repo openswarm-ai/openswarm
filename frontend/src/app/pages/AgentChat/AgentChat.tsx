@@ -31,6 +31,7 @@ import {
   duplicateSession,
   setActiveSession,
   updateSessionModel,
+  persistSessionModel,
   updateSessionMode,
   updateSessionThinkingLevel,
   updateThinkingLevel,
@@ -492,7 +493,11 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
 
   const handleModelChange = useCallback((newModel: string) => {
     setModel(newModel);
-    if (id && !isDraft) dispatch(updateSessionModel({ sessionId: id, model: newModel }));
+    if (!id) return;
+    dispatch(updateSessionModel({ sessionId: id, model: newModel }));
+    if (!isDraft) {
+      dispatch(persistSessionModel({ sessionId: id, model: newModel }));
+    }
   }, [id, isDraft, dispatch]);
 
   const handleThinkingLevelChange = useCallback((level: 'off' | 'low' | 'medium' | 'high' | 'auto') => {

@@ -91,6 +91,131 @@ const webviewPreloadPath: string | undefined = isElectron
 
 type WebviewElement = BrowserWebview;
 
+function createIframeBrowserWebview(iframe: HTMLIFrameElement): BrowserWebview {
+  const getWindow = (): Window | null => {
+    try {
+      return iframe.contentWindow;
+    } catch {
+      return null;
+    }
+  };
+
+  const getDocument = (): Document | null => {
+    try {
+      return iframe.contentDocument;
+    } catch {
+      return null;
+    }
+  };
+
+  const sameOriginOnly = (action: string): Error => new Error(`Iframe browser ${action} requires same-origin content`);
+
+  return Object.assign(iframe, {
+    async loadURL(url: string) {
+      iframe.src = url;
+    },
+    goBack() {
+      const win = getWindow();
+      if (win) {
+        try { win.history.back(); } catch { /* ignore */ }
+      }
+    },
+    goForward() {
+      const win = getWindow();
+      if (win) {
+        try { win.history.forward(); } catch { /* ignore */ }
+      }
+    },
+    reload() {
+      const win = getWindow();
+      if (win) {
+        try { win.location.reload(); return; } catch { /* ignore */ }
+      }
+      iframe.src = iframe.src;
+    },
+    canGoBack() {
+      return false;
+    },
+    canGoForward() {
+      return false;
+    },
+    getURL() {
+      try {
+        return getWindow()?.location.href || iframe.src || '';
+      } catch {
+        return iframe.src || '';
+      }
+    },
+    getTitle() {
+      try {
+        return getDocument()?.title || iframe.title || '';
+      } catch {
+        return iframe.title || '';
+      }
+    },
+    async capturePage() {
+      const doc = getDocument();
+      if (!doc || !doc.body) throw sameOriginOnly('screenshot');
+      const win = doc.defaultView;
+      if (!win) throw sameOriginOnly('screenshot');
+      if (!(win as any).html2canvas) {
+        await new Promise<void>((resolve, reject) => {
+          const script = doc.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+          script.onload = () => resolve();
+          script.onerror = () => reject(sameOriginOnly('screenshot'));
+          doc.head.appendChild(script);
+        });
+      }
+      const h2c = (win as any).html2canvas;
+      if (!h2c) throw sameOriginOnly('screenshot');
+      const canvas = await h2c(doc.body, {
+        backgroundColor: null,
+        scale: 1,
+        logging: false,
+        useCORS: true,
+      });
+      return {
+        toDataURL: () => canvas.toDataURL('image/png'),
+        toPNG: () => canvas as any,
+      };
+    },
+    async executeJavaScript(code: string) {
+      const win = getWindow();
+      if (!win) throw sameOriginOnly('script execution');
+      try {
+        return win.eval(code);
+      } catch {
+        throw sameOriginOnly('script execution');
+      }
+    },
+    sendInputEvent(event: any) {
+      const doc = getDocument();
+      if (!doc) return;
+      const active = doc.activeElement || doc.body;
+      if (!active) return;
+      if (event?.type === 'keyDown' || event?.type === 'keyUp' || event?.type === 'char') {
+        active.dispatchEvent(new KeyboardEvent(event.type === 'keyUp' ? 'keyup' : 'keydown', { bubbles: true, cancelable: true, key: event.keyCode || event.key || '' }));
+        return;
+      }
+      active.dispatchEvent(new Event(event?.type || 'input', { bubbles: true, cancelable: true }));
+    },
+    getWebContentsId() {
+      const existing = iframe.dataset.openswarmWebContentsId;
+      if (existing) return Number(existing);
+      const next = Number.parseInt(`${Date.now()}${Math.floor(Math.random() * 1000)}`, 10);
+      iframe.dataset.openswarmWebContentsId = String(next);
+      return next;
+    },
+    addEventListener(event: string, listener: (...args: any[]) => void, options?: boolean | AddEventListenerOptions) {
+      iframe.addEventListener(event, listener as EventListener, options);
+    },
+    removeEventListener(event: string, listener: (...args: any[]) => void, options?: boolean | EventListenerOptions) {
+      iframe.removeEventListener(event, listener as EventListener, options);
+    },
+  }) as BrowserWebview;
+}
+
 interface TabLocalState {
   loading: boolean;
   canGoBack: boolean;
@@ -133,6 +258,7 @@ const BrowserCard: React.FC<Props> = ({
   const browserHomepage = useAppSelector((state) => state.settings.data.browser_homepage);
   const elementSelectionCtx = useElementSelection();
   const isElementSelectMode = elementSelectionCtx?.selectMode ?? false;
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const browserAgentSession = useAppSelector((state) => {
     const sessions = state.agents.sessions;
@@ -326,6 +452,8 @@ const BrowserCard: React.FC<Props> = ({
       wv.loadURL(finalUrl).catch((err: Error) => {
         if (!err.message?.includes('ERR_ABORTED')) console.error('Navigation failed:', err);
       });
+    } else if (wv) {
+      wv.loadURL(finalUrl).catch(() => {});
     }
     dispatch(updateBrowserTabUrl({ browserId, tabId: activeTabId, url: finalUrl }));
   }, [browserId, activeTabId, dispatch]);
@@ -621,6 +749,19 @@ const BrowserCard: React.FC<Props> = ({
   const isGlowingFromRedux = !!glowingBrowserCards[browserId];
 
   const showGlow = isGlowingFromRedux;
+
+  useEffect(() => {
+    if (isElectron) return;
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    const adapter = createIframeBrowserWebview(iframe);
+    webviewMap.current.set(activeTabId, adapter);
+    registerWebview(browserId, activeTabId, adapter);
+    return () => {
+      unregisterWebview(browserId, activeTabId);
+      webviewMap.current.delete(activeTabId);
+    };
+  }, [browserId, activeTabId, isElectron, activeUrl]);
 
   const agentBorder = isHighlighted
     ? `2px solid ${c.accent.primary}`
@@ -1159,10 +1300,32 @@ const BrowserCard: React.FC<Props> = ({
         {!isElectron && (
           <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
             <iframe
+              ref={iframeRef}
               src={activeUrl}
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               style={{ width: '100%', height: '100%', border: 'none' }}
               title="Browser"
+              onLoad={() => {
+                const iframe = iframeRef.current;
+                if (!iframe) return;
+                const currentUrl = (() => {
+                  try {
+                    return iframe.contentWindow?.location.href || activeUrl;
+                  } catch {
+                    return activeUrl;
+                  }
+                })();
+                const currentTitle = (() => {
+                  try {
+                    return iframe.contentDocument?.title || '';
+                  } catch {
+                    return '';
+                  }
+                })();
+                dispatch(updateBrowserTabUrl({ browserId, tabId: activeTabId, url: currentUrl }));
+                dispatch(updateBrowserTabTitle({ browserId, tabId: activeTabId, title: currentTitle }));
+                updateTabLocal(activeTabId, { loading: false, canGoBack: false, canGoForward: false });
+              }}
             />
             <Box
               sx={{

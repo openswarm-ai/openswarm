@@ -4342,12 +4342,12 @@ class AgentManager:
         return {"name": name, "svg": svg, "is_refined": is_refinement}
 
     async def update_session(self, session_id: str, **fields):
-        """Update mutable session fields (system_prompt, name)."""
+        """Update mutable session fields (system_prompt, name, model)."""
         session = self.sessions.get(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
 
-        allowed = {"system_prompt", "name", "thinking_level"}
+        allowed = {"system_prompt", "name", "thinking_level", "model"}
         for key, value in fields.items():
             if key in allowed:
                 # Defend against bad thinking_level values

@@ -411,6 +411,18 @@ export const updateThinkingLevel = createAsyncThunk(
   }
 );
 
+export const persistSessionModel = createAsyncThunk(
+  'agents/persistSessionModel',
+  async ({ sessionId, model }: { sessionId: string; model: string }) => {
+    await fetch(`${AGENTS_API}/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    return { sessionId, model };
+  }
+);
+
 export const handleApproval = createAsyncThunk(
   'agents/handleApproval',
   async ({
