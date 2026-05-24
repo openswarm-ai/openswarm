@@ -7,6 +7,9 @@ logic is right across every gate-dismissal path the renderer cares about.
 
 from __future__ import annotations
 
+import time
+from urllib.parse import parse_qs, urlparse
+
 import pytest
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
@@ -133,6 +136,115 @@ def test_signin_activate_short_token_rejected_locally(client, reset_settings):
         json={"token": "short", "signin_method": "google"},
     )
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Browser-only /api/auth/google/* fallback
+# ---------------------------------------------------------------------------
+
+def test_local_google_start_redirects_to_google_with_local_callback(client, reset_settings):
+    """Plain-browser sign-in starts from localhost so it never hits the
+    cloud success page that redirects to openswarm:// (Electron keeps using
+    the cloud start URL from the frontend)."""
+    from backend.apps.auth import router as auth_router
+
+    auth_router._pending_local_google_oauth.clear()
+    with patch.dict(
+        "os.environ",
+        {
+            "GOOGLE_OAUTH_CLIENT_ID": "google-client-id",
+            "GOOGLE_OAUTH_CLIENT_SECRET": "google-client-secret",
+        },
+        clear=False,
+    ):
+        r = client.get(
+            "/api/auth/google/start?install_id=test-install&local_port=8324",
+            follow_redirects=False,
+        )
+
+    assert r.status_code == 302
+    location = r.headers["location"]
+    parsed = urlparse(location)
+    qs = parse_qs(parsed.query)
+    assert parsed.netloc == "accounts.google.com"
+    assert qs["redirect_uri"] == ["http://localhost:8324/api/auth/google/callback"]
+    state = qs["state"][0]
+    assert auth_router._pending_local_google_oauth[state]["redirect_uri"] == "http://localhost:8324/api/auth/google/callback"
+
+
+def test_local_google_callback_persists_identity_without_cloud_deep_link(client, reset_settings):
+    """The local callback exchanges with Google and writes settings itself,
+    avoiding api.openswarm.com's openswarm:// browser prompt entirely."""
+    from backend.apps.auth import router as auth_router
+    from backend.apps.settings.settings import load_settings
+
+    auth_router._pending_local_google_oauth.clear()
+    auth_router._pending_local_google_oauth["state-123"] = {
+        "expires_at": time.time() + 60,
+        "redirect_uri": "http://localhost:8324/api/auth/google/callback",
+        "install_id": "test-install",
+    }
+
+    token_response = AsyncMock()
+    token_response.status_code = 200
+    token_response.json = lambda: {"access_token": "google-access-token"}
+    token_response.text = ""
+
+    userinfo_response = AsyncMock()
+    userinfo_response.status_code = 200
+    userinfo_response.json = lambda: {"id": "google-user-123", "email": "browser@example.com"}
+    userinfo_response.text = ""
+
+    with patch.dict(
+        "os.environ",
+        {
+            "GOOGLE_OAUTH_CLIENT_ID": "google-client-id",
+            "GOOGLE_OAUTH_CLIENT_SECRET": "google-client-secret",
+        },
+        clear=False,
+    ), patch("httpx.AsyncClient") as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.post = AsyncMock(return_value=token_response)
+        instance.get = AsyncMock(return_value=userinfo_response)
+
+        r = client.get("/api/auth/google/callback?code=oauth-code&state=state-123")
+
+    assert r.status_code == 200
+    assert "You're signed in" in r.text
+    settings = load_settings()
+    assert settings.user_id == "google:google-user-123"
+    assert settings.user_email == "browser@example.com"
+    assert settings.signin_method == "google"
+    assert "state-123" not in auth_router._pending_local_google_oauth
+
+
+def test_browser_token_allows_first_party_localhost_origin(reset_settings):
+    """Browser mode can bootstrap the local bearer from localhost:3000."""
+    import backend.auth as auth_mod
+    if not auth_mod._TOKEN:
+        auth_mod._TOKEN = "test-browser-token-1234567890"
+
+    unauth_client = TestClient(app)
+    r = unauth_client.get(
+        "/api/auth/browser-token",
+        headers={"Origin": "http://localhost:3000", "Host": "localhost:8324"},
+    )
+    assert r.status_code == 200
+    assert r.json()["token"] == auth_mod._TOKEN
+
+
+def test_browser_token_rejects_non_first_party_origin(reset_settings):
+    """Do not hand the API bearer to arbitrary websites."""
+    import backend.auth as auth_mod
+    if not auth_mod._TOKEN:
+        auth_mod._TOKEN = "test-browser-token-1234567890"
+
+    unauth_client = TestClient(app)
+    r = unauth_client.get(
+        "/api/auth/browser-token",
+        headers={"Origin": "https://evil.example", "Host": "localhost:8324"},
+    )
+    assert r.status_code == 403
 
 
 # ---------------------------------------------------------------------------

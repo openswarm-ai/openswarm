@@ -34,8 +34,9 @@ import {
 } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import EmailIcon from '@mui/icons-material/Email';
-import { useAppSelector } from '@/shared/hooks';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { activateSignin, fetchSettings } from '@/shared/state/settingsSlice';
 import { OPENSWARM_DEFAULT_PROXY_URL, API_BASE } from '@/shared/config';
 import { report } from '@/shared/serviceClient';
 
@@ -44,6 +45,7 @@ type Stage = 'choose' | 'email_form' | 'code_form';
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export default function SignInGate(): JSX.Element {
+  const dispatch = useAppDispatch();
   const tokens = useClaudeTokens();
   const proxyUrl = useAppSelector(
     (s) => s.settings.data.openswarm_proxy_url || OPENSWARM_DEFAULT_PROXY_URL,
@@ -58,20 +60,14 @@ export default function SignInGate(): JSX.Element {
 
   const cloudBase = proxyUrl.replace(/\/$/, '');
 
-  const activateSignin = async (token: string, email?: string | null): Promise<void> => {
-    const res = await fetch(`${API_BASE}/auth/signin-activate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+  const activateGoogleSignin = async (token: string, email?: string | null): Promise<void> => {
+    await dispatch(
+      activateSignin({
         token,
         email: email ?? undefined,
         signin_method: 'google',
       }),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(text || `Local activate failed (${res.status})`);
-    }
+    ).unwrap();
   };
 
   const resolveInstallId = async (): Promise<string> => {
@@ -121,13 +117,18 @@ export default function SignInGate(): JSX.Element {
       install_id: resolvedInstallId,
       local_port: String(localPort),
     });
-    const startUrl = `${cloudBase}/api/auth/google/start?${params.toString()}`;
     const api = (window as any).openswarm;
     if (api?.openExternal) {
+      const startUrl = `${cloudBase}/api/auth/google/start?${params.toString()}`;
       api.openExternal(startUrl);
     } else {
+      // Plain browser mode has no Electron protocol handler, so do not use
+      // api.openswarm.com's openswarm:// success page. Complete OAuth through
+      // the local backend callback instead.
+      const startUrl = `${API_BASE}/auth/google/start?${params.toString()}`;
       const popup = window.open(startUrl, 'openswarm-google-signin', 'width=560,height=720');
       const cloudOrigin = new URL(cloudBase).origin;
+      const localOrigin = new URL(API_BASE).origin;
       let completed = false;
 
       const cleanup = () => {
@@ -136,14 +137,20 @@ export default function SignInGate(): JSX.Element {
       };
 
       const onMessage = async (event: MessageEvent) => {
-        if (event.origin !== cloudOrigin) return;
+        if (event.origin !== cloudOrigin && event.origin !== localOrigin) return;
         const payload = event.data;
         const callbackData = payload?.type === 'oauth_callback' ? payload.data : payload;
         const token = callbackData?.token || callbackData?.bearer || callbackData?.access_token;
+        if ((callbackData?.ok || callbackData?.local) && !token) {
+          await dispatch(fetchSettings()).unwrap();
+          completed = true;
+          cleanup();
+          return;
+        }
         if (!token || completed) return;
         completed = true;
         try {
-          await activateSignin(token, callbackData?.email || callbackData?.user_email || null);
+          await activateGoogleSignin(token, callbackData?.email || callbackData?.user_email || null);
           cleanup();
         } catch (err) {
           setErrMsg((err as Error).message || 'Sign-in failed.');
@@ -230,24 +237,15 @@ export default function SignInGate(): JSX.Element {
       }
       const data = (await res.json()) as { bearer?: string; user_id?: string; user_email?: string };
       if (!data.bearer) throw new Error('Server did not return a bearer.');
-      // Hand the bearer to the local backend the same way Google's
-      // handoff page does, so the rest of the app converges identically.
-      await fetch(`${API_BASE}/auth/signin-activate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Hand the bearer to the local backend and immediately refresh Redux
+      // settings so the gate dismisses as soon as the code is accepted.
+      await dispatch(
+        activateSignin({
           token: data.bearer,
           email: data.user_email,
           signin_method: 'email',
         }),
-      }).then(async (activate) => {
-        if (!activate.ok) {
-          const text = await activate.text().catch(() => '');
-          throw new Error(text || `Local activate failed (${activate.status})`);
-        }
-      });
-      // SignInGateLoader's polling picks up the new user_id within 2s
-      // and unmounts this gate. Nothing else to do.
+      ).unwrap();
     } catch (err) {
       setErrMsg((err as Error).message || 'Verification failed.');
     } finally {

@@ -312,6 +312,15 @@ _AUTH_EXEMPT_EXACT = {
     # cloud-validated bearer in the body is the actual auth mechanism.
     "/api/subscription/activate",
     "/api/auth/signin-activate",
+    # Browser-only dev/frontend mode has no Electron preload bridge to read
+    # AUTH_TOKEN_FILE. This localhost-origin-gated route returns the same
+    # per-install bearer so the React app can authenticate normal API calls.
+    "/api/auth/browser-token",
+    # Browser-only Google sign-in fallback. Plain browsers do not have the
+    # Electron preload/deep-link bridge, so they complete OAuth through a
+    # localhost callback instead of api.openswarm.com's openswarm:// handoff.
+    "/api/auth/google/start",
+    "/api/auth/google/callback",
     # Browser-only dev mode (frontend on localhost without Electron preload)
     # needs a valid install_id to start sign-in. This endpoint returns only
     # that identifier (no secrets), so it's safe to expose without bearer auth.

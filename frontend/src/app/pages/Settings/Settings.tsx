@@ -41,7 +41,7 @@ import LinearProgress from '@mui/material/LinearProgress';
 import Collapse from '@mui/material/Collapse';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { updateSettings, closeSettingsModal, resetSystemPrompt, disconnectSubscription, signOut, setDraft, clearDraft, AppSettings, CustomProvider, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
+import { updateSettings, closeSettingsModal, resetSystemPrompt, disconnectSubscription, signOut, activateSignin, fetchSettings, setDraft, clearDraft, AppSettings, CustomProvider, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
 import { onboardingBus } from '@/app/components/Onboarding/eventBus';
 import { resetTour } from '@/app/components/Onboarding/OnboardingProgressSlice';
 import { OPENSWARM_DEFAULT_PROXY_URL } from '@/shared/config';
@@ -227,6 +227,7 @@ const AccountCard: React.FC = () => {
   const methodLabel = (() => {
     switch (signinMethod) {
       case 'google': return 'Signed in with Google';
+      case 'email': return 'Signed in with email code';
       case 'stripe': return 'Signed in via Stripe checkout';
       default: return null;
     }
@@ -251,12 +252,18 @@ const AccountCard: React.FC = () => {
       install_id: installId,
       local_port: String(localPort),
     });
-    const startUrl = proxyUrl.replace(/\/$/, '') + '/api/auth/google/start?' + params.toString();
     const api = (window as any).openswarm;
-    if (api?.openExternal) api.openExternal(startUrl);
+    if (api?.openExternal) {
+      const startUrl = proxyUrl.replace(/\/$/, '') + '/api/auth/google/start?' + params.toString();
+      api.openExternal(startUrl);
+    }
     else {
+      // Plain browser mode cannot consume openswarm:// deep links. Use the
+      // localhost OAuth callback; Electron remains on the cloud/deep-link path.
+      const startUrl = `${API_BASE}/auth/google/start?${params.toString()}`;
       const popup = window.open(startUrl, 'openswarm-google-signin', 'width=560,height=720');
       const cloudOrigin = new URL(proxyUrl.replace(/\/$/, '')).origin;
+      const localOrigin = new URL(API_BASE).origin;
 
       const cleanup = () => {
         window.removeEventListener('message', onMessage);
@@ -264,10 +271,15 @@ const AccountCard: React.FC = () => {
       };
 
       const onMessage = async (event: MessageEvent) => {
-        if (event.origin !== cloudOrigin) return;
+        if (event.origin !== cloudOrigin && event.origin !== localOrigin) return;
         const payload = event.data;
         const callbackData = payload?.type === 'oauth_callback' ? payload.data : payload;
         const token = callbackData?.token || callbackData?.bearer || callbackData?.access_token;
+        if ((callbackData?.ok || callbackData?.local) && !token) {
+          await dispatch(fetchSettings()).unwrap();
+          cleanup();
+          return;
+        }
         if (!token) return;
         try {
           await dispatch(activateSignin({ token, email: callbackData?.email || callbackData?.user_email || undefined, signin_method: 'google' })).unwrap();
