@@ -28,6 +28,7 @@ import {
   Dashboard,
 } from '@/shared/state/dashboardsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { byPreviewRecency } from '@/shared/previewOrder';
 
 function formatRelativeTime(dateStr: string | null): string {
   if (!dateStr) return '';
@@ -59,9 +60,7 @@ const DashboardSelection: React.FC = () => {
   }, [dispatch]);
 
   const dashboards = useMemo(() => {
-    const all = Object.values(items).sort(
-      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-    );
+    const all = Object.values(items).sort(byPreviewRecency);
     if (!search.trim()) return all;
     const q = search.toLowerCase();
     return all.filter((d) => d.name.toLowerCase().includes(q));

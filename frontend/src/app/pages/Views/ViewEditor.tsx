@@ -39,7 +39,6 @@ import TerminalPanel, { TerminalLine } from './TerminalPanel';
 import { getDefault } from './InputSchemaForm';
 import CodeEditor from './CodeEditor';
 import { ElementSelectionProvider } from '@/app/components/ElementSelectionContext';
-import { captureViewThumbnail } from './captureViewThumbnail';
 import { API_BASE, getAuthToken } from '@/shared/config';
 import { onboardingBus } from '@/app/components/Onboarding/eventBus';
 
@@ -107,6 +106,19 @@ const HIDDEN_PATH_SEGMENTS = new Set<string>([
 // Poll fast while agent is writing; slow while idle. A one-shot poll fires on active->idle transition to catch the last write.
 const POLL_INTERVAL_ACTIVE_MS = 2000;
 const POLL_INTERVAL_IDLE_MS = 15000;
+// Settle window after a content change/paint before snapshotting, so the app's JS has a beat to render.
+const CAPTURE_SETTLE_MS = 1000;
+
+// Fingerprint of the files that actually affect the rendered preview, so renames,
+// schema tweaks, and SKILL.md edits don't trigger a needless re-screenshot.
+function previewRenderKey(files: Record<string, string>): string {
+  const ignore = new Set(['meta.json', 'schema.json', 'SKILL.md']);
+  return Object.keys(files)
+    .filter((k) => !ignore.has(k))
+    .sort()
+    .map((k) => `${k}:${files[k]}`)
+    .join('\n');
+}
 
 function getFileIcon(filename: string): React.ReactNode {
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -315,6 +327,17 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
   const previewRef = useRef<ViewPreviewHandle>(null);
   // True ~300ms after iframe `load`; keeps placeholder up until SPA actually paints, resets on URL change.
   const [iframePainted, setIframePainted] = useState(false);
+
+  // Thumbnail capture state. lastCaptured starts at the current render key when a
+  // thumbnail already exists, so merely opening an app doesn't re-shoot (and re-sort) it;
+  // null when there's no thumbnail yet, so the first paint backfills one.
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  const isAgentActiveRef = useRef(false);
+  const lastCapturedRenderKeyRef = useRef<string | null>(
+    output?.thumbnail ? previewRenderKey(initialFiles) : null,
+  );
+  const captureThumbTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const SIDEBAR_MIN = 280;
   const SIDEBAR_MAX = 800;
@@ -601,6 +624,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
   sessionStatusRef.current = agentStatus;
   const isLaunchedRef = useRef(false);
   isLaunchedRef.current = isLaunched;
+  isAgentActiveRef.current = isAgentActive;
   // Track if the draft has any user messages on it. If it does, the user has interacted (likely a send is in flight) and GC would orphan the backend session that's about to materialize via draftLaunchMap.
   const draftMessageCount = useAppSelector((state) =>
     initialDraftId ? (state.agents.sessions[initialDraftId]?.messages?.length ?? 0) : 0,
@@ -665,15 +689,25 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     };
   };
 
-  const captureThumbnailAsync = (outputId: string) => {
-    captureViewThumbnail(files['index.html'] ?? '', testInput, files)
-      .then((thumbnail) => {
-        if (thumbnail) {
-          dispatch(updateOutput({ id: outputId, thumbnail }));
-        }
-      })
-      .catch(() => {});
-  };
+  // Snapshot the live preview once content settles. Guards: skip mid-agent-run, skip
+  // if nothing visual changed since the last shot, skip until the app row exists.
+  // capture() returns null when the preview isn't mounted/ready, so a miss leaves
+  // lastCaptured untouched and a later paint can still backfill the thumbnail.
+  const captureAppThumbnail = useCallback(() => {
+    if (isAgentActiveRef.current) return;
+    const eid = output?.id ?? createdIdRef.current;
+    if (!eid) return;
+    if (previewRenderKey(filesRef.current) === lastCapturedRenderKeyRef.current) return;
+    if (captureThumbTimerRef.current) clearTimeout(captureThumbTimerRef.current);
+    captureThumbTimerRef.current = setTimeout(async () => {
+      captureThumbTimerRef.current = null;
+      if (isAgentActiveRef.current) return;
+      const dataUrl = await previewRef.current?.capture();
+      if (!dataUrl) return;
+      lastCapturedRenderKeyRef.current = previewRenderKey(filesRef.current);
+      dispatch(updateOutput({ id: eid, thumbnail: dataUrl }));
+    }, CAPTURE_SETTLE_MS);
+  }, [output?.id, dispatch]);
 
   const performSaveRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -707,7 +741,6 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
         lastReloadedIndexHtmlRef.current = currentHtml;
         previewRef.current?.reload();
       }, PREVIEW_RELOAD_DEBOUNCE_MS);
-      captureThumbnailAsync(savedId);
     } catch (err: any) {
       console.error('Failed to save output:', err);
     } finally {
@@ -847,8 +880,10 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
   // 300ms after iframe `load` because SPA bundles need a beat to mount, otherwise the grey flash returns.
   const onIframeContentLoad = useCallback(() => {
     const t = window.setTimeout(() => setIframePainted(true), 300);
+    // A full (re)load just painted: covers flat-mode post-reload, tab-switch back to preview, and first-open backfill.
+    captureAppThumbnail();
     return () => window.clearTimeout(t);
-  }, []);
+  }, [captureAppThumbnail]);
 
   // Keep PixelBlast mounted across transient gate flips; unmounting rebuilds the GL context and the user reads it as the animation restarting.
   const placeholderVisible = showInstallPlaceholder || !iframePainted;
@@ -963,10 +998,19 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     };
   }, [files, name, description]);
 
+  // Live-preview (Vite/HMR) mode patches the webview without a load event, so onContentLoad
+  // misses most agent edits. Re-arm capture when files settle or the agent goes idle;
+  // captureAppThumbnail debounces and skips mid-run, no-op, and not-yet-saved cases.
+  useEffect(() => {
+    if (!frontendUrl) return;
+    captureAppThumbnail();
+  }, [files, isAgentActive, frontendUrl, captureAppThumbnail]);
+
   useEffect(() => {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       if (previewReloadTimerRef.current) clearTimeout(previewReloadTimerRef.current);
+      if (captureThumbTimerRef.current) clearTimeout(captureThumbTimerRef.current);
       wsPushTimers.current.forEach(t => clearTimeout(t));
     };
   }, []);

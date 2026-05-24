@@ -14,6 +14,8 @@ export interface Output {
   input_schema: Record<string, any>;
   files: Record<string, string>;
   thumbnail?: string | null;
+  /** Bumped only on a real screenshot save; sidebar/grids sort by this so opening an app doesn't reorder it. */
+  preview_updated_at?: string | null;
   /** Linkage so reopening App Builder reattaches to the in-progress session and workspace. */
   session_id?: string | null;
   workspace_id?: string | null;

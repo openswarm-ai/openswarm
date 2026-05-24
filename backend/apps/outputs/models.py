@@ -16,6 +16,8 @@ class Output(BaseModel):
     })
     files: dict[str, str] = Field(default_factory=dict)
     thumbnail: Optional[str] = None
+    # Bumped only when a fresh thumbnail is saved; drives sidebar/grid order so merely opening an app doesn't reshuffle the list.
+    preview_updated_at: Optional[str] = None
     # Linkage so reopening the App Builder reattaches to the in-progress session
     # and reuses the same on-disk workspace folder instead of seeding a fresh one
     # (which would orphan the running agent + lose chat history on every navigate).

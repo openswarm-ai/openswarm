@@ -45,6 +45,7 @@ import { setPendingBrowserUrl } from '@/shared/state/tempStateSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { setInstalling } from '@/shared/state/updateSlice';
 import { findBrowserByWebContentsId } from '@/shared/browserRegistry';
+import { byPreviewRecency } from '@/shared/previewOrder';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { ErrorSlime } from '@/app/components/ErrorSlime';
 
@@ -154,9 +155,7 @@ const AppShell: React.FC = () => {
     shallowEqual,
   );
   const dashboardList = React.useMemo(
-    () => Object.values(dashboardItems).sort(
-      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-    ),
+    () => Object.values(dashboardItems).sort(byPreviewRecency),
     [dashboardItems],
   );
 
@@ -165,9 +164,7 @@ const AppShell: React.FC = () => {
     shallowEqual,
   );
   const appsList = React.useMemo(
-    () => Object.values(outputItems).sort(
-      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-    ),
+    () => Object.values(outputItems).sort(byPreviewRecency),
     [outputItems],
   );
 

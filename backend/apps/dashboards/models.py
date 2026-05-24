@@ -68,6 +68,10 @@ class Dashboard(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
     layout: DashboardLayout = Field(default_factory=DashboardLayout)
     thumbnail: Optional[str] = None
+    # Bumped only when a fresh thumbnail is saved; drives sidebar/grid order so merely opening a dashboard doesn't reshuffle the list.
+    preview_updated_at: Optional[datetime] = None
+    # Sorted card-id set captured with the last thumbnail; lets the client tell if cards were added/removed since.
+    preview_signature: Optional[str] = None
 
 
 class DashboardCreate(BaseModel):
@@ -78,3 +82,4 @@ class DashboardUpdate(BaseModel):
     name: Optional[str] = None
     layout: Optional[DashboardLayout] = None
     thumbnail: Optional[str] = None
+    preview_signature: Optional[str] = None

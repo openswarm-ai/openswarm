@@ -10,8 +10,37 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 // In Electron use <webview> to escape iframe restrictions (popups, mic/camera, WebAuthn, cookied fetch); outside Electron fall back to iframe.
 const isElectron = navigator.userAgent.includes('Electron');
 
+// Card previews render small; downscale + JPEG so thumbnails don't bloat the output JSON or every list fetch.
+const THUMB_WIDTH = 600;
+const THUMB_QUALITY = 0.7;
+
+// NativeImage -> small JPEG data URL. We resize on the native image (cheap) then
+// re-encode via canvas because NativeImage.toJPEG hands back a Node Buffer that
+// the sandboxed renderer can't base64 on its own.
+async function nativeImageToJpegDataUrl(img: any, width: number, quality: number): Promise<string | null> {
+  const sized = typeof img.resize === 'function' ? img.resize({ width }) : img;
+  const pngUrl: string = sized.toDataURL();
+  if (!pngUrl) return null;
+  const el = new Image();
+  await new Promise<void>((resolve, reject) => {
+    el.onload = () => resolve();
+    el.onerror = () => reject(new Error('thumbnail decode failed'));
+    el.src = pngUrl;
+  });
+  if (!el.width || !el.height) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = el.width;
+  canvas.height = el.height;
+  const cctx = canvas.getContext('2d');
+  if (!cctx) return null;
+  cctx.drawImage(el, 0, 0);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
 export interface ViewPreviewHandle {
   reload: () => void;
+  /** Native snapshot of the live preview as a small JPEG data URL, or null if not capturable (iframe/dev, hidden, or webview not ready). */
+  capture: () => Promise<string | null>;
 }
 
 interface Props {
@@ -162,7 +191,19 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
         });
       }
     },
-  }), [useWebview, serveUrl, srcdoc]);
+    capture: async () => {
+      const wv = webviewRef.current;
+      // Only the webview path is reliably snapshottable; iframe/dev or a hidden window (about:blank) returns null.
+      if (!useWebview || !wv || windowHidden || typeof wv.capturePage !== 'function') return null;
+      try {
+        const img = await wv.capturePage();
+        if (!img) return null;
+        return await nativeImageToJpegDataUrl(img, THUMB_WIDTH, THUMB_QUALITY);
+      } catch {
+        return null;
+      }
+    },
+  }), [useWebview, serveUrl, srcdoc, windowHidden]);
 
   useEffect(() => {
     if (useWebview) return;

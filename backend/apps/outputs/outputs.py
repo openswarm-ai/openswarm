@@ -788,7 +788,11 @@ async def update_output(output_id: str, body: OutputUpdate):
     output = _load(output_id)
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(output, k, v)
-    output.updated_at = datetime.now().isoformat()
+    now = datetime.now().isoformat()
+    output.updated_at = now
+    # Only a real screenshot write moves the sort key; files/linkage saves don't reorder.
+    if body.thumbnail is not None:
+        output.preview_updated_at = now
     _save(output)
     return {"ok": True, "output": output.model_dump()}
 

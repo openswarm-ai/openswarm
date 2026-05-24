@@ -126,6 +126,8 @@ async def list_dashboards():
             "created_at": dumped.get("created_at"),
             "updated_at": dumped.get("updated_at"),
             "thumbnail": dumped.get("thumbnail"),
+            "preview_updated_at": dumped.get("preview_updated_at"),
+            "preview_signature": dumped.get("preview_signature"),
         })
     return {"dashboards": items}
 
@@ -373,9 +375,13 @@ async def update_dashboard(dashboard_id: str, body: DashboardUpdate):
         dashboard.auto_named = False
     if body.layout is not None:
         dashboard.layout = body.layout
+    now = datetime.now()
     if body.thumbnail is not None:
         dashboard.thumbnail = body.thumbnail
-    dashboard.updated_at = datetime.now()
+        dashboard.preview_signature = body.preview_signature
+        # Only a real screenshot write moves the sort key; layout/rename saves don't reorder.
+        dashboard.preview_updated_at = now
+    dashboard.updated_at = now
     _save(dashboard)
     return dashboard.model_dump(mode="json")
 
