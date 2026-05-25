@@ -360,7 +360,11 @@ const WorkflowCard: React.FC<Props> = ({
   // every other view should size to its content so nothing is cut off and
   // there's no dead space below short content. While the user is actively
   // resizing, honor the dragged height.
-  const isChatView = card?.view === 'edit_agent' || card?.view === 'fix_agent';
+  // Chat views host a composer + conversation, so they keep a bounded height
+  // (composer docked at the bottom, content scrolls) like a normal chat card.
+  // Everything else fits to its content. Scheduling is a chat too (you talk to
+  // it in natural language), so it belongs here, not in the fit-to-content set.
+  const isChatView = card?.view === 'edit_agent' || card?.view === 'fix_agent' || card?.view === 'scheduling';
   const autoHeight = !isChatView && !localResize && !isResizing;
   const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
 

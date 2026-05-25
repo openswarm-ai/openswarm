@@ -133,7 +133,7 @@ export default function SchedulingView({ workflow, steps }: Props) {
   }, [pending, dispatch, workflow.id, workflow.updated_at]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, minHeight: '100%' }}>
       {/* Inline header replacement. Image #49: subtitle on LEFT, Cancel
           on RIGHT. Cancel matches the subtitle's weight/size/color so the
           row reads as peers, not a heavy CTA; it just reddens on hover. */}
@@ -160,6 +160,9 @@ export default function SchedulingView({ workflow, steps }: Props) {
       {error && (
         <Typography sx={{ fontSize: '0.82rem', color: c.status.error }}>{error}</Typography>
       )}
+      {/* Spacer pushes the composer to the bottom of the card so the view
+          reads like a normal chat (prompt up top, input docked below). */}
+      <Box sx={{ flex: 1, minHeight: 40 }} />
       {/* Real ChatInput (same one the toolbar / agent chat use) so the
           composer matches Image #54 / #64 exactly: live model picker,
           mode picker, thinking level, paperclip + mic, the works. We
