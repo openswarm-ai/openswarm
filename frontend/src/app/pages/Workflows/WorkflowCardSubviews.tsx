@@ -114,11 +114,13 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
   const liveDraft = (card?.draft ?? initialDraft ?? {}) as Partial<Workflow>;
   const title = (liveDraft.title as string) || 'New workflow';
   const description = (liveDraft.description as string) || '';
-  // Track step text edits locally so the textarea stays uncontrolled-ish
-  // (no remote round-trip on every keystroke). On Save we pass the
-  // edited values through.
-  const [editedSteps, setEditedSteps] = useState<Workflow['steps'] | null>(null);
-  const liveSteps = editedSteps || steps;
+  // Steps render compact (label + chevron, capped + "... N more"), same as
+  // the saved card. The raw prompt drills down on click. Keeping them short
+  // is what leaves room for the schedule prompt + buttons to stay on-card.
+  const expandedIds = card?.expandedStepIds || [];
+  const onToggleStep = useCallback((stepId: string) => {
+    dispatch(toggleExpandedStep({ workflowId, stepId }));
+  }, [dispatch, workflowId]);
 
   const onDiscard = useCallback(() => {
     dispatch(closeWorkflowCard(workflowId));
@@ -128,13 +130,6 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
   const onChangeDescription = useCallback((value: string) => {
     dispatch(updateWorkflowCard({ workflowId, patch: { draft: { ...liveDraft, description: value } } }));
   }, [dispatch, workflowId, liveDraft]);
-
-  const onChangeStep = useCallback((idx: number, value: string) => {
-    const next = (liveSteps || []).slice();
-    if (!next[idx]) return;
-    next[idx] = { ...next[idx], text: value };
-    setEditedSteps(next);
-  }, [liveSteps]);
 
   // The Save flow auto-creates the workflow, then prompts the user to schedule it
   // (Image #7). Ignore = save without schedule. Schedule = open the scheduling
@@ -146,7 +141,7 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
       const result = await dispatch(createWorkflow({
         title,
         description,
-        steps: liveSteps.map((s) => ({ id: s.id, text: s.text })),
+        steps: steps.map((s) => ({ id: s.id, text: s.text })),
         source_session_id: sourceSessionId,
         use_synced_prompt: true,
       } as Partial<Workflow>));
@@ -161,12 +156,12 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
     } finally {
       setBusy(false);
     }
-  }, [busy, dispatch, title, description, liveSteps, sourceSessionId, onSaved]);
+  }, [busy, dispatch, title, description, steps, sourceSessionId, onSaved]);
 
   void onChangeDescription;
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, minHeight: '100%' }}>
-      <StepList steps={liveSteps} framed onChangeStep={onChangeStep} />
+      <StepList steps={steps} expandable expandedIds={expandedIds} onToggleExpand={onToggleStep} />
       <Box sx={{ flex: 1 }} />
       {/* Schedule prompt card. Soft accent tint + calendar icon, matching Image #7. */}
       <Box sx={{
