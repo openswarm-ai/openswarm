@@ -836,6 +836,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const isActive = session.status === 'running' || session.status === 'waiting_approval' || session.status === 'draft';
   const statusStyle = STATUS_STYLES[session.status] || { color: c.text.tertiary, bg: c.bg.secondary };
 
+  // eslint-disable-next-line no-console
+  console.log('[diag][AgentChat:before-jsx]', id, 'status=', session.status, 'isActive=', isActive);
+
   return (
     <Box sx={{ display: 'flex', height: '100%' }}>
       <ContextDrawer />

@@ -126,6 +126,8 @@ const BrowserCard: React.FC<Props> = ({
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
   cardZOrder = 0, onDoubleClick, onBringToFront,
 }) => {
+  // eslint-disable-next-line no-console
+  console.log('[diag][BrowserCard:render]', browserId, 'tabs=', tabs && tabs.length);
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);

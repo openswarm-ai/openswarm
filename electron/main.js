@@ -1,4 +1,30 @@
-const { app, components, BrowserWindow, ipcMain, shell, session, dialog } = require('electron');
+const { app, components, BrowserWindow, ipcMain, shell, session, dialog, crashReporter } = require('electron');
+
+// Local-only crash reporter. Captures native renderer crashes that escape JS-level error handlers and don't otherwise surface in Crashpad. uploadToServer=false keeps minidumps on disk under %APPDATA%/OpenSwarm/Crashpad so we can inspect them post-mortem without sending anywhere.
+try {
+  crashReporter.start({
+    productName: 'OpenSwarm',
+    companyName: 'OpenSwarm',
+    submitURL: 'https://localhost.invalid',
+    uploadToServer: false,
+    ignoreSystemCrashHandler: false,
+  });
+} catch (err) {
+  console.warn('[crashReporter] start failed:', err && err.message);
+}
+
+// Capture every main-process throw we can. Without these, a throw inside an IPC handler or BrowserWindow event listener can die silently and look indistinguishable from a renderer crash in the trace.
+process.on('uncaughtException', (err) => {
+  console.error('[diag][main:uncaughtException]', err && err.stack || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[diag][main:unhandledRejection]', reason && reason.stack || reason);
+});
+
+// child-process-gone fires for GPU/utility/renderer process deaths. The GPU one is especially useful: a GPU crash forces the renderer to recover its compositor, and that recovery can itself crash on Windows.
+app.on('child-process-gone', (_event, details) => {
+  console.error('[diag][main:child-process-gone]', JSON.stringify(details));
+});
 // Platform-split auto-updater: electron-updater on Mac (full-featured: allowPrerelease, allowDowngrade, progress), Electron's built-in autoUpdater on Windows (required for Squirrel.Windows target; electron-updater dropped Squirrel support).
 let autoUpdater;
 let isSquirrelUpdater = false;
@@ -751,12 +777,15 @@ function createWindow() {
   });
 
   // Renderer process death (GPU/native/OOM crash) is invisible to React error boundaries since the whole content process is gone. We RECREATE the window rather than reload(): the Electron 40 CastLabs build hits NOTREACHED in base/observer_list.h on reload after a renderer crash (some session/webview observer is re-registered against a list that disallows duplicates), aborting the entire main process with exit 3. A fresh BrowserWindow side-steps that. Crashes capped at 3 in 60s; after the cap we surface a native dialog so the user picks Reload vs Quit themselves rather than thrashing.
+  mainWindow.webContents.on('preload-error', (_event, preloadPath, err) => {
+    console.error('[diag][main:preload-error]', preloadPath, err && err.stack || err);
+  });
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     const reason = details && details.reason;
     if (reason === 'clean-exit') return;
     // Renderer dying mid-quit-drain is expected; recreating then would resurrect a window we're trying to close.
     if (drainingForQuit) return;
-    console.error('[main] renderer process gone:', reason);
+    console.error('[main] renderer process gone:', JSON.stringify(details));
     const now = Date.now();
     rendererCrashTimes = rendererCrashTimes.filter((t) => now - t < 60_000);
     if (rendererCrashTimes.length >= 3) {
@@ -873,7 +902,12 @@ async function showCrashRecoveryOverlay() {
 
 function sendToRenderer(channel, ...args) {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(channel, ...args);
+    try {
+      mainWindow.webContents.send(channel, ...args);
+    } catch (err) {
+      // webContents.send throws after the renderer dies but before mainWindow.isDestroyed() returns true (race during recreate). Swallow so the blur/focus listener cannot become a secondary crash source.
+      console.warn('[sendToRenderer] send failed for', channel, ':', err && err.message);
+    }
   }
 }
 
@@ -1477,6 +1511,20 @@ ipcMain.on('splash:action', (_event, action) => {
     } catch (_) {}
   }
 });
+
+// Log every IPC handle entry so the trace shows which main-process call the renderer was making in the seconds before death.
+const _origHandle = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, handler) => {
+  return _origHandle(channel, async (...args) => {
+    console.log('[diag][ipc.handle]', channel);
+    try {
+      return await handler(...args);
+    } catch (err) {
+      console.error('[diag][ipc.handle:throw]', channel, err && err.stack || err);
+      throw err;
+    }
+  });
+};
 
 ipcMain.handle('get-backend-port', () => backendPort);
 // Sync mirrors so preload.js can expose window.openswarm synchronously (no await), closing the race where React renders before the async exposure resolves and window.openswarm is briefly undefined. backendPort is assigned in app.whenReady before any BrowserWindow is created, so it is always set by the time preload runs.

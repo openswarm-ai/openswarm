@@ -97,6 +97,8 @@ const WorkflowCard: React.FC<Props> = ({
   isSelected = false, isHighlighted = false, multiDragDelta,
   onCardSelect, onDragStart, onDragMove, onDragEnd, onDoubleClick, onBringToFront,
 }) => {
+  // eslint-disable-next-line no-console
+  console.log('[diag][WorkflowCard:render]', workflowId);
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
 
