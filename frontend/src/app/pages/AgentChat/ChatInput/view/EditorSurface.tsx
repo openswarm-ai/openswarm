@@ -30,8 +30,6 @@ export const EditorSurface: React.FC<Props> = ({
         contentEditable={!disabled}
         suppressContentEditableWarning
         spellCheck
-        autoCorrect="on"
-        autoCapitalize="sentences"
         onInput={onInput}
         onClick={onClick}
         onKeyDown={onKeyDown}
