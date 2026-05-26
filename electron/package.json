@@ -1,6 +1,6 @@
 {
   "name": "openswarm",
-  "version": "1.1.60",
+  "version": "1.1.61",
   "description": "OpenSwarm — AI Agent Orchestrator",
   "author": "openswarm-ai",
   "main": "main.js",
