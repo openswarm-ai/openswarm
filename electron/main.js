@@ -153,9 +153,7 @@ app.on('open-url', (event, url) => {
 });
 
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
-app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
+// Removed ignore-gpu-blocklist + enable-gpu-rasterization + enable-zero-copy: Chromium maintains a blocklist of GPU drivers known to cause native segfaults (STATUS_ACCESS_VIOLATION 0xC0000005) when forced through the GPU pipeline, and Crashpad has been capturing exactly that exit code on every renderer crash with no JS-side cause; respecting the blocklist lets Chromium fall back to software rasterization on affected drivers while keeping GPU on safe ones. Widevine CDM still works in software mode.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 let mainWindow = null;
