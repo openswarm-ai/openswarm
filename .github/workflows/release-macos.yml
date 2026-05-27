@@ -1,0 +1,105 @@
+name: Release (macOS)
+
+# Builds + signs + notarizes the macOS DMGs (arm64 + x64) and uploads them to the
+# GitHub Release matching electron/package.json's version. This is the macOS half
+# of the unified release: it triggers on the SAME `v*` tag as
+# release-windows.yml, so one tag fans out to two parallel platform jobs that
+# both check out the same commit. Because each build stamps build-info.json from
+# `git rev-parse HEAD`, the SHA in the shipped DMG and EXE are identical.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   APPLE_ID                      Apple Developer account email (notarization)
+#   APPLE_APP_SPECIFIC_PASSWORD   app-specific password for that Apple ID
+#   APPLE_TEAM_ID                 Apple Developer Team ID
+#   CSC_LINK                      base64-encoded Developer ID Application .p12
+#   CSC_KEY_PASSWORD              password for that .p12
+#   GOOGLE_OAUTH_CLIENT_ID        shipped in production .env (Google OAuth)
+#   GOOGLE_OAUTH_CLIENT_SECRET    shipped in production .env (Google OAuth)
+#
+# NOTE: untested in CI as of authoring. Verify the secrets above are present and
+# do one dry run with workflow_dispatch publish=false before relying on a tag.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to GitHub Releases (otherwise artifact only)'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    env:
+      APPLE_ID:                   ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID:              ${{ secrets.APPLE_TEAM_ID }}
+      CSC_LINK:                   ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD:           ${{ secrets.CSC_KEY_PASSWORD }}
+      PUBLISH_INPUT:              ${{ github.event.inputs.publish }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Exact pin to match the bundled runtime + the Windows job.
+          node-version: '20.18.1'
+
+      - name: Setup Python (for building bundled python-env)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Build app
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOGLE_OAUTH_CLIENT_ID:     ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          should_publish=false
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then should_publish=true; fi
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$PUBLISH_INPUT" == "true" ]]; then should_publish=true; fi
+
+          version="$(node -p "require('./electron/package.json').version")"
+          if [[ "$version" == *-* ]]; then
+            export EP_PRE_RELEASE=true
+            echo "Version $version is EXPERIMENTAL; setting EP_PRE_RELEASE=true"
+          else
+            echo "Version $version is STABLE"
+          fi
+
+          if $should_publish; then
+            echo "Build mode: PUBLISH"
+            bash scripts/build-app.sh --publish
+          else
+            echo "Build mode: SIGN (artifact only)"
+            bash scripts/build-app.sh --sign
+          fi
+
+      - name: Upload artifact (non-publish runs)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openswarm-macos
+          path: |
+            electron/dist/*.dmg
+            electron/dist/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 14
