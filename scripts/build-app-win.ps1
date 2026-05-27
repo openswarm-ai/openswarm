@@ -367,27 +367,18 @@ if (Test-Path $EnvExampleSrc) {
 # so extraResources can substitute ${arch} (matches the mac build).
 
 # Production .env: OAuth helper base URL + Google credentials. See
-# scripts/build-app.sh for the rationale; v1.0.29 cloud-proxied the OAuth flow,
-# but the bundled google_workspace_mcp still needs CLIENT_SECRET at startup.
-# v1.0.30 plans to fork or replace that MCP and drop the secret here.
+# Google client_id/secret are no longer shipped: nothing reads them at runtime,
+# so we don't bake a secret into the .env.
 $ShipOauthBaseUrl = if ($env:OPENSWARM_OAUTH_BASE_URL_OVERRIDE) {
     $env:OPENSWARM_OAUTH_BASE_URL_OVERRIDE
 } else {
     'https://api.openswarm.com'
 }
-$GoogleClientIdShip     = $env:GOOGLE_OAUTH_CLIENT_ID
-$GoogleClientSecretShip = $env:GOOGLE_OAUTH_CLIENT_SECRET
-if (-not $GoogleClientIdShip -or -not $GoogleClientSecretShip) {
-    Write-Host "ERROR: GOOGLE_OAUTH_CLIENT_ID/SECRET missing in backend\.env -- required for Google MCP." -ForegroundColor Red
-    exit 1
-}
 $ShipEnvPath = Join-Path $Staging 'backend\.env'
 New-Item -ItemType Directory -Force -Path (Split-Path $ShipEnvPath -Parent) | Out-Null
 @(
-    "# OAuth helper base URL + Google OAuth credentials.",
-    "OPENSWARM_OAUTH_BASE_URL=$ShipOauthBaseUrl",
-    "GOOGLE_OAUTH_CLIENT_ID=$GoogleClientIdShip",
-    "GOOGLE_OAUTH_CLIENT_SECRET=$GoogleClientSecretShip"
+    "# OAuth helper base URL.",
+    "OPENSWARM_OAUTH_BASE_URL=$ShipOauthBaseUrl"
 ) | Set-Content -Path $ShipEnvPath
 Write-Host "Staged production .env"
 

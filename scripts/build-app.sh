@@ -401,28 +401,14 @@ rsync -a \
 # would strip it. The top-level backend/.env is still excluded (it's
 # (re)generated at the production .env step below).
 
-# Production .env: OAuth helper base URL + Google client_id and client_secret.
-# v1.0.29 moved the *OAuth flow* (auth-code exchange + refresh) to the Fly
-# cloud-proxy, so the OAuth flow itself no longer reads client_secret on the
-# desktop. But the bundled google_workspace_mcp Python package still requires
-# CLIENT_SECRET at startup to do its own token refresh per Google API call
-# (see backend/apps/tools_lib/tools_lib.py for the deferred-fix note).
-# Until we fork or replace that MCP in v1.0.30, the secret still ships here.
+# Production .env: just the OAuth helper base URL. Google client_id/secret are no
+# longer shipped: nothing in backend/ or frontend/ reads GOOGLE_OAUTH_CLIENT_{ID,
+# SECRET} at runtime, so we don't bake a secret into the packaged app.
 SHIP_OAUTH_BASE_URL="${OPENSWARM_OAUTH_BASE_URL_OVERRIDE:-https://api.openswarm.com}"
-GOOGLE_CLIENT_ID_SHIP="${GOOGLE_OAUTH_CLIENT_ID:-}"
-GOOGLE_CLIENT_SECRET_SHIP="${GOOGLE_OAUTH_CLIENT_SECRET:-}"
-if [[ -z "$GOOGLE_CLIENT_ID_SHIP" || -z "$GOOGLE_CLIENT_SECRET_SHIP" ]]; then
-    echo "ERROR: GOOGLE_OAUTH_CLIENT_ID/SECRET missing in $ENV_FILE — required for Google MCP."
-    exit 1
-fi
 mkdir -p "$STAGING_DIR/backend"
 cat > "$STAGING_DIR/backend/.env" <<EOF
-# OAuth helper base URL + Google OAuth credentials.
-# OAuth flow itself is cloud-proxied; client_secret is here only because the
-# bundled google_workspace_mcp requires it. v1.0.30 plans to remove this.
+# OAuth helper base URL.
 OPENSWARM_OAUTH_BASE_URL=${SHIP_OAUTH_BASE_URL}
-GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_CLIENT_ID_SHIP}
-GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET_SHIP}
 EOF
 echo "Staged production .env"
 
