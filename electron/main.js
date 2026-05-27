@@ -485,6 +485,12 @@ function waitForBackend(port, opts = {}) {
           finish(reject, new Error(`Backend process exited with code ${code} during startup`));
         }
       });
+      // spawn 'error' (missing/quarantined/wrong-arch python.exe) never fires
+      // 'exit', so without this the health poll loops forever and the splash
+      // hangs. Reject so the caller surfaces the failure UI instead.
+      proc.once('error', (err) => {
+        finish(reject, new Error(`Backend failed to spawn: ${err && err.message || err}`));
+      });
     }
 
     function check() {
@@ -632,7 +638,14 @@ async function startBackend() {
     env.PYTHONPATH = [projectRoot, debuggerDir, pythonEnvSitePackages].join(path.delimiter);
   }
 
-  console.log(`Starting backend: ${pythonPath} on port ${backendPort}`);
+  openBackendLog();
+  // Record what we're about to launch and whether the interpreter is even
+  // present. If AV quarantined python.exe or the wrong-arch bundle shipped,
+  // exists=false (or spawn 'error' below) names the cause that otherwise
+  // produces a silent "backend crashed" with no stdout/stderr at all.
+  let pythonExists = false;
+  try { pythonExists = fs.existsSync(pythonPath); } catch (_) {}
+  console.log(`Starting backend: ${pythonPath} (exists=${pythonExists}) on port ${backendPort}`);
   console.log(`Project root: ${projectRoot}`);
 
   backendProcess = spawn(
@@ -663,6 +676,20 @@ async function startBackend() {
     // when boot fails we can show actionable context inline instead of
     // making the user dig through a log file.
     recentBackendStderr.push(text);
+    while (recentBackendStderr.length > 60) recentBackendStderr.shift();
+  });
+
+  // spawn() fires 'error' (not 'exit', not stdout/stderr) when the binary is
+  // missing, AV-quarantined, blocked, or the wrong arch (ENOEXEC). This is the
+  // most common silent cross-machine failure; without this handler it produced
+  // an unhandled emitter error and an empty log. Surface it in both the log and
+  // the splash error buffer so "View logs" actually explains the crash.
+  backendProcess.on('error', (err) => {
+    const msg = `\n[electron] backend spawn FAILED: ${err && err.code ? err.code + ' ' : ''}${err && err.message || err}\n` +
+      `  python path: ${pythonPath} (exists=${pythonExists})\n` +
+      `  arch: ${process.arch}, platform: ${process.platform}\n`;
+    console.error(msg);
+    recentBackendStderr.push(msg);
     while (recentBackendStderr.length > 60) recentBackendStderr.shift();
   });
 
@@ -722,6 +749,54 @@ function getAuthTokenFilePath() {
   }
   // Dev: backend/data/auth.token relative to repo root.
   return path.join(__dirname, '..', 'backend', 'data', 'auth.token');
+}
+
+// Persistent backend log on disk. Until now the bundled-Python stdout/stderr
+// only went to the Electron process streams, which a packaged Windows app
+// has no console for, so a user whose backend failed on their machine had
+// nothing to send us. This file is the one artifact that names the actual
+// cause (UnicodeDecodeError, EADDRINUSE, missing DLL, AV quarantine) of the
+// "works on my laptop, not theirs" failures. Lives next to auth.token.
+function getBackendLogPath() {
+  return path.join(path.dirname(getAuthTokenFilePath()), 'backend.log');
+}
+
+let backendLogStream = null;
+let _consoleTeed = false;
+function openBackendLog() {
+  try {
+    const logPath = getBackendLogPath();
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    // Size-based rotation: keep one previous file so the log can't grow
+    // unbounded across long-running sessions. 5MB is plenty for a boot trace.
+    try {
+      if (fs.existsSync(logPath) && fs.statSync(logPath).size > 5 * 1024 * 1024) {
+        fs.renameSync(logPath, logPath + '.1');
+      }
+    } catch (_) {}
+    backendLogStream = fs.createWriteStream(logPath, { flags: 'a' });
+    backendLogStream.write(`\n===== launch ${new Date().toISOString()} (app ${app.getVersion()}, ${process.platform}/${process.arch}) =====\n`);
+    installConsoleTee();
+  } catch (err) {
+    console.warn('[backend-log] could not open log file:', err && err.message);
+    backendLogStream = null;
+  }
+}
+// Tee the whole main-process stdout/stderr into the log file, not just the
+// Python child's streams. A packaged Windows GUI app has no console, so
+// otherwise every main-process console.log/error (boot failures, frontend
+// server errors, renderer-forwarded crashes, the spawn-error handler) is lost.
+// Patched once; reads the current backendLogStream so it survives restarts.
+function installConsoleTee() {
+  if (_consoleTeed) return;
+  _consoleTeed = true;
+  for (const name of ['stdout', 'stderr']) {
+    const orig = process[name].write.bind(process[name]);
+    process[name].write = (chunk, ...rest) => {
+      try { if (backendLogStream) backendLogStream.write(chunk); } catch (_) {}
+      return orig(chunk, ...rest);
+    };
+  }
 }
 
 async function loadAuthToken() {
@@ -1036,6 +1111,10 @@ function killBackend() {
       }, 3000);
     }
     backendProcess = null;
+  }
+  if (backendLogStream) {
+    try { backendLogStream.end(`[electron] backend killed ${new Date().toISOString()}\n`); } catch (_) {}
+    backendLogStream = null;
   }
 }
 
@@ -1575,13 +1654,16 @@ ipcMain.on('splash:action', (_event, action) => {
     app.relaunch();
     app.exit(0);
   } else if (action === 'open-logs') {
-    // No backend log file is written to disk today; the next-best thing
-    // is opening the OpenSwarm data dir, where the user can see the
-    // auth.token file and any future log artifacts. Surfacing the dir
-    // also lets advanced users self-serve (clear data, etc).
+    // Reveal the backend log so a user hitting a boot failure on their
+    // machine can hand us the one file that names the cause. Falls back to
+    // the data dir if the log was never created (e.g. spawn never reached).
     try {
-      const dataDir = path.dirname(getAuthTokenFilePath());
-      shell.openPath(dataDir).catch(() => {});
+      const logPath = getBackendLogPath();
+      if (fs.existsSync(logPath)) {
+        shell.showItemInFolder(logPath);
+      } else {
+        shell.openPath(path.dirname(getAuthTokenFilePath())).catch(() => {});
+      }
     } catch (_) {}
   }
 });

@@ -136,12 +136,24 @@ def _minimal_env(force: bool = False) -> dict:
     if force:
         env = {k: v for k, v in os.environ.items() if k not in _SCRUBBED_ENV_KEYS}
         env["PYTHONDONTWRITEBYTECODE"] = "1"
+        # Force UTF-8 even if the parent somehow lacked it (dev mode where
+        # Electron didn't inject PYTHONUTF8). Without this, a child reading
+        # non-ASCII stdin/files on a cp1252 Windows machine raises
+        # UnicodeDecodeError, the "works on my laptop, not theirs" failure.
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
         return env
 
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
+        # LANG/LC_ALL are POSIX-only; on Windows the active code page (cp1252)
+        # decides default encoding instead. PYTHONUTF8 + PYTHONIOENCODING force
+        # UTF-8 for this from-scratch env so json.loads(sys.stdin.read()) of
+        # non-ASCII input_data doesn't blow up on stock Windows machines.
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8",
     }
     if sys.platform == "win32":
         for k in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP", "USERPROFILE"):
