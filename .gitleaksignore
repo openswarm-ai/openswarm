@@ -1,0 +1,23 @@
+# Known historical findings, slated for a separate git filter-repo redaction
+# pass (see .gitleaks.toml header). These fingerprints pin EXACT past commits +
+# lines, so a new leak (different commit/line) still trips the scan. The files
+# themselves are mostly already gone from the current tree (9router/ vendored
+# from npm at build time, collector.py / oauth_providers.py moved). The Google
+# default + 9router client secrets are also shipped in the packaged app today,
+# so flagging them on every branch off this line is noise, not a new exposure.
+# Rotating + purging them from history is the real fix and remains a TODO.
+7239f704463b5ba315a627b50e58e2e9c45ad33b:backend/apps/tools_lib/oauth_providers.py:generic-api-key:12
+7c3da1ab4c0330a7a2d5348a774171bc74b5bd43:backend/apps/tools_lib/tools_lib.py:generic-api-key:25
+cbefe89fe0a6541362428de43c0ad305524c2be6:backend/apps/tools_lib/tools_lib.py:generic-api-key:25
+8d09e46df5eec01612f4fe4334b0915bf657f7cf:backend/apps/analytics/collector.py:generic-api-key:18
+b6f45e84121f3d95d0076e4aac8ccc5b50c1fd14:backend/apps/analytics/collector.py:generic-api-key:18
+cf775b497704859f6d88eca9e3ac5a73f8dada11:9router/open-sse/config/providers.js:generic-api-key:59
+cf775b497704859f6d88eca9e3ac5a73f8dada11:9router/open-sse/config/providers.js:generic-api-key:65
+cf775b497704859f6d88eca9e3ac5a73f8dada11:9router/open-sse/config/providers.js:generic-api-key:75
+cf775b497704859f6d88eca9e3ac5a73f8dada11:9router/open-sse/config/providers.js:generic-api-key:94
+cf775b497704859f6d88eca9e3ac5a73f8dada11:9router/open-sse/config/providers.js:generic-api-key:106
+cf775b497704859f6d88eca9e3ac5a73f8dada11:9router/open-sse/services/usage.js:generic-api-key:19
+cf775b497704859f6d88eca9e3ac5a73f8dada11:9router/src/lib/oauth/constants/oauth.js:generic-api-key:46
+cf775b497704859f6d88eca9e3ac5a73f8dada11:9router/src/lib/oauth/constants/oauth.js:generic-api-key:69
+cf775b497704859f6d88eca9e3ac5a73f8dada11:9router/src/lib/oauth/constants/oauth.js:generic-api-key:82
+cf775b497704859f6d88eca9e3ac5a73f8dada11:9router/tests/unit/embeddings.cloud.test.js:generic-api-key:70
