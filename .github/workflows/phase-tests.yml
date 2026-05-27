@@ -1,15 +1,15 @@
 name: Phase tests (hermetic)
 
 # Runs every deterministic, no-build test harness from the build-parity plan as a
-# CI gate on each push/PR. These need no packaged artifact, no secrets, and no
-# network, so this job is fast and always meaningful. Phase tests that REQUIRE a
-# packaged build, signing, or real devices are NOT here (they can't be hermetic)
-# — those live in the smoke job below (manual) and docs/RELEASE_CHECKLIST.md.
+# CI gate on each push/PR: Phase 0 (boot timing + file count), Phase 3 (backend
+# smoke logic), Phase 5a (release promotion gate) — each asserts both its pass
+# and failure paths. No packaged artifact, secrets, or network needed, so it's
+# fast and always meaningful. The real packaged-app smoke (build + launch on
+# macOS + Windows) lives in e2e.yml; release signing/upload in release-*.yml.
 
 on:
   push:
   pull_request:
-  workflow_dispatch:
 
 jobs:
   hermetic-tests:
@@ -20,39 +20,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20.18.1'
-      # Phase 0 (boot timing + file count), Phase 3 (backend smoke logic),
-      # Phase 5a (release promotion gate) — all assert pass + failure paths.
       - run: node scripts/run-phase-tests.js
-
-  # Phase 3 real-artifact smoke. Manual until the bundled-backend launch command
-  # is confirmed on a runner. Builds the signed Windows artifact, then drives the
-  # actual backend the app spawns and asserts health + agent endpoints answer.
-  # NOTE: the backend-launch step is marked TODO — fill in how the packaged build
-  # starts its bundled python backend headlessly before relying on this job.
-  windows-artifact-smoke:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20.18.1'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - name: Build (unsigned, artifact only)
-        shell: pwsh
-        env:
-          GOOGLE_OAUTH_CLIENT_ID:     ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-        run: pwsh -NoProfile -File scripts/build-app-win.ps1
-      # TODO(user): launch the packaged backend headlessly here (spawn the bundled
-      # python-env\python.exe against backend\main.py with the same env main.js
-      # uses), capture its port + auth.token, then:
-      #   node scripts/ci/smoke-backend.js --port <port> --token-file <auth.token path>
-      # Break the http origin/CORS in a test branch to confirm this goes red.
-      - name: Smoke the booted backend (enable once launch is wired)
-        if: ${{ false }}
-        shell: pwsh
-        run: node scripts/ci/smoke-backend.js --port 8324 --token-file "$env:APPDATA\OpenSwarm\data\auth.token"
