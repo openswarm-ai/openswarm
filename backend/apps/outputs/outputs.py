@@ -230,7 +230,7 @@ def ensure_webapp_workspace_seeded_and_registered(
             from backend.apps.outputs.runtime import _find_free_port
             frontend_port = _find_free_port()
             seed_webapp_template_workspace(folder, frontend_port)
-            with open(os.path.join(folder, "SKILL.md"), "w") as f:
+            with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as f:
                 f.write(load_app_builder_skill())
         existing = [o for o in _load_all() if o.workspace_id == workspace_id]
         if existing:
@@ -311,11 +311,11 @@ async def seed_workspace(body: WorkspaceSeedRequest):
             # SKILL.md still goes in workspace root; agent reads it for
             # context. Live content (user-editable via Skills page) is
             # injected into the system prompt regardless.
-            with open(os.path.join(folder, "SKILL.md"), "w") as f:
+            with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as f:
                 f.write(load_app_builder_skill())
         meta = body.meta or {}
         if body.meta and not already_seeded:
-            with open(os.path.join(folder, "meta.json"), "w") as f:
+            with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
                 json.dump(body.meta, f, indent=2)
         # Create (or look up) the Output record so the app appears in
         # the Apps sidebar the moment the user kicks off generation.
@@ -360,12 +360,12 @@ async def seed_workspace(body: WorkspaceSeedRequest):
             if not full_path.startswith(os.path.normpath(folder)):
                 continue
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            with open(full_path, "w") as f:
+            with open(full_path, "w", encoding="utf-8") as f:
                 f.write(content)
     else:
         for rel_path, content in VIEW_TEMPLATE_FILES.items():
             full_path = os.path.join(folder, rel_path)
-            with open(full_path, "w") as f:
+            with open(full_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
     # Seed the workspace's SKILL.md with the LIVE skill content so an
@@ -374,11 +374,11 @@ async def seed_workspace(body: WorkspaceSeedRequest):
     # already-seeded workspaces (the system-prompt injection in
     # agent_manager reads live, so the agent always has the latest
     # rules regardless of this on-disk copy).
-    with open(os.path.join(folder, "SKILL.md"), "w") as f:
+    with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as f:
         f.write(load_app_builder_skill())
 
     if body.meta:
-        with open(os.path.join(folder, "meta.json"), "w") as f:
+        with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
             json.dump(body.meta, f, indent=2)
 
     return {"path": os.path.abspath(folder), "template_mode": "flat"}
@@ -494,7 +494,7 @@ async def write_workspace_file(workspace_id: str, filepath: str, body: dict):
     if full_path != folder_norm and not full_path.startswith(folder_norm + os.sep):
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
-    with open(full_path, "w") as f:
+    with open(full_path, "w", encoding="utf-8") as f:
         f.write(body.get("content", ""))
     return {"ok": True}
 

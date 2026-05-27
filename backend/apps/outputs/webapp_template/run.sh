@@ -39,8 +39,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ "${BACKEND_PORT}" == "NONE" ]]; then
-    echo "BACKEND_PORT=NONE — running frontend only (no backend)."
+if [[ "${BACKEND_PORT}" == "NONE" || -z "${BACKEND_PORT}" || ! -f "$ROOT_DIR/backend/run.sh" ]]; then
+    # Frontend-only is the safe default: BACKEND_PORT=NONE (frontend-only app),
+    # OR unset/empty (e.g. .env missing — never start a backend that isn't
+    # configured), OR there is genuinely no backend/run.sh to run. Without the
+    # last two guards an unset BACKEND_PORT fell through to the backend branch
+    # and `bash backend/run.sh` died with "No such file or directory", tearing
+    # the whole app down before the frontend could show.
+    echo "Running frontend only (no backend configured)."
     echo ""
 
     bash "$ROOT_DIR/frontend/run.sh" 2>&1 | awk '{printf "\033[32m[frontend]\033[0m %s\n", $0; fflush()}' &

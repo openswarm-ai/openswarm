@@ -329,6 +329,20 @@ function Copy-Excluded($Source, $Dest, $Exclude) {
 Copy-Excluded `
     (Join-Path $ProjectRoot 'backend') (Join-Path $Staging 'backend') `
     @{ Dirs = @('__pycache__','.venv','data','uv-bin','tests'); Files = @('*.pyc','.env','.env.*') }
+# The '.env.*' exclude above is recursive, so it also strips the vendored
+# webapp_template/.env.example that seed_workspace copies into each new app's
+# .env (BACKEND_PORT=NONE). The mac build anchors its exclude to avoid this;
+# here we restore the one file. Without it, Windows-built apps seed with no
+# .env, run.sh takes the backend branch, and the app dies on a missing backend.
+# (seed_workspace also now writes a default .env when this is absent, but
+# shipping it keeps the template snapshot complete and matches mac.)
+$EnvExampleSrc = Join-Path $ProjectRoot 'backend\apps\outputs\webapp_template\.env.example'
+$EnvExampleDst = Join-Path $Staging 'backend\apps\outputs\webapp_template\.env.example'
+if (Test-Path $EnvExampleSrc) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $EnvExampleDst -Parent) | Out-Null
+    Copy-Item -Force $EnvExampleSrc $EnvExampleDst
+    Write-Host "Restored webapp_template/.env.example (stripped by the .env.* exclude)"
+}
 # data: backend/config/paths.py points DATA_ROOT at %APPDATA%/OpenSwarm/data in
 # packaged mode and no code seeds from the bundle, so the entire shipped
 # backend/data/ tree was dead weight (and was leaking the dev machine's

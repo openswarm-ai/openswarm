@@ -467,7 +467,7 @@ def _ensure_warm_python_venv() -> str | None:
                 logger.warning("warm-venv pip install failed: %s", r.stderr[-1500:])
                 return None
 
-            with open(sentinel, "w") as fh:
+            with open(sentinel, "w", encoding="utf-8") as fh:
                 fh.write("ok\n")
             logger.info("webapp-template: warm backend venv ready at %s", venv_dir)
             return venv_dir
@@ -568,6 +568,16 @@ def seed_webapp_template_workspace(workspace_dir: str, frontend_port: int) -> No
     src_example = os.path.join(WEBAPP_TEMPLATE_DIR, ".env.example")
     if os.path.exists(src_example):
         shutil.copyfile(src_example, env_path)
+    else:
+        # .env.example can be absent from a packaged build whose copy step
+        # stripped dotfiles (the Windows build's recursive '.env.*' exclude did
+        # exactly this). Write the default directly so the workspace always has
+        # a .env with BACKEND_PORT=NONE; without it run.sh sees no BACKEND_PORT,
+        # takes the backend branch, and dies on a backend that isn't there,
+        # leaving the app stuck on the splash. Mac was unaffected because its
+        # build anchors the exclude and ships .env.example.
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write("BACKEND_PORT=NONE\nFRONTEND_PORT=4949\n")
 
     _patch_env_port(env_path, "FRONTEND_PORT", str(frontend_port))
     _patch_env_port(env_example_path, "FRONTEND_PORT", str(frontend_port))
