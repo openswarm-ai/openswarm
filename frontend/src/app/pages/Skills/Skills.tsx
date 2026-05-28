@@ -115,7 +115,6 @@ const Skills: React.FC = () => {
     dispatch(fetchAllRegistrySkills());
   }, [dispatch]);
 
-  // Group registry skills by category
   const regGrouped = useMemo(() => {
     const groups: Record<string, RegistrySkill[]> = {};
     const q = searchFilter.toLowerCase();
@@ -139,7 +138,6 @@ const Skills: React.FC = () => {
   const toggleCategory = (cat: string) =>
     setCollapsedCats((p) => ({ ...p, [cat]: !p[cat] }));
 
-  // Selection handlers
   const selectRegistry = (name: string) => {
     setSelection({ type: 'registry', name });
     dispatch(fetchSkillDetail(name));
@@ -149,13 +147,11 @@ const Skills: React.FC = () => {
     setSelection({ type: 'local', id });
   };
 
-  // Get active detail content
   const selectedLocal: Skill | null =
     selection?.type === 'local' ? items[selection.id] ?? null : null;
   const selectedReg: RegistrySkillDetail | null =
     selection?.type === 'registry' && regDetail?.name === selection.name ? regDetail : null;
 
-  // CRUD
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm);
@@ -212,7 +208,6 @@ const Skills: React.FC = () => {
     return selection.type === 'local' && selection.id === key;
   };
 
-  // ─── Content preview with raw/preview toggle ───
   const ContentPreview: React.FC<{ content: string }> = ({ content }) => (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1, flexShrink: 0 }}>
@@ -278,7 +273,6 @@ const Skills: React.FC = () => {
     </Box>
   );
 
-  // ─── Sidebar row component ───
   const SidebarRow: React.FC<{
     label: string;
     selected: boolean;
@@ -311,14 +305,12 @@ const Skills: React.FC = () => {
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden', bgcolor: c.bg.page, position: 'relative' }}>
-      {/* ─── Left Sidebar ─── */}
       <Box
         sx={{
           width: SIDEBAR_W, minWidth: SIDEBAR_W, height: '100%', display: 'flex', flexDirection: 'column',
           borderRight: `${c.border.width} solid ${c.border.subtle}`, bgcolor: 'transparent',
         }}
       >
-        {/* Sidebar header */}
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, pt: 2, pb: 1 }}>
           <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: c.text.primary }}>Skills</Typography>
           <Box sx={{ display: 'flex', gap: 0.25 }}>
@@ -361,7 +353,6 @@ const Skills: React.FC = () => {
           </Button>
         </Box>
 
-        {/* Search input (toggled) */}
         <Collapse in={searchFilter !== ''} timeout={0} unmountOnExit>
           <Box sx={{ px: 1.5, pb: 1 }}>
             <TextField
@@ -388,7 +379,6 @@ const Skills: React.FC = () => {
           </Box>
         </Collapse>
 
-        {/* Scrollable tree */}
         <Box
           sx={{
             flex: 1, overflow: 'auto', px: 0.75, pb: 2,
@@ -396,7 +386,6 @@ const Skills: React.FC = () => {
             '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 2 },
           }}
         >
-          {/* My Skills (local) */}
           {filteredLocal.length > 0 && (
             <Box sx={{ mb: 1 }}>
               <Box
@@ -431,7 +420,6 @@ const Skills: React.FC = () => {
             </Box>
           )}
 
-          {/* Registry categories */}
           {(loading || regLoading) && regSkills.length === 0 && localSkills.length === 0 ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
               <CircularProgress size={22} sx={{ color: c.accent.primary }} />
@@ -481,7 +469,6 @@ const Skills: React.FC = () => {
         </Box>
       </Box>
 
-      {/* ─── Right Detail Panel ─── */}
       <Box sx={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'transparent' }}>
         {selection?.type === 'builder-preview' && builderPreview ? (
           <Box sx={{ p: 4, pb: 3, maxWidth: 1100, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -547,7 +534,6 @@ const Skills: React.FC = () => {
             </Box>
           ) : selectedReg ? (
             <Box sx={{ p: 4, pb: 3, maxWidth: 1100, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-              {/* Header row: name + actions */}
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5, flexShrink: 0 }}>
                 <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
                   {selectedReg.name}
@@ -612,7 +598,6 @@ const Skills: React.FC = () => {
           ) : null
         ) : selectedLocal ? (
           <Box sx={{ p: 4, pb: 3, maxWidth: 1100, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-            {/* Header row: name + actions */}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5, flexShrink: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
@@ -680,7 +665,6 @@ const Skills: React.FC = () => {
         ) : null}
       </Box>
 
-      {/* ─── Create/Edit Dialog ─── */}
       <Dialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
@@ -752,7 +736,6 @@ const Skills: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* ─── Skill Builder Chat ─── */}
       <SkillBuilderChat
         onSkillPreview={handleBuilderPreview}
         onSkillSaved={handleBuilderSaved}
@@ -760,7 +743,6 @@ const Skills: React.FC = () => {
         onExpandedChange={setBuilderOpen}
       />
 
-      {/* ─── Snackbar ─── */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={3000}

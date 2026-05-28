@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""Stdio MCP server exposing the MCP activation gate.
-
-Tools:
-  - MCPList: enumerate installed MCP servers (active + available).
-  - MCPSearch(query): rank servers by relevance to a free-form query.
-  - MCPActivate(server_name): activate a server for the rest of the session.
-
-The activation gate is the dispatch-layer enforcement of the product invariant
-"all MCP actions only via ToolSearch": the model can only reach an MCP server's
-tools if the user has approved MCPActivate for that server, which appends to
-session.active_mcps. _build_mcp_servers in agent_manager.py intersects connected
-MCPs with that list before handing them to the SDK, so unactivated servers are
-literally unreachable — the gate cannot be bypassed by ignoring prompt rules.
-
-HITL: the model's invocation of MCPActivate goes through agent_manager's pre-
-tool approval hook just like any other tool call — the user is prompted to
-approve activation in the standard ApprovalBar UI. No separate HITL inside this
-server.
-"""
+"""Stdio MCP server exposing the MCP activation gate (MCPList/MCPSearch/MCPActivate)."""
 
 import json
 import os
@@ -69,7 +51,7 @@ TOOLS = [
         "description": (
             "Request activation of an MCP server for this session. Triggers a "
             "user approval prompt; on approve the server's tools become callable "
-            "next turn. Always confirm the server name via MCPList/MCPSearch first — "
+            "next turn. Always confirm the server name via MCPList/MCPSearch first; "
             "invalid names return alternatives instead of activating."
         ),
         "inputSchema": {
@@ -81,7 +63,7 @@ TOOLS = [
                 },
                 "reason": {
                     "type": "string",
-                    "description": "Why you need it — shown to the user in the approval prompt.",
+                    "description": "Why you need it; shown to the user in the approval prompt.",
                 },
             },
             "required": ["server_name"],
@@ -133,7 +115,7 @@ def format_servers(servers: list[dict], heading: str = "") -> str:
         name = s.get("name", "")
         desc = s.get("description") or f"{name} integration"
         status = s.get("status", "available")
-        lines.append(f"- `{name}` [{status}] — {desc}")
+        lines.append(f"- `{name}` [{status}]; {desc}")
     return "\n".join(lines)
 
 
@@ -189,15 +171,17 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
                 "isError": True,
             }
         if result.get("status") == "already_active":
-            return {"content": [{"type": "text", "text": f"`{server_name}` is already active for this session — its tools should be callable now."}]}
+            return {"content": [{"type": "text", "text": f"`{server_name}` is already active for this session; its tools should be callable now."}]}
         if result.get("status") == "activated":
             return {
                 "content": [{
                     "type": "text",
                     "text": (
                         f"Activated `{server_name}`. Its tools (`mcp__{server_name}__*`) "
-                        f"will be callable on the NEXT turn. End this turn now and the user's "
-                        f"next message will see the new tools."
+                        f"are NOT callable in this turn; the transport snapshot is "
+                        f"already locked. This turn will end automatically and a "
+                        f"hidden continuation turn will fire with the new tools "
+                        f"loaded. Do not attempt any other tool call now."
                     ),
                 }],
             }

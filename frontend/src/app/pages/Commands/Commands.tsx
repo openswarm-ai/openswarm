@@ -14,7 +14,7 @@ import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
-import { getToolGroupIcon } from '@/app/components/CommandPicker';
+import { getToolGroupIcon } from '@/app/components/editor/CommandPicker';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { fetchSkills } from '@/shared/state/skillsSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
@@ -235,7 +235,6 @@ export const CommandsContent: React.FC = () => {
     }
 
     for (const out of Object.values(outputItems)) {
-      if (out.permission === 'deny') continue;
       const cmd = out.name.toLowerCase().replace(/\s+/g, '-');
       items.push({
         prefix: `@${cmd}`,
@@ -254,7 +253,6 @@ export const CommandsContent: React.FC = () => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-        {/* Slash Commands */}
         <Box>
           <SectionHeader
             icon={<TerminalIcon sx={{ fontSize: 22 }} />}
@@ -352,7 +350,6 @@ export const CommandsContent: React.FC = () => {
 
         <Box sx={{ my: 2, borderTop: `1px solid ${c.border.subtle}` }} />
 
-        {/* @ Commands */}
         <Box>
           <SectionHeader
             icon={<AlternateEmailIcon sx={{ fontSize: 22 }} />}
@@ -441,7 +438,6 @@ export const CommandsContent: React.FC = () => {
 
         <Box sx={{ my: 2, borderTop: `1px solid ${c.border.subtle}` }} />
 
-        {/* Keyboard Shortcuts */}
         <Box>
           <SectionHeader
             icon={<KeyboardIcon sx={{ fontSize: 22 }} />}
@@ -452,7 +448,6 @@ export const CommandsContent: React.FC = () => {
           />
 
           <Box sx={{ display: 'flex', gap: 4 }}>
-            {/* Navigation */}
             <Box sx={{ flex: 1 }}>
               <Typography
                 sx={{
@@ -491,7 +486,6 @@ export const CommandsContent: React.FC = () => {
               </Box>
             </Box>
 
-            {/* Actions */}
             <Box sx={{ flex: 1 }}>
               <Typography
                 sx={{

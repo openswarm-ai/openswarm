@@ -8,7 +8,7 @@ import {
   recordMultiChoice,
   resetTour,
   type PanelMode,
-} from '../OnboardingProgressSlice';
+} from '@/shared/state/onboardingProgressSlice';
 
 export function useOnboardingProgress() {
   const state = useAppSelector((s) => s.onboardingProgress);

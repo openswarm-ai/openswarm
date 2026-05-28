@@ -10,10 +10,7 @@ export const step02: OnboardingStep = {
   description: 'Allow agents to work across your apps.',
   videoSrc: './onboarding-videos/v2/02.mp4',
   videoDurationLabel: '0:24',
-  // Narrowed from hasAnyToolEnabled → isYoutubeEnabled so users with
-  // an unrelated tool already on (e.g. Slack, Reddit) still get walked
-  // through enabling YouTube — step 3's hardcoded YouTube-summary
-  // prompt would otherwise hit a disabled MCP and stall.
+  // Narrowed to YouTube so users with other tools still get walked; step 3 needs YouTube on.
   skipIf: isYoutubeEnabled,
   ops: [
     { kind: 'move_to', target: S.sidebarActions },
@@ -22,12 +19,7 @@ export const step02: OnboardingStep = {
       kind: 'wait_user',
       condition: { kind: 'click_target', target: S.sidebarActions },
     },
-    // YouTube toggle. Picked YouTube here (instead of Reddit) so the
-    // tour has a consistent throughline — step 3 launches an Agent that
-    // summarizes a YouTube video, so enabling the YouTube integration
-    // here directly powers the next step. Wait on REDUX STATE (YouTube
-    // enabled), not a single click — if the user toggles off then back
-    // on, AC stays in sync.
+    // YouTube on the throughline; step 3 needs it. Waits on Redux state, not click, so toggling stays synced.
     { kind: 'move_to', target: S.actionsYoutubeToggle },
     { kind: 'popup', text: 'Flip YouTube on.' },
     {
@@ -39,15 +31,12 @@ export const step02: OnboardingStep = {
       },
       timeoutMs: 90000,
     },
-    // Expand the YouTube row to reveal its actions list.
     { kind: 'move_to', target: S.actionsYoutubeChevron },
     { kind: 'popup', text: 'Tap to peek inside.' },
     {
       kind: 'wait_user',
       condition: { kind: 'click_target', target: S.actionsYoutubeChevron },
     },
-    // Hover the permission toggle for the first listed action and
-    // explain what it controls. No click required from the user.
     { kind: 'move_to', target: S.actionsPermissionToggle },
     {
       kind: 'popup',

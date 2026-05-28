@@ -34,7 +34,7 @@ def patch_settings(tmp_path):
         "installation_id": "test-install-abc",
         "analytics_opt_in": True,
     }))
-    import backend.apps.settings.settings as settings_mod
+    import backend.apps.settings.store as settings_mod
     old = settings_mod.SETTINGS_FILE
     settings_mod.SETTINGS_FILE = str(sf)
     yield
@@ -158,7 +158,7 @@ def test_opt_out_blocks_sync(sink, tmp_path):
         "installation_id": "test-install-abc",
         "analytics_opt_in": False,
     }))
-    import backend.apps.settings.settings as settings_mod
+    import backend.apps.settings.store as settings_mod
     settings_mod.SETTINGS_FILE = str(sf)
     from backend.apps.service.client import sync
     sync({"x": 1})
@@ -173,7 +173,7 @@ def test_standard_mode_allows_sync(sink):
 
 
 def test_settings_load_failure_defaults_to_enabled(sink):
-    import backend.apps.settings.settings as settings_mod
+    import backend.apps.settings.store as settings_mod
     settings_mod.SETTINGS_FILE = "/nonexistent/path/settings.json"
     from backend.apps.service.client import sync
     sync({})
@@ -288,7 +288,7 @@ async def test_drain_spool_empty():
 def test_install_id_persisted(sink, tmp_path):
     sf = tmp_path / "fresh.json"
     sf.write_text(json.dumps({"analytics_opt_in": True}))
-    import backend.apps.settings.settings as settings_mod
+    import backend.apps.settings.store as settings_mod
     settings_mod.SETTINGS_FILE = str(sf)
     import backend.apps.service.client as client
     client._install_id = None

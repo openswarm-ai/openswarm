@@ -137,9 +137,7 @@ async function handleType(wv: BrowserWebview, params: Record<string, any>): Prom
   return result;
 }
 
-// Map common JS KeyboardEvent.key values to Electron's accelerator keyCodes.
-// Electron's sendInputEvent expects: 'Up', 'Down', 'Left', 'Right', 'Enter',
-// 'Escape', 'Tab', 'Backspace', 'Delete', 'Space', or single char letters.
+// Electron sendInputEvent expects names like 'Up', 'Enter', 'Space', not 'ArrowUp'/' '/'Esc'.
 const KEY_NAME_MAP: Record<string, string> = {
   ArrowUp: 'Up',
   ArrowDown: 'Down',
@@ -155,30 +153,15 @@ async function handlePressKey(wv: BrowserWebview, params: Record<string, any>): 
   const rawKey = (params.key as string) || '';
   if (!rawKey) return { error: 'key parameter is required' };
   const keyCode = KEY_NAME_MAP[rawKey] || rawKey;
-  // Focus the page first so the key event has a sensible target.
   await wv.executeJavaScript('document.body && document.body.focus && document.body.focus(); true');
-  // Native OS-level key events — these have event.isTrusted === true so site
-  // keyboard handlers (Tinder, Slack, Notion, etc.) actually respect them.
+  // Native OS-level key events have isTrusted=true, so hostile sites' keyboard handlers respect them.
   wv.sendInputEvent({ type: 'keyDown', keyCode });
   wv.sendInputEvent({ type: 'char', keyCode });
   wv.sendInputEvent({ type: 'keyUp', keyCode });
   return { text: `Pressed ${rawKey}` };
 }
 
-// ---------------------------------------------------------------------------
-// CDP accessibility-tree element indexing
-// ---------------------------------------------------------------------------
-// list_interactives uses Chrome DevTools Protocol's Accessibility.getFullAXTree
-// to get the *computed* accessibility tree, not the raw DOM. This sees roles,
-// names, and labels even on hostile sites (Tinder, Instagram) where the raw
-// HTML is just unlabeled <div>s with click handlers — because Chromium computes
-// accessible names for screen readers from icons, surrounding text, etc.
-//
-// Each interactive element is assigned a numeric index. The index → backendNodeId
-// map is cached server-side per webContents and used by click_index. This is
-// orders of magnitude more reliable than CSS-selector-based clicking on sites
-// that don't expose semantic markup.
-
+// CDP Accessibility.getFullAXTree sees computed roles/names even on hostile sites with unlabeled DOMs.
 const INTERACTIVE_ROLES = new Set([
   'button', 'link', 'textbox', 'combobox', 'checkbox', 'menuitem',
   'tab', 'switch', 'searchbox', 'slider', 'listbox', 'option',
@@ -211,7 +194,7 @@ async function sendCdp(wv: BrowserWebview, method: string, params?: Record<strin
   const bridge = (window as any).openswarm?.sendCdpCommand as
     | ((id: number, m: string, p?: any) => Promise<CdpResult>)
     | undefined;
-  if (!bridge) throw new Error('CDP bridge not available — restart the app');
+  if (!bridge) throw new Error('CDP bridge not available, restart the app');
   const resp = await bridge(wcId, method, params);
   if (!resp || !resp.ok) {
     throw new Error(resp?.error || `CDP ${method} failed`);
@@ -237,7 +220,6 @@ async function handleListInteractives(wv: BrowserWebview): Promise<Record<string
     if (!INTERACTIVE_ROLES.has(role)) continue;
     const name = extractAxValue(node.name);
     if (!name && role !== 'textbox' && role !== 'searchbox' && role !== 'combobox') {
-      // Skip nameless elements unless they're inputs (which can be empty)
       continue;
     }
     const backendNodeId = node.backendDOMNodeId;
@@ -246,8 +228,7 @@ async function handleListInteractives(wv: BrowserWebview): Promise<Record<string
     index++;
   }
 
-  // Cache the index map in main-process storage so click_index can resolve it
-  // even across separate WebSocket commands.
+  // Cache in main-process so click_index can resolve across separate WS commands.
   const indexMap: Record<number, number> = {};
   for (const el of interactives) {
     indexMap[el.index] = el.backendNodeId;
@@ -256,10 +237,9 @@ async function handleListInteractives(wv: BrowserWebview): Promise<Record<string
     const cacheBridge = (window as any).openswarm?.cdpCacheSet;
     if (cacheBridge) await cacheBridge(wv.getWebContentsId(), indexMap);
   } catch {
-    // Cache is best-effort; click_index will fall back to re-listing.
+    // best-effort; click_index falls back to re-listing.
   }
 
-  // Build the model-friendly text representation: [1]<button "Like">
   const lines = interactives.map(
     (el) => `[${el.index}]<${el.role} "${el.name}">`,
   );
@@ -280,7 +260,6 @@ async function handleClickIndex(wv: BrowserWebview, params: Record<string, any>)
     return { error: 'index parameter is required and must be a positive integer' };
   }
 
-  // Look up the cached index → backendNodeId mapping.
   let backendNodeId: number | undefined;
   try {
     const cacheBridge = (window as any).openswarm?.cdpCacheGet;
@@ -300,9 +279,7 @@ async function handleClickIndex(wv: BrowserWebview, params: Record<string, any>)
     };
   }
 
-  // Cheap revalidation: resolve the backend node ID to a runtime object.
-  // If the page has mutated and the node is gone, this fails fast with a
-  // clear error message instead of clicking the wrong element.
+  // Revalidate: fails fast if the page mutated and the node is gone (vs. clicking the wrong element).
   try {
     await sendCdp(wv, 'DOM.resolveNode', { backendNodeId });
   } catch (err: any) {
@@ -311,9 +288,7 @@ async function handleClickIndex(wv: BrowserWebview, params: Record<string, any>)
     };
   }
 
-  // Get the element's bounding box for clicking via Input.dispatchMouseEvent
-  // (more reliable than Element.click() on hostile sites — bypasses any
-  // synthetic-event filtering since these are real OS-level mouse events).
+  // Input.dispatchMouseEvent (OS-level) bypasses synthetic-event filtering on hostile sites.
   let boxModel;
   try {
     boxModel = await sendCdp(wv, 'DOM.getBoxModel', { backendNodeId });
@@ -327,7 +302,7 @@ async function handleClickIndex(wv: BrowserWebview, params: Record<string, any>)
   if (!Array.isArray(content) || content.length < 8) {
     return { error: `Index ${idx} has no valid bounding rect.` };
   }
-  // content is [x1,y1, x2,y2, x3,y3, x4,y4] — compute center
+  // content is [x1,y1, x2,y2, x3,y3, x4,y4]; compute center
   const x = (content[0] + content[4]) / 2;
   const y = (content[1] + content[5]) / 2;
 
@@ -355,16 +330,7 @@ async function handleClickIndex(wv: BrowserWebview, params: Record<string, any>)
   };
 }
 
-// ---------------------------------------------------------------------------
-// Batched actions
-// ---------------------------------------------------------------------------
-// handleBatch executes a list of sub-actions sequentially on the same webview,
-// capturing the URL before/after each one and aborting the rest of the batch
-// if the URL changes mid-batch (page navigated → indices and selectors are
-// stale). This lets the model emit "[click_index 7, wait 500, type 'eric',
-// press_key Enter]" in a single tool call instead of round-tripping for each
-// action.
-
+// Sequential sub-actions; aborts mid-batch if URL changes (indices/selectors go stale on navigation).
 const MAX_BATCH_ACTIONS = 5;
 
 type SubActionType =
@@ -403,7 +369,7 @@ async function handleBatch(wv: BrowserWebview, params: Record<string, any>): Pro
 
     if (!subType || !(subType in BATCH_DISPATCH)) {
       results.push({ index: i, type: subType, error: `Unknown sub-action type: ${subType}` });
-      // Continue with the rest — per-action failures don't abort the batch.
+      // per-action failures don't abort the batch
       continue;
     }
 
@@ -416,8 +382,7 @@ async function handleBatch(wv: BrowserWebview, params: Record<string, any>): Pro
     }
     results.push({ index: i, type: subType, ...subResult });
 
-    // If the URL changed, abort the rest — selectors and indices are stale
-    // and any subsequent actions would be operating on a half-loaded page.
+    // URL changed: selectors and indices are stale on the half-loaded page; abort.
     const urlAfter = wv.getURL();
     if (urlAfter !== urlBefore && i < actions.length - 1) {
       aborted_at = i + 1;

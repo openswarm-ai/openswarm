@@ -1,74 +1,26 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { report } from '@/shared/serviceClient';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import TextField from '@mui/material/TextField';
-import Button from '@mui/material/Button';
-import FormControl from '@mui/material/FormControl';
-import Select from '@mui/material/Select';
-import MenuItem from '@mui/material/MenuItem';
-import ListSubheader from '@mui/material/ListSubheader';
-import IconButton from '@mui/material/IconButton';
-import InputAdornment from '@mui/material/InputAdornment';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
-import Slider from '@mui/material/Slider';
-import Switch from '@mui/material/Switch';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
-import Tab from '@mui/material/Tab';
-import Tabs from '@mui/material/Tabs';
 import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import LightModeIcon from '@mui/icons-material/LightMode';
-import DarkModeIcon from '@mui/icons-material/DarkMode';
-import SaveIcon from '@mui/icons-material/Save';
-import CloseIcon from '@mui/icons-material/Close';
-import KeyboardIcon from '@mui/icons-material/Keyboard';
-import LanguageIcon from '@mui/icons-material/Language';
-import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import DownloadIcon from '@mui/icons-material/Download';
-import CircularProgress from '@mui/material/CircularProgress';
-import LinearProgress from '@mui/material/LinearProgress';
-import Collapse from '@mui/material/Collapse';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { updateSettings, closeSettingsModal, resetSystemPrompt, disconnectSubscription, signOut, activateSignin, fetchSettings, setDraft, clearDraft, AppSettings, CustomProvider, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
 import { onboardingBus } from '@/app/components/Onboarding/eventBus';
-import { resetTour } from '@/app/components/Onboarding/OnboardingProgressSlice';
-import { OPENSWARM_DEFAULT_PROXY_URL } from '@/shared/config';
 import { fetchModels } from '@/shared/state/modelsSlice';
-import {
-  fetchSubscriptionStatus,
-  setSubscriptionStatus,
-  selectSubscriptionConnections,
-} from '@/shared/state/subscriptionsSlice';
-import { setChecking, setUpdateError, setInstalling } from '@/shared/state/updateSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
-import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
-import DirectoryBrowser from '@/app/components/DirectoryBrowser';
-import TrustedFilePatterns from '@/app/components/TrustedFilePatterns';
+import { useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
+import DirectoryBrowser from '@/app/components/editor/DirectoryBrowser';
 import { CommandsContent } from '@/app/pages/Commands/Commands';
-import { API_BASE } from '@/shared/config';
-import PlanPicker from '@/app/components/PlanPicker';
-import type { OpenSwarmPlan } from '@/shared/subscription/checkout';
+import GeneralTab from './sections/general/GeneralTab';
+import ModelsTab from './sections/models/ModelsTab';
+import UsageStats from './sections/usage/UsageStats';
+import SettingsHeader from './sections/SettingsHeader';
+import SettingsFooter from './sections/SettingsFooter';
+import ConfirmDiscardDialog from './sections/ConfirmDiscardDialog';
+import { makeSettingsStyles } from './sections/settingsStyles';
 
-// NOTE: a standalone CopilotAuthButton component used to live here, but it
-// referenced `/agents/copilot/{models,start-auth,poll-auth,disconnect}`
-// endpoints that never existed on the backend. GitHub Copilot now flows
-// through 9Router's `github` OAuth under the generic SubscriptionCard path
-// below, so the dead component was removed.
-
-// Brand colors for provider group headers in the default-model picker.
-// Mirrors the set used by the in-session ChatInput picker.
+// Brand colors for provider group headers; mirrors ChatInput picker.
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: '#E8927A',
   openai: '#74AA9C',
@@ -1350,7 +1302,6 @@ const API_KEY_STEPS = [
     detail: 'Paste the key into the field above, then hit Save. You\'re all set!',
   },
 ];
-
 const Settings: React.FC = () => {
   const open = useAppSelector((s) => s.settings.modalOpen);
   const c = useClaudeTokens();
@@ -1362,9 +1313,7 @@ const Settings: React.FC = () => {
 
   const modesList = useMemo(() => Object.values(modes), [modes]);
 
-  // Model picker source — same state as the in-session ChatInput picker, so
-  // Settings shows exactly the models gated-in by the user's connected
-  // providers / subscriptions (OpenSwarm Pro, Anthropic, OpenAI, Google, ...).
+  // Model picker source matches the in-session ChatInput picker, so Settings reflects connected providers.
   const modelsByProvider = useAppSelector((s) => s.models.byProvider);
   const modelsLoaded = useAppSelector((s) => s.models.loaded);
 
@@ -1385,19 +1334,8 @@ const Settings: React.FC = () => {
     return { grouped, flat };
   }, [modelsByProvider, modelsLoaded, settings.connection_mode]);
 
-  const updateStatus = useAppSelector((s) => s.update.status);
-  const appVersion = useAppSelector((s) => s.update.appVersion);
-  const availableVersion = useAppSelector((s) => s.update.availableVersion);
-  const downloadPercent = useAppSelector((s) => s.update.downloadPercent);
-  const updateError = useAppSelector((s) => s.update.error);
-  const installing = useAppSelector((s) => s.update.installing);
-
   const initialTab = useAppSelector((s) => s.settings.initialTab);
-  // Persisted in-flight edits — survive modal close so the user can pop
-  // out to the dashboard / a doc / wherever and pick up where they left
-  // off without being prompted to "save or discard." Cleared on actual
-  // save (in the slice's updateSettings.fulfilled) or via the explicit
-  // "Discard changes" button.
+  // In-flight edits persisted to Redux so they survive modal close; cleared on save or explicit Discard.
   const draft = useAppSelector((s) => s.settings.draft);
   const draftTab = useAppSelector((s) => s.settings.draftTab);
   const TAB_VALUES = ['general', 'models', 'usage', 'commands'] as const;
@@ -1409,20 +1347,13 @@ const Settings: React.FC = () => {
   );
   const [form, setForm] = useState<AppSettings>({ ...settings, ...(draft || {}) });
 
-  // Re-seed the form whenever the signed-in user changes. Without this,
-  // switching accounts left `form` holding the previous user's snapshot
-  // while Redux `settings` got reloaded for the new user, so the
-  // dirty-detector (form != settings) lit up the Save / Discard footer
-  // even though the user hadn't touched anything. Watching user_id +
-  // user_email handles sign-out, sign-in, and sign-in-as-different-user
-  // in one effect.
+  // Re-seed form on user change; otherwise the dirty detector falsely lights up Save/Discard.
   useEffect(() => {
     setForm({ ...settings });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.user_id, settings.user_email]);
 
-  // When the modal opens with a requested tab (e.g., from the warning
-  // banner's "Configure models" link), switch to it.
+  // Switch to requested tab when modal opens (e.g. from the "Configure models" banner link).
   useEffect(() => {
     if (initialTab && (TAB_VALUES as readonly string[]).includes(initialTab)) {
       setActiveTab(initialTab as SettingsTab);
@@ -1431,9 +1362,7 @@ const Settings: React.FC = () => {
   const [showApiKey, setShowApiKey] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [recordingShortcut, setRecordingShortcut] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const [showApiHelp, setShowApiHelp] = useState(false);
 
   useEffect(() => {
     dispatch(fetchModes());
@@ -1444,24 +1373,14 @@ const Settings: React.FC = () => {
   }, [open, dispatch]);
 
   useEffect(() => {
-    // On open, restore the user's last tab if they had unsaved edits;
-    // otherwise default to General. The caller's explicit initialTab
-    // (e.g. openSettingsModal('models') from the warning banner) wins
-    // over both — the separate initialTab effect above handles that.
+    // On open, restore the last tab from draft; explicit initialTab is handled by the effect above.
     if (open && !initialTab) {
       setActiveTab(isValidTab(draftTab) ? draftTab : 'general');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialTab]);
 
-  // Sync form to Redux settings on modal open / first load only — NOT on
-  // every settings change. Including `settings` in the deps causes any
-  // background dispatch that touches state.data (the SignInGate's 2s
-  // fetchSettings poll, the window-focus refetch in SettingsLoader, the
-  // updateSettings response, etc.) to wipe the user's in-flight edits
-  // mid-typing — that's the "save button flashes and the key disappears"
-  // report from issue #25. Spreads any preserved draft over settings so
-  // unsaved edits resurface after a close → reopen cycle.
+  // Sync form on modal open + first load only; including `settings` in deps wipes in-flight edits on background fetches (issue #25).
   useEffect(() => {
     if (open && loaded) {
       setForm({ ...settings, ...(draft || {}) });
@@ -1469,11 +1388,7 @@ const Settings: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, loaded]);
 
-  // Persist in-flight edits to Redux so they survive modal close. Compares
-  // against `settings` rather than the previous draft so closing+reopening
-  // a clean form doesn't keep a phantom draft alive. Runs after every
-  // commit where form/activeTab changed; React batches keystrokes so the
-  // overhead is one dispatch per render, not per character.
+  // Persist in-flight edits to Redux; compares to `settings` so a clean reopen doesn't keep a phantom draft.
   useEffect(() => {
     if (!open || !loaded) return;
     const dirty = JSON.stringify(form) !== JSON.stringify(settings);
@@ -1483,34 +1398,6 @@ const Settings: React.FC = () => {
       dispatch(clearDraft());
     }
   }, [form, activeTab, open, loaded, settings, draft, dispatch]);
-
-  const handleCheckForUpdates = async () => {
-    dispatch(setChecking());
-    const timeout = setTimeout(() => {
-      dispatch(setUpdateError('Update check timed out. Please try again.'));
-    }, 15000);
-    try {
-      await (window as any).openswarm?.checkForUpdates();
-    } catch {
-      /* error handled via IPC event listener */
-    } finally {
-      clearTimeout(timeout);
-    }
-  };
-
-  const handleDownloadUpdate = async () => {
-    try {
-      await (window as any).openswarm?.downloadUpdate();
-    } catch {
-      /* error handled via IPC event listener */
-    }
-  };
-
-  const handleInstallUpdate = () => {
-    if (installing) return;
-    dispatch(setInstalling());
-    (window as any).openswarm?.installUpdate();
-  };
 
   const hasChanges = JSON.stringify(form) !== JSON.stringify(settings);
 
@@ -1523,76 +1410,20 @@ const Settings: React.FC = () => {
     setSaved(true);
   };
 
-  // Closing Settings is now non-destructive — the draft persists in
-  // Redux so unsaved edits resurface on reopen. The old "Save or
-  // discard?" prompt was dropped because it interrupted the user every
-  // time they wanted to step out (e.g. to look up a value on the
-  // dashboard). Explicit discard lives on a button next to Save.
+  // Non-destructive close; draft persists in Redux. Explicit discard lives on its own button.
   const handleRequestClose = useCallback(() => {
     dispatch(closeSettingsModal());
     onboardingBus.emit('settings:closed');
   }, [dispatch]);
 
-  // Explicit discard — fires from the "Discard changes" button. Wipes
-  // the draft so the form snaps back to saved settings; modal stays
-  // open so the user can verify the reset before closing.
+  // Explicit discard wipes the draft so form snaps back to saved settings; modal stays open for verification.
   const handleConfirmDiscard = useCallback(() => {
     setConfirmDiscard(false);
     setForm({ ...settings });
     dispatch(clearDraft());
   }, [settings, dispatch]);
 
-  const fieldSx = {
-    '& .MuiOutlinedInput-root': {
-      fontSize: '0.85rem',
-    },
-  };
-
-  const sectionSx = {
-    fontSize: '0.7rem',
-    fontWeight: 600,
-    letterSpacing: '0.06em',
-    textTransform: 'uppercase' as const,
-    color: c.text.tertiary,
-    mb: 0.5,
-    mt: 0.5,
-  };
-
-  const rowSx = {
-    py: 2,
-    borderBottom: `1px solid ${c.border.subtle}`,
-  };
-
-  const rowLastSx = {
-    py: 2,
-  };
-
-  const inlineRowSx = {
-    ...rowSx,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  };
-
-  const inlineRowLastSx = {
-    ...rowLastSx,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  };
-
-  const labelSx = {
-    color: c.text.primary,
-    fontWeight: 500,
-    fontSize: '0.875rem',
-    lineHeight: 1.4,
-  };
-
-  const descSx = {
-    color: c.text.tertiary,
-    fontSize: '0.75rem',
-    lineHeight: 1.4,
-  };
+  const styles = makeSettingsStyles(c);
 
   return (
     <>
@@ -1612,44 +1443,11 @@ const Settings: React.FC = () => {
         },
       }}
     >
-      <DialogTitle
-        sx={{
-          px: 3,
-          py: 0,
-          borderBottom: `1px solid ${c.border.subtle}`,
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1.5, pb: 0.5 }}>
-          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem' }}>
-            Settings
-          </Typography>
-          <IconButton onClick={handleRequestClose} size="small" data-onboarding="settings-close-button" sx={{ color: c.text.tertiary, '&:hover': { color: c.text.primary } }}>
-            <CloseIcon sx={{ fontSize: 18 }} />
-          </IconButton>
-        </Box>
-        <Tabs
-          value={activeTab}
-          onChange={(_, v) => setActiveTab(v)}
-          sx={{
-            minHeight: 36,
-            '& .MuiTab-root': {
-              minHeight: 36,
-              textTransform: 'none',
-              fontSize: '0.85rem',
-              fontWeight: 500,
-              color: c.text.muted,
-              px: 1.5,
-              '&.Mui-selected': { color: c.accent.primary, fontWeight: 600 },
-            },
-            '& .MuiTabs-indicator': { backgroundColor: c.accent.primary, height: 2 },
-          }}
-        >
-          <Tab label="General" value="general" disableRipple />
-          <Tab label="Models" value="models" disableRipple data-onboarding="settings-models-tab" />
-          <Tab label="Usage" value="usage" disableRipple />
-          <Tab label="Commands" value="commands" disableRipple />
-        </Tabs>
-      </DialogTitle>
+      <SettingsHeader
+        activeTab={activeTab}
+        onTabChange={(v) => setActiveTab(v)}
+        onClose={handleRequestClose}
+      />
 
       <DialogContent sx={{
         px: 3,
@@ -1661,1071 +1459,24 @@ const Settings: React.FC = () => {
         scrollbarColor: `${c.border.medium} transparent`,
       }}>
       {activeTab === 'general' ? (
-      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
-
-        {/* ── Account ── */}
-        <Typography sx={sectionSx}>Account</Typography>
-        <AccountCard />
-
-        {/* ── Agent Defaults ── */}
-        <Typography sx={sectionSx}>Agent Defaults</Typography>
-
-        <Box sx={rowSx}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-            <Typography sx={labelSx}>System prompt</Typography>
-            {form.default_system_prompt !== DEFAULT_SYSTEM_PROMPT && (
-              <Button
-                size="small"
-                startIcon={<RestartAltIcon sx={{ fontSize: 14 }} />}
-                onClick={async () => {
-                  await dispatch(resetSystemPrompt());
-                  setForm((prev) => ({ ...prev, default_system_prompt: DEFAULT_SYSTEM_PROMPT }));
-                }}
-                sx={{
-                  color: c.accent.primary,
-                  textTransform: 'none',
-                  fontSize: '0.75rem',
-                  py: 0.25,
-                  '&:hover': { bgcolor: `${c.accent.primary}10` },
-                }}
-              >
-                Reset to default
-              </Button>
-            )}
-          </Box>
-          <Typography sx={{ ...descSx, mb: 1.5 }}>
-            Prepended to every agent session before mode-specific instructions. Modes can override with their own.
-          </Typography>
-          <TextField
-            value={form.default_system_prompt ?? DEFAULT_SYSTEM_PROMPT}
-            onChange={(e) => setForm({ ...form, default_system_prompt: e.target.value || null })}
-            multiline
-            minRows={3}
-            maxRows={8}
-            fullWidth
-            size="small"
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                fontFamily: c.font.mono,
-                fontSize: '0.8rem',
-                lineHeight: 1.6,
-                color: c.text.secondary,
-              },
-            }}
-          />
-        </Box>
-
-        <Box sx={rowSx}>
-          <Typography sx={labelSx}>Working directory</Typography>
-          <Typography sx={{ ...descSx, mb: 1.5 }}>
-            Default folder agents start in. Modes can override per-mode.
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <TextField
-              value={form.default_folder ?? ''}
-              onChange={(e) => setForm({ ...form, default_folder: e.target.value || null })}
-              size="small"
-              fullWidth
-              placeholder="Not set (uses project root)"
-              sx={{
-                ...fieldSx,
-                '& .MuiOutlinedInput-root': {
-                  ...fieldSx['& .MuiOutlinedInput-root'],
-                  fontFamily: c.font.mono,
-                },
-              }}
-            />
-            <Button
-              variant="outlined"
-              onClick={() => setBrowseOpen(true)}
-              startIcon={<FolderOpenIcon sx={{ fontSize: 16 }} />}
-              sx={{
-                color: c.text.tertiary,
-                borderColor: c.border.medium,
-                textTransform: 'none',
-                whiteSpace: 'nowrap',
-                minWidth: 'auto',
-                fontSize: '0.8rem',
-                '&:hover': { color: c.accent.primary, borderColor: c.accent.primary },
-              }}
-            >
-              Browse
-            </Button>
-          </Box>
-        </Box>
-
-        <Box sx={inlineRowSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>Model</Typography>
-            <Typography sx={descSx}>Default model for new sessions.</Typography>
-          </Box>
-          <FormControl size="small" sx={{ minWidth: 220 }}>
-            <Select
-              value={form.default_model}
-              onChange={(e) => setForm({ ...form, default_model: e.target.value })}
-              sx={{ fontSize: '0.85rem' }}
-              MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
-              renderValue={(val) => {
-                const m = modelOptions.flat.find((x) => x.value === val);
-                if (!m) return String(val);
-                return (
-                  <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
-                    <span>{m.label}</span>
-                    <Typography component="span" sx={{ fontSize: '0.65rem', color: c.text.ghost }}>
-                      · {m.provider}
-                    </Typography>
-                  </Box>
-                );
-              }}
-            >
-              {Object.entries(modelOptions.grouped).flatMap(([prov, models]) => {
-                const isOpenSwarmPro = prov === 'OpenSwarm Pro';
-                const brandColor = PROVIDER_COLORS[prov.toLowerCase()] ?? c.text.tertiary;
-                return [
-                  <ListSubheader
-                    key={`header-${prov}`}
-                    sx={{
-                      bgcolor: c.bg.surface,
-                      lineHeight: '1.8em',
-                      px: 1.5,
-                      py: 0.4,
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                      <Box
-                        sx={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: '50%',
-                          flexShrink: 0,
-                          background: isOpenSwarmPro ? OPENSWARM_GRADIENT : brandColor,
-                          boxShadow: isOpenSwarmPro
-                            ? '0 0 8px rgba(229, 107, 196, 0.6)'
-                            : `0 0 6px ${brandColor}80`,
-                        }}
-                      />
-                      <Typography
-                        sx={{
-                          fontSize: '0.68rem',
-                          fontWeight: 700,
-                          letterSpacing: '0.08em',
-                          textTransform: 'uppercase',
-                          ...(isOpenSwarmPro
-                            ? {
-                                background: OPENSWARM_GRADIENT,
-                                WebkitBackgroundClip: 'text',
-                                WebkitTextFillColor: 'transparent',
-                                backgroundClip: 'text',
-                              }
-                            : { color: brandColor }),
-                        }}
-                      >
-                        {prov}
-                      </Typography>
-                    </Box>
-                  </ListSubheader>,
-                  ...models.map((m) => (
-                    <MenuItem key={m.value} value={m.value} sx={{ fontSize: '0.85rem', pl: 3 }}>
-                      {m.label}
-                    </MenuItem>
-                  )),
-                ];
-              })}
-            </Select>
-          </FormControl>
-        </Box>
-
-        <Box sx={inlineRowSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>Mode</Typography>
-            <Typography sx={descSx}>Default interaction mode for new sessions.</Typography>
-          </Box>
-          <FormControl size="small" sx={{ minWidth: 170 }}>
-            <Select
-              value={form.default_mode}
-              onChange={(e) => setForm({ ...form, default_mode: e.target.value })}
-              sx={{ fontSize: '0.85rem' }}
-              MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
-            >
-              {modesList.map((m) => (
-                <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
-
-        <Box sx={inlineRowSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>Thinking</Typography>
-            <Typography sx={descSx}>Default thinking level for reasoning-capable models.</Typography>
-          </Box>
-          <FormControl size="small" sx={{ minWidth: 170 }}>
-            <Select
-              value={form.default_thinking_level}
-              onChange={(e) => setForm({ ...form, default_thinking_level: e.target.value as AppSettings['default_thinking_level'] })}
-              sx={{ fontSize: '0.85rem' }}
-              MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
-            >
-              <MenuItem value="auto">Auto</MenuItem>
-              <MenuItem value="off">Off</MenuItem>
-              <MenuItem value="low">Low</MenuItem>
-              <MenuItem value="medium">Medium</MenuItem>
-              <MenuItem value="high">High</MenuItem>
-            </Select>
-          </FormControl>
-        </Box>
-
-        <Box sx={inlineRowLastSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>Max turns</Typography>
-            <Typography sx={descSx}>Auto-stop after this many turns. Empty = unlimited.</Typography>
-          </Box>
-          <TextField
-            type="number"
-            value={form.default_max_turns ?? ''}
-            onChange={(e) => setForm({ ...form, default_max_turns: e.target.value ? parseInt(e.target.value) : null })}
-            size="small"
-            placeholder="∞"
-            inputProps={{ min: 1 }}
-            sx={{ ...fieldSx, width: 100 }}
-          />
-        </Box>
-
-        {/* ── Interface ── */}
-        <Typography sx={{ ...sectionSx, mt: 3 }}>Interface</Typography>
-
-        <Box sx={inlineRowSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>Theme</Typography>
-            <Typography sx={descSx}>Application color scheme.</Typography>
-          </Box>
-          <ToggleButtonGroup
-            value={form.theme}
-            exclusive
-            onChange={(_, v) => { if (v) setForm({ ...form, theme: v }); }}
-            size="small"
-            sx={{
-              '& .MuiToggleButton-root': {
-                color: c.text.muted,
-                borderColor: c.border.medium,
-                textTransform: 'none',
-                px: 2,
-                py: 0.5,
-                gap: 0.5,
-                fontSize: '0.8rem',
-                '&.Mui-selected': {
-                  bgcolor: `${c.accent.primary}15`,
-                  color: c.accent.primary,
-                  borderColor: c.accent.primary,
-                  '&:hover': { bgcolor: `${c.accent.primary}20` },
-                },
-              },
-            }}
-          >
-            <ToggleButton value="light">
-              <LightModeIcon sx={{ fontSize: 16 }} /> Light
-            </ToggleButton>
-            <ToggleButton value="dark">
-              <DarkModeIcon sx={{ fontSize: 16 }} /> Dark
-            </ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
-
-        <Box sx={rowSx}>
-          <Typography sx={labelSx}>Zoom sensitivity</Typography>
-          <Typography sx={{ ...descSx, mb: 1 }}>
-            Scroll-to-zoom responsiveness. Lower for trackpads, higher for mouse wheels.
-          </Typography>
-          <Box sx={{ px: 1 }}>
-            <Slider
-              value={form.zoom_sensitivity}
-              onChange={(_, v) => setForm({ ...form, zoom_sensitivity: v as number })}
-              min={1}
-              max={100}
-              step={1}
-              valueLabelDisplay="auto"
-              marks={[
-                { value: 1, label: 'Low' },
-                { value: 50, label: 'Default' },
-                { value: 100, label: 'High' },
-              ]}
-              sx={{
-                color: c.accent.primary,
-                '& .MuiSlider-markLabel': { color: c.text.tertiary, fontSize: '0.7rem' },
-                '& .MuiSlider-valueLabel': { bgcolor: c.accent.primary },
-              }}
-            />
-          </Box>
-        </Box>
-
-        <Box sx={inlineRowSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>New agent shortcut</Typography>
-            <Typography sx={descSx}>Keyboard shortcut to create an agent.</Typography>
-          </Box>
-          <Box
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (!recordingShortcut) return;
-              if (['Meta', 'Control', 'Shift', 'Alt'].includes(e.key)) return;
-              e.preventDefault();
-              const parts: string[] = [];
-              if (e.metaKey) parts.push('Meta');
-              if (e.ctrlKey) parts.push('Ctrl');
-              if (e.altKey) parts.push('Alt');
-              if (e.shiftKey) parts.push('Shift');
-              parts.push(e.key.length === 1 ? e.key.toLowerCase() : e.key);
-              setForm({ ...form, new_agent_shortcut: parts.join('+') });
-              setRecordingShortcut(false);
-            }}
-            onBlur={() => setRecordingShortcut(false)}
-            onClick={() => setRecordingShortcut(true)}
-            sx={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 0.75,
-              px: 1.5,
-              py: 0.75,
-              borderRadius: `${c.radius.sm}px`,
-              border: `1px solid ${recordingShortcut ? c.accent.primary : c.border.medium}`,
-              cursor: 'pointer',
-              outline: 'none',
-              transition: 'border-color 0.15s',
-              '&:hover': { borderColor: c.accent.primary },
-            }}
-          >
-            <KeyboardIcon sx={{ fontSize: 16, color: recordingShortcut ? c.accent.primary : c.text.tertiary }} />
-            {recordingShortcut ? (
-              <Typography sx={{ fontSize: '0.8rem', color: c.accent.primary, fontWeight: 500 }}>
-                Press shortcut…
-              </Typography>
-            ) : (
-              <Typography sx={{ fontSize: '0.8rem', color: c.text.primary, fontFamily: c.font.mono, fontWeight: 500 }}>
-                {form.new_agent_shortcut
-                  .split('+')
-                  .map((p) => {
-                    if (p === 'Meta') return '⌘';
-                    if (p === 'Ctrl') return 'Ctrl';
-                    if (p === 'Alt') return '⌥';
-                    if (p === 'Shift') return '⇧';
-                    return p.toUpperCase();
-                  })
-                  .join(' + ')}
-              </Typography>
-            )}
-          </Box>
-        </Box>
-
-        <Box sx={inlineRowSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>Auto-enable element selection</Typography>
-            <Typography sx={descSx}>Automatically enter element selection mode when creating a new agent.</Typography>
-          </Box>
-          <Switch
-            checked={form.auto_select_mode_on_new_agent}
-            onChange={(e) => setForm({ ...form, auto_select_mode_on_new_agent: e.target.checked })}
-            sx={{
-              '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
-              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
-            }}
-          />
-        </Box>
-
-        <Box sx={inlineRowSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>Default agent spawn state in dashboard</Typography>
-            <Typography sx={descSx}>When enabled, new agents spawn expanded instead of collapsed.</Typography>
-          </Box>
-          <Switch
-            checked={form.expand_new_chats_in_dashboard}
-            onChange={(e) => setForm({ ...form, expand_new_chats_in_dashboard: e.target.checked })}
-            sx={{
-              '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
-              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
-            }}
-          />
-        </Box>
-
-        <Box sx={inlineRowLastSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>Auto-reveal sub-agents on dashboard</Typography>
-            <Typography sx={descSx}>Automatically show sub-agent cards (from CreateAgent / InvokeAgent) tethered to their parent on the dashboard.</Typography>
-          </Box>
-          <Switch
-            checked={form.auto_reveal_sub_agents}
-            onChange={(e) => setForm({ ...form, auto_reveal_sub_agents: e.target.checked })}
-            sx={{
-              '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
-              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
-            }}
-          />
-        </Box>
-
-        {/* ── Browser ── */}
-        <Typography sx={{ ...sectionSx, mt: 3 }}>Browser</Typography>
-
-        <Box sx={rowLastSx}>
-          <Typography sx={labelSx}>Default homepage</Typography>
-          <Typography sx={{ ...descSx, mb: 1.5 }}>
-            URL loaded when opening a new browser card on the dashboard.
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            <LanguageIcon sx={{ fontSize: 18, color: c.text.tertiary, flexShrink: 0 }} />
-            <TextField
-              value={form.browser_homepage}
-              onChange={(e) => setForm({ ...form, browser_homepage: e.target.value })}
-              size="small"
-              fullWidth
-              placeholder="https://www.google.com"
-              sx={{
-                ...fieldSx,
-                '& .MuiOutlinedInput-root': {
-                  ...fieldSx['& .MuiOutlinedInput-root'],
-                  fontFamily: c.font.mono,
-                },
-              }}
-            />
-          </Box>
-        </Box>
-
-        {/* ── Advanced ── */}
-        <Typography sx={{ ...sectionSx, mt: 3 }}>Advanced</Typography>
-
-        <Box sx={inlineRowSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>Developer mode</Typography>
-            <Typography sx={descSx}>Show transport details, environment variables, raw configs, and other technical metadata throughout the app.</Typography>
-          </Box>
-          <Switch
-            checked={form.dev_mode}
-            onChange={(e) => setForm({ ...form, dev_mode: e.target.checked })}
-            sx={{
-              '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
-              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
-            }}
-          />
-        </Box>
-
-        <Box sx={inlineRowLastSx}>
-          <Box sx={{ mr: 3 }}>
-            <Typography sx={labelSx}>Experimental updates</Typography>
-            <Typography sx={descSx}>Receive pre-release builds with new features earlier. These versions may be less stable than normal releases.</Typography>
-          </Box>
-          <Switch
-            checked={form.allow_experimental_updates}
-            onChange={(e) => setForm({ ...form, allow_experimental_updates: e.target.checked })}
-            sx={{
-              '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
-              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
-            }}
-          />
-        </Box>
-
-        {/* About */}
-        <Typography sx={{ ...sectionSx, mt: 3 }}>About</Typography>
-
-        <Box sx={rowSx}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box>
-              <Typography sx={labelSx}>Version</Typography>
-              <Typography sx={{ ...descSx, fontFamily: c.font.mono }}>
-                {appVersion ?? '—'}
-              </Typography>
-            </Box>
-          </Box>
-        </Box>
-
-        <Box sx={rowLastSx}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: updateStatus === 'downloading' ? 1 : 0 }}>
-            <Box>
-              <Typography sx={labelSx}>Software update</Typography>
-              <Typography sx={descSx}>
-                {updateStatus === 'checking' && 'Checking for updates…'}
-                {updateStatus === 'not-available' && 'You\'re on the latest version.'}
-                {updateStatus === 'available' && `Version ${availableVersion} is available.`}
-                {updateStatus === 'downloading' && `Downloading update… ${Math.round(downloadPercent)}%`}
-                {updateStatus === 'downloaded' && `Version ${availableVersion} is ready to install.`}
-                {updateStatus === 'error' && (updateError || 'Update check failed.')}
-                {updateStatus === 'idle' && 'Check for new versions of OpenSwarm.'}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, ml: 2 }}>
-              {updateStatus === 'checking' && (
-                <CircularProgress size={18} sx={{ color: c.text.tertiary }} />
-              )}
-              {updateStatus === 'not-available' && (
-                <CheckCircleOutlineIcon sx={{ fontSize: 18, color: c.status.success }} />
-              )}
-              {updateStatus === 'error' && (
-                <ErrorOutlineIcon sx={{ fontSize: 18, color: c.status.error }} />
-              )}
-              {(updateStatus === 'idle' || updateStatus === 'not-available' || updateStatus === 'error') && (
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={handleCheckForUpdates}
-                  startIcon={<SystemUpdateAltIcon sx={{ fontSize: 15 }} />}
-                  sx={{
-                    color: c.text.secondary,
-                    borderColor: c.border.medium,
-                    textTransform: 'none',
-                    fontSize: '0.8rem',
-                    whiteSpace: 'nowrap',
-                    '&:hover': { color: c.accent.primary, borderColor: c.accent.primary },
-                  }}
-                >
-                  Check for Updates
-                </Button>
-              )}
-              {updateStatus === 'available' && (
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={handleDownloadUpdate}
-                  startIcon={<DownloadIcon sx={{ fontSize: 15 }} />}
-                  sx={{
-                    color: c.accent.primary,
-                    borderColor: c.accent.primary,
-                    textTransform: 'none',
-                    fontSize: '0.8rem',
-                    whiteSpace: 'nowrap',
-                    '&:hover': { bgcolor: `${c.accent.primary}10` },
-                  }}
-                >
-                  Download
-                </Button>
-              )}
-              {updateStatus === 'downloaded' && (
-                <Button
-                  variant="contained"
-                  size="small"
-                  onClick={handleInstallUpdate}
-                  disabled={installing}
-                  startIcon={installing
-                    ? <CircularProgress size={14} sx={{ color: '#fff' }} />
-                    : <RestartAltIcon sx={{ fontSize: 15 }} />}
-                  sx={{
-                    bgcolor: c.accent.primary,
-                    '&:hover': { bgcolor: c.accent.pressed },
-                    '&.Mui-disabled': { bgcolor: c.accent.primary, color: '#fff', opacity: 0.7 },
-                    textTransform: 'none',
-                    fontSize: '0.8rem',
-                    whiteSpace: 'nowrap',
-                    borderRadius: 1.5,
-                  }}
-                >
-                  {installing ? 'Restarting…' : 'Restart & Update'}
-                </Button>
-              )}
-            </Box>
-          </Box>
-          {updateStatus === 'downloading' && (
-            <LinearProgress
-              variant="determinate"
-              value={downloadPercent}
-              sx={{
-                height: 3,
-                borderRadius: 2,
-                bgcolor: `${c.accent.primary}20`,
-                '& .MuiLinearProgress-bar': { bgcolor: c.accent.primary, borderRadius: 2 },
-              }}
-            />
-          )}
-        </Box>
-
-        <TrustedFilePatterns />
-
-
-        <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box>
-            <Typography sx={{ ...labelSx, mb: 0.25 }}>Onboarding tour</Typography>
-            <Typography sx={{ ...descSx, mb: 0 }}>
-              Re-run the Show me walkthrough at any time.
-            </Typography>
-          </Box>
-          <Button
-            variant="outlined"
-            size="small"
-            data-onboarding="settings-restart-tour"
-            onClick={() => {
-              report('onboarding_v2', 'tour_restarted');
-              try {
-                window.localStorage.removeItem('openswarm.onboarding.v2');
-              } catch { /* ignore */ }
-              // Soft reset via Redux — wipes completedSteps, opens the
-              // expanded panel at step 1. No reload needed; the slice's
-              // resetTour reducer handles everything in-memory and the
-              // localStorage-mirror middleware re-persists the new state.
-              dispatch(resetTour());
-              // Close the settings modal so the user sees the panel.
-              dispatch(closeSettingsModal());
-              onboardingBus.emit('settings:closed');
-            }}
-            sx={{
-              color: c.text.secondary,
-              borderColor: c.border.medium,
-              textTransform: 'none',
-              fontSize: '0.8rem',
-              whiteSpace: 'nowrap',
-              '&:hover': { color: c.accent.primary, borderColor: c.accent.primary },
-            }}
-          >
-            Restart tour
-          </Button>
-        </Box>
-
-      </Box>
+        <GeneralTab
+          form={form}
+          setForm={setForm}
+          styles={styles}
+          setBrowseOpen={setBrowseOpen}
+          modelOptions={modelOptions}
+          modesList={modesList}
+          providerColors={PROVIDER_COLORS}
+          openswarmGradient={OPENSWARM_GRADIENT}
+        />
       ) : activeTab === 'models' ? (
-      <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, gap: 2.5, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
-
-          {/* ── OPENSWARM PRO (managed) ── */}
-          <Box data-onboarding="settings-pro-section" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-              One Subscription, No Setup
-            </Typography>
-
-            <Typography sx={{ ...descSx, mb: 0 }}>
-              Don't have a Claude account? We'll handle it for you. One simple subscription covers Claude Sonnet, Opus, and Haiku.
-            </Typography>
-
-            <OpenSwarmProCard />
-          </Box>
-
-          {/* ── USE EXISTING SUBSCRIPTIONS ── */}
-          <Box data-onboarding="settings-external-subs" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, mt: 1 }}>
-              Or Use Your Existing Subscriptions
-            </Typography>
-
-            <Typography sx={{ ...descSx, mb: 0 }}>
-              Already paying for Claude, ChatGPT, or Gemini? Connect your subscription — no API key needed, no extra cost.
-            </Typography>
-
-            <SubscriptionCards />
-          </Box>
-
-          {/* ── API KEYS ── */}
-          <Box data-onboarding="settings-api-keys" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, mt: 1 }}>
-              Or Connect With API Keys
-            </Typography>
-
-            <Typography sx={{ ...descSx, mb: -1 }}>
-              Pay per use. Each key is stored locally on your device.
-            </Typography>
-
-          {/* Anthropic */}
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography sx={labelSx}>Anthropic</Typography>
-              {form.anthropic_api_key ? (
-                <Typography sx={{ fontSize: '0.6rem', fontWeight: 600, color: c.status.success, bgcolor: `${c.status.success}15`, px: 0.75, py: 0.15, borderRadius: '3px' }}>CONNECTED</Typography>
-              ) : null}
-            </Box>
-            <Typography sx={{ ...descSx, mb: 1 }}>Claude Sonnet, Opus, Haiku.</Typography>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <TextField
-                type={showApiKey ? 'text' : 'password'}
-                value={form.anthropic_api_key ?? ''}
-                onChange={(e) => setForm({ ...form, anthropic_api_key: e.target.value || null })}
-                size="small"
-                fullWidth
-                placeholder="sk-ant-..."
-                sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton onClick={() => setShowApiKey(!showApiKey)} edge="end" size="small" sx={{ color: c.text.tertiary }}>
-                        {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-              />
-              <Typography
-                component="a"
-                href="https://console.anthropic.com/settings/keys"
-                target="_blank"
-                rel="noopener"
-                sx={{ color: c.accent.primary, fontSize: '0.72rem', whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
-              >
-                Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
-              </Typography>
-            </Box>
-          </Box>
-
-          {/* OpenAI */}
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography sx={labelSx}>OpenAI</Typography>
-              {form.openai_api_key ? (
-                <Typography sx={{ fontSize: '0.6rem', fontWeight: 600, color: c.status.success, bgcolor: `${c.status.success}15`, px: 0.75, py: 0.15, borderRadius: '3px' }}>CONNECTED</Typography>
-              ) : null}
-            </Box>
-            <Typography sx={{ ...descSx, mb: 1 }}>GPT-5.4, GPT-5.4 Mini, o-series reasoning models.</Typography>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <TextField
-                type={showApiKey ? 'text' : 'password'}
-                value={form.openai_api_key ?? ''}
-                onChange={(e) => setForm({ ...form, openai_api_key: e.target.value || null })}
-                size="small"
-                fullWidth
-                placeholder="sk-..."
-                sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton onClick={() => setShowApiKey(!showApiKey)} edge="end" size="small" sx={{ color: c.text.tertiary }}>
-                        {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-              />
-              <Typography
-                component="a"
-                href="https://platform.openai.com/api-keys"
-                target="_blank"
-                rel="noopener"
-                sx={{ color: c.accent.primary, fontSize: '0.72rem', whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
-              >
-                Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
-              </Typography>
-            </Box>
-          </Box>
-
-          {/* Google */}
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography sx={labelSx}>Google</Typography>
-              {form.google_api_key ? (
-                <Typography sx={{ fontSize: '0.6rem', fontWeight: 600, color: c.status.success, bgcolor: `${c.status.success}15`, px: 0.75, py: 0.15, borderRadius: '3px' }}>CONNECTED</Typography>
-              ) : null}
-            </Box>
-            <Typography sx={{ ...descSx, mb: 1 }}>Gemini 3 Pro, Gemini 3 Flash, Gemini 2.5 Pro.</Typography>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <TextField
-                type={showApiKey ? 'text' : 'password'}
-                value={form.google_api_key ?? ''}
-                onChange={(e) => setForm({ ...form, google_api_key: e.target.value || null })}
-                size="small"
-                fullWidth
-                placeholder="AIza..."
-                sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton onClick={() => setShowApiKey(!showApiKey)} edge="end" size="small" sx={{ color: c.text.tertiary }}>
-                        {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-              />
-              <Typography
-                component="a"
-                href="https://aistudio.google.com/apikey"
-                target="_blank"
-                rel="noopener"
-                sx={{ color: c.accent.primary, fontSize: '0.72rem', whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
-              >
-                Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
-              </Typography>
-            </Box>
-          </Box>
-
-          {/* OpenRouter */}
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography sx={labelSx}>OpenRouter</Typography>
-              {form.openrouter_api_key ? (
-                <Typography sx={{ fontSize: '0.6rem', fontWeight: 600, color: c.status.success, bgcolor: `${c.status.success}15`, px: 0.75, py: 0.15, borderRadius: '3px' }}>CONNECTED</Typography>
-              ) : null}
-            </Box>
-            <Typography sx={{ ...descSx, mb: 1 }}>300+ models from xAI, Meta, DeepSeek, Mistral, Qwen, and more.</Typography>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <TextField
-                type={showApiKey ? 'text' : 'password'}
-                value={form.openrouter_api_key ?? ''}
-                onChange={(e) => setForm({ ...form, openrouter_api_key: e.target.value || null })}
-                size="small"
-                fullWidth
-                placeholder="sk-or-..."
-                sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton onClick={() => setShowApiKey(!showApiKey)} edge="end" size="small" sx={{ color: c.text.tertiary }}>
-                        {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-              />
-              <Typography
-                component="a"
-                href="https://openrouter.ai/keys"
-                target="_blank"
-                rel="noopener"
-                sx={{ color: c.accent.primary, fontSize: '0.72rem', whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
-              >
-                Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
-              </Typography>
-            </Box>
-          </Box>
-
-          {/* Custom Providers — OpenAI-compatible endpoints (Ollama Cloud, Together AI, local Ollama, etc.) */}
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.25 }}>
-              <Typography sx={labelSx}>Custom Providers</Typography>
-              {(() => {
-                const list = form.custom_providers || [];
-                if (list.length === 0) return null;
-                const readyCount = list.filter(cp => {
-                  const filled = (cp.models || []).filter(m => (m.value || '').trim()).length;
-                  return !!cp.name?.trim() && !!cp.base_url?.trim() && !!cp.api_key?.trim() && filled > 0;
-                }).length;
-                const allReady = readyCount === list.length;
-                return (
-                  <Typography sx={{
-                    fontSize: '0.6rem',
-                    fontWeight: 600,
-                    color: allReady ? c.status.success : c.status.warning,
-                    bgcolor: allReady ? `${c.status.success}15` : `${c.status.warning}1F`,
-                    px: 0.75, py: 0.15, borderRadius: '3px',
-                  }}>
-                    {readyCount} OF {list.length} READY
-                  </Typography>
-                );
-              })()}
-            </Box>
-            <Typography sx={{ ...descSx, mb: 1.25 }}>
-              Add OpenAI-compatible endpoints — Ollama Cloud, Together, Groq, local Ollama, anything that speaks /v1/chat/completions.
-            </Typography>
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-              {(form.custom_providers || []).map((cp, idx) => {
-                const list = form.custom_providers || [];
-                const updateProvider = (patch: Partial<CustomProvider>) => {
-                  const next = list.map((x, i) => (i === idx ? { ...x, ...patch } : x));
-                  setForm({ ...form, custom_providers: next });
-                };
-                const removeProvider = () => {
-                  const next = list.filter((_, i) => i !== idx);
-                  setForm({ ...form, custom_providers: next });
-                };
-                const addModel = () => {
-                  const nextModels = [...(cp.models || []), { value: '', label: '' }];
-                  updateProvider({ models: nextModels });
-                };
-                const updateModel = (mIdx: number, value: string) => {
-                  const nextModels = (cp.models || []).map((m, i) =>
-                    i === mIdx ? { ...m, value, label: value } : m
-                  );
-                  updateProvider({ models: nextModels });
-                };
-                const removeModel = (mIdx: number) => {
-                  const nextModels = (cp.models || []).filter((_, i) => i !== mIdx);
-                  updateProvider({ models: nextModels });
-                };
-                const filledModelCount = (cp.models || []).filter(m => (m.value || '').trim()).length;
-                const nameMissing = !cp.name?.trim();
-                const urlMissing = !cp.base_url?.trim();
-                const modelsMissing = filledModelCount === 0;
-                // api_key is optional — local OpenAI-compatible servers
-                // (LM Studio, Ollama, llama.cpp, vLLM, etc.) usually run
-                // without auth. Backend substitutes a placeholder when
-                // blank so 9Router still gets a valid connection. Only
-                // hosted providers (Together, Groq, OpenRouter via Custom)
-                // need a real key.
-                const isReady = !nameMissing && !urlMissing && !modelsMissing;
-                const dupeNameWithEarlier = list.findIndex((other, i) =>
-                  i < idx && (other.name || '').trim().toLowerCase() === (cp.name || '').trim().toLowerCase() && (cp.name || '').trim() !== ''
-                ) !== -1;
-                const missingLabels: string[] = [];
-                if (nameMissing) missingLabels.push('name');
-                if (urlMissing) missingLabels.push('base URL');
-                if (modelsMissing) missingLabels.push('a model');
-
-                return (
-                  <Box
-                    key={idx}
-                    sx={{
-                      p: 1.5,
-                      borderRadius: `${c.radius.md}px`,
-                      border: `1px solid ${isReady ? c.status.success + '30' : c.status.warning + '40'}`,
-                      bgcolor: isReady ? `${c.status.success}04` : `${c.status.warning}06`,
-                      transition: 'all 0.2s ease',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 1,
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: -0.25 }}>
-                      <Typography sx={{
-                        fontSize: '0.62rem',
-                        fontWeight: 700,
-                        letterSpacing: '0.05em',
-                        textTransform: 'uppercase' as const,
-                        color: isReady ? c.status.success : c.status.warning,
-                        bgcolor: isReady ? `${c.status.success}15` : `${c.status.warning}1F`,
-                        px: 0.75,
-                        py: 0.2,
-                        borderRadius: '3px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                      }}>
-                        <Box component="span" sx={{
-                          width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                          bgcolor: isReady ? c.status.success : c.status.warning,
-                        }} />
-                        {isReady ? 'Ready' : `Incomplete · add ${missingLabels.join(', ')}`}
-                      </Typography>
-                      <IconButton
-                        onClick={removeProvider}
-                        size="small"
-                        title="Remove provider"
-                        sx={{
-                          color: c.text.tertiary,
-                          '&:hover': { color: c.status.error, bgcolor: `${c.status.error}10` },
-                        }}
-                      >
-                        <CloseIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </Box>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                      <TextField
-                        value={cp.name || ''}
-                        onChange={(e) => updateProvider({ name: e.target.value })}
-                        size="small"
-                        fullWidth
-                        placeholder="e.g. Ollama Cloud"
-                        label="Name"
-                        required
-                        error={dupeNameWithEarlier}
-                        helperText={dupeNameWithEarlier ? 'Name must be unique' : undefined}
-                        InputLabelProps={{ shrink: true, sx: { fontSize: '0.72rem', color: c.text.tertiary } }}
-                        sx={fieldSx}
-                      />
-                      <TextField
-                        value={cp.base_url || ''}
-                        onChange={(e) => updateProvider({ base_url: e.target.value })}
-                        size="small"
-                        fullWidth
-                        placeholder="https://ollama.com/v1"
-                        label="Base URL"
-                        required
-                        InputLabelProps={{ shrink: true, sx: { fontSize: '0.72rem', color: c.text.tertiary } }}
-                        sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
-                      />
-                      <TextField
-                        type={showApiKey ? 'text' : 'password'}
-                        value={cp.api_key || ''}
-                        onChange={(e) => updateProvider({ api_key: e.target.value })}
-                        size="small"
-                        fullWidth
-                        placeholder="Leave blank for local servers (LM Studio, Ollama, ...)"
-                        label="API Key (optional)"
-                        InputLabelProps={{ shrink: true, sx: { fontSize: '0.72rem', color: c.text.tertiary } }}
-                        sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
-                        InputProps={{
-                          endAdornment: (
-                            <InputAdornment position="end">
-                              <IconButton onClick={() => setShowApiKey(!showApiKey)} edge="end" size="small" sx={{ color: c.text.tertiary }}>
-                                {showApiKey ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
-                              </IconButton>
-                            </InputAdornment>
-                          ),
-                        }}
-                      />
-                    </Box>
-
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 0.25 }}>
-                      <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
-                        Models
-                      </Typography>
-                      {((cp.models || []).length === 0) ? (
-                        <Typography sx={{ fontSize: '0.7rem', color: c.text.muted, fontStyle: 'italic', px: 0.5 }}>
-                          No models yet — add the model IDs this endpoint serves.
-                        </Typography>
-                      ) : (
-                        (cp.models || []).map((m, mIdx) => (
-                          <Box key={mIdx} sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                            <TextField
-                              value={m.value || ''}
-                              onChange={(e) => updateModel(mIdx, e.target.value)}
-                              size="small"
-                              fullWidth
-                              placeholder="e.g. gpt-oss:120b"
-                              sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono, fontSize: '0.78rem' } }}
-                            />
-                            <IconButton
-                              onClick={() => removeModel(mIdx)}
-                              size="small"
-                              title="Remove model"
-                              sx={{
-                                color: c.text.tertiary,
-                                '&:hover': { color: c.status.error, bgcolor: `${c.status.error}10` },
-                              }}
-                            >
-                              <CloseIcon sx={{ fontSize: 14 }} />
-                            </IconButton>
-                          </Box>
-                        ))
-                      )}
-                      <Button
-                        onClick={addModel}
-                        size="small"
-                        sx={{
-                          alignSelf: 'flex-start',
-                          mt: 0.25,
-                          textTransform: 'none',
-                          color: c.accent.primary,
-                          fontSize: '0.72rem',
-                          minWidth: 'auto',
-                          px: 0.75,
-                          py: 0.25,
-                          '&:hover': { bgcolor: `${c.accent.primary}10` },
-                        }}
-                      >
-                        + Add model
-                      </Button>
-                    </Box>
-                  </Box>
-                );
-              })}
-
-              <Button
-                onClick={() => {
-                  const next: CustomProvider[] = [
-                    ...(form.custom_providers || []),
-                    { name: '', base_url: '', api_key: '', models: [{ value: '', label: '' }] },
-                  ];
-                  setForm({ ...form, custom_providers: next });
-                }}
-                variant="outlined"
-                size="small"
-                sx={{
-                  alignSelf: 'flex-start',
-                  textTransform: 'none',
-                  color: c.text.primary,
-                  borderColor: c.border.medium,
-                  borderStyle: 'dashed',
-                  fontSize: '0.78rem',
-                  px: 1.5,
-                  py: 0.6,
-                  '&:hover': { borderColor: c.accent.primary, bgcolor: `${c.accent.primary}08` },
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                + Add Custom Provider
-              </Button>
-            </Box>
-          </Box>
-          </Box>
-
-      </Box>
+        <ModelsTab
+          form={form}
+          setForm={setForm}
+          showApiKey={showApiKey}
+          setShowApiKey={setShowApiKey}
+          styles={styles}
+        />
       ) : activeTab === 'usage' ? (
       <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
         <UsageStats />
@@ -2738,47 +1489,12 @@ const Settings: React.FC = () => {
       </DialogContent>
 
       {(activeTab === 'general' || activeTab === 'models') && (
-      <DialogActions sx={{ borderTop: `1px solid ${c.border.subtle}`, px: 3, py: 1.5, justifyContent: 'space-between' }}>
-        {/* Left: explicit "Discard changes" — only surfaces when there
-            are unsaved edits. Closing the modal no longer prompts; the
-            draft persists in Redux. This button is the only way to
-            actively wipe the draft. */}
-        <Box>
-          {hasChanges && (
-            <Button
-              onClick={() => setConfirmDiscard(true)}
-              sx={{ color: c.status.error, textTransform: 'none', fontSize: '0.85rem' }}
-            >
-              Discard changes
-            </Button>
-          )}
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            onClick={handleRequestClose}
-            sx={{ color: c.text.muted, textTransform: 'none', fontSize: '0.85rem' }}
-          >
-            Close
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<SaveIcon sx={{ fontSize: 16 }} />}
-            onClick={handleSave}
-            disabled={!hasChanges}
-            sx={{
-              bgcolor: c.accent.primary,
-              '&:hover': { bgcolor: c.accent.pressed },
-              '&.Mui-disabled': { bgcolor: c.bg.secondary, color: c.text.ghost },
-              textTransform: 'none',
-              borderRadius: 1.5,
-              px: 2.5,
-              fontSize: '0.85rem',
-            }}
-          >
-            Save
-          </Button>
-        </Box>
-      </DialogActions>
+      <SettingsFooter
+        hasChanges={hasChanges}
+        onDiscard={() => setConfirmDiscard(true)}
+        onClose={handleRequestClose}
+        onSave={handleSave}
+      />
       )}
 
       <DirectoryBrowser
@@ -2800,50 +1516,11 @@ const Settings: React.FC = () => {
       </Snackbar>
     </Dialog>
 
-    <Dialog
+    <ConfirmDiscardDialog
       open={confirmDiscard}
-      onClose={() => setConfirmDiscard(false)}
-      PaperProps={{
-        sx: {
-          bgcolor: c.bg.page,
-          borderRadius: 2,
-          border: `1px solid ${c.border.subtle}`,
-          boxShadow: c.shadow.md,
-          maxWidth: 380,
-        },
-      }}
-    >
-      <DialogTitle sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', pb: 0.5, px: 3, pt: 2.5 }}>
-        Discard unsaved changes?
-      </DialogTitle>
-      <DialogContent sx={{ px: 3 }}>
-        <Typography sx={{ color: c.text.muted, fontSize: '0.85rem' }}>
-          Your in-progress edits will be cleared and the form will revert to your saved settings. This can&apos;t be undone.
-        </Typography>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
-        <Button
-          onClick={() => setConfirmDiscard(false)}
-          sx={{ color: c.text.muted, textTransform: 'none', fontSize: '0.85rem' }}
-        >
-          Keep editing
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleConfirmDiscard}
-          sx={{
-            bgcolor: c.status.error,
-            color: '#fff',
-            '&:hover': { bgcolor: c.status.error, filter: 'brightness(0.9)' },
-            textTransform: 'none',
-            borderRadius: 1.5,
-            fontSize: '0.85rem',
-          }}
-        >
-          Discard
-        </Button>
-      </DialogActions>
-    </Dialog>
+      onCancel={() => setConfirmDiscard(false)}
+      onConfirm={handleConfirmDiscard}
+    />
     </>
   );
 };

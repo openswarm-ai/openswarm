@@ -15,8 +15,9 @@ class Output(BaseModel):
         "required": [],
     })
     files: dict[str, str] = Field(default_factory=dict)
-    permission: str = "ask"
     thumbnail: Optional[str] = None
+    # Bumped only when a fresh thumbnail is saved; drives sidebar/grid order so merely opening an app doesn't reshuffle the list.
+    preview_updated_at: Optional[str] = None
     # Linkage so reopening the App Builder reattaches to the in-progress session
     # and reuses the same on-disk workspace folder instead of seeding a fresh one
     # (which would orphan the running agent + lose chat history on every navigate).
@@ -94,7 +95,6 @@ class OutputUpdate(BaseModel):
     icon: Optional[str] = None
     input_schema: Optional[dict[str, Any]] = None
     files: Optional[dict[str, str]] = None
-    permission: Optional[str] = None
     thumbnail: Optional[str] = None
     session_id: Optional[str] = None
     workspace_id: Optional[str] = None
@@ -127,7 +127,7 @@ class OutputExecute(BaseModel):
     # running if the backend code touches anything outside the safe
     # data-shaping allowlist. The UI shows those warnings to the user and
     # re-submits with force=True after they click "Run Anyway." This is
-    # a UX gate, not a security one — anyone holding the auth token can
+    # a UX gate, not a security one; anyone holding the auth token can
     # set force=True; the value is providing the user explicit visibility
     # of what's about to execute.
     force: bool = False

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, RefObject } from 'react';
-import { SelectedElement, useElementSelection } from '@/app/components/ElementSelectionContext';
+import { SelectedElement, useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 
 const OVERLAY_ID = '__clawd-select-overlay__';
 const LABEL_ID = '__clawd-select-label__';
@@ -295,7 +295,6 @@ export function useIframeElementSelector(explicitIframeRef?: RefObject<HTMLIFram
             setupSelection();
           }
         } catch {
-          // iframe not ready yet
         }
       };
 
@@ -326,7 +325,6 @@ export function useIframeElementSelector(explicitIframeRef?: RefObject<HTMLIFram
     return () => iframe.removeEventListener('load', onLoad);
   }, [ctx?.selectMode, setupSelection, teardownSelection, getIframe]);
 
-  // Sync persistent highlights with selectedElements (handle removals & clears)
   useEffect(() => {
     if (!ctx) return;
     const currentIds = new Set(ctx.selectedElements.map((e) => e.id));

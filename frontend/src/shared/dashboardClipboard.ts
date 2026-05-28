@@ -1,4 +1,4 @@
-import type { CardType } from '@/app/pages/Dashboard/useDashboardSelection';
+import type { CardType } from '@/shared/state/dashboardLayoutSlice';
 
 export interface ClipboardCard {
   type: CardType;

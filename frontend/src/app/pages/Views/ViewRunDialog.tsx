@@ -11,7 +11,8 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { Output, executeOutput, OutputExecuteResult, getFrontendCode, getBackendCode, buildServeUrl, SERVE_BASE } from '@/shared/state/outputsSlice';
 import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import InputSchemaForm, { getDefault } from './InputSchemaForm';
+import InputSchemaForm from './InputSchemaForm';
+import { getDefault } from '@/shared/inputSchemaDefaults';
 import ViewPreview from './ViewPreview';
 
 interface Props {

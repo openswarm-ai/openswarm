@@ -8,10 +8,7 @@ interface SubscribeOptions {
   wasSubscribed?: boolean;
 }
 
-// Kicks off a Stripe Checkout session for the given plan + interval and opens
-// the returned URL in the user's default browser (or a new tab fallback).
-// All subscribe CTAs across Settings, Onboarding, and the 429 error card go
-// through this helper so the wire shape and error handling stay consistent.
+/** Create a Stripe Checkout session and open the URL externally; used by all subscribe CTAs. */
 export async function subscribeToPlan(
   plan: OpenSwarmPlan,
   billingInterval: BillingInterval,
@@ -26,14 +23,10 @@ export async function subscribeToPlan(
   });
 
   try {
-    // Cloud schema uses "yearly"; the desktop UI uses "annual".
-    // Normalize at the boundary so the rest of the client stays consistent.
+    // Cloud uses "yearly", UI uses "annual"; normalize at the boundary.
     const wireInterval = billingInterval === 'annual' ? 'yearly' : billingInterval;
 
-    // Pull app_install_id from Electron's persisted install.json so the cloud
-    // can join Stripe checkout against install_tokens for affiliate payout
-    // attribution. Best-effort: missing IPC (renderer running outside the
-    // shell, e.g. in a dev browser) just means no attribution, not an error.
+    // app_install_id lets the cloud attribute Stripe checkout to install_tokens for affiliate payout.
     let appInstallId: string | null = null;
     try {
       const api = (window as any).openswarm;

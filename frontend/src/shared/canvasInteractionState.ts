@@ -1,13 +1,4 @@
-// Plain-JS shared ref (NOT React state) for "is the user currently
-// interacting with the canvas" (pan/drag/wheel/zoom). Read on hot paths
-// like AgentCard's ResizeObserver to suppress expensive work during the
-// gesture. Setting/clearing the ref does NOT trigger any React re-renders.
-//
-// Why this pattern instead of Redux or context: ResizeObserver callbacks
-// fire dozens of times per second during streaming. We want them to bail
-// in O(1) without a subscription that itself has overhead. A module-level
-// mutable holder + a one-shot "interaction ended" event meets both.
-
+// Module-level ref (not React state) so ResizeObservers can bail O(1) without subscription overhead.
 let _isPanning = false;
 
 const listeners: Set<() => void> = new Set();
@@ -20,9 +11,7 @@ export function setCanvasInteractionActive(active: boolean) {
   if (_isPanning === active) return;
   const wasActive = _isPanning;
   _isPanning = active;
-  // Fire the end-of-interaction notification so listeners can flush work
-  // that was suppressed during the gesture (re-measure heights, dispatch
-  // pending state updates, etc.).
+  // End-of-interaction: flush work suppressed during the gesture (re-measure, dispatch, etc.).
   if (wasActive && !active) {
     for (const fn of listeners) {
       try { fn(); } catch (e) { console.warn('[canvas-interaction] listener threw', e); }

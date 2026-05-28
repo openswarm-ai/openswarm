@@ -1,15 +1,4 @@
-// Singleton glue between the Onboarding panel UI and the AC runtime.
-//
-// Lifecycle:
-//   - OnboardingRoot mounts, calls Director.attach({ acRef, store, getAccentColor })
-//   - Panel "Show me" click → Director.startStep(stepId, sourceRect)
-//   - Director creates an AbortController, hands off to acRuntime.runStep
-//   - User dismisses panel mid-step → Director.cancelStep() → controller.abort()
-//
-// The runtime is the only place that touches the cursor handle directly.
-// The Director is just a thin policy layer — it picks the spawn point,
-// resolves dependencies, and translates Redux state into "should we walk
-// step 4 again before step 5."
+// Glue between the Onboarding panel and the AC runtime; thin policy layer over acRuntime.runStep.
 
 import type { Store } from '@reduxjs/toolkit';
 import type { RootState } from '@/shared/state/store';
@@ -24,9 +13,7 @@ interface AttachArgs {
   acRef: RefObject<AgenticCursorHandle | null>;
   store: Store<RootState>;
   getAccentColor: () => string;
-  // Resolves whether a dependency's outcome is still satisfied. If true,
-  // the dependency's flow is skipped during walk_again. Step-5's depCheck,
-  // for example, asks "is there still a live browser card on the canvas?"
+  /** True if a dep is still satisfied; if so walk_again skips its flow. */
   isDependencySatisfied: (depId: string) => boolean;
 }
 
@@ -84,26 +71,9 @@ class OnboardingDirector {
     const controller = new AbortController();
     this.currentAbort = controller;
 
-    // Adaptive abort hooks — fire controller.abort() so the runtime's
-    // existing cleanup path takes over (cursor outros, popup retreats,
-    // panel re-shows for the user to re-attempt).
-    //
-    // 1. Lost target — tracker fires this when its cached element has
-    //    been disconnected for >2.5s (user navigated away, collapsed
-    //    the section, swapped a card out from under us).
-    // 2. Hash-route change — user clicked a sidebar entry / dashboard
-    //    item / settings link mid-flow. Capture the route at start time
-    //    and abort if it changes; lets the user explore freely without
-    //    the AC stranding itself on the wrong page.
+    // Abort hooks: lost-target (cached element disconnected >2.5s) and hash-route change.
     const startHash = window.location.hash;
-    // Console-visible breadcrumb for which abort listener fired. The
-    // existing `report()` calls only go to analytics; we couldn't tell
-    // whether step 8's recurring `AbortError: aborted` was from a
-    // lost-target (chat-input element disconnected by an in-flight
-    // remount) or from a route change (`hashchange` firing as a side
-    // effect of e.g. ViewEditor calling history.replaceState mid-flow).
-    // Logging on each abort path resolves that ambiguity without
-    // needing to open the Network/Analytics panel.
+    // Console breadcrumbs distinguish lost-target vs hashchange aborts without the Analytics panel.
     const onLost = (e: Event) => {
       const detail = (e as CustomEvent)?.detail;
       // eslint-disable-next-line no-console
@@ -151,16 +121,11 @@ class OnboardingDirector {
     }
   }
 
-  // Step 6 previously triggered seed-orchestration-demo here to drop a
-  // stub "research" agent on the canvas. We removed it — step 6 now
-  // reuses the real chat the user created in step 3 as the "previous
-  // chat" the orchestrator bosses around, so no stub is needed.
 }
 
 export const onboardingDirector = new OnboardingDirector();
 
-// Convenience: return the ordered roadmap (1..10) so callers don't import STEPS
-// directly when they just need the schedule. STEPS itself is the source of truth.
+/** Ordered roadmap (1..10); STEPS is the source of truth. */
 export function getRoadmap(): OnboardingStep[] {
   return STEPS;
 }

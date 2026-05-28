@@ -28,13 +28,13 @@ os.environ.setdefault("OPENSWARM_DATA_DIR", _TMPROOT)
 
 
 # ---------------------------------------------------------------------------
-# Group 1 — Message.client_message_id
+# Group 1, Message.client_message_id
 # ---------------------------------------------------------------------------
 
 
 def test_message_round_trips_client_id():
     """The new field must default to None and survive model_dump."""
-    from backend.apps.agents.models import Message
+    from backend.apps.agents.core.models import Message
 
     m = Message(role="user", content="hi")
     assert m.client_message_id is None
@@ -51,8 +51,8 @@ def test_message_round_trips_client_id():
 
 
 def test_message_legacy_payload_without_client_id():
-    """Older session JSON files won't have the field — must still load."""
-    from backend.apps.agents.models import Message
+    """Older session JSON files won't have the field, must still load."""
+    from backend.apps.agents.core.models import Message
 
     legacy = {
         "id": "abc",
@@ -68,7 +68,7 @@ def test_message_legacy_payload_without_client_id():
 def test_client_message_id_collision_resistance():
     """Many random client_message_ids must remain distinct values
     after serialization. Smoke-tests the field preservation in bulk."""
-    from backend.apps.agents.models import Message
+    from backend.apps.agents.core.models import Message
 
     seen: set[str] = set()
     for _ in range(500):
@@ -82,7 +82,7 @@ def test_client_message_id_collision_resistance():
 
 
 # ---------------------------------------------------------------------------
-# Group 2 — Mode migration: chat → ask
+# Group 2, Mode migration: chat → ask
 # ---------------------------------------------------------------------------
 
 
@@ -196,7 +196,7 @@ def test_reconcile_idempotent():
 
 
 # ---------------------------------------------------------------------------
-# Group 6 — Notes layout serialization
+# Group 6, Notes layout serialization
 # ---------------------------------------------------------------------------
 
 
@@ -254,11 +254,11 @@ def test_notes_stress_many_round_trips():
 
 
 # ---------------------------------------------------------------------------
-# Group 7 — Concurrent send_message dedupe stress
+# Group 7, Concurrent send_message dedupe stress
 #
 # Real-world scenario: user mashes Enter quickly. 50 concurrent sends
 # each with a unique client_message_id must produce 50 echoed messages
-# carrying the right ids. Pure pydantic / asyncio test — no real
+# carrying the right ids. Pure pydantic / asyncio test, no real
 # agent loop.
 # ---------------------------------------------------------------------------
 
@@ -266,8 +266,8 @@ def test_notes_stress_many_round_trips():
 @pytest.mark.asyncio
 async def test_concurrent_send_message_unique_client_ids():
     """100 parallel Message constructions with unique client_message_ids
-    must round-trip independently — no cross-talk on the dataclass."""
-    from backend.apps.agents.models import Message
+    must round-trip independently, no cross-talk on the dataclass."""
+    from backend.apps.agents.core.models import Message
 
     async def make_one(i: int):
         cmi = f"opt-{i}-{random.randint(0, 1_000_000)}"

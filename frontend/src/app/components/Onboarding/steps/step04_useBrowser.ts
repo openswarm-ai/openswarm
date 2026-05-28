@@ -11,15 +11,8 @@ export const step04: OnboardingStep = {
     'No more jumping between apps. You and your agents work in one place.',
   videoSrc: './onboarding-videos/v2/04.mp4',
   videoDurationLabel: '0:18',
-  // Auto-skip if the user already has a browser on canvas — re-running
-  // "open another browser" is just noise when they've clearly already
-  // discovered the feature.
+  // Auto-skip if a browser card already exists.
   skipIf: hasAnyBrowserSpawned,
-  // Runtime auto-prepends a "click into a dashboard" hop when the user
-  // isn't already on a #/dashboards/:id route. No need to repeat that in
-  // ops — the previous version of this step pointed at the section
-  // header (which only toggles the sidebar list) and never actually
-  // navigated the user into a dashboard.
   requiresDashboard: true,
   ops: [
     { kind: 'move_to', target: S.browserButton },

@@ -10,6 +10,10 @@ export interface Dashboard {
   created_at: string;
   updated_at: string;
   thumbnail?: string | null;
+  /** Bumped only on a real screenshot save; sidebar/grids sort by this so opening a dashboard doesn't reorder it. */
+  preview_updated_at?: string | null;
+  /** Sorted card-id set at last screenshot; compared on exit to decide if cards changed. */
+  preview_signature?: string | null;
 }
 
 interface DashboardsState {
@@ -71,15 +75,22 @@ export const duplicateDashboard = createAsyncThunk(
 
 export const updateDashboardThumbnail = createAsyncThunk(
   'dashboards/updateThumbnail',
-  async ({ id, thumbnail }: { id: string; thumbnail: string }) => {
+  // `signature` is the card-id set the shot was taken at; '' thumbnail clears the preview (empty dashboard).
+  async ({ id, thumbnail, signature }: { id: string; thumbnail: string; signature: string }) => {
     const res = await fetch(`${DASHBOARDS_API}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ thumbnail }),
+      body: JSON.stringify({ thumbnail, preview_signature: signature }),
     });
     if (!res.ok) throw new Error(`Thumbnail update failed: ${res.status}`);
     const data = await res.json();
-    return { id, thumbnail: data.thumbnail as string | null, updated_at: data.updated_at as string };
+    return {
+      id,
+      thumbnail: data.thumbnail as string | null,
+      updated_at: data.updated_at as string,
+      preview_updated_at: data.preview_updated_at as string | null,
+      preview_signature: data.preview_signature as string | null,
+    };
   },
 );
 
@@ -117,9 +128,7 @@ const dashboardsSlice = createSlice({
       .addCase(createDashboard.fulfilled, (state, action) => {
         state.items[action.payload.id] = action.payload;
       })
-      // Optimistic: update name immediately on dispatch so the sidebar
-      // entry / picker label swaps with no perceptible lag. Server confirms
-      // on .fulfilled (rare correction); .rejected rolls back to previousName.
+      // Optimistic rename: swap label on dispatch; .rejected rolls back to previousName.
       .addCase(renameDashboard.pending, (state, action) => {
         const { id, name } = action.meta.arg;
         if (state.items[id]) {
@@ -158,10 +167,12 @@ const dashboardsSlice = createSlice({
         }
       })
       .addCase(updateDashboardThumbnail.fulfilled, (state, action) => {
-        const { id, thumbnail, updated_at } = action.payload;
+        const { id, thumbnail, updated_at, preview_updated_at, preview_signature } = action.payload;
         if (state.items[id]) {
           state.items[id].thumbnail = thumbnail;
           state.items[id].updated_at = updated_at;
+          state.items[id].preview_updated_at = preview_updated_at;
+          state.items[id].preview_signature = preview_signature;
         }
       });
   },

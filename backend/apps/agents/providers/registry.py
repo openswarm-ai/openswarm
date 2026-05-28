@@ -1,14 +1,37 @@
-"""Provider registry. Anthropic via SDK; everything else via 9Router prefix routing."""
+"""Provider registry. Anthropic via SDK; everything else via 9Router prefix routing.
+
+The model-resolution gate: always go through here, never hardcode a model id.
+Pricing/tier scoring lives in pricing.py, OpenRouter plumbing in openrouter.py,
+thinking-level translation in thinking.py; all re-exported below so external
+importers keep their single entry point.
+"""
 
 from __future__ import annotations
 
 import logging
 from typing import Any, TYPE_CHECKING
 
+from .openrouter import (
+    _OPENROUTER_VALUE_PREFIX,
+    fetch_openrouter_models,
+    get_direct_pricing,
+    get_openrouter_pricing,
+    invalidate_openrouter_cache,
+)
+from .pricing import (
+    compute_billing_kind,
+    compute_tiers,
+    _heuristic_tiers,
+)
+from .thinking import thinking_params_for
+
 if TYPE_CHECKING:
     from backend.apps.settings.models import AppSettings
 
 logger = logging.getLogger(__name__)
+
+# Full set of model-id prefixes that force routing through 9Router.
+_NINEROUTER_MODEL_PREFIXES = ("cc/", "cx/", "gc/", "ag/", "gemini/", "openrouter/")
 
 # Entry fields: value, label, context_window, model_id, router_model_id, api,
 # subscription_only, reasoning, route ("cc"|"api"|"openrouter"|None).
@@ -44,7 +67,7 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
         {"value": "haiku-api", "label": "Claude Haiku 4.5 (API key)", "context_window": 200_000,
          "model_id": "claude-haiku-4-5", "router_model_id": "claude-haiku-4-5", "api": "anthropic", "reasoning": True, "route": "api"},
     ],
-  
+
     "OpenAI": [
         # GPT-5.5 cx/ entry 404s on 9Router 0.3.60 (our pin); API-key route below works.
         {"value": "gpt-5.5", "label": "GPT-5.5",
@@ -125,201 +148,6 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
-# --- Thinking-level translation ---
-# Provider-agnostic off/low/medium/high/auto → per-API params.
-#
-# Returns the provider-specific payload to merge into request params, or
-# None if no special thinking params should be sent (use defaults).
-
-def thinking_params_for(api: str, level: str, model_id: str = "") -> dict | None:
-    """Translate a provider-agnostic thinking level to per-provider API params.
-
-    Args:
-        api: "anthropic" | "codex" | "gemini-cli"
-        level: "off" | "low" | "medium" | "high" | "auto"
-        model_id: optional, used to pick adaptive vs legacy for Claude
-
-    Returns a dict to merge into request params, or None for "use defaults".
-    """
-    if level == "auto":
-        if api == "anthropic":
-            return {"thinking": {"type": "adaptive"}}
-        return None
-
-    if level == "off":
-        if api == "anthropic":
-            return {"thinking": {"type": "disabled"}}
-        if api == "codex":
-            return {"reasoning": {"effort": "none"}}
-        # Gemini: budget=0 actually disables reasoning. Anything else still
-        # emits thoughtSignatures and 400s the next tool turn.
-        if api == "gemini-cli":
-            return {"thinkingConfig": {"thinkingBudget": 0}}
-        return None
-
-    if api == "anthropic":
-        return {"thinking": {"type": "adaptive"}}
-
-    if api == "codex":
-        effort_map = {"low": "low", "medium": "medium", "high": "high"}
-        return {"reasoning": {"effort": effort_map[level]}}
-
-    if api == "gemini-cli":
-        level_map = {"low": "LOW", "medium": "MEDIUM", "high": "HIGH"}
-        return {"thinkingConfig": {"thinkingLevel": level_map[level]}}
-
-    return None
-
-
-# --- OpenRouter ---
-
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-
-# `or:` prefix on picker values so resolve_model_id_for_sdk recognises them
-# without a side-table.
-_OPENROUTER_VALUE_PREFIX = "or:"
-
-_OR_MODELS_TTL_OK = 3600.0
-_OR_MODELS_TTL_FAIL = 30.0
-_or_models_cache: dict = {"models": None, "fetched_at": 0.0, "ok": False}
-
-_9router_cache: dict = {"available": None, "checked_at": 0}
-
-
-def get_openrouter_pricing(resolved_model: str) -> tuple[float, float] | None:
-    """($/1M input, $/1M output) for an openrouter/ id, or None if not cached."""
-    if not isinstance(resolved_model, str) or not resolved_model.startswith("openrouter/"):
-        return None
-    bare = resolved_model[len("openrouter/"):]
-    for m in _or_models_cache.get("models") or []:
-        if m.get("model_id") == bare:
-            return (
-                float(m.get("input_cost_per_1m", 0.0)),
-                float(m.get("output_cost_per_1m", 0.0)),
-            )
-    return None
-
-
-def invalidate_openrouter_cache() -> None:
-    _or_models_cache["models"] = None
-    _or_models_cache["fetched_at"] = 0.0
-    _or_models_cache["ok"] = False
-
-
-async def fetch_openrouter_models(api_key: str | None) -> list[dict]:
-    """Return OR's tool-capable chat catalog. Cached. Never raises."""
-    import time as _time
-    if not api_key:
-        invalidate_openrouter_cache()
-        return []
-
-    now = _time.monotonic()
-    fetched_at = _or_models_cache["fetched_at"]
-    if _or_models_cache["models"] is not None:
-        ttl = _OR_MODELS_TTL_OK if _or_models_cache["ok"] else _OR_MODELS_TTL_FAIL
-        if now - fetched_at < ttl:
-            return _or_models_cache["models"]
-
-    import httpx
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(
-                f"{OPENROUTER_BASE_URL}/models",
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-        if r.status_code != 200:
-            _or_models_cache.update(models=[], fetched_at=now, ok=False)
-            logger.debug(f"OpenRouter /models returned {r.status_code}")
-            return []
-        raw = r.json().get("data") or []
-    except Exception as e:
-        _or_models_cache.update(models=[], fetched_at=now, ok=False)
-        logger.debug(f"OpenRouter /models fetch failed: {e}")
-        return []
-
-    out: list[dict] = []
-    for m in raw:
-        if not isinstance(m, dict):
-            continue
-        model_id = m.get("id") or ""
-        if not model_id or "/" not in model_id:
-            continue
-        arch = m.get("architecture") or {}
-        in_mods = arch.get("input_modalities") or []
-        out_mods = arch.get("output_modalities") or []
-        if isinstance(in_mods, list) and in_mods and "text" not in in_mods:
-            continue
-        if isinstance(out_mods, list) and out_mods and "text" not in out_mods:
-            continue
-        # Tools required — agent loop doesn't work without function calling.
-        params = m.get("supported_parameters") or []
-        if not isinstance(params, list) or "tools" not in params:
-            continue
-        ctx = m.get("context_length") or 128_000
-        try:
-            ctx = int(ctx)
-        except (TypeError, ValueError):
-            ctx = 128_000
-        reasoning_capable = bool("reasoning" in params or "include_reasoning" in params)
-        vendor = model_id.split("/", 1)[0]
-        label = m.get("name") or model_id
-        pricing = m.get("pricing") or {}
-        try:
-            prompt_per_tok = float(pricing.get("prompt") or 0)
-            completion_per_tok = float(pricing.get("completion") or 0)
-        except (TypeError, ValueError):
-            prompt_per_tok = completion_per_tok = 0.0
-        # Negative price = OR's "varies" sentinel (e.g. openrouter/auto). Clamp.
-        is_variable_pricing = prompt_per_tok < 0 or completion_per_tok < 0
-        if is_variable_pricing:
-            prompt_per_tok = 0.0
-            completion_per_tok = 0.0
-        is_free = (
-            not is_variable_pricing
-            and prompt_per_tok == 0.0 and completion_per_tok == 0.0
-        )
-        top_provider = m.get("top_provider") or {}
-        max_completion = top_provider.get("max_completion_tokens")
-        try:
-            max_completion = int(max_completion) if max_completion else None
-        except (TypeError, ValueError):
-            max_completion = None
-        out.append({
-            "value": f"{_OPENROUTER_VALUE_PREFIX}{model_id}",
-            "label": label,
-            "context_window": ctx,
-            "model_id": model_id,
-            "router_model_id": f"openrouter/{model_id}",
-            "api": "openrouter",
-            "route": "openrouter",
-            "reasoning": reasoning_capable,
-            "vendor": vendor,
-            "input_cost_per_1m": prompt_per_tok * 1_000_000,
-            "output_cost_per_1m": completion_per_tok * 1_000_000,
-            "is_free": is_free,
-            "max_completion_tokens": max_completion,
-        })
-
-    _or_models_cache.update(models=out, fetched_at=now, ok=True)
-    return out
-
-
-def _is_9router_available() -> bool:
-    """Check if 9Router is running on localhost:20128. Caches for 30 seconds."""
-    import time as _time
-    now = _time.time()
-    if _9router_cache["available"] is not None and now - _9router_cache["checked_at"] < 30:
-        return _9router_cache["available"]
-    try:
-        import httpx
-        r = httpx.get("http://localhost:20128/v1/models", timeout=2.0)
-        available = r.status_code == 200
-    except Exception:
-        available = False
-    _9router_cache["available"] = available
-    _9router_cache["checked_at"] = now
-    return available
-
 
 # ---------------------------------------------------------------------------
 # Model resolution (used by the live claude_agent_sdk path)
@@ -329,7 +157,7 @@ _CUSTOM_VALUE_PREFIX = "custom/"
 
 
 def _custom_provider_slug_for_lookup(name: str) -> str:
-    """Mirror nine_router._custom_provider_slug — duplicated here to avoid
+    """Mirror nine_router._custom_provider_slug; duplicated here to avoid
     importing from nine_router (circular: nine_router imports from settings)."""
     import re
     s = re.sub(r"[^a-zA-Z0-9-]+", "-", (name or "").strip().lower()).strip("-")
@@ -355,7 +183,7 @@ def _find_builtin_model(short_name: str) -> dict | None:
     """Look up a model entry by its short `value`.
 
     OpenRouter entries (prefixed `or:<vendor>/<model>`) and custom-provider
-    entries (prefixed `custom/<slug>/<model_id>`) aren't in BUILTIN_MODELS —
+    entries (prefixed `custom/<slug>/<model_id>`) aren't in BUILTIN_MODELS ,
     they're synthesised on demand so the rest of the routing code can treat
     them like BUILTIN_MODELS entries."""
     for models in BUILTIN_MODELS.values():
@@ -520,7 +348,7 @@ async def resolve_aux_model(
         return ("cx/gpt-5.4-mini", base_url)
     if "gemini-cli" in connected:
         return ("gc/gemini-3.1-flash-lite-preview", base_url)
-    # OR is metered, hence last — saves OR-only users from "Untitled session" hell.
+    # OR is metered, hence last; saves OR-only users from "Untitled session" hell.
     if "openrouter" in connected:
         return (or_aux, base_url)
 
@@ -538,7 +366,7 @@ def get_context_window(provider: str, model: str, settings: AppSettings | None =
             if m["value"] == model:
                 return m.get("context_window", 128_000)
 
-    # Check custom providers — picker values are `custom/<slug>/<bare_model>`;
+    # Check custom providers; picker values are `custom/<slug>/<bare_model>`;
     # cp.models[].value stores the bare model id the user typed. Match the
     # bare-model tail against any custom provider's models list.
     if settings:
@@ -557,365 +385,13 @@ def get_context_window(provider: str, model: str, settings: AppSettings | None =
 
 
 # ---------------------------------------------------------------------------
-# Curated model tiers — Intelligence, Speed, Cost on a 1-5 scale
-# ---------------------------------------------------------------------------
-#
-# Hand-tuned from public benchmarks + per-token pricing (knowledge cutoff
-# Jan 2026). The tier numbers serve the picker hover card so users can
-# pick a model that fits the task without reading a leaderboard.
-#
-#   Intelligence:  5 = frontier reasoner, 1 = nano / specialised tiny
-#   Speed:         5 = sub-second TTFT + 250 tok/s, 1 = slow + thinking
-#   Cost:          5 = $25+/M output, 1 = under $0.50/M output (or free)
-#
-# Lookup order (compute_tiers below):
-#   1. Bare model_id direct
-#   2. ":free" stripped (so anthropic/claude-opus-4.7:free shares scoring
-#      with anthropic/claude-opus-4.7)
-#   3. Vendor-prefixed and bare-after-slash variants for cross-format
-#      coverage (so "claude-opus-4-7" matches "anthropic/claude-opus-4.7")
-#   4. Last-path-component normalised (dashes ↔ dots)
-#
-# Models not in this map fall through to a heuristic that uses cost
-# bucket + reasoning flag + name-keyword adjustments.
-# (intelligence, speed, cost) on a 1-5 scale. Tiers: 5 frontier, 4 top
-# open / strong sub, 3 solid mid, 2 small specialised, 1 nano.
-MODEL_TIERS: dict[str, tuple[int, int, int]] = {
-    # Anthropic
-    "claude-opus-4-7":              (5, 2, 5),
-    "claude-opus-4.7":              (5, 2, 5),
-    "anthropic/claude-opus-4.7":    (5, 2, 5),
-    "claude-opus-4-6":              (5, 2, 5),
-    "claude-opus-4.6":              (5, 2, 5),
-    "anthropic/claude-opus-4.6":    (5, 2, 5),
-    "claude-opus-4-5":              (5, 2, 5),
-    "claude-opus-4":                (5, 2, 5),
-    "anthropic/claude-opus-4":      (5, 2, 5),
-    "claude-sonnet-4-6":            (4, 4, 3),
-    "claude-sonnet-4.6":            (4, 4, 3),
-    "anthropic/claude-sonnet-4.6":  (4, 4, 3),
-    "claude-sonnet-4-5":            (4, 4, 3),
-    "claude-sonnet-4.5":            (4, 4, 3),
-    "anthropic/claude-sonnet-4.5":  (4, 4, 3),
-    "claude-sonnet-4":              (4, 4, 3),
-    "anthropic/claude-sonnet-4":    (4, 4, 3),
-    "claude-3.7-sonnet":            (4, 4, 3),
-    "anthropic/claude-3.7-sonnet":  (4, 4, 3),
-    "claude-haiku-4-5":             (3, 5, 2),
-    "claude-haiku-4.5":             (3, 5, 2),
-    "anthropic/claude-haiku-4.5":   (3, 5, 2),
-    "claude-3.5-haiku":             (2, 5, 2),
-    "anthropic/claude-3.5-haiku":   (2, 5, 2),
-    "claude-3-haiku":               (2, 5, 1),
-    "anthropic/claude-3-haiku":     (2, 5, 1),
-
-    # OpenAI
-    "gpt-5.5":                  (5, 2, 5),
-    "openai/gpt-5.5":           (5, 2, 5),
-    "gpt-5.5-pro":              (5, 1, 5),
-    "openai/gpt-5.5-pro":       (5, 1, 5),
-    "gpt-5.4":                  (4, 3, 4),
-    "openai/gpt-5.4":           (4, 3, 4),
-    "gpt-5.4-mini":             (3, 4, 2),
-    "openai/gpt-5.4-mini":      (3, 4, 2),
-    "gpt-5.3-codex":            (4, 3, 3),
-    "gpt-5.3-codex-high":       (5, 2, 4),
-    "gpt-5.3-codex-xhigh":      (5, 1, 4),
-    "gpt-5":                    (4, 3, 4),
-    "openai/gpt-5":             (4, 3, 4),
-    "gpt-5-mini":               (3, 4, 2),
-    "openai/gpt-5-mini":        (3, 4, 2),
-    "gpt-5-nano":               (2, 5, 1),
-    "openai/gpt-5-nano":        (2, 5, 1),
-    "gpt-chat-latest":          (3, 4, 2),
-    "openai/gpt-chat-latest":   (3, 4, 2),
-    "gpt-oss-120b":             (3, 3, 1),
-    "openai/gpt-oss-120b":      (3, 3, 1),
-    "gpt-oss-20b":              (2, 4, 1),
-    "openai/gpt-oss-20b":       (2, 4, 1),
-
-    # Google
-    "gemini-3.1-pro-preview":           (5, 3, 4),
-    "gemini-3.1-pro":                   (5, 3, 4),
-    "google/gemini-3.1-pro":            (5, 3, 4),
-    "gemini-3.1-flash-lite-preview":    (2, 5, 1),
-    "gemini-3.1-flash-lite":            (2, 5, 1),
-    "google/gemini-3.1-flash-lite":     (2, 5, 1),
-    "gemini-3-pro-preview":             (5, 3, 4),
-    "gemini-3-pro":                     (5, 3, 4),
-    "google/gemini-3-pro":              (5, 3, 4),
-    "gemini-3-flash-preview":           (3, 5, 2),
-    "gemini-3-flash":                   (3, 5, 2),
-    "google/gemini-3-flash":            (3, 5, 2),
-    "gemini-2.5-pro":                   (4, 3, 3),
-    "google/gemini-2.5-pro":            (4, 3, 3),
-    "gemini-2.5-flash":                 (3, 5, 1),
-    "google/gemini-2.5-flash":          (3, 5, 1),
-
-    # xAI
-    "x-ai/grok-4":          (5, 3, 4),
-    "x-ai/grok-4-0214":     (5, 3, 4),
-    "x-ai/grok-4.3":        (5, 3, 4),
-    "x-ai/grok-4-heavy":    (5, 2, 5),
-    "x-ai/grok-3":          (4, 4, 3),
-    "x-ai/grok-3-mini":     (2, 5, 1),
-    "x-ai/grok-code-fast":  (3, 5, 2),
-
-    # DeepSeek
-    "deepseek/deepseek-r1":             (5, 2, 2),  # cheap-but-frontier reasoner
-    "deepseek/deepseek-r1-0528":        (5, 2, 2),
-    "deepseek/deepseek-chat":           (4, 4, 2),
-    "deepseek/deepseek-v3":             (4, 4, 2),
-    "deepseek/deepseek-v3.1":           (4, 4, 2),
-    "deepseek/deepseek-v3.1-base":      (4, 4, 2),
-    "deepseek/deepseek-v3.1-terminus":  (4, 4, 2),
-    "deepseek/deepseek-chat-v3-0324":   (4, 4, 2),
-    "deepseek/deepseek-v3.2":           (3, 4, 1),
-    "deepseek/deepseek-v3.2-exp":       (3, 4, 1),
-
-    # Meta Llama
-    "meta-llama/llama-4-maverick":          (4, 4, 2),
-    "meta-llama/llama-4-scout":             (3, 4, 1),
-    "meta-llama/llama-3.3-70b":             (3, 4, 1),
-    "meta-llama/llama-3.3-70b-instruct":    (3, 4, 1),
-    "meta-llama/llama-3.3-8b":              (2, 5, 1),
-    "meta-llama/llama-3.2-3b":              (1, 5, 1),
-    "meta-llama/llama-3.2-1b":              (1, 5, 1),
-    "meta-llama/llama-3.1-8b":              (2, 5, 1),
-
-    # Qwen
-    "qwen/qwen3-coder":             (4, 3, 2),
-    "qwen/qwen3-235b-a22b":         (4, 3, 2),
-    "qwen/qwen3-72b":               (3, 4, 1),
-    "qwen/qwen3-32b":               (2, 4, 1),
-    "qwen/qwen3-14b":               (2, 5, 1),
-    "qwen/qwen3-vl-235b-thinking":  (4, 2, 3),
-    "qwen/qwen3-vl-8b-thinking":    (2, 3, 1),
-    "qwen/qwen3-next-80b-a3b-instruct": (3, 4, 1),
-
-    # Mistral
-    "mistralai/mistral-large-2501":             (4, 4, 3),
-    "mistralai/mistral-large":                  (4, 4, 3),
-    "mistralai/mistral-medium-3-5":             (3, 4, 2),
-    "mistralai/mistral-medium-3":               (3, 4, 2),
-    "mistralai/mistral-small-3.1-24b-instruct": (2, 5, 1),
-    "mistralai/codestral":                      (3, 5, 2),
-    "mistralai/ministral-8b":                   (1, 5, 1),
-    "mistralai/ministral-3b":                   (1, 5, 1),
-
-    # Cohere
-    "cohere/command-a-03-2025":     (3, 4, 3),
-    "cohere/command-r-plus":        (3, 4, 2),
-    "cohere/command-r":             (2, 5, 1),
-
-    # Misc frontier-ish
-    "moonshotai/kimi-k2":           (4, 3, 2),
-    "moonshotai/kimi-k1.5":         (4, 3, 2),
-    "z-ai/glm-4.6":                 (4, 3, 2),
-    "z-ai/glm-4.5":                 (4, 3, 2),
-    "z-ai/glm-4.5-air":             (3, 4, 1),
-    "ai21/jamba-large-1.7":         (3, 4, 2),
-    "minimax/minimax-m2":           (4, 3, 2),
-    "minimax/minimax-m1":           (4, 3, 2),
-    "bytedance-seed/seed-1.6":      (4, 4, 2),
-    "bytedance-seed/seed-1.6-flash": (3, 5, 1),
-
-    # Smaller/specialised
-    "baidu/cobuddy":                (2, 4, 1),
-    "baidu/ernie-4.5-21b-a3b":      (2, 5, 1),
-    "nvidia/nemotron-3-nano-30b-a3b":           (2, 5, 1),
-    "nvidia/nemotron-3-super-120b-a12b":        (3, 3, 2),
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": (2, 4, 1),
-    "ibm-granite/granite-4.1-8b":   (1, 5, 1),
-    "ibm-granite/granite-3-8b":     (1, 5, 1),
-    "inception/mercury-coder":      (2, 5, 1),
-    "thedrummer/cydonia":           (1, 5, 1),
-    "sao10k/l3.3-euryale-70b":      (2, 4, 1),
-}
-
-
-def _heuristic_tiers(label: str, output_cost_per_1m: float, reasoning: bool) -> tuple[int, int, int]:
-    """Fallback tier scoring for models not in MODEL_TIERS. Tries to
-    extract a parameter count from the label (8B/70B/235B/etc.) and
-    use that as a stronger size signal than cost alone, since open-
-    source vendors price aggressively low for marketing reasons.
-
-    Distribution:
-      Intelligence:
-        - 200B+ params or $25+/M  → 5
-        - 70-200B or $5-$25/M     → 4
-        - 30-70B or $1-$5/M       → 3
-        - 8-30B or $0.20-$1/M     → 2
-        - <8B or <$0.20/M         → 1
-        + reasoning bumps tier 1-3 by 1; doesn't push 4→5 unless
-          the model is genuinely huge.
-      Speed:
-        - inverse of size, with name keywords as ±1 nudges.
-      Cost: pure cost bucket.
-    """
-    import re as _re
-    out = output_cost_per_1m or 0.0
-
-    # Cost bucket — same 5-tier cost ladder as before.
-    if out < 0.5:
-        cb = 1
-    elif out < 2:
-        cb = 2
-    elif out < 7:
-        cb = 3
-    elif out < 25:
-        cb = 4
-    else:
-        cb = 5
-
-    # Try to parse a parameter count. Label often carries something
-    # like "Llama 3.3 70B" or "Qwen3 235B". 235B → 5, 70B → 4, 30B
-    # → 3, 14B → 2, 7B → 1. We only trust the param count when it's
-    # clearly above 1B (so we don't pick up version numbers).
-    lower = (label or "").lower()
-    param_b = 0.0
-    for m in _re.finditer(r"\b(\d{1,4}(?:\.\d+)?)\s*b\b", lower):
-        try:
-            v = float(m.group(1))
-            if v >= 1 and v > param_b:
-                param_b = v
-        except ValueError:
-            pass
-
-    if param_b >= 200:
-        size_tier = 5
-    elif param_b >= 70:
-        size_tier = 4
-    elif param_b >= 30:
-        size_tier = 3
-    elif param_b >= 8:
-        size_tier = 2
-    elif param_b > 0:
-        size_tier = 1
-    else:
-        size_tier = 0  # unknown — fall back to cost
-
-    # Intelligence is the max of cost bucket and parsed size tier.
-    # Cost is high-confidence for closed-source frontier; size is
-    # high-confidence for open-source ladders. Whichever is higher
-    # is closer to the truth.
-    intel = max(cb, size_tier)
-    if reasoning and intel < 4:
-        # Reasoning is a strong intelligence signal but only for
-        # genuinely smaller models — frontier closed-source already
-        # caps at 5, so don't double-count there.
-        intel += 1
-
-    # Speed inverse of intel.
-    speed = 6 - intel
-    if _re.search(r"\b(mini|lite|flash|haiku|nano|small|fast|turbo|micro|tiny)\b", lower):
-        speed += 1
-    if _re.search(r"\b(opus|ultra|max|xlarge|titan|huge)\b", lower):
-        speed -= 1
-    if reasoning and intel >= 4:
-        # Frontier reasoning models burn lots of tokens on hidden
-        # thoughts; user-perceived speed drops.
-        speed -= 1
-
-    return (
-        max(1, min(5, intel)),
-        max(1, min(5, speed)),
-        max(1, min(5, cb)),
-    )
-
-
-def compute_tiers(
-    model_id: str,
-    label: str,
-    output_cost_per_1m: float,
-    reasoning: bool,
-) -> tuple[int, int, int]:
-    """Look up a (intelligence, speed, cost) triple. Curated map first;
-    heuristic fallback for the long tail."""
-    candidates = [model_id]
-    if ":free" in model_id:
-        candidates.append(model_id.replace(":free", ""))
-    if "/" in model_id:
-        tail = model_id.split("/", 1)[1]
-        candidates.append(tail)
-        if ":free" in tail:
-            candidates.append(tail.replace(":free", ""))
-    # Try dashes-vs-dots normalisations for each candidate.
-    for c in list(candidates):
-        if "." in c:
-            candidates.append(c.replace(".", "-"))
-        if "-" in c:
-            candidates.append(c.replace("-", "."))
-
-    # Dedup while preserving order.
-    seen = set()
-    ordered = []
-    for c in candidates:
-        if c not in seen:
-            seen.add(c)
-            ordered.append(c)
-
-    for c in ordered:
-        if c in MODEL_TIERS:
-            return MODEL_TIERS[c]
-
-    return _heuristic_tiers(label, output_cost_per_1m, reasoning)
-
-
-def compute_billing_kind(
-    *,
-    api: str,
-    route: str | None,
-    is_or_free: bool,
-    settings,
-) -> str:
-    """Return one of:
-        'subscription' — covered by an OAuth sub or Pro plan; hide cost row
-        'api_key'      — direct API-key path (Anthropic / OpenAI / Gemini)
-        'free'         — genuinely $0 per token (rate-limited OR :free tier)
-        'paid'         — per-token metering through OpenRouter; show pricing
-
-    Why 'api_key' is split from 'paid': both meter per-token, but the user
-    is paying a different counterparty. Letting the picker filter chips
-    "API key" vs "Subscription" gives users a clear way to scope to their
-    billing relationship — direct API key vs OAuth subscription — instead
-    of conflating them under a generic "paid" bucket.
-
-    Subscription paths:
-      - api=codex (Codex sub via 9Router)
-      - api=gemini-cli (Gemini CLI sub via 9Router)
-      - route="cc" (Claude sub via 9Router)
-      - api=anthropic, adaptive route, Pro mode active with bearer
-    """
-    if api == "codex":
-        return "subscription"
-    if api == "gemini-cli":
-        return "subscription"
-    if route == "cc":
-        return "subscription"
-    if (
-        api == "anthropic"
-        and route is None
-        and getattr(settings, "connection_mode", "own_key") == "openswarm-pro"
-        and getattr(settings, "openswarm_bearer_token", None)
-    ):
-        return "subscription"
-    if route == "api":
-        return "api_key"
-    if is_or_free:
-        return "free"
-    return "paid"
-
-
-# ---------------------------------------------------------------------------
 # Cost tracking
 # ---------------------------------------------------------------------------
 
 COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     # (provider, model): (input_cost_per_1M, output_cost_per_1M)
-    # NOTE: `calculate_cost` is currently unused in the live path — real
-    # cost numbers come from 9Router's usage stats. These entries are kept
-    # so the table matches BUILTIN_MODELS and can
+    # NOTE: real cost numbers come from 9Router's usage stats. These entries
+    # are kept so the table matches BUILTIN_MODELS and can
     # be used by any future native-loop path. Subscription-routed models
     # are zero-cost to the user, but API rates are recorded here for
     # reference where they exist.
@@ -924,14 +400,14 @@ COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     ("Anthropic", "opus"): (5.0, 25.0),
     ("Anthropic", "opus-4-7"): (5.0, 25.0),
     ("Anthropic", "haiku"): (1.0, 5.0),
-    # OpenAI — Codex subscription path, user pays nothing per token
+    # OpenAI; Codex subscription path, user pays nothing per token
     ("OpenAI", "gpt-5.5"): (0.0, 0.0),
     ("OpenAI", "gpt-5.4"): (0.0, 0.0),
     ("OpenAI", "gpt-5.4-mini"): (0.0, 0.0),
     ("OpenAI", "gpt-5.3-codex"): (0.0, 0.0),
     ("OpenAI", "gpt-5.3-codex-high"): (0.0, 0.0),
     ("OpenAI", "gpt-5.3-codex-xhigh"): (0.0, 0.0),
-    # Google — Gemini CLI subscription path, user pays nothing per token
+    # Google; Gemini CLI subscription path, user pays nothing per token
     ("Google", "gemini-3.1-pro"): (0.0, 0.0),
     ("Google", "gemini-3.1-flash-lite"): (0.0, 0.0),
     ("Google", "gemini-3-pro"): (0.0, 0.0),
@@ -950,23 +426,3 @@ COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     ("Qwen", "qwen/qwen3-235b-a22b"): (0.20, 0.70),
     ("Cohere", "cohere/command-a-03-2025"): (2.50, 10.0),
 }
-
-
-def calculate_cost(
-    provider: str, model: str,
-    input_tokens: int, output_tokens: int,
-) -> float:
-    """Calculate cost in USD from token counts."""
-    # Direct lookup first
-    rates = COST_PER_1M_TOKENS.get((provider, model))
-    if not rates:
-        # Case-insensitive provider lookup
-        lower = provider.lower()
-        for (p, m), r in COST_PER_1M_TOKENS.items():
-            if p.lower() == lower and m == model:
-                rates = r
-                break
-    if not rates:
-        return 0.0
-    input_rate, output_rate = rates
-    return (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000

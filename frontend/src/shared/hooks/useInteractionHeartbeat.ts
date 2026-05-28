@@ -1,10 +1,4 @@
-// Mounts a single global listener that records each user interaction
-// timestamp into Redux. One installer per app — call from Main.tsx after
-// the store is provided.
-//
-// Debounces at 1-second granularity so we don't spam Redux on every
-// keystroke. Coarse enough for "idle dim after N minutes" UX; fine enough
-// that the timestamp on session close is accurate to the second.
+// Records user-interaction timestamps into Redux, 1s-debounced. Mount once from Main.tsx.
 
 import { useEffect } from 'react';
 import { useAppDispatch } from '@/shared/hooks';

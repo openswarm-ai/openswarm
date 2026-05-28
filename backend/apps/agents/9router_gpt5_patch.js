@@ -1,34 +1,6 @@
 // Node-runtime patch loaded via `node --require <this>` before 9router boots.
-//
-// Why this exists
-// ---------------
-// OpenAI's GPT-5 family (gpt-5.4, gpt-5.4-mini, gpt-5.5, gpt-5.3-codex, …)
-// rejects the legacy `max_tokens` parameter with HTTP 400, requiring
-// `max_completion_tokens`. 9router (every released version, including 0.4.20)
-// blindly forwards `max_tokens` in its Anthropic→OpenAI translator. We can't
-// fix 9router from outside (env vars are ignored, baseUrl on the openai
-// provider is hardcoded, prefix routing falls back). Instead we intercept
-// the HTTPS write at the Node syscall layer — the actual boundary OpenAI
-// sees — and rename the field on the way out.
-//
-// Safety contract
-// ---------------
-// • Scope: only requests whose hostname is `api.openai.com`. Every other
-//   outbound HTTP/HTTPS call passes through unmodified.
-// • Model gate: only requests whose body parses as JSON with
-//   `model.startsWith("gpt-5")` (after stripping common prefixes 9router
-//   adds). GPT-4 / Claude / etc. unaffected.
-// • Failure mode: every step is wrapped in try/catch and falls back to the
-//   unmodified original on any error. Worst case is "request behaves
-//   exactly as it would without this patch" — never worse than baseline.
-// • Idempotency: the patch self-flags so re-loading via multiple --require
-//   doesn't double-wrap.
-//
-// Verification
-// ------------
-// Set OPENSWARM_DEBUG_GPT5_PATCH=1 in the env to log "[openswarm] 9router-
-// gpt5-patch installed" on stderr and "rewrote max_tokens → max_completion_tokens"
-// on each rewrite.
+// Rewrites `max_tokens` to `max_completion_tokens` for GPT-5 calls (which 9router still emits) and floors completion tokens at 32K for reasoning headroom.
+// Hostname-gated to api.openai.com; every step is try/catch so failure falls back to baseline behavior.
 
 'use strict';
 
@@ -40,7 +12,7 @@ const DEBUG = process.env.OPENSWARM_DEBUG_GPT5_PATCH === '1';
 
 function _log(msg) {
   if (DEBUG) {
-    try { process.stderr.write('[openswarm-gpt5-patch] ' + msg + '\n'); } catch (_) { /* ignore */ }
+    try { process.stderr.write('[openswarm-gpt5-patch] ' + msg + '\n'); } catch (_) {}
   }
 }
 
@@ -48,9 +20,7 @@ function isGpt5Model(model) {
   if (typeof model !== 'string') return false;
   let m = model.trim().toLowerCase();
   if (!m) return false;
-  // Strip routing prefixes 9router may have added: cp-openai/, openai/,
-  // cx/, openrouter/, or:openai/. Don't strip cp- (custom-provider) blindly
-  // because cp-anything could match a non-OpenAI custom node.
+  // Strip 9router prefixes; don't blindly strip cp- (could be a non-OpenAI custom node).
   const prefixes = ['cp-openai/', 'openai/', 'cx/', 'openrouter/', 'or:openai/'];
   for (const p of prefixes) {
     if (m.startsWith(p)) { m = m.slice(p.length); break; }
@@ -58,19 +28,7 @@ function isGpt5Model(model) {
   return m.startsWith('gpt-5');
 }
 
-// Minimum completion-token budget for GPT-5 reasoning models.
-// GPT-5 burns 8-30K tokens on internal reasoning BEFORE producing any
-// user-visible output. The Anthropic CLI's default max_tokens (~4096) is
-// way under that floor — OpenAI accepts the request, runs reasoning until
-// it hits the cap, then returns "Could not finish the message because
-// max_tokens or model output limit was reached" with zero user-visible
-// content. Floor at 32K so reasoning has room AND the user gets an
-// actual response. Cost is unaffected because OpenAI bills for
-// tokens-consumed, not max_completion_tokens (which is just a cap).
-//
-// We use max(requestedValue, 32K) — never lower the user's value, only
-// raise it. If the user explicitly sets a high value (e.g. 100K) we
-// honor it untouched.
+// GPT-5 burns 8-30K reasoning tokens before any output; the CLI's default 4096 caps before content lands. Floor at 32K and only raise, never lower.
 const GPT5_MIN_COMPLETION_TOKENS = 32768;
 
 function maybeRewriteBody(bodyStr) {
@@ -80,8 +38,7 @@ function maybeRewriteBody(bodyStr) {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return bodyStr;
   if (!isGpt5Model(parsed.model)) return bodyStr;
   let mutated = false;
-  // Both fields present (unlikely but possible): drop the legacy one so
-  // OpenAI doesn't reject for "both specified".
+  // Drop legacy field if both present, else OpenAI 400s on "both specified".
   if ('max_tokens' in parsed && 'max_completion_tokens' in parsed) {
     delete parsed.max_tokens;
     mutated = true;
@@ -90,15 +47,13 @@ function maybeRewriteBody(bodyStr) {
     parsed.max_completion_tokens = parsed.max_tokens;
     delete parsed.max_tokens;
     mutated = true;
-    _log('rewrote max_tokens → max_completion_tokens for ' + parsed.model);
+    _log('rewrote max_tokens to max_completion_tokens for ' + parsed.model);
   }
-  // Floor max_completion_tokens at 32K for reasoning headroom. Only raise,
-  // never lower — if the user explicitly set 100K, keep 100K.
   if (typeof parsed.max_completion_tokens === 'number' && parsed.max_completion_tokens < GPT5_MIN_COMPLETION_TOKENS) {
     const orig = parsed.max_completion_tokens;
     parsed.max_completion_tokens = GPT5_MIN_COMPLETION_TOKENS;
     mutated = true;
-    _log('raised max_completion_tokens ' + orig + ' → ' + GPT5_MIN_COMPLETION_TOKENS + ' for ' + parsed.model + ' (reasoning headroom)');
+    _log('raised max_completion_tokens ' + orig + ' to ' + GPT5_MIN_COMPLETION_TOKENS + ' for ' + parsed.model);
   }
   return mutated ? JSON.stringify(parsed) : bodyStr;
 }
@@ -112,7 +67,6 @@ function _hostFromOpts(opts) {
 function patchHttpRequest(orig) {
   return function patchedRequest() {
     const args = Array.prototype.slice.call(arguments);
-    // First arg may be a URL string, URL object, or options object.
     let opts = args[0];
     let host = '';
     try {
@@ -125,33 +79,28 @@ function patchHttpRequest(orig) {
       return orig.apply(this, args);
     }
 
-    // Outbound request to OpenAI: intercept body. The Anthropic SDK and
-    // 9router both call .write(body) then .end(), or .end(body) directly.
     let req;
     try { req = orig.apply(this, args); } catch (e) { throw e; }
     const origWrite = req.write.bind(req);
     const origEnd = req.end.bind(req);
     const chunks = [];
-    let isStringMode = null; // null until first chunk; then true=string, false=buffer
+    let isStringMode = null;
 
     function recordChunk(chunk) {
       if (chunk == null) return;
       if (typeof chunk === 'string') {
         if (isStringMode === false) {
-          // Mixed mode — fall back: convert prior buffers to string
           for (let i = 0; i < chunks.length; i++) chunks[i] = chunks[i].toString('utf8');
         }
         isStringMode = true;
         chunks.push(chunk);
       } else if (Buffer.isBuffer(chunk)) {
         if (isStringMode === true) {
-          // Mixed: convert prior strings to buffers
           for (let i = 0; i < chunks.length; i++) chunks[i] = Buffer.from(chunks[i], 'utf8');
         }
         isStringMode = false;
         chunks.push(chunk);
       } else {
-        // Unknown shape — abandon interception
         throw new Error('unknown-chunk-shape');
       }
     }
@@ -162,12 +111,10 @@ function patchHttpRequest(orig) {
         recordChunk(chunk);
         return true;
       } catch (_) {
-        // Abandon interception — pass through immediately and disable buffering.
-        // Flush anything we'd buffered so far.
         try {
           for (const c of chunks) origWrite(c);
           chunks.length = 0;
-        } catch (_) { /* ignore */ }
+        } catch (_) {}
         return origWrite.apply(req, [chunk].concat(restArgs));
       }
     };
@@ -186,19 +133,17 @@ function patchHttpRequest(orig) {
             if (req.getHeader && typeof req.getHeader === 'function' && req.getHeader('content-length')) {
               req.setHeader('Content-Length', newBuf.length);
             }
-          } catch (_) { /* ignore */ }
+          } catch (_) {}
           return origEnd.call(req, newBuf);
         }
-        // No rewrite — send original body intact
         if (chunks.length === 0) return origEnd.apply(req, restArgs);
         if (isStringMode === true) return origEnd.call(req, chunks.join(''));
         return origEnd.call(req, Buffer.concat(chunks));
       } catch (_) {
-        // Abandon — flush any buffered content + tail chunk
         try {
           for (const c of chunks) origWrite(c);
           chunks.length = 0;
-        } catch (_) { /* ignore */ }
+        } catch (_) {}
         if (chunk != null) return origEnd.apply(req, [chunk].concat(restArgs));
         return origEnd.apply(req, restArgs);
       }
@@ -216,13 +161,11 @@ if (!_https.__openswarm_gpt5_patched) {
     _http.__openswarm_gpt5_patched = true;
     _log('installed https.request + http.request interceptors');
   } catch (e) {
-    // Patch failed — log and continue. 9router will work as normal,
-    // GPT-5 calls will fail with the same 400 they did before. Never worse.
     _log('install failed: ' + (e && e.message ? e.message : String(e)));
   }
 }
 
-// Also patch global fetch (Node 18+). 9router uses fetch in some paths.
+// Node 18+ fetch path; 9router uses fetch in some routes.
 if (typeof globalThis.fetch === 'function' && !globalThis.fetch.__openswarm_gpt5_patched) {
   try {
     const origFetch = globalThis.fetch;
@@ -249,7 +192,7 @@ if (typeof globalThis.fetch === 'function' && !globalThis.fetch.__openswarm_gpt5
                     if (k.toLowerCase() === 'content-length') newInit.headers[k] = newLen;
                   }
                 }
-              } catch (_) { /* ignore */ }
+              } catch (_) {}
             }
             return origFetch.call(this, input, newInit);
           }

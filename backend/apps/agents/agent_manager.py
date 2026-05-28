@@ -9,11 +9,10 @@ from datetime import datetime
 from uuid import uuid4
 from typing import Optional
 
-from backend.apps.agents.models import (
+from backend.apps.agents.core.models import (
     AgentConfig, AgentSession, Message, MessageBranch, ApprovalRequest, ToolGroupMeta,
 )
-from backend.apps.agents.ws_manager import ws_manager
-from backend.apps.modes.modes import load_mode
+from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.tools_lib.tools_lib import (
     _load_all as load_all_tools,
@@ -27,196 +26,81 @@ from backend.apps.tools_lib.tools_lib import (
     save_trusted_sensitive_paths,
 )
 from backend.config.paths import SESSIONS_DIR
-from backend.apps.service.client import sync as _sync
+from backend.apps.agents.core.error_classify import (
+    _NON_TRANSIENT_PATTERNS,
+    _TRANSIENT_CAPACITY_PATTERNS,
+    _is_auth_error,
+    _is_long_context_error,
+    _is_transient_capacity_error,
+)
+from backend.apps.agents.manager.session.session_store import (
+    _delete_session_file,
+    _load_all_session_data,
+    _load_session_data,
+    _save_session,
+    build_search_text,
+)
+from backend.apps.agents.manager.session.cloud_sync import _sync_session_close
+from backend.apps.agents.manager.session.workspace_git import _detect_git_identity, _ensure_cwd_git_repo
+from backend.apps.agents.manager.prompt.tool_catalog import (
+    FULL_TOOLS,
+    _get_all_known_tool_names,
+    _get_denied_tool_names,
+    _is_fully_denied,
+)
+from backend.apps.agents.core.aux_llm import _safe_resp_text
+from backend.apps.agents.manager.session.history_compaction import (
+    _build_history_prefix,
+    _get_branch_messages,
+    _truncate_large_tool_result,
+)
+from backend.apps.agents.manager.prompt.prompt_context import (
+    _build_browser_context,
+    _build_connected_tools_context,
+    _build_mcp_registry_summary,
+    _compose_system_prompt,
+    _get_pre_selected_browser_ids,
+    _resolve_attached_skills,
+    _resolve_forced_tools,
+    _resolve_mode,
+)
+from backend.apps.agents.manager.prompt.attachments import (
+    _build_dir_tree,
+    _build_prompt_content,
+    _resolve_attachments,
+    _resolve_context_paths,
+)
 
 logger = logging.getLogger(__name__)
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 
 
-def _safe_resp_text(resp) -> str:
-    """Extract text from an Anthropic-shape response, tolerating Gemini/OpenAI
-    edge cases. Gemini through 9Router occasionally returns `content=[]` (e.g.
-    safety stop, function-call-only turn) which makes `resp.content[0].text`
-    raise `'NoneType' object is not subscriptable` and bubbles up as a
-    fallback-required path. This walks the content list looking for the first
-    text block and returns "" if none exists, so callers can decide their own
-    fallback without a raw IndexError.
+def _apply_context_window(session, settings=None) -> None:
+    """Set session.context_window from the registry for its (provider, model).
+
+    Called at every AgentSession creation, restore, and model-switch site so
+    the soft-cap trim, auto-compaction, and the UI percent meter line up
+    with the model's real cap (Opus/Sonnet 1M, Haiku 200k, custom values
+    declared per-provider). Silent fallback to the existing value keeps a
+    bad lookup from ever breaking a session.
     """
     try:
-        blocks = getattr(resp, "content", None) or []
-        for b in blocks:
-            t = getattr(b, "text", None)
-            if isinstance(t, str) and t:
-                return t
-        return ""
+        from backend.apps.agents.providers.registry import get_context_window
+        if settings is None:
+            try:
+                settings = load_settings()
+            except Exception:
+                settings = None
+        cw = get_context_window(
+            getattr(session, "provider", "") or "",
+            getattr(session, "model", "") or "",
+            settings,
+        )
+        if isinstance(cw, int) and cw > 0:
+            session.context_window = cw
     except Exception:
-        return ""
-
-
-def _save_session(session_id: str, doc_data: dict):
-    os.makedirs(SESSIONS_DIR, exist_ok=True)
-    with open(os.path.join(SESSIONS_DIR, f"{session_id}.json"), "w") as f:
-        json.dump(doc_data, f, indent=2)
-
-
-def _load_session_data(session_id: str) -> dict | None:
-    path = os.path.join(SESSIONS_DIR, f"{session_id}.json")
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        return json.load(f)
-
-
-def _delete_session_file(session_id: str):
-    path = os.path.join(SESSIONS_DIR, f"{session_id}.json")
-    if os.path.exists(path):
-        os.remove(path)
-
-
-# Patterns that indicate an upstream transient problem (overload / rate limit /
-# infra blip) — safe to silently retry with backoff. Checked against the
-# stringified exception from claude_agent_sdk / Claude CLI.
-_TRANSIENT_CAPACITY_PATTERNS = re.compile(
-    r"(?:\b(?:429|500|502|503|504|529)\b"
-    r"|overloaded"
-    r"|service\s+(?:temporarily\s+)?unavailable"
-    r"|at\s+capacity"
-    r"|try\s+again\s+shortly"
-    r"|internal\s+server\s+error"
-    r"|rate[_\s-]?limit(?:_error)?"
-    r"|ECONNRESET|ETIMEDOUT|ENETUNREACH|fetch\s+failed"
-    r"|upstream\s+connect\s+error)",
-    re.IGNORECASE,
-)
-
-# Patterns that look rate-limit-ish but are actually non-transient (user quota,
-# auth, context-window tier gate). Must NOT retry — upgrading, reauthing, or
-# trimming context is required. The long-context-required variant is what
-# Anthropic returns when an OAuth Pro/Max account ships a request whose input
-# exceeds the 200K standard tier and would need the "extra usage" tier; the
-# user can't recover by waiting, so we surface it instead of looping.
-_NON_TRANSIENT_PATTERNS = re.compile(
-    r"(?:usage\s+cap\s+exceeded"
-    r"|reached\s+your\s+OpenSwarm.*plan\s+limit"
-    r"|no\s+active\s+subscription"
-    r"|subscription\s+(?:canceled|past_due)"
-    r"|invalid.*token"
-    r"|missing\s+bearer\s+token"
-    r"|extra\s+usage\s+is\s+required\s+for\s+long\s+context"
-    r"|long\s+context\s+(?:requests?\s+)?(?:requires?|not\s+(?:available|enabled))"
-    r"|401|403)",
-    re.IGNORECASE,
-)
-
-
-def _is_long_context_error(exc: BaseException, extra_text: str = "") -> bool:
-    """True when the upstream error is the 'long context tier required' 429.
-
-    Used by the catch-all error path to emit a friendly context-overflow
-    event instead of a generic system-error message.
-    """
-    combined = f"{exc!s}\n{extra_text}".strip()
-    if not combined:
-        return False
-    return bool(re.search(
-        r"extra\s+usage\s+is\s+required\s+for\s+long\s+context"
-        r"|long\s+context\s+(?:requests?\s+)?(?:requires?|not\s+(?:available|enabled))",
-        combined,
-        re.IGNORECASE,
-    ))
-
-
-def _is_auth_error(exc: BaseException, extra_text: str = "") -> bool:
-    """True when the upstream error is a 401/403 auth failure.
-
-    Used by the catch-all error path to surface a friendly "subscription
-    expired / reconnect" card instead of dumping the raw 401 JSON. The most
-    common cause: the OpenSwarm Pro bearer or 9Router OAuth token has expired
-    while the UI still shows the connection as 'connected'.
-    """
-    combined = f"{exc!s}\n{extra_text}".strip()
-    if not combined:
-        return False
-    return bool(re.search(
-        r"\b(401|403)\b"
-        r"|invalid\s+authentication\s+credentials"
-        r"|invalid.*api[_\s-]?key"
-        r"|missing\s+bearer\s+token"
-        r"|unauthori[sz]ed"
-        r"|no\s+credentials\s+for\s+provider"
-        r"|provider\s+not\s+(?:configured|connected|authorized)",
-        combined,
-        re.IGNORECASE,
-    ))
-
-
-def _is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> bool:
-    # The Claude CLI's underlying ProcessError stringifies to a generic
-    # "Command failed with exit code 1 / Check stderr output for details" —
-    # the real cause (rate_limit_error / No pool capacity available / 429
-    # / overloaded) only surfaces in the subprocess's stderr stream, which
-    # we capture via the SDK's `stderr` callback and pass in as extra_text.
-    # Classify against both so we catch capacity errors regardless of which
-    # channel carried the message.
-    combined = f"{exc!s}\n{extra_text}".strip()
-    if not combined:
-        return False
-    if _NON_TRANSIENT_PATTERNS.search(combined):
-        return False
-    if _TRANSIENT_CAPACITY_PATTERNS.search(combined):
-        return True
-    # Pool-exhaustion copy from the OpenSwarm proxy ("No pool capacity
-    # available. Try again shortly.") — matches the capacity family too.
-    if re.search(r"no\s+pool\s+capacity", combined, re.IGNORECASE):
-        return True
-    return False
-
-
-def _load_all_session_data() -> list[tuple[str, dict]]:
-    results = []
-    if not os.path.exists(SESSIONS_DIR):
-        return results
-    for fname in os.listdir(SESSIONS_DIR):
-        if fname.endswith(".json"):
-            with open(os.path.join(SESSIONS_DIR, fname)) as f:
-                results.append((fname[:-5], json.load(f)))
-    return results
-
-FULL_TOOLS = [
-    "Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion",
-    "WebSearch", "WebFetch", "NotebookEdit", "TodoWrite",
-    "EnterPlanMode", "ExitPlanMode", "EnterWorktree",
-    "TaskOutput", "TaskStop",
-    "CronCreate", "CronList", "CronDelete",
-    "InvokeAgent",
-    "Agent",
-    # ToolSearch is the loader the CLI uses to expose deferred tool schemas
-    # on demand. Must be in the allowedTools whitelist or the model can't
-    # call it, which means none of the deferred extended tools become
-    # reachable even when the CLI advertises them in the system prompt.
-    "ToolSearch",
-]
-
-def _get_denied_tool_names(tool) -> set[str]:
-    """Return the set of MCP sub-tool names whose permission is 'deny'."""
-    return {
-        key for key, value in tool.tool_permissions.items()
-        if not key.startswith("_") and value == "deny"
-    }
-
-
-def _get_all_known_tool_names(tool) -> set[str]:
-    """Return all known sub-tool names for an MCP tool (from _tool_descriptions)."""
-    return set(tool.tool_permissions.get("_tool_descriptions", {}).keys())
-
-
-def _is_fully_denied(tool) -> bool:
-    """True when every known sub-tool on this MCP server is set to 'deny'."""
-    known = _get_all_known_tool_names(tool)
-    if not known:
-        return False
-    return known <= _get_denied_tool_names(tool)
+        logger.debug("context_window lookup failed; keeping existing value", exc_info=True)
 
 
 def get_all_tool_names() -> list[str]:
@@ -241,141 +125,13 @@ def get_all_tool_names() -> list[str]:
     return builtin_tools + mcp_names
 
 
-def _ensure_cwd_git_repo(cwd: str, home: str | None = None) -> None:
-    """Idempotently make `cwd` into a git repo with a valid HEAD.
-
-    The CLI's built-in Agent tool uses `isolation: "worktree"` to spawn
-    subagents, which runs `git rev-parse HEAD` + `git worktree add`. If
-    cwd isn't a git repo, or is a repo with no commits yet, that fails
-    with "worktree/base-branch metadata is broken for isolation" or
-    "repo doesn't have a valid HEAD yet". We silently init a minimal
-    repo with one empty commit so worktree add always has something to
-    anchor on.
-
-    Safe to call on every request — does nothing if cwd is already a
-    valid repo (real project, previous init, or inside a parent repo).
-    """
-    try:
-        home = home or os.path.expanduser("~")
-        cwd_abs = os.path.abspath(cwd)
-        risky_roots = {
-            os.path.abspath(home),
-            "/",
-            os.path.abspath(os.path.dirname(home)),  # e.g. /Users
-        }
-        if cwd_abs in risky_roots:
-            return
-        if not os.path.isdir(cwd):
-            return
-
-        import subprocess as _sp_git
-        # Case A: cwd is inside some git repo (possibly parent). Verify
-        # HEAD resolves. If the enclosing repo is broken (e.g. a stray
-        # `.git` in $HOME with no commits — which makes workspaces
-        # under ~/.openswarm/workspaces/ inherit a broken HEAD), we
-        # need to init a fresh repo AT cwd so it shadows the parent.
-        _inside = _sp_git.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            cwd=cwd,
-            stdout=_sp_git.PIPE, stderr=_sp_git.DEVNULL, timeout=5,
-        )
-        if _inside.returncode == 0 and b"true" in _inside.stdout:
-            # Check HEAD resolves (has at least one commit).
-            _head = _sp_git.run(
-                ["git", "rev-parse", "--verify", "HEAD"],
-                cwd=cwd,
-                stdout=_sp_git.DEVNULL, stderr=_sp_git.DEVNULL, timeout=5,
-            )
-            if _head.returncode == 0:
-                return  # parent repo is healthy, leave it alone
-            # Parent repo exists but HEAD is broken.
-            if os.path.isdir(os.path.join(cwd, ".git")):
-                # .git is directly here — commit to fix it.
-                _sp_git.run(
-                    ["git", "-c", "user.email=openswarm@local",
-                     "-c", "user.name=OpenSwarm",
-                     "commit", "--allow-empty", "-q", "-m", "openswarm init"],
-                    cwd=cwd,
-                    stdout=_sp_git.DEVNULL, stderr=_sp_git.DEVNULL, timeout=10,
-                )
-                return
-            # .git is in a parent dir (broken home-dir repo, etc.).
-            # Init our own repo at cwd so it shadows the broken parent.
-            # Fall through to Case B.
-
-        # Case B: cwd is not a git repo at all (or parent is broken) —
-        # init + empty commit here.
-        _sp_git.run(
-            ["git", "init", "-q", "-b", "main"],
-            cwd=cwd,
-            stdout=_sp_git.DEVNULL, stderr=_sp_git.DEVNULL, timeout=10,
-        )
-        _sp_git.run(
-            ["git", "-c", "user.email=openswarm@local",
-             "-c", "user.name=OpenSwarm",
-             "commit", "--allow-empty", "-q", "-m", "openswarm init"],
-            cwd=cwd,
-            stdout=_sp_git.DEVNULL, stderr=_sp_git.DEVNULL, timeout=10,
-        )
-    except Exception as _e:
-        logger.info(f"[agent-cwd] git init skipped: {_e}")
-
-
-def _detect_git_identity(cwd: str) -> tuple[str | None, str | None]:
-    """Resolve the origin remote and current branch for `cwd`.
-
-    Used to label sessions in the session list ("Agent on owner/repo
-    @ branch") and to keep a resumed session pinned to the same project
-    even after the user `cd`'s elsewhere. Returns (None, None) for
-    non-git cwds, detached HEADs, repos without an origin, or any
-    subprocess failure. Credentials in the URL are stripped so a
-    `https://user:token@host/...` remote becomes `https://host/...`.
-    """
-    if not cwd or not os.path.isdir(cwd):
-        return (None, None)
-    try:
-        import subprocess as _sp
-        url_proc = _sp.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=cwd, stdout=_sp.PIPE, stderr=_sp.DEVNULL, timeout=3,
-        )
-        repo_url: str | None = None
-        if url_proc.returncode == 0:
-            raw = url_proc.stdout.decode("utf-8", errors="replace").strip()
-            if raw:
-                if "://" in raw:
-                    scheme, _, rest = raw.partition("://")
-                    if "@" in rest:
-                        rest = rest.split("@", 1)[1]
-                    repo_url = f"{scheme}://{rest}"
-                else:
-                    repo_url = raw
-        branch_proc = _sp.run(
-            ["git", "branch", "--show-current"],
-            cwd=cwd, stdout=_sp.PIPE, stderr=_sp.DEVNULL, timeout=3,
-        )
-        branch_name: str | None = None
-        if branch_proc.returncode == 0:
-            raw_b = branch_proc.stdout.decode("utf-8", errors="replace").strip()
-            if raw_b:
-                branch_name = raw_b
-        return (repo_url, branch_name)
-    except Exception:
-        return (None, None)
-
-
 class AgentManager:
     def __init__(self):
         self.sessions: dict[str, AgentSession] = {}
         self.tasks: dict[str, asyncio.Task] = {}
     
     def _resolve_mode(self, mode_id: str) -> tuple[list[str], str | None, str | None]:
-        """Return (tools, system_prompt, default_folder) resolved from the mode store."""
-        mode_def = load_mode(mode_id)
-        if mode_def:
-            tools = mode_def.tools if mode_def.tools is not None else get_all_tool_names()
-            return tools, mode_def.system_prompt, mode_def.default_folder
-        return get_all_tool_names(), None, None
+        return _resolve_mode(mode_id, get_all_tool_names)
 
     async def _build_mcp_servers(
         self,
@@ -385,8 +141,8 @@ class AgentManager:
         """Build the mcp_servers dict for ClaudeAgentOptions from installed MCP tools.
 
         Filtering is two-stage:
-          1. allowed_tools (mode/session permission) — same as before.
-          2. active_mcps (per-session activation gate) — NEW. When this list is
+          1. allowed_tools (mode/session permission), same as before.
+          2. active_mcps (per-session activation gate), NEW. When this list is
              provided (non-None), only MCP servers whose sanitized name appears
              in it are forwarded to the SDK. Empty list means zero MCPs ship.
              None means legacy / non-gated path (used by sessions created
@@ -396,7 +152,7 @@ class AgentManager:
         invariant "all MCP actions only via ToolSearch": the model can only
         reach an MCP server's tools if the user has approved MCPActivate for
         that server, which appends to session.active_mcps. The model cannot
-        bypass this by ignoring prompt instructions — the SDK simply receives
+        bypass this by ignoring prompt instructions, the SDK simply receives
         no MCP definition for unactivated servers.
 
         Servers whose every sub-tool is denied are skipped entirely.
@@ -420,7 +176,7 @@ class AgentManager:
 
             server_name = _sanitize_server_name(tool.name)
             if active_set is not None and server_name not in active_set:
-                logger.info(f"[MCP-DEBUG] GATED {server_name}: not in session.active_mcps — model must call MCPActivate first")
+                logger.info(f"[MCP-DEBUG] GATED {server_name}: not in session.active_mcps, model must call MCPActivate first")
                 continue
 
             if _is_fully_denied(tool):
@@ -451,252 +207,19 @@ class AgentManager:
         return mcp_servers
 
     def _build_connected_tools_context(self, allowed_tools: list[str]) -> str | None:
-        """Build a context block describing connected MCP tools and their accounts.
-
-        Tools set to 'deny' and fully-denied servers are excluded.
-        """
-        all_tools = load_all_tools()
-        mcp_tools = [t for t in all_tools if t.mcp_config and t.enabled and t.auth_status in ("configured", "connected")]
-
-        sections = []
-        for tool in mcp_tools:
-            tool_ref = f"mcp:{tool.name}"
-            if tool_ref not in allowed_tools and allowed_tools != get_all_tool_names():
-                continue
-
-            if _is_fully_denied(tool):
-                continue
-
-            server_name = _sanitize_server_name(tool.name)
-            denied = _get_denied_tool_names(tool)
-            tool_descs = {
-                k: v for k, v in tool.tool_permissions.get("_tool_descriptions", {}).items()
-                if k not in denied
-            }
-            if not tool_descs:
-                continue
-
-            lines = [f"MCP Server: {server_name}"]
-            lines.append(f"  Status: {tool.auth_status}")
-
-            if tool.connected_account_email:
-                lines.append(f"  Connected account: {tool.connected_account_email}")
-                lines.append(
-                    f"  IMPORTANT: When calling tools from this server that require an email "
-                    f"parameter (e.g. user_google_email, user_email), always use "
-                    f"\"{tool.connected_account_email}\" automatically — do NOT ask the user."
-                )
-
-            # Discord guild scoping — hard restriction. The bot may technically
-            # be in other servers (across other OpenSwarm users), but this
-            # specific user only authorized these guild IDs.
-            if tool.name.lower() == "discord":
-                guilds = tool.oauth_tokens.get("guilds") or []
-                if guilds:
-                    guild_descriptions = ", ".join(
-                        f"{g.get('name', 'Unknown')} ({g.get('id', '')})" for g in guilds
-                    )
-                    allowed_ids = [g.get("id", "") for g in guilds if g.get("id")]
-                    lines.append(
-                        f"  AUTHORIZED DISCORD SERVERS (guild_ids): {guild_descriptions}"
-                    )
-                    lines.append(
-                        f"  HARD RESTRICTION: You MUST only call Discord tools that operate on "
-                        f"these guild_ids: {allowed_ids}. NEVER call Discord tools on any other "
-                        f"guild_id even if the bot has access to it. NEVER list, search, or "
-                        f"enumerate servers outside this list. If a user asks about a server "
-                        f"not in this list, refuse and tell them to authorize it via the Connect "
-                        f"Discord button. This is a security boundary, not a preference."
-                    )
-                else:
-                    lines.append(
-                        f"  No Discord servers authorized yet. Tell the user to click "
-                        f"'Connect Discord' to add a server before attempting any Discord actions."
-                    )
-
-            tool_names = list(tool_descs.keys())
-            if tool_names:
-                lines.append(f"  Available tools ({len(tool_names)}): {', '.join(tool_names)}")
-
-            sections.append("\n".join(lines))
-
-        if not sections:
-            return None
-        return (
-            "<connected_mcp_tools>\n"
-            "The following MCP tool servers are connected and available. "
-            "Use them directly when relevant to the user's request.\n\n"
-            + "\n\n".join(sections)
-            + "\n</connected_mcp_tools>"
-        )
+        return _build_connected_tools_context(allowed_tools, get_all_tool_names)
 
     def _build_browser_context(self, dashboard_id: str | None, selected_browser_ids: list[str] | None = None) -> str | None:
-        """Build a context block listing browser cards and delegation instructions.
-
-        Only browser cards explicitly selected by the user are included.
-        If none are selected, no browser card details are exposed.
-        """
-        if not dashboard_id:
-            return None
-        try:
-            from backend.apps.dashboards.dashboards import _load as load_dashboard
-            dashboard = load_dashboard(dashboard_id)
-        except Exception:
-            return None
-        raw = dashboard.model_dump(mode="json")
-        browser_cards = raw.get("layout", {}).get("browser_cards", {})
-
-        lines = [
-            "<browser_agent_instructions>",
-            "You have access to browser automation through the CreateBrowserAgent, BrowserAgent, and BrowserAgents tools.",
-            "",
-            "- **CreateBrowserAgent(task, url?)**: Create a new browser card and run a task on it. "
-            "Use this when you need a fresh browser. Optionally provide a starting URL.",
-            "- **BrowserAgent(browser_id, task)**: Delegate a task to an existing browser card. "
-            "The browser agent will autonomously navigate, click, type, and interact with the page, then return a summary and screenshot.",
-            "- **BrowserAgents(tasks)**: Run multiple browser tasks in parallel on existing browser cards. "
-            "Each task requires a browser_id.",
-            "",
-            "You do NOT have direct access to low-level browser tools (click, type, screenshot, etc.). "
-            "Instead, describe what you want accomplished and the browser agent will handle the details.",
-        ]
-
-        if browser_cards and selected_browser_ids:
-            visible_cards = [
-                card for card in browser_cards.values()
-                if card.get("browser_id", "") in selected_browser_ids
-            ]
-            if visible_cards:
-                lines.append("")
-                lines.append("The user selected these browser cards for you to work with:")
-                for card in visible_cards:
-                    bid = card.get("browser_id", "")
-                    tabs = card.get("tabs", [])
-                    active_tab_id = card.get("activeTabId", "")
-                    active_tab = next((t for t in tabs if t.get("id") == active_tab_id), None)
-                    url = (active_tab or {}).get("url", card.get("url", ""))
-                    title = (active_tab or {}).get("title", "")
-                    lines.append(f"- browser_id: \"{bid}\"")
-                    if title:
-                        lines.append(f"  Title: {title}")
-                    if url:
-                        lines.append(f"  URL: {url}")
-
-        lines.append("</browser_agent_instructions>")
-        return "\n".join(lines)
+        return _build_browser_context(dashboard_id, selected_browser_ids)
 
     def _get_pre_selected_browser_ids(self, dashboard_id: str | None) -> list[str]:
-        """Return browser_ids of all browser cards currently on the dashboard."""
-        if not dashboard_id:
-            return []
-        try:
-            from backend.apps.dashboards.dashboards import _load as load_dashboard
-            dashboard = load_dashboard(dashboard_id)
-        except Exception:
-            return []
-        raw = dashboard.model_dump(mode="json")
-        browser_cards = raw.get("layout", {}).get("browser_cards", {})
-        return [card.get("browser_id", "") for card in browser_cards.values() if card.get("browser_id")]
+        return _get_pre_selected_browser_ids(dashboard_id)
 
     def _build_mcp_registry_summary(self, allowed_tools: list[str], active_mcps: list[str]) -> str | None:
-        """Compact registry of installed MCP servers — one line per server.
-
-        This is the visible surface that drives the activation gate: the model
-        sees which servers exist and what they're for, but cannot call any
-        unactivated server's tools (the dispatch-layer filter in
-        _build_mcp_servers blocks that). To use a server, the model must call
-        MCPSearch (to find the right one) and then MCPActivate, which fires a
-        HITL prompt; on approve, the server's tools become callable next turn.
-
-        Schemas are NOT included here — that's the whole point. A 30-server
-        registry costs ~1KB; the previous full-schema dump cost ~30-80KB.
-        """
-        all_tools = load_all_tools()
-        mcp_tools = [
-            t for t in all_tools
-            if t.mcp_config and t.enabled and t.auth_status in ("configured", "connected")
-        ]
-        if not mcp_tools:
-            return None
-
-        active_set = set(active_mcps or [])
-        active_lines: list[str] = []
-        available_lines: list[str] = []
-        for tool in mcp_tools:
-            tool_ref = f"mcp:{tool.name}"
-            if tool_ref not in allowed_tools and allowed_tools != get_all_tool_names():
-                continue
-            if _is_fully_denied(tool):
-                continue
-            server_name = _sanitize_server_name(tool.name)
-            desc = (getattr(tool, "description", None) or "").strip()
-            if not desc:
-                # Fall back to a generic blurb keyed on the tool name so the
-                # model still has *some* signal to MCPSearch against.
-                desc = f"{tool.name} integration"
-            line = f"- `{server_name}` — {desc}"
-            if server_name in active_set:
-                active_lines.append(line)
-            else:
-                available_lines.append(line)
-
-        if not active_lines and not available_lines:
-            return None
-
-        # Static preamble first (kept byte-identical across users so it caches),
-        # then the per-session server list. Worked-example uses generic
-        # placeholders so a Pro Anthropic prompt-cache hit isn't broken by
-        # one user's connector names differing from another's.
-        sections = ["<mcp_servers>"]
-        sections.append(
-            "MCP servers are gated: their tools are uncallable until the user "
-            "approves an MCPActivate request. To use one below, call MCPSearch "
-            "(if unsure which) then MCPActivate(server_name); after approval the "
-            "server's tools (`mcp__<server>__<tool>`) become callable next turn."
-        )
-        sections.append("")
-        sections.append("## Rules")
-        sections.append(
-            "1. If the user's request needs a server below that isn't Active, "
-            "your FIRST tool call must be MCPSearch or MCPActivate. Ignore any "
-            "`mcp__*__authenticate` helpers — those are legacy shims; always go "
-            "through MCPActivate."
-        )
-        sections.append(
-            "1a. NEVER call any tool whose name begins with `mcp__claude_ai_` "
-            "(claude.ai-connected partner shims). They bypass the OpenSwarm "
-            "gate and don't share auth with this app. If the user wants Gmail/"
-            "Calendar/Drive, the equivalent OpenSwarm server is listed below; "
-            "activate that one via MCPActivate instead."
-        )
-        sections.append(
-            "2. After MCPActivate returns, end the turn — a follow-up turn fires "
-            "automatically with the new tools available."
-        )
-        sections.append(
-            "3. Don't ask 'should I activate X?' first — MCPActivate already "
-            "triggers an approval prompt."
-        )
-        sections.append("")
-        sections.append("## Example")
-        sections.append(
-            "User asks for email; no email server is Active. First tool call: "
-            "`MCPActivate(server_name=\"<email-server>\", reason=\"...\")`. End "
-            "turn. Next turn: call the activated server's email tool."
-        )
-        sections.append("")
-        if active_lines:
-            sections.append("Active (callable now):")
-            sections.extend(active_lines)
-        if available_lines:
-            sections.append("\nAvailable (not yet activated):")
-            sections.extend(available_lines)
-        sections.append("</mcp_servers>")
-        return "\n".join(sections)
+        return _build_mcp_registry_summary(allowed_tools, active_mcps, get_all_tool_names)
 
     def _compose_system_prompt(self, default_prompt: str | None, mode_prompt: str | None, session_prompt: str | None, connected_tools_ctx: str | None = None, browser_ctx: str | None = None, mcp_registry_ctx: str | None = None) -> str | None:
-        parts = [p for p in (default_prompt, mode_prompt, session_prompt, connected_tools_ctx, mcp_registry_ctx, browser_ctx) if p]
-        return "\n\n".join(parts) if parts else None
+        return _compose_system_prompt(default_prompt, mode_prompt, session_prompt, connected_tools_ctx, browser_ctx, mcp_registry_ctx)
 
     async def launch_agent(self, config: AgentConfig) -> AgentSession:
         session_id = uuid4().hex
@@ -788,9 +311,10 @@ class AgentManager:
             dashboard_id=config.dashboard_id,
             thinking_level=getattr(global_settings, "default_thinking_level", "auto"),
         )
+        _apply_context_window(session, global_settings)
         self.sessions[session_id] = session
 
-        from backend.apps.service.service import APP_VERSION
+        from backend.apps.service.version import APP_VERSION
 
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
@@ -800,157 +324,14 @@ class AgentManager:
 
         return session
 
-    def _resolve_context_paths(self, context_paths: list | None) -> str:
-        """Read file contents / directory trees for attached context paths."""
-        if not context_paths:
-            return ""
-        sections = []
-        for cp in context_paths:
-            path = cp.get("path", "")
-            cp_type = cp.get("type", "file")
-            if not path or not os.path.exists(path):
-                sections.append(f"[Context: {path} — not found]")
-                continue
-            if cp_type == "file" and os.path.isfile(path):
-                try:
-                    with open(path, "r", errors="replace") as f:
-                        content = f.read(512_000)  # ~500KB cap per file
-                    sections.append(
-                        f"<context_file path=\"{path}\">\n{content}\n</context_file>"
-                    )
-                except Exception as e:
-                    sections.append(f"[Context: {path} — error reading: {e}]")
-            elif cp_type == "directory" and os.path.isdir(path):
-                tree_lines = self._build_dir_tree(path, max_depth=4)
-                sections.append(
-                    f"<context_directory path=\"{path}\">\n{chr(10).join(tree_lines)}\n</context_directory>"
-                )
-            else:
-                sections.append(f"[Context: {path} — type mismatch]")
-        return "\n\n".join(sections)
-
     def _build_dir_tree(self, root: str, max_depth: int = 4, prefix: str = "") -> list[str]:
-        """Build a recursive directory tree listing."""
-        lines = []
-        try:
-            entries = sorted(os.listdir(root))
-        except PermissionError:
-            return [f"{prefix}[permission denied]"]
-        dirs = [e for e in entries if not e.startswith(".") and os.path.isdir(os.path.join(root, e))]
-        files = [e for e in entries if not e.startswith(".") and os.path.isfile(os.path.join(root, e))]
-        for f in files:
-            lines.append(f"{prefix}{f}")
-        for d in dirs:
-            lines.append(f"{prefix}{d}/")
-            if max_depth > 1:
-                sub = self._build_dir_tree(os.path.join(root, d), max_depth - 1, prefix + "  ")
-                lines.extend(sub)
-        return lines
+        return _build_dir_tree(root, max_depth, prefix)
 
     def _resolve_forced_tools(self, forced_tools: list[str] | None) -> str:
-        """Build a context block describing explicitly requested tools."""
-        if not forced_tools:
-            return ""
-        from backend.apps.tools_lib.models import BUILTIN_TOOLS
-        desc_map: dict[str, str] = {t.name: t.description for t in BUILTIN_TOOLS}
-        tool_to_server: dict[str, str] = {}
-        tool_to_email: dict[str, str] = {}
-        for t in load_all_tools():
-            if not t.enabled or not t.tool_permissions:
-                continue
-            tool_descs = t.tool_permissions.get("_tool_descriptions", {})
-            server_name = _sanitize_server_name(t.name)
-            for tn, td in tool_descs.items():
-                desc_map[tn] = td
-                tool_to_server[tn] = server_name
-                if t.connected_account_email:
-                    tool_to_email[tn] = t.connected_account_email
-
-        lines = []
-        for name in forced_tools:
-            desc = desc_map.get(name, "")
-            line = f"- {name}: {desc}" if desc else f"- {name}"
-            server = tool_to_server.get(name)
-            if server:
-                line += f"\n  (MCP server: {server})"
-            email = tool_to_email.get(name)
-            if email:
-                line += f"\n  (connected account: {email} — use this for any email parameter)"
-            lines.append(line)
-
-        return (
-            "<forced_tools>\n"
-            "The user explicitly requested these tools be used. "
-            "Prioritize using them to address the user's request.\n"
-            + "\n".join(lines)
-            + "\n</forced_tools>"
-        )
+        return _resolve_forced_tools(forced_tools)
 
     def _resolve_attached_skills(self, attached_skills: list | None) -> str:
-        """Build a context block injecting attached skill content into the prompt."""
-        if not attached_skills:
-            return ""
-        sections = []
-        for skill in attached_skills:
-            name = skill.get("name", "Unknown")
-            content = skill.get("content", "")
-            if content:
-                sections.append(f"[Using skill: {name}]\n\n{content}")
-        return "\n\n".join(sections)
-
-    @staticmethod
-    def _get_branch_messages(session) -> list:
-        """Return the linear message list for the active branch, walking the branch tree."""
-        branch_id = session.active_branch_id or "main"
-        branch = session.branches.get(branch_id)
-
-        if not branch or not branch.fork_point_message_id:
-            return [m for m in session.messages if m.branch_id == "main" or m.branch_id == branch_id]
-
-        segments = []
-        cur = branch
-        cur_id = branch_id
-        visited = set()
-        while cur and cur.fork_point_message_id:
-            if cur_id in visited:
-                break
-            visited.add(cur_id)
-            segments.insert(0, {"branch_id": cur_id, "up_to": cur.fork_point_message_id})
-            cur_id = cur.parent_branch_id or "main"
-            cur = session.branches.get(cur_id)
-        segments.insert(0, {"branch_id": cur_id, "up_to": None})
-
-        result = []
-        for i, seg in enumerate(segments):
-            fork_msg_id = seg["up_to"]
-            if fork_msg_id:
-                fork_idx = next((j for j, m in enumerate(session.messages) if m.id == fork_msg_id), len(session.messages))
-                result.extend(m for m in session.messages[:fork_idx] if m.branch_id == seg["branch_id"])
-            else:
-                next_fork = segments[i + 1]["up_to"] if i + 1 < len(segments) else None
-                if next_fork:
-                    fork_idx = next((j for j, m in enumerate(session.messages) if m.id == next_fork), len(session.messages))
-                    result.extend(m for m in session.messages[:fork_idx] if m.branch_id == seg["branch_id"])
-                else:
-                    result.extend(m for m in session.messages if m.branch_id == seg["branch_id"])
-
-        if not any(m.branch_id == branch_id for m in result):
-            result.extend(m for m in session.messages if m.branch_id == branch_id)
-        return result
-
-    @staticmethod
-    def _build_history_prefix(messages) -> str:
-        """Format branch messages into a conversation summary for context injection."""
-        lines = []
-        for m in messages:
-            if m.role not in ("user", "assistant") or getattr(m, "hidden", False):
-                continue
-            text = m.content if isinstance(m.content, str) else str(m.content)
-            label = "User" if m.role == "user" else "Assistant"
-            lines.append(f"{label}: {text}")
-        if not lines:
-            return ""
-        return "<prior_conversation>\n" + "\n".join(lines) + "\n</prior_conversation>"
+        return _resolve_attached_skills(attached_skills)
 
     # ------------------------------------------------------------------
     # Compaction & token guard (Phase 2)
@@ -962,93 +343,27 @@ class AgentManager:
     #     and old user/assistant pairs before the next query() call
     #   - context_soft_cap_pct (default 0.90): pre-send hard guard. After
     #     compaction, if still over, LRU-trim active_mcps
-    #   - >= 1.0 hits the proxy/Anthropic 200K ceiling — friendly card
+    #   - >= 1.0 hits the proxy/Anthropic 200K ceiling, friendly card
     #     surfaces from the catch-all
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _approx_tokens(text: str) -> int:
-        """Conservative chars/4 estimate. Used for the pre-send guard
-        and the compaction trigger when a precise count_tokens isn't
-        cheap (or the route isn't Anthropic). Errs slightly high so we
-        compact a touch earlier than strictly necessary."""
-        return max(1, len(text or "") // 4)
-
-    @staticmethod
-    def _summarize_message_block(messages: list) -> str:
-        """Programmatic, no-LLM summary of a message slice. Mirrors the
-        shape of browser_agent._summarize_messages: extracts the original
-        user task, counts tool calls, captures the last assistant text.
-        Cheap, deterministic, and never makes a network call — so
-        compaction itself adds zero latency to the user's turn.
-        """
-        if not messages:
-            return ""
-
-        initial_task = ""
-        for m in messages:
-            if getattr(m, "role", "") == "user":
-                content = getattr(m, "content", "")
-                txt = content if isinstance(content, str) else str(content)
-                if txt.strip():
-                    initial_task = txt.strip()[:400]
-                    break
-
-        tool_calls_by_name: dict[str, int] = {}
-        last_tool_results = 0
-        last_assistant_text = ""
-        for m in messages:
-            role = getattr(m, "role", "")
-            if role == "tool_call":
-                content = getattr(m, "content", {}) or {}
-                name = (content.get("tool") if isinstance(content, dict) else None) or "unknown"
-                tool_calls_by_name[name] = tool_calls_by_name.get(name, 0) + 1
-            elif role == "tool_result":
-                last_tool_results += 1
-            elif role == "assistant":
-                content = getattr(m, "content", "")
-                if isinstance(content, str) and content.strip():
-                    last_assistant_text = content.strip()
-                elif isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            txt = (block.get("text") or "").strip()
-                            if txt:
-                                last_assistant_text = txt
-
-        parts = ["<compacted_history>"]
-        parts.append("[The following is a programmatic summary of earlier turns in this session. Originals are preserved on disk and viewable via the chat UI's compaction drawer.]")
-        if initial_task:
-            parts.append(f'Initial user request: "{initial_task}"')
-        if tool_calls_by_name:
-            total = sum(tool_calls_by_name.values())
-            top = sorted(tool_calls_by_name.items(), key=lambda kv: -kv[1])[:8]
-            parts.append(f"Tool calls so far ({total} total): " + ", ".join(f"{n}×{c}" for n, c in top))
-        if last_tool_results:
-            parts.append(f"Tool results received: {last_tool_results}")
-        if last_assistant_text:
-            parts.append("Last assistant message:")
-            parts.append(last_assistant_text[:1200])
-        parts.append("</compacted_history>")
-        return "\n".join(parts)
 
     def _maybe_compact(self, session: AgentSession, force: bool = False) -> bool:
         """Run summarizer when ctx_used_pct >= compact_threshold_pct (or force).
 
         Returns True if a new summary was produced. Mutates session state:
         sets compacted_through_msg_id and emits a context_status event.
-        Never modifies session.messages — originals stay around for the
+        Never modifies session.messages, originals stay around for the
         UI drawer; only the history *sent to the SDK* is trimmed (handled
         in _build_history_prefix lookups).
         """
         ctx_used = session.tokens.get("input", 0) / max(1, session.context_window)
         if not force and ctx_used < session.compact_threshold_pct:
             return False
-        msgs = self._get_branch_messages(session)
+        msgs = _get_branch_messages(session)
         if len(msgs) < 4:
             return False
         # Summarize everything up to (but not including) the last 6
-        # messages — that window keeps recent intent visible to the
+        # messages, that window keeps recent intent visible to the
         # model so it doesn't lose its train of thought right after
         # compaction.
         cutoff = max(0, len(msgs) - 6)
@@ -1060,66 +375,14 @@ class AgentManager:
         session.compacted_through_msg_id = last_id
         return True
 
-    @staticmethod
-    def _truncate_large_tool_result(content: object, session_id: str, msg_id: str, max_bytes: int = 50_000) -> tuple[object, str | None]:
-        """Spill a large tool_result body to disk, return a truncated
-        inline replacement plus the on-disk path (or None if untouched).
+    def _build_prompt_content(self, prompt: str, images: list | None = None, context_paths: list | None = None, forced_tools: list[str] | None = None, attached_skills: list | None = None, api_type: str = "anthropic", model: str = ""):
+        return _build_prompt_content(prompt, images, context_paths, forced_tools, attached_skills, api_type, model)
 
-        Storage is session-scoped under data/sessions/<session_id>/blobs/
-        — never honors caller-supplied paths (defense against path
-        traversal). The inline replacement keeps the first 4KB so the
-        model retains some signal about what was returned.
-        """
-        if not isinstance(content, str):
-            try:
-                serialized = json.dumps(content) if not isinstance(content, str) else content
-            except Exception:
-                serialized = str(content)
-        else:
-            serialized = content
-        if len(serialized.encode("utf-8")) <= max_bytes:
-            return content, None
-        blobs_dir = os.path.join(SESSIONS_DIR, session_id, "blobs")
-        os.makedirs(blobs_dir, exist_ok=True)
-        # Sanitize msg_id (it's UUID hex, but be defensive).
-        safe_msg_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(msg_id))[:64] or "blob"
-        blob_path = os.path.join(blobs_dir, f"{safe_msg_id}.txt")
-        try:
-            with open(blob_path, "w", encoding="utf-8") as f:
-                f.write(serialized)
-        except Exception as e:
-            logger.warning(f"Failed to spill tool result to {blob_path}: {e}")
-            return content, None
-        head = serialized[:4_000]
-        replacement = (
-            f"{head}\n\n"
-            f"[truncated — full output ({len(serialized)} chars) saved to {blob_path}. "
-            f"Ask the user or run a follow-up tool call if you need the rest.]"
-        )
-        return replacement, blob_path
+    def _resolve_attachments(self, context_paths: list | None, api_type: str, model: str) -> tuple[str, list[dict], list[str]]:
+        return _resolve_attachments(context_paths, api_type, model)
 
-    def _build_prompt_content(self, prompt: str, images: list | None = None, context_paths: list | None = None, forced_tools: list[str] | None = None, attached_skills: list | None = None):
-        """Build message content with optional image blocks, context, and forced tools for the Claude API."""
-        context_text = self._resolve_context_paths(context_paths)
-        forced_tools_text = self._resolve_forced_tools(forced_tools)
-        skills_text = self._resolve_attached_skills(attached_skills)
-
-        parts = [p for p in (forced_tools_text, context_text, skills_text, prompt) if p]
-        full_prompt = "\n\n".join(parts)
-
-        if not images:
-            return full_prompt
-        content = [{"type": "text", "text": full_prompt}]
-        for img in images:
-            content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": img.get("media_type", "image/png"),
-                    "data": img["data"],
-                },
-            })
-        return content
+    def _resolve_context_paths(self, context_paths: list | None) -> str:
+        return _resolve_context_paths(context_paths)
 
     async def _run_agent_loop(self, session_id: str, prompt: str, images: list | None = None, context_paths: list | None = None, forced_tools: list[str] | None = None, attached_skills: list | None = None, fork_session: bool = False, selected_browser_ids: list[str] | None = None):
         """Run the Claude Agent SDK query loop for a session."""
@@ -1127,7 +390,12 @@ class AgentManager:
         if not session:
             return
         
-        prompt_content = self._build_prompt_content(prompt, images, context_paths, forced_tools, attached_skills)
+        from backend.apps.agents.providers.registry import get_api_type as _get_api_type
+        _api = _get_api_type(session.model)
+        prompt_content = self._build_prompt_content(
+            prompt, images, context_paths, forced_tools, attached_skills,
+            api_type=_api, model=session.model,
+        )
 
         try:
             from claude_agent_sdk import (
@@ -1163,7 +431,7 @@ class AgentManager:
         # explicitly in builtin_permissions.json). Bash defaults to "ask"
         # because every other builtin is sandboxed by domain (Read/Write
         # touch files but not the shell, browser tools touch a webview),
-        # whereas Bash is a full local shell — and the agent receives
+        # whereas Bash is a full local shell, and the agent receives
         # untrusted text from MCP tools (Gmail, WebFetch, browsing) that
         # can carry prompt injection. Without this, a poisoned email
         # could silently `rm -rf` the user. Users who want the old
@@ -1230,7 +498,7 @@ class AgentManager:
             except Exception:
                 return None
             # Normalize to forward slashes so the patterns match on Windows
-            # too — `os.path.normpath` produces backslashes on Windows
+            # too, `os.path.normpath` produces backslashes on Windows
             # (`C:\Users\eric\.ssh\authorized_keys`), and fnmatch treats
             # `/` in the pattern as a literal character. Without this,
             # every sensitive-path gate would silently no-op on Windows
@@ -1693,7 +961,7 @@ class AgentManager:
                 #     re-expand.
                 # If a subagent ever needs a parent activation, the user
                 # must approve it explicitly via MCPActivate inside the
-                # subagent session — same gate as a fresh top-level chat.
+                # subagent session, same gate as a fresh top-level chat.
                 sub_session = AgentSession(
                     id=sub_session_id,
                     name=sub_name,
@@ -1715,6 +983,7 @@ class AgentManager:
                     # than relying on the field's default_factory.
                     active_mcps=[],
                 )
+                _apply_context_window(sub_session)
                 self.sessions[sub_session_id] = sub_session
                 await ws_manager.broadcast_global("agent:status", {
                     "session_id": sub_session_id,
@@ -1731,7 +1000,7 @@ class AgentManager:
             # at *write* time (before the next turn ships history to the
             # SDK) so the bloat never re-enters context.
             try:
-                truncated_content, blob_path = self._truncate_large_tool_result(
+                truncated_content, blob_path = _truncate_large_tool_result(
                     result_msg.content, session.id, result_msg.id
                 )
                 if blob_path:
@@ -1750,7 +1019,7 @@ class AgentManager:
             _, mode_sys_prompt, _ = self._resolve_mode(session.mode)
             # MCP servers and their tool inventories are intentionally NOT
             # injected into the system prompt. The CLI's deferred-tool pool
-            # already exposes them by name via ToolSearch — eagerly listing
+            # already exposes them by name via ToolSearch, eagerly listing
             # connected MCPs (with account emails, full tool enumerations,
             # etc.) here would defeat the deferral and leak knowledge of
             # every connected integration into every turn. The model
@@ -1761,7 +1030,7 @@ class AgentManager:
             #   need to ask which account to use, or pass it explicitly.
             # - Discord guild-id "hard restriction" is gone as a prompt
             #   instruction. Enforce that at the Discord MCP server's
-            #   tool-call layer instead — prompt rules are not a security
+            #   tool-call layer instead, prompt rules are not a security
             #   boundary.
             connected_tools_ctx = None
             browser_ctx = self._build_browser_context(session.dashboard_id, selected_browser_ids=selected_browser_ids)
@@ -1814,10 +1083,13 @@ class AgentManager:
 
             # Per-turn estimate of framework overhead (subtracted from displayed
             # input). Conservative on purpose so honest over-shows beat lies.
-            # 16K Claude Code preset, 12K base+deferred tools, 600/MCP, char/4 prompt.
+            # 16K Claude Code preset, 12K base+deferred tools, ~3K/MCP (real
+            # MCP tool definitions range 1-10K depending on server; 3K is a
+            # rough median that keeps the meter honest without over-trimming),
+            # char/4 of composed prompt.
             _PRESET_OVERHEAD = 16_000
             _TOOL_DEFS_OVERHEAD = 12_000
-            _PER_MCP_OVERHEAD = 600
+            _PER_MCP_OVERHEAD = 3_000
             _composed_tokens = len(composed_prompt or "") // 4
             _mcp_tokens = len(session.active_mcps) * _PER_MCP_OVERHEAD
             session.framework_overhead_tokens = (
@@ -1906,7 +1178,7 @@ class AgentManager:
             # The CLI's built-in WebSearch/WebFetch wraps Anthropic's
             # web_search_20250305. For non-Claude primaries the CLI
             # delegates execution back to Anthropic via
-            # ANTHROPIC_SMALL_FAST_MODEL — needs an Anthropic credential
+            # ANTHROPIC_SMALL_FAST_MODEL, needs an Anthropic credential
             # or it 401s. We register our DDG-backed MCP only for users
             # with no Anthropic path; Anthropic's hosted search is
             # higher-quality so we prefer it whenever it's reachable.
@@ -1931,7 +1203,7 @@ class AgentManager:
                 pass
 
             # When the primary is non-Claude we deliberately don't count
-            # OpenSwarm Pro as an Anthropic path — using the Pro pool for
+            # OpenSwarm Pro as an Anthropic path, using the Pro pool for
             # WebSearch on a GPT/Gemini session would drain it for the
             # user's Claude turns. The user's GPT/Gemini subscription
             # serves their non-Claude turns at zero cost to us.
@@ -1945,7 +1217,7 @@ class AgentManager:
             # connection unless the user separately set up one. The CLI's
             # built-in WebSearch delegates to Anthropic Haiku, which falls
             # through 9Router to whichever connection serves anthropic/...
-            # ids — usually OpenRouter — and 401s. Force the openswarm-web
+            # ids, usually OpenRouter, and 401s. Force the openswarm-web
             # MCP to register so WebSearch always cascades through our own
             # /api/web/search (Gemini → OpenAI → DuckDuckGo).
             _is_custom_session = _api_type_for_session == "custom"
@@ -1953,7 +1225,7 @@ class AgentManager:
             # if the conversation primary IS Claude. Pre-fix: any user
             # with an Anthropic key set OR on OpenSwarm Pro skipped the
             # openswarm-web MCP registration and the CLI's built-in
-            # WebSearch routed to Anthropic Haiku — which on a Codex
+            # WebSearch routed to Anthropic Haiku, which on a Codex
             # /Gemini session drained the Pro pool's Haiku quota for
             # WebSearch calls, even though the conversation primary
             # (Codex/Gemini) supports native search via its own credits.
@@ -1994,7 +1266,7 @@ class AgentManager:
                     "type": "stdio",
                 }
                 logger.info(
-                    f"[MCP-DEBUG] Primary {_m} has no reliable native web search — "
+                    f"[MCP-DEBUG] Primary {_m} has no reliable native web search, "
                     f"registering openswarm-web (DDG search + trafilatura fetch, free)"
                 )
 
@@ -2032,7 +1304,7 @@ class AgentManager:
                     if name == "openswarm-web":
                         # Expose our DDG-backed web tools under an MCP prefix.
                         # Honor existing WebSearch/WebFetch permission policy
-                        # — if the user disabled them in Settings, don't offer
+                        #, if the user disabled them in Settings, don't offer
                         # the MCP variants either.
                         for wt in ("WebSearch", "WebFetch"):
                             policy = _builtin_perms.get(wt, "always_allow")
@@ -2071,14 +1343,14 @@ class AgentManager:
 
             # Tell the model directly which web tools work for this session.
             # The Claude Code CLI's deferred-tool registry still advertises bare
-            # `WebSearch` and `WebFetch` even when we've stripped them above —
+            # `WebSearch` and `WebFetch` even when we've stripped them above;
             # frontier models (Claude/GPT-5/Gemini Pro) intuit the namespaced
             # MCP variant from context, but smaller open-source models (gpt-oss
             # via Ollama, smaller Llama/Qwen, etc.) thrash on the deferred-tool
             # handshake (saw 2+ minutes of repeated `ToolSearch(select:WebSearch)`
             # → empty matches → retry). Naming the working tool here cuts that
             # to a single direct call. Only injected when (a) we registered the
-            # web MCP, AND (b) the user hasn't disabled the policy — matches
+            # web MCP, AND (b) the user hasn't disabled the policy, matches
             # the same gate the MCP allowlist uses, so disabling WebSearch in
             # Settings still wins.
             _web_tools_available = _need_web_mcp and (
@@ -2091,21 +1363,21 @@ class AgentManager:
                     "This session does NOT have the built-in `WebSearch` / "
                     "`WebFetch` tools (they delegate to Anthropic Haiku, which "
                     "isn't reachable on this primary). Use the MCP-backed "
-                    "equivalents instead — call them DIRECTLY, no ToolSearch "
+                    "equivalents instead, call them DIRECTLY, no ToolSearch "
                     "step needed:"
                 )
                 if "mcp__openswarm-web__WebSearch" in effective_allowed:
                     _hint_lines.append(
                         "- `mcp__openswarm-web__WebSearch(query: str, "
-                        "num_results?: int)` — DuckDuckGo search."
+                        "num_results?: int)`, DuckDuckGo search."
                     )
                 if "mcp__openswarm-web__WebFetch" in effective_allowed:
                     _hint_lines.append(
                         "- `mcp__openswarm-web__WebFetch(url: str, prompt?: "
-                        "str)` — fetch a URL and return readable text."
+                        "str)`, fetch a URL and return readable text."
                     )
                 _hint_lines.append(
-                    "Do not call `ToolSearch(select:WebSearch)` — bare "
+                    "Do not call `ToolSearch(select:WebSearch)`, bare "
                     "`WebSearch` is unavailable on this session and that path "
                     "will return empty matches."
                 )
@@ -2149,7 +1421,13 @@ class AgentManager:
 
             options_kwargs = {
                 "model": resolved_model,
-                "max_buffer_size": 5 * 1024 * 1024,
+                # 64 MB ceiling on the SDK <-> CLI JSON-RPC channel. The
+                # default 5 MB blocked any base64'd PDF over ~3.5 MB; we
+                # now route PDFs/images as native content blocks, which
+                # base64-expand by ~33%. 64 MB clears the largest single
+                # Anthropic PDF (32 MB raw) with headroom for prompt +
+                # tool results sharing the same frame.
+                "max_buffer_size": 64 * 1024 * 1024,
                 "permission_mode": "default",
                 "can_use_tool": can_use_tool,
                 "stderr": _stderr_cb,
@@ -2164,7 +1442,8 @@ class AgentManager:
             # cc/cx/gc/ag/gemini/openrouter prefixes force 9Router; route="api"
             # bypasses to the provider's host directly; otherwise Pro proxy or key.
             from backend.apps.nine_router import is_running as _9r_running
-            resolved_is_9router = isinstance(resolved_model, str) and resolved_model.startswith(("cc/", "cx/", "gc/", "ag/", "gemini/", "openrouter/"))
+            from backend.apps.agents.providers.registry import _NINEROUTER_MODEL_PREFIXES
+            resolved_is_9router = isinstance(resolved_model, str) and resolved_model.startswith(_NINEROUTER_MODEL_PREFIXES)
 
             from backend.apps.agents.providers.registry import _find_builtin_model
             _model_entry = _find_builtin_model(session.model)
@@ -2186,14 +1465,14 @@ class AgentManager:
                 logger.info(f"[MCP-DEBUG] Using direct Anthropic API key (route=api) for {session.model}")
             elif _is_pinned_api_route and _api_route_provider == "openai" and getattr(global_settings, "openai_api_key", None):
                 # Goes through 9Router's Anthropic→OpenAI translator like
-                # other own-key routes — but we point OPENAI_BASE_URL at a
+                # other own-key routes, but we point OPENAI_BASE_URL at a
                 # tiny local pass-through (/api/openai-passthrough/v1) that
                 # renames max_tokens → max_completion_tokens before relaying
                 # to api.openai.com. OpenAI's GPT-5 family rejects max_tokens
                 # with HTTP 400, and 9Router 0.3.60 doesn't know about
                 # max_completion_tokens yet (its CLI<->OpenAI translator
                 # emits the legacy field). The pin on 0.3.60 is intentional
-                # (newer 9Router versions regress WebSearch — see
+                # (newer 9Router versions regress WebSearch, see
                 # nine_router.py comment) so we patch the boundary instead
                 # of bumping. Pre-fix: every gpt-5.* / gpt-5.* own-key
                 # session 400'd silently.
@@ -2218,7 +1497,7 @@ class AgentManager:
                         raise ValueError(
                             "9Router could not start. Custom OpenAI-compatible "
                             "providers need 9Router to translate the Anthropic "
-                            "protocol — install Node.js and restart the app."
+                            "protocol, install Node.js and restart the app."
                         )
                 from backend.apps.agents.providers.registry import _find_custom_provider_for_value
                 cp = _find_custom_provider_for_value(global_settings, session.model)
@@ -2229,14 +1508,15 @@ class AgentManager:
                 }
                 if cp:
                     # Local OpenAI-compatible servers (LM Studio, Ollama, ...)
-                    # often run with auth disabled — the user leaves api_key
+                    # often run with auth disabled, the user leaves api_key
                     # blank in Settings. The OpenAI-style SDK insists on a
                     # non-empty key; substitute a harmless placeholder so the
                     # CLI can issue requests. Servers that DO check auth always
                     # have a real key configured.
                     env["OPENAI_API_KEY"] = (cp.api_key or "").strip() or "no-auth-required"
-                    env["OPENAI_BASE_URL"] = (cp.base_url or "")
-                # Pin subagent ids — without these, CLI's default Haiku 4.5
+                    from backend.apps.nine_router import normalize_openai_compat_base_url as _norm_cp_url
+                    env["OPENAI_BASE_URL"] = _norm_cp_url(cp.base_url or "")
+                # Pin subagent ids, without these, CLI's default Haiku 4.5
                 # gets sent to the custom provider and 404s.
                 if global_settings.anthropic_api_key:
                     env["CLAUDE_CODE_SUBAGENT_MODEL"] = "claude-sonnet-4-6"
@@ -2278,7 +1558,7 @@ class AgentManager:
                     if not _9r_running():
                         raise ValueError(
                             "9Router could not start. OpenRouter routing requires "
-                            "Node.js — install it and restart the app, or pick a "
+                            "Node.js, install it and restart the app, or pick a "
                             "model that uses a direct API key (Anthropic, OpenAI, "
                             "or Google AI Studio)."
                         )
@@ -2363,12 +1643,12 @@ class AgentManager:
                     env["ANTHROPIC_SMALL_FAST_MODEL"] = _small_model
                     env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = _small_model
                 logger.info(
-                    f"[MCP-DEBUG] 9Router direct — subagent_model={_sub_model}, small_fast={_small_model}"
+                    f"[MCP-DEBUG] 9Router direct, subagent_model={_sub_model}, small_fast={_small_model}"
                 )
                 # ENABLE_TOOL_SEARCH=auto: without it, CLI's tengu_defer_all_bn4
                 # Statsig flag defers 16 tools with no way to load them on non-
                 # Anthropic networks. "auto" eagerly loads tools when schema
-                # budget fits in ~10% of context. Don't pass --bare — sets
+                # budget fits in ~10% of context. Don't pass --bare, sets
                 # CLAUDE_CODE_SIMPLE=1 which strips the system prompt scaffolding.
                 env["ENABLE_TOOL_SEARCH"] = "auto"
                 options_kwargs["env"] = env
@@ -2403,7 +1683,7 @@ class AgentManager:
                 "preset": "claude_code",
             }
             # exclude_dynamic_sections=True moves cwd/git/OS grounding out of
-            # the cached prefix and into the first user message — unlocks
+            # the cached prefix and into the first user message, unlocks
             # Anthropic prompt cache (~80% input-token cut, 13-31% faster TTFT).
             # Trade-off: grounding freezes at turn 1.
             if composed_prompt:
@@ -2444,7 +1724,7 @@ class AgentManager:
             try:
                 level = getattr(session, "thinking_level", "auto") or "auto"
                 # Trivially short prompts ("hi", "thanks") don't benefit from
-                # 5-30s of hidden reasoning. Override per-turn only — session
+                # 5-30s of hidden reasoning. Override per-turn only, session
                 # setting is untouched so the UI pill keeps reflecting the
                 # user's choice.
                 _prompt_len = len((prompt or "").strip())
@@ -2501,7 +1781,7 @@ class AgentManager:
                 if session.needs_fork:
                     session.needs_fork = False
             elif len(session.messages) > 1:
-                history = self._build_history_prefix(self._get_branch_messages(session))
+                history = _build_history_prefix(_get_branch_messages(session))
                 if history:
                     if isinstance(prompt_content, str):
                         prompt_content = history + "\n\n" + prompt_content
@@ -2509,7 +1789,7 @@ class AgentManager:
                         prompt_content.insert(0, {"type": "text", "text": history})
 
             # Compaction trigger (Phase 2). Driven by live ctx_used ratio
-            # rather than turn count — fires when input_tokens/context_window
+            # rather than turn count, fires when input_tokens/context_window
             # crosses session.compact_threshold_pct (default 0.65). Cheap,
             # programmatic summarization (no aux LLM call) so this adds
             # zero latency on the user's turn.
@@ -2531,7 +1811,7 @@ class AgentManager:
                 # Use the most recent measurement (the prior turn's
                 # input_tokens) as the estimate. Conservative because the
                 # current turn's user prompt + any new history adds on top
-                # — but the first turn of a fresh session has tokens=0 so
+                #, but the first turn of a fresh session has tokens=0 so
                 # we only act once we've seen real numbers.
                 _est_tokens = session.tokens.get("input", 0)
                 _hard_cap = int(session.context_window * session.context_soft_cap_pct)
@@ -2550,6 +1830,29 @@ class AgentManager:
                             "trimmed": trimmed,
                             "estimate_after": _est_tokens,
                         })
+                        # Surface a visible system breadcrumb in the chat so
+                        # the user (and the model on the next turn) know
+                        # which MCPs got dropped. Without this, the model
+                        # may keep trying to call a now-missing tool and
+                        # the user has no idea why.
+                        try:
+                            _names = ", ".join(t.replace("mcp:", "") for t in trimmed)
+                            _trim_msg = Message(
+                                role="system",
+                                content=(
+                                    f"Trimmed {len(trimmed)} app{'s' if len(trimmed) != 1 else ''} from this session to fit "
+                                    f"the model's context: {_names}. Re-activate via MCPSearch + MCPActivate "
+                                    "if you still need them."
+                                ),
+                                branch_id=session.active_branch_id,
+                            )
+                            session.messages.append(_trim_msg)
+                            await ws_manager.send_to_session(session_id, "agent:message", {
+                                "session_id": session_id,
+                                "message": _trim_msg.model_dump(mode="json"),
+                            })
+                        except Exception:
+                            logger.exception("failed to emit MCP-trimmed breadcrumb")
                         # Trimming changes mcp_servers / outputs context →
                         # rebuild options. The cheapest correct path is
                         # to flag for fork on next turn via needs_fork
@@ -2589,7 +1892,7 @@ class AgentManager:
             _turn_thinking_text_parts: list[str] = []
             _turn_tool_count: int = 0
             _turn_started_ts: float | None = None
-            # Wall-clock turn duration (ms) — covers thinking + tool
+            # Wall-clock turn duration (ms), covers thinking + tool
             # execution + assistant text. Updated continuously as the
             # turn unfolds. Used for the "Thought for Ns" segment so
             # the duration reflects the entire user-visible wait, not
@@ -2598,14 +1901,14 @@ class AgentManager:
             # Total output tokens across every AssistantMessage in the
             # turn (thinking + visible text + tool-call JSON args). The
             # consolidated thinking pill's `tokens` segment uses this
-            # rather than thinking-text-only chars/3.6 — answers the
+            # rather than thinking-text-only chars/3.6, answers the
             # question "how much work did the model produce on this
             # turn" honestly. Populated from each AssistantMessage's
             # usage.output_tokens; fallback heuristic kicks in only
             # when usage is absent.
             _turn_output_tokens: int = 0
             # Running char counts for the streaming portions of the
-            # turn — used to grow the token estimate while assistant
+            # turn, used to grow the token estimate while assistant
             # text and tool-call JSON args are still streaming, BEFORE
             # the SDK has emitted a final usage.output_tokens count
             # for those blocks. Once the AssistantMessage lands with
@@ -2637,7 +1940,7 @@ class AgentManager:
             _first_event = True
             # True between the first non-ResultMessage of a turn and the
             # following ResultMessage; False at turn boundaries. The retry
-            # layer below only retries at boundaries — resuming mid-turn via
+            # layer below only retries at boundaries, resuming mid-turn via
             # sdk_session_id would risk duplicating user-visible output.
             _current_turn_emitted = False
 
@@ -2652,7 +1955,7 @@ class AgentManager:
 
             async def _emit_consolidated_thinking(force_provider_unavailable: bool = False) -> None:
                 """Build the running aggregate Message and broadcast it.
-                Safe to call multiple times — uses a stable per-turn id
+                Safe to call multiple times, uses a stable per-turn id
                 so the frontend dedupes by id and updates the bubble in
                 place.
 
@@ -2660,7 +1963,7 @@ class AgentManager:
                   1. Reasoning text exists (Anthropic happy path).
                   2. Upstream provider reported reasoning tokens via
                      9Router (best-effort path for GPT/Gemini).
-                  3. force_provider_unavailable=True — caller has
+                  3. force_provider_unavailable=True, caller has
                      determined this turn went through a translator that
                      doesn't carry reasoning content (cx/ or gc/), and
                      the user should see a "provider doesn't expose
@@ -2696,7 +1999,7 @@ class AgentManager:
                         and not force_provider_unavailable
                     ):
                         # No text, no upstream signal, and caller didn't
-                        # ask for the unavailable-pill — nothing to show.
+                        # ask for the unavailable-pill, nothing to show.
                         return
                 joined_text = "\n".join(_turn_thinking_text_parts)
                 # Total turn output token estimate. Combines two sources:
@@ -2706,7 +2009,7 @@ class AgentManager:
                 #   - chars/3.6 heuristic over the running streams of
                 #     thinking + assistant-text + tool-input JSON
                 #     (covers in-flight blocks the SDK hasn't billed
-                #     yet — i.e. the answer the user is currently
+                #     yet, i.e. the answer the user is currently
                 #     reading).
                 # Take the max so the number doesn't visually shrink as
                 # the SDK's authoritative count overtakes our running
@@ -2756,23 +2059,23 @@ class AgentManager:
                         pass
                 if _turn_thinking_msg_id is None:
                     _turn_thinking_msg_id = uuid4().hex
-                # Combined token total for the pill — input + output for
+                # Combined token total for the pill, input + output for
                 # the parent turn PLUS any work delegated to subagents
                 # (browser agents, invoke-agent forks) and tool MCP
                 # servers that produced their own usage on this turn.
                 # The user-visible answer to "how big is this turn" is
                 # the all-in sum, not just the primary's output. We sum
                 # every reachable source:
-                #   - parent's input  (session.tokens["input"] —
+                #   - parent's input  (session.tokens["input"],
                 #     ResultMessage.usage at line ~2886)
-                #   - parent's output (session.tokens["output"] — same
+                #   - parent's output (session.tokens["output"], same
                 #     ResultMessage)
                 #   - every direct sub-session whose parent_session_id
                 #     points at this session (browser agents, sub-agent
                 #     forks, invoke-agent calls book their own usage at
-                #     subprocess return time — agent_manager.py:1365 +
+                #     subprocess return time, agent_manager.py:1365 +
                 #     browser_agent.py:1000-1001)
-                # This mirrors how billing accumulates per-turn — caches,
+                # This mirrors how billing accumulates per-turn, caches,
                 # tool MCP servers that talk to LLMs (e.g. summarizers),
                 # and subagent reasoning all show up under the parent's
                 # "session.tokens" once their result lands.
@@ -2801,7 +2104,7 @@ class AgentManager:
                     pass
 
                 # Fall back to cumulative if the baseline wasn't captured
-                # (degenerate empty turn — better than showing zero).
+                # (degenerate empty turn, better than showing zero).
                 if _turn_baseline_captured:
                     _parent_in = max(0, _cum_in - _turn_baseline_session_in)
                     _parent_out = max(0, _cum_out - _turn_baseline_session_out)
@@ -2890,7 +2193,7 @@ class AgentManager:
                     else:
                         _current_turn_emitted = True
                         # Stamp the turn's wall-clock start at the FIRST
-                        # non-Result message we see — this is when the
+                        # non-Result message we see, this is when the
                         # user actually started waiting. We use the same
                         # timestamp as the basis for "Thought for Ns"
                         # so the duration covers thinking + tool exec
@@ -2922,7 +2225,7 @@ class AgentManager:
                             # translator strips reasoning content (cx/, gc/,
                             # ag/, gemini/). Without this, the pill emits
                             # at turn end and lands BELOW the assistant
-                            # text in session.messages — visually wrong.
+                            # text in session.messages, visually wrong.
                             # Pre-emitting here gives the pill the same
                             # ordering as Anthropic's natural streaming
                             # path. Updates in place at turn end via the
@@ -2977,7 +2280,7 @@ class AgentManager:
                                 # (GPT-5.3 Codex, Gemini 3 Pro/Flash, Claude
                                 # with extended thinking). Rendered as a
                                 # collapsible "thinking" message in the UI via
-                                # the existing stream infrastructure — the
+                                # the existing stream infrastructure, the
                                 # frontend already handles role="thinking" for
                                 # the DynamicIsland/agent card rendering.
                                 thinking_msg_id = uuid4().hex
@@ -3001,7 +2304,7 @@ class AgentManager:
                                 # consolidated thinking pill. The
                                 # AssistantMessage path (further down)
                                 # ALSO increments _turn_tool_count when
-                                # ToolUseBlocks fully arrive — but for
+                                # ToolUseBlocks fully arrive, but for
                                 # OpenAI/Gemini through 9Router the
                                 # AssistantMessage envelope is sometimes
                                 # incomplete, so this stream-level count
@@ -3009,7 +2312,7 @@ class AgentManager:
                                 # segment renders cross-provider. To
                                 # avoid double-counting we DON'T also
                                 # increment on AssistantMessage when
-                                # this code path already fired — see
+                                # this code path already fired, see
                                 # the dedupe at the AssistantMessage
                                 # block below.
                                 _turn_tool_count += 1
@@ -3059,7 +2362,7 @@ class AgentManager:
                             # If this was a thinking block, accumulate
                             # elapsed_ms server-side. We don't include
                             # per-block elapsed/tokens on the WS event
-                            # — the pill stays in "Thinking…" until the
+                            #, the pill stays in "Thinking…" until the
                             # AssistantMessage lands carrying the per-turn
                             # aggregate values.
                             if index in _thinking_block_starts:
@@ -3096,7 +2399,7 @@ class AgentManager:
                                 thinking_text = getattr(block, "thinking", None) or getattr(block, "text", None) or ""
                                 if thinking_text:
                                     new_thinking_parts.append(thinking_text)
-                                # Try multiple field-name variants — SDK
+                                # Try multiple field-name variants, SDK
                                 # versions and 9Router translations have
                                 # used `signature`, `thoughtSignature`,
                                 # and `thought_signature` over time.
@@ -3138,7 +2441,7 @@ class AgentManager:
                         # higher count.
                         if new_thinking_parts:
                             _turn_thinking_text_parts.extend(new_thinking_parts)
-                        # Latch the most recent thoughtSignature — Gemini
+                        # Latch the most recent thoughtSignature, Gemini
                         # only validates against the LATEST one in the
                         # conversation history, so older signatures from
                         # earlier think-steps in the same turn are
@@ -3194,7 +2497,7 @@ class AgentManager:
                                 if "codex/" in _lower_text or "[codex" in _lower_text:
                                     friendly = (
                                         "GPT subscription token expired. Open Settings → Models and click "
-                                        "Reconnect on the OpenAI / GPT row to refresh — should take ~10s, "
+                                        "Reconnect on the OpenAI / GPT row to refresh, should take ~10s, "
                                         "then send your message again."
                                     )
                                     reason = "codex_token_expired"
@@ -3259,7 +2562,7 @@ class AgentManager:
                         # ResultMessage carries the AUTHORITATIVE per-turn
                         # output_tokens count. Some providers (notably
                         # OpenAI/Gemini through 9Router) only populate
-                        # `usage.output_tokens` here — not on individual
+                        # `usage.output_tokens` here, not on individual
                         # AssistantMessages. Fold this into the running
                         # turn aggregate BEFORE emitting the final
                         # consolidated thinking message, so the bubble's
@@ -3269,7 +2572,7 @@ class AgentManager:
                             _result_usage = getattr(message, "usage", None) or {}
                             if isinstance(_result_usage, dict):
                                 _result_out = int(_result_usage.get("output_tokens", 0) or 0)
-                                # Take the max — if individual
+                                # Take the max, if individual
                                 # AssistantMessages already summed to a
                                 # larger number we trust that; otherwise
                                 # ResultMessage's count fills the gap.
@@ -3379,7 +2682,7 @@ class AgentManager:
                                     # provider (Ollama Cloud, Together, Groq,
                                     # local LMs, etc.). Pricing is unknowable
                                     # without per-provider rate tables that
-                                    # would rot fast — zero out instead of
+                                    # would rot fast, zero out instead of
                                     # showing the SDK's Anthropic-rate
                                     # estimate, which is meaningless here.
                                     _free_route = True
@@ -3402,6 +2705,32 @@ class AgentManager:
                                         (inp + cache_create + cache_read) * in_rate
                                         + out * out_rate
                                     ) / 1_000_000
+                            elif api_type in ("openai", "gemini") or (
+                                isinstance(resolved_model, str)
+                                and (resolved_model.startswith("cp-openai/")
+                                     or resolved_model.startswith("cp-gemini/")
+                                     or resolved_model.startswith("cp-google/"))
+                            ):
+                                # Direct OpenAI/Gemini API key lane. SDK's
+                                # total_cost_usd is computed at Anthropic
+                                # rates (Opus pricing), for GPT-5.4-Mini
+                                # at $0.25/M input that's a 60x overcount
+                                # ($30 instead of $0.04 per Mehmet-style
+                                # 4-PDF turn). Use the published per-model
+                                # rates instead.
+                                from backend.apps.agents.providers.registry import get_direct_pricing
+                                pricing = get_direct_pricing(resolved_model) or get_direct_pricing(session.model)
+                                if pricing:
+                                    in_rate, out_rate = pricing
+                                    cost = (
+                                        (inp + cache_create + cache_read) * in_rate
+                                        + out * out_rate
+                                    ) / 1_000_000
+                                else:
+                                    # Unknown model in this family: zero out
+                                    # rather than ship an Anthropic-rate
+                                    # estimate that's wildly wrong.
+                                    cost = 0.0
 
                             session.cost_usd = cost
                             await ws_manager.send_to_session(session_id, "agent:cost_update", {
@@ -3411,13 +2740,15 @@ class AgentManager:
 
                         if isinstance(usage, dict):
                             # Per-turn context-usage broadcast. Drives the UI
-                            # status pill, the auto-compact threshold (Phase 2),
-                            # and is the user's only honest signal that they're
-                            # approaching the context cap. 200K is the standard-
-                            # tier ceiling Anthropic returns the
-                            # long-context-required 429 against; it's also the
-                            # right denominator for OAuth Pro/Max users.
-                            ctx_used_pct = round(total_input / 200_000.0, 4) if total_input else 0.0
+                            # status pill and the auto-compact threshold. The
+                            # denominator is the session's real model cap,
+                            # populated from registry.get_context_window at
+                            # session creation, restore, and model-switch
+                            # (see _apply_context_window). max(1, ...) is a
+                            # belt-and-braces guard against zero/None drift
+                            # from any future restore-from-disk corner case.
+                            _ctx_window = max(1, getattr(session, "context_window", 0) or 200_000)
+                            ctx_used_pct = round(total_input / _ctx_window, 4) if total_input else 0.0
                             cache_read_pct = round(cache_read / total_input, 4) if total_input else 0.0
                             try:
                                 await ws_manager.send_to_session(session_id, "agent:context_update", {
@@ -3427,6 +2758,8 @@ class AgentManager:
                                     "cache_read_tokens": cache_read,
                                     "cache_read_pct": cache_read_pct,
                                     "ctx_used_pct": ctx_used_pct,
+                                    "context_window": _ctx_window,
+                                    "framework_overhead_tokens": session.framework_overhead_tokens,
                                     "active_mcps": list(session.active_mcps),
                                 })
                             except Exception:
@@ -3468,7 +2801,7 @@ class AgentManager:
                         # we wait and restart. On resume the CLI re-runs the
                         # last turn from scratch (Anthropic doesn't persist
                         # in-progress responses), so the partial assistant
-                        # text / tool call we emitted is now orphaned — cap
+                        # text / tool call we emitted is now orphaned, cap
                         # it with stream_end and start the fresh turn under a
                         # new message id.
                         if stream_text_msg_id:
@@ -3526,44 +2859,88 @@ class AgentManager:
             # Long-context-required 429 fork: surface a friendly overflow event
             # so the frontend can render an actionable card ("Switch to Chat
             # mode" / "Start a fresh chat") instead of a raw error blob. The
-            # user can't recover by waiting — this is a tier-gate, not a rate
-            # limit — so the UX matters.
+            # user can't recover by waiting, this is a tier-gate, not a rate
+            # limit, so the UX matters.
             try:
                 _stderr_tail = "\n".join(_stderr_buffer[-50:])
             except Exception:
                 _stderr_tail = ""
+            # If we already streamed a substantive assistant response this
+            # turn, the user got their answer; the error fired on a
+            # subsequent step (title gen, follow-up tool turn, etc.).
+            # Don't blast a "context exceeded" card over a completed reply.
+            _streamed_substantive = bool(stream_text_msg_id) and _current_turn_emitted
+            if _streamed_substantive and _is_long_context_error(e, extra_text=_stderr_tail):
+                # Mark the session completed (not error), keep the assistant
+                # reply visible, and skip the overflow card. The next user
+                # turn will properly hit the pre-send guard if the chat is
+                # still over cap.
+                session.status = "completed"
+                if stream_text_msg_id:
+                    try:
+                        await ws_manager.send_to_session(session_id, "agent:stream_end", {
+                            "session_id": session_id,
+                            "message_id": stream_text_msg_id,
+                        })
+                    except Exception:
+                        pass
+                return
             if _is_long_context_error(e, extra_text=_stderr_tail):
                 friendly_msg = (
                     "This conversation has grown too large for your account's "
                     "standard context window. Long-context requests require an "
-                    "upgraded tier — switch to Chat mode or start a fresh chat "
+                    "upgraded tier, switch to Chat mode or start a fresh chat "
                     "to continue."
                 )
                 error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
                 session.messages.append(error_msg)
-                await ws_manager.send_to_session(session_id, "agent:context_overflow", {
+                _ovf_payload = {
                     "session_id": session_id,
                     "reason": "long_context_required",
                     "message": friendly_msg,
+                    "model": session.model,
+                    "provider": session.provider,
+                    "context_window": session.context_window,
+                    "framework_overhead_tokens": session.framework_overhead_tokens,
                     "input_tokens": session.tokens.get("input", 0),
                     "active_mcps": list(session.active_mcps),
-                })
+                    "compact_threshold_pct": session.compact_threshold_pct,
+                    "context_soft_cap_pct": session.context_soft_cap_pct,
+                }
+                await ws_manager.send_to_session(session_id, "agent:context_overflow", _ovf_payload)
                 await ws_manager.send_to_session(session_id, "agent:message", {
                     "session_id": session_id,
                     "message": error_msg.model_dump(mode="json"),
                 })
+                try:
+                    from backend.apps.service.client import submit_diagnostic
+                    submit_diagnostic({
+                        "kind": "context_overflow",
+                        "where": "agent_manager._run_streaming_turn",
+                        "session_id": session_id,
+                        "model": session.model,
+                        "provider": session.provider,
+                        "context_window": session.context_window,
+                        "input_tokens": session.tokens.get("input", 0),
+                        "framework_overhead_tokens": session.framework_overhead_tokens,
+                        "active_mcps_count": len(session.active_mcps),
+                        "messages_count": len(session.messages),
+                        "error_preview": (str(e) or "")[:500],
+                    })
+                except Exception:
+                    logger.debug("submit_diagnostic for context_overflow failed", exc_info=True)
             elif _is_auth_error(e, extra_text=_stderr_tail):
                 # Three sub-cases the user can hit, with distinct fixes:
-                #   1. "No credentials for provider: claude" — user picked a
+                #   1. "No credentials for provider: claude", user picked a
                 #      -cc route but doesn't have Claude Pro/Max connected
                 #      via 9Router. Tell them to either connect Claude
                 #      Pro/Max OR pick a non--cc model.
-                #   2. OpenSwarm Pro 401 — bearer expired. Reconnect.
-                #   3. Anthropic API key 401 — wrong key. Re-enter.
+                #   2. OpenSwarm Pro 401, bearer expired. Reconnect.
+                #   3. Anthropic API key 401, wrong key. Re-enter.
                 _model = (session.model or "").lower()
                 _combined = f"{e!s}\n{_stderr_tail}".lower()
                 # Codex/OpenAI subscription tokens rotate every ~2-3
-                # minutes — the user sees the rotation window as a 401
+                # minutes, the user sees the rotation window as a 401
                 # with "reset after 1m 59s" or similar. Don't ask them to
                 # reconnect; just tell them to wait it out and retry.
                 if (
@@ -3571,7 +2948,7 @@ class AgentManager:
                     and ("authentication token is expired" in _combined or "authentication token has expired" in _combined or "401" in _combined)
                 ):
                     friendly_msg = (
-                        "GPT subscription token just rotated — this is "
+                        "GPT subscription token just rotated, this is "
                         "automatic and resets every couple minutes. Send "
                         "your message again in ~1 minute and it'll go "
                         "through. (No need to reconnect anything.)"
@@ -3831,6 +3208,7 @@ class AgentManager:
             data = _load_session_data(session_id)
             if data:
                 session = AgentSession(**data)
+                _apply_context_window(session)
                 session.closed_at = None
                 self.sessions[session_id] = session
             else:
@@ -3856,6 +3234,7 @@ class AgentManager:
                 logger.info(f"[MCP-DEBUG] Forking session: api_type changed {session.model}→{model}")
 
             session.model = model
+            _apply_context_window(session)
             session_changed = True
         if mode and mode != session.mode:
             session.mode = mode
@@ -3891,7 +3270,7 @@ class AgentManager:
         # Fire a background aux LLM call to generate a 3-6 word verb-phrase
         # describing this turn ("Auditing the pull request", "Drafting your
         # email"). The narrator pill swaps from its heuristic verb to this
-        # label as soon as it lands — usually ~500ms-1s into the turn,
+        # label as soon as it lands, usually ~500ms-1s into the turn,
         # which is exactly when "Thinking…" starts feeling generic.
         # Provider-agnostic via resolve_aux_model. Non-blocking; failure
         # is silent and the heuristic stays.
@@ -4136,7 +3515,7 @@ class AgentManager:
         Fires in the background while the actual turn streams. The pill
         renderer swaps from its heuristic verb to this label as soon as it
         arrives, then back to the heuristic if the call fails. Cost is
-        ~$0.0001 per turn at Haiku tier — trivial vs the perceived-quality
+        ~$0.0001 per turn at Haiku tier, trivial vs the perceived-quality
         win.
 
         Provider-agnostic per memory rule: uses `resolve_aux_model`
@@ -4213,13 +3592,13 @@ class AgentManager:
 
         Skips silently if the session doesn't exist, isn't on Anthropic,
         or has no Anthropic credentials. Skips if a real request is
-        already in flight on this session — Anthropic permits parallel
+        already in flight on this session, Anthropic permits parallel
         requests but it just wastes the warm.
         """
         session = self.sessions.get(session_id)
         if not session:
             return
-        # If a real run is in flight, the cache will be warmed by it —
+        # If a real run is in flight, the cache will be warmed by it;
         # firing again is wasted tokens.
         existing = self.tasks.get(session_id)
         if existing and not existing.done():
@@ -4363,44 +3742,10 @@ class AgentManager:
 
     @staticmethod
     def _build_search_text(session: AgentSession, max_len: int = 5000) -> str:
-        """Build a search-indexing string from the session name and message content."""
-        parts = [session.name or ""]
-        for msg in session.messages:
-            if msg.role in ("user", "assistant") and isinstance(msg.content, str):
-                parts.append(msg.content)
-        text = " ".join(parts)
-        return text[:max_len]
+        return build_search_text(session, max_len)
 
     def _sync_session_close(self, session: AgentSession, close_reason: str = "user"):
-        """Submit the session state to the cloud on close. The cloud
-        consumes the dump however it sees fit; the desktop just hands off
-        a snapshot. Skipped for mock sessions so dev runs don't post to
-        the real backend.
-
-        Synthesizes a `closed_at` timestamp on the dump if the session
-        doesn't have one. Two paths previously sent close-events without
-        a timestamp and made the cloud unable to compute duration_ms
-        (which surfaced as duration_ms=null on 90% of session.ended events
-        — browser-agent and shutdown paths in particular):
-
-          1. browser_agent.py calls this without setting closed_at.
-          2. shutdown_all_sessions() clears closed_at to None for the
-             on-disk restore mechanism, then syncs.
-
-        Fix is here at the bottleneck rather than at every caller so we
-        can't miss a future call site. The on-disk session JSON keeps its
-        original (possibly None) closed_at — only the cloud-bound dump
-        gets the synthesized timestamp.
-        """
-        if close_reason == "mock" or getattr(session, "_mock_run", False):
-            return
-        try:
-            dump = session.model_dump(mode="json")
-            if not dump.get("closed_at"):
-                dump["closed_at"] = datetime.now().isoformat()
-            _sync(dump)
-        except Exception:
-            pass
+        _sync_session_close(session, close_reason)
 
     async def close_session(self, session_id: str) -> None:
         """Close a session: pause the agent if running, persist to JSON file,
@@ -4492,6 +3837,7 @@ class AgentManager:
             raise ValueError(f"Session {session_id} not found in history")
 
         session = AgentSession(**data)
+        _apply_context_window(session)
 
         hours_since_closed = 0
         if data.get("closed_at"):
@@ -4615,6 +3961,7 @@ class AgentManager:
             if session.status in ("running", "waiting_approval"):
                 session.status = "stopped"
             session.pending_approvals = []
+            _apply_context_window(session)
             self.sessions[session.id] = session
             _delete_session_file(sid)
             logger.info(f"Restored session {session.id}")
@@ -4627,6 +3974,7 @@ class AgentManager:
             if data is None:
                 raise ValueError(f"Session {session_id} not found")
             source = AgentSession(**data)
+            _apply_context_window(source)
 
         source_messages = list(source.messages)
         if up_to_message_id:
@@ -4683,6 +4031,7 @@ class AgentManager:
             sdk_session_id=source.sdk_session_id,
             needs_fork=True,
         )
+        _apply_context_window(new_session)
 
         self.sessions[new_session.id] = new_session
 
@@ -4708,6 +4057,7 @@ class AgentManager:
             if data is None:
                 raise ValueError(f"Session {source_session_id} not found")
             source = AgentSession(**data)
+            _apply_context_window(source)
 
         source_name = source.name
 
@@ -4723,7 +4073,14 @@ class AgentManager:
                 timestamp=msg.timestamp,
                 branch_id=msg.branch_id,
                 parent_id=old_to_new_msg.get(msg.parent_id) if msg.parent_id else None,
-                context_paths=msg.context_paths,
+                # Sub-agents do NOT inherit parent's attached files. Each
+                # parent-message base64-expansion would re-fire in the
+                # sub-agent (cost explosion: a 25 MB PDF in parent +
+                # 5 InvokeAgent calls = 125 MB transmitted). The
+                # sub-agent receives the user's new message only; if it
+                # needs the file content, the parent message text from
+                # the prior turn already carries the model's summary.
+                context_paths=None,
                 attached_skills=msg.attached_skills,
                 forced_tools=msg.forced_tools,
                 images=msg.images,
@@ -4760,6 +4117,7 @@ class AgentManager:
             dashboard_id=dashboard_id or source.dashboard_id,
             parent_session_id=parent_session_id,
         )
+        _apply_context_window(fork)
 
         self.sessions[fork.id] = fork
 

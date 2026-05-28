@@ -11,43 +11,16 @@ interface Props {
 }
 
 const SAFE_PAD = 8;
-// Slight bump to APPROX_W to match the larger font — keeps line-wrap
-// behavior similar to before. The runtime measures the real rect via
-// ref so this is just an initial-mount estimate.
 const APPROX_W = 320;
 const APPROX_H = 70;
-// Distance from the bubble edge to the rounded corner radius — the
-// tail's anchor x is clamped between TAIL_PAD and (w - TAIL_PAD) so
-// the tail never juts past the corner.
 const TAIL_PAD = 16;
 
-// Pokémon-dialog cadence — letters pop in steadily, punctuation gets
-// a small extra pause so sentences "land" instead of slurring together.
-// Slowed 50% (was 20ms/char) so the popup reads at a more deliberate
-// pace, matching the AC cursor's calmer motion.
 const STREAM_MS_PER_CHAR = 30;
-const STREAM_PUNCT_EXTRA_MS = 210; // after . , ! ? ; : (also +50%)
+/** Extra pause after . , ! ? ; : */
+const STREAM_PUNCT_EXTRA_MS = 210;
 const STREAM_MIN_CHARS = 5;
 
-/**
- * Tiny popup that follows the cursor. Non-blocking — no CTA.
- *
- * Streams text character-by-character like an RPG dialog box (modulo
- * very short strings, which appear instantly to avoid visual jank on
- * single-word popups).
- *
- * Positioning: vertical-only — the bubble sits DIRECTLY ABOVE the
- * cursor (centered horizontally on the cursor's actual x), with the
- * tail pointing down at the target icon. Flips to BELOW the cursor
- * only when there isn't room above. This places the popup "over" the
- * thing it's referring to instead of beside it, so adjacent siblings
- * (toolbar [+ grid globe history note], chat-input [cursor-circle clip
- * mic], etc.) are never covered by the bubble's body.
- *
- * The tail anchors at the cursor's actual x relative to the bubble's
- * (possibly clamped) left edge, so it still points at the icon even
- * when the bubble is shifted by the viewport-edge clamp.
- */
+/** Non-blocking cursor popup; streams char-by-char above the cursor (flips below if no room). */
 const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
   const c = useClaudeTokens();
   const { x, y, visible } = useCursorPosition();
@@ -64,19 +37,7 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
     flipY: true,
   });
 
-  // Streaming text state — grows from 0 to text.length char-by-char.
-  // Use chained setTimeout (not setInterval) so we can vary the delay
-  // per character — punctuation gets an extra beat, mimicking the
-  // pacing of Pokémon-style dialog boxes where sentences "land."
-  //
-  // Diagnostic popups (anything containing the literal `[debug]`
-  // marker) skip streaming entirely. The recovery popup that fires on
-  // step failure carries a `[debug] <error message>` suffix so the
-  // user can see WHY a step bailed without opening DevTools — but at
-  // 30 ms/char + 210 ms per punctuation, the suffix takes the full
-  // 14 s popup duration to even start rendering, so by the time the
-  // user reads it the popup is already gone. Instant-render for these
-  // means the diagnostic appears immediately.
+  // [debug] popups skip streaming so the diagnostic suffix is visible immediately.
   const isDebugPopup = text.includes('[debug]');
   const skipStream = isDebugPopup || text.length < STREAM_MIN_CHARS;
   const [streamCount, setStreamCount] = useState<number>(
@@ -97,9 +58,7 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
         timer = null;
         return;
       }
-      // Look at the char we *just* revealed — if it's punctuation,
-      // wait an extra beat before the next one. Mirrors Pokémon's
-      // "..." and end-of-sentence pacing.
+      // Punctuation we just revealed gets an extra beat.
       const justShown = text[i - 1];
       const isPunct = /[.,!?;:]/.test(justShown);
       const delay = STREAM_MS_PER_CHAR + (isPunct ? STREAM_PUNCT_EXTRA_MS : 0);
@@ -118,8 +77,6 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // Default: bubble centered on cursor's x, sitting above the cursor.
-    // Flip below only when there isn't room above.
     let nx = x - w / 2;
     let ny = y - h - offset.y;
     let flipY = true;
@@ -128,10 +85,7 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
       flipY = false;
     }
 
-    // Horizontal clamp — keep the bubble on-screen. The tail's anchor x
-    // is computed AFTER clamping so the tail always points at the
-    // cursor's actual position even when the bubble has been shoved
-    // inward by the viewport edge.
+    // Tail anchor x is computed AFTER clamp so it still points at the cursor when bubble shifts.
     const nxClamped = Math.max(SAFE_PAD, Math.min(nx, vw - w - SAFE_PAD));
     const nyClamped = Math.max(SAFE_PAD, Math.min(ny, vh - h - SAFE_PAD));
     const tailRaw = x - nxClamped;
@@ -143,8 +97,7 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
   if (!visible) return null;
 
   const displayText = text.slice(0, streamCount);
-  // Reserve full width with invisible char to prevent the bubble from
-  // jiggling as letters arrive — invisible character keeps wrap consistent.
+  // Reserve full width with invisible chars so the bubble doesn't jiggle as letters arrive.
   const isStreaming = streamCount < text.length;
 
   return (
@@ -160,9 +113,7 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
       }}
       exit={{ opacity: 0, scale: 0.85 }}
       transition={{
-        // Slowed 50% from {0.14, stiffness 320, damping 32} — gives the
-        // bubble a more deliberate arrival, in sync with the cursor's
-        // gentler spring.
+        // Slowed 50% from {0.14, 320, 32}; matches cursor spring.
         opacity: { duration: 0.21 },
         scale: { duration: 0.21 },
         x: { type: 'spring', stiffness: 160, damping: 22 },
@@ -191,10 +142,7 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
           fontFamily: c.font.sans,
         }}
       >
-        {/* Tail pointing back at the cursor. Centered on the cursor's
-            actual x (via tailLeft) so the diamond's point lands on the
-            target icon, regardless of whether the bubble itself was
-            shifted by the viewport clamp. */}
+        {/* Tail anchored on cursor's actual x via tailLeft; lands on target despite bubble clamp. */}
         <Box
           sx={{
             position: 'absolute',
@@ -206,11 +154,7 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
             top: pos.flipY ? 'auto' : -5,
             bottom: pos.flipY ? -5 : 'auto',
             left: pos.tailLeft - 5,
-            // flipY=true → bubble is above cursor, tail at bubble's
-            // bottom edge → bottom-right corner borders visible so the
-            // diamond points down at the cursor.
-            // flipY=false → bubble is below cursor, tail at top edge →
-            // top-left corner borders visible, diamond points up.
+            // flipY true: bubble above, tail at bottom (br corners visible, points down). flipY false flips.
             borderRight: pos.flipY ? `1px solid ${c.accent.primary}` : 'none',
             borderBottom: pos.flipY ? `1px solid ${c.accent.primary}` : 'none',
             borderTop: pos.flipY ? 'none' : `1px solid ${c.accent.primary}`,
@@ -219,9 +163,7 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
         />
         <Typography
           sx={{
-            // Sized to feel like a Pokémon dialog — small but firm.
-            // 0.85rem reads cleanly without dominating the screen,
-            // and pairs with the bolder weight to stay legible.
+            // 0.85rem with bold weight reads cleanly without dominating.
             fontSize: '0.85rem',
             color: c.text.primary,
             fontWeight: 600,

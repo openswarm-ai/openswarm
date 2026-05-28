@@ -13,7 +13,7 @@ import ListItemText from '@mui/material/ListItemText';
 import AddIcon from '@mui/icons-material/Add';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import { Skeleton } from '@/app/components/Loading';
+import { Skeleton } from '@/app/components/feedback/Loading';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EditIcon from '@mui/icons-material/Edit';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -28,6 +28,7 @@ import {
   Dashboard,
 } from '@/shared/state/dashboardsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { byPreviewRecency } from '@/shared/previewOrder';
 
 function formatRelativeTime(dateStr: string | null): string {
   if (!dateStr) return '';
@@ -59,9 +60,7 @@ const DashboardSelection: React.FC = () => {
   }, [dispatch]);
 
   const dashboards = useMemo(() => {
-    const all = Object.values(items).sort(
-      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-    );
+    const all = Object.values(items).sort(byPreviewRecency);
     if (!search.trim()) return all;
     const q = search.toLowerCase();
     return all.filter((d) => d.name.toLowerCase().includes(q));

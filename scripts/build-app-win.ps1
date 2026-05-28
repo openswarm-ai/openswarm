@@ -426,6 +426,29 @@ try {
 
 Remove-Item -Recurse -Force $Staging -ErrorAction SilentlyContinue
 
+# --- Step 5b: Stable-named installer alias for the website download button ---
+# Squirrel names the local installer per `artifactName` (in
+# dist\squirrel-windows\) but RENAMES the published asset to
+# `openswarm-Setup-<version>.exe`, so the fixed openswarm.com download link
+# 404s without this stable-named copy. -Recurse because the .exe sits in the
+# squirrel-windows\ subdir, not the dist\ root. Byte copy keeps the signature;
+# invisible to the updater, which keys off RELEASES + .nupkg, not the filename.
+if ($Publish) {
+    Write-Host "[5b/5] Uploading stable-named installer alias (OpenSwarm-Setup-x64.exe)..."
+    $version  = (Get-Content -Raw (Join-Path $ProjectRoot 'electron\package.json') | ConvertFrom-Json).version
+    $DistDir  = Join-Path $ProjectRoot 'electron\dist'
+    $SetupExe = Get-ChildItem -Path $DistDir -Recurse -Filter '*Setup*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $SetupExe) { throw "No Squirrel Setup .exe found under $DistDir to alias" }
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "gh CLI not found; cannot upload OpenSwarm-Setup-x64.exe alias (install gh or upload it manually)"
+    }
+    $AliasExe = Join-Path $DistDir 'OpenSwarm-Setup-x64.exe'
+    Copy-Item -Force $SetupExe.FullName $AliasExe
+    & gh release upload "v$version" $AliasExe --repo openswarm-ai/openswarm --clobber
+    if ($LASTEXITCODE -ne 0) { throw "gh release upload of OpenSwarm-Setup-x64.exe failed" }
+    Write-Host "Uploaded OpenSwarm-Setup-x64.exe to release v$version."
+}
+
 Write-Host ""
 Write-Host "========================================"
 Write-Host "  Build Complete!"

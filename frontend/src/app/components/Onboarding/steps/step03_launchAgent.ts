@@ -2,13 +2,7 @@ import type { OnboardingStep } from './types';
 import { S } from '../selectors';
 import { hasAnyAgentLaunched, isYoutubeEnabled } from './skipPredicates';
 
-// Primary demo: summarize a YouTube video — requires the YouTube
-// transcript MCP, which step 2 enables. If a user reaches step 3 with
-// YouTube not enabled (they skipped step 2's flow, dismissed it, or
-// toggled YouTube back off), the agent would hang trying to call a
-// missing MCP. The fallback prompt uses the agent's built-in web tools
-// to do live research — same "agent does real work" demo, no MCP
-// dependency.
+// Primary: YouTube summary (needs MCP from step 2). Fallback uses built-in web tools (no MCP).
 const YOUTUBE_PROMPT =
   'What is this youtube video about: https://youtu.be/_NKj8KQMY-k?si=rEk4KO2bOpa5Vo0z. Do not use browser agents.';
 const FALLBACK_PROMPT =
@@ -31,22 +25,13 @@ export const step03: OnboardingStep = {
       kind: 'wait_user',
       condition: { kind: 'click_target', target: S.newAgentButton },
     },
-    // Chat input mounts asynchronously after + is clicked. waitForSelector
-    // inside the runtime handles the small delay before type_into runs.
     {
       kind: 'type_into',
       target: S.chatInput,
-      // Anti-browser-agent directive on the YouTube path: the summary
-      // can be answered entirely from the youtube transcript MCP, and
-      // browser agents misbehave under load. The fallback path
-      // intentionally USES web tools — that's the whole point of the
-      // fallback (no MCP needed, agent still demonstrates real work).
+      // YouTube prompt bans browser agents (MCP handles it); fallback uses web tools by design.
       text: (state) => (isYoutubeEnabled(state) ? YOUTUBE_PROMPT : FALLBACK_PROMPT),
       speedMs: 12,
     },
-    // Auto-send the prompt — same pattern as steps 5/6/8. Without this,
-    // the user lands on a typed-but-unsent prompt and has to hit send
-    // themselves, which is awkward and out-of-line with the other steps.
     { kind: 'move_to', target: S.chatSendButton },
     { kind: 'click', target: S.chatSendButton, simulate: true },
     {

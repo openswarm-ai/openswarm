@@ -1,6 +1,15 @@
 const { app, components, BrowserWindow, ipcMain, shell, session } = require('electron');
+// Platform-split auto-updater: electron-updater on Mac (full-featured: allowPrerelease, allowDowngrade, progress), Electron's built-in autoUpdater on Windows (required for Squirrel.Windows target; electron-updater dropped Squirrel support).
 let autoUpdater;
-try { autoUpdater = require('electron-updater').autoUpdater; } catch (_) {}
+let isSquirrelUpdater = false;
+try {
+  if (process.platform === 'win32') {
+    autoUpdater = require('electron').autoUpdater;
+    isSquirrelUpdater = true;
+  } else {
+    autoUpdater = require('electron-updater').autoUpdater;
+  }
+} catch (_) {}
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const os = require('os');
@@ -8,6 +17,56 @@ const fs = require('fs');
 const getPort = require('get-port');
 const http = require('http');
 const affiliateTracking = require('./affiliateTracking');
+
+// Defender warmup helper. Touches bundled exes so Windows scans them now instead of on first launch.
+function _squirrelPrewarmTouch() {
+  const touchExe = (rel) => {
+    const full = path.join(process.resourcesPath, rel);
+    try {
+      if (fs.existsSync(full)) {
+        execFileSync(full, ['--version'], { timeout: 15000, stdio: 'ignore', windowsHide: true });
+      }
+    } catch (_) {}
+  };
+  touchExe(path.join('python-env', 'python.exe'));
+  touchExe(path.join('node', 'x64', 'node.exe'));
+  touchExe(path.join('node', 'arm64', 'node.exe'));
+}
+
+// Legacy NSIS prewarm path (kept for any user still on 1.1.40 stable NSIS install).
+if (process.argv.includes('--prewarm') && process.platform === 'win32') {
+  _squirrelPrewarmTouch();
+  process.exit(0);
+}
+
+// Squirrel hands shortcut creation to the app: when we intercept --squirrel-*
+// ourselves, Update.exe won't make the Start Menu / Desktop icons unless we ask
+// it to. Skip this and the user only ever sees Setup.exe, no app to click.
+function _squirrelUpdate(args) {
+  try {
+    const updateExe = path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
+    const exeName = path.basename(process.execPath);
+    execFileSync(updateExe, [...args, exeName], { timeout: 20000, stdio: 'ignore', windowsHide: true });
+  } catch (_) {}
+}
+
+// Squirrel.Windows lifecycle: app is invoked with --squirrel-* args during install/update/uninstall. Handle and exit fast; --squirrel-firstrun is the only one we let fall through to normal boot.
+(function handleSquirrelEvents() {
+  if (process.platform !== 'win32' || process.argv.length < 2) return;
+  const sq = process.argv[1];
+  if (sq === '--squirrel-install' || sq === '--squirrel-updated') {
+    _squirrelUpdate(['--createShortcut']);
+    _squirrelPrewarmTouch();
+    process.exit(0);
+  }
+  if (sq === '--squirrel-uninstall') {
+    _squirrelUpdate(['--removeShortcut']);
+    process.exit(0);
+  }
+  if (sq === '--squirrel-obsolete') {
+    process.exit(0);
+  }
+})();
 
 // Prevent duplicate instances. Without this, double-clicking the app icon
 // (or macOS auto-launch + manual launch overlapping) spawns two independent
@@ -100,6 +159,7 @@ let cachedUpdateStatus = { status: 'idle', info: null, error: null };
 let splashWindow = null;
 let mainWindowReady = false;
 let isQuittingFromSplash = false;  // guards against double-quit during error shutdown
+let rendererCrashTimes = [];       // timestamps of recent render-process-gone events; caps the auto-reload retry storm
 const recentBackendStderr = [];   // ring buffer (last ~60 lines) for splash error UI
 let splashDataUrlCache = null;
 
@@ -431,7 +491,7 @@ async function pickBackendPort() {
 }
 
 async function startBackend() {
-  backendPort = await pickBackendPort();
+  if (!backendPort) backendPort = await pickBackendPort();
 
   const pythonPath = getPythonPath();
   const backendDir = getResourcePath('backend');
@@ -565,6 +625,7 @@ async function startBackend() {
   // any browser on the machine could hit our localhost API and
   // impersonate the user. See backend/auth.py.
   await loadAuthToken();
+  markBackendReady();
 }
 
 // Per-install auth token read from <data-root>/auth.token (backend
@@ -572,6 +633,16 @@ async function startBackend() {
 // calls are fast. If reads fail initially (race with backend) we
 // retry a few times.
 let authToken = '';
+
+// Lazy-backend gate: renderer fetches block on this until backend is reachable AND auth token is loaded. Lets the main window open immediately while Python is still cold-starting on Windows.
+let backendReady = false;
+let _backendReadyResolve;
+const backendReadyPromise = new Promise((resolve) => { _backendReadyResolve = resolve; });
+function markBackendReady() {
+  if (backendReady) return;
+  backendReady = true;
+  _backendReadyResolve();
+}
 
 function getAuthTokenFilePath() {
   // Mirrors backend/config/paths.py. On macOS the file lives at
@@ -684,6 +755,30 @@ function createWindow() {
     mainWindow = null;
   });
 
+  // Renderer process death (GPU/native/OOM crash) is invisible to React error
+  // boundaries: the whole content process is gone, so JS never runs to catch
+  // anything. Without this the window just sits blank forever. Reload to
+  // recover, but cap retries so a deterministic crash-on-load can't pin the CPU
+  // in an infinite reload storm; after the cap we leave it so the splash/quit
+  // path can take over rather than thrash.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    const reason = details && details.reason;
+    if (reason === 'clean-exit') return;
+    // Don't fight the shutdown: the renderer dying mid-quit-drain is expected, reloading it then would resurrect a window we're trying to close.
+    if (drainingForQuit) return;
+    console.error('[main] renderer process gone:', reason);
+    const now = Date.now();
+    rendererCrashTimes = rendererCrashTimes.filter((t) => now - t < 60_000);
+    if (rendererCrashTimes.length >= 3) {
+      console.error('[main] renderer crashed 3x in 60s — not auto-reloading again');
+      return;
+    }
+    rendererCrashTimes.push(now);
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
+    } catch (_) {}
+  });
+
   // Window-blur / window-focus tracking — analytics signal for "user
   // switched to another app" (temp-churn). The renderer captures these
   // through the existing report() pipeline; we just emit IPC notices
@@ -714,13 +809,25 @@ function sendToRenderer(channel, ...args) {
 
 function setupAutoUpdater() {
   if (!autoUpdater) return;
-  // Silent background updates: download on detect, install on next quit.
-  // The OS gates the install on main-process exit (can't replace a
-  // running .app / locked .exe), so an active session is never disrupted.
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  // Renderer pushes the user's experimental-updates setting via IPC right after settings load.
-  autoUpdater.allowPrerelease = false;
+  if (isSquirrelUpdater) {
+    // Squirrel.Windows: setFeedURL to GH Releases /latest/download/ so Squirrel fetches RELEASES from there. allowPrerelease/allowDowngrade not supported by built-in autoUpdater; experimental users on Windows get only the latest stable until we wire a separate Squirrel feed for prereleases.
+    try {
+      autoUpdater.setFeedURL({ url: 'https://github.com/openswarm-ai/openswarm/releases/latest/download/' });
+    } catch (err) {
+      console.warn('[updater] Squirrel setFeedURL failed:', err && err.message);
+      return;
+    }
+  } else {
+    // Silent background updates: download on detect, install on next quit.
+    // The OS gates the install on main-process exit (can't replace a
+    // running .app / locked .exe), so an active session is never disrupted.
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    // Renderer pushes the user's experimental-updates setting via IPC right after settings load.
+    autoUpdater.allowPrerelease = false;
+    // Lets us un-ship a bad release: re-flip GH 'latest' to an older one and users hop back to it.
+    autoUpdater.allowDowngrade = true;
+  }
 
   autoUpdater.on('update-available', (info) => {
     console.log(`Update available: ${info.version}`);
@@ -882,8 +989,14 @@ app.whenReady().then(async () => {
       backendPort = parseInt(process.env.OPENSWARM_PORT || '8324', 10);
       console.log(`Dev mode: using existing backend on port ${backendPort}`);
       emitSplashStatus('Connecting to dev backend…');
+      markBackendReady();
     } else {
-      await startBackend();
+      // Kick off backend without awaiting so the window can paint while Python is still cold-starting. Renderer fetches lazy-await markBackendReady() via the get-auth-token IPC; splash status updates still fire from inside startBackend.
+      backendPort = await pickBackendPort();
+      const _backendBoot = startBackend().catch((err) => {
+        console.error('[boot] backend startup failed:', err && err.message);
+        emitSplashStatus({ text: 'Backend failed to start', level: 'error', logs: recentBackendStderr.slice(-20).join('') });
+      });
     }
     emitSplashStatus('Almost ready…');
     createWindow();
@@ -901,9 +1014,14 @@ app.whenReady().then(async () => {
     // Swap splash → main only once React has actually painted. ready-to-show
     // fires after the renderer's first frame, eliminating the white-flash
     // that would otherwise pop between splash close and React mount.
+    // Also gated on backendReady: with lazy backend, ready-to-show can fire while React is still showing null (SignInGateLoader returns null until settings load), so we'd show a blank window if we swapped early.
     if (mainWindow) {
       const swapToMain = () => {
         if (mainWindowReady || mainWindow.isDestroyed()) return;
+        if (!backendReady) {
+          backendReadyPromise.then(() => swapToMain()).catch(() => {});
+          return;
+        }
         mainWindowReady = true;
         try { mainWindow.show(); mainWindow.focus(); } catch (_) {}
         // Tiny delay so the OS gets a chance to bring main to front
@@ -923,7 +1041,13 @@ app.whenReady().then(async () => {
       // sees the load error in the window itself.
       mainWindow.webContents.once('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
         console.warn('[boot] mainWindow load failed:', errorCode, errorDescription, validatedURL);
-        if (isDev) swapToMain();
+        if (isDev) {
+          // Force-skip the backend gate so dev sees the error.
+          mainWindowReady = true;
+          try { mainWindow.show(); mainWindow.focus(); } catch (_) {}
+          if (splashWindow && !splashWindow.isDestroyed()) splashWindow.destroy();
+          splashWindow = null;
+        }
       });
     }
 
@@ -1276,7 +1400,9 @@ ipcMain.on('splash:action', (_event, action) => {
 });
 
 ipcMain.handle('get-backend-port', () => backendPort);
-ipcMain.handle('get-auth-token', () => {
+ipcMain.handle('get-auth-token', async () => {
+  // Wait for backend if it's still cold-starting; this is the lazy-backend gate that lets the window open while Python is warming up.
+  if (!backendReady) await backendReadyPromise;
   // Re-read the file every time. The backend rotates the token on each
   // start, and during dev hot-reload the cached value could go stale
   // while the renderer stays alive. Re-reading is cheap (small file,
@@ -1314,6 +1440,8 @@ ipcMain.handle('check-for-updates', async () => {
 
 ipcMain.handle('download-update', async () => {
   if (!autoUpdater) return { success: false, error: 'Updater not available' };
+  // Squirrel built-in autoUpdater auto-downloads on detect; no manual trigger needed.
+  if (isSquirrelUpdater) return { success: true };
   try {
     await autoUpdater.downloadUpdate();
     return { success: true };
@@ -1324,6 +1452,8 @@ ipcMain.handle('download-update', async () => {
 
 ipcMain.handle('set-allow-prerelease', async (_e, value) => {
   if (!autoUpdater) return { success: false, error: 'Updater not available' };
+  // Squirrel built-in autoUpdater has no allowPrerelease; experimental channel on Windows is a TODO once we wire a separate Squirrel feed URL.
+  if (isSquirrelUpdater) return { success: false, error: 'Experimental channel not yet supported on Windows Squirrel target' };
   const next = Boolean(value);
   if (autoUpdater.allowPrerelease === next) return { success: true, changed: false };
   autoUpdater.allowPrerelease = next;
@@ -1338,7 +1468,12 @@ ipcMain.handle('set-allow-prerelease', async (_e, value) => {
 
 ipcMain.handle('install-update', () => {
   if (!autoUpdater) return;
-  autoUpdater.quitAndInstall(false, true);
+  // Built-in autoUpdater on Windows takes no args; electron-updater on Mac takes (isSilent, isForceRunAfter).
+  if (isSquirrelUpdater) {
+    autoUpdater.quitAndInstall();
+  } else {
+    autoUpdater.quitAndInstall(false, true);
+  }
 });
 
 ipcMain.handle('capture-page', async (event, rect) => {

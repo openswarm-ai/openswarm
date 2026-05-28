@@ -1,21 +1,46 @@
 import React, { useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import { Skeleton } from '@/app/components/Loading';
-import { useElementSelection } from '@/app/components/ElementSelectionContext';
+import { Skeleton } from '@/app/components/feedback/Loading';
+import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { useIframeElementSelector } from './useIframeElementSelector';
 import { getAuthToken, ensureAuthToken } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
-// We render apps in a <webview> when running inside the Electron shell so
-// they escape iframe restrictions (popups, mic/camera, WebAuthn,
-// cross-origin fetch with cookies). Outside Electron — webpack-dev-server
-// in the browser, jest, etc. — `<webview>` is a no-op element, so we fall
-// back to the iframe path. Same detection BrowserCard uses.
+// In Electron use <webview> to escape iframe restrictions (popups, mic/camera, WebAuthn, cookied fetch); outside Electron fall back to iframe.
 const isElectron = navigator.userAgent.includes('Electron');
+
+// Card previews render small; downscale + JPEG so thumbnails don't bloat the output JSON or every list fetch.
+const THUMB_WIDTH = 600;
+const THUMB_QUALITY = 0.7;
+
+// NativeImage -> small JPEG data URL. We resize on the native image (cheap) then
+// re-encode via canvas because NativeImage.toJPEG hands back a Node Buffer that
+// the sandboxed renderer can't base64 on its own.
+async function nativeImageToJpegDataUrl(img: any, width: number, quality: number): Promise<string | null> {
+  const sized = typeof img.resize === 'function' ? img.resize({ width }) : img;
+  const pngUrl: string = sized.toDataURL();
+  if (!pngUrl) return null;
+  const el = new Image();
+  await new Promise<void>((resolve, reject) => {
+    el.onload = () => resolve();
+    el.onerror = () => reject(new Error('thumbnail decode failed'));
+    el.src = pngUrl;
+  });
+  if (!el.width || !el.height) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = el.width;
+  canvas.height = el.height;
+  const cctx = canvas.getContext('2d');
+  if (!cctx) return null;
+  cctx.drawImage(el, 0, 0);
+  return canvas.toDataURL('image/jpeg', quality);
+}
 
 export interface ViewPreviewHandle {
   reload: () => void;
+  /** Native snapshot of the live preview as a small JPEG data URL, or null if not capturable (iframe/dev, hidden, or webview not ready). */
+  capture: () => Promise<string | null>;
 }
 
 interface Props {
@@ -26,16 +51,9 @@ interface Props {
   inputData: Record<string, any>;
   backendResult?: Record<string, any> | null;
   style?: React.CSSProperties;
-  /** Forwarded for each `console.{log,warn,error,info,debug}` inside the
-   *  running app (captured by webview-preload.js → ipc-message). Only
-   *  fires in the webview path — iframes have no comparable channel. */
+  /** Forwarded per console.* call in the running app (webview path only; iframes have no equivalent channel). */
   onConsoleMessage?: (level: string, text: string) => void;
-  /** Fires once the iframe/webview has finished its first navigation +
-   *  load event for a given serveUrl. Lets parents (ViewEditor) keep
-   *  the cold-start placeholder visible until the embedded app has
-   *  actually painted, instead of unmounting the placeholder the moment
-   *  vite reports "ready" (which leaves a 1-2 s window where the
-   *  iframe has a URL but no content → visible grey flash). */
+  /** Fires once the embedded app has actually painted, so cold-start placeholders don't unmount during the vite-ready to first-paint gap. */
   onContentLoad?: () => void;
 }
 
@@ -78,20 +96,11 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const webviewRef = useRef<any>(null);
   const ctx = useElementSelection();
-  // Match the iframe/webview's BG to the OpenSwarm host's theme during
-  // load. Previously hardcoded '#fff', which on a dark OpenSwarm host
-  // produced a jarring white flash for the 60-90 s between vite spawn
-  // and first paint, then ANOTHER flash to the same white when the
-  // app reattached. Using the host's page color means the loading
-  // state visually blends with the chrome around it — no flashes
-  // until the app's own theme paints over it.
+  // Bg matches host theme so the 60-90s vite-boot gap doesn't flash white on dark hosts.
   const _hostTokens = useClaudeTokens();
   const _hostBg = _hostTokens.bg.page;
   const [reloadKey, setReloadKey] = useState(0);
-  // Track auth token in state so the iframe URL is rebuilt the moment the
-  // token IPC roundtrip resolves. Without this, the first render runs while
-  // _authTokenCache is still '' and the iframe loads a tokenless URL → 401
-  // → the JSON error renders inside the preview pane.
+  // Track in state so the iframe URL rebuilds the moment the token IPC roundtrip resolves (else first render 401s with a JSON body).
   const [authToken, setAuthToken] = useState(() => getAuthToken());
   useEffect(() => {
     if (authToken) return;
@@ -104,22 +113,14 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
 
   const iframeSrc = useMemo(() => {
     if (!serveUrl) return undefined;
-    // Don't ship a tokenless URL — the backend auth middleware would 401 and
-    // the iframe would render the JSON error. Wait for the token to load.
+    // Wait for the token; tokenless URL 401s and the iframe would render the JSON error body.
     if (!authToken) return undefined;
     const dataParam = encodeDataParam(inputData, backendResult);
     const sep = serveUrl.includes('?') ? '&' : '?';
     return `${serveUrl}${sep}_d=${encodeURIComponent(dataParam)}&_v=${reloadKey}&token=${encodeURIComponent(authToken)}`;
   }, [serveUrl, inputData, backendResult, reloadKey, authToken]);
 
-  // Pause the iframe when the Electron window is hidden (minimized, occluded,
-  // user switched to a different desktop space). Vite's HMR client keeps a
-  // WS heartbeat open + the app's rAF loops keep running otherwise — pure
-  // wasted CPU since nobody can see the result. Swap to about:blank, which
-  // destroys the previous document and closes its HMR connection cleanly.
-  // Only applies to URL-mode (vite dev server). Srcdoc apps stay put — they
-  // don't run HMR and pausing them would silently wipe arbitrary in-memory
-  // user state.
+  // When the window is hidden, swap URL-mode iframes to about:blank to kill HMR + rAF CPU; srcdoc apps stay put so user in-memory state isn't wiped.
   const [windowHidden, setWindowHidden] = useState(
     () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
   );
@@ -134,9 +135,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
     return windowHidden ? 'about:blank' : iframeSrc;
   }, [iframeSrc, windowHidden]);
 
-  // "Restoring preview…" overlay covers the gap between window-restore and
-  // the iframe finishing its second navigation back to the dev server. Set
-  // on hidden→visible transition; cleared by iframe load (or 5 s safety).
+  // "Restoring preview..." overlay covers the window-restore to iframe-reload gap; cleared by load or 5s safety.
   const [restoring, setRestoring] = useState(false);
   const wasHiddenRef = useRef(windowHidden);
   useEffect(() => {
@@ -151,14 +150,8 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
   }, [windowHidden, iframeSrc]);
 
   const handleNavigationLoad = useCallback(() => {
-    // load fires for both the about:blank pause-step AND the restored URL —
-    // only the latter should clear the overlay.
+    // load fires for both about:blank pause and real URL; only the latter counts.
     if (!windowHidden) setRestoring(false);
-    // Notify parent that an actual URL just finished loading. Skip the
-    // about:blank pauses (those happen while the OpenSwarm window is
-    // hidden) — those aren't user-visible content paints. The parent
-    // (ViewEditor) uses this to know when its install-placeholder can
-    // safely fade away.
     if (!windowHidden && onContentLoad) {
       onContentLoad();
     }
@@ -169,19 +162,10 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
     return buildSrcdoc(frontendCode, inputData, backendResult);
   }, [serveUrl, frontendCode, inputData, backendResult]);
 
-  // Use webview when (a) we're in Electron and (b) we have a real serveUrl
-  // to navigate to. Inline srcdoc still goes through the iframe path: a
-  // webview's only inline option is `data:text/html,...` which the Electron
-  // sandbox treats as a null/opaque origin, breaking localStorage and
-  // same-origin fetch for the rendered app.
+  // Webview only when we have a real serveUrl; data:text/html for srcdoc breaks same-origin in the Electron sandbox.
   const useWebview = isElectron && !!iframeSrc;
 
-  // Wire the iframe element into the element-selection context only when
-  // we're actually rendering an iframe. A <webview>'s document lives in
-  // a separate renderer process — its contentDocument is null from the
-  // host page, so useIframeElementSelector's overlay/listener injection
-  // can't reach it. Element selection on in-Electron previews is a known
-  // regression of the webview swap.
+  // Webview's contentDocument is null from the host (separate renderer process); element selection skips it (known regression).
   useEffect(() => {
     if (useWebview) return;
     if (ctx && iframeRef.current) {
@@ -189,18 +173,13 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
     }
   }, [ctx, frontendCode, serveUrl, useWebview]);
 
-  // Selector hook keys off iframeRef.current. When webview is mounted
-  // instead, no <iframe> is rendered, so iframeRef.current stays null and
-  // setupSelection() bails — same effect as an explicit gate.
+  // Selector hook no-ops in webview mode because iframeRef stays null.
   useIframeElementSelector(iframeRef);
 
   useImperativeHandle(ref, () => ({
     reload: () => {
       if (useWebview) {
-        // Bumping reloadKey changes _v= in the URL, which React threads
-        // back into the webview's `src` prop and re-navigates. Belt-and-
-        // suspenders: also call reload() on the element in case React
-        // skipped the re-render (e.g. reloadKey was already pending).
+        // Bumping reloadKey re-navigates via src change; also call reload() as belt-and-suspenders.
         setReloadKey(k => k + 1);
         webviewRef.current?.reload?.();
       } else if (serveUrl) {
@@ -212,7 +191,19 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
         });
       }
     },
-  }), [useWebview, serveUrl, srcdoc]);
+    capture: async () => {
+      const wv = webviewRef.current;
+      // Only the webview path is reliably snapshottable; iframe/dev or a hidden window (about:blank) returns null.
+      if (!useWebview || !wv || windowHidden || typeof wv.capturePage !== 'function') return null;
+      try {
+        const img = await wv.capturePage();
+        if (!img) return null;
+        return await nativeImageToJpegDataUrl(img, THUMB_WIDTH, THUMB_QUALITY);
+      } catch {
+        return null;
+      }
+    },
+  }), [useWebview, serveUrl, srcdoc, windowHidden]);
 
   useEffect(() => {
     if (useWebview) return;
@@ -221,10 +212,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
     }
   }, [srcdoc, useWebview]);
 
-  // Subscribe to the webview's ipc-message channel so the App Builder can
-  // surface [FRONTEND] logs from inside the running app. The preload
-  // script wraps console.* and emits 'webview-console' events; we forward
-  // each one up via `onConsoleMessage`. Iframe path doesn't use this.
+  // Forward webview-console events (preload wraps console.*) to onConsoleMessage; iframe path has no equivalent.
   useEffect(() => {
     if (!useWebview || !onConsoleMessage) return;
     const wv = webviewRef.current;
@@ -241,18 +229,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
     };
   }, [useWebview, onConsoleMessage, iframeSrc]);
 
-  // Webviews don't surface a React-style `onLoad` prop; subscribe to the
-  // Electron-specific `did-finish-load` event to clear the restoring
-  // overlay after the about:blank→iframeSrc transition completes.
-  //
-  // Also subscribe to `did-fail-load` and retry. When the runtime WS
-  // reports a frontend_url before Vite has actually bound to its
-  // port, the first navigation hits ERR_CONNECTION_REFUSED and only
-  // did-fail-load fires (never did-finish-load), which would leave
-  // the parent's cold-start placeholder stuck on forever. The retry
-  // re-issues the navigation with exponential backoff (500 ms → 5 s)
-  // until Vite is actually serving, at which point did-finish-load
-  // fires and the overlay can fade cleanly.
+  // Webviews use did-finish-load instead of onLoad; did-fail-load retries with 500ms to 5s backoff (Vite may not have bound yet when frontend_url arrives).
   useEffect(() => {
     if (!useWebview) return;
     const wv = webviewRef.current;
@@ -274,10 +251,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
       handleNavigationLoad();
     };
     const onFail = (e: any) => {
-      // Sub-resource failures inside the embedded app (a missing
-      // favicon, a 404 image) also fire did-fail-load, so guard on
-      // isMainFrame. User-initiated aborts (ERR_ABORTED = -3) also
-      // surface here and shouldn't trigger a retry loop.
+      // Guard on isMainFrame (subresource 404s fire too) and ERR_ABORTED (user-cancel).
       if (e && e.isMainFrame === false) return;
       if (e && e.errorCode === -3) return;
       if (retryTimer != null) return;
@@ -350,13 +324,10 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
       {useWebview ? (
         <webview
           ref={(el: any) => { webviewRef.current = el; }}
-          // Stable key so React swaps src in place rather than remounting
-          // — preserves the prior frame's pixels through reload, same
-          // pattern as the iframe path.
+          // Stable key so src swaps in place (keeps prior pixels through reload).
           key="url-mode-webview"
           src={effectiveSrc}
-          // Autoplay is the most common cross-app expectation; matches
-          // the BrowserCard default. Plugins / nodeintegration stay off.
+          // Autoplay matches BrowserCard default; plugins/nodeintegration stay off.
           webpreferences="autoplayPolicy=no-user-gesture-required"
           style={{
             width: '100%',
@@ -369,14 +340,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
       ) : (
         <iframe
           ref={iframeRef}
-          // Key stable across reloads — only changes when switching MODES
-          // (URL vs srcdoc). Previously the key embedded reloadKey, which
-          // unmounted-and-remounted the iframe on every reload, producing
-          // a visible blank flash mid-burst. With a stable key, reloadKey
-          // still updates iframeSrc → React swaps the src attribute on
-          // the EXISTING iframe element → browser navigates in place,
-          // keeping the prior frame's pixels visible until the new doc
-          // paints. No flash.
+          // Key only changes on mode switch (URL vs srcdoc); reloadKey updates the src attribute in place to avoid blank-flash on reload.
           key={iframeSrc ? 'url-mode' : 'srcdoc'}
           src={effectiveSrc}
           onLoad={handleNavigationLoad}
@@ -408,7 +372,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
         >
           <Skeleton variant="card" width={140} height={14} delayMs={0} />
           <Typography sx={{ fontSize: '0.78rem', color: '#888', letterSpacing: '0.01em' }}>
-            Restoring preview…
+            Restoring preview...
           </Typography>
         </Box>
       )}
