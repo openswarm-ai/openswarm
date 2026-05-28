@@ -53,43 +53,26 @@ function perfMark(name) {
   try { console.log(`[perf] ${name} t=${t}`); } catch (_) {}
 }
 
-// Preflight: name the common "works on my machine, not theirs" causes up front,
-// so a user-submitted backend.log explains a silent break without a repro. The
-// existing python-exists log + the backend spawn 'error' handler already cover
-// AV-quarantined / wrong-arch python; this adds the OTHER usual suspects. Pure
-// logging, every probe individually guarded - it must never affect boot.
-let _preflightInfo = {};   // captured by sendBootBeacon() below.
+// Preflight: log the usual "works on mine, not theirs" causes (python is already covered by the exists-log + spawn handler; this adds the rest). Log-only, guarded, no PII (lengths/flags, never paths).
+let _preflightInfo = {};
 function logPreflight(backendPort) {
   const info = {};
   const probe = (label, fn) => { try { info[label] = fn(); } catch (_) { info[label] = 'ERR'; } };
   try {
     const userData = app.getPath('userData');
-    // Locked-down / read-only roaming profile -> the backend can't write its data.
     probe('userDataWritable', () => { const t = path.join(userData, '.preflight'); fs.writeFileSync(t, 'x'); fs.unlinkSync(t); return true; });
-    // Non-ASCII or very long profile paths break some bundled tooling on Windows.
-    // We record only the length + an ascii flag, never the path itself (no PII).
     probe('userDataAscii', () => /^[\x00-\x7F]*$/.test(userData));
     probe('userDataLen', () => userData.length);
-    // OneDrive-redirected AppData is a known source of odd file-locking behavior.
     probe('oneDriveProfile', () => /onedrive/i.test(userData));
-    // Falling out of the preferred range means the loopback probe was blocked
-    // (EDR/firewall) and we used an OS-assigned port - worth knowing on a break.
     probe('portInPreferredRange', () => backendPort >= 8324 && backendPort <= 8424);
     probe('freeDiskMB', () => Math.round((fs.statfsSync(userData).bavail * fs.statfsSync(userData).bsize) / 1048576));
-    // Bundled bits missing at launch = AV quarantine, wrong-arch, or partial install.
-    if (isPackaged) {
-      for (const bit of ['router', 'node', 'app.asar', 'frontend', 'backend', 'python-env']) {
-        probe(bit, () => fs.existsSync(getResourcePath(bit)));
-      }
-    }
+    if (isPackaged) for (const bit of ['router', 'node', 'app.asar', 'frontend', 'backend', 'python-env']) probe(bit, () => fs.existsSync(getResourcePath(bit)));
     _preflightInfo = info;
     console.log(`[preflight] ${Object.entries(info).map(([k, v]) => `${k}=${v}`).join(' | ')}`);
-  } catch (_) { /* preflight must never break boot */ }
+  } catch (_) { /* never break boot */ }
 }
 
-// crashReporter (top of file) keeps minidumps locally under userData/Crashpad.
-// Count them so the boot beacon can attribute crashes to a version: a count that
-// climbs release-over-release (the cloud diffs by install_id) flags a crashy build.
+// Count local Crashpad minidumps so the beacon can flag a crashy build (the cloud diffs by install_id over time).
 function countCrashDumps() {
   try {
     const base = path.join(app.getPath('userData'), 'Crashpad');
@@ -107,12 +90,7 @@ function countCrashDumps() {
   } catch (_) { return -1; }
 }
 
-// Fleet self-report. After the UI paints, post a compact boot-outcome event to the
-// LOCAL backend, which forwards it through the existing service client - so the
-// user's analytics opt-out is honored and there's no separate network surface
-// here. No PII: just the commit, perf marks, preflight flags (lengths/booleans,
-// never paths), and a crash count. Enough to see "version X boots on real
-// machines, version Y doesn't". Fire-and-forget + fully guarded; never affects boot.
+// Fleet self-report: POST a compact boot outcome to the LOCAL backend, which forwards it via the existing service client (opt-out honored). No PII. Fire-and-forget, guarded.
 function sendBootBeacon() {
   try {
     if (!isPackaged || !backendPort) return;
@@ -140,6 +118,15 @@ function sendBootBeacon() {
     req.write(body);
     req.end();
   } catch (_) { /* beacon must never affect the app */ }
+}
+
+// Fire the beacon once first-paint AND backend-http-ready have both landed (the POST needs the backend listening); a touch later so it stays off the critical path.
+let _beaconScheduled = false;
+function maybeSendBootBeacon() {
+  if (_beaconScheduled) return;
+  if (_perfValues['first-paint'] == null || _perfValues['backend-http-ready'] == null) return;
+  _beaconScheduled = true;
+  setTimeout(() => sendBootBeacon(), 1500);
 }
 
 // Defender warmup: NSIS runs us with --prewarm right after install so Windows scans the bundled binaries while the user is already watching the installer instead of staring at a slow first launch.
@@ -824,6 +811,7 @@ async function startBackend() {
   await waitForBackend(backendPort, { process: backendProcess });
   perfMark('backend-http-ready');
   console.log(`Backend ready on port ${backendPort}`);
+  maybeSendBootBeacon();
 
   // Backend writes a per-install auth token file at startup. Read it
   // here so the renderer can include it in WS URLs (`?token=...`) and
@@ -1001,9 +989,7 @@ function createWindow() {
   // be a string (legacy) OR a {channel, url} object (v1.0.26+ OAuth claims).
   mainWindow.webContents.once('did-finish-load', () => {
     perfMark('first-paint');
-    // Off the critical path: once the UI has settled, report this boot's outcome
-    // so the fleet self-reports which builds boot cleanly on real machines.
-    setTimeout(() => sendBootBeacon(), 3000);
+    maybeSendBootBeacon();
     if (pendingDeepLink) {
       if (typeof pendingDeepLink === 'string') {
         mainWindow.webContents.send('openswarm:auth-url', pendingDeepLink);
