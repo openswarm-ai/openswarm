@@ -32,9 +32,16 @@ test.describe('deep interactive coverage', () => {
     expect(now, `renderer crashed during: ${label}`).toBe(baseline);
   };
 
-  const safeClick = async (locator: ReturnType<Page['getByText']>, label: string) => {
-    if ((await locator.count()) === 0) { test.info().annotations.push({ type: 'skip', description: `${label}: target not visible` }); return false; }
-    await locator.first().click({ timeout: 5000 }).catch((e) => { test.info().annotations.push({ type: 'click-fail', description: `${label}: ${e.message}` }); });
+  // Strict by default: a missing target FAILS the step so absent buttons can't
+  // green a build. Pass { optional: true } only for surfaces that legitimately
+  // may not exist on a clean profile, and we still annotate the skip.
+  const safeClick = async (locator: ReturnType<Page['getByText']>, label: string, opts?: { optional?: boolean }) => {
+    const count = await locator.count();
+    if (count === 0) {
+      if (opts?.optional) { test.info().annotations.push({ type: 'skip', description: `${label}: optional target absent` }); return false; }
+      throw new Error(`${label}: required target not visible`);
+    }
+    await locator.first().click({ timeout: 5000 });
     return true;
   };
 
@@ -116,14 +123,18 @@ test.describe('deep interactive coverage', () => {
   test('Modes editor (RichPromptEditor) opens without TSF crash', async ({}, info) => {
     await safeClick(page.getByText('Modes', { exact: true }), 'Modes');
     await page.waitForTimeout(1200);
+    // Modes list may be empty on a brand-new profile; this branch is the one
+    // legitimate optional in this spec. If a row exists, we drive it strictly.
     const editIcons = page.locator('[aria-label="Edit"], [aria-label*="edit mode" i]');
     if (await editIcons.count()) {
-      await editIcons.first().click({ timeout: 3000 }).catch(() => {});
+      await editIcons.first().click({ timeout: 3000 });
       await page.waitForTimeout(2000);
       await page.screenshot({ path: info.outputPath('mode-editor.png') });
       noNewCrashes('RichPromptEditor mount');
       await page.keyboard.press('Escape').catch(() => {});
       await page.waitForTimeout(600);
+    } else {
+      test.info().annotations.push({ type: 'skip', description: 'Modes: no existing modes on clean profile, edit path unreachable' });
     }
   });
 
