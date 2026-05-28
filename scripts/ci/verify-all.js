@@ -1,15 +1,5 @@
 #!/usr/bin/env node
-// Runs every deterministic packaged-app verifier in sequence and aggregates the
-// result. This is the single entry point CI calls after building the artifact.
-// Each verifier cold-launches the app itself for clean isolation, so this is
-// slower than one shared launch but far less flaky.
-//
-//   node scripts/ci/verify-all.js [--app <path>] [--require-signed] [--strict]
-//
-//   --require-signed   make the signature check a hard gate (release CI, post-sign)
-//   --strict           make external-network reachability a hard gate
-//
-// Exit 0 only if every verifier passed.
+// Runs every verifier in sequence and aggregates; CI's entry point after building. --require-signed/--strict harden the signature/network gates. Exit 0 iff all pass.
 
 'use strict';
 const path = require('path');
@@ -40,6 +30,7 @@ function main() {
     ['code-signing state', 'verify-signature.js', [...(args.app ? ['--target', args.app] : []), ...(args.requireSigned ? ['--require-signed'] : [])]],
     ['resilience (locked-port + multi-instance)', 'verify-resilience.js', appArg],
     ['network / auth / 9router', 'verify-network.js', [...appArg, ...(args.strict ? ['--strict'] : [])]],
+    ['boot beacon + preflight', 'verify-boot-beacon.js', appArg],
     ['real agent turn (opt-in: OPENSWARM_E2E_AGENT=1)', 'verify-agent-turn.js', appArg],
   ];
 
