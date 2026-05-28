@@ -448,6 +448,7 @@ const StepCardBody: React.FC<StepCardProps> = ({
             component="video"
             src={step.videoSrc}
             autoPlay={typeof navigator === 'undefined' || !navigator.userAgent.includes('Windows')}
+            preload={typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows') ? 'none' : 'metadata'}
             muted
             loop
             playsInline
