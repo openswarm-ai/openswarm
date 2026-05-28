@@ -7,8 +7,8 @@ import { useIframeElementSelector } from './useIframeElementSelector';
 import { getAuthToken, ensureAuthToken } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
-// In Electron use <webview> to escape iframe restrictions (popups, mic/camera, WebAuthn, cookied fetch); outside Electron fall back to iframe.
-const isElectron = navigator.userAgent.includes('Electron');
+// In Electron use <webview> to escape iframe restrictions (popups, mic/camera, WebAuthn, cookied fetch); outside Electron fall back to iframe. Windows-Electron also falls back: the <webview> tag mount segfaults the renderer on Chromium 144 + Electron 40 CastLabs (same crash as BrowserCard.tsx:77).
+const isElectron = navigator.userAgent.includes('Electron') && !navigator.userAgent.includes('Windows');
 
 // Card previews render small; downscale + JPEG so thumbnails don't bloat the output JSON or every list fetch.
 const THUMB_WIDTH = 600;
