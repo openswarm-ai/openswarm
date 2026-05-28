@@ -11,7 +11,7 @@ name: Dogfood (preflight verdict vs reality)
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # every 6 hours; 4 runs/day; 12 runs ~= 3 days of dogfood
+    - cron: '0 */2 * * *'   # every 2 hours; 12 runs/day; 12 consecutive clean ~= 24h of dogfood
   push:
     branches: [eric/lock]
   workflow_dispatch:
