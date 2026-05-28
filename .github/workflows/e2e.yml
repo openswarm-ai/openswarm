@@ -71,6 +71,9 @@ jobs:
       - name: Preflight race / cache (Layer 4)
         shell: bash
         run: node scripts/ci/verify-preflight-race.js
+      - name: Pairwise generator selftest (covering-array math)
+        shell: bash
+        run: node scripts/ci/selftest-pairwise.js
 
       # Preflight Layer 5: hostile-env scenarios. Each leg asserts the verdict
       # matches the expected envelope for that scenario; network=blocked

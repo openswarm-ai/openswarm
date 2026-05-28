@@ -79,7 +79,14 @@ export function hasAnyProviderKey(): boolean {
 
 export async function launchApp(): Promise<ElectronApplication> {
   seedTestUserIfClean();
-  return electron.launch({ executablePath: packagedAppPath(), args: [] });
+  const app = await electron.launch({ executablePath: packagedAppPath(), args: [] });
+  // The frontend bundle gates `__OPENSWARM_STORE__` exposure on
+  // `__OPENSWARM_E2E__` being truthy at module-load time. Adding an init
+  // script BEFORE the main page navigates guarantees the flag is set before
+  // bundle.js parses, so specs that read the Redux store directly work
+  // against the production build.
+  try { await app.context().addInitScript({ content: '(window).__OPENSWARM_E2E__ = true;' }); } catch { /* best effort */ }
+  return app;
 }
 
 // The app opens a splash window first, then the main window that loads the React
