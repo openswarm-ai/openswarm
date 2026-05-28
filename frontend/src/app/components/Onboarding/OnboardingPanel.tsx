@@ -443,12 +443,11 @@ const StepCardBody: React.FC<StepCardProps> = ({
             : undefined,
         }}
       >
-        {step.videoSrc ? (
+        {step.videoSrc && !(typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows')) ? (
           <Box
             component="video"
             src={step.videoSrc}
-            autoPlay={typeof navigator === 'undefined' || !navigator.userAgent.includes('Windows')}
-            preload={typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows') ? 'none' : 'metadata'}
+            autoPlay
             muted
             loop
             playsInline
