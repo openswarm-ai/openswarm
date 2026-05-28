@@ -43,8 +43,30 @@ permissions:
   contents: write
 
 jobs:
+  # Release-readiness gate: fetches the most recent dogfood workflow's preflight-tunings artifact and asserts every required platform has the consecutive clean dogfood runs. Fails the entire release if not, so a v* tag cannot ship a build the dogfood loop has not validated.
+  release-gate:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, actions: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20.18.1' }
+      - name: Fetch latest preflight-tunings from dogfood
+        env: { GH_TOKEN: ${{ github.token }} }
+        shell: bash
+        run: |
+          set -e
+          run_id=$(gh run list --workflow dogfood.yml --branch eric/lock --limit 1 --json databaseId --jq '.[0].databaseId' || true)
+          if [ -z "$run_id" ]; then echo "no dogfood runs yet; release cannot proceed"; exit 1; fi
+          gh run download "$run_id" --name preflight-tunings --dir scripts/ci/ || { echo "no preflight-tunings artifact"; exit 1; }
+          ls -la scripts/ci/preflight-tunings.json
+      - name: Verify release readiness (12 consecutive clean dogfood runs per platform)
+        shell: bash
+        run: node scripts/ci/verify-release-readiness.js
+
   build-windows:
     runs-on: windows-latest
+    needs: release-gate
     timeout-minutes: 60
 
     env:

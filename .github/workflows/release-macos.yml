@@ -38,8 +38,29 @@ permissions:
   contents: write
 
 jobs:
+  # Release-readiness gate (mirrors release-windows): the dogfood loop must have validated 12 consecutive clean runs per platform OR the v* tag halts before any DMG is built.
+  release-gate:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, actions: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20.18.1' }
+      - name: Fetch latest preflight-tunings from dogfood
+        env: { GH_TOKEN: ${{ github.token }} }
+        shell: bash
+        run: |
+          set -e
+          run_id=$(gh run list --workflow dogfood.yml --branch eric/lock --limit 1 --json databaseId --jq '.[0].databaseId' || true)
+          if [ -z "$run_id" ]; then echo "no dogfood runs yet; release cannot proceed"; exit 1; fi
+          gh run download "$run_id" --name preflight-tunings --dir scripts/ci/ || { echo "no preflight-tunings artifact"; exit 1; }
+      - name: Verify release readiness
+        shell: bash
+        run: node scripts/ci/verify-release-readiness.js
+
   build-macos:
     runs-on: macos-latest
+    needs: release-gate
     timeout-minutes: 90
 
     env:

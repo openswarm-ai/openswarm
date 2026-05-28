@@ -1,0 +1,101 @@
+name: Dogfood (preflight verdict vs reality)
+
+# Runs verify-dogfood every 6 hours across the matrix plus on push. Each leg
+# launches the packaged app, captures the [preflight2] verdict, INDEPENDENTLY
+# verifies boot success, and asserts they agree. Mismatches (false-positive,
+# false-negative, or missing line) fail the leg red. The aggregator job
+# downloads every leg's manifest, computes per-check disagreement rates, and
+# writes preflight-tunings.json which the preflight module reads to silently
+# downgrade a chronically-noisy check. Release-readiness gate runs at the end:
+# blocks the v* tag until every required platform has 12 consecutive clean runs.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours; 4 runs/day; 12 runs ~= 3 days of dogfood
+  push:
+    branches: [eric/lock]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  dogfood:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-13, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      GOOGLE_OAUTH_CLIENT_ID: 'e2e-placeholder.apps.googleusercontent.com'
+      GOOGLE_OAUTH_CLIENT_SECRET: 'e2e-placeholder-secret'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20.18.1' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+
+      - name: Build packaged app (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/build-app-win.ps1
+
+      - name: Build packaged app (macOS)
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        run: bash scripts/build-app.sh
+
+      - name: Dogfood run (verdict vs reality cross-check)
+        shell: bash
+        run: node scripts/ci/verify-dogfood.js --manifest scripts/ci/dogfood-manifest.jsonl
+
+      - name: Upload per-leg manifest fragment
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dogfood-manifest-${{ matrix.os }}
+          path: scripts/ci/dogfood-manifest.jsonl
+          retention-days: 90
+
+  aggregate:
+    needs: dogfood
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20.18.1' }
+
+      - name: Download every leg's manifest
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dogfood-manifest-*
+          path: dogfood-fragments
+
+      - name: Merge into the rolling manifest
+        shell: bash
+        run: |
+          touch scripts/ci/dogfood-manifest.jsonl
+          for f in dogfood-fragments/*/dogfood-manifest.jsonl; do
+            [ -f "$f" ] && cat "$f" >> scripts/ci/dogfood-manifest.jsonl
+          done
+          wc -l scripts/ci/dogfood-manifest.jsonl
+
+      - name: Aggregate + auto-tune
+        shell: bash
+        run: node scripts/ci/dogfood-aggregator.js
+
+      - name: Upload tunings (preflight reads this next build)
+        uses: actions/upload-artifact@v4
+        with:
+          name: preflight-tunings
+          path: scripts/ci/preflight-tunings.json
+          retention-days: 90
+
+      - name: Release readiness summary (informational; release workflow enforces it on v* tag)
+        shell: bash
+        run: node scripts/ci/verify-release-readiness.js || echo "Not yet ready - the v* tag will be blocked until consecutive clean runs accrue."
