@@ -26,6 +26,10 @@ function main() {
   const appArg = args.app ? ['--app', args.app] : [];
 
   const steps = [
+    // Pure-logic gates run first - cheap, no build needed, fail fast.
+    ['deps fully pinned (reproducible backend builds)', 'verify-deps-pinned.js', []],
+    ['no build-host paths leaked into the artifact', 'verify-host-leakage.js', appArg],
+    // App-launching gates.
     ['boot / paint / serve / provenance', 'verify-packaged-app.js', appArg],
     ['code-signing state', 'verify-signature.js', [...(args.app ? ['--target', args.app] : []), ...(args.requireSigned ? ['--require-signed'] : [])]],
     ['resilience (locked-port + multi-instance)', 'verify-resilience.js', appArg],
