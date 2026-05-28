@@ -19,8 +19,8 @@ import {
 } from '@/shared/state/updateSlice';
 import AppShell from './components/Layout/AppShell';
 import DashboardSelection from './pages/DashboardSelection/DashboardSelection';
-import ErrorBoundary from './components/ErrorBoundary';
-// Lazy: heavy pages that aren't on the first-paint path.
+import ErrorBoundary from './components/feedback/ErrorBoundary';
+import { setPanelMode, disableOnboardingAfterCrash } from '@/shared/state/onboardingProgressSlice';
 const Skills = lazy(() => import('./pages/Skills/Skills'));
 const Tools = lazy(() => import('./pages/Tools/Tools'));
 const Modes = lazy(() => import('./pages/Modes/Modes'));
@@ -30,22 +30,9 @@ const Analytics = lazy(() => import('./pages/Analytics/Analytics'));
 const OnboardingRoot = lazy(() =>
   import('./components/Onboarding').then((m) => ({ default: m.OnboardingRoot })),
 );
-const SignInGate = lazy(() => import('./components/SignInGate'));
+const SignInGate = lazy(() => import('./components/overlays/SignInGate'));
 
-// Idle-prefetch the lazy page chunks so first-click on any sidebar
-// entry doesn't pay 200-600ms for the webpack chunk download. Each
-// `void import('...')` triggers webpack to stream the chunk in the
-// background; React.lazy returns the cached module instantly when the
-// user finally navigates. We do them sequentially inside one idle
-// callback to avoid all six firing at once and contending for network
-// + parse time during first paint.
 if (typeof window !== 'undefined') {
-  // Map sidebar paths to their dynamic imports so a hover/mouseenter on
-  // the sidebar can preload the chunk before the click. By the time the
-  // user actually clicks (~100-300ms after hover), the chunk is parsed
-  // and React.lazy resolves instantly. Exposed on window so AppShell
-  // can call it without prop-drilling. Each entry is idempotent;
-  // webpack dedupes repeated dynamic imports.
   (window as any).__openswarmPrefetchRoute = (path: string) => {
     switch (path) {
       case '/skills': void import('./pages/Skills/Skills'); return;
@@ -66,12 +53,6 @@ if (typeof window !== 'undefined') {
     void import('./pages/Customization/Customization');
     void import('./pages/Analytics/Analytics');
   };
-  // Tighter idle deadline (was 4000ms): we WANT these chunks loaded
-  // before the user's first click, so don't let the browser defer them
-  // indefinitely. Fallback timeout reduced from 2000ms to 500ms for the
-  // same reason. The cost during initial render is small (one chunk
-  // parse per route, deferred); the cost of paying it on first click
-  // is a multi-hundred-ms freeze.
   const ric = (window as any).requestIdleCallback as
     | ((cb: () => void, opts?: { timeout?: number }) => number)
     | undefined;
@@ -84,7 +65,7 @@ import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import { useDeepLink } from '@/shared/hooks/useDeepLink';
 import { useWindowFocus } from '@/shared/hooks/useWindowFocus';
 import { useInteractionHeartbeat } from '@/shared/hooks/useInteractionHeartbeat';
-import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
+import KeyboardShortcutsHelp from './components/overlays/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 
@@ -216,11 +197,7 @@ const ShortcutsProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
 const DeepLinkListener: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   useDeepLink();
-  // Window blur/focus → analytics events (temp-churn signal).
   useWindowFocus();
-  // Single global interaction-timestamp recorder. Powers idle-dim and
-  // similar UX, and gives the session-close dump a real "last user
-  // interaction" timestamp.
   useInteractionHeartbeat();
   return <>{children}</>;
 };
@@ -234,23 +211,13 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   useEffect(() => {
     dispatch(fetchSettings());
     dispatch(fetchModels());
-    // Reconcile OpenSwarm Pro state with Stripe on every launch so a
-    // missed webhook (cancel, upgrade, renewal) can't leave the user
-    // wedged on stale info. Fire-and-forget; if the cloud is unreachable
-    // we simply keep whatever local state we already had.
     fetch(`${API_BASE}/subscription/sync`, { method: 'POST' })
       .then((r) => {
         if (r.ok) dispatch(fetchSettings());
       })
-      .catch(() => { /* offline — next launch will reconcile */ });
+      .catch(() => {});
   }, [dispatch]);
 
-  // Refetch settings when the window regains focus. Catches every out-of-
-  // band settings mutation that doesn't come through a renderer-dispatched
-  // thunk: Stripe checkout's bearer-handoff page POSTing /api/subscription/
-  // activate, the new sign-in flow's bearer-handoff POSTing /api/auth/
-  // signin-activate, manual ~/.openswarm/settings.json edits, etc. Throttled
-  // by the browser's natural focus cadence (one refetch per Cmd-Tab back).
   useEffect(() => {
     const onFocus = () => { dispatch(fetchSettings()); };
     window.addEventListener('focus', onFocus);
@@ -268,15 +235,7 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
-// Sign-in gate. Sits between SettingsLoader and DefaultModelGuard so the
-// gate is the very first thing a user without a user_id sees.
-//
-// In v2 the gate is **mandatory** — no skip link, no soft/hard split.
-// The user must sign in (Google or email/password+verification code) before
-// the rest of the app is interactive. Already-signed-in users skip the gate.
-// Existing paid Stripe users without explicit user_id also skip — their
-// bearer is valid even though user_id might not be backfilled yet.
-
+/** Mandatory sign-in gate; first thing shown when settings lack a user_id or bearer. */
 const SignInGateLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const dispatch = useAppDispatch();
   const settings = useAppSelector((s) => s.settings.data);
@@ -284,10 +243,6 @@ const SignInGateLoader: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const alreadySignedIn = Boolean(settings.user_id || settings.openswarm_bearer_token);
 
-  // Poll settings every 2s while the gate is up so the moment the sign-in
-  // flow completes (browser POSTs /api/auth/signin-activate, local backend
-  // persists user_id to settings.json), we re-read settings and the gate
-  // auto-dismisses without the user clicking anything.
   useEffect(() => {
     if (!settingsLoaded || alreadySignedIn) return;
     const id = setInterval(() => { dispatch(fetchSettings()); }, 2000);
@@ -307,10 +262,6 @@ const SignInGateLoader: React.FC<{ children: React.ReactNode }> = ({ children })
   );
 };
 
-// Priority order for picking a default model when the user's stored
-// default_model is unreachable (no matching provider connected). The user's
-// preferred fallback ordering: direct provider keys first, then OpenSwarm
-// Pro, then Copilot-powered OpenSwarm free tier.
 const DEFAULT_MODEL_PRIORITY: string[] = [
   'Anthropic',
   'OpenAI',
@@ -319,9 +270,6 @@ const DEFAULT_MODEL_PRIORITY: string[] = [
   'OpenSwarm',
 ];
 
-// Preferred model pick inside each provider group. Ordered by the user's
-// stated preference: Sonnet mid-tier for Claude, GPT-5.4 Mini for OpenAI,
-// Flash for Gemini, and conservative picks for the shared tiers.
 const DEFAULT_MODEL_PICKS: Record<string, string[]> = {
   Anthropic: ['sonnet-cc', 'sonnet'],
   OpenAI: ['gpt-5.4-mini', 'gpt-5.4'],
@@ -348,10 +296,7 @@ function pickFallbackModel(
   return null;
 }
 
-// Reconciles the stored default_model against the set of models actually
-// reachable given the user's current connections. When the stored value is
-// unavailable, falls back per DEFAULT_MODEL_PRIORITY and shows a one-time
-// warning so the user knows why their default changed.
+/** Reconciles stored default_model against reachable models; falls back per DEFAULT_MODEL_PRIORITY and warns once. */
 const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const dispatch = useAppDispatch();
   const settings = useAppSelector((s) => s.settings.data);
@@ -399,7 +344,7 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
           sx={{ fontSize: '0.8rem' }}
         >
           {warning && (
-            <>Default model <b>{warning.from}</b> is no longer available — switched to <b>{warning.to}</b> ({warning.provider}).</>
+            <>Default model <b>{warning.from}</b> is no longer available, switched to <b>{warning.to}</b> ({warning.provider}).</>
           )}
         </Alert>
       </Snackbar>
@@ -491,9 +436,7 @@ const ThemedApp: React.FC = () => {
                     <Routes>
                       <Route element={<AppShell />}>
                         <Route path="/" element={<DashboardSelection />} />
-                        {/* Dashboard route is a no-op stub — the actual <Dashboard /> is rendered
-                            persistently inside AppShell so its webviews survive navigation between
-                            routes. This route exists only so React Router matches the URL. */}
+                        {/* Dashboard renders persistently in AppShell so webviews survive nav. */}
                         <Route path="/dashboard/:id" element={null} />
                         <Route path="/customization" element={<Customization />} />
                         <Route path="/skills" element={<Skills />} />
@@ -506,9 +449,11 @@ const ThemedApp: React.FC = () => {
                     </Routes>
                   </Suspense>
                 </ErrorBoundary>
-                <Suspense fallback={null}>
-                  <OnboardingRoot />
-                </Suspense>
+                <OnboardingErrorGuard>
+                  <Suspense fallback={null}>
+                    <OnboardingRoot />
+                  </Suspense>
+                </OnboardingErrorGuard>
               </DeepLinkListener>
             </UpdateListener>
             </DefaultModelGuard>
@@ -520,8 +465,31 @@ const ThemedApp: React.FC = () => {
   );
 };
 
-// Tiny mount-point so the route-tracker hook can use useLocation() (which
-// requires a Router ancestor). Lives inside HashRouter, runs once.
+/**
+ * Onboarding must never be able to take the whole app down. It mounts beside the
+ * routes (not under them), so before this guard a render throw bubbled to the root
+ * boundary and blanked everything. Here we catch it locally: keep the dashboard
+ * alive (fallback null), report it under its own scope so the stack finally shows
+ * up in telemetry, and dismiss the tour in storage so the next launch doesn't drop
+ * the user straight back into the same crash. Settings > restart tour re-enables it.
+ */
+const OnboardingErrorGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const dispatch = useAppDispatch();
+  return (
+    <ErrorBoundary
+      scope="onboarding"
+      fallback={null}
+      onError={() => {
+        try { dispatch(setPanelMode('hidden')); } catch {}
+        disableOnboardingAfterCrash();
+      }}
+    >
+      {children}
+    </ErrorBoundary>
+  );
+};
+
+// useRouteTracker calls useLocation, must be inside HashRouter.
 const RouteTrackerMount: React.FC = () => {
   useRouteTracker();
   return null;

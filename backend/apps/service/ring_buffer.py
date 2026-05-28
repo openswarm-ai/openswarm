@@ -1,10 +1,4 @@
-"""Fixed-size event log for operational diagnostics.
-
-Maintains a rolling window of the last N app events so support
-diagnostics can include context about recent activity. Used by
-the error report builder to attach "what just happened" when
-something goes wrong.
-"""
+"""Fixed-size rolling event log for support diagnostics."""
 
 from __future__ import annotations
 

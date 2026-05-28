@@ -1,12 +1,4 @@
-// Onboarding v2 telemetry — wraps the existing report() surface so all
-// events land under surface='onboarding_v2' (separate from the legacy
-// onboarding/walkthrough rows so dashboards stay clean during transition).
-//
-// Standard properties on every report:
-//   step_id        — current step (or 'panel' / 'roadmap' for non-step events)
-//   stage          — 'get_started' | 'customize'
-//   ms_since_step  — time since the active step started (panel "Show me" click)
-// Plus whatever the caller passes in.
+// Wraps report() so all onboarding-v2 events land under surface='onboarding_v2'.
 
 import { report as _report } from '@/shared/serviceClient';
 

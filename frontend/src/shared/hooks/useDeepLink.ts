@@ -6,30 +6,17 @@ import { fetchTools } from '@/shared/state/toolsSlice';
 import { API_BASE } from '@/shared/config';
 import { report } from '@/shared/serviceClient';
 
-// Listens for openswarm://auth?token=...&plan=...&expires=... URLs coming
-// from the Electron main process via window.openswarm.onAuthUrl. Parses the
-// payload and dispatches activateSubscription so the backend validates and
-// persists the bearer.
-//
-// Safe no-op in web/browser contexts where window.openswarm isn't defined.
+/** Subscribe to openswarm:// auth/oauth deep-links from Electron main; no-op in browser. */
 export function useDeepLink(): void {
   const dispatch = useAppDispatch();
 
   useEffect(() => {
     const api = (window as any).openswarm as OpenSwarmAPI | undefined;
-    // Both listeners are optional — useDeepLink no-ops in browser/web context
-    // where window.openswarm is undefined.
     if (!api) return;
 
     const unsubscribe = api.onAuthUrl?.((rawUrl: string) => {
       try {
-        // openswarm://auth?token=...  (host = "auth", search carries fields).
-        // Two flavors land here, distinguished by the `signin` flag:
-        //   - signin=true  → free-tier sign-in (Google OAuth / magic link)
-        //   - (default)    → Stripe checkout subscription activation
-        // Note: the bearer-handoff page in lib/authMint.ts (cloud) POSTs
-        // directly to localhost so this deep-link path is currently a
-        // backstop for older flows. Both branches here remain wired up.
+        // openswarm://auth?token=... ; signin=true => free sign-in, else Stripe activation.
         const url = new URL(rawUrl);
         if (url.host !== 'auth' && url.pathname !== '//auth' && url.pathname !== '/auth') {
           console.warn('[deep-link] Unknown openswarm:// host:', url.host);
@@ -47,9 +34,7 @@ export function useDeepLink(): void {
         const expires = url.searchParams.get('expires');
 
         if (isSignin) {
-          // v1.0.29 only supports Google sign-in. signinMethodRaw is read
-          // for forward compatibility / analytics if other methods are
-          // added later.
+          // 1.0.29 only ships Google sign-in; read for forward compat.
           void signinMethodRaw;
           report('signin', 'deep_link_received', { method: 'google' });
 
@@ -82,8 +67,7 @@ export function useDeepLink(): void {
           .unwrap()
           .then((res) => {
             report('subscription', 'activated', { plan: res.plan });
-            // Re-fetch the model list so the Claude models (via OpenSwarm
-            // Pro proxy) show up in the chat picker right away.
+            // Refresh models so Pro-proxy Claude models appear in the picker immediately.
             dispatch(fetchModels());
           })
           .catch((err) => {
@@ -97,15 +81,12 @@ export function useDeepLink(): void {
       }
     });
 
-    // OAuth claim deep-link listener. The Electron main process routes
-    // openswarm://oauth/{provider}/complete to its own IPC channel so we
-    // can claim tokens immediately rather than routing through Settings.
     let unsubscribeOauth: (() => void) | undefined;
     if (api?.onOauthClaim) {
       unsubscribeOauth = api.onOauthClaim(async (rawUrl: string) => {
         try {
+          // openswarm://oauth/{provider}/complete?session_id=...&tool_id=...
           const url = new URL(rawUrl);
-          // Expected: openswarm://oauth/{provider}/complete?session_id=...&tool_id=...
           if (url.host !== 'oauth' || !url.pathname.endsWith('/complete')) {
             console.warn('[deep-link] Unexpected oauth-claim URL:', rawUrl);
             return;
@@ -131,7 +112,6 @@ export function useDeepLink(): void {
             return;
           }
           report('oauth', 'claim_succeeded');
-          // Refresh tools so the UI reflects the newly-connected tool.
           dispatch(fetchTools());
         } catch (e) {
           console.error('[deep-link] OAuth claim threw:', e);

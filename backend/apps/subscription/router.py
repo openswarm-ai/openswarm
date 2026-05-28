@@ -41,7 +41,7 @@ async def _clear_subscription(settings_obj, *, drop_bearer: bool = True) -> None
 
     `drop_bearer=True` (the default) is the original behavior, used when the
     cloud reports the bearer as revoked (401) or the subscription as past its
-    grace period (402) — the bearer is dead so we have to clear it.
+    grace period (402); the bearer is dead so we have to clear it.
 
     `drop_bearer=False` is used by the explicit user-initiated /disconnect
     endpoint: the bearer still authenticates the user's account at api.me
@@ -62,7 +62,7 @@ async def _clear_subscription(settings_obj, *, drop_bearer: bool = True) -> None
 def _sync_subscription_identity(settings_obj) -> None:
     """Push the installation's current subscription state into service-sync person
     properties so every event from this user is segmentable by plan /
-    paying-vs-free. Safe to call from hot paths — service-sync is fire-and-forget
+    paying-vs-free. Safe to call from hot paths; service-sync is fire-and-forget
     and swallows errors internally."""
     try:
         from backend.apps.service.client import identify as _identify
@@ -178,7 +178,7 @@ async def status():
             "connection_mode": mode,
         }
 
-    # Best-effort live fetch — surface stale cache if cloud is unreachable.
+    # Best-effort live fetch; surface stale cache if cloud is unreachable.
     # Network errors leave upstream_code=None so we keep the cached state;
     # only explicit 401/402 from the cloud trigger a local clear.
     live_usage = None
@@ -203,7 +203,7 @@ async def status():
         logger.debug("subscription/status live fetch failed: %s", e)
 
     # Cloud says the bearer is gone (401) or the sub is past its grace
-    # period (402) — drop local credentials so the desktop stops routing
+    # period (402); drop local credentials so the desktop stops routing
     # through a dead subscription. Settings UI sees connected=False and
     # falls back to the Subscribe CTA; chat reverts to own_key routing.
     if upstream_code in (401, 402):
@@ -237,7 +237,7 @@ async def sync():
     state forever.
 
     No-op when not in openswarm-pro mode. Best-effort: network failures are
-    swallowed — the caller still gets a 200 with whatever local state we
+    swallowed; the caller still gets a 200 with whatever local state we
     already had."""
     # Lazy-import the service-sync helper so subscription/router doesn't pay the
     # cost when analytics are disabled.
@@ -285,7 +285,7 @@ async def sync():
     cloud_plan = data.get("plan")
     period_end_ms = data.get("current_period_end")
 
-    # Only touch local fields the cloud explicitly confirmed — don't paper
+    # Only touch local fields the cloud explicitly confirmed; don't paper
     # over missing keys with defaults that would downgrade an older record.
     if cloud_plan:
         settings_obj.openswarm_subscription_plan = cloud_plan

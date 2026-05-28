@@ -1,5 +1,4 @@
-// Full 10-step roadmap. Modal opens from the panel's "See all todos" link.
-// Stages cascade: Stage 2 unlocks once Stage 1 is fully complete.
+/** 10-step roadmap modal opened from the panel's "See all todos"; Stage 2 unlocks once Stage 1 is fully complete. */
 
 import React from 'react';
 import { Modal, Box, Typography, IconButton, Button } from '@mui/material';
@@ -37,28 +36,18 @@ const OnboardingRoadmapModal: React.FC = () => {
     progress.setPanelMode('expanded');
   };
 
-  // Anchor the roadmap to the same top-right corner the panel sits in,
-  // so visually it reads as the panel "expanding into" the full roadmap
-  // rather than a centered modal that breaks spatial continuity. The
-  // origin point matches OnboardingPanel's top:44 / right:16 dock.
+  // Anchored top:44 / right:16 to match OnboardingPanel's dock so the modal reads as the panel expanding.
   return (
     <Modal
       open={open}
       onClose={close}
-      // Disable Modal's internal flex centering — we position the inner
-      // box absolutely from the top-right corner ourselves.
       sx={{ inset: 0 }}
       slotProps={{
         backdrop: {
           sx: { backgroundColor: 'rgba(0,0,0,0.42)' },
         },
       }}
-      // Modal mounts as soon as `open` is true; AnimatePresence inside
-      // owns the actual exit animation, so we keep keepMounted off and
-      // use AnimatePresence with mode="wait".
     >
-      {/* Outer Box gets focus / aria attributes from MUI Modal. The
-          motion.div inside handles the slide-in. */}
       <Box
         sx={{
           position: 'absolute',
@@ -79,8 +68,6 @@ const OnboardingRoadmapModal: React.FC = () => {
         >
       <Box
         sx={{
-          // Roughly the same width as the expanded panel, just a touch
-          // wider so the 8-row roadmap breathes. 360 vs panel's 320.
           width: 360,
           maxHeight: 'calc(100vh - 80px)',
           overflowY: 'auto',
@@ -93,7 +80,6 @@ const OnboardingRoadmapModal: React.FC = () => {
           fontFamily: c.font.sans,
         }}
       >
-        {/* Header */}
         <Box
           sx={{
             display: 'flex',
@@ -129,7 +115,6 @@ const OnboardingRoadmapModal: React.FC = () => {
           </IconButton>
         </Box>
 
-        {/* Stages */}
         <Box sx={{ px: 2.4, pt: 1.6, pb: 0.5 }}>
           {STAGE_GROUPS.map((group, gi) => {
             const stageDone = group.steps.filter((s) =>
@@ -191,9 +176,7 @@ const OnboardingRoadmapModal: React.FC = () => {
                         key={step.id}
                         onClick={() => {
                           if (isLocked) return;
-                          // If a step is mid-flow, abort it before
-                          // jumping. Otherwise the AC keeps animating
-                          // for a step the user no longer sees.
+                          // Abort mid-flow step before jumping; otherwise AC keeps animating for a step the user no longer sees.
                           if (progress.running) {
                             onboardingDirector.cancelStep();
                           }
@@ -270,7 +253,6 @@ const OnboardingRoadmapModal: React.FC = () => {
           })}
         </Box>
 
-        {/* Footer */}
         <Box
           sx={{
             px: 2.4,

@@ -44,14 +44,6 @@ export function getWebview(browserId: string, tabId?: string): BrowserWebview | 
   return registry.get(makeKey(browserId, resolvedTabId));
 }
 
-export function getActiveTabId(browserId: string): string | undefined {
-  return activeTabMap.get(browserId);
-}
-
-export function getAllWebviews(): Map<string, BrowserWebview> {
-  return new Map(registry);
-}
-
 export function findBrowserByWebContentsId(wcId: number): string | undefined {
   for (const [key, wv] of registry.entries()) {
     if ((wv as any).getWebContentsId?.() === wcId) {
@@ -59,12 +51,4 @@ export function findBrowserByWebContentsId(wcId: number): string | undefined {
     }
   }
   return undefined;
-}
-
-export function unregisterAllForBrowser(browserId: string): void {
-  const prefix = `${browserId}:`;
-  for (const key of registry.keys()) {
-    if (key.startsWith(prefix)) registry.delete(key);
-  }
-  activeTabMap.delete(browserId);
 }

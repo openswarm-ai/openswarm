@@ -36,11 +36,11 @@ BUILTIN_TOOLS: list[BuiltinTool] = [
     # Agent tools
     BuiltinTool(name="Agent", display_name="CreateAgent", description="Spawn a sub-agent to handle a complex subtask", category="agents"),
     BuiltinTool(name="InvokeAgent", description="Invoke a copy of an existing agent with a new message, preserving full conversation context", category="agents"),
-    # Browser delegation tools (Layer 1 — what the main agent calls)
+    # Browser delegation tools (Layer 1, what the main agent calls)
     BuiltinTool(name="CreateBrowserAgent", description="Create a new browser and run a task on it", category="browser_delegation"),
     BuiltinTool(name="BrowserAgent", description="Delegate a browser task to an existing browser agent", category="browser_delegation"),
     BuiltinTool(name="BrowserAgents", description="Run multiple browser tasks in parallel on existing browsers", category="browser_delegation"),
-    # Browser action tools (Layer 2 — what the sub-agent executes)
+    # Browser action tools (Layer 2, what the sub-agent executes)
     BuiltinTool(name="BrowserScreenshot", description="Capture a screenshot of the browser page", category="browser_action"),
     BuiltinTool(name="BrowserNavigate", description="Navigate the browser to a URL", category="browser_action"),
     BuiltinTool(name="BrowserClick", description="Click an element by CSS selector", category="browser_action"),

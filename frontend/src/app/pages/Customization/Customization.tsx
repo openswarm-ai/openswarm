@@ -65,8 +65,6 @@ const Customization: React.FC = () => {
                 borderRadius: 2.5,
                 boxShadow: c.shadow.sm,
                 willChange: 'transform',
-                // Removed the box-shadow hover animation; border-color
-                // alone reads as the affordance and is layout-free.
                 '&:hover': { borderColor: c.accent.primary },
                 transition: 'border-color 0.2s',
               }}

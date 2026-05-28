@@ -13,16 +13,7 @@ import Button from '@mui/material/Button';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-
-interface SchemaNode {
-  type?: string;
-  properties?: Record<string, SchemaNode>;
-  items?: SchemaNode;
-  required?: string[];
-  enum?: string[];
-  description?: string;
-  default?: any;
-}
+import { getDefault, type SchemaNode } from '@/shared/inputSchemaDefaults';
 
 interface Props {
   schema: SchemaNode;
@@ -30,26 +21,6 @@ interface Props {
   onChange: (value: any) => void;
   label?: string;
   depth?: number;
-}
-
-function getDefault(schema: SchemaNode): any {
-  if (schema.default !== undefined) return schema.default;
-  switch (schema.type) {
-    case 'string': return '';
-    case 'number': return 0;
-    case 'boolean': return false;
-    case 'array': return [];
-    case 'object': {
-      const obj: Record<string, any> = {};
-      if (schema.properties) {
-        for (const [k, v] of Object.entries(schema.properties)) {
-          obj[k] = getDefault(v);
-        }
-      }
-      return obj;
-    }
-    default: return '';
-  }
 }
 
 const InputSchemaForm: React.FC<Props> = ({ schema, value, onChange, label, depth = 0 }) => {
@@ -258,5 +229,4 @@ const InputSchemaForm: React.FC<Props> = ({ schema, value, onChange, label, dept
   );
 };
 
-export { getDefault };
 export default InputSchemaForm;

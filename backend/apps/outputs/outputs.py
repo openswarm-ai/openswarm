@@ -1,16 +1,13 @@
 import json
 import os
-import re
 import logging
 import mimetypes
-import base64
 from datetime import datetime
 from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import HTTPException, Query
 from fastapi.responses import Response
 from backend.auth import get_auth_token
-from jsonschema import validate as schema_validate, ValidationError as SchemaValidationError
 from backend.config.Apps import SubApp
 from backend.apps.outputs.models import (
     Output, OutputCreate, OutputUpdate, OutputExecute, OutputExecuteResult,
@@ -23,156 +20,28 @@ from backend.apps.outputs.view_builder_templates import (
     seed_webapp_template_workspace,
 )
 from backend.apps.settings.settings import load_settings
+from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR as WORKSPACE_DIR
+from backend.apps.outputs.html_inject import (
+    MODEL_MAP,
+    _resolve_model,
+    _get_anthropic_client,
+    _validate_against_schema,
+    _build_data_injection,
+    _inject_data_into_html,
+    _backend_url_for_workspace,
+    _inject_token_into_relative_urls,
+    _decode_data_param,
+)
+from backend.apps.outputs.workspace_io import (
+    _load_all,
+    _save,
+    _load,
+    load_output,
+    _walk_directory,
+)
+from backend.apps.outputs.prompts import VIBE_CODE_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
-
-MODEL_MAP = {
-    "sonnet": "claude-sonnet-4-20250514",
-    "opus": "claude-opus-4-20250514",
-    "haiku": "claude-haiku-4-5-20251001",
-}
-
-
-def _resolve_model(short_name: str) -> str:
-    return MODEL_MAP.get(short_name, short_name)
-
-
-def _get_anthropic_client(api_model: str | None = None):
-    """Create an AsyncAnthropic client using the API key from app settings.
-
-    When `api_model` is provided and carries a 9Router prefix (cc/, cx/, gc/),
-    the client is pointed at 9Router so non-Anthropic aux calls don't 400 on
-    api.anthropic.com. Without an api_model we fall back to the default
-    connection-mode-driven client.
-    """
-    from backend.apps.settings.credentials import (
-        get_anthropic_client,
-        get_anthropic_client_for_model,
-    )
-    settings = load_settings()
-    if api_model:
-        return get_anthropic_client_for_model(settings, api_model)
-    return get_anthropic_client(settings)
-
-
-def _validate_against_schema(data: dict, schema: dict) -> str | None:
-    """Validate *data* against *schema*. Return an error string or None."""
-    try:
-        schema_validate(instance=data, schema=schema)
-        return None
-    except SchemaValidationError as exc:
-        path = " -> ".join(str(p) for p in exc.absolute_path) if exc.absolute_path else "(root)"
-        return f"Schema validation failed at {path}: {exc.message}"
-
-from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR as WORKSPACE_DIR
-
-
-def _build_data_injection(input_json: str, result_json: str, backend_url_json: str = "null") -> str:
-    """Build a <script> tag that sets OUTPUT_INPUT / OUTPUT_BACKEND_RESULT /
-    OUTPUT_BACKEND_URL and listens for postMessage updates.
-
-    OUTPUT_BACKEND_URL is `null` when the app has no live `backend.py`
-    process; otherwise it's `http://localhost:<port>` and app code can
-    `fetch(window.OUTPUT_BACKEND_URL + '/route')` to hit the persistent
-    backend's endpoints."""
-    return (
-        "<script>\n"
-        "(function() {\n"
-        "  window.OUTPUT_INPUT = " + input_json + ";\n"
-        "  window.OUTPUT_BACKEND_RESULT = " + result_json + ";\n"
-        "  window.OUTPUT_BACKEND_URL = " + backend_url_json + ";\n"
-        "  window.addEventListener('message', function(e) {\n"
-        "    if (e.data && e.data.type === 'OUTPUT_DATA') {\n"
-        "      window.OUTPUT_INPUT = e.data.input || {};\n"
-        "      window.OUTPUT_BACKEND_RESULT = e.data.backendResult || null;\n"
-        "      if (e.data.backendUrl !== undefined) window.OUTPUT_BACKEND_URL = e.data.backendUrl;\n"
-        "      window.dispatchEvent(new CustomEvent('output-data-ready'));\n"
-        "    }\n"
-        "  });\n"
-        "})();\n"
-        "</script>"
-    )
-
-
-def _inject_data_into_html(html: str, input_json: str = "{}", result_json: str = "null", backend_url_json: str = "null") -> str:
-    injection = _build_data_injection(input_json, result_json, backend_url_json)
-    if "</head>" in html:
-        return html.replace("</head>", f"{injection}\n</head>", 1)
-    if "<body" in html:
-        return html.replace("<body", f"{injection}\n<body", 1)
-    return f"{injection}\n{html}"
-
-
-def _backend_url_for_workspace(workspace_id: str) -> str:
-    """Return the JSON-encoded backend URL for the given workspace, or
-    "null" if no runtime is active. Cheap inline lookup so serve_workspace_file
-    doesn't have to think about it."""
-    try:
-        from backend.apps.outputs.runtime import manager as runtime_manager
-        rt = runtime_manager.get(workspace_id)
-        if rt and rt.running and rt.port:
-            return json.dumps(f"http://127.0.0.1:{rt.port}")
-    except Exception:
-        logger.exception("backend url lookup failed for %s", workspace_id)
-    return "null"
-
-
-# URL schemes / prefixes that must NOT have ?token= appended. These are either
-# external (CDNs, mailto) or non-network references that the auth middleware
-# never sees. Anything else is treated as a same-origin relative URL pointing
-# at our /api/outputs/.../serve/ subtree, which DOES need the token.
-_ABSOLUTE_URL_PREFIXES = (
-    "http://", "https://", "//", "data:", "blob:",
-    "mailto:", "tel:", "javascript:", "about:", "#",
-)
-
-_HREF_SRC_ATTR_RE = re.compile(
-    r"""(\s(?:href|src))\s*=\s*(["'])([^"']+)\2""",
-    re.IGNORECASE,
-)
-
-
-def _inject_token_into_relative_urls(html: str, token: str) -> str:
-    """Append `?token=<t>` to every relative href/src in the served HTML.
-
-    Browsers strip the parent iframe URL's query string before resolving
-    relative `<link href="styles.css">` / `<script src="x.js">`, so without
-    this rewrite the sub-resource fetch lands at the auth middleware with no
-    credentials and gets a 401. Idempotent: skips URLs that already carry a
-    `token=` param. Skips absolute URLs (CDN, data:, etc.) — see prefix list.
-    """
-    if not token:
-        return html
-
-    def _patch(match: re.Match) -> str:
-        attr, quote, url = match.group(1), match.group(2), match.group(3)
-        lowered = url.lower().lstrip()
-        if lowered.startswith(_ABSOLUTE_URL_PREFIXES):
-            return match.group(0)
-        if "token=" in url:
-            return match.group(0)
-        # Split off any hash fragment so `?token=` lands in the query, not in
-        # the fragment: `page.html?v=1#sec` → `page.html?v=1&token=X#sec`.
-        hash_idx = url.find("#")
-        if hash_idx >= 0:
-            base, frag = url[:hash_idx], url[hash_idx:]
-        else:
-            base, frag = url, ""
-        sep = "&" if "?" in base else "?"
-        return f'{attr}={quote}{base}{sep}token={token}{frag}{quote}'
-
-    return _HREF_SRC_ATTR_RE.sub(_patch, html)
-
-
-def _decode_data_param(d: str) -> tuple[str, str]:
-    """Decode the base64-encoded _d query param into (input_json, result_json)."""
-    try:
-        decoded = json.loads(base64.b64decode(d))
-        input_json = json.dumps(decoded.get("i", {}))
-        result_json = json.dumps(decoded.get("r", None))
-        return input_json, result_json
-    except Exception:
-        return "{}", "null"
 
 
 @asynccontextmanager
@@ -198,113 +67,6 @@ async def outputs_lifespan():
 outputs = SubApp("outputs", outputs_lifespan)
 
 
-def _load_all() -> list[Output]:
-    result = []
-    if not os.path.exists(DATA_DIR):
-        return result
-    for fname in os.listdir(DATA_DIR):
-        if fname.endswith(".json"):
-            with open(os.path.join(DATA_DIR, fname)) as f:
-                result.append(Output(**json.load(f)))
-    return result
-
-
-def _save(output: Output):
-    with open(os.path.join(DATA_DIR, f"{output.id}.json"), "w") as f:
-        json.dump(output.model_dump(), f, indent=2)
-
-
-def _load(output_id: str) -> Output:
-    path = os.path.join(DATA_DIR, f"{output_id}.json")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Output not found")
-    with open(path) as f:
-        return Output(**json.load(f))
-
-
-def load_output(output_id: str) -> Output | None:
-    """Public helper for other modules to resolve an output by ID."""
-    path = os.path.join(DATA_DIR, f"{output_id}.json")
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        return Output(**json.load(f))
-
-
-# Build/install/cache directories that the polling endpoint must never
-# descend into. Without this skip-list the workspace endpoint reads
-# `node_modules/` (300 MB of MUI source, when it's a real dir and not a
-# symlink), `.venv/` (10k+ Python files from the hardlinked cache),
-# `__pycache__/`, `dist/`, `.git/`, etc — every 2 seconds while the
-# agent is active. Result: backend CPU pegged on JSON-serializing
-# auto-generated chunks the frontend will then throw away. The frontend
-# already filters these for display; this skip is the real fix.
-_WALK_SKIP_DIRS = frozenset({
-    "node_modules",
-    ".vite",
-    ".vite-cache",
-    ".vite_cache",
-    ".git",
-    "dist",
-    ".next",
-    "__pycache__",
-    ".venv",
-    "venv",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
-})
-
-# Cap per-file response size at 256 KB. Hand-written source rarely
-# exceeds this; auto-generated bundles routinely run into the MBs and
-# they're not what the user/agent is editing. Anything over the cap
-# returns a truncated stub the frontend treats as "open the file
-# directly to see full contents."
-_WALK_MAX_FILE_BYTES = 256 * 1024
-
-
-def _walk_directory(folder: str) -> dict[str, str]:
-    """Walk a directory tree and return {relative_path: content} for all
-    text files the user is actually authoring. Skips build/install
-    directories AND truncates oversize files — both critical for the
-    polling endpoint, which is called every 2 s while the agent is
-    writing code and would otherwise serialize hundreds of MB per poll."""
-    files: dict[str, str] = {}
-    if not os.path.isdir(folder):
-        return files
-    for root, dirs, filenames in os.walk(folder):
-        # Mutate `dirs` in place — that's how os.walk skips a subtree.
-        # Doing it here means we never even stat the children, so a
-        # 10k-file `.venv/` costs ~one stat (on the dir itself) instead
-        # of 10k.
-        dirs[:] = [d for d in dirs if d not in _WALK_SKIP_DIRS]
-        for fname in filenames:
-            full_path = os.path.join(root, fname)
-            # Normalize to forward-slash keys so the frontend's
-            # `path.split('/')` and `.startsWith(prefix)` checks work
-            # the same on Windows (where os.sep is '\\') as on macOS.
-            # Without this, every workspace file came back as
-            # `backend\\app.py` on Windows and the file tree silently
-            # mis-parsed.
-            rel_path = os.path.relpath(full_path, folder).replace(os.sep, "/")
-            try:
-                # Stat first — cheap, lets us skip giant files without
-                # opening + reading them.
-                size = os.path.getsize(full_path)
-                if size > _WALK_MAX_FILE_BYTES:
-                    files[rel_path] = (
-                        f"// [openswarm] file truncated ({size} bytes > "
-                        f"{_WALK_MAX_FILE_BYTES} byte cap). Open directly "
-                        f"to view full contents."
-                    )
-                    continue
-                with open(full_path) as f:
-                    files[rel_path] = f.read()
-            except Exception:
-                pass
-    return files
-
-
 # ---------------------------------------------------------------------------
 # File-serving endpoints (for iframe preview with multi-file support)
 # ---------------------------------------------------------------------------
@@ -328,7 +90,7 @@ async def serve_workspace_file(workspace_id: str, filepath: str, _d: str = ""):
         content = _inject_data_into_html(content, input_json, result_json, backend_url_json)
         # Iframe sub-resource fetches (<link>, <script src>, <img>) drop the
         # parent's ?token= query string, so rewrite the HTML to put the token
-        # back on every relative URL — otherwise sub-resources 401.
+        # back on every relative URL; otherwise sub-resources 401.
         content = _inject_token_into_relative_urls(content, get_auth_token())
 
     mime, _ = mimetypes.guess_type(filepath)
@@ -512,7 +274,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
       openswarm-ai/webapp-template snapshot (React + Vite + TS frontend
       with an optional FastAPI backend) into the workspace, allocates a
       free FRONTEND_PORT and writes it into both `.env` and
-      `.env.example`. BACKEND_PORT stays NONE — the agent opts in with
+      `.env.example`. BACKEND_PORT stays NONE; the agent opts in with
       `bash backend_init.sh`. Runtime spawn flips to `bash run.sh` and
       the preview pane points at `http://localhost:{FRONTEND_PORT}/`.
       `body.files` is ignored in this mode; the snapshot is the source
@@ -524,7 +286,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
     # An explicit non-empty `files` payload means the caller has flat-mode
     # content to write (a saved legacy Output being reseeded). Don't
     # clobber that with the React template even if template_mode is the
-    # new default — the migration helper has its own path for that.
+    # new default; the migration helper has its own path for that.
     effective_mode = body.template_mode
     if body.files:
         effective_mode = "flat"
@@ -533,7 +295,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
         # Idempotency guard: re-seeding an existing webapp_template
         # workspace would clobber the agent's edits (the helper uses
         # dirs_exist_ok=True + copytree). If `run.sh` already exists,
-        # the workspace was seeded on a previous visit — skip the file
+        # the workspace was seeded on a previous visit; skip the file
         # copy and only re-derive the frontend port from .env.
         from backend.apps.outputs.runtime import _find_free_port, _read_env_value
         already_seeded = os.path.exists(os.path.join(folder, "run.sh"))
@@ -546,7 +308,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
         else:
             frontend_port = _find_free_port()
             seed_webapp_template_workspace(folder, frontend_port)
-            # SKILL.md still goes in workspace root — agent reads it for
+            # SKILL.md still goes in workspace root; agent reads it for
             # context. Live content (user-editable via Skills page) is
             # injected into the system prompt regardless.
             with open(os.path.join(folder, "SKILL.md"), "w") as f:
@@ -559,7 +321,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
         # the Apps sidebar the moment the user kicks off generation.
         # Previously the record only landed when the editor's autosave
         # fired, which itself was gated on `files['index.html']` being
-        # non-empty (a flat-template invariant) — meaning React+Vite
+        # non-empty (a flat-template invariant); meaning React+Vite
         # apps that navigated-away mid-build had no way back. The record
         # is a thin pointer (name + workspace_id); the workspace itself
         # remains the source of truth for the code.
@@ -591,7 +353,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
             "already_seeded": already_seeded,
         }
 
-    # Legacy flat path — unchanged.
+    # Legacy flat path; unchanged.
     if body.files:
         for rel_path, content in body.files.items():
             full_path = os.path.normpath(os.path.join(folder, rel_path))
@@ -693,7 +455,7 @@ async def runtime_restart(workspace_id: str):
     from backend.apps.outputs.runtime import manager as runtime_manager
     # Restart only if something's attached; otherwise this is a no-op
     # silently (a hard-reload click while the runtime was already torn
-    # down — we'd rather not silently respawn an orphan).
+    # down; we'd rather not silently respawn an orphan).
     rt = runtime_manager.get(workspace_id)
     if rt:
         await runtime_manager.restart(workspace_id, os.path.abspath(folder))
@@ -725,7 +487,7 @@ async def write_workspace_file(workspace_id: str, filepath: str, body: dict):
     folder_norm = os.path.normpath(folder)
     full_path = os.path.normpath(os.path.join(folder, filepath))
     # `startswith(folder_norm + os.sep)` (not just folder_norm) so a workspace
-    # `abc-123` can't be tricked into writing into a sibling `abc-1234-evil` —
+    # `abc-123` can't be tricked into writing into a sibling `abc-1234-evil` , 
     # prefix-string collision rather than path-component containment. Today's
     # UUID-format ids make the collision unlikely in practice, but the check
     # is one character and immunizes future id schemes.
@@ -787,7 +549,11 @@ async def update_output(output_id: str, body: OutputUpdate):
     output = _load(output_id)
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(output, k, v)
-    output.updated_at = datetime.now().isoformat()
+    now = datetime.now().isoformat()
+    output.updated_at = now
+    # Only a real screenshot write moves the sort key; files/linkage saves don't reorder.
+    if body.thumbnail is not None:
+        output.preview_updated_at = now
     _save(output)
     return {"ok": True, "output": output.model_dump()}
 
@@ -799,23 +565,6 @@ async def delete_output(output_id: str):
     if os.path.exists(path):
         os.remove(path)
     return {"ok": True}
-
-
-VIBE_CODE_SYSTEM_PROMPT = """\
-You are an expert at building self-contained HTML/JS/CSS applications that run in an iframe.
-
-The user will describe what they want, and you will generate:
-1. **frontend_code**: A complete HTML document. React 18 is available via esm.sh CDN.
-   - Use: <script type="importmap">{"imports":{"react":"https://esm.sh/react@18","react-dom/client":"https://esm.sh/react-dom@18/client"}}</script>
-   - Input data is at window.OUTPUT_INPUT (object), backend result at window.OUTPUT_BACKEND_RESULT.
-2. **input_schema**: A JSON Schema object defining the structured input.
-3. **backend_code** (optional): Python code where input_data is a global dict and result is a global dict to assign to.
-4. **name**: A short name for the view.
-5. **description**: A one-sentence description.
-6. **message**: A brief explanation of what you did/changed.
-
-Return ONLY valid JSON with these keys. No markdown fences, no extra text.\
-"""
 
 
 @outputs.router.post("/vibe-code")
@@ -865,7 +614,7 @@ async def vibe_code(body: VibeCodeRequest):
             system=VIBE_CODE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
         )
-        from backend.apps.agents.agent_manager import _safe_resp_text
+        from backend.apps.agents.core.aux_llm import _safe_resp_text
         raw = _safe_resp_text(resp).strip()
         if not raw:
             return {
@@ -931,7 +680,7 @@ async def execute_output(body: OutputExecute):
         # HITL gate: collect warnings up front. If the caller hasn't opted
         # in via force=True AND the code touches anything outside the safe
         # allowlist, return the warnings + the code itself so the UI can
-        # show a preview dialog. No subprocess is spawned on this path —
+        # show a preview dialog. No subprocess is spawned on this path , 
         # zero-cost when warnings exist, identical-to-before when they
         # don't.
         if not body.force:

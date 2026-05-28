@@ -42,3 +42,7 @@ When you touch routing, fetch wiring, asset loading, or WS plumbing, build with 
 
 - Direct LLM calls from the frontend bypass the backend's provider routing and MCP gate. Don't add them; route through `/api/*` instead.
 - Webpack-dev-server hot reload occasionally loses WS state; full page reload after backend restarts.
+- MUI `Menu`/`Popover`/`Modal` portals dropped over an Electron `<webview>` inside the zoom/pan canvas eat clicks intermittently. Webviews are a separate compositor layer that CSS `pointer-events` and z-index can't reliably beat. Don't float a menu over a webview: open it into empty canvas, use plain `position:fixed` JSX you control, or make it a direct action (right-click does the thing, no menu).
+- Reset/clear handlers must clear local component state, not just the Redux slice. `clearSessionMessages` only wipes `session.messages`; AgentChat's `showResumeBubble`, `awaitingResponse`, and message queue are React state and survive, leaving a stale "thinking" bubble or Resume button. Clear both.
+- Don't GC a session/draft on unmount without checking it isn't mid-launch. `launchAndSendFirstMessage` races against route-change unmount; deleting a draft that already has user messages orphans the backend session and reads as "everything got wiped" on reopen. Guard on message count.
+- Don't write placeholder strings into fields the UI renders as real data. The Google Workspace pill showed "Google Workspace account" because the connected email fell back to `f"{tool.name} account"`; leave the field empty and let the UI's empty-state handle it.

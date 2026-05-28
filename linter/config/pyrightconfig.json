@@ -1,0 +1,14 @@
+{
+  "include": ["../../backend"],
+  "exclude": [
+    "../../backend/.venv",
+    "../../backend/uv-bin",
+    "../../backend/data",
+    "../../backend/tests"
+  ],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.11",
+  "venvPath": "../../backend",
+  "venv": ".venv",
+  "reportMissingTypeStubs": false
+}

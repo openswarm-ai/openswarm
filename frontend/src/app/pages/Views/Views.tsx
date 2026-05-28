@@ -7,12 +7,11 @@ import AddIcon from '@mui/icons-material/Add';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchOutputs, deleteOutput, Output } from '@/shared/state/outputsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { byPreviewRecency } from '@/shared/previewOrder';
 import ViewCard from './ViewCard';
-import { Skeleton } from '@/app/components/Loading';
+import { Skeleton } from '@/app/components/feedback/Loading';
 import ViewRunDialog from './ViewRunDialog';
-// ViewEditor pulls in CodeMirror (~600KB minified) and 1600+ lines of
-// form scaffolding. Landing on /apps to browse the grid shouldn't pay
-// that cost; lazy so the chunk only loads when the user opens an editor.
+// Lazy: pulls CodeMirror (~600KB) + 1600 lines of form scaffolding, only needed when an editor opens.
 const ViewEditor = lazy(() => import('./ViewEditor'));
 
 const Views: React.FC = () => {
@@ -23,7 +22,7 @@ const Views: React.FC = () => {
   const items = useAppSelector((state) => state.outputs.items);
   const loading = useAppSelector((state) => state.outputs.loading);
   const loaded = useAppSelector((state) => state.outputs.loaded);
-  const outputs = useMemo(() => Object.values(items), [items]);
+  const outputs = useMemo(() => Object.values(items).sort(byPreviewRecency), [items]);
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingOutput, setEditingOutput] = useState<Output | null>(null);

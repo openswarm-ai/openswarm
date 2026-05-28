@@ -10,13 +10,7 @@ export const step06: OnboardingStep = {
   videoSrc: './onboarding-videos/v2/06.mp4',
   videoDurationLabel: '0:34',
   requiresDashboard: true,
-  // Reuses the chat the user launched back in step 3 (the YouTube /
-  // web-research agent) as the "previous chat." Step 5's
-  // dependsOn-walk pattern would be appropriate here too, but
-  // pragmatically: by step 6 the user has already created at least one
-  // chat (step 3 marks itself done on chat:message_sent), so we just
-  // frame the existing chat as the helper instead of seeding a stub
-  // via seed-orchestration-demo.
+  // Reuses step 3's chat as the orchestratee; step 6 always has one available by now.
   ops: [
     {
       kind: 'popup',
@@ -28,18 +22,14 @@ export const step06: OnboardingStep = {
       kind: 'wait_user',
       condition: { kind: 'click_target', target: S.newAgentButton },
     },
-    // See step05 — same nudge so the cursor's visual body center sits
-    // over the select-mode icon, not the adjacent paperclip.
+    // See step05 (cursor body offset).
     { kind: 'move_to', target: S.elementSelectionToggle, offset: { x: -10, y: -10 } },
     { kind: 'popup', text: 'Tap here to hook in the older chat.' },
     {
       kind: 'wait_user',
       condition: { kind: 'click_target', target: S.elementSelectionToggle },
     },
-    // Same auto-fit as step 5: the new orchestrator chat triggers
-    // Dashboard's autoFocusSessionId, which often pushes the older
-    // chat off-screen. Click fit-to-view first so both cards are
-    // visible together for the drag-select demo.
+    // Fit-to-view (same reason as step 5).
     { kind: 'move_to', target: S.canvasFitToView },
     { kind: 'click', target: S.canvasFitToView, simulate: true },
     { kind: 'delay', ms: 350 },
@@ -50,28 +40,21 @@ export const step06: OnboardingStep = {
     },
     {
       kind: 'wait_user',
+      // Reuses agent:attached_to_browser; backend emits it for any element-selection attach.
       condition: { kind: 'event_bus', event: 'agent:attached_to_browser' },
-      // Reuses the same attached event as step 5 for now — backend emits
-      // it for any element-selection attachment regardless of element type.
       timeoutMs: 90000,
     },
     { kind: 'move_to', target: S.chatInput },
     {
       kind: 'type_into',
       target: S.chatInput,
-      // Phrased to work against EITHER prompt step 3 sent — the
-      // YouTube summary OR the web-research fallback. "What it dug
-      // up" covers both without naming the source.
+      // Source-agnostic; works for either step 3 prompt.
       text: 'Turn what it dug up into a PDF report and save it to my downloads.',
       speedMs: 12,
     },
     { kind: 'move_to', target: S.chatSendButton },
     { kind: 'click', target: S.chatSendButton, simulate: true },
-    // Wait for the user's message to actually go out — short wait, just
-    // to confirm the orchestration kicked off. Don't wait for the agent
-    // to fully finish: orchestrators legitimately run for minutes,
-    // sub-agents loop while doing real work, and trapping the user
-    // in step 6 until everything settles is the worst possible UX.
+    // Confirm message went out; don't wait for the orchestrator to finish (legitimately runs minutes).
     {
       kind: 'wait_user',
       condition: { kind: 'event_bus', event: 'chat:message_sent' },

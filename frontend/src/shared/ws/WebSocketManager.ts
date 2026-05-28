@@ -30,7 +30,7 @@ import { notifyAgentCompletion } from '../notifications';
 
 // Thin wrapper around getAuthToken so the connect() call site stays
 // synchronous. If the token isn't cached yet, returns '' and the WS
-// handshake will 4401 — onclose catches that and refreshes the token
+// handshake will 4401 , onclose catches that and refreshes the token
 // before the next reconnect.
 const _getAuthTokenSafe = (): string => {
   try { return getAuthToken() || ''; } catch { return ''; }
@@ -38,7 +38,7 @@ const _getAuthTokenSafe = (): string => {
 
 
 const _genUuid = (): string => {
-  // Avoid pulling in `crypto.randomUUID` for compat — this is a
+  // Avoid pulling in `crypto.randomUUID` for compat , this is a
   // disambiguator, not a security boundary, so a 96-bit hex string is
   // plenty.
   const a = Math.floor(Math.random() * 2 ** 32).toString(16).padStart(8, '0');
@@ -89,7 +89,7 @@ class WebSocketManager {
   // Resume state. lastSeq is the highest server-assigned seq this
   // client has applied; it's sent on every (re)connect so the server
   // can replay missed events. Persists for the lifetime of this
-  // WebSocketManager instance — when the user navigates away and a
+  // WebSocketManager instance , when the user navigates away and a
   // new createSessionWs() is constructed, lastSeq starts at 0 and we
   // get a full replay.
   private connectionUuid: string;
@@ -112,7 +112,7 @@ class WebSocketManager {
   private pongTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Outbound queue. Frames the user enqueues while the WS isn't
-  // OPEN — or while OPEN but pre-resume-ack — wait here and flush
+  // OPEN , or while OPEN but pre-resume-ack , wait here and flush
   // after the resume handshake completes. Queue is in-memory only:
   // surviving a full app restart isn't worth the localStorage
   // complexity given how rare that case is for a transient drop.
@@ -122,7 +122,7 @@ class WebSocketManager {
   // Frame-aligned message coalescer. Buffers incoming WS messages from
   // all WebSocketManager instances and flushes them in ONE batched
   // React render per animation frame. Without this, N concurrent agents
-  // each cause their own renders on every WS message — dozens of full
+  // each cause their own renders on every WS message , dozens of full
   // app re-renders per second, fanning out to every useSelector. With
   // it: max one render per frame regardless of message volume.
   private static _messageQueue: Array<{ mgr: WebSocketManager; msg: WSEvent }> = [];
@@ -220,7 +220,7 @@ class WebSocketManager {
         // Buffer incoming messages and flush them per animation frame
         // in a single React batch. With N concurrent agents/browsers
         // streaming, each WS instance used to trigger its own React
-        // render — dozens per frame, fanning out to every useSelector
+        // render , dozens per frame, fanning out to every useSelector
         // subscriber, starving the main thread. Coalescing flips that
         // to ONE batched render per frame regardless of how many
         // messages arrived. Stream deltas dispatch directly into Redux
@@ -254,7 +254,7 @@ class WebSocketManager {
     };
 
     this.ws.onerror = () => {
-      // Force the close path to run — onclose will mark state
+      // Force the close path to run , onclose will mark state
       // reconnecting and schedule a retry.
       this.ws?.close();
     };
@@ -312,7 +312,7 @@ class WebSocketManager {
     try {
       this.ws.send(JSON.stringify({ event: 'client:ping', data: { nonce } }));
     } catch {
-      // socket dying — let the close handler take over
+      // socket dying , let the close handler take over
       return;
     }
     if (this.pongTimeoutTimer != null) clearTimeout(this.pongTimeoutTimer);
@@ -397,7 +397,7 @@ class WebSocketManager {
       // REST so the slice's view doesn't have a silent gap.
       if (session_id) {
         store.dispatch(fetchSession(session_id));
-        // Reset lastSeq — the REST refetch is the new authoritative
+        // Reset lastSeq , the REST refetch is the new authoritative
         // baseline; subsequent server events with seq numbers will
         // re-establish the high-water mark. Also wipe the cross-mount
         // persistent map so a remount during this gap window doesn't
@@ -514,7 +514,7 @@ class WebSocketManager {
         // The discriminator is `resumeAcked`: it flips to true when
         // server:hello arrives, which the server sends AFTER the replay
         // completes. Any stream_* event arriving while !resumeAcked is
-        // replay-from-buffer (historical) and can be dropped — the REST
+        // replay-from-buffer (historical) and can be dropped , the REST
         // snapshot we awaited before connect is authoritative for any
         // already-finalized message, and any genuinely live turn the
         // server is pushing will continue emitting events after the ack.
@@ -578,6 +578,8 @@ class WebSocketManager {
             cacheReadTokens: data.cache_read_tokens ?? 0,
             cacheReadPct: data.cache_read_pct ?? 0,
             ctxUsedPct: data.ctx_used_pct ?? 0,
+            contextWindow: typeof data.context_window === 'number' ? data.context_window : undefined,
+            frameworkOverheadTokens: typeof data.framework_overhead_tokens === 'number' ? data.framework_overhead_tokens : undefined,
             activeMcps: Array.isArray(data.active_mcps) ? data.active_mcps : [],
           }));
         }
@@ -598,7 +600,7 @@ class WebSocketManager {
         // compacted_through_msg_id locally so the renderer can drop a
         // visible "N earlier turns summarized" chip into the transcript.
         // Other reasons (cleared, etc.) flow through this same event but
-        // don't currently need a chip — ignore them for now.
+        // don't currently need a chip , ignore them for now.
         if (session_id && data.reason === 'compacted') {
           store.dispatch(recordCompaction({
             sessionId: session_id,
@@ -621,7 +623,7 @@ class WebSocketManager {
         break;
 
       case 'agent:auth_error':
-        // Re-uses the context_overflow card slot — both are "this session is
+        // Re-uses the context_overflow card slot , both are "this session is
         // blocked, here's what to do" cards. Reason field disambiguates.
         if (session_id) {
           store.dispatch(setContextOverflow({
@@ -688,7 +690,7 @@ class WebSocketManager {
             dashboard_id: data.dashboard_id,
           }));
           // Auto-delete browsers spawned by this agent when it finishes
-          // normally or errors out. We intentionally skip 'stopped' — the
+          // normally or errors out. We intentionally skip 'stopped' , the
           // user may want to inspect the browser after manually stopping.
           if (closedStatus === 'completed' || closedStatus === 'error') {
             const browserCards = store.getState().dashboardLayout.browserCards;
@@ -744,7 +746,7 @@ class WebSocketManager {
   send(event: string, data: Record<string, any>) {
     // Queue if the socket isn't open OR resume hasn't been ack'd yet.
     // The pre-ack gate prevents an outbound user message from racing
-    // the resume replay — the server might process the message
+    // the resume replay , the server might process the message
     // before the replay finishes, leaving the slice's view of
     // history incomplete.
     const open = this.ws?.readyState === WebSocket.OPEN;
@@ -813,7 +815,7 @@ export const dashboardWs = new WebSocketManager(`${WS_BASE}/ws/dashboard`, { ski
 // the user sees their completed chat "type itself out" on every reopen.
 //
 // Lifetime: tied to the JS module load, which means the page tab. Lost
-// on full app reload (intentional — that should re-hydrate from REST).
+// on full app reload (intentional , that should re-hydrate from REST).
 // On backend restart the buffers are wiped anyway, so a stale
 // lastSeq pointing past the buffer top falls into the "fresh client"
 // path on the server (last_seq>0 but no buffer) which short-circuits

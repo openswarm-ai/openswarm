@@ -10,11 +10,7 @@ class Skill(BaseModel):
     content: str
     file_path: str = ""
     command: str = ""
-    # Skills that OpenSwarm ships as part of the platform (e.g. the App
-    # Builder reference) get this flag set. The UI hides the delete
-    # button for them and the DELETE endpoint refuses with 409. Content
-    # is still editable — the whole point is that users can tune how
-    # the platform-internal agents behave.
+    # Platform-shipped skills (e.g. App Builder): UI hides delete and DELETE returns 409, but content stays editable so users can tune them.
     built_in: bool = False
 
 

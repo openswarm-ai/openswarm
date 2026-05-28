@@ -3,7 +3,7 @@
 #
 # Idempotent. The workspace is seeded frontend-only (no backend/ dir,
 # BACKEND_PORT=NONE). Run this script when your App needs server-side
-# code — it copies the master template's backend/ into the workspace
+# code; it copies the master template's backend/ into the workspace
 # and flips BACKEND_PORT in both .env files to a free port.
 #
 # After running this, hard-reload the preview (right-click the reload
@@ -15,7 +15,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
 if [[ ! -f .env ]]; then
-    echo "ERROR: .env not found at $HERE — is this the workspace root?" >&2
+    echo "ERROR: .env not found at $HERE. Is this the workspace root?" >&2
     exit 1
 fi
 
@@ -26,12 +26,12 @@ source .env
 set +a
 
 if [[ "${BACKEND_PORT:-NONE}" != "NONE" ]]; then
-    echo "Backend already enabled on port $BACKEND_PORT — nothing to do." >&2
+    echo "Backend already enabled on port $BACKEND_PORT, nothing to do." >&2
     exit 0
 fi
 
 if [[ -d ./backend ]]; then
-    echo "ERROR: ./backend/ already exists but BACKEND_PORT=NONE — your" >&2
+    echo "ERROR: ./backend/ already exists but BACKEND_PORT=NONE; your" >&2
     echo "       workspace is in an inconsistent state. Either delete" >&2
     echo "       ./backend/ and re-run, or set BACKEND_PORT manually." >&2
     exit 1
@@ -56,7 +56,7 @@ echo "Copying backend/ from $OPENSWARM_TEMPLATE_BACKEND_PATH..."
 cp -R "$OPENSWARM_TEMPLATE_BACKEND_PATH" ./backend
 chmod +x ./backend/run.sh
 
-# Reuse the warm-cache backend venv if available — this skips the
+# Reuse the warm-cache backend venv if available; this skips the
 # ~5s venv-create + ~20s pip-install in the workspace's backend/run.sh.
 # The cache holds FastAPI + transitives pre-installed; the workspace's
 # own editable install (`pip install -e .`) still runs once on first

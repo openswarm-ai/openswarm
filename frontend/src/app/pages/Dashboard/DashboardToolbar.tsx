@@ -14,8 +14,8 @@ import LanguageIcon from '@mui/icons-material/Language';
 import SearchIcon from '@mui/icons-material/Search';
 import { motion } from 'framer-motion';
 import ChatInput from '@/app/pages/AgentChat/ChatInput';
-import type { ContextPath } from '@/app/components/DirectoryBrowser';
-import { useElementSelection } from '@/app/components/ElementSelectionContext';
+import type { ContextPath } from '@/app/components/editor/DirectoryBrowser';
+import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { searchHistory, clearHistorySearch } from '@/shared/state/agentsSlice';
@@ -107,7 +107,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     // backend. Without the settingsLoaded guard, the effect fires against the
     // Redux initialState ('sonnet') before the real default has loaded, and
     // the settingsApplied flag then locks out the real default for the rest
-    // of the session — so new chats spawn under the stale value.
+    // of the session , so new chats spawn under the stale value.
     const settingsApplied = useRef(false);
     useEffect(() => {
       if (settingsLoaded && !settingsApplied.current) {

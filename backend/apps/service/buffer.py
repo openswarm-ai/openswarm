@@ -3,8 +3,8 @@
 When the desktop is offline (laptop closed, no internet, cloud unreachable),
 the service-sync layer can't reach `api.openswarm.com`. Rather than drop
 data on the floor, we spool submissions to a small SQLite file and replay
-them on the next online tick. The spool is bounded — when full, the oldest
-entries are dropped — so it can never balloon to a problem.
+them on the next online tick. The spool is bounded; when full, the oldest
+entries are dropped; so it can never balloon to a problem.
 
 Single file, single table, single thread guarded by a sqlite3 connection's
 implicit lock. No concurrency model beyond "don't write from two processes
@@ -24,7 +24,7 @@ from typing import Iterator, Optional
 logger = logging.getLogger(__name__)
 
 # Cap the spool at 50 MB on disk. SQLite's overhead means the actual ceiling
-# on retained payloads is somewhat smaller, which is fine — this is a
+# on retained payloads is somewhat smaller, which is fine; this is a
 # best-effort cushion, not a guaranteed retention window.
 _MAX_BYTES = 50 * 1024 * 1024
 
@@ -63,7 +63,7 @@ def enqueue(spool_path: str, kind: str, payload: dict, *, now: float) -> None:
             "INSERT INTO spool (kind, payload, created_at) VALUES (?, ?, ?)",
             (kind, body, now),
         )
-        # Cheap size check — only run trim when stat says we're over.
+        # Cheap size check; only run trim when stat says we're over.
         try:
             size = os.path.getsize(spool_path)
         except OSError:
@@ -108,7 +108,7 @@ def drain(spool_path: str, batch_size: int = 50) -> list[tuple[int, str, dict]]:
         try:
             out.append((rid, kind, json.loads(body)))
         except json.JSONDecodeError:
-            # Corrupt row — discard so it doesn't block draining behind it.
+            # Corrupt row; discard so it doesn't block draining behind it.
             with _lock, _conn(spool_path) as c:
                 c.execute("DELETE FROM spool WHERE id = ?", (rid,))
             logger.warning("Dropped corrupt spool row id=%s", rid)

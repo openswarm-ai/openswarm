@@ -54,6 +54,30 @@
   Sleep 1500
 !macroend
 
+!macro customInstall
+  ; ---- Defender prewarm: scan the heavy binaries while user is still watching the installer, not on first launch ----
+  ;
+  ; Right after extraction we spawn OpenSwarm.exe --prewarm, which loads
+  ; python.exe and node.exe just enough to trigger Windows Defender's
+  ; on-execute scan against them. Defender then has a cached verdict by
+  ; the time the user double-clicks the app, dropping cold-start by
+  ; 3-7 seconds on default-Defender Windows installs.
+  ;
+  ; --prewarm in main.js: no windows, no single-instance lock, no
+  ; backend spawn, no UI side effects. Touches binaries via
+  ; execFileSync('--version') and process.exit(0). 15s internal timeout
+  ; per binary; outer nsExec call adds no further bound, so worst case
+  ; this adds ~30-45s to install on a truly pathological machine.
+  ; Standard machines: 3-8s.
+  ;
+  ; Failure here is silent and non-fatal. If --prewarm itself errors,
+  ; the install still completes; user just pays the cold-start tax on
+  ; first launch, same as before this macro existed.
+
+  nsExec::Exec '"$INSTDIR\OpenSwarm.exe" --prewarm'
+  Pop $0  ; discard exit code; prewarm is best-effort
+!macroend
+
 !macro customRemoveFiles
   ; ---- Layer B: bulk-delete heavy dirs with REBOOTOK fallback ----
   ;

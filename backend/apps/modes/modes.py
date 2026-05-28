@@ -9,15 +9,13 @@ from backend.apps.modes.models import Mode, ModeCreate, ModeUpdate, BUILTIN_MODE
 logger = logging.getLogger(__name__)
 
 from backend.config.paths import MODES_DIR as DATA_DIR
+from backend.config.json_store import read_json_or_none, atomic_write_json
 
 
 @asynccontextmanager
 async def modes_lifespan():
     os.makedirs(DATA_DIR, exist_ok=True)
-    # One-time migration: Chat was merged into Ask. Remove a stale built-in
-    # chat.json if it still has its is_builtin=True signature so users don't
-    # see two near-identical modes in the picker. Leave alone if a user has
-    # diverged it (we don't want to wipe customizations).
+    # Migration: Chat merged into Ask; drop a stale built-in chat.json but leave customized copies alone.
     chat_path = os.path.join(DATA_DIR, "chat.json")
     if os.path.exists(chat_path):
         try:
@@ -45,31 +43,31 @@ def _load_all() -> list[Mode]:
         return result
     for fname in os.listdir(DATA_DIR):
         if fname.endswith(".json"):
-            with open(os.path.join(DATA_DIR, fname)) as f:
-                result.append(Mode(**json.load(f)))
+            data = read_json_or_none(os.path.join(DATA_DIR, fname))
+            if data is None:
+                continue
+            try:
+                result.append(Mode(**data))
+            except Exception as e:
+                logger.warning("Skipping invalid mode file %s: %s", fname, e)
     return result
 
 
 def _save(mode: Mode):
-    with open(os.path.join(DATA_DIR, f"{mode.id}.json"), "w") as f:
-        json.dump(mode.model_dump(), f, indent=2)
+    atomic_write_json(os.path.join(DATA_DIR, f"{mode.id}.json"), mode.model_dump())
 
 
 def _load(mode_id: str) -> Mode:
-    path = os.path.join(DATA_DIR, f"{mode_id}.json")
-    if not os.path.exists(path):
+    data = read_json_or_none(os.path.join(DATA_DIR, f"{mode_id}.json"))
+    if data is None:
         raise HTTPException(status_code=404, detail="Mode not found")
-    with open(path) as f:
-        return Mode(**json.load(f))
+    return Mode(**data)
 
 
 def load_mode(mode_id: str) -> Mode | None:
     """Public helper for other modules to resolve a mode by ID."""
-    path = os.path.join(DATA_DIR, f"{mode_id}.json")
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        return Mode(**json.load(f))
+    data = read_json_or_none(os.path.join(DATA_DIR, f"{mode_id}.json"))
+    return Mode(**data) if data is not None else None
 
 
 @modes.router.get("/list")

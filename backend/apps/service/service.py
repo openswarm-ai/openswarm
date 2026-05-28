@@ -27,35 +27,9 @@ from fastapi import Body
 from backend.config.Apps import SubApp
 from backend.config.paths import SESSIONS_DIR
 from backend.apps.service import client as svc
+from backend.apps.service.version import APP_VERSION, _read_app_version
 
 logger = logging.getLogger(__name__)
-
-
-def _read_app_version() -> str:
-    # Preferred: Electron's main process injects this when spawning the
-    # backend (see electron/main.js — OPENSWARM_APP_VERSION). Always reliable
-    # in packaged builds because it comes from app.getVersion() rather than
-    # path-based file resolution.
-    env_v = os.environ.get("OPENSWARM_APP_VERSION", "").strip()
-    if env_v:
-        return env_v
-    # Fallback: read electron/package.json via relative path. Works in
-    # `bash run.sh` dev mode where the repo layout is intact, but FAILS in
-    # packaged dmg/exe builds because electron/package.json isn't shipped
-    # into Resources/ — which made every shipped install report
-    # app_version="unknown" pre-fix. Kept for backward compatibility with
-    # dev runs and as a safety net if the env var is ever unset.
-    try:
-        _here = os.path.dirname(os.path.abspath(__file__))
-        _repo = os.path.dirname(os.path.dirname(os.path.dirname(_here)))
-        _pkg = os.path.join(_repo, "electron", "package.json")
-        with open(_pkg, encoding="utf-8") as _f:
-            return json.load(_f).get("version", "unknown")
-    except (OSError, ValueError, KeyError):
-        return "unknown"
-
-
-APP_VERSION = _read_app_version()
 
 _pulse_task: asyncio.Task | None = None
 _drain_task: asyncio.Task | None = None
@@ -120,7 +94,7 @@ async def _pulse_loop():
         if _pulse_count >= _pulse_batch_size:
             try:
                 from backend.apps.agents.agent_manager import agent_manager
-                # Compact field names — the wire stays small and the cloud
+                # Compact field names; the wire stays small and the cloud
                 # is the only place that knows what each key means.
                 svc.sync({
                     "a": len(agent_manager.sessions),       # active sessions
@@ -282,11 +256,24 @@ async def usage_summary():
     for s in agent_manager.get_all_sessions():
         sessions.append(s.model_dump(mode="json"))
 
+    def _is_real(sess: dict) -> bool:
+        # "Real" = actually ran. Empty draft/abandoned sessions (no assistant turn, no tokens,
+        # no active time) otherwise inflate the count and drag every average toward zero.
+        if (sess.get("agent_active_ms") or 0) > 0 or (sess.get("cost_usd") or 0) > 0:
+            return True
+        tk = sess.get("tokens") or {}
+        if (tk.get("input") or 0) > 0 or (tk.get("output") or 0) > 0:
+            return True
+        return any(m.get("role") == "assistant" for m in sess.get("messages", []))
+
+    sessions = [s for s in sessions if _is_real(s)]
+
     total_sessions = len(sessions)
     total_cost = sum(s.get("cost_usd", 0) for s in sessions)
     total_messages = 0
     total_tool_calls = 0
-    total_duration = 0.0
+    total_run_seconds = 0.0
+    timed_sessions = 0
     model_counts: Counter = Counter()
     provider_counts: Counter = Counter()
     tool_counts: Counter = Counter()
@@ -294,30 +281,43 @@ async def usage_summary():
 
     for s in sessions:
         messages = s.get("messages", [])
-        user_msgs = [m for m in messages if m.get("role") in ("user", "assistant")]
-        tool_msgs = [m for m in messages if m.get("role") == "tool_call"]
-        total_messages += len(user_msgs)
-        total_tool_calls += len(tool_msgs)
+        total_messages += sum(1 for m in messages if m.get("role") in ("user", "assistant"))
         model_counts[s.get("model", "unknown")] += 1
         provider_counts[s.get("provider", "anthropic")] += 1
         status_counts[s.get("status", "unknown")] += 1
-        created = s.get("created_at")
-        closed = s.get("closed_at")
-        if created and closed:
-            try:
-                dur = (datetime.fromisoformat(closed[:19]) - datetime.fromisoformat(created[:19])).total_seconds()
-                if dur > 0:
-                    total_duration += dur
-            except Exception:
-                pass
-        for m in tool_msgs:
-            content = m.get("content", {})
-            if isinstance(content, dict):
-                tool_name = content.get("tool", "")
-                if tool_name:
-                    tool_counts[tool_name] += 1
 
-    avg_duration = total_duration / total_sessions if total_sessions > 0 else 0
+        # Tool calls: tool_latencies carries authoritative per-tool counts; older sessions only have
+        # the sparse tool_call messages. Per session take whichever source recorded more so we never
+        # undercount what's on record (and so the total never drops below the old message-only count).
+        lat_counts: Counter = Counter()
+        for tool, d in (s.get("tool_latencies") or {}).items():
+            cnt = (d or {}).get("count", 0) or 0
+            if tool and cnt:
+                lat_counts[tool] += cnt
+        msg_counts: Counter = Counter()
+        for m in messages:
+            if m.get("role") == "tool_call":
+                content = m.get("content", {})
+                name = content.get("tool") if isinstance(content, dict) else None
+                msg_counts[name or "tool"] += 1
+        chosen = lat_counts if sum(lat_counts.values()) >= sum(msg_counts.values()) else msg_counts
+        total_tool_calls += sum(chosen.values())
+        tool_counts.update(chosen)
+
+        # Run time: real agent-active time when tracked, else session wall-clock as a rough proxy.
+        run_s = (s.get("agent_active_ms") or 0) / 1000.0
+        if run_s <= 0:
+            created, closed = s.get("created_at"), s.get("closed_at")
+            if created and closed:
+                try:
+                    run_s = (datetime.fromisoformat(closed[:19]) - datetime.fromisoformat(created[:19])).total_seconds()
+                except Exception:
+                    run_s = 0
+        if run_s > 0:
+            total_run_seconds += run_s
+            timed_sessions += 1
+
+    avg_duration = total_run_seconds / timed_sessions if timed_sessions > 0 else 0
     completed = status_counts.get("completed", 0)
     completion_rate = completed / total_sessions if total_sessions > 0 else 0
 
@@ -362,6 +362,7 @@ async def usage_summary():
         "total_cost_usd": round(total_cost, 4),
         "total_messages": total_messages,
         "total_tool_calls": total_tool_calls,
+        "total_run_seconds": round(total_run_seconds, 1),
         "avg_duration_seconds": round(avg_duration, 1),
         "avg_cost_per_session": round(avg_cost, 4),
         "completion_rate": round(completion_rate, 3),
@@ -412,26 +413,26 @@ async def service_status():
 async def post_submit(body=Body(...)):
     """Accepts three body shapes for backward compatibility:
 
-    1. Frontend `report()` shape — flat `{s, a, p, submission_id, t}`.
+    1. Frontend `report()` shape; flat `{s, a, p, submission_id, t}`.
        This is what `frontend/src/shared/serviceClient.ts:report()` sends
        on every UI interaction. Pass through unchanged so the cloud sees
        it as a frontend.event.
 
-    2. Legacy `{kind, payload}` shape — used by older callers that wrapped
+    2. Legacy `{kind, payload}` shape; used by older callers that wrapped
        the payload in a kind+payload envelope before submitting. Unwrap
        and forward the payload.
 
-    3. Batched array — frontend collects up to 1s of events and sends them
+    3. Batched array; frontend collects up to 1s of events and sends them
        as a single JSON array to cut N POSTs/sec down to 1. Each item is
        processed exactly as if it had arrived as its own request.
 
     Pre-fix this endpoint required shape #2 and silently rejected shape #1
     with a 200 + `{ok:false}`, so every UI event from `report()` was
-    dropped — `frontend.event` count was 0 in production analytics.
+    dropped; `frontend.event` count was 0 in production analytics.
     """
     # Shape 3: batched array. Recurse per-item so single-item handling
     # logic stays in one place. Returns a single ok regardless of
-    # individual item shape — analytics calls aren't transactional.
+    # individual item shape; analytics calls aren't transactional.
     if isinstance(body, list):
         for item in body:
             if isinstance(item, dict):
@@ -446,7 +447,7 @@ async def post_submit(body=Body(...)):
         return {"ok": True}
     if not isinstance(body, dict):
         return {"ok": False, "error": "JSON object or array required"}
-    # Shape 1: frontend `report()` — flat {s, a, p, ...}
+    # Shape 1: frontend `report()`; flat {s, a, p, ...}
     if any(k in body for k in ("s", "a", "p")):
         svc.sync(body)
         return {"ok": True}

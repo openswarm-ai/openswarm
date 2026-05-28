@@ -1,14 +1,4 @@
-// Native (Electron / browser) notifications for agent completion.
-//
-// We only fire when the document is hidden — the user has switched away —
-// since a notification while you're staring at the same window would just
-// be noise. Granola/Linear/Raycast all converge on this rule.
-//
-// Permission is requested lazily on first attempted use; subsequent calls
-// no-op gracefully when permission is denied. Click on a notification
-// re-focuses the window and emits a custom event the renderer listens for
-// to deep-link back to the right session.
-
+// Native notifications for agent completion; fires only when document is hidden (user switched away).
 const FIRED_RECENTLY = new Set<string>();
 const COOLDOWN_MS = 30_000;
 
@@ -35,15 +25,13 @@ export interface AgentCompletionPayload {
 
 export function notifyAgentCompletion(p: AgentCompletionPayload): void {
   if (typeof document === 'undefined') return;
-  // Same-window — skip noise. Hidden = tab switched, window minimised, or
-  // (in Electron) another BrowserWindow is in front.
+  // Same-window: skip noise (hidden = tab-switched, minimized, or another BrowserWindow in front).
   if (!document.hidden) return;
   if (typeof Notification === 'undefined') return;
   const perm = ensurePermission();
   if (perm !== 'granted') return;
 
-  // Per-session debounce — if a sub-agent flips completed→error→completed
-  // in quick succession we still only fire one toast.
+  // Per-session debounce: collapse rapid completed/error/completed flips.
   const key = `${p.sessionId}:${p.status}`;
   if (FIRED_RECENTLY.has(key)) return;
   FIRED_RECENTLY.add(key);
@@ -68,7 +56,6 @@ export function notifyAgentCompletion(p: AgentCompletionPayload): void {
       n.close();
     };
   } catch {
-    // Notification API can throw if the page is sandboxed or in a
-    // headless harness — fail silently.
+    // Notification API can throw if sandboxed or headless; fail silently.
   }
 }

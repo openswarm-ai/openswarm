@@ -9,7 +9,7 @@ terminal state. After these fixes the contract should be:
   2. Every event the server emits is replayable, in order, with no
      duplicates and no gaps, after any number of disconnects.
   3. Terminal events (completed/stopped/error) are always observable
-     by a client that reconnects later — even if the only persistence
+     by a client that reconnects later, even if the only persistence
      of the event is the on-disk terminal log.
   4. Concurrent broadcasts (thinking deltas + tool calls + status
      changes from many tasks) preserve seq order == wire order.
@@ -56,14 +56,14 @@ os.makedirs(_SEQ_DIR, exist_ok=True)
 @pytest.fixture(autouse=True)
 def _patch_persist_dir():
     """Force the seq_log to use our tmp dir so we can assert on disk state."""
-    from backend.apps.agents import seq_log as sl_mod
+    from backend.apps.agents.core import seq_log as sl_mod
 
     # Rebuild the singleton with our test dir.
     new_store = sl_mod.SeqLogStore(persist_dir=_SEQ_DIR)
     monkey = patch.object(sl_mod, "seq_log", new_store)
     monkey.start()
     # Also patch the symbol re-exported into ws_manager's import scope.
-    from backend.apps.agents import ws_manager as wm_mod
+    from backend.apps.agents.core import ws_manager as wm_mod
     wm_monkey = patch.object(wm_mod, "seq_log", new_store)
     wm_monkey.start()
     yield new_store
@@ -82,9 +82,9 @@ def _patch_persist_dir():
 def _build_app(seq_log):
     """Replicates main.py's WS handler + adds a /test/emit endpoint
     so the test thread can drive event emission through the same
-    event loop as the WS handler — avoiding the cross-loop hazards
+    event loop as the WS handler, avoiding the cross-loop hazards
     of `asyncio.run()` mid-test."""
-    from backend.apps.agents.ws_manager import ws_manager
+    from backend.apps.agents.core.ws_manager import ws_manager
 
     app = FastAPI()
 
@@ -150,7 +150,7 @@ async def _emit_run(session_id: str, n_events: int, terminate: str | None = "com
     fanning out the broadcast across multiple coroutines. The seq
     log must still order them strictly.
     """
-    from backend.apps.agents.ws_manager import ws_manager
+    from backend.apps.agents.core.ws_manager import ws_manager
 
     async def emit_chunk(start: int, count: int):
         for i in range(count):
@@ -159,7 +159,7 @@ async def _emit_run(session_id: str, n_events: int, terminate: str | None = "com
                 "message_id": "m1",
                 "delta": f"chunk-{start + i}",
             })
-            # Yield to the scheduler so other coroutines interleave —
+            # Yield to the scheduler so other coroutines interleave;
             # this is what surfaces the seq race if locking is wrong.
             await asyncio.sleep(0)
 
@@ -275,7 +275,7 @@ def test_resume_after_disconnect_recovers_all_events(_patch_persist_dir):
 def test_terminal_event_visible_after_full_eviction(_patch_persist_dir):
     """If the in-memory log is wiped (process restart simulation),
     a reconnecting client should still see the terminal event from
-    disk — never a phantom 'running' spinner."""
+    disk, never a phantom 'running' spinner."""
     app = _build_app(_patch_persist_dir)
     sid = "session-evict-term-1"
 
@@ -449,7 +449,7 @@ def test_concurrent_broadcast_preserves_order(trial, _patch_persist_dir):
 
 # ---------------------------------------------------------------------------
 # Auth/security smoke: the WS endpoint here is unauth'd by design (test
-# scaffolding) — but main.py's _ws_auth_ok must remain in place. This
+# scaffolding), but main.py's _ws_auth_ok must remain in place. This
 # test pins that contract so a future refactor can't accidentally
 # strip it.
 # ---------------------------------------------------------------------------
@@ -485,7 +485,7 @@ def test_terminate_during_disconnect_is_observable(trial, _patch_persist_dir):
         # Disconnected. Emit the rest + terminate while WS is gone.
         _emit(client, sid, n=n_post, terminate="completed")
         # Reconnect. We expect to receive everything from last_seq+1
-        # through to the terminal — possibly via disk if the buffer
+        # through to the terminal, possibly via disk if the buffer
         # rolled (it won't here; numbers are small).
         with client.websocket_connect(f"/ws/agents/{sid}") as ws:
             ws.send_text(json.dumps({"event": "client:hello", "data": {"last_seq": last_seq, "connection_uuid": "c2"}}))
@@ -518,7 +518,7 @@ def test_disconnect_does_not_touch_agent_task(_patch_persist_dir):
     this test will catch it. We import agent_manager lazily so the
     `tasks` dict starts empty; we register a sentinel task and confirm
     disconnect_session doesn't poke it."""
-    from backend.apps.agents.ws_manager import ws_manager
+    from backend.apps.agents.core.ws_manager import ws_manager
     # Insert a real Future into a parallel registry to mimic
     # `agent_manager.tasks[session_id]` and confirm ws_manager
     # never reaches into it. We don't import agent_manager (heavy);
@@ -534,10 +534,10 @@ def test_main_ws_endpoints_still_gated_by_auth(_patch_persist_dir):
     src = open(os.path.join(os.path.dirname(__file__), "..", "main.py")).read()
     assert "_ws_auth_ok(websocket)" in src, (
         "main.py WS endpoints must still call _ws_auth_ok before accepting "
-        "the connection — otherwise any local web page can read agent traffic."
+        "the connection, otherwise any local web page can read agent traffic."
     )
     # And the disconnect handler must NOT call any task-cancel helper
-    # — that's the regression we're guarding against.
+    #, that's the regression we're guarding against.
     assert "stop_agent" not in src.split("WebSocketDisconnect")[1].split("def ")[0], (
         "WebSocketDisconnect handler must not cancel the agent task."
     )

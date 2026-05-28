@@ -27,7 +27,7 @@ SWARM_DEBUG_SKILL_SOURCE_PATH = os.path.join(os.path.dirname(__file__), "swarm_d
 # scripts/fetch-webapp-template.sh for the snapshot fetch + patches.
 WEBAPP_TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "webapp_template")
 
-# Bundled default — used as the read-once fallback if the user-editable
+# Bundled default; used as the read-once fallback if the user-editable
 # copy at ~/.claude/skills/app_builder_skill.md has been removed despite
 # the built-in flag (defensive; shouldn't happen in normal use).
 with open(APP_BUILDER_SKILL_SOURCE_PATH, encoding="utf-8") as _f:
@@ -38,7 +38,7 @@ def load_app_builder_skill() -> str:
     """Return the live App Builder skill content. Prefers the
     user-editable copy at ~/.claude/skills/app_builder_skill.md (so a
     user's edit on the Skills page takes effect on the very next App
-    Builder agent turn — no restart, no copy-on-edit dance). Falls back
+    Builder agent turn; no restart, no copy-on-edit dance). Falls back
     to the bundled default if the user file is somehow gone."""
     user_path = os.path.expanduser("~/.claude/skills/app_builder_skill.md")
     if os.path.exists(user_path):
@@ -50,7 +50,7 @@ def load_app_builder_skill() -> str:
     return APP_BUILDER_SKILL_DEFAULT
 
 
-# Backward-compat alias. Older callers import VIEW_BUILDER_SKILL directly —
+# Backward-compat alias. Older callers import VIEW_BUILDER_SKILL directly , 
 # point them at the same content as the user-editable version so a "frozen
 # at import" stale copy can't drift from what the skills page shows.
 VIEW_BUILDER_SKILL = APP_BUILDER_SKILL_DEFAULT
@@ -127,7 +127,7 @@ VIEW_TEMPLATE_FILES = {
 # ---------------------------------------------------------------------------
 
 def _ignore_backend(src: str, names: list[str]) -> list[str]:
-    """copytree filter — when copying the template root, drop only the
+    """copytree filter; when copying the template root, drop only the
     top-level `backend/` directory. Subdirectories named `backend` deeper
     in the tree (none today, but defensively scoped) are unaffected."""
     if os.path.abspath(src) == os.path.abspath(WEBAPP_TEMPLATE_DIR):
@@ -142,13 +142,13 @@ _TEMPLATE_BACKEND_PATH = os.path.abspath(os.path.join(WEBAPP_TEMPLATE_DIR, "back
 
 
 # ---------------------------------------------------------------------------
-# Shared node_modules cache — every new webapp-template workspace symlinks
+# Shared node_modules cache; every new webapp-template workspace symlinks
 # its frontend/node_modules to a single warm directory. First-app create
 # pays the ~22s npm-install cost once; every subsequent app is instant
 # (just a symlink + vite startup, ~1s).
 #
 # Cache directory is keyed by a sha of the template's package.json, so a
-# template dep bump invalidates the cache automatically — old caches sit
+# template dep bump invalidates the cache automatically; old caches sit
 # until the user clears ~/.openswarm/cache.
 # ---------------------------------------------------------------------------
 
@@ -159,7 +159,7 @@ _warm_cache_thread: threading.Thread | None = None
 # Pre-built node_modules archive bundled with packaged releases. Generated
 # by `scripts/build-template-archive.sh` and shipped at this path inside
 # the app's resources. When present (and tagged with the current
-# package.json sha), extract instead of running npm — decompression is
+# package.json sha), extract instead of running npm; decompression is
 # ~3 s vs ~22 s for the live install. Stale archives (package.json bumped
 # but archive not rebuilt) are silently ignored, so the live-install
 # fallback always wins on correctness.
@@ -191,7 +191,7 @@ def _try_extract_bundled_archive(cache_dir: str, digest: str) -> bool:
         )
         os.makedirs(cache_dir, exist_ok=True)
         # Archive root is `node_modules/`; extracting into cache_dir places
-        # it at the expected path. tarfile uses zlib internally for .gz —
+        # it at the expected path. tarfile uses zlib internally for .gz , 
         # no extra dep needed.
         with tarfile.open(archive_path, "r:gz") as tar:
             tar.extractall(cache_dir)
@@ -214,7 +214,7 @@ def _try_extract_bundled_archive(cache_dir: str, digest: str) -> bool:
 
 
 def _warm_cache_digest() -> str:
-    """Sha of the template's frontend/package.json — used as the cache
+    """Sha of the template's frontend/package.json; used as the cache
     key + the bundled-archive filename suffix so a package.json bump
     invalidates both at once."""
     pkg_path = os.path.join(WEBAPP_TEMPLATE_DIR, "frontend", "package.json")
@@ -237,7 +237,7 @@ def _warm_cache_dir() -> str:
 def _ensure_warm_cache() -> str | None:
     """Populate the warm-cache node_modules if missing. Returns the
     absolute path to the populated `node_modules` directory, or None on
-    failure. Thread-safe — concurrent callers block on a single install
+    failure. Thread-safe; concurrent callers block on a single install
     instead of racing. Idempotent and fast after the first call."""
     cache_dir = _warm_cache_dir()
     cache_modules = os.path.join(cache_dir, "node_modules")
@@ -259,7 +259,7 @@ def _ensure_warm_cache() -> str | None:
             os.makedirs(cache_dir, exist_ok=True)
             # Copy package.json + lockfile (if it exists) into the cache
             # dir so npm has something to install from. We don't write
-            # back to the template — the lockfile generated here stays
+            # back to the template; the lockfile generated here stays
             # local to the cache.
             tmpl_pkg = os.path.join(WEBAPP_TEMPLATE_DIR, "frontend", "package.json")
             tmpl_lock = os.path.join(WEBAPP_TEMPLATE_DIR, "frontend", "package-lock.json")
@@ -269,7 +269,7 @@ def _ensure_warm_cache() -> str | None:
                 shutil.copyfile(tmpl_lock, os.path.join(cache_dir, "package-lock.json"))
                 cmd = ["npm", "ci", *base_flags]
             else:
-                # No lockfile yet — `npm install` resolves the tree and
+                # No lockfile yet; `npm install` resolves the tree and
                 # writes one into the cache dir for future use.
                 cmd = ["npm", "install", *base_flags]
             logger.info("webapp-template: warming node_modules cache at %s", cache_dir)
@@ -291,7 +291,7 @@ def _ensure_warm_cache() -> str | None:
 
 def _link_node_modules(workspace_dir: str) -> None:
     """After copytree, point the workspace's frontend/node_modules at
-    the warm-cache directory. Safe fallback — if the cache isn't ready,
+    the warm-cache directory. Safe fallback; if the cache isn't ready,
     the workspace's run.sh will fall through to its own install path."""
     cache_modules = _ensure_warm_cache()
     if not cache_modules:
@@ -309,9 +309,9 @@ def _link_node_modules(workspace_dir: str) -> None:
             return
     elif os.path.isdir(target):
         # If the dir is EMPTY (left over from copytree of the template's
-        # placeholder node_modules — `.gitkeep`-style scenarios) nuke it
+        # placeholder node_modules; `.gitkeep`-style scenarios) nuke it
         # so we can symlink to the warm cache. A non-empty directory is
-        # treated as a real npm install — respect it and bail.
+        # treated as a real npm install; respect it and bail.
         try:
             has_content = any(True for _ in os.scandir(target))
         except OSError:
@@ -331,7 +331,7 @@ def _link_node_modules(workspace_dir: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Shared Python venv cache — same pattern as the node_modules cache, but
+# Shared Python venv cache; same pattern as the node_modules cache, but
 # for the workspace backend's FastAPI + transitive deps. Eliminates the
 # ~25s `python -m venv` + `pip install -e .` that backend_init.sh
 # otherwise pays per workspace.
@@ -358,7 +358,7 @@ def _warm_venv_dir() -> str:
 def _ensure_warm_python_venv() -> str | None:
     """Populate the warm-cache backend venv if missing. Returns the
     absolute path to the populated `.venv` directory, or None on
-    failure. Thread-safe and idempotent — fast return after first call."""
+    failure. Thread-safe and idempotent; fast return after first call."""
     cache_dir = _warm_venv_dir()
     venv_dir = os.path.join(cache_dir, ".venv")
     sentinel = os.path.join(cache_dir, ".populated")
@@ -374,7 +374,7 @@ def _ensure_warm_python_venv() -> str | None:
             # Pick the same python the workspace's run.sh would have
             # picked, so the venv's binary is compatible. Includes
             # bare `python` as the last fallback for Windows, where
-            # there's no `python3` symlink — the installer ships just
+            # there's no `python3` symlink; the installer ships just
             # `python.exe`. On macOS/Linux the versioned candidates
             # match first so we don't accidentally pick a system
             # Python 2.x via the bare name.
@@ -405,7 +405,7 @@ def _ensure_warm_python_venv() -> str | None:
                 return None
 
             # Install the template's dependencies (fastapi[standard],
-            # typeguard, transitives) — NOT the workspace's own backend,
+            # typeguard, transitives); NOT the workspace's own backend,
             # which gets editable-installed per-workspace by run.sh after
             # the cache copy. The venv layout differs by platform:
             # POSIX puts executables in `bin/`, Windows in `Scripts/`,
@@ -461,7 +461,7 @@ def warm_cache_in_background() -> None:
     _warm_cache_thread.start()
 
 
-# Trigger pre-warm on module import — backend startup hits this and the
+# Trigger pre-warm on module import; backend startup hits this and the
 # installs run in parallel with the rest of the boot. By the time the
 # user creates their first app, node_modules + the backend venv are
 # usually ready.
@@ -495,10 +495,10 @@ def seed_webapp_template_workspace(workspace_dir: str, frontend_port: int) -> No
       1. Copy `.env.example` → `.env` verbatim (preserves the upstream
          defaults `FRONTEND_PORT=4949` and `BACKEND_PORT=NONE`).
       2. Sed both `.env` and `.env.example` to set `FRONTEND_PORT=<port>`.
-         BACKEND_PORT stays NONE in both (per spec — the agent flips it
+         BACKEND_PORT stays NONE in both (per spec; the agent flips it
          via backend_init.sh when it needs a backend).
       3. Append two install-specific paths to `.env` ONLY (NOT
-         `.env.example` — these are absolute paths on the current
+         `.env.example`; these are absolute paths on the current
          machine, not template defaults):
             OPENSWARM_TEMPLATE_BACKEND_PATH=<abs path to master template's backend/>
             OPENSWARM_DEBUGGER_PATH=<abs path to OpenSwarm's debugger/ package>
@@ -506,7 +506,7 @@ def seed_webapp_template_workspace(workspace_dir: str, frontend_port: int) -> No
          the template's `backend/run.sh` to install our local debugger
          before `pip install -e .`.
 
-    Idempotent within reason — re-running over an existing workspace
+    Idempotent within reason; re-running over an existing workspace
     overwrites template files and re-asserts the env values.
     """
     os.makedirs(workspace_dir, exist_ok=True)
@@ -528,10 +528,10 @@ def seed_webapp_template_workspace(workspace_dir: str, frontend_port: int) -> No
     _patch_env_port(env_path, "FRONTEND_PORT", str(frontend_port))
     _patch_env_port(env_example_path, "FRONTEND_PORT", str(frontend_port))
 
-    # Install-specific paths — .env only.
+    # Install-specific paths; .env only.
     _patch_env_port(env_path, "OPENSWARM_TEMPLATE_BACKEND_PATH", _TEMPLATE_BACKEND_PATH)
     _patch_env_port(env_path, "OPENSWARM_DEBUGGER_PATH", _DEBUGGER_PATH)
-    # Backend-venv warm-cache path — backend_init.sh checks this for a
+    # Backend-venv warm-cache path; backend_init.sh checks this for a
     # pre-populated `.venv/` to cp -aR into the workspace instead of
     # paying the ~25s venv-create + pip-install cost. Written even if
     # the cache isn't ready yet; backend_init.sh re-checks at run time.

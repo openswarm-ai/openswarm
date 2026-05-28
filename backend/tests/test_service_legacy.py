@@ -45,7 +45,7 @@ def install_sync_sink():
         cs = body.get("client_state") or {}
         payload = body.get("d") or body.get("payload") or {}
 
-        # Infer a synthetic kind from payload shape — same dispatch logic
+        # Infer a synthetic kind from payload shape, same dispatch logic
         # as the cloud uses in production.
         if "status" in payload and "messages" in payload:
             status = payload.get("status", "unknown")
@@ -100,7 +100,7 @@ def mock_settings(tmp_path):
         "installation_id": "test-install-id",
     }))
 
-    import backend.apps.settings.settings as settings_mod
+    import backend.apps.settings.store as settings_mod
     old_file = settings_mod.SETTINGS_FILE
     settings_mod.SETTINGS_FILE = str(settings_file)
     yield
@@ -136,7 +136,7 @@ def last_sync(kind: str) -> dict:
 
 # Import application modules (after fixtures are wired).
 from backend.apps.service.client import record
-from backend.apps.agents.models import AgentConfig, AgentSession, Message, ApprovalRequest
+from backend.apps.agents.core.models import AgentConfig, AgentSession, Message, ApprovalRequest
 from backend.apps.agents.agent_manager import AgentManager
 
 
@@ -147,7 +147,7 @@ def manager():
 
 
 # ---------------------------------------------------------------------------
-# 1. record() — legacy shim correctness
+# 1. record(), legacy shim correctness
 # ---------------------------------------------------------------------------
 
 class TestRecordBasics:
@@ -175,7 +175,7 @@ class TestRecordBasics:
 
 
 # ---------------------------------------------------------------------------
-# 2. Multi-message session — close fires exactly once
+# 2. Multi-message session, close fires exactly once
 # ---------------------------------------------------------------------------
 
 class TestMultiMessageSession:

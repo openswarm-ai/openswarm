@@ -31,7 +31,7 @@ const Analytics: React.FC = () => {
             Your usage
           </Typography>
           <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.6, mb: 3, maxWidth: 500, mx: 'auto' }}>
-            Usage data is automatically collected — sessions, costs, tool usage, model distribution, and task categories.
+            Usage data is automatically collected: sessions, costs, tool usage, model distribution, and task categories.
             All data is anonymous and can be disabled in Settings.
           </Typography>
 
@@ -39,7 +39,7 @@ const Analytics: React.FC = () => {
             {[
               { label: 'Sessions & Usage', desc: 'How often agents are launched, session duration, completion rates' },
               { label: 'Cost Tracking', desc: 'Spend by model, provider, and time period' },
-              { label: 'Task Categories', desc: 'What users do — coding, email, research, social, browsing' },
+              { label: 'Task Categories', desc: 'What users do: coding, email, research, social, browsing' },
               { label: 'Model Distribution', desc: 'Which models and providers are most popular' },
               { label: 'Tool Usage', desc: 'Most used MCP tools, execution times, approval rates' },
               { label: 'Retention & Funnels', desc: 'User engagement, feature adoption, onboarding flow' },
