@@ -79,7 +79,23 @@ test.describe('combinatorial user flows', () => {
   });
   // Per-test mark so events.jsonl is searchable by test name.
   test.beforeEach(async ({}, info) => { vis?.mark('test-begin', { title: info.titlePath.join(' > ') }); });
-  test.afterEach(async ({}, info) => { vis?.mark('test-end', { title: info.titlePath.join(' > '), status: info.status }); });
+  test.afterEach(async ({}, info) => {
+    vis?.mark('test-end', { title: info.titlePath.join(' > '), status: info.status });
+    if (vis && (info.status === 'failed' || info.status === 'timedOut')) {
+      const errMsg = info.errors?.[0]?.message;
+      await vis.recordFailure(info.titlePath.join(' > '), info.status, errMsg).catch(() => {});
+    }
+  });
+
+  // Visual diff baselining gate: opt-in via env so a fresh repo with no
+  // committed baselines stays green. To bless baselines once:
+  //   $env:RUN_VISUAL_DIFFS="1"; npx playwright test combinatorial-flows --update-snapshots
+  // ...then commit the generated combinatorial-flows.spec.ts-snapshots/ dir.
+  const visualDiffs = process.env.RUN_VISUAL_DIFFS === '1';
+  const visualAssert = async (name: string) => {
+    if (!visualDiffs) return;
+    await expect(page).toHaveScreenshot(`${name}.png`, { maxDiffPixelRatio: 0.02, animations: 'disabled' });
+  };
 
   // The "test the test" sanity check: prove our must() helper fails loudly when
   // a target is missing. If this ever passes silently, every later assertion is
@@ -97,6 +113,9 @@ test.describe('combinatorial user flows', () => {
     await expect(root).toBeVisible();
     const childCount = await root.evaluate((el) => el.childElementCount);
     expect(childCount, 'react root rendered no children').toBeGreaterThan(0);
+    await vis?.snapshotA11y('home');
+    await vis?.snapshotHeap('home');
+    await visualAssert('home');
     assertNoNew(mark, 'home render');
   });
 
@@ -143,6 +162,8 @@ test.describe('combinatorial user flows', () => {
       await clickMust(tabLoc, `settings tab ${tab}`);
       await expect(tabLoc.first()).toHaveAttribute('aria-selected', 'true');
       await page.screenshot({ path: info.outputPath(`settings-${tab.toLowerCase()}.png`) });
+      await vis?.snapshotA11y(`settings-${tab.toLowerCase()}`);
+      await visualAssert(`settings-${tab.toLowerCase()}`);
       assertNoNew(mark, `settings tab ${tab}`);
     }
 
@@ -322,6 +343,7 @@ test.describe('combinatorial user flows', () => {
 
   test('resilience: open + close Settings 3x without state corruption', async () => {
     const mark = errors.length;
+    await vis?.snapshotHeap('resilience-before');
     for (let i = 0; i < 3; i++) {
       await clickMust(page.locator('[data-onboarding="sidebar-settings-button"]'), `open settings round ${i}`);
       await expect(page.getByRole('tab', { name: 'General' })).toBeVisible({ timeout: 5_000 });
@@ -329,6 +351,9 @@ test.describe('combinatorial user flows', () => {
       await expect(page.getByRole('tab', { name: 'General' })).toHaveCount(0, { timeout: 5_000 });
       assertNoNew(mark, `settings open/close round ${i}`);
     }
+    // Snapshot AFTER the loop so a diff between before/after surfaces growth
+    // from a leaked subscription or React tree retained across opens.
+    await vis?.snapshotHeap('resilience-after');
   });
 
   test('zero unexpected errors and zero new renderer crashes across whole walkthrough', () => {
