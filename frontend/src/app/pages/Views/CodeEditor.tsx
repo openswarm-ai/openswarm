@@ -26,9 +26,6 @@ const langExtension = (lang: Language) => {
   }
 };
 
-// Windows-Electron: CodeMirror's EditorView mounts a contenteditable surface internally; same Chromium 144 TSF crash as EditorSurface. Skip CodeMirror entirely on Windows and render a plain <textarea> (no syntax highlighting, but no segfault).
-const IS_WIN_ELECTRON = typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows') && navigator.userAgent.includes('Electron');
-
 const CodeEditor: React.FC<Props> = ({ value, onChange, language, placeholder }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -59,7 +56,7 @@ const CodeEditor: React.FC<Props> = ({ value, onChange, language, placeholder })
   }, [language, mode, placeholder]);
 
   useEffect(() => {
-    if (IS_WIN_ELECTRON || !containerRef.current) return;
+    if (!containerRef.current) return;
 
     const state = EditorState.create({ doc: value, extensions });
     const view = new EditorView({ state, parent: containerRef.current });
@@ -73,7 +70,6 @@ const CodeEditor: React.FC<Props> = ({ value, onChange, language, placeholder })
   }, [extensions]);
 
   useEffect(() => {
-    if (IS_WIN_ELECTRON) return;
     const view = viewRef.current;
     if (!view) return;
     const current = view.state.doc.toString();
@@ -83,29 +79,6 @@ const CodeEditor: React.FC<Props> = ({ value, onChange, language, placeholder })
       });
     }
   }, [value]);
-
-  if (IS_WIN_ELECTRON) {
-    return (
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        spellCheck={false}
-        style={{
-          width: '100%',
-          height: '100%',
-          background: 'transparent',
-          border: 'none',
-          outline: 'none',
-          resize: 'none',
-          padding: '8px',
-          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-          fontSize: '13px',
-          color: mode === 'dark' ? '#fff' : '#000',
-        }}
-      />
-    );
-  }
 
   return <div ref={containerRef} style={{ height: '100%', width: '100%', overflow: 'hidden' }} />;
 };

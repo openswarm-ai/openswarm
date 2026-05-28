@@ -321,62 +321,32 @@ const RichPromptEditor: React.FC<RichPromptEditorProps> = ({
         )}
 
         <Box sx={{ px: 1.75, pt: label ? 2 : 1.25, pb: 1.25, position: 'relative' }}>
-          {(typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows') && navigator.userAgent.includes('Electron')) ? (
-            // Windows-Electron: <div contentEditable> hits the Chromium 144 TSF native crash; fall back to a plain textarea (loses inline pills but stays alive).
-            <textarea
-              ref={editorRef as unknown as React.RefObject<HTMLTextAreaElement>}
-              onInput={handleInput as unknown as React.FormEventHandler<HTMLTextAreaElement>}
-              onClick={handleEditorClick as unknown as React.MouseEventHandler<HTMLTextAreaElement>}
-              onKeyDown={handleKeyDown as unknown as React.KeyboardEventHandler<HTMLTextAreaElement>}
-              onPaste={handlePaste as unknown as React.ClipboardEventHandler<HTMLTextAreaElement>}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              spellCheck={false}
-              style={{
-                width: '100%',
-                minHeight: `${minHeight}rem`,
-                maxHeight: `${maxHeight}rem`,
-                overflowY: 'auto',
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                resize: 'none',
-                color: c.text.primary,
-                fontSize: `${FONT_SIZE}rem`,
-                lineHeight: `${LINE_HEIGHT}`,
-                fontFamily: 'inherit',
-                wordBreak: 'break-word',
-                whiteSpace: 'pre-wrap',
-              }}
-            />
-          ) : (
-            <div
-              ref={editorRef}
-              contentEditable
-              suppressContentEditableWarning
-              onInput={handleInput}
-              onClick={handleEditorClick}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              style={{
-                width: '100%',
-                minHeight: `${minHeight}rem`,
-                maxHeight: `${maxHeight}rem`,
-                overflowY: 'auto',
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                color: c.text.primary,
-                fontSize: `${FONT_SIZE}rem`,
-                lineHeight: `${LINE_HEIGHT}`,
-                fontFamily: 'inherit',
-                wordBreak: 'break-word',
-                whiteSpace: 'pre-wrap',
-              }}
-            />
-          )}
+          <div
+            ref={editorRef}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={handleInput}
+            onClick={handleEditorClick}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            style={{
+              width: '100%',
+              minHeight: `${minHeight}rem`,
+              maxHeight: `${maxHeight}rem`,
+              overflowY: 'auto',
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: c.text.primary,
+              fontSize: `${FONT_SIZE}rem`,
+              lineHeight: `${LINE_HEIGHT}`,
+              fontFamily: 'inherit',
+              wordBreak: 'break-word',
+              whiteSpace: 'pre-wrap',
+            }}
+          />
           {!hasContent && (
             <div
               style={{
