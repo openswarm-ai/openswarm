@@ -79,8 +79,18 @@
   ; the install still completes; user just pays the cold-start tax on
   ; first launch, same as before this macro existed.
 
-  nsExec::Exec '"$INSTDIR\OpenSwarm.exe" --prewarm'
-  Pop $0  ; discard exit code; prewarm is best-effort
+  ; Skip prewarm on SILENT installs. CI's installer verification AND production
+  ; auto-updates both run the installer with /S, and nsExec::Exec is synchronous
+  ; with no upper bound - launching the freshly-extracted, not-yet-signed
+  ; OpenSwarm.exe (which loads python.exe + node.exe) provokes a cold Windows
+  ; Defender scan that can stall the silent install for minutes (it hung the CI
+  ; installer check, and would do the same to a user's auto-update). Interactive
+  ; first-time installs, where the cold-start win actually lands, still prewarm.
+  ${If} ${Silent}
+  ${Else}
+    nsExec::Exec '"$INSTDIR\OpenSwarm.exe" --prewarm'
+    Pop $0  ; discard exit code; prewarm is best-effort
+  ${EndIf}
 !macroend
 
 !macro customRemoveFiles

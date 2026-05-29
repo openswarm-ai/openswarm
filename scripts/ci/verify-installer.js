@@ -99,15 +99,24 @@ function runDestructive(setup) {
   }
   process.stdout.write('\n[destructive] installing silently...\n');
   killRunning();
-  const inst = spawnSync(setup, ['/S'], { stdio: 'inherit' });
-  if (inst.status !== 0 && inst.status !== null) bad(`Setup.exe /S exited ${inst.status}`);
-  // oneClick installer returns before files settle; wait for the exe to appear.
-  const deadline = Date.now() + 120000;
-  while (Date.now() < deadline && !exists(path.join(INSTALL_DIR, 'OpenSwarm.exe'))) { execSync('powershell -NoProfile -Command "Start-Sleep -Milliseconds 1000"'); }
+  const installedExe = path.join(INSTALL_DIR, 'OpenSwarm.exe');
+  // Blocking: spawnSync returns only once the installer has fully finished
+  // (files + registry uninstall entry + shortcuts are all written, the last of
+  // which assertInstalled checks). The timeout is the safety net: the silent
+  // path now skips the unbounded --prewarm step (see installer-recovery.nsh), so
+  // a clean extract finishes well inside this, but if a future installer change
+  // reintroduces a synchronous stall this fails the gate in minutes instead of
+  // hanging the whole job until it is force-cancelled.
+  const inst = spawnSync(setup, ['/S'], { stdio: 'inherit', timeout: 300000 });
+  if (inst.error) bad(`Setup.exe /S did not complete: ${inst.error.message}`);
+  else if (inst.status !== 0 && inst.status !== null) bad(`Setup.exe /S exited ${inst.status}`);
+  // oneClick installer can return microseconds before the exe handle settles.
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline && !exists(installedExe)) { execSync('powershell -NoProfile -Command "Start-Sleep -Milliseconds 1000"'); }
+  killRunning();   // defensive: ensure nothing the installer launched is holding the dir
   assertInstalled();
 
   // Launch the INSTALLED exe through the full gate (boot/serve/provenance/etc.).
-  const installedExe = path.join(INSTALL_DIR, 'OpenSwarm.exe');
   if (exists(installedExe)) {
     process.stdout.write('\n[destructive] verifying the INSTALLED app...\n');
     const v = spawnSync(process.execPath, [path.join(__dirname, 'verify-all.js'), '--app', installedExe], { stdio: 'inherit' });
