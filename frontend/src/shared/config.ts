@@ -10,6 +10,19 @@ export const OPENSWARM_DEFAULT_PROXY_URL = 'https://api.openswarm.com';
 let _authTokenCache: string = '';
 let _authTokenPromise: Promise<string> | null = null;
 
+// Dev mode fallback: seed token from env variable when not running in Electron
+if (!(window as any).openswarm) {
+  fetch(`http://${host}:${port}/api/dev/token`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.token) {
+        _authTokenCache = data.token;
+      }
+    })
+    .catch(() => {});
+}
+
+
 export function getAuthToken(): string {
   return _authTokenCache;
 }

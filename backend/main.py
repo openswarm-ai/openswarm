@@ -49,6 +49,8 @@ from backend.auth import (
     is_origin_allowed,
 )
 init_auth_token()
+
+
 # Install the log scrubber AFTER the token exists so any log line that
 # accidentally embeds it (subprocess env dumps, urllib retry traces,
 # proxied-request error bodies) gets redacted before hitting handlers.
@@ -384,6 +386,16 @@ async def browser_command(request: Request):
     request_id = uuid4().hex
     result = await ws_manager.send_browser_command(request_id, action, browser_id, params, tab_id=tab_id)
     return JSONResponse(result)
+
+
+@app.get("/api/dev/token")
+async def dev_token(request: Request):
+    """Return the install token for dev mode only.
+    Disabled in packaged builds. Localhost binding is the security gate."""
+    if os.environ.get("OPENSWARM_PACKAGED") == "1":
+        return JSONResponse({"error": "not available"}, status_code=404)
+    from backend.auth import get_auth_token
+    return JSONResponse({"token": get_auth_token()})
 
 
 @app.get("/api/subscriptions/pending/{state}")

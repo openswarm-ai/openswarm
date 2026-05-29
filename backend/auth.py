@@ -186,6 +186,7 @@ _AUTH_EXEMPT_EXACT = {
     # public api.openswarm.com/api/oauth/google/refresh doesn't already
     # do for any internet caller, so no new attack surface.
     "/api/tools/google-oauth-token",
+    "/api/dev/token",
 }
 
 _AUTH_EXEMPT_PREFIX = (

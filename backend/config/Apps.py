@@ -1,6 +1,7 @@
 import os
 
 from fastapi import FastAPI, APIRouter
+from fastapi.middleware.cors import CORSMiddleware 
 import debug
 from uuid import uuid4
 from typing import List
@@ -37,6 +38,13 @@ class MainApp:
                 yield
                 
         self.app = FastAPI(lifespan=lifespan)
+        self.app.add_middleware(
+            CORSMiddleware , 
+            allow_origins = ["http://localhost:3000"] , 
+            allow_credentials=True , 
+            allow_methods=["*"],
+            allow_headers=["*"], 
+        )
 
         for sub_app in sub_apps:
             self.app.include_router(

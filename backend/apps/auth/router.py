@@ -33,6 +33,7 @@ from pydantic import BaseModel
 from backend.config.Apps import SubApp
 from backend.apps.settings.credentials import OPENSWARM_DEFAULT_PROXY_URL
 from backend.apps.settings.settings import load_settings, save_settings_async
+from backend.config.install_id import get_install_id
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +268,7 @@ async def identity_status():
         }
 
     # Not signed in; defer to cloud for install-age + grace-window math.
-    install_id = getattr(settings_obj, "installation_id", None)
+    install_id = getattr(settings_obj, "installation_id", None) or get_install_id()
     if not install_id:
         # No install_id yet (very fresh install before first sync); hard gate.
         return {"authed": False, "hard_gate": True, "install_age_days": 0, "deadline_ts": None}
