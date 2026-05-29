@@ -87,6 +87,11 @@ def _augmented_path() -> str:
     return os.pathsep.join(parts)
 
 
+def linkedin_profile_dir() -> str:
+    """Return OpenSwarm's managed LinkedIn browser profile directory."""
+    return os.path.join(os.path.expanduser("~"), ".openswarm", "linkedin", "accounts", "default", "profile")
+
+
 def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
     """Build the claude_agent_sdk mcp_servers config entry for a tool.
 
@@ -178,6 +183,17 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
         os.makedirs(cache_dir, exist_ok=True)
         env["MS365_MCP_TOKEN_CACHE_PATH"] = os.path.join(cache_dir, "ms365-token-cache.json")
         env["MS365_MCP_SELECTED_ACCOUNT_PATH"] = os.path.join(cache_dir, "ms365-selected-account.json")
+
+    # LinkedIn MCP keeps browser auth in a persistent Patchright profile.
+    # Use an OpenSwarm-managed path so setup, reconnect, and normal MCP calls
+    # all operate on the same selected account.
+    if tool.name.lower() == "linkedin" and config.get("type") == "stdio":
+        args = list(config.get("args") or [])
+        if "--user-data-dir" not in args:
+            args.extend(["--user-data-dir", linkedin_profile_dir()])
+            config["args"] = args
+        env = config.setdefault("env", {})
+        env.setdefault("LINKEDIN_EXPERIMENTAL_PERSIST_DERIVED_SESSION", "true")
 
     if config.get("type") == "stdio":
         if config.get("command"):

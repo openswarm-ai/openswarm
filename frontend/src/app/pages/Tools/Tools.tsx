@@ -92,7 +92,7 @@ const Tools: React.FC = () => {
   // Curated whitelist matches the MCPSearch alias map in main.py (mcp-meta).
   const CURATED_MCP_NAMES = useMemo(() => new Set([
     'google-workspace', 'microsoft-365', 'slack', 'discord',
-    'notion', 'airtable', 'hubspot', 'reddit', 'youtube',
+    'notion', 'airtable', 'hubspot', 'reddit', 'youtube', 'linkedin',
   ]), []);
   const regServers = useMemo(() => {
     if (a.regSource !== 'curated') return regServersRaw;
@@ -230,9 +230,11 @@ const Tools: React.FC = () => {
                   onIntegrationToggle={a.handleIntegrationToggle}
                   onOAuthConnect={a.handleOAuthConnect}
                   onDeviceCodeConnect={a.handleDeviceCodeConnect}
+                  onLinkedInConnect={a.handleLinkedInConnect}
                   onM365Disconnect={a.handleM365Disconnect}
                   onDisconnectIntegration={a.handleDisconnectIntegration}
                   onOpenCredentialsDialog={a.openCredentialsDialog}
+                  linkedinConnectingToolId={a.linkedinConnectingToolId}
                   onEdit={a.openEdit}
                   onDelete={a.handleDelete}
                 />

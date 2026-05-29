@@ -125,6 +125,51 @@ export const disconnectM365 = createAsyncThunk(
   }
 );
 
+export const startLinkedInConnect = createAsyncThunk(
+  'tools/startLinkedInConnect',
+  async ({ toolId, reconnect = false }: { toolId: string; reconnect?: boolean }) => {
+    const suffix = reconnect ? '?reconnect=true' : '';
+    const res = await fetch(`${TOOLS_API}/${toolId}/linkedin/connect${suffix}`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to start LinkedIn connection');
+    return await res.json();
+  }
+);
+
+export const pollLinkedInConnectStatus = createAsyncThunk(
+  'tools/pollLinkedInConnectStatus',
+  async (toolId: string) => {
+    const res = await fetch(`${TOOLS_API}/${toolId}/linkedin/connect/status`);
+    return await res.json() as { status: string; email?: string; output?: string; message?: string };
+  }
+);
+
+export const importLinkedInCookies = createAsyncThunk(
+  'tools/importLinkedInCookies',
+  async ({ toolId, cookies }: { toolId: string; cookies: Record<string, any>[] }) => {
+    const res = await fetch(`${TOOLS_API}/${toolId}/linkedin/session-cookies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cookies }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to import LinkedIn session' }));
+      throw new Error(err.detail || 'Failed to import LinkedIn session');
+    }
+    const data = await res.json();
+    return data.tool as ToolDefinition;
+  }
+);
+
+export const disconnectLinkedIn = createAsyncThunk(
+  'tools/disconnectLinkedIn',
+  async (toolId: string) => {
+    const res = await fetch(`${TOOLS_API}/${toolId}/linkedin/disconnect`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to disconnect LinkedIn');
+    const data = await res.json();
+    return data.tool as ToolDefinition;
+  }
+);
+
 export const disconnectOAuth = createAsyncThunk(
   'tools/disconnectOAuth',
   async (toolId: string) => {
@@ -195,6 +240,8 @@ const toolsSlice = createSlice({
       .addCase(updateTool.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(deleteTool.fulfilled, (state, action) => { delete state.items[action.payload]; })
       .addCase(disconnectOAuth.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
+      .addCase(importLinkedInCookies.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
+      .addCase(disconnectLinkedIn.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(fetchToolStatus.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(discoverTools.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(fetchBuiltinPermissions.fulfilled, (state, action) => { state.builtinPermissions = action.payload; })

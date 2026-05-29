@@ -98,3 +98,7 @@ class ToolUpdate(BaseModel):
     tool_permissions: Optional[dict[str, Any]] = None
     connected_account_email: Optional[str] = None
     enabled: Optional[bool] = None
+
+
+class LinkedInCookieImport(BaseModel):
+    cookies: list[dict[str, Any]] = Field(default_factory=list)

@@ -8,6 +8,10 @@ import {
   startDeviceCodeLogin,
   pollDeviceCodeStatus,
   disconnectM365,
+  startLinkedInConnect,
+  pollLinkedInConnectStatus,
+  importLinkedInCookies,
+  disconnectLinkedIn,
   ToolDefinition,
 } from '@/shared/state/toolsSlice';
 import { API_BASE } from '@/shared/config';
@@ -35,6 +39,7 @@ export function useToolConnections({ items, setSnackbar, setExpandedToolId }: De
   const [credDialogIntegration, setCredDialogIntegration] = useState<Integration | null>(null);
   const [credDialogValues, setCredDialogValues] = useState<Record<string, string>>({});
   const [credDialogSaving, setCredDialogSaving] = useState(false);
+  const [linkedinConnectingToolId, setLinkedinConnectingToolId] = useState<string | null>(null);
 
   const handleOAuthConnect = async (toolId: string) => {
     const result = await dispatch(startOAuth(toolId));
@@ -120,6 +125,77 @@ export function useToolConnections({ items, setSnackbar, setExpandedToolId }: De
     setSnackbar({ open: true, message: 'Disconnected from Microsoft 365' });
   };
 
+  const handleLinkedInConnect = async (toolId: string, reconnect = false) => {
+    setLinkedinConnectingToolId(toolId);
+    const electronLinkedInBridge = (window as any).openswarm?.connectLinkedIn;
+    if (electronLinkedInBridge) {
+      setSnackbar({ open: true, message: 'Opening LinkedIn sign-in…' });
+      try {
+        const { cookies } = await electronLinkedInBridge();
+        const importResult = await dispatch(importLinkedInCookies({ toolId, cookies }));
+        if (!importLinkedInCookies.fulfilled.match(importResult)) {
+          throw new Error('Failed to import LinkedIn session');
+        }
+        setLinkedinConnectingToolId(null);
+        setSnackbar({ open: true, message: 'LinkedIn connected! Discovering actions…' });
+        setExpandedToolId(toolId);
+        await dispatch(fetchToolStatus(toolId));
+        dispatch(discoverTools(toolId));
+        return;
+      } catch (err: any) {
+        const message = String(err?.message || err || '');
+        if (message.includes('No handler registered')) {
+          setSnackbar({ open: true, message: 'Opening LinkedIn sign-in…' });
+        } else if (message.includes('Google sign-in is blocked')) {
+          setLinkedinConnectingToolId(null);
+          setSnackbar({ open: true, message, severity: 'error' });
+          return;
+        } else {
+          setLinkedinConnectingToolId(null);
+          setSnackbar({ open: true, message: message || 'LinkedIn sign-in was cancelled', severity: 'error' });
+          return;
+        }
+      }
+    } else {
+      setSnackbar({ open: true, message: 'Opening LinkedIn login. Complete sign-in in the browser window…' });
+    }
+
+    const result = await dispatch(startLinkedInConnect({ toolId, reconnect }));
+    if (!startLinkedInConnect.fulfilled.match(result)) {
+      setLinkedinConnectingToolId(null);
+      setSnackbar({ open: true, message: 'Failed to start LinkedIn login', severity: 'error' });
+      return;
+    }
+
+    const poll = setInterval(async () => {
+      const statusResult = await dispatch(pollLinkedInConnectStatus(toolId));
+      if (!pollLinkedInConnectStatus.fulfilled.match(statusResult)) return;
+      const { status, output } = statusResult.payload;
+      if (status === 'connected') {
+        clearInterval(poll);
+        setLinkedinConnectingToolId(null);
+        setSnackbar({ open: true, message: 'LinkedIn connected! Discovering actions…' });
+        setExpandedToolId(toolId);
+        await dispatch(fetchToolStatus(toolId));
+        dispatch(discoverTools(toolId));
+      } else if (status === 'error') {
+        clearInterval(poll);
+        setLinkedinConnectingToolId(null);
+        setSnackbar({ open: true, message: output || 'LinkedIn login failed', severity: 'error' });
+      }
+    }, 2000);
+
+    setTimeout(() => {
+      clearInterval(poll);
+      setLinkedinConnectingToolId(null);
+    }, 360000);
+  };
+
+  const handleLinkedInDisconnect = async (toolId: string) => {
+    await dispatch(disconnectLinkedIn(toolId));
+    setSnackbar({ open: true, message: 'Disconnected from LinkedIn' });
+  };
+
   const openCredentialsDialog = (toolId: string, integration: Integration) => {
     const tool = items[toolId];
     const existing = tool?.credentials || {};
@@ -190,7 +266,9 @@ export function useToolConnections({ items, setSnackbar, setExpandedToolId }: De
   };
 
   const handleDisconnectIntegration = async (toolId: string, integration: Integration) => {
-    if (integration.authType === 'oauth2') {
+    if (integration.id === 'linkedin') {
+      await handleLinkedInDisconnect(toolId);
+    } else if (integration.authType === 'oauth2') {
       fetch(`${API_BASE}/tools/${toolId}/oauth/disconnect`, { method: 'POST' }).catch(() => {});
       const result = await dispatch(updateTool({
         id: toolId,
@@ -217,7 +295,9 @@ export function useToolConnections({ items, setSnackbar, setExpandedToolId }: De
   return {
     deviceCodeDialogOpen, setDeviceCodeDialogOpen, deviceCode, deviceCodeUrl, deviceCodeStatus,
     credDialogOpen, setCredDialogOpen, credDialogIntegration, credDialogValues, setCredDialogValues, credDialogSaving,
+    linkedinConnectingToolId,
     handleOAuthConnect, handleDeviceCodeConnect, handleM365Disconnect,
+    handleLinkedInConnect, handleLinkedInDisconnect,
     openCredentialsDialog, handleCredentialsSave, handleSlackAutoConnect, handleDisconnectIntegration,
   };
 }

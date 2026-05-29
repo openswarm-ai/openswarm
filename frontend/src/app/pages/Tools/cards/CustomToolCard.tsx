@@ -48,9 +48,11 @@ interface CustomToolCardProps {
   onIntegrationToggle: (integration: Integration) => void;
   onOAuthConnect: (toolId: string) => void;
   onDeviceCodeConnect: (toolId: string) => void;
+  onLinkedInConnect: (toolId: string, reconnect?: boolean) => void;
   onM365Disconnect: (toolId: string) => void;
   onDisconnectIntegration: (toolId: string, integration: Integration) => void;
   onOpenCredentialsDialog: (toolId: string, integration: Integration) => void;
+  linkedinConnectingToolId: string | null;
   onEdit: (tool: ToolDefinition) => void;
   onDelete: (toolId: string) => void;
 }
@@ -67,9 +69,11 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
   onIntegrationToggle: handleIntegrationToggle,
   onOAuthConnect: handleOAuthConnect,
   onDeviceCodeConnect: handleDeviceCodeConnect,
+  onLinkedInConnect: handleLinkedInConnect,
   onM365Disconnect: handleM365Disconnect,
   onDisconnectIntegration: handleDisconnectIntegration,
   onOpenCredentialsDialog: openCredentialsDialog,
+  linkedinConnectingToolId,
   onEdit: openEdit,
   onDelete: handleDelete,
 }) => {
@@ -143,9 +147,11 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                           isDisabled={isDisabled}
                           onOAuthConnect={handleOAuthConnect}
                           onDeviceCodeConnect={handleDeviceCodeConnect}
+                          onLinkedInConnect={handleLinkedInConnect}
                           onOpenCredentialsDialog={openCredentialsDialog}
                           onM365Disconnect={handleM365Disconnect}
                           onDisconnectIntegration={handleDisconnectIntegration}
+                          linkedinConnectingToolId={linkedinConnectingToolId}
                         />
                         {ig && (
                           <Box
