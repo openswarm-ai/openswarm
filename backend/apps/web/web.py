@@ -18,6 +18,8 @@ from typeguard import typechecked
 
 import debug
 
+from backend.apps.agents.tools.ssrf_guard import SSRFBlockedError, assert_safe_url
+
 from backend.config.Apps import SubApp
 
 
@@ -503,6 +505,11 @@ async def search(body: SearchBody) -> dict:
 @typechecked
 async def fetch(body: FetchBody) -> dict:
     """Fetch a URL, primary-aware. Mirrors /search cascade logic."""
+    try:
+        assert_safe_url(body.url)
+    except SSRFBlockedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
     gemini_key = _resolve_gemini_api_key()
     openai_key = _resolve_openai_api_key()
     primary = (body.primary or "").lower()

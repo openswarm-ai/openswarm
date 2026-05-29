@@ -15,9 +15,21 @@ FETCH_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/web/fetch"
 # Primary-provider hint from agent_manager; backend picks the native search tool (googleSearch/web_search_preview) so searches use the user's existing budget.
 PRIMARY_HINT = os.environ.get("OPENSWARM_PRIMARY_API", "") or None
 
+# ---------------------------------------------------------------------------
+# SSRF guard — import from shared module; fail closed if unavailable
+# ---------------------------------------------------------------------------
+try:
+    from backend.apps.agents.tools.ssrf_guard import is_safe_url as _is_safe_url
+except ImportError:
+    # If the backend package is not on sys.path (unusual), deny all fetches
+    # rather than silently skipping the check.
+    def _is_safe_url(url: str) -> bool:  # type: ignore[misc]
+        return False
+
+
+# ---------------------------------------------------------------------------
 TOOLS = [
     {
-        "name": "WebSearch",
         "description": (
             "Search the web using DuckDuckGo and return titles, URLs, and "
             "snippets for the top results. Works on any model primary, "
@@ -121,6 +133,8 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
             return {"content": [{"type": "text", "text": "Error: url is required"}], "isError": True}
         if not url.startswith(("http://", "https://")):
             return {"content": [{"type": "text", "text": f"Error: url must start with http:// or https:// (got {url!r})"}], "isError": True}
+        if not _is_safe_url(url):
+            return {"content": [{"type": "text", "text": f"Error: URL {url!r} is blocked — fetching private or internal addresses is not allowed"}], "isError": True}
         prompt = arguments.get("prompt") or None
         body = {"url": url}
         if prompt:

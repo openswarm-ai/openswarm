@@ -5,10 +5,12 @@ from __future__ import annotations
 import html
 import re
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
 
 from backend.apps.agents.tools.base import BaseTool, ToolContext
+from backend.apps.agents.tools.ssrf_guard import SSRFBlockedError, assert_safe_url
 
 _HTTP_TIMEOUT = 30
 _MAX_OUTPUT_BYTES = 250 * 1024  # ~250 KB covers ~95% of articles/wikis/docs.
@@ -32,6 +34,37 @@ def _strip_html(raw_html: str) -> str:
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+_MAX_REDIRECTS = 10
+_REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
+
+
+async def _safe_fetch(url: str) -> httpx.Response:
+    """Fetch *url* with SSRF protection and manual redirect following.
+
+    Each hop (initial URL + every ``Location`` header) is validated against
+    the private-address blocklist before the request is made, so a public URL
+    that 30x-redirects to an internal address is still blocked.
+    """
+    assert_safe_url(url)
+    async with httpx.AsyncClient(
+        timeout=_HTTP_TIMEOUT,
+        follow_redirects=False,  # we follow manually so we can re-validate
+        headers={"User-Agent": _USER_AGENT},
+    ) as client:
+        for _ in range(_MAX_REDIRECTS + 1):
+            resp = await client.get(url)
+            if resp.status_code not in _REDIRECT_CODES:
+                return resp
+            location = resp.headers.get("location", "").strip()
+            if not location:
+                return resp
+            if not location.startswith(("http://", "https://")):
+                location = urljoin(str(resp.url), location)
+            assert_safe_url(location)
+            url = location
+        raise httpx.TooManyRedirects(f"Exceeded {_MAX_REDIRECTS} redirects")
 
 
 class WebSearchTool(BaseTool):
@@ -168,13 +201,10 @@ class WebFetchTool(BaseTool):
         prompt: str | None = input_data.get("prompt")
 
         try:
-            async with httpx.AsyncClient(
-                timeout=_HTTP_TIMEOUT,
-                follow_redirects=True,
-                headers={"User-Agent": _USER_AGENT},
-            ) as client:
-                resp = await client.get(url)
-                resp.raise_for_status()
+            resp = await _safe_fetch(url)
+            resp.raise_for_status()
+        except SSRFBlockedError as exc:
+            return [{"type": "text", "text": f"Blocked: {exc}"}]
         except httpx.HTTPStatusError as exc:
             return [{"type": "text", "text": f"HTTP error {exc.response.status_code} fetching {url}"}]
         except Exception as exc:
