@@ -190,7 +190,7 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
     if tool.name.lower() == "linkedin" and config.get("type") == "stdio":
         shim_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "linkedin_mcp_setup",
+            "linkedin_mcp_shim",
             "server.py",
         )
         config["command"] = "uv"

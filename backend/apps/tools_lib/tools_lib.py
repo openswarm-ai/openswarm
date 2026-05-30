@@ -7,11 +7,19 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlencode
-from uuid import uuid4
 
 import httpx
 from fastapi import HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
+from backend.apps.linkedin_mcp_shim.session import (
+    clear_linkedin_auth_state,
+    kill_linkedin_processes,
+    linkedin_auth_state_ready,
+    linkedin_connect_process_status,
+    start_linkedin_connect,
+    start_linkedin_warmup,
+    write_linkedin_cookie_bridge,
+)
 from backend.config.Apps import SubApp
 from backend.apps.tools_lib.models import ToolDefinition, ToolCreate, ToolUpdate, LinkedInCookieImport, BUILTIN_TOOLS
 from backend.config.paths import DATA_ROOT, TOOLS_DIR as DATA_DIR, BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH, TRUSTED_SENSITIVE_PATHS_PATH
@@ -20,7 +28,7 @@ from backend.config.paths import DATA_ROOT, TOOLS_DIR as DATA_DIR, BUILTIN_PERMI
 # before anything reads it; re-exported here for the route handlers below.
 from backend.apps.tools_lib.oauth_config import OPENSWARM_OAUTH_BASE_URL
 # _sanitize_server_name + derive_mcp_config re-exported for agent_manager/main.
-from backend.apps.tools_lib.mcp_config import _sanitize_server_name, derive_mcp_config, linkedin_profile_dir, _resolve_command
+from backend.apps.tools_lib.mcp_config import _sanitize_server_name, derive_mcp_config
 from backend.apps.tools_lib.mcp_discovery import (
     _discover_mcp_tools_http,
     _discover_mcp_tools_sse,
@@ -73,11 +81,6 @@ def _visible_mcp_tools(tool: ToolDefinition, raw_tools: list[dict[str, Any]]) ->
     if not hidden:
         return raw_tools
     return [t for t in raw_tools if t.get("name") not in hidden]
-
-
-def _is_linkedin_host(value: str | None) -> bool:
-    host = (value or "").lower().strip(".")
-    return host == "linkedin.com" or host.endswith(".linkedin.com")
 
 
 def _ensure_default_permissions() -> None:
@@ -563,169 +566,6 @@ async def m365_disconnect(tool_id: str):
     return {"ok": True, "tool": tool.model_dump()}
 
 
-# ---------------------------------------------------------------------------
-# LinkedIn interactive login flow
-# ---------------------------------------------------------------------------
-_linkedin_connect_processes: dict[str, dict] = {}  # tool_id -> {proc, status, output}
-_linkedin_warmup_processes: dict[str, dict] = {}  # tool_id -> {proc, status, output}
-
-
-def linkedin_auth_state_ready() -> bool:
-    """Return whether OpenSwarm has the source-session files the LinkedIn MCP requires."""
-    profile_dir = linkedin_profile_dir()
-    auth_root = os.path.dirname(profile_dir)
-    cookies_path = os.path.join(auth_root, "cookies.json")
-    source_state_path = os.path.join(auth_root, "source-state.json")
-    if not (
-        os.path.isdir(profile_dir)
-        and os.path.isfile(cookies_path)
-        and os.path.isfile(source_state_path)
-    ):
-        return False
-    try:
-        with open(cookies_path, "r") as f:
-            cookies = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return False
-    return isinstance(cookies, list) and any(
-        c.get("name") == "li_at" and c.get("value")
-        for c in cookies
-        if isinstance(c, dict)
-    )
-
-
-def _clear_linkedin_auth_state() -> None:
-    """Clear OpenSwarm-managed LinkedIn auth state without invoking the interactive logout prompt."""
-    profile_dir = linkedin_profile_dir()
-    auth_root = os.path.dirname(profile_dir)
-    for path in (
-        profile_dir,
-        os.path.join(auth_root, "runtime-profiles"),
-    ):
-        if os.path.isdir(path):
-            shutil.rmtree(path, ignore_errors=True)
-    for path in (
-        os.path.join(auth_root, "cookies.json"),
-        os.path.join(auth_root, "source-state.json"),
-    ):
-        if os.path.isfile(path):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-
-
-def _utcnow_iso() -> str:
-    from datetime import UTC, datetime
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _atomic_write_json(path: str, payload: Any) -> None:
-    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-    tmp = f"{path}.tmp"
-    with open(tmp, "w") as f:
-        json.dump(payload, f)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
-
-
-def _write_linkedin_cookie_bridge(cookies: list[dict[str, Any]]) -> None:
-    """Write the minimal source-session artifacts expected by linkedin-scraper-mcp."""
-    profile_dir = linkedin_profile_dir()
-    auth_root = os.path.dirname(profile_dir)
-    os.makedirs(profile_dir, mode=0o700, exist_ok=True)
-    marker = os.path.join(profile_dir, ".openswarm-bridge")
-    with open(marker, "w") as f:
-        f.write(_utcnow_iso())
-    os.chmod(marker, 0o600)
-
-    normalized = []
-    for cookie in cookies:
-        name = cookie.get("name")
-        value = cookie.get("value")
-        domain = cookie.get("domain") or ".linkedin.com"
-        if not name or value is None or not _is_linkedin_host(str(domain)):
-            continue
-        normalized.append({
-            "name": name,
-            "value": value,
-            "domain": domain if str(domain).startswith(".") else f".{domain}",
-            "path": cookie.get("path") or "/",
-            "expires": cookie.get("expires", -1),
-            "httpOnly": bool(cookie.get("httpOnly", False)),
-            "secure": cookie.get("secure", True) is not False,
-            "sameSite": cookie.get("sameSite") or "None",
-        })
-
-    if not any(c.get("name") == "li_at" for c in normalized):
-        raise HTTPException(status_code=400, detail="LinkedIn login cookie li_at was not found")
-
-    cookies_path = os.path.join(auth_root, "cookies.json")
-    _atomic_write_json(cookies_path, normalized)
-    _atomic_write_json(os.path.join(auth_root, "source-state.json"), {
-        "version": 1,
-        "source_runtime_id": "openswarm-electron-cookie-bridge",
-        "login_generation": str(uuid4()),
-        "created_at": _utcnow_iso(),
-        "profile_path": os.path.abspath(os.path.expanduser(profile_dir)),
-        "cookies_path": os.path.abspath(os.path.expanduser(cookies_path)),
-    })
-
-
-def _linkedin_setup_command(tool: ToolDefinition) -> tuple[list[str], dict]:
-    """Build the OpenSwarm LinkedIn setup shim command."""
-    config = derive_mcp_config(tool)
-    if not config or config.get("type") != "stdio":
-        raise HTTPException(status_code=400, detail="LinkedIn MCP must use stdio transport")
-
-    command = _resolve_command("uv")
-    if not command:
-        raise HTTPException(status_code=500, detail="Cannot resolve uv for LinkedIn setup")
-    shim_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "linkedin_mcp_setup",
-        "run.py",
-    )
-    env = {**os.environ, **(config.get("env") or {})}
-    return [
-        command,
-        "run",
-        "--with",
-        "linkedin-scraper-mcp",
-        "python",
-        shim_path,
-        "--user-data-dir",
-        linkedin_profile_dir(),
-    ], env
-
-
-def _linkedin_warmup_command(tool: ToolDefinition) -> tuple[list[str], dict]:
-    """Build the OpenSwarm LinkedIn browser-runtime warmup command."""
-    config = derive_mcp_config(tool)
-    if not config or config.get("type") != "stdio":
-        raise HTTPException(status_code=400, detail="LinkedIn MCP must use stdio transport")
-
-    command = _resolve_command("uv")
-    if not command:
-        raise HTTPException(status_code=500, detail="Cannot resolve uv for LinkedIn warmup")
-    shim_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "linkedin_mcp_setup",
-        "warmup.py",
-    )
-    env = {**os.environ, **(config.get("env") or {})}
-    return [
-        command,
-        "run",
-        "--with",
-        "linkedin-scraper-mcp",
-        "python",
-        shim_path,
-        "--user-data-dir",
-        linkedin_profile_dir(),
-    ], env
-
-
 @tools_lib.router.post("/{tool_id}/linkedin/session-cookies")
 async def linkedin_session_cookies(tool_id: str, body: LinkedInCookieImport):
     """Import LinkedIn cookies captured by the Electron login popup."""
@@ -733,21 +573,9 @@ async def linkedin_session_cookies(tool_id: str, body: LinkedInCookieImport):
     if tool.name.lower() != "linkedin":
         raise HTTPException(status_code=400, detail="Tool is not LinkedIn")
 
-    existing = _linkedin_connect_processes.pop(tool_id, None)
-    if existing and existing.get("proc"):
-        try:
-            existing["proc"].kill()
-        except Exception:
-            pass
-    warmup = _linkedin_warmup_processes.pop(tool_id, None)
-    if warmup and warmup.get("proc"):
-        try:
-            warmup["proc"].kill()
-        except Exception:
-            pass
-
-    _clear_linkedin_auth_state()
-    _write_linkedin_cookie_bridge(body.cookies)
+    kill_linkedin_processes(tool_id)
+    clear_linkedin_auth_state()
+    write_linkedin_cookie_bridge(body.cookies)
 
     tool.auth_status = "connected"
     tool.connected_account_email = None
@@ -758,121 +586,41 @@ async def linkedin_session_cookies(tool_id: str, body: LinkedInCookieImport):
 @tools_lib.router.post("/{tool_id}/linkedin/warmup")
 async def linkedin_warmup(tool_id: str):
     """Best-effort install of the LinkedIn MCP browser runtime after cookie login."""
-    import subprocess
-    import threading
-
     tool = _load(tool_id)
     if tool.name.lower() != "linkedin":
         raise HTTPException(status_code=400, detail="Tool is not LinkedIn")
     if not linkedin_auth_state_ready():
         return {"status": "skipped", "reason": "not_connected"}
-
-    existing = _linkedin_warmup_processes.get(tool_id)
-    if existing:
-        proc = existing.get("proc")
-        if proc and proc.poll() is None:
-            return {"status": "already_running"}
-        _linkedin_warmup_processes.pop(tool_id, None)
-
-    cmd, env = _linkedin_warmup_command(tool)
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=env,
-        text=True,
-    )
-
-    state: dict = {
-        "proc": proc,
-        "status": "running",
-        "output": "",
-        "started_at": time.time(),
-    }
-
-    def _read_output():
-        try:
-            if proc.stdout:
-                for line in proc.stdout:
-                    state["output"] += line
-            proc.wait()
-            state["status"] = "ready" if proc.returncode == 0 else "error"
-        except Exception as e:
-            state["status"] = "error"
-            state["output"] += f"\n{type(e).__name__}: {e}"
-
-    threading.Thread(target=_read_output, daemon=True).start()
-    _linkedin_warmup_processes[tool_id] = state
-    return {"status": "started"}
+    return start_linkedin_warmup(tool_id, tool)
 
 
 @tools_lib.router.post("/{tool_id}/linkedin/connect")
 async def linkedin_connect(tool_id: str, reconnect: bool = Query(False)):
     """Run the upstream LinkedIn MCP browser setup/login flow once."""
-    import subprocess
-    import threading
-
     tool = _load(tool_id)
     if tool.name.lower() != "linkedin":
         raise HTTPException(status_code=400, detail="Tool is not LinkedIn")
 
-    existing = _linkedin_connect_processes.pop(tool_id, None)
-    if existing and existing.get("proc"):
-        try:
-            existing["proc"].kill()
-        except Exception:
-            pass
-
     if reconnect:
-        _clear_linkedin_auth_state()
+        clear_linkedin_auth_state()
 
-    cmd, env = _linkedin_setup_command(tool)
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=env,
-        text=True,
-    )
-
-    state: dict = {
-        "proc": proc,
-        "status": "running",
-        "output": "",
-        "started_at": time.time(),
-    }
-
-    def _read_output():
+    def _mark_connected() -> None:
         try:
-            if proc.stdout:
-                for line in proc.stdout:
-                    state["output"] += line
-            proc.wait()
-            if proc.returncode == 0:
-                state["status"] = "connected"
-                try:
-                    t = _load(tool_id)
-                    t.auth_status = "connected"
-                    t.connected_account_email = None
-                    _save(t)
-                except Exception:
-                    logger.exception("Failed to persist LinkedIn connected state")
-            else:
-                state["status"] = "error"
-        except Exception as e:
-            state["status"] = "error"
-            state["output"] += f"\n{type(e).__name__}: {e}"
+            t = _load(tool_id)
+            t.auth_status = "connected"
+            t.connected_account_email = None
+            _save(t)
+        except Exception:
+            logger.exception("Failed to persist LinkedIn connected state")
 
-    threading.Thread(target=_read_output, daemon=True).start()
-    _linkedin_connect_processes[tool_id] = state
-    return {"status": "running"}
+    return start_linkedin_connect(tool_id, tool, _mark_connected)
 
 
 @tools_lib.router.get("/{tool_id}/linkedin/connect/status")
 async def linkedin_connect_status(tool_id: str):
     """Poll status for the LinkedIn browser setup/login subprocess."""
-    state = _linkedin_connect_processes.get(tool_id)
-    if not state:
+    status = linkedin_connect_process_status(tool_id)
+    if not status:
         tool = _load(tool_id)
         if tool.auth_status == "connected" and linkedin_auth_state_ready():
             return {"status": "connected", "email": tool.connected_account_email}
@@ -881,15 +629,7 @@ async def linkedin_connect_status(tool_id: str):
             tool.connected_account_email = None
             _save(tool)
         return {"status": "no_login_in_progress"}
-
-    status = state.get("status", "running")
-    result = {
-        "status": status,
-        "output": (state.get("output") or "")[-4000:],
-    }
-    if status in ("connected", "error"):
-        _linkedin_connect_processes.pop(tool_id, None)
-    return result
+    return status
 
 
 @tools_lib.router.post("/{tool_id}/linkedin/disconnect")
@@ -899,20 +639,8 @@ async def linkedin_disconnect(tool_id: str):
     if tool.name.lower() != "linkedin":
         raise HTTPException(status_code=400, detail="Tool is not LinkedIn")
 
-    existing = _linkedin_connect_processes.pop(tool_id, None)
-    if existing and existing.get("proc"):
-        try:
-            existing["proc"].kill()
-        except Exception:
-            pass
-    warmup = _linkedin_warmup_processes.pop(tool_id, None)
-    if warmup and warmup.get("proc"):
-        try:
-            warmup["proc"].kill()
-        except Exception:
-            pass
-
-    _clear_linkedin_auth_state()
+    kill_linkedin_processes(tool_id)
+    clear_linkedin_auth_state()
 
     tool.auth_status = "configured"
     tool.connected_account_email = None
