@@ -1,0 +1,109 @@
+name: Windows NSIS fast-boot test
+
+# Builds a SIGNED NSIS installer of the current app to test the bytecode-
+# invalidation fix (compileall --invalidation-mode unchecked-hash) + the 9router
+# loopback fix, against the Squirrel build. NSIS is the shipped target; this is
+# just an artifact-only test build so we can A/B startup speed without publishing.
+#
+# Fires on push to eric/nsis-fastboot (push needs no default-branch registration)
+# or manual dispatch. Builds with --publish never, so it never touches the feed.
+# Signing is attempted and reported, not enforced.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - eric/nsis-fastboot
+
+permissions:
+  contents: read
+
+jobs:
+  build-nsis:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    env:
+      AZURE_TENANT_ID:            ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID:            ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET:        ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_SIGNING_ENDPOINT:     ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT:      ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+      AZURE_SIGNING_CERT_PROFILE: ${{ secrets.AZURE_SIGNING_CERT_PROFILE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.1'
+
+      - name: Setup Python (for building bundled python-env)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Microsoft.Trusted.Signing.Client (dlib for signtool)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dlibDir = Join-Path $env:GITHUB_WORKSPACE 'trusted-signing-client'
+          New-Item -ItemType Directory -Force -Path $dlibDir | Out-Null
+          nuget install Microsoft.Trusted.Signing.Client -Version 1.0.60 -OutputDirectory $dlibDir -ExcludeVersion
+          $dlib = Join-Path $dlibDir 'Microsoft.Trusted.Signing.Client\bin\x64\Azure.CodeSigning.Dlib.dll'
+          if (-not (Test-Path $dlib)) {
+            Get-ChildItem -Path $dlibDir -Recurse -Filter 'Azure.CodeSigning.Dlib.dll' | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+            throw "Azure.CodeSigning.Dlib.dll not found after NuGet install"
+          }
+          "AZURE_SIGNING_DLIB=$dlib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "AZURE_SIGNING_DLIB=$dlib"
+
+      - name: Locate signtool.exe on the runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidates = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter 'signtool.exe' -ErrorAction SilentlyContinue `
+            | Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } `
+            | Sort-Object FullName -Descending
+          if (-not $candidates) { throw "signtool.exe not found on runner" }
+          $signtool = $candidates[0].FullName
+          "SIGNTOOL_PATH=$signtool" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "SIGNTOOL_PATH=$signtool"
+
+      - name: Build SIGNED NSIS installer (no publish)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOGLE_OAUTH_CLIENT_ID:     ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # -Sign, NO -Squirrel: default NSIS target, signs via the Azure hook,
+          # electron-builder runs with --publish never.
+          pwsh -NoProfile -File scripts\build-app-win.ps1 -Sign
+          if ($LASTEXITCODE -ne 0) { throw "build-app-win.ps1 failed ($LASTEXITCODE)" }
+
+      - name: Locate + report the NSIS installer (signing not enforced)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $setup = 'electron\dist\OpenSwarm-Setup-x64.exe'
+          if (-not (Test-Path $setup)) {
+            Write-Host "dist tree:"; Get-ChildItem 'electron\dist' -Filter '*.exe' | Format-Table FullName, Length
+            throw "no NSIS installer at $setup (build likely failed)"
+          }
+          $f = Get-Item $setup
+          Write-Host "--- NSIS installer: $($f.FullName) ($([math]::Round($f.Length/1MB))MB) ---"
+          node scripts/ci/verify-signature.js --target $f.FullName
+          Write-Host "NOTE: signing is REPORTED, not enforced, for this fast-boot test build."
+
+      - name: Upload NSIS installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openswarm-windows-nsis-fastboot-x64
+          path: |
+            electron/dist/OpenSwarm-Setup-x64.exe
+          if-no-files-found: error
+          retention-days: 14
