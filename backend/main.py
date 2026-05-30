@@ -505,7 +505,11 @@ async def mcp_meta(action: str, request: Request):
         valid options instead of activating (anti-hallucination).
     """
     from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.tools_lib.tools_lib import _load_all as load_all_tools, _sanitize_server_name
+    from backend.apps.tools_lib.tools_lib import (
+        _load_all as load_all_tools,
+        _sanitize_server_name,
+        linkedin_auth_state_ready,
+    )
 
     body = await request.json()
     parent_session_id = body.get("parent_session_id", "")
@@ -537,7 +541,10 @@ async def mcp_meta(action: str, request: Request):
         "linkedin": [
             "profile", "people", "person", "connection", "connect", "dm",
             "message", "messaging", "inbox", "conversation", "feed", "post",
-            "company", "jobs", "linkedin",
+            "company", "jobs", "job", "role", "roles", "position",
+            "positions", "opening", "openings", "career", "careers",
+            "hiring", "recruiting", "software engineer", "software engineering",
+            "linkedin",
         ],
     }
 
@@ -547,6 +554,7 @@ async def mcp_meta(action: str, request: Request):
             if not (t.mcp_config and t.enabled and t.auth_status in ("configured", "connected")):
                 continue
             sanitized = _sanitize_server_name(t.name)
+            needs_login = sanitized == "linkedin" and not linkedin_auth_state_ready()
             # Pull tool sub-action names from tool_permissions._tool_descriptions
             # so MCPSearch can match against capability names (e.g. "send_email").
             action_names: list[str] = []
@@ -561,6 +569,7 @@ async def mcp_meta(action: str, request: Request):
                 "name": sanitized,
                 "description": (t.description or "").strip() or f"{t.name} integration",
                 "raw_name": t.name,
+                "_needs_login": needs_login,
                 "_search_extras": " ".join(action_names + aliases),
             })
         return out
@@ -572,8 +581,15 @@ async def mcp_meta(action: str, request: Request):
         servers = _connected_servers()
         session = agent_manager.sessions.get(parent_session_id) if parent_session_id else None
         active_set = set(session.active_mcps) if session else set()
-        active = [{**_strip_extras(s), "status": "active"} for s in servers if s["name"] in active_set]
-        available = [{**_strip_extras(s), "status": "available"} for s in servers if s["name"] not in active_set]
+        active = [{**_strip_extras(s), "status": "active"} for s in servers if s["name"] in active_set and not s.get("_needs_login")]
+        available = [
+            {
+                **_strip_extras(s),
+                "status": "needs_login" if s.get("_needs_login") else "available",
+            }
+            for s in servers
+            if s["name"] not in active_set or s.get("_needs_login")
+        ]
         return JSONResponse({"active": active, "available": available})
 
     if action == "search":
@@ -603,7 +619,11 @@ async def mcp_meta(action: str, request: Request):
                     else:
                         score += 1
             if score:
-                annotated = {**_strip_extras(s), "status": "active" if s["name"] in active_set else "available"}
+                if s.get("_needs_login"):
+                    status = "needs_login"
+                else:
+                    status = "active" if s["name"] in active_set else "available"
+                annotated = {**_strip_extras(s), "status": status}
                 scored.append((score, annotated))
         scored.sort(key=lambda t: (-t[0], 0 if t[1]["status"] == "active" else 1, t[1]["name"]))
         matches = [s for _, s in scored[:5]]
@@ -624,6 +644,16 @@ async def mcp_meta(action: str, request: Request):
         valid_names = {s["name"] for s in servers}
         if server_name not in valid_names:
             return JSONResponse({"status": "unknown_server", "available": sorted(valid_names)})
+        selected = next((s for s in servers if s["name"] == server_name), None)
+        if selected and selected.get("_needs_login"):
+            if server_name in session.active_mcps:
+                session.active_mcps = [s for s in session.active_mcps if s != server_name]
+                session.needs_fork = True
+            return JSONResponse({
+                "status": "needs_login",
+                "server_name": server_name,
+                "message": "LinkedIn is installed, but no valid LinkedIn session is connected. Please open the Tools page, connect LinkedIn, then try again.",
+            })
 
         if server_name in session.active_mcps:
             return JSONResponse({"status": "already_active", "server_name": server_name})

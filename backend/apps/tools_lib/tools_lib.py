@@ -59,13 +59,6 @@ tools_lib = SubApp("tools", tools_lib_lifespan)
 _DEFAULT_BUILTIN_POLICIES = {"Bash": "ask"}
 
 
-LINKEDIN_UNSUPPORTED_TOOLS = {
-    "connect_with_person",
-    "get_conversation",
-    "send_message",
-}
-
-
 def _ensure_default_permissions() -> None:
     """Seed BUILTIN_PERMISSIONS_PATH so the user's Settings toggles persist
     cleanly. Without this the file is missing on first run, load returns {},
@@ -361,9 +354,6 @@ async def discover_tools(tool_id: str):
         logger.warning(f"MCP tool discovery failed for {tool.name}: {msg}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"Discovery failed: {msg}")
 
-    if tool.name.lower() == "linkedin":
-        raw_tools = [t for t in raw_tools if t.get("name") not in LINKEDIN_UNSUPPORTED_TOOLS]
-
     tool_names = [t["name"] for t in raw_tools]
     services, service_groups, all_read, all_write = _classify_services(tool_names, tool.name)
     permissions: dict[str, Any] = {n: tool.tool_permissions.get(n, "ask") for n in tool_names}
@@ -536,6 +526,30 @@ async def m365_disconnect(tool_id: str):
 # LinkedIn interactive login flow
 # ---------------------------------------------------------------------------
 _linkedin_connect_processes: dict[str, dict] = {}  # tool_id -> {proc, status, output}
+
+
+def linkedin_auth_state_ready() -> bool:
+    """Return whether OpenSwarm has the source-session files the LinkedIn MCP requires."""
+    profile_dir = linkedin_profile_dir()
+    auth_root = os.path.dirname(profile_dir)
+    cookies_path = os.path.join(auth_root, "cookies.json")
+    source_state_path = os.path.join(auth_root, "source-state.json")
+    if not (
+        os.path.isdir(profile_dir)
+        and os.path.isfile(cookies_path)
+        and os.path.isfile(source_state_path)
+    ):
+        return False
+    try:
+        with open(cookies_path, "r") as f:
+            cookies = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(cookies, list) and any(
+        c.get("name") == "li_at" and c.get("value")
+        for c in cookies
+        if isinstance(c, dict)
+    )
 
 
 def _clear_linkedin_auth_state() -> None:
@@ -734,8 +748,12 @@ async def linkedin_connect_status(tool_id: str):
     state = _linkedin_connect_processes.get(tool_id)
     if not state:
         tool = _load(tool_id)
-        if tool.auth_status == "connected":
+        if tool.auth_status == "connected" and linkedin_auth_state_ready():
             return {"status": "connected", "email": tool.connected_account_email}
+        if tool.name.lower() == "linkedin" and tool.auth_status == "connected":
+            tool.auth_status = "configured"
+            tool.connected_account_email = None
+            _save(tool)
         return {"status": "no_login_in_progress"}
 
     status = state.get("status", "running")

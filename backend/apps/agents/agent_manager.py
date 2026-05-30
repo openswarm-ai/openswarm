@@ -18,7 +18,7 @@ from backend.apps.tools_lib.tools_lib import (
     _load_all as load_all_tools,
     _sanitize_server_name,
     derive_mcp_config,
-    LINKEDIN_UNSUPPORTED_TOOLS,
+    linkedin_auth_state_ready,
     load_builtin_permissions,
     load_trusted_sensitive_paths,
     refresh_airtable_token,
@@ -182,6 +182,10 @@ class AgentManager:
 
             if _is_fully_denied(tool):
                 logger.info(f"[MCP-DEBUG] SKIPPED {tool.name}: fully denied")
+                continue
+
+            if server_name == "linkedin" and not linkedin_auth_state_ready():
+                logger.info("[MCP-DEBUG] SKIPPED linkedin: no valid LinkedIn session")
                 continue
 
             if tool.auth_type == "oauth2" and tool.auth_status == "connected":
@@ -1321,13 +1325,8 @@ class AgentManager:
                         None,
                     )
                     if tool_def:
-                        if name == "linkedin":
-                            for tn in LINKEDIN_UNSUPPORTED_TOOLS:
-                                effective_disallowed.append(f"mcp__{name}__{tn}")
                         denied = _get_denied_tool_names(tool_def)
                         known = _get_all_known_tool_names(tool_def)
-                        if name == "linkedin":
-                            known -= LINKEDIN_UNSUPPORTED_TOOLS
                         for tn in known - denied:
                             policy = tool_def.tool_permissions.get(tn, "ask")
                             if policy == "always_allow":

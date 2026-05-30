@@ -4,6 +4,7 @@ from backend.apps.modes.modes import load_mode
 from backend.apps.tools_lib.tools_lib import (
     _load_all as load_all_tools,
     _sanitize_server_name,
+    linkedin_auth_state_ready,
 )
 from backend.apps.agents.manager.prompt.tool_catalog import _get_denied_tool_names, _is_fully_denied
 
@@ -35,6 +36,8 @@ def _build_connected_tools_context(allowed_tools: list[str], get_all_tool_names:
             continue
 
         server_name = _sanitize_server_name(tool.name)
+        if server_name == "linkedin" and not linkedin_auth_state_ready():
+            continue
         denied = _get_denied_tool_names(tool)
         tool_descs = {
             k: v for k, v in tool.tool_permissions.get("_tool_descriptions", {}).items()
@@ -199,13 +202,16 @@ def _build_mcp_registry_summary(allowed_tools: list[str], active_mcps: list[str]
         if _is_fully_denied(tool):
             continue
         server_name = _sanitize_server_name(tool.name)
+        linkedin_needs_login = server_name == "linkedin" and not linkedin_auth_state_ready()
         desc = (getattr(tool, "description", None) or "").strip()
         if not desc:
             # Fall back to a generic blurb keyed on the tool name so the
             # model still has *some* signal to MCPSearch against.
             desc = f"{tool.name} integration"
+        if linkedin_needs_login:
+            desc = f"{desc} Requires the user to connect LinkedIn from the Tools page before activation."
         line = f"- `{server_name}`, {desc}"
-        if server_name in active_set:
+        if server_name in active_set and not linkedin_needs_login:
             active_lines.append(line)
         else:
             available_lines.append(line)

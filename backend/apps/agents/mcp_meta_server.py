@@ -172,6 +172,11 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
             }
         if result.get("status") == "already_active":
             return {"content": [{"type": "text", "text": f"`{server_name}` is already active for this session; its tools should be callable now."}]}
+        if result.get("status") == "needs_login":
+            message = result.get("message") or (
+                f"`{server_name}` is installed but not connected. Ask the user to open the Tools page and connect it before trying again."
+            )
+            return {"content": [{"type": "text", "text": message}], "isError": True}
         if result.get("status") == "activated":
             return {
                 "content": [{
