@@ -48,10 +48,22 @@ def _get_branch_messages(session) -> list:
     return result
 
 
-def _build_history_prefix(messages) -> str:
-    """Format branch messages into a conversation summary for context injection."""
+def _build_history_prefix(messages, compact_from_id: str | None = None) -> str:
+    """Format branch messages into a conversation summary for context injection.
+
+    When compact_from_id is set, all messages up to and including that ID are
+    skipped and replaced with a one-line note, reducing the history that gets
+    sent to the SDK on a fresh-session restart after compaction fires.
+    """
     lines = []
+    skipping = compact_from_id is not None
+    skipped_count = 0
     for m in messages:
+        if skipping:
+            skipped_count += 1
+            if m.id == compact_from_id:
+                skipping = False
+            continue
         if m.role not in ("user", "assistant") or getattr(m, "hidden", False):
             continue
         text = m.content if isinstance(m.content, str) else str(m.content)
@@ -59,7 +71,11 @@ def _build_history_prefix(messages) -> str:
         lines.append(f"{label}: {text}")
     if not lines:
         return ""
-    return "<prior_conversation>\n" + "\n".join(lines) + "\n</prior_conversation>"
+    header = (
+        f"[{skipped_count} earlier messages omitted — conversation compacted to fit context window]\n"
+        if skipped_count else ""
+    )
+    return "<prior_conversation>\n" + header + "\n".join(lines) + "\n</prior_conversation>"
 
 
 def _truncate_large_tool_result(content: object, session_id: str, msg_id: str, max_bytes: int = 50_000) -> tuple[object, str | None]:

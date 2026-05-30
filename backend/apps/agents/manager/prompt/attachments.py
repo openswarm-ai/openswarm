@@ -148,6 +148,14 @@ def _resolve_attachments(context_paths: list | None, api_type: str, model: str) 
     # refused with concrete recovery actions.
     b64_total = 0
 
+    # Running total of inlined text characters. Text files have no binary
+    # size limit (they aren't base64-encoded), but they consume context
+    # tokens 1:4 and can silently blow out any model's context window.
+    # Cap the combined text payload at 600K chars (~150K tokens), leaving
+    # headroom for the system prompt, tool definitions, and a response.
+    _TEXT_TOTAL_CAP = 600_000
+    text_total = 0
+
     for cp in context_paths:
         path = cp.get("path", "") or ""
         cp_type = cp.get("type", "file")
@@ -172,6 +180,17 @@ def _resolve_attachments(context_paths: list | None, api_type: str, model: str) 
             if kind == "text":
                 with open(path, "r", errors="replace") as f:
                     content = f.read(512_000)
+                content_len = len(content)
+                if text_total + content_len > _TEXT_TOTAL_CAP:
+                    room_k = max(0, _TEXT_TOTAL_CAP - text_total) // 1000
+                    refusals.append(
+                        f"[Attached file {os.path.basename(path)} ({size // 1024} KB text) would push "
+                        f"total inlined text over {_TEXT_TOTAL_CAP // 1000} KB (~150K tokens, the per-turn "
+                        f"budget for file contents). ~{room_k} KB of room left this turn. "
+                        f"Send fewer files at once, or paste only the relevant sections.]"
+                    )
+                    continue
+                text_total += content_len
                 sections.append(
                     f"<context_file path=\"{path}\">\n{content}\n</context_file>"
                 )

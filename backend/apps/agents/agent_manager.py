@@ -373,6 +373,11 @@ class AgentManager:
         if session.compacted_through_msg_id == last_id and not force:
             return False
         session.compacted_through_msg_id = last_id
+        # Force a fresh SDK session on the next turn so _build_history_prefix
+        # is called with compact_from_id and only sends the post-cutoff
+        # messages to the API. Without this flag the compaction has no effect:
+        # resumed sessions replay history via sdk_session_id, not the prefix.
+        session.needs_fresh_session = True
         return True
 
     def _build_prompt_content(self, prompt: str, images: list | None = None, context_paths: list | None = None, forced_tools: list[str] | None = None, attached_skills: list | None = None, api_type: str = "anthropic", model: str = ""):
@@ -1781,7 +1786,10 @@ class AgentManager:
                 if session.needs_fork:
                     session.needs_fork = False
             elif len(session.messages) > 1:
-                history = _build_history_prefix(_get_branch_messages(session))
+                history = _build_history_prefix(
+                    _get_branch_messages(session),
+                    compact_from_id=session.compacted_through_msg_id,
+                )
                 if history:
                     if isinstance(prompt_content, str):
                         prompt_content = history + "\n\n" + prompt_content
