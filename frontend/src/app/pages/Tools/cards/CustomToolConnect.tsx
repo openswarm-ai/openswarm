@@ -4,6 +4,7 @@ import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
 import LinkIcon from '@mui/icons-material/Link';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CircularProgress from '@mui/material/CircularProgress';
 import { ToolDefinition } from '@/shared/state/toolsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { Integration } from '../integrations';
@@ -14,22 +15,39 @@ interface CustomToolConnectProps {
   isDisabled: boolean;
   onOAuthConnect: (toolId: string) => void;
   onDeviceCodeConnect: (toolId: string) => void;
+  onLinkedInConnect: (toolId: string, reconnect?: boolean) => void;
   onOpenCredentialsDialog: (toolId: string, integration: Integration) => void;
   onM365Disconnect: (toolId: string) => void;
   onDisconnectIntegration: (toolId: string, integration: Integration) => void;
+  linkedinConnectingToolId: string | null;
 }
 
 const CustomToolConnect: React.FC<CustomToolConnectProps> = ({
   tool, ig, isDisabled,
   onOAuthConnect: handleOAuthConnect,
   onDeviceCodeConnect: handleDeviceCodeConnect,
+  onLinkedInConnect: handleLinkedInConnect,
   onOpenCredentialsDialog: openCredentialsDialog,
   onM365Disconnect: handleM365Disconnect,
   onDisconnectIntegration: handleDisconnectIntegration,
+  linkedinConnectingToolId,
 }) => {
   const c = useClaudeTokens();
+  const isLinkedInConnecting = linkedinConnectingToolId === tool.id;
   return (
     <>
+                        {!isDisabled && ig?.id === 'linkedin' && tool.auth_status !== 'connected' && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={isLinkedInConnecting ? <CircularProgress size={14} /> : <LinkIcon sx={{ fontSize: 14 }} />}
+                            disabled={isLinkedInConnecting}
+                            onClick={(e) => { e.stopPropagation(); handleLinkedInConnect(tool.id); }}
+                            sx={{ borderColor: `${ig.color}40`, color: ig.color, '&:hover': { borderColor: ig.color, bgcolor: `${ig.color}10` }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
+                          >
+                            {isLinkedInConnecting ? 'Connecting…' : (ig.connectLabel || 'Connect LinkedIn')}
+                          </Button>
+                        )}
                         {!isDisabled && (tool.auth_type === 'oauth2' || ig?.authType === 'oauth2') && (tool.auth_status !== 'connected' || ig?.id === 'discord') && (
                           <Button
                             size="small"
@@ -64,12 +82,12 @@ const CustomToolConnect: React.FC<CustomToolConnectProps> = ({
                           </Button>
                         )}
                         {!isDisabled && ig && tool.auth_status === 'connected' && (
-                          <Tooltip title={ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code' ? 'Disconnect' : ''}>
+                          <Tooltip title={ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code' || ig.id === 'linkedin' ? 'Disconnect' : ''}>
                             <Chip
                               icon={<CheckCircleIcon sx={{ fontSize: 12 }} />}
                               label={tool.connected_account_email ? `Connected · ${tool.connected_account_email}` : 'Connected'}
                               size="small"
-                              onDelete={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code') ? (e: React.SyntheticEvent) => { e.stopPropagation(); ig.authType === 'device_code' ? handleM365Disconnect(tool.id) : handleDisconnectIntegration(tool.id, ig); } : undefined}
+                              onDelete={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code' || ig.id === 'linkedin') ? (e: React.SyntheticEvent) => { e.stopPropagation(); ig.authType === 'device_code' ? handleM365Disconnect(tool.id) : handleDisconnectIntegration(tool.id, ig); } : undefined}
                               onClick={(e) => e.stopPropagation()}
                               sx={{ bgcolor: c.status.successBg, color: c.status.success, fontSize: '0.7rem', height: 22, '& .MuiChip-icon': { color: c.status.success }, '& .MuiChip-deleteIcon': { color: c.status.success, '&:hover': { color: c.status.error } }, flexShrink: 0 }}
                             />

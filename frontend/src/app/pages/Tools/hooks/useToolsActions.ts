@@ -55,7 +55,7 @@ export function useToolsActions({ items, allTools, regServersRaw, closeMenu }: T
         setSnackbar({ open: true, message: `Disabled ${integration.name}` });
       } else if (existing && existing.enabled === false) {
         await dispatch(updateTool({ id: existing.id, enabled: true }));
-        if (integration.authType === 'oauth2' && existing.auth_status !== 'connected') {
+        if ((integration.authType === 'oauth2' || integration.authType === 'browser') && existing.auth_status !== 'connected') {
           setSnackbar({ open: true, message: `Enabled ${integration.name}, connect your account to discover actions` });
         } else {
           setSnackbar({ open: true, message: `Enabled ${integration.name}, re-discovering actions…` });
@@ -79,7 +79,7 @@ export function useToolsActions({ items, allTools, regServersRaw, closeMenu }: T
         }));
         if (createTool.fulfilled.match(result)) {
           const newTool = result.payload;
-          if (integration.authType === 'oauth2' || integration.authType === 'device_code') {
+          if (integration.authType === 'oauth2' || integration.authType === 'device_code' || integration.authType === 'browser') {
             setSnackbar({ open: true, message: `Enabled ${integration.name}, connect your account to discover actions` });
           } else {
             setSnackbar({ open: true, message: `Enabled ${integration.name}, discovering actions…` });

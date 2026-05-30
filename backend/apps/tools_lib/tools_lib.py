@@ -11,8 +11,17 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
+from backend.apps.linkedin_mcp_shim.session import (
+    clear_linkedin_auth_state,
+    kill_linkedin_processes,
+    linkedin_auth_state_ready,
+    linkedin_connect_process_status,
+    start_linkedin_connect,
+    start_linkedin_warmup,
+    write_linkedin_cookie_bridge,
+)
 from backend.config.Apps import SubApp
-from backend.apps.tools_lib.models import ToolDefinition, ToolCreate, ToolUpdate, BUILTIN_TOOLS
+from backend.apps.tools_lib.models import ToolDefinition, ToolCreate, ToolUpdate, LinkedInCookieImport, BUILTIN_TOOLS
 from backend.config.paths import DATA_ROOT, TOOLS_DIR as DATA_DIR, BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH, TRUSTED_SENSITIVE_PATHS_PATH
 
 # oauth_config runs the dotenv load (leaf) so OPENSWARM_OAUTH_BASE_URL is set
@@ -58,6 +67,22 @@ tools_lib = SubApp("tools", tools_lib_lifespan)
 _DEFAULT_BUILTIN_POLICIES = {"Bash": "ask"}
 
 
+_HIDDEN_MCP_TOOLS: dict[str, set[str]] = {
+    "linkedin": {"close_session"},
+}
+
+
+def _hidden_mcp_tools_for(tool: ToolDefinition) -> set[str]:
+    return _HIDDEN_MCP_TOOLS.get(tool.name.lower(), set())
+
+
+def _visible_mcp_tools(tool: ToolDefinition, raw_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    hidden = _hidden_mcp_tools_for(tool)
+    if not hidden:
+        return raw_tools
+    return [t for t in raw_tools if t.get("name") not in hidden]
+
+
 def _ensure_default_permissions() -> None:
     """Seed BUILTIN_PERMISSIONS_PATH so the user's Settings toggles persist
     cleanly. Without this the file is missing on first run, load returns {},
@@ -96,6 +121,16 @@ def _reclassify_existing_tools() -> None:
         names = [k for k in perms if not k.startswith("_")]
         if not names:
             continue
+        hidden = _hidden_mcp_tools_for(tool)
+        if hidden:
+            names = [n for n in names if n not in hidden]
+            for name in hidden:
+                perms.pop(name, None)
+            for meta_key in ("_tool_descriptions", "_tool_schemas"):
+                meta = perms.get(meta_key)
+                if isinstance(meta, dict):
+                    for name in hidden:
+                        meta.pop(name, None)
         services, service_groups, all_read, all_write = _classify_services(names, tool.name)
         if perms.get("_services") == services and perms.get("_service_groups") == service_groups:
             continue
@@ -107,6 +142,7 @@ def _reclassify_existing_tools() -> None:
             _save(tool)
         except Exception:
             pass
+
 
 # All providers go through the Fly cloud-proxy claim handoff. The
 # v1.0.28 local Google callback was retired in v1.0.29 once the prod
@@ -233,6 +269,10 @@ async def update_builtin_permissions(body: dict):
 async def list_tools():
     tools = []
     for t in _load_all():
+        if t.name.lower() == "linkedin" and t.auth_status == "connected" and not linkedin_auth_state_ready():
+            t.auth_status = "configured"
+            t.connected_account_email = None
+            _save(t)
         d = t.model_dump()
         # Heal pre-fix tools whose persisted email is the "{name} account" placeholder so the pill stops reading like a name and falls back to plain "Connected".
         placeholder = f"{t.name} account"
@@ -258,7 +298,12 @@ def _connected_html() -> HTMLResponse:
 
 @tools_lib.router.get("/{tool_id}")
 async def get_tool(tool_id: str):
-    return _load(tool_id).model_dump()
+    tool = _load(tool_id)
+    if tool.name.lower() == "linkedin" and tool.auth_status == "connected" and not linkedin_auth_state_ready():
+        tool.auth_status = "configured"
+        tool.connected_account_email = None
+        _save(tool)
+    return tool.model_dump()
 
 
 @tools_lib.router.post("/create")
@@ -352,6 +397,7 @@ async def discover_tools(tool_id: str):
         logger.warning(f"MCP tool discovery failed for {tool.name}: {msg}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"Discovery failed: {msg}")
 
+    raw_tools = _visible_mcp_tools(tool, raw_tools)
     tool_names = [t["name"] for t in raw_tools]
     services, service_groups, all_read, all_write = _classify_services(tool_names, tool.name)
     permissions: dict[str, Any] = {n: tool.tool_permissions.get(n, "ask") for n in tool_names}
@@ -519,6 +565,91 @@ async def m365_disconnect(tool_id: str):
     _save(tool)
     return {"ok": True, "tool": tool.model_dump()}
 
+
+@tools_lib.router.post("/{tool_id}/linkedin/session-cookies")
+async def linkedin_session_cookies(tool_id: str, body: LinkedInCookieImport):
+    """Import LinkedIn cookies captured by the Electron login popup."""
+    tool = _load(tool_id)
+    if tool.name.lower() != "linkedin":
+        raise HTTPException(status_code=400, detail="Tool is not LinkedIn")
+
+    kill_linkedin_processes(tool_id)
+    clear_linkedin_auth_state()
+    write_linkedin_cookie_bridge(body.cookies)
+
+    tool.auth_status = "connected"
+    tool.connected_account_email = None
+    _save(tool)
+    return {"ok": True, "tool": tool.model_dump()}
+
+
+@tools_lib.router.post("/{tool_id}/linkedin/warmup")
+async def linkedin_warmup(tool_id: str):
+    """Best-effort install of the LinkedIn MCP browser runtime after cookie login."""
+    tool = _load(tool_id)
+    if tool.name.lower() != "linkedin":
+        raise HTTPException(status_code=400, detail="Tool is not LinkedIn")
+    if not linkedin_auth_state_ready():
+        return {"status": "skipped", "reason": "not_connected"}
+    return start_linkedin_warmup(tool_id, tool)
+
+
+@tools_lib.router.post("/{tool_id}/linkedin/connect")
+async def linkedin_connect(tool_id: str, reconnect: bool = Query(False)):
+    """Run the upstream LinkedIn MCP browser setup/login flow once."""
+    tool = _load(tool_id)
+    if tool.name.lower() != "linkedin":
+        raise HTTPException(status_code=400, detail="Tool is not LinkedIn")
+
+    if reconnect:
+        clear_linkedin_auth_state()
+
+    def _mark_connected() -> None:
+        try:
+            t = _load(tool_id)
+            t.auth_status = "connected"
+            t.connected_account_email = None
+            _save(t)
+        except Exception:
+            logger.exception("Failed to persist LinkedIn connected state")
+
+    return start_linkedin_connect(tool_id, tool, _mark_connected)
+
+
+@tools_lib.router.get("/{tool_id}/linkedin/connect/status")
+async def linkedin_connect_status(tool_id: str):
+    """Poll status for the LinkedIn browser setup/login subprocess."""
+    status = linkedin_connect_process_status(tool_id)
+    if not status:
+        tool = _load(tool_id)
+        if tool.auth_status == "connected" and linkedin_auth_state_ready():
+            return {"status": "connected", "email": tool.connected_account_email}
+        if tool.name.lower() == "linkedin" and tool.auth_status == "connected":
+            tool.auth_status = "configured"
+            tool.connected_account_email = None
+            _save(tool)
+        return {"status": "no_login_in_progress"}
+    return status
+
+
+@tools_lib.router.post("/{tool_id}/linkedin/disconnect")
+async def linkedin_disconnect(tool_id: str):
+    """Reset LinkedIn auth and clear the managed browser profile."""
+    tool = _load(tool_id)
+    if tool.name.lower() != "linkedin":
+        raise HTTPException(status_code=400, detail="Tool is not LinkedIn")
+
+    kill_linkedin_processes(tool_id)
+    clear_linkedin_auth_state()
+
+    tool.auth_status = "configured"
+    tool.connected_account_email = None
+    _save(tool)
+    return {"ok": True, "tool": tool.model_dump()}
+
+# ---------------------------------------------------------------------------
+# OAuth connection
+# ---------------------------------------------------------------------------
 
 @tools_lib.router.post("/{tool_id}/oauth/disconnect")
 async def oauth_disconnect(tool_id: str):

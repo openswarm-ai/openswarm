@@ -18,6 +18,7 @@ from backend.apps.tools_lib.tools_lib import (
     _load_all as load_all_tools,
     _sanitize_server_name,
     derive_mcp_config,
+    linkedin_auth_state_ready,
     load_builtin_permissions,
     load_trusted_sensitive_paths,
     refresh_airtable_token,
@@ -181,6 +182,10 @@ class AgentManager:
 
             if _is_fully_denied(tool):
                 logger.info(f"[MCP-DEBUG] SKIPPED {tool.name}: fully denied")
+                continue
+
+            if server_name == "linkedin" and not linkedin_auth_state_ready():
+                logger.info("[MCP-DEBUG] SKIPPED linkedin: no valid LinkedIn session")
                 continue
 
             if tool.auth_type == "oauth2" and tool.auth_status == "connected":

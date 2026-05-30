@@ -146,7 +146,10 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         if not matches:
             return {"content": [{"type": "text", "text": f"No MCP servers matched '{query}'. Try MCPList to see everything installed, or tell the user no suitable server is connected."}]}
         body = format_servers(matches, f"Top matches for '{query}':")
-        body += "\n\nNext step: pick one and call MCPActivate(server_name) to request activation."
+        if any(m.get("status") == "active" for m in matches):
+            body += "\n\nNext step: use an active server's `mcp__<server>__*` tools directly. Do not call MCPActivate again for active servers."
+        else:
+            body += "\n\nNext step: pick one and call MCPActivate(server_name) to request activation."
         return {"content": [{"type": "text", "text": body}]}
 
     if tool_name == "MCPActivate":
@@ -172,6 +175,11 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
             }
         if result.get("status") == "already_active":
             return {"content": [{"type": "text", "text": f"`{server_name}` is already active for this session; its tools should be callable now."}]}
+        if result.get("status") == "needs_login":
+            message = result.get("message") or (
+                f"`{server_name}` is installed but not connected. Ask the user to open the Tools page and connect it before trying again."
+            )
+            return {"content": [{"type": "text", "text": message}], "isError": True}
         if result.get("status") == "activated":
             return {
                 "content": [{

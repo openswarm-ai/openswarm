@@ -1667,3 +1667,147 @@ ipcMain.handle('connect-slack', async () => {
     }, 10 * 60 * 1000);
   });
 });
+
+ipcMain.handle('connect-linkedin', async () => {
+  const linkedinLoginUrl = 'https://www.linkedin.com/login';
+  const isGoogleAuthUrl = (url) => {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === 'accounts.google.com' || parsed.hostname.endsWith('.accounts.google.com');
+    } catch (_) {
+      return false;
+    }
+  };
+  let googleAuthBlocked = false;
+
+  const win = new BrowserWindow({
+    width: 520,
+    height: 720,
+    title: 'Sign in to LinkedIn',
+    parent: mainWindow || undefined,
+    modal: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      partition: `linkedin-auth-${Date.now()}`,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  const authSession = win.webContents.session;
+  win.webContents.setUserAgent(process.platform === 'win32'
+    ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isGoogleAuthUrl(url)) {
+      googleAuthBlocked = true;
+      win.loadURL(linkedinLoginUrl).catch(() => {});
+    } else if (url.startsWith('http://') || url.startsWith('https://')) {
+      win.loadURL(url).catch(() => {});
+    }
+    return { action: 'deny' };
+  });
+
+  win.webContents.on('will-navigate', (event, url) => {
+    if (isGoogleAuthUrl(url)) {
+      event.preventDefault();
+      googleAuthBlocked = true;
+      win.loadURL(linkedinLoginUrl).catch(() => {});
+    }
+  });
+
+  try {
+    await win.loadURL(linkedinLoginUrl);
+  } catch (err) {
+    if (!win.isDestroyed()) win.close();
+    throw new Error(`Failed to load LinkedIn: ${err.message}`);
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let pollInterval = null;
+    let timeoutHandle = null;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      authSession.cookies.removeListener('changed', onCookieChanged);
+      if (!win.isDestroyed()) win.close();
+      fn(value);
+    };
+
+    const collectCookies = async () => {
+      const [wwwCookies, rootCookies] = await Promise.all([
+        authSession.cookies.get({ url: 'https://www.linkedin.com' }),
+        authSession.cookies.get({ url: 'https://linkedin.com' }),
+      ]);
+      const cookieMap = new Map();
+      for (const cookie of [...wwwCookies, ...rootCookies]) {
+        cookieMap.set(`${cookie.name}|${cookie.domain}|${cookie.path}`, cookie);
+      }
+      const cookies = [...cookieMap.values()];
+      if (!cookies.find((c) => c.name === 'li_at' && c.value)) return null;
+      return cookies
+        .filter((c) => c.domain && c.domain.includes('linkedin.com'))
+        .map((c) => ({
+          name: c.name,
+          value: c.value,
+          domain: c.domain.startsWith('.') ? c.domain : `.${c.domain}`,
+          path: c.path || '/',
+          expires: typeof c.expirationDate === 'number' ? c.expirationDate : -1,
+          httpOnly: !!c.httpOnly,
+          secure: c.secure !== false,
+          sameSite: c.sameSite === 'no_restriction'
+            ? 'None'
+            : c.sameSite === 'lax'
+              ? 'Lax'
+              : c.sameSite === 'strict'
+                ? 'Strict'
+                : 'None',
+        }));
+    };
+
+    const tryFinishWithCookies = async () => {
+      if (win.isDestroyed() || settled) return;
+      if (googleAuthBlocked) {
+        finish(reject, new Error('Google sign-in is blocked in this LinkedIn popup. Use LinkedIn email/password instead.'));
+        return;
+      }
+      try {
+        const cookies = await collectCookies();
+        if (cookies) finish(resolve, { cookies });
+      } catch (_) {
+        // page navigating, ignore
+      }
+    };
+
+    const onCookieChanged = (_event, cookie) => {
+      if (cookie && cookie.name === 'li_at' && cookie.value) {
+        setTimeout(tryFinishWithCookies, 100);
+      }
+    };
+    authSession.cookies.on('changed', onCookieChanged);
+
+    win.on('closed', () => {
+      if (!settled) {
+        settled = true;
+        if (pollInterval) clearInterval(pollInterval);
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        authSession.cookies.removeListener('changed', onCookieChanged);
+        reject(new Error('Sign-in window was closed'));
+      }
+    });
+
+    win.webContents.on('did-navigate', tryFinishWithCookies);
+    win.webContents.on('did-navigate-in-page', tryFinishWithCookies);
+
+    pollInterval = setInterval(tryFinishWithCookies, 250);
+
+    timeoutHandle = setTimeout(() => {
+      finish(reject, new Error('LinkedIn sign-in timed out after 10 minutes'));
+    }, 10 * 60 * 1000);
+  });
+});

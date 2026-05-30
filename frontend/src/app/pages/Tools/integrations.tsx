@@ -18,7 +18,7 @@ export interface Integration {
   credentialFields?: CredentialField[];
   connectLabel?: string;
   connectInstructions?: string;
-  authType?: 'none' | 'oauth2' | 'env_vars' | 'device_code';
+  authType?: 'none' | 'oauth2' | 'env_vars' | 'device_code' | 'browser';
 }
 
 export const INTEGRATIONS: Integration[] = [
@@ -47,6 +47,27 @@ export const INTEGRATIONS: Integration[] = [
       <svg viewBox="0 0 24 24" width="22" height="22">
         <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z" fill="#FF0000"/>
         <path d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z" fill="#fff"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'linkedin',
+    name: 'LinkedIn',
+    description: 'Search profiles, browse feed posts, read messaging, inspect companies, and find jobs through a signed-in browser session.',
+    mcp_config: {
+      type: 'stdio',
+      command: 'uvx',
+      args: ['linkedin-scraper-mcp@latest', '--user-data-dir', '~/.openswarm/linkedin/accounts/default/profile'],
+      env: { UV_HTTP_TIMEOUT: '300' },
+    },
+    color: '#0A66C2',
+    website: 'https://github.com/stickerdaniel/linkedin-mcp-server',
+    authType: 'browser',
+    connectLabel: 'Connect LinkedIn',
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <rect width="24" height="24" rx="3" fill="#0A66C2"/>
+        <path d="M6.94 8.42H3.78v10.1h3.16V8.42zM5.36 3.48a1.83 1.83 0 1 0 0 3.66 1.83 1.83 0 0 0 0-3.66zM20.22 13.4c0-3.04-1.62-4.46-3.79-4.46-1.75 0-2.53.96-2.97 1.64V8.42h-3.03c.04.96 0 10.1 0 10.1h3.16v-5.64c0-.3.02-.6.11-.82.24-.6.78-1.22 1.69-1.22 1.19 0 1.67.91 1.67 2.24v5.44h3.16V13.4z" fill="#fff"/>
       </svg>
     ),
   },
