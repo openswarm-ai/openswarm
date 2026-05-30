@@ -1,3 +1,5 @@
+# pyright: reportMissingImports=false
+
 from __future__ import annotations
 
 import asyncio
@@ -8,15 +10,14 @@ from urllib.parse import urlparse
 from fastmcp import Context
 
 # Supplied at subprocess runtime by `uv run --with linkedin-scraper-mcp`.
-# The backend venv intentionally does not install MCP server packages.
-from linkedin_mcp_server.config import get_config  # type: ignore[import-not-found]
-from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS  # type: ignore[import-not-found]
-from linkedin_mcp_server.core.exceptions import AuthenticationError  # type: ignore[import-not-found]
-from linkedin_mcp_server.core.utils import detect_rate_limit, handle_modal_close  # type: ignore[import-not-found]
-from linkedin_mcp_server.dependencies import get_ready_extractor, handle_auth_error  # type: ignore[import-not-found]
-from linkedin_mcp_server.error_handler import raise_tool_error  # type: ignore[import-not-found]
-from linkedin_mcp_server.logging_config import configure_logging  # type: ignore[import-not-found]
-from linkedin_mcp_server.server import create_mcp_server  # type: ignore[import-not-found]
+from linkedin_mcp_server.config import get_config
+from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS
+from linkedin_mcp_server.core.exceptions import AuthenticationError
+from linkedin_mcp_server.core.utils import detect_rate_limit, handle_modal_close
+from linkedin_mcp_server.dependencies import get_ready_extractor, handle_auth_error
+from linkedin_mcp_server.error_handler import raise_tool_error
+from linkedin_mcp_server.logging_config import configure_logging
+from linkedin_mcp_server.server import create_mcp_server
 
 logger = logging.getLogger(__name__)
 
