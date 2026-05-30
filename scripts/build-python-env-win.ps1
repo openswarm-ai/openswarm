@@ -165,14 +165,16 @@ Write-Host "Trimming .pyi type stubs..."
 Get-ChildItem -Path $PythonEnvDir -Recurse -Filter '*.pyi' -File -ErrorAction SilentlyContinue `
     | Remove-Item -Force -ErrorAction SilentlyContinue
 
-# Pre-compile bytecode so cold backend startup skips parse+compile on
-# every imported .py. Worth ~5-10s on Windows under Defender (parsing
-# Python source is parser-bound; loading .pyc is just bytes). We cap
-# concurrency at 4 — `-j 0` (all cores) is fine on dev boxes but
-# unstable on small CI runners. Missing .pyc is non-fatal at runtime
-# (Python falls back to in-memory compile), so we warn rather than fail.
+# Pre-compile bytecode so cold backend startup skips parse+compile per import.
+# invalidation-mode unchecked-hash is load-bearing: the default timestamp mode
+# ties each .pyc to its source mtime, but the installer rewrites mtimes on extract,
+# so every .pyc looks stale and Python recompiles the whole stdlib+deps from source
+# on EVERY launch (and runtime PYTHONDONTWRITEBYTECODE means it never caches the
+# result), which is the multi-minute Windows cold-start. unchecked-hash makes the
+# .pyc valid regardless of mtime, which is the correct mode for a frozen bundle.
+# Concurrency capped at 4; missing .pyc is non-fatal (runtime in-memory fallback).
 Write-Host "Pre-compiling bytecode..."
-& $PythonBin -m compileall -q -j 4 (Join-Path $PythonEnvDir 'lib')
+& $PythonBin -m compileall -q -j 4 --invalidation-mode unchecked-hash (Join-Path $PythonEnvDir 'lib')
 if ($LASTEXITCODE -ne 0) {
     Write-Host "WARNING: some files failed to compile; runtime will fall back to in-memory compile." -ForegroundColor Yellow
 }

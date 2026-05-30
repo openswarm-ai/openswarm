@@ -224,8 +224,12 @@ find "$PYTHON_ENV_DIR" -name 'libpython*.a' -delete 2>/dev/null || true
 # version-shim packages); a non-zero exit here would rather be visible
 # than silent so we don't `|| true` the whole thing — but missing .pyc
 # is non-fatal at runtime, so a hard fail isn't warranted either.
+# invalidation-mode unchecked-hash: default timestamp mode ties each .pyc to its
+# source mtime, which installers rewrite on extract, silently invalidating every
+# .pyc so Python recompiles from source on every launch. unchecked-hash is mtime-
+# independent (correct for a frozen bundle), so the precompiled .pyc actually get used.
 echo "Pre-compiling bytecode..."
-"$PYTHON_BIN" -m compileall -q -j 4 "$PYTHON_ENV_DIR/lib" || \
+"$PYTHON_BIN" -m compileall -q -j 4 --invalidation-mode unchecked-hash "$PYTHON_ENV_DIR/lib" || \
     echo "WARNING: some files failed to compile; runtime will fall back to in-memory compile."
 
 # ----- macOS: hide bundled python from the Dock -----
