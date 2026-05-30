@@ -160,6 +160,15 @@ export const importLinkedInCookies = createAsyncThunk(
   }
 );
 
+export const warmupLinkedInRuntime = createAsyncThunk(
+  'tools/warmupLinkedInRuntime',
+  async (toolId: string) => {
+    const res = await fetch(`${TOOLS_API}/${toolId}/linkedin/warmup`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to warm LinkedIn runtime');
+    return await res.json() as { status: string; reason?: string };
+  }
+);
+
 export const disconnectLinkedIn = createAsyncThunk(
   'tools/disconnectLinkedIn',
   async (toolId: string) => {

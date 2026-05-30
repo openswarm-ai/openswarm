@@ -11,6 +11,7 @@ import {
   startLinkedInConnect,
   pollLinkedInConnectStatus,
   importLinkedInCookies,
+  warmupLinkedInRuntime,
   disconnectLinkedIn,
   ToolDefinition,
 } from '@/shared/state/toolsSlice';
@@ -136,6 +137,7 @@ export function useToolConnections({ items, setSnackbar, setExpandedToolId }: De
         if (!importLinkedInCookies.fulfilled.match(importResult)) {
           throw new Error('Failed to import LinkedIn session');
         }
+        void dispatch(warmupLinkedInRuntime(toolId));
         setLinkedinConnectingToolId(null);
         setSnackbar({ open: true, message: 'LinkedIn connected! Discovering actions…' });
         setExpandedToolId(toolId);

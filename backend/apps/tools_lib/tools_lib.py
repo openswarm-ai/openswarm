@@ -59,6 +59,22 @@ tools_lib = SubApp("tools", tools_lib_lifespan)
 _DEFAULT_BUILTIN_POLICIES = {"Bash": "ask"}
 
 
+_HIDDEN_MCP_TOOLS: dict[str, set[str]] = {
+    "linkedin": {"close_session"},
+}
+
+
+def _hidden_mcp_tools_for(tool: ToolDefinition) -> set[str]:
+    return _HIDDEN_MCP_TOOLS.get(tool.name.lower(), set())
+
+
+def _visible_mcp_tools(tool: ToolDefinition, raw_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    hidden = _hidden_mcp_tools_for(tool)
+    if not hidden:
+        return raw_tools
+    return [t for t in raw_tools if t.get("name") not in hidden]
+
+
 def _ensure_default_permissions() -> None:
     """Seed BUILTIN_PERMISSIONS_PATH so the user's Settings toggles persist
     cleanly. Without this the file is missing on first run, load returns {},
@@ -97,6 +113,16 @@ def _reclassify_existing_tools() -> None:
         names = [k for k in perms if not k.startswith("_")]
         if not names:
             continue
+        hidden = _hidden_mcp_tools_for(tool)
+        if hidden:
+            names = [n for n in names if n not in hidden]
+            for name in hidden:
+                perms.pop(name, None)
+            for meta_key in ("_tool_descriptions", "_tool_schemas"):
+                meta = perms.get(meta_key)
+                if isinstance(meta, dict):
+                    for name in hidden:
+                        meta.pop(name, None)
         services, service_groups, all_read, all_write = _classify_services(names, tool.name)
         if perms.get("_services") == services and perms.get("_service_groups") == service_groups:
             continue
@@ -235,6 +261,10 @@ async def update_builtin_permissions(body: dict):
 async def list_tools():
     tools = []
     for t in _load_all():
+        if t.name.lower() == "linkedin" and t.auth_status == "connected" and not linkedin_auth_state_ready():
+            t.auth_status = "configured"
+            t.connected_account_email = None
+            _save(t)
         d = t.model_dump()
         # Heal pre-fix tools whose persisted email is the "{name} account" placeholder so the pill stops reading like a name and falls back to plain "Connected".
         placeholder = f"{t.name} account"
@@ -260,7 +290,12 @@ def _connected_html() -> HTMLResponse:
 
 @tools_lib.router.get("/{tool_id}")
 async def get_tool(tool_id: str):
-    return _load(tool_id).model_dump()
+    tool = _load(tool_id)
+    if tool.name.lower() == "linkedin" and tool.auth_status == "connected" and not linkedin_auth_state_ready():
+        tool.auth_status = "configured"
+        tool.connected_account_email = None
+        _save(tool)
+    return tool.model_dump()
 
 
 @tools_lib.router.post("/create")
@@ -354,6 +389,7 @@ async def discover_tools(tool_id: str):
         logger.warning(f"MCP tool discovery failed for {tool.name}: {msg}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"Discovery failed: {msg}")
 
+    raw_tools = _visible_mcp_tools(tool, raw_tools)
     tool_names = [t["name"] for t in raw_tools]
     services, service_groups, all_read, all_write = _classify_services(tool_names, tool.name)
     permissions: dict[str, Any] = {n: tool.tool_permissions.get(n, "ask") for n in tool_names}
@@ -526,6 +562,7 @@ async def m365_disconnect(tool_id: str):
 # LinkedIn interactive login flow
 # ---------------------------------------------------------------------------
 _linkedin_connect_processes: dict[str, dict] = {}  # tool_id -> {proc, status, output}
+_linkedin_warmup_processes: dict[str, dict] = {}  # tool_id -> {proc, status, output}
 
 
 def linkedin_auth_state_ready() -> bool:
@@ -657,6 +694,33 @@ def _linkedin_setup_command(tool: ToolDefinition) -> tuple[list[str], dict]:
     ], env
 
 
+def _linkedin_warmup_command(tool: ToolDefinition) -> tuple[list[str], dict]:
+    """Build the OpenSwarm LinkedIn browser-runtime warmup command."""
+    config = derive_mcp_config(tool)
+    if not config or config.get("type") != "stdio":
+        raise HTTPException(status_code=400, detail="LinkedIn MCP must use stdio transport")
+
+    command = _resolve_command("uv")
+    if not command:
+        raise HTTPException(status_code=500, detail="Cannot resolve uv for LinkedIn warmup")
+    shim_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "linkedin_mcp_setup",
+        "warmup.py",
+    )
+    env = {**os.environ, **(config.get("env") or {})}
+    return [
+        command,
+        "run",
+        "--with",
+        "linkedin-scraper-mcp",
+        "python",
+        shim_path,
+        "--user-data-dir",
+        linkedin_profile_dir(),
+    ], env
+
+
 @tools_lib.router.post("/{tool_id}/linkedin/session-cookies")
 async def linkedin_session_cookies(tool_id: str, body: LinkedInCookieImport):
     """Import LinkedIn cookies captured by the Electron login popup."""
@@ -670,6 +734,12 @@ async def linkedin_session_cookies(tool_id: str, body: LinkedInCookieImport):
             existing["proc"].kill()
         except Exception:
             pass
+    warmup = _linkedin_warmup_processes.pop(tool_id, None)
+    if warmup and warmup.get("proc"):
+        try:
+            warmup["proc"].kill()
+        except Exception:
+            pass
 
     _clear_linkedin_auth_state()
     _write_linkedin_cookie_bridge(body.cookies)
@@ -678,6 +748,57 @@ async def linkedin_session_cookies(tool_id: str, body: LinkedInCookieImport):
     tool.connected_account_email = "LinkedIn account"
     _save(tool)
     return {"ok": True, "tool": tool.model_dump()}
+
+
+@tools_lib.router.post("/{tool_id}/linkedin/warmup")
+async def linkedin_warmup(tool_id: str):
+    """Best-effort install of the LinkedIn MCP browser runtime after cookie login."""
+    import subprocess
+    import threading
+
+    tool = _load(tool_id)
+    if tool.name.lower() != "linkedin":
+        raise HTTPException(status_code=400, detail="Tool is not LinkedIn")
+    if not linkedin_auth_state_ready():
+        return {"status": "skipped", "reason": "not_connected"}
+
+    existing = _linkedin_warmup_processes.get(tool_id)
+    if existing:
+        proc = existing.get("proc")
+        if proc and proc.poll() is None:
+            return {"status": "already_running"}
+        _linkedin_warmup_processes.pop(tool_id, None)
+
+    cmd, env = _linkedin_warmup_command(tool)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=env,
+        text=True,
+    )
+
+    state: dict = {
+        "proc": proc,
+        "status": "running",
+        "output": "",
+        "started_at": time.time(),
+    }
+
+    def _read_output():
+        try:
+            if proc.stdout:
+                for line in proc.stdout:
+                    state["output"] += line
+            proc.wait()
+            state["status"] = "ready" if proc.returncode == 0 else "error"
+        except Exception as e:
+            state["status"] = "error"
+            state["output"] += f"\n{type(e).__name__}: {e}"
+
+    threading.Thread(target=_read_output, daemon=True).start()
+    _linkedin_warmup_processes[tool_id] = state
+    return {"status": "started"}
 
 
 @tools_lib.router.post("/{tool_id}/linkedin/connect")
@@ -777,6 +898,12 @@ async def linkedin_disconnect(tool_id: str):
     if existing and existing.get("proc"):
         try:
             existing["proc"].kill()
+        except Exception:
+            pass
+    warmup = _linkedin_warmup_processes.pop(tool_id, None)
+    if warmup and warmup.get("proc"):
+        try:
+            warmup["proc"].kill()
         except Exception:
             pass
 
