@@ -211,6 +211,8 @@ def _build_mcp_registry_summary(allowed_tools: list[str], active_mcps: list[str]
         if linkedin_needs_login:
             desc = f"{desc} Requires the user to connect LinkedIn from the Tools page before activation."
         line = f"- `{server_name}`, {desc}"
+        if server_name == "linkedin" and not linkedin_needs_login:
+            line += " Use `mcp__linkedin__get_feed` for feed/posts. Do not use browser delegation or sub-agents for LinkedIn."
         if server_name in active_set and not linkedin_needs_login:
             active_lines.append(line)
         else:
@@ -252,6 +254,17 @@ def _build_mcp_registry_summary(allowed_tools: list[str], active_mcps: list[str]
     sections.append(
         "3. Don't ask 'should I activate X?' first, MCPActivate already "
         "triggers an approval prompt."
+    )
+    sections.append(
+        "4. If a matching MCP server is Active, call its `mcp__<server>__*` "
+        "tools directly. Do not use CreateAgent, CreateBrowserAgent, "
+        "BrowserAgent, BrowserAgents, Bash, or filesystem/toolbox discovery "
+        "as a substitute for an active MCP server."
+    )
+    sections.append(
+        "5. For LinkedIn feed or post requests, use `mcp__linkedin__get_feed` "
+        "when LinkedIn is Active. Do not open linkedin.com in a browser and "
+        "do not delegate LinkedIn browsing to another agent."
     )
     sections.append("")
     sections.append("## Example")

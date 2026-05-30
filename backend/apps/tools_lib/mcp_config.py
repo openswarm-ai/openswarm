@@ -188,10 +188,21 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
     # Use an OpenSwarm-managed path so setup, reconnect, and normal MCP calls
     # all operate on the same selected account.
     if tool.name.lower() == "linkedin" and config.get("type") == "stdio":
-        args = list(config.get("args") or [])
-        if "--user-data-dir" not in args:
-            args.extend(["--user-data-dir", linkedin_profile_dir()])
-            config["args"] = args
+        shim_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "linkedin_mcp_setup",
+            "server.py",
+        )
+        config["command"] = "uv"
+        config["args"] = [
+            "run",
+            "--with",
+            "linkedin-scraper-mcp",
+            "python",
+            shim_path,
+            "--user-data-dir",
+            linkedin_profile_dir(),
+        ]
         env = config.setdefault("env", {})
         env.setdefault("LINKEDIN_EXPERIMENTAL_PERSIST_DERIVED_SESSION", "true")
 

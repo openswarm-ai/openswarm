@@ -1,5 +1,3 @@
-"""Install the browser runtime required by the LinkedIn MCP without logging in."""
-
 from __future__ import annotations
 
 import argparse
@@ -11,8 +9,6 @@ def main() -> int:
     parser.add_argument("--user-data-dir", required=True, help="Persistent LinkedIn browser profile directory.")
     args = parser.parse_args()
 
-    # Optional runtime dependency: this script is launched via
-    # `uv run --with linkedin-scraper-mcp`, not from the backend venv.
     from linkedin_mcp_server.bootstrap import ensure_browser_installed
 
     Path(args.user_data_dir).expanduser().mkdir(parents=True, exist_ok=True)

@@ -717,11 +717,20 @@ async def mcp_meta(action: str, request: Request):
                 break
         except Exception:
             logger.exception("activate: failed to build tool hint for %s", server_name)
+        continuation_rules = ""
+        if server_name == "linkedin":
+            continuation_rules = (
+                " For LinkedIn feed/posts, call `mcp__linkedin__get_feed` "
+                "directly. Do not call CreateAgent, CreateBrowserAgent, "
+                "BrowserAgent, BrowserAgents, MCPSearch, MCPActivate, Bash, "
+                "or filesystem/toolbox discovery, and do not open linkedin.com "
+                "in a browser."
+            )
         session.pending_continuation_prompt = (
             "[mcp:auto-continue] The MCP server you requested has been "
             f"activated (`{server_name}`). Continue with the user's original "
             "request now using the newly-available tools; do NOT ask "
-            "for confirmation." + tool_hint
+            "for confirmation." + continuation_rules + tool_hint
         )
 
         return JSONResponse({"status": "activated", "server_name": server_name, "auto_continue": True})

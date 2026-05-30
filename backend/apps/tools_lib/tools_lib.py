@@ -75,6 +75,11 @@ def _visible_mcp_tools(tool: ToolDefinition, raw_tools: list[dict[str, Any]]) ->
     return [t for t in raw_tools if t.get("name") not in hidden]
 
 
+def _is_linkedin_host(value: str | None) -> bool:
+    host = (value or "").lower().strip(".")
+    return host == "linkedin.com" or host.endswith(".linkedin.com")
+
+
 def _ensure_default_permissions() -> None:
     """Seed BUILTIN_PERMISSIONS_PATH so the user's Settings toggles persist
     cleanly. Without this the file is missing on first run, load returns {},
@@ -639,7 +644,7 @@ def _write_linkedin_cookie_bridge(cookies: list[dict[str, Any]]) -> None:
         name = cookie.get("name")
         value = cookie.get("value")
         domain = cookie.get("domain") or ".linkedin.com"
-        if not name or value is None or "linkedin.com" not in domain:
+        if not name or value is None or not _is_linkedin_host(str(domain)):
             continue
         normalized.append({
             "name": name,
@@ -745,7 +750,7 @@ async def linkedin_session_cookies(tool_id: str, body: LinkedInCookieImport):
     _write_linkedin_cookie_bridge(body.cookies)
 
     tool.auth_status = "connected"
-    tool.connected_account_email = "LinkedIn account"
+    tool.connected_account_email = None
     _save(tool)
     return {"ok": True, "tool": tool.model_dump()}
 
@@ -848,7 +853,7 @@ async def linkedin_connect(tool_id: str, reconnect: bool = Query(False)):
                 try:
                     t = _load(tool_id)
                     t.auth_status = "connected"
-                    t.connected_account_email = "LinkedIn account"
+                    t.connected_account_email = None
                     _save(t)
                 except Exception:
                     logger.exception("Failed to persist LinkedIn connected state")
