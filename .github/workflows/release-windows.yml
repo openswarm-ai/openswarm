@@ -136,13 +136,16 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $shouldPublish = ($env:GITHUB_EVENT_NAME -eq 'push') -or `
                            ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $env:PUBLISH_INPUT -eq 'true')
-          # electron-builder auto-detects prerelease from semver suffix in electron/package.json,
-          # but EP_PRE_RELEASE forces the GitHub Releases publisher to mark it Pre-release even
-          # when the runner's environment differs from local. Set it whenever the version has a "-" suffix.
+          # Do NOT set EP_PRE_RELEASE for suffixed versions. It marks the GitHub
+          # "pre-release" checkbox, and GitHub then HIDES that release from the
+          # releases.atom feed electron-updater reads, so even experimental
+          # (allowPrerelease) clients can never discover it. Experimental builds
+          # ship as a NORMAL release distinguished by their semver suffix + a
+          # channel yml (rc.yml / exp.yml), kept off "Latest" after publish so
+          # stable clients (which read /releases/latest) never pull them.
           $version = (Get-Content electron/package.json | ConvertFrom-Json).version
           if ($version -match '-') {
-            $env:EP_PRE_RELEASE = 'true'
-            Write-Host "Version $version is EXPERIMENTAL; setting EP_PRE_RELEASE=true"
+            Write-Host "Version $version is EXPERIMENTAL (semver-suffix channel; NOT a GH pre-release)"
           } else {
             Write-Host "Version $version is STABLE"
           }
@@ -178,9 +181,16 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $version = (Get-Content electron/package.json | ConvertFrom-Json).version
-          $setup = 'electron/dist/squirrel-windows/OpenSwarm-Setup-x64.exe'
-          pwsh -NoProfile -File scripts\gen-squirrel-latest-yml.ps1 -SetupPath $setup -Version $version -OutPath 'electron/dist/squirrel-windows/latest.yml'
-          Get-Content 'electron/dist/squirrel-windows/latest.yml'
+          $dir = 'electron/dist/squirrel-windows'
+          pwsh -NoProfile -File scripts\gen-squirrel-latest-yml.ps1 -SetupPath "$dir/OpenSwarm-Setup-x64.exe" -Version $version -OutPath "$dir/latest.yml"
+          # Experimental builds: electron-updater (allowPrerelease) fetches a channel
+          # yml named after the first semver-suffix id (1.1.72-rc.1 -> rc.yml). Same
+          # content as latest.yml; copy it so the experimental channel resolves.
+          if ($version -match '-([0-9A-Za-z]+)') {
+            Copy-Item "$dir/latest.yml" "$dir/$($matches[1]).yml" -Force
+            Write-Host "Experimental channel file: $($matches[1]).yml"
+          }
+          Get-Content "$dir/latest.yml"
 
       # electron-builder published Setup + RELEASES + nupkg to the draft release;
       # attach the latest.yml it cannot emit so NSIS clients can migrate.
@@ -193,9 +203,19 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $version = (Get-Content electron/package.json | ConvertFrom-Json).version
           $tag = "v$version"
-          gh release upload $tag electron/dist/squirrel-windows/latest.yml --clobber
+          $dir = 'electron/dist/squirrel-windows'
+          gh release upload $tag "$dir/latest.yml" --clobber
           if ($LASTEXITCODE -ne 0) { throw "failed to upload latest.yml to $tag" }
-          Write-Host "Attached latest.yml to release $tag (NSIS clients can now migrate)"
+          if ($version -match '-([0-9A-Za-z]+)') {
+            gh release upload $tag "$dir/$($matches[1]).yml" --clobber
+            if ($LASTEXITCODE -ne 0) { throw "failed to upload $($matches[1]).yml to $tag" }
+            # Keep experimental builds OFF "Latest" so stable clients never pull them;
+            # only allowPrerelease clients (atom feed) discover them.
+            gh release edit $tag --prerelease=false --latest=false
+            Write-Host "Attached $($matches[1]).yml and kept $tag off Latest (experimental channel)"
+          } else {
+            Write-Host "Attached latest.yml to release $tag (stable; becomes Latest on publish)"
+          }
 
       - name: Upload artifact (non-publish runs)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish != 'true'
