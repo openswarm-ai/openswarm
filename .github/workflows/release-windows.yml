@@ -165,8 +165,37 @@ jobs:
         run: |
           node scripts/ci/verify-signature.js --require-signed --target electron/dist/win-unpacked/OpenSwarm.exe
           if ($LASTEXITCODE -ne 0) { throw "inner OpenSwarm.exe is not validly signed" }
-          node scripts/ci/verify-signature.js --require-signed --target electron/dist/OpenSwarm-Setup-x64.exe
+          # Squirrel writes Setup.exe into dist\squirrel-windows\, not dist\ root.
+          node scripts/ci/verify-signature.js --require-signed --target electron/dist/squirrel-windows/OpenSwarm-Setup-x64.exe
           if ($LASTEXITCODE -ne 0) { throw "OpenSwarm-Setup-x64.exe (installer) is not validly signed" }
+
+      # The squirrel target emits RELEASES + nupkg + Setup.exe but NO latest.yml.
+      # Existing NSIS clients poll latest.yml; without it they never see the
+      # update and are stranded on the old build. Generate it next to the Setup so
+      # both client kinds are served by the one release.
+      - name: Generate latest.yml for the Squirrel installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content electron/package.json | ConvertFrom-Json).version
+          $setup = 'electron/dist/squirrel-windows/OpenSwarm-Setup-x64.exe'
+          pwsh -NoProfile -File scripts\gen-squirrel-latest-yml.ps1 -SetupPath $setup -Version $version -OutPath 'electron/dist/squirrel-windows/latest.yml'
+          Get-Content 'electron/dist/squirrel-windows/latest.yml'
+
+      # electron-builder published Setup + RELEASES + nupkg to the draft release;
+      # attach the latest.yml it cannot emit so NSIS clients can migrate.
+      - name: Upload latest.yml to the release (publish runs)
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content electron/package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          gh release upload $tag electron/dist/squirrel-windows/latest.yml --clobber
+          if ($LASTEXITCODE -ne 0) { throw "failed to upload latest.yml to $tag" }
+          Write-Host "Attached latest.yml to release $tag (NSIS clients can now migrate)"
 
       - name: Upload artifact (non-publish runs)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish != 'true'
@@ -174,7 +203,9 @@ jobs:
         with:
           name: openswarm-windows-x64
           path: |
-            electron/dist/*.exe
-            electron/dist/latest.yml
+            electron/dist/squirrel-windows/*.exe
+            electron/dist/squirrel-windows/RELEASES
+            electron/dist/squirrel-windows/*.nupkg
+            electron/dist/squirrel-windows/latest.yml
           if-no-files-found: error
           retention-days: 14
