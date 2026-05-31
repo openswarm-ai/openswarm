@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from backend.apps.agents.tools.base import BaseTool, ToolContext
+from backend.apps.agents.tools.url_guard import BlockedURLError, fetch_guarded
 
 _HTTP_TIMEOUT = 30
 _MAX_OUTPUT_BYTES = 250 * 1024  # ~250 KB covers ~95% of articles/wikis/docs.
@@ -168,13 +169,17 @@ class WebFetchTool(BaseTool):
         prompt: str | None = input_data.get("prompt")
 
         try:
+            # follow_redirects=False so url_guard re-checks every hop; httpx's own
+            # auto-redirect would happily 30x-pivot us into the LAN.
             async with httpx.AsyncClient(
                 timeout=_HTTP_TIMEOUT,
-                follow_redirects=True,
+                follow_redirects=False,
                 headers={"User-Agent": _USER_AGENT},
             ) as client:
-                resp = await client.get(url)
+                resp = await fetch_guarded(client, url)
                 resp.raise_for_status()
+        except BlockedURLError as exc:
+            return [{"type": "text", "text": f"Refused to fetch {url}: {exc}"}]
         except httpx.HTTPStatusError as exc:
             return [{"type": "text", "text": f"HTTP error {exc.response.status_code} fetching {url}"}]
         except Exception as exc:
