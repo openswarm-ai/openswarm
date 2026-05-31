@@ -1,0 +1,149 @@
+name: Windows Migration Stage (isolated test feed)
+
+# Builds the SIGNED Squirrel installer of the current app, generates the
+# electron-updater latest.yml (the squirrel target does not emit one), and
+# publishes an ISOLATED PRE-RELEASE feed so the live NSIS 1.1.70 -> Squirrel
+# migration can be exercised end-to-end on a real Windows box WITHOUT touching
+# the production "Latest" release.
+#
+# Why this is safe to point a real client at:
+#   - The release is a GitHub *pre-release*, so it is never resolved as "Latest".
+#     A shipped 1.1.70 client only considers it when the user turns ON
+#     experimental updates (allowPrerelease=true). It cannot reach the general
+#     install base by accident.
+#   - It carries the FULL asset set (Setup + RELEASES + nupkg + latest.yml), so
+#     it is a faithful replica of what the real 1.1.71 release will serve to both
+#     electron-updater (NSIS) clients and built-in autoUpdater (Squirrel) clients.
+#
+# Fires on push to the throwaway `migration-stage` branch.
+#
+# Required repository secrets (same as release-windows.yml):
+#   AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET
+#   AZURE_SIGNING_ENDPOINT / AZURE_SIGNING_ACCOUNT / AZURE_SIGNING_CERT_PROFILE
+#   GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET
+
+on:
+  push:
+    branches:
+      - migration-stage
+
+permissions:
+  contents: write
+
+jobs:
+  stage-feed:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    env:
+      AZURE_TENANT_ID:            ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID:            ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET:        ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_SIGNING_ENDPOINT:     ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT:      ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+      AZURE_SIGNING_CERT_PROFILE: ${{ secrets.AZURE_SIGNING_CERT_PROFILE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.1'
+
+      - name: Setup Python (for building bundled python-env)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Microsoft.Trusted.Signing.Client (dlib for signtool)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dlibDir = Join-Path $env:GITHUB_WORKSPACE 'trusted-signing-client'
+          New-Item -ItemType Directory -Force -Path $dlibDir | Out-Null
+          nuget install Microsoft.Trusted.Signing.Client -Version 1.0.60 -OutputDirectory $dlibDir -ExcludeVersion
+          $dlib = Join-Path $dlibDir 'Microsoft.Trusted.Signing.Client\bin\x64\Azure.CodeSigning.Dlib.dll'
+          if (-not (Test-Path $dlib)) {
+            Get-ChildItem -Path $dlibDir -Recurse -Filter 'Azure.CodeSigning.Dlib.dll' | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+            throw "Azure.CodeSigning.Dlib.dll not found after NuGet install"
+          }
+          "AZURE_SIGNING_DLIB=$dlib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "AZURE_SIGNING_DLIB=$dlib"
+
+      - name: Locate signtool.exe on the runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidates = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter 'signtool.exe' -ErrorAction SilentlyContinue `
+            | Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } `
+            | Sort-Object FullName -Descending
+          if (-not $candidates) { throw "signtool.exe not found on runner" }
+          $signtool = $candidates[0].FullName
+          "SIGNTOOL_PATH=$signtool" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "SIGNTOOL_PATH=$signtool"
+
+      - name: Build SIGNED Squirrel installer (no publish)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOGLE_OAUTH_CLIENT_ID:     ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          pwsh -NoProfile -File scripts\build-app-win.ps1 -Sign -Squirrel
+          if ($LASTEXITCODE -ne 0) { throw "build-app-win.ps1 -Squirrel failed ($LASTEXITCODE)" }
+
+      - name: Locate Squirrel output + assert signed Setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = 'electron\dist\squirrel-windows'
+          if (-not (Test-Path $dir)) { throw "squirrel output dir missing: $dir" }
+          $setup = Get-ChildItem $dir -Filter '*Setup*.exe' | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $setup) { throw "no Setup.exe in $dir" }
+          $nupkg = Get-ChildItem $dir -Filter '*-full.nupkg' | Select-Object -First 1
+          if (-not $nupkg) { throw "no full nupkg in $dir" }
+          if (-not (Test-Path (Join-Path $dir 'RELEASES'))) { throw "no RELEASES in $dir" }
+          Write-Host "Setup: $($setup.FullName) ($([math]::Round($setup.Length/1MB))MB)"
+          Write-Host "nupkg: $($nupkg.Name)"
+          # require-signed exits non-zero unless Authenticode Status == Valid.
+          node scripts/ci/verify-signature.js --require-signed --target $setup.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Squirrel Setup.exe is not validly signed" }
+          "SQUIRREL_DIR=$((Resolve-Path $dir).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SETUP_PATH=$($setup.FullName)"           | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Generate latest.yml (so NSIS clients can detect + migrate)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content electron/package.json | ConvertFrom-Json).version
+          $out = Join-Path $env:SQUIRREL_DIR 'latest.yml'
+          pwsh -NoProfile -File scripts\gen-squirrel-latest-yml.ps1 -SetupPath $env:SETUP_PATH -Version $version -OutPath $out
+          Write-Host "--- latest.yml ---"
+          Get-Content $out
+
+      - name: Publish isolated PRE-RELEASE feed (v1.1.71-rc.1)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = 'v1.1.71-rc.1'
+          $dir = $env:SQUIRREL_DIR
+          $setup    = $env:SETUP_PATH
+          $releases = Join-Path $dir 'RELEASES'
+          $latest   = Join-Path $dir 'latest.yml'
+          $nupkg    = (Get-ChildItem $dir -Filter '*-full.nupkg' | Select-Object -First 1).FullName
+          # Idempotent: reuse the release if a prior run made it, else create it.
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --prerelease `
+              --title "1.1.71-rc.1 (NSIS->Squirrel migration test - DO NOT USE for real installs)" `
+              --notes "Isolated pre-release feed for testing the live NSIS 1.1.70 -> Squirrel migration. Never resolved as Latest; a 1.1.70 client only sees it with experimental updates ON."
+            if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          }
+          gh release upload $tag $setup $releases $latest $nupkg --clobber
+          if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+          Write-Host "Staged feed at tag $tag with Setup + RELEASES + nupkg + latest.yml"
