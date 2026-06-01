@@ -414,12 +414,26 @@ async function startFrontendServer() {
       try { res.writeHead(500); res.end(); } catch (_) {}
     }
   });
-  return new Promise((resolve, reject) => {
-    server.on('error', (err) => {
-      console.error('[frontend-server] failed to start:', err && err.message);
-      reject(err);
+  // Try a deterministic port first so the renderer's origin stays stable across launches.
+  // localStorage is keyed by origin (incl. port), and the old listen(0) handed out a random
+  // port every launch, which wiped onboarding state on every restart and re-triggered the
+  // tour. Try a preferred port; if held, fall back to OS-assigned.
+  const PREFERRED_PORT = 4173;
+  return new Promise((resolve) => {
+    server.once('error', () => {
+      // Preferred port held; fall back. localStorage may rotate this run but stabilizes once 4173 frees up.
+      const fallback = http.createServer(server.listeners('request')[0]);
+      fallback.on('error', (err) => {
+        console.error('[frontend-server] fallback also failed:', err && err.message);
+      });
+      fallback.listen(0, '127.0.0.1', () => {
+        const addr = fallback.address();
+        frontendServerPort = typeof addr === 'object' && addr ? addr.port : null;
+        console.log(`[frontend-server] listening (fallback) on 127.0.0.1:${frontendServerPort}`);
+        resolve(frontendServerPort);
+      });
     });
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(PREFERRED_PORT, '127.0.0.1', () => {
       const addr = server.address();
       frontendServerPort = typeof addr === 'object' && addr ? addr.port : null;
       console.log(`[frontend-server] listening on 127.0.0.1:${frontendServerPort}`);
