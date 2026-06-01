@@ -490,27 +490,48 @@ async def summarize_file(req: _SummarizeRequest):
             "short bullets grouped by section. Never invent. If a section is unclear, "
             "say so. Aim for roughly the target token budget."
         )
-        user = (
-            f"Target length: ~{req.target_tokens} tokens.\n\n"
-            f"<document path=\"{os.path.basename(src)}\">\n{raw}\n</document>\n\n"
-            "Summary:"
-        )
-        resp = await client.messages.create(
-            model=aux_model,
-            max_tokens=min(8_192, max(512, req.target_tokens + 1_024)),
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        summary = ""
-        try:
+
+        # Source can be bigger than the aux model's window (Haiku 4.5 is 200K).
+        # Chunk by characters, summarize each, then merge. Picked 480K chars
+        # (~120K tokens) so a Haiku-tier aux still has ~80K room for system +
+        # output + safety margin; bigger-window models would just see fewer
+        # chunks. Char-level cut intentionally; we re-summarize so a mid-sentence
+        # split is fine.
+        CHUNK_CHARS = 480_000
+        is_chunked = len(raw) > CHUNK_CHARS
+
+        async def _summarize_block(text: str, target_tokens: int, label: str) -> str:
+            user = (
+                f"Target length: ~{target_tokens} tokens.\n\n"
+                f"<document path=\"{label}\">\n{text}\n</document>\n\n"
+                "Summary:"
+            )
+            resp = await client.messages.create(
+                model=aux_model,
+                max_tokens=min(8_192, max(512, target_tokens + 1_024)),
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+            out = ""
             for b in (getattr(resp, "content", None) or []):
                 t = getattr(b, "text", None)
                 if isinstance(t, str) and t:
-                    summary += t
-        except Exception:
-            summary = ""
-        if not summary.strip():
-            raise RuntimeError("empty summary from aux model")
+                    out += t
+            if not out.strip():
+                raise RuntimeError("empty summary from aux model")
+            return out
+
+        if not is_chunked:
+            summary = await _summarize_block(raw, req.target_tokens, os.path.basename(src))
+        else:
+            chunks = [raw[i:i + CHUNK_CHARS] for i in range(0, len(raw), CHUNK_CHARS)]
+            per_chunk_budget = max(800, req.target_tokens // len(chunks) + 600)
+            partials = []
+            for i, ch in enumerate(chunks):
+                label = f"{os.path.basename(src)} (part {i + 1} of {len(chunks)})"
+                partials.append(await _summarize_block(ch, per_chunk_budget, label))
+            merge_input = "\n\n".join(f"## Part {i + 1}\n{p}" for i, p in enumerate(partials))
+            summary = await _summarize_block(merge_input, req.target_tokens, f"merged summary of {os.path.basename(src)}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"summarize failed: {e}")
 
