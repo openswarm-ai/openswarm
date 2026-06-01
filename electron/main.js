@@ -338,7 +338,16 @@ app.on('open-url', (event, url) => {
   if (mainWindow) mainWindow.focus();
 });
 
-app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
+// Disabled Chromium features. Mac gets one extra: MacWebContentsOcclusion is
+// Chromium's window-occlusion tracker that subscribes to NSEvent / NSApplicationSceneWorkspace
+// events on the main thread — exactly the code path the user-reported macOS 26.5 + Electron 42
+// NSEvent null-deref crash lives in. Disabling it routes around the subscription. Conservative:
+// the only cost is slightly higher CPU when the window is fully hidden behind other apps
+// (Chromium keeps painting invisible frames instead of pausing), zero impact when window is
+// foreground. If this doesn't help, removing the flag is a one-line revert with no UX trace.
+const _disabledFeatures = ['HardwareMediaKeyHandling'];
+if (process.platform === 'darwin') _disabledFeatures.push('MacWebContentsOcclusion');
+app.commandLine.appendSwitch('disable-features', _disabledFeatures.join(','));
 // disableHardwareAcceleration() was tried as a fallback but did not stop the 0xC0000005 crashes, confirming the segfault is not GPU-side. Dev mode (http origin) never crashed, packaged (file:// origin) always crashed, so the embedded localhost HTTP server (see startFrontendServer below) is the real fix and we keep GPU acceleration on.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
@@ -444,6 +453,51 @@ async function startFrontendServer() {
 
 const isPackaged = app.isPackaged;
 const isDev = process.env.ELECTRON_DEV === '1';
+
+// Mac-only crash watchdog. Targets the macOS 26.5 + Electron 42 NSEvent
+// null-deref users have reported (wake-from-sleep mostly). When the parent
+// dies unexpectedly, the watchdog calls `open -n /Applications/OpenSwarm.app`
+// to bring the user back in ~2s. Five guards in crash-watchdog.js prevent
+// false-positive relaunches (intentional Cmd+Q, auto-updater swap, startup
+// crash loop, repeat cap). Packaged builds only; never runs in dev.
+const CRASH_WATCHDOG_SUPPORT_DIR = path.join(os.homedir(), 'Library', 'Application Support', 'openswarm');
+const CRASH_WATCHDOG_CLEAN_QUIT_LOCK = path.join(CRASH_WATCHDOG_SUPPORT_DIR, 'clean-quit.lock');
+
+function spawnCrashWatchdog() {
+  if (process.platform !== 'darwin') return;
+  if (!isPackaged) return;
+  try {
+    const watchdogScript = path.join(__dirname, 'crash-watchdog.js');
+    if (!fs.existsSync(watchdogScript)) return;
+    // .../OpenSwarm.app/Contents/Resources/  ->  .../OpenSwarm.app
+    const appBundle = path.join(process.resourcesPath, '..', '..');
+    const { spawn: _spawn } = require('child_process');
+    const child = _spawn(process.execPath, [watchdogScript], {
+      detached: true,
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        OPENSWARM_PARENT_PID: String(process.pid),
+        OPENSWARM_APP_BUNDLE_PATH: appBundle,
+        OPENSWARM_PARENT_START_TIME: String(Date.now()),
+      },
+    });
+    child.unref();
+  } catch (e) {
+    console.warn('[crash-watchdog] spawn failed:', e && e.message);
+  }
+}
+
+function writeCleanQuitLock() {
+  if (process.platform !== 'darwin') return;
+  try {
+    if (!fs.existsSync(CRASH_WATCHDOG_SUPPORT_DIR)) fs.mkdirSync(CRASH_WATCHDOG_SUPPORT_DIR, { recursive: true });
+    fs.writeFileSync(CRASH_WATCHDOG_CLEAN_QUIT_LOCK, '');
+  } catch (_) {}
+}
+
+app.on('before-quit', writeCleanQuitLock);
 const iconPath = process.platform === 'win32'
   ? path.join(__dirname, 'build', 'icon.ico')
   : path.join(__dirname, 'build', 'icon.png');
@@ -1444,6 +1498,11 @@ function killBackend() {
 }
 
 app.whenReady().then(async () => {
+  // Spawn the Mac crash watchdog. Detached process; if it fails to spawn the
+  // app continues normally (silent fail by design). Guards inside the
+  // watchdog itself prevent false-positive relaunches.
+  spawnCrashWatchdog();
+
   // Cold-launch: if the OS opened us via openswarm:// (Windows/Linux it's
   // in argv; macOS fires open-url AFTER whenReady which we handle above)
   // route through forwardDeepLinkToRenderer so the URL gets stashed under
