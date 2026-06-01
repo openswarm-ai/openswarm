@@ -67,6 +67,7 @@ function shouldScan(file) {
 const DEFAULT_ALLOW = [
   /\.dist-info[\\/]direct_url\.json$/,   // PEP 610 install provenance, not read at runtime
   /\.dist-info[\\/]RECORD$/,             // wheel file list, lists relative paths only
+  /\.dist-info[\\/]sboms[\\/]/,          // CycloneDX SBOMs bake the wheel PUBLISHER's CI path (e.g. /Users/runner/work), never ours
 ];
 
 function walk(dir, out = []) {

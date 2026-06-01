@@ -22,14 +22,17 @@ function bundlesRoot(appExe) {
   return path.join(path.dirname(appExe), 'resources', 'backend', 'mcp-bundles');
 }
 
+// POSIX ships node under bin/ (node/<arch>/bin/node); Windows drops it (node.exe
+// straight under arch). Must mirror electron/main.js getBundledNodePath() or this
+// gate cant find the binary it bundled and false-fails a perfectly good build.
 function bundledNode(appExe) {
   if (process.platform === 'win32') return path.join(path.dirname(appExe), 'resources', 'node', 'x64', 'node.exe');
   if (process.platform === 'darwin') {
     const i = appExe.indexOf('.app');
     const appRoot = i === -1 ? appExe : appExe.slice(0, i + 4);
-    return path.join(appRoot, 'Contents', 'Resources', 'node', process.arch, 'node');
+    return path.join(appRoot, 'Contents', 'Resources', 'node', process.arch, 'bin', 'node');
   }
-  return path.join(path.dirname(appExe), 'resources', 'node', process.arch, 'node');
+  return path.join(path.dirname(appExe), 'resources', 'node', process.arch, 'bin', 'node');
 }
 
 // Locate the JS entry for each bundle. Single-file bundles ship as <name>.js;
