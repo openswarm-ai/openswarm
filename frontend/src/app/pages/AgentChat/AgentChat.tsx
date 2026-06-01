@@ -427,6 +427,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   }, []);
 
   const scrollRafRef = useRef<number | null>(null);
+  const pinRafRef = useRef<number | null>(null);
   const lastScrollHeightRef = useRef<number>(0);
   // Shared scroll-stick routine. Used both by the structural-events
   // useEffect below (new message lands / stream starts/ends) and by
@@ -455,35 +456,64 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   }, [session?.messages.length, streamingMessageId, stickToBottomIfNeeded]);
 
   // Stream-end re-stick. When a stream finishes, the live bubble (smooth-revealed
-  // text) is replaced by the committed bubble rendering FULL markdown, whose code
-  // blocks / tables lay out in a later pass and grow the height AFTER the normal
-  // stick already ran, stranding the view above the new bottom. If the user was
-  // following the bottom, force one more scroll-to-bottom after layout settles.
-  // Skipped entirely if the user had scrolled up (isAtBottomRef false), per the
-  // "unless the user scrolls away" rule.
+  // text) is replaced by the committed bubble rendering FULL markdown with
+  // contentVisibility placeholders; as those resolve, Chromium's overflow-anchor
+  // re-anchors to an EARLIER element (the user message), yanking the view up to
+  // "the top of the user input". A single deferred scroll loses the race because
+  // that anchor shift fires an onScroll that flips isAtBottomRef false before we
+  // run. Fix: snapshot the "was following" intent the moment streaming stops
+  // (captured continuously during the stream, before any completion re-render),
+  // then pin to bottom across a short multi-frame window that OVERRIDES the
+  // layout-induced flip. A genuine user scroll-away (wheel/touch) during that
+  // window aborts the pin, honoring "unless the user scrolls up".
   const prevStreamingIdRef = useRef<string | null>(null);
+  const wasFollowingRef = useRef(true);
+  const pinAbortRef = useRef(false);
+  // Keep the follow-intent fresh while streaming so it's accurate at the instant
+  // the stream ends (handleScroll updates isAtBottomRef on every real scroll).
+  if (streamingMessageId) wasFollowingRef.current = isAtBottomRef.current;
   useEffect(() => {
     const prev = prevStreamingIdRef.current;
     prevStreamingIdRef.current = streamingMessageId;
-    if (prev && !streamingMessageId && isAtBottomRef.current) {
-      // Two passes: ~70ms catches synchronous markdown, a second rAF catches
-      // async highlighter/layout that lands a frame or two later.
-      const settle = () => {
-        const el = scrollContainerRef.current;
-        if (el && isAtBottomRef.current) {
-          el.scrollTop = el.scrollHeight;
-          lastScrollHeightRef.current = el.scrollHeight;
-        }
-      };
-      const t = setTimeout(() => { settle(); requestAnimationFrame(settle); }, 70);
-      return () => clearTimeout(t);
-    }
+    if (!(prev && !streamingMessageId)) return;
+    if (!wasFollowingRef.current) return; // user had scrolled up; leave them be
+    pinAbortRef.current = false;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    // Abort the pin only on a deliberate scroll-away gesture, not the
+    // layout-induced onScroll the commit itself triggers.
+    const onUserScrollAway = (e: Event) => {
+      if ((e as WheelEvent).deltaY != null && (e as WheelEvent).deltaY < 0) pinAbortRef.current = true; // wheel up
+      else if (e.type === 'touchmove') pinAbortRef.current = true;
+    };
+    el.addEventListener('wheel', onUserScrollAway, { passive: true });
+    el.addEventListener('touchmove', onUserScrollAway, { passive: true });
+    let frame = 0;
+    const FRAMES = 18; // ~300ms at 60fps, long enough for async highlight/layout
+    const pin = () => {
+      if (pinAbortRef.current) { cleanup(); return; }
+      const c = scrollContainerRef.current;
+      if (c) { c.scrollTop = c.scrollHeight; lastScrollHeightRef.current = c.scrollHeight; isAtBottomRef.current = true; }
+      if (++frame < FRAMES) { pinRafRef.current = requestAnimationFrame(pin); }
+      else cleanup();
+    };
+    const cleanup = () => {
+      el.removeEventListener('wheel', onUserScrollAway);
+      el.removeEventListener('touchmove', onUserScrollAway);
+      if (pinRafRef.current != null) { cancelAnimationFrame(pinRafRef.current); pinRafRef.current = null; }
+    };
+    pinRafRef.current = requestAnimationFrame(pin);
+    return cleanup;
   }, [streamingMessageId]);
 
   useEffect(() => () => {
     if (scrollRafRef.current != null) {
       cancelAnimationFrame(scrollRafRef.current);
       scrollRafRef.current = null;
+    }
+    if (pinRafRef.current != null) {
+      cancelAnimationFrame(pinRafRef.current);
+      pinRafRef.current = null;
     }
   }, []);
 
