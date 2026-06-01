@@ -972,6 +972,17 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
           overflow: 'hidden',
           opacity: isPending ? 0.7 : 1,
           transition: 'opacity 0.2s, border-color 0.2s',
+          // User bubbles ease in instead of popping. Assistant bubbles are left
+          // alone on purpose: they reveal by typing, and animating them would
+          // flash at the streaming -> committed handoff. Transform+opacity only,
+          // so it rides the compositor and never shifts layout or the scroll.
+          ...(isUser && !editing ? {
+            animation: 'msgBubbleEnter 160ms ease-out',
+            '@keyframes msgBubbleEnter': {
+              from: { opacity: 0, transform: 'translateY(4px)' },
+              to: { opacity: 1, transform: 'translateY(0)' },
+            },
+          } : {}),
         }}
       >
         {isUser ? (
@@ -1165,22 +1176,12 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
               </Box>
             ) : (
               <>
-                {isStreaming ? (
-                  <Box
-                    component="div"
-                    sx={{
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      fontSize: 'inherit',
-                      lineHeight: 'inherit',
-                      color: 'inherit',
-                    }}
-                  >
-                    {rawText}
-                  </Box>
-                ) : (
-                  renderedMarkdown
-                )}
+                {/* Render markdown live (not just at the end) so code is mono,
+                    bold is bold, lists/headings format from the first character.
+                    Killing the old plain-text -> markdown swap removes the big
+                    layout snap at stream end, which was the "glitch" people felt.
+                    Re-parse is memoized on the (smoothed) text and cheap at chat sizes. */}
+                {renderedMarkdown}
                 {isStreaming && <StreamingCursor />}
               </>
             )}
