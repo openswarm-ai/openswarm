@@ -492,12 +492,14 @@ async def summarize_file(req: _SummarizeRequest):
         )
 
         # Source can be bigger than the aux model's window (Haiku 4.5 is 200K).
-        # Chunk by characters, summarize each, then merge. Picked 480K chars
-        # (~120K tokens) so a Haiku-tier aux still has ~80K room for system +
-        # output + safety margin; bigger-window models would just see fewer
-        # chunks. Char-level cut intentionally; we re-summarize so a mid-sentence
-        # split is fine.
-        CHUNK_CHARS = 480_000
+        # Chunk by characters, summarize each, then merge. PDFs and other
+        # binary-ish text tokenize WAY denser than the 4-chars-per-token rule
+        # of thumb implies; a 480K-char PDF blob was hitting 210K tokens and
+        # busting Haiku's 200K window. 200K chars / chunk caps the worst case
+        # at ~100K tokens even for binary garbage, leaving ~100K for system +
+        # output. Char-level cut intentionally; re-summarization tolerates a
+        # mid-sentence split.
+        CHUNK_CHARS = 200_000
         is_chunked = len(raw) > CHUNK_CHARS
 
         async def _summarize_block(text: str, target_tokens: int, label: str) -> str:

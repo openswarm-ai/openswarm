@@ -3,10 +3,8 @@ import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Modal from '@mui/material/Modal';
 import Snackbar from '@mui/material/Snackbar';
-import Alert from '@mui/material/Alert';
 import CloseIcon from '@mui/icons-material/Close';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
-import { formatTokenCount } from '../helpers';
 
 interface Props {
   c: ClaudeTokens;
@@ -72,19 +70,24 @@ export const ChatInputOverlays: React.FC<Props> = ({
       <Snackbar
         open={oversizeQueue.length > 0}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        sx={{ mb: 10 }}
+        sx={{ mb: 10, '& .MuiSnackbarContent-root': { p: 0, minWidth: 0, bgcolor: 'transparent', boxShadow: 'none' } }}
       >
         <Box
           sx={{
-            display: 'flex', alignItems: 'center', gap: 1.5,
+            display: 'flex', alignItems: 'center', gap: 2,
             bgcolor: c.bg.surface, border: `1px solid ${c.border.medium}`,
-            boxShadow: c.shadow.md, borderRadius: '10px',
-            px: 2, py: 1.25, maxWidth: 560,
+            boxShadow: c.shadow.md, borderRadius: '12px',
+            px: 2.5, py: 1.5,
+            width: 'min(560px, calc(100vw - 32px))',
+            whiteSpace: 'normal',
           }}
         >
           {oversizeQueue[0] ? (
-            <Box sx={{ color: c.text.primary, fontSize: '0.85rem', lineHeight: 1.4, flex: 1 }}>
-              This file is too big to fit. Want me to shrink it down to a summary, or just remove it?
+            <Box sx={{
+              color: c.text.primary, fontSize: '0.9rem', lineHeight: 1.5,
+              flex: '1 1 auto', minWidth: 0,
+            }}>
+              This file is too big to send. Shrink it down to a summary, or remove it?
             </Box>
           ) : null}
           <Box sx={{ display: 'flex', gap: 0.75, flexShrink: 0 }}>
@@ -95,7 +98,8 @@ export const ChatInputOverlays: React.FC<Props> = ({
               sx={{
                 bgcolor: c.accent.primary, color: '#fff',
                 border: 'none', borderRadius: '6px',
-                px: 1.5, py: 0.6, fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer',
+                px: 1.5, py: 0.7, fontSize: '0.82rem', fontWeight: 500, cursor: 'pointer',
+                whiteSpace: 'nowrap',
                 '&:hover': { bgcolor: c.accent.hover },
                 '&:disabled': { opacity: 0.6, cursor: 'wait' },
               }}
@@ -108,7 +112,8 @@ export const ChatInputOverlays: React.FC<Props> = ({
               sx={{
                 bgcolor: 'transparent', color: c.text.secondary,
                 border: `1px solid ${c.border.medium}`, borderRadius: '6px',
-                px: 1.5, py: 0.6, fontSize: '0.8rem', cursor: 'pointer',
+                px: 1.5, py: 0.7, fontSize: '0.82rem', cursor: 'pointer',
+                whiteSpace: 'nowrap',
                 '&:hover': { bgcolor: c.bg.secondary, color: c.text.primary },
               }}
             >
@@ -123,11 +128,32 @@ export const ChatInputOverlays: React.FC<Props> = ({
         autoHideDuration={6000}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         onClose={() => setSummarizeError(null)}
-        sx={{ mb: 18 }}
+        sx={{ mb: 18, '& .MuiSnackbarContent-root': { p: 0, minWidth: 0, bgcolor: 'transparent', boxShadow: 'none' } }}
       >
-        <Alert severity="error" variant="filled" onClose={() => setSummarizeError(null)} sx={{ fontSize: '0.78rem', maxWidth: 520 }}>
-          {summarizeError}
-        </Alert>
+        <Box
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 1.5,
+            bgcolor: c.bg.surface, border: `1px solid ${c.border.medium}`,
+            boxShadow: c.shadow.md, borderRadius: '12px',
+            px: 2.5, py: 1.5,
+            width: 'min(560px, calc(100vw - 32px))',
+            whiteSpace: 'normal',
+          }}
+        >
+          <Box sx={{
+            color: c.text.primary, fontSize: '0.9rem', lineHeight: 1.5,
+            flex: '1 1 auto', minWidth: 0,
+          }}>
+            {summarizeError}
+          </Box>
+          <IconButton
+            onClick={() => setSummarizeError(null)}
+            size="small"
+            sx={{ color: c.text.secondary, flexShrink: 0, '&:hover': { color: c.text.primary } }}
+          >
+            <CloseIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Box>
       </Snackbar>
     </>
   );
