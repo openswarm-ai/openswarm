@@ -506,6 +506,23 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     return cleanup;
   }, [streamingMessageId]);
 
+  // A tool's live pill is already on screen when it commits, so re-running the
+  // mount reveal on the committed bubble flashes the exact same row. Remember the
+  // id that just stopped streaming for a beat and let that one bubble skip its
+  // entrance, so the hand-off is seamless. 500ms is slack for the commit render
+  // to land after the stream clears (they don't always arrive on the same frame).
+  const [justStreamedId, setJustStreamedId] = useState<string | null>(null);
+  const justStreamPrevRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = justStreamPrevRef.current;
+    justStreamPrevRef.current = streamingMessageId;
+    if (prev && !streamingMessageId) {
+      setJustStreamedId(prev);
+      const t = setTimeout(() => setJustStreamedId(null), 500);
+      return () => clearTimeout(t);
+    }
+  }, [streamingMessageId]);
+
   useEffect(() => () => {
     if (scrollRafRef.current != null) {
       cancelAnimationFrame(scrollRafRef.current);
@@ -1297,7 +1314,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 const isPending = item.result === null && sessionRunning;
                 return (
                   <React.Fragment key={item.id}>
-                    <ToolCallBubble call={item.call} result={item.result} isPending={isPending} sessionId={session.id} />
+                    <ToolCallBubble call={item.call} result={item.result} isPending={isPending} sessionId={session.id} suppressReveal={item.call.id === justStreamedId} />
                     {compactionChip}
                   </React.Fragment>
                 );
@@ -1337,6 +1354,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   {!isEditing && (msg.role === 'user' || (msg.role === 'assistant' && lastAssistantIdsInTurn.has(msg.id))) && (
                     <MessageActionBar
                       role={msg.role as 'user' | 'assistant'}
+                      sessionId={session.id}
+                      messageId={msg.id}
                       onCopy={() => navigator.clipboard.writeText(rawText)}
                       onEdit={msg.role === 'user' ? () => setEditingMessageId(msg.id) : undefined}
                       onRegenerate={msg.role === 'assistant' ? () => handleRegenerate(msg) : undefined}

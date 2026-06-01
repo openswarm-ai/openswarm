@@ -45,21 +45,22 @@ interface DefaultToolBubbleProps {
   isBrowserAgent: boolean;
   accentRgb: string;
   selectAttrs: Record<string, string>;
+  suppressReveal?: boolean;
 }
 
 export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
   call, input, sessionId, mcpCompact, isPending, isStreaming, isDenied, isError, result,
   mcpInfo, toolName, inputSummary, formattedInput, promptPrefix, resultSummary, resultElapsedMs,
-  showTimer, showBody, toggle, parsedResult, isBrowserAgent, accentRgb, selectAttrs,
+  showTimer, showBody, toggle, parsedResult, isBrowserAgent, accentRgb, selectAttrs, suppressReveal = false,
 }) => {
   const c = useClaudeTokens();
   const tc = useTermColors();
-  // JS-driven mount reveal (see useMountReveal): replaces the old mount keyframe
-  // that silently no-op'd, which is why standalone tools "appeared out of nowhere".
-  // Skipped while streaming (the live pill has a committed twin; animating both
-  // would flash) and for mcpCompact rows (the group's row-fade already handles them).
+  // JS-driven mount reveal (see useMountReveal). The streaming pill itself glides
+  // in so a tool enters smoothly the moment it starts; when it commits, AgentChat
+  // sets suppressReveal on that same row so the hand-off doesn't re-animate what's
+  // already on screen. mcpCompact rows opt out (the group's row-fade handles them).
   const reveal = useMountReveal();
-  const enterStyle = (!isStreaming && !mcpCompact) ? reveal : {};
+  const enterStyle = (!mcpCompact && !suppressReveal) ? reveal : {};
 
   return (
     <Box

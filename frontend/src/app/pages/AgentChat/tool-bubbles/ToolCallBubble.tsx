@@ -43,10 +43,11 @@ interface ToolCallBubbleProps {
   isStreaming?: boolean;
   mcpCompact?: boolean;
   sessionId?: string;
+  suppressReveal?: boolean;
 }
 
 const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
-  ({ call, result = null, isPending = false, isStreaming = false, mcpCompact = false, sessionId }) => {
+  ({ call, result = null, isPending = false, isStreaming = false, mcpCompact = false, sessionId, suppressReveal = false }) => {
     ensureToolCallKeyframes();
 
     const c = useClaudeTokens();
@@ -295,6 +296,7 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
         isBrowserAgent={isBrowserAgent}
         accentRgb={accentRgb}
         selectAttrs={selectAttrs}
+        suppressReveal={suppressReveal}
       />
     );
   }
