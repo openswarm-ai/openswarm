@@ -5,7 +5,7 @@ import { rankAndCapInteractives, type RankItem } from './interactiveRanking';
 
 let initialized = false;
 
-export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'batch' | 'detect_webmcp';
+export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'batch' | 'detect_webmcp' | 'list_routes' | 'replay_route';
 
 export interface BrowserActivity {
   action: BrowserAction;
@@ -684,6 +684,66 @@ async function handleDetectWebMCP(wv: BrowserWebview): Promise<Record<string, an
   }
 }
 
+// Tier 2: the safe GET routes captured for the current site, so the agent can
+// fetch data directly instead of re-scraping the UI. Only same-origin GET/HEAD
+// routes are listed; those are all that replay_route will run.
+async function handleListRoutes(wv: BrowserWebview): Promise<Record<string, any>> {
+  const bridge = (window as any).openswarm?.cdpRoutesGet as
+    | ((id: number, origin?: string) => Promise<any[]>) | undefined;
+  if (!bridge) return { error: 'Route capture not available, restart the app.' };
+  let origin = '';
+  try { origin = new URL(wv.getURL()).origin; } catch {}
+  let routes: any[] = [];
+  try { routes = (await bridge(wv.getWebContentsId(), origin)) || []; } catch {}
+  const safe = routes.filter((r) => r && r.safe);
+  if (!safe.length) {
+    return { text: 'No replayable (GET) API routes captured for this site yet. Use the page first so they get recorded, then try again.', url: wv.getURL() };
+  }
+  const lines = safe.slice(0, 40).map((r) => `${r.method} ${r.template} (x${r.hits})`);
+  return {
+    text: `Replayable API routes for this site (safe GETs, call with BrowserReplayRoute):\n${lines.join('\n')}`,
+    routes: safe.slice(0, 40),
+    url: wv.getURL(),
+  };
+}
+
+// Tier 2: replay a captured endpoint directly. GET/HEAD only (idempotent) and
+// same-origin only; the fetch runs IN the page so cookies/CSRF come for free.
+// Mutating methods are intentionally refused, those must go through the UI.
+async function handleReplayRoute(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
+  const rawUrl = params.url as string;
+  const method = String(params.method || 'GET').toUpperCase();
+  if (!rawUrl) return { error: 'url parameter is required' };
+  if (method !== 'GET' && method !== 'HEAD') {
+    return { error: `BrowserReplayRoute only runs safe GET/HEAD requests. ${method} changes data, do that through the UI (click the button) instead.` };
+  }
+  let absUrl: string;
+  let pageOrigin: string;
+  try {
+    pageOrigin = new URL(wv.getURL()).origin;
+    absUrl = new URL(rawUrl, wv.getURL()).href;
+  } catch {
+    return { error: 'invalid url' };
+  }
+  if (new URL(absUrl).origin !== pageOrigin) {
+    return { error: "BrowserReplayRoute can only call the current site's own API (same origin)." };
+  }
+  const code = `(async () => {
+    try {
+      const r = await fetch(${JSON.stringify(absUrl)}, { method: ${JSON.stringify(method)}, credentials: 'include' });
+      const body = await r.text();
+      return { status: r.status, body: body.slice(0, 15000) };
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  })()`;
+  try {
+    const res = await wv.executeJavaScript(code);
+    if (res.error) return { error: `Replay failed: ${res.error}` };
+    return { text: `${method} ${absUrl} -> HTTP ${res.status}\n${res.body}`, status: res.status, url: wv.getURL() };
+  } catch (err: any) {
+    return { error: `Replay failed: ${err?.message || String(err)}` };
+  }
+}
+
 async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
   const expression = params.expression as string;
   if (!expression) return { error: 'expression parameter is required' };
@@ -784,6 +844,12 @@ async function handleBrowserCommand(data: Record<string, any>) {
         break;
       case 'detect_webmcp':
         result = await handleDetectWebMCP(wv);
+        break;
+      case 'list_routes':
+        result = await handleListRoutes(wv);
+        break;
+      case 'replay_route':
+        result = await handleReplayRoute(wv, params);
         break;
       default:
         result = { error: `Unknown browser action: ${action}` };

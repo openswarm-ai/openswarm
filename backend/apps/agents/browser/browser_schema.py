@@ -285,6 +285,37 @@ BROWSER_TOOLS_SCHEMA = [
         },
     },
     {
+        "name": "BrowserListRoutes",
+        "description": (
+            "List the site's own API endpoints that were captured while you "
+            "browsed it (GET routes, safe to call directly). When you need to "
+            "re-fetch data you already loaded once (search results, a list, a "
+            "detail page), calling the API with BrowserReplayRoute is far faster "
+            "than re-navigating and re-scraping the UI. Returns nothing until "
+            "you've actually used the page. Read-only."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "BrowserReplayRoute",
+        "description": (
+            "Directly call one of the site's captured GET endpoints (from "
+            "BrowserListRoutes) and get the raw response, skipping the UI. "
+            "ONLY safe read-only GET/HEAD requests on the current site are "
+            "allowed; anything that changes data (add to cart, send, delete, "
+            "post) must be done through the UI by clicking. Use this to read "
+            "data fast, not to perform actions."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The endpoint URL to GET (from BrowserListRoutes; same site only)."},
+                "method": {"type": "string", "enum": ["GET", "HEAD"], "description": "Defaults to GET."},
+            },
+            "required": ["url"],
+        },
+    },
+    {
         "name": "BrowserDetectWebMCP",
         "description": (
             "Check whether the current page declares its own WebMCP tools "
@@ -341,6 +372,8 @@ ACTION_MAP = {
     "BrowserClickIndex": "click_index",
     "BrowserBatch": "batch",
     "BrowserDetectWebMCP": "detect_webmcp",
+    "BrowserListRoutes": "list_routes",
+    "BrowserReplayRoute": "replay_route",
 }
 
 SYSTEM_PROMPT = (
@@ -424,7 +457,11 @@ SYSTEM_PROMPT = (
     "- Do NOT call the same failing tool twice with identical parameters. If selector "
     "X failed, try a DIFFERENT selector or a DIFFERENT strategy.\n"
     "- For repeated actions (swiping through profiles, going through inbox messages), "
-    "use BrowserPressKey if available; it's an order of magnitude faster than DOM clicks.\n\n"
+    "use BrowserPressKey if available; it's an order of magnitude faster than DOM clicks.\n"
+    "- To RE-READ data you already loaded once (search results, a list, a detail page), "
+    "check BrowserListRoutes and use BrowserReplayRoute to fetch it straight from the "
+    "site's API instead of re-navigating and re-scraping; it's much faster. This is for "
+    "reading only, never for actions that change data (those go through the UI).\n\n"
 
     "## When you genuinely cannot proceed\n"
     "Use RequestHumanIntervention for:\n"
