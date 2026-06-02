@@ -285,6 +285,17 @@ BROWSER_TOOLS_SCHEMA = [
         },
     },
     {
+        "name": "BrowserDetectWebMCP",
+        "description": (
+            "Check whether the current page declares its own WebMCP tools "
+            "(navigator.modelContext). If a site exposes tools this way, they "
+            "are the fastest, most reliable path; prefer them over scraping the "
+            "UI. Most sites don't support this yet, so it usually reports none; "
+            "in that case just use the normal browser tools. Read-only."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
         "name": "RequestHumanIntervention",
         "description": (
             "Request the user's help when you encounter an obstacle you cannot solve "
@@ -329,6 +340,7 @@ ACTION_MAP = {
     "BrowserListInteractives": "list_interactives",
     "BrowserClickIndex": "click_index",
     "BrowserBatch": "batch",
+    "BrowserDetectWebMCP": "detect_webmcp",
 }
 
 SYSTEM_PROMPT = (

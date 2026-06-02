@@ -5,7 +5,7 @@ import { rankAndCapInteractives, type RankItem } from './interactiveRanking';
 
 let initialized = false;
 
-export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'batch';
+export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'batch' | 'detect_webmcp';
 
 export interface BrowserActivity {
   action: BrowserAction;
@@ -648,6 +648,42 @@ async function handleGetElements(wv: BrowserWebview, params: Record<string, any>
   }
 }
 
+// Tier 1: detect a site's declared WebMCP tools (navigator.modelContext). When a
+// site exposes its own tools the agent can prefer them over scraping the UI. The
+// API is a Chrome 149 origin-trial standard; this Electron's Chromium predates it
+// so real pages return "not present" today, this is forward-compatible probing,
+// also covers the MCP-B convention (getRegisteredTools/listTools/tools array).
+async function handleDetectWebMCP(wv: BrowserWebview): Promise<Record<string, any>> {
+  const code = `(() => {
+    const mc = navigator.modelContext;
+    if (!mc) return { present: false, tools: [] };
+    let raw = [];
+    try {
+      if (typeof mc.getRegisteredTools === 'function') raw = mc.getRegisteredTools() || [];
+      else if (typeof mc.listTools === 'function') raw = mc.listTools() || [];
+      else if (Array.isArray(mc.tools)) raw = mc.tools;
+    } catch (e) {}
+    const tools = (raw || []).map(t => ({
+      name: String((t && t.name) || ''),
+      description: String((t && t.description) || '').slice(0, 200),
+    })).filter(t => t.name);
+    return { present: true, tools };
+  })()`;
+  try {
+    const r = await wv.executeJavaScript(code);
+    if (!r || !r.present) {
+      return { text: 'No WebMCP on this page (navigator.modelContext not present). Use the normal browser tools.', url: wv.getURL() };
+    }
+    if (!r.tools.length) {
+      return { text: 'WebMCP is present but exposes no callable tools. Use the normal browser tools.', url: wv.getURL() };
+    }
+    const lines = r.tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n');
+    return { text: `WebMCP tools declared by this page:\n${lines}`, tools: r.tools, url: wv.getURL() };
+  } catch (err: any) {
+    return { error: `WebMCP detection failed: ${err?.message || String(err)}` };
+  }
+}
+
 async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
   const expression = params.expression as string;
   if (!expression) return { error: 'expression parameter is required' };
@@ -745,6 +781,9 @@ async function handleBrowserCommand(data: Record<string, any>) {
         break;
       case 'batch':
         result = await handleBatch(wv, params);
+        break;
+      case 'detect_webmcp':
+        result = await handleDetectWebMCP(wv);
         break;
       default:
         result = { error: `Unknown browser action: ${action}` };
