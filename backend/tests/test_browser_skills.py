@@ -68,6 +68,32 @@ def test_distill_skips_failed_steps():
     assert [s["tool"] for s in steps] == ["BrowserType"]
 
 
+def test_distill_flattens_browser_batch():
+    # the agent's efficient path bundles type+press_key into one BrowserBatch;
+    # the recorder must flatten those into discrete robust steps.
+    log = [
+        {"tool": "BrowserNavigate", "input": {"url": "http://h/form"}, "ok": True},
+        {"tool": "BrowserBatch", "ok": True, "input": {"actions": [
+            {"type": "type", "params": {"selector": "#msg", "text": "hello world"}},
+            {"type": "press_key", "params": {"key": "Enter"}},
+        ]}},
+    ]
+    steps = sk.distill_steps(log)
+    assert [s["tool"] for s in steps] == ["BrowserNavigate", "BrowserType", "BrowserPressKey"]
+    assert steps[1]["params"]["text"] == "hello world"
+
+
+def test_distill_bails_on_batched_click_index():
+    # a batched click_index can't be made robust (resolved name not recoverable)
+    log = [
+        {"tool": "BrowserBatch", "ok": True, "input": {"actions": [
+            {"type": "type", "params": {"selector": "#m", "text": "x"}},
+            {"type": "click_index", "params": {"index": 2}},
+        ]}},
+    ]
+    assert sk.distill_steps(log) == []
+
+
 def test_record_and_find_roundtrip():
     assert sk.record_skill("localhost:8901", "type hello and click Send", _log()) is True
     found = sk.find_skill("localhost:8901", "Please type hello and click Send")

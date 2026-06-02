@@ -75,11 +75,49 @@ def distill_steps(action_log: list[dict]) -> list[dict]:
     """
     steps: list[dict] = []
     productive_count = 0
+
+    def _emit_simple(tool, inp):
+        """Append a robust step for a simple action, or return False if this
+        action can't be made robustly replayable (caller then bails)."""
+        nonlocal productive_count
+        if tool in ("BrowserType", "type") and inp.get("selector") is not None:
+            steps.append({"tool": "BrowserType", "params": {"selector": inp.get("selector"), "text": inp.get("text", "")}})
+            productive_count += 1; return True
+        if tool in ("BrowserClick", "click") and inp.get("selector"):
+            steps.append({"tool": "BrowserClick", "params": {"selector": inp["selector"]}})
+            productive_count += 1; return True
+        if tool in ("BrowserPressKey", "press_key") and inp.get("key"):
+            steps.append({"tool": "BrowserPressKey", "params": {"key": inp["key"]}})
+            productive_count += 1; return True
+        if tool in ("BrowserScroll", "scroll"):
+            steps.append({"tool": "BrowserScroll", "params": {k: inp[k] for k in ("direction", "amount") if k in inp}})
+            productive_count += 1; return True
+        if tool in ("BrowserNavigate", "navigate") and inp.get("url"):
+            steps.append({"tool": "BrowserNavigate", "params": {"url": inp["url"]}})
+            return True
+        if tool in ("wait", "BrowserWait"):
+            return True  # waits are skipped, not fatal
+        return False  # unknown/unrobust -> signal bail
+
     for a in action_log:
         if not a.get("ok", True):
             continue  # never replay a step that failed when recorded
         tool = a.get("tool")
         inp = a.get("input") or {}
+        if tool == "BrowserBatch":
+            # The agent's efficient path bundles sub-actions. Flatten them so the
+            # skill captures the real work. A batched click_index can't be made
+            # robust (its resolved name isn't recoverable here), so bail rather
+            # than record a flaky index-based step.
+            subs = inp.get("actions") or []
+            for sub in subs:
+                st = sub.get("type")
+                sp = sub.get("params") or {}
+                if st == "click_index":
+                    return []  # un-robustifiable batched click -> no skill
+                if not _emit_simple(st, sp):
+                    return []
+            continue
         if tool == "BrowserNavigate" and inp.get("url"):
             steps.append({"tool": "BrowserNavigate", "params": {"url": inp["url"]}})
         elif tool == "BrowserType" and inp.get("selector") is not None:
