@@ -813,7 +813,10 @@ async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): 
   try {
     const result = await wv.executeJavaScript(expression);
     const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-    return { text: text ?? 'undefined', url: wv.getURL() };
+    // evaluate is the agent's main read path; sample routes here too (XHRs have
+    // fired by now) so the backend can surface the fast network tier once.
+    const routes_available = await countSafeRoutes(wv);
+    return { text: text ?? 'undefined', url: wv.getURL(), routes_available };
   } catch (err: any) {
     return { error: `JS evaluation error: ${err?.message || String(err)}` };
   }

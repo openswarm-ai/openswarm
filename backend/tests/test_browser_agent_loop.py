@@ -908,16 +908,16 @@ def test_captured_routes_are_surfaced_once_per_host(monkeypatch):
     # gets a ONE-TIME nudge per host toward BrowserReplayRoute, not on every read.
     BH._browser_history.clear()
     primary = FakeLLM([
-        Resp([_rp("read 1"), _tu("BrowserGetText")]),
-        Resp([_rp("read 2"), _tu("BrowserGetText")]),
+        Resp([_rp("read 1"), _tu("BrowserEvaluate", expression="document.title")]),
+        Resp([_rp("read 2"), _tu("BrowserEvaluate", expression="document.title")]),
         Resp([Blk("text", "done")], stop_reason="end_turn"),
     ])
     sent = _install(monkeypatch, primary, FakeAux())
     orig = BA.ws_manager.send_browser_command
 
     async def _with_routes(request_id, action, browser_id, params, tab_id=""):
-        if action == "get_text":
-            return {"text": "page content", "url": DOC_URL, "routes_available": 4}
+        if action == "evaluate":
+            return {"text": "Reddit Programming", "url": DOC_URL, "routes_available": 4}
         return await orig(request_id, action, browser_id, params, tab_id)
     monkeypatch.setattr(BA.ws_manager, "send_browser_command", _with_routes, raising=False)
 
