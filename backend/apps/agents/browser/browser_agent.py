@@ -207,7 +207,11 @@ async def run_browser_agent(
     # Pure speed: it's the same reads the agent would do anyway, just front-loaded.
     async def _perceive(label_url: str) -> tuple[str, str]:
         """Cheap list+text perception of the CURRENT page. Returns
-        (front_load_block, current_url). Best-effort; never raises."""
+        (front_load_block, current_url, read_records). The read_records are real
+        reads that ran (so the completion-honesty gate knows content WAS read,
+        even when the agent then answers a read task with zero further tools, the
+        whole point of front-loading). Best-effort; never raises."""
+        recs = []
         try:
             li = await execute_browser_tool("BrowserListInteractives", {}, browser_id, tab_id)
             gt = await execute_browser_tool("BrowserGetText", {}, browser_id, tab_id)
@@ -215,17 +219,21 @@ async def run_browser_agent(
             parts = []
             if li.get("text") and "error" not in li:
                 parts.append("Interactive elements already on the page:\n" + str(li["text"]))
+                recs.append({"tool": "BrowserListInteractives", "input": {}, "ok": True,
+                             "result_summary": str(li["text"])[:200], "elapsed_ms": 0})
             if gt.get("text") and "error" not in gt:
                 parts.append("Visible page text (truncated):\n" + str(gt["text"])[:2000])
+                recs.append({"tool": "BrowserGetText", "input": {}, "ok": True,
+                             "result_summary": str(gt["text"])[:200], "elapsed_ms": 0})
             block = (
                 "\n\n[Page already loaded and inspected for you, act directly; "
                 "no need to screenshot or list elements again unless it changes]\n"
                 + "\n\n".join(parts)
             ) if parts else ""
-            return block, url
+            return block, url, recs
         except Exception as e:
             logger.debug(f"[browser-perf] perception prefetch skipped: {e}")
-            return "", (label_url or "")
+            return "", (label_url or ""), recs
 
     # current_url is the live URL of the card. When the parent delegates to an
     # EXISTING browser (no initial_url), the backend has no record of where that
@@ -233,17 +241,18 @@ async def run_browser_agent(
     # resolve the host on a repeat task and the whole fast path stayed dead.
     preloaded_perception = ""
     current_url = ""
+    preloaded_reads: list[dict] = []  # real front-loaded reads, seeded into action_log
     _resumed = bool(browser_history._browser_history.get(browser_id))
     if initial_url:
         nav_result = await execute_browser_tool(
             "BrowserNavigate", {"url": initial_url}, browser_id, tab_id,
         )
         logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
-        preloaded_perception, current_url = await _perceive(initial_url)
+        preloaded_perception, current_url, preloaded_reads = await _perceive(initial_url)
     elif not _resumed:
         # Fresh task on an existing card: perceive the current page to learn its
         # host (for replay) and front-load turn 1 (this path used to start cold).
-        preloaded_perception, current_url = await _perceive("")
+        preloaded_perception, current_url, preloaded_reads = await _perceive("")
 
     from backend.apps.settings.settings import load_settings
     from backend.apps.settings.credentials import get_anthropic_client_for_model
@@ -319,7 +328,9 @@ async def run_browser_agent(
     # already knows the page). The visible task text stays clean.
     first_user_content = task + preloaded_perception if (preloaded_perception and not prior_messages) else task
     messages: list[dict] = list(prior_messages) + [{"role": "user", "content": first_user_content}]
-    action_log: list[dict] = []
+    # Seed with the front-loaded reads: they really ran and returned content, so a
+    # read task the agent answers straight from them is NOT a "did nothing" ghost.
+    action_log: list[dict] = list(preloaded_reads)
     final_screenshot: str | None = None
     metrics_started_at = time.time()  # wall-clock start for per-task timing
     last_seen_url = initial_url or current_url or ""  # host source for skill record/replay

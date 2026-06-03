@@ -538,6 +538,34 @@ def test_informational_run_records_no_skill_to_avoid_thin_ghost(monkeypatch):
     assert SK.find_skill("docs.google.com", "find me 10 cracked design engineers") is None
 
 
+def test_read_answered_from_frontloaded_perception_is_not_a_ghost(monkeypatch):
+    # REGRESSION: front-loading reads perception into turn 1; if the agent answers
+    # a read task straight from that (zero further tools), the honesty gate must
+    # NOT flag it as 'declared done without taking a single action'. The front-
+    # loaded reads are real and seed action_log. (This bug caused retry loops.)
+    BH._browser_history.clear()
+    primary = FakeLLM([
+        # the model answers immediately from the front-loaded page text, no tools
+        Resp([Blk("text", "The first sentence is: Alan Turing was a mathematician.")], stop_reason="end_turn"),
+    ])
+    captured = {}
+    _install(monkeypatch, primary, FakeAux())
+    orig = BA.ws_manager.send_to_session
+
+    async def _cap(session_id, event, payload):
+        if event == "agent:status":
+            captured["status"] = payload.get("status")
+        return await orig(session_id, event, payload)
+    monkeypatch.setattr(BA.ws_manager, "send_to_session", _cap, raising=False)
+
+    r = asyncio.run(BA.run_browser_agent(
+        task="read me the first sentence", browser_id="b1", model="sonnet", initial_url=DOC_URL,
+    ))
+    # the fake get_text returns content during front-load -> honest completion
+    assert captured.get("status") == "completed", "answering from front-loaded perception is honest, not a ghost"
+    assert not r.get("error")
+
+
 def test_ghost_completion_is_reported_as_error_not_completed(monkeypatch):
     # The measured ghost, end to end: the model does a bunch of failing clicks
     # then declares done. The honesty gate must report 'error' (not 'completed')
