@@ -1213,18 +1213,22 @@ class AgentManager:
                 getattr(global_settings, "connection_mode", "own_key") == "openswarm-pro"
                 or bool(getattr(global_settings, "anthropic_api_key", None))
             )
-            # Both 9Router provider ids `claude` (subscription OAuth) and
-            # `anthropic` (direct API / Pro proxy) satisfy this check.
-            _9r_has_anthropic = False
+            # Collect the active 9Router anthropic-family provider ids so the
+            # web-search reliability check (below) can distinguish a STABLE
+            # credential (direct `anthropic`) from subscription OAuth
+            # (`claude`/`claude-code`), whose hosted-WebSearch delegation 401s on
+            # token rotation. Subscription OAuth must NOT suppress the DDG fallback.
+            _9r_provider_ids: list[str] = []
             try:
                 from backend.apps.nine_router import get_providers as _9r_providers
                 _conns = await _9r_providers()
-                _9r_has_anthropic = any(
-                    isinstance(c, dict)
+                _9r_provider_ids = [
+                    c.get("provider")
+                    for c in _conns
+                    if isinstance(c, dict)
                     and c.get("provider") in ("claude", "claude-code", "anthropic")
                     and c.get("isActive")
-                    for c in _conns
-                )
+                ]
             except Exception:
                 pass
 
@@ -1258,12 +1262,14 @@ class AgentManager:
             # Post-fix: non-Claude primaries always register openswarm-web,
             # which cascades Gemini-native → OpenAI-native → subscriptions
             # → DDG, only falling to Anthropic if everything else missing.
+            from backend.apps.agents.tools.web import anthropic_web_search_is_reliable
             _has_anthropic_path = (
                 not _is_custom_session
                 and _primary_is_claude
-                and (
-                    bool(getattr(global_settings, "anthropic_api_key", None))
-                    or _9r_has_anthropic
+                and anthropic_web_search_is_reliable(
+                    has_direct_anthropic_key=bool(getattr(global_settings, "anthropic_api_key", None)),
+                    is_pro=(getattr(global_settings, "connection_mode", "own_key") == "openswarm-pro"),
+                    provider_ids=_9r_provider_ids,
                 )
             )
 

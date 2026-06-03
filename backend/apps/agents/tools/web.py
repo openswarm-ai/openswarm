@@ -18,6 +18,24 @@ _USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+# 9router provider ids that authenticate with a STABLE token. Subscription OAuth
+# ('claude'/'claude-code') is deliberately excluded: the CLI's built-in WebSearch
+# delegates to Haiku via the subscription's rotating OAuth token, which 401s
+# intermittently ("Invalid bearer token, reset after 2m"). Only stable creds are
+# reliable enough to suppress our free DuckDuckGo fallback.
+_STABLE_ANTHROPIC_PROVIDERS = ("anthropic",)
+
+
+def anthropic_web_search_is_reliable(*, has_direct_anthropic_key: bool,
+                                     is_pro: bool, provider_ids) -> bool:
+    """Whether the Anthropic-hosted WebSearch path is reliable enough to suppress
+    the DuckDuckGo fallback. A subscription-OAuth-only user is NOT reliable (its
+    web-search delegation 401s on token rotation), so those users keep the free,
+    always-working DDG path instead of a flaky hosted one."""
+    if has_direct_anthropic_key or is_pro:
+        return True
+    return any(p in _STABLE_ANTHROPIC_PROVIDERS for p in (provider_ids or []))
+
 
 def _truncate(text: str, limit: int = _MAX_OUTPUT_BYTES) -> str:
     if len(text) > limit:
