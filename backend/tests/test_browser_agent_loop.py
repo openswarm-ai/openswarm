@@ -93,7 +93,10 @@ def _install(monkeypatch, primary, aux):
         # smart-wait probes via evaluate; report 'settled' so BrowserWait returns
         # fast in tests instead of riding the full cap.
         if action == "evaluate" and "getEntriesByType('resource')" in str(params.get("expression", "")):
-            return {"text": '{"ready": true, "quiet": 9999}', "url": DOC_URL}
+            expr = str(params.get("expression", ""))
+            # a confirm/target probe embeds a non-empty `const spec="..."`; report it found
+            found = "const spec=" in expr and 'const spec=""' not in expr
+            return {"text": json.dumps({"ready": True, "quiet": 9999, "elems": 100, "found": found}), "url": DOC_URL}
         if action == "list_interactives":
             return {"text": '1 interactive elements:\n[1]<button "Submit">', "url": DOC_URL}
         if action == "click_index":
@@ -157,6 +160,29 @@ def test_full_loop_goal_stagnation_adjudication_and_hint_write(monkeypatch):
 
     # 4) per-domain hint written from working_memory
     assert "cross-origin iframe" in BH.get_domain_note("google.com")
+
+
+def test_action_with_expect_is_confirmed(monkeypatch):
+    # An action that declares `expect` is CONFIRMED after it runs: the loop issues a
+    # target-aware confirm probe and feeds the next turn a tool_result stating the
+    # expected change is present (observed success, never assumed).
+    BH._browser_history.clear(); BH._domain_notes.clear()
+    primary = FakeLLM([
+        Resp([_rp("click submit and confirm"),
+              _tu("BrowserClickIndex", index=1, expect="Submitted")]),
+        Resp([Blk("text", "Confirmed and done.")], stop_reason="end_turn"),
+    ])
+    aux = FakeAux()
+    sent = _install(monkeypatch, primary, aux)
+
+    asyncio.run(BA.run_browser_agent(task="submit the form", browser_id="b1", model="sonnet"))
+
+    # a confirm probe carrying the declared target was issued
+    assert any(c["action"] == "evaluate" and "Submitted" in str(c["params"].get("expression", ""))
+               for c in sent), "no confirm probe for the declared target"
+    # and the confirmation was fed back to the model on the next turn
+    all_msgs = json.dumps([c["messages"] for c in primary.calls])
+    assert "Confirmed: 'Submitted' is now present." in all_msgs
 
 
 def test_aux_adjudication_fires_even_when_loop_detector_trips(monkeypatch):

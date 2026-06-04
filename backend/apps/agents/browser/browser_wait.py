@@ -162,5 +162,5 @@ async def smart_wait(execute_fn, browser_id, tab_id, max_ms, *, until="",
         text += " The page or tab appears unresponsive."
     if last_url:
         text += f" Current URL: {last_url}"
-    return {"text": text, "url": last_url, "settled": settled, "hung": hung,
+    return {"text": text, "url": last_url, "settled": settled, "found": found, "hung": hung,
             "waited_ms": waited, **({"error": "page unresponsive"} if hung else {})}

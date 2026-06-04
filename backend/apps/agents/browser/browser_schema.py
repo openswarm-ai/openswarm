@@ -12,6 +12,20 @@ MODEL_MAP = {
     "haiku": "claude-haiku-4-5-20251001",
 }
 
+# The change an action should cause, declared by the agent and CONFIRMED after the
+# action runs (success is observed, never assumed). A hit returns fast; a miss tells
+# the agent it may not have worked instead of letting it claim a false success.
+_EXPECT_DESC = {
+    "type": "string",
+    "description": (
+        "Optional but recommended: the specific change this action should cause, a "
+        "button label, text, or element you expect to see afterward (e.g. 'Write a "
+        "message', the recipient's name in the thread). It's confirmed right after, so "
+        "you learn whether it actually worked. REQUIRED for anything you can't undo "
+        "(Send/Submit/Pay/Post): set it to proof the action landed."
+    ),
+}
+
 BROWSER_TOOLS_SCHEMA = [
     {
         "name": "ReportProgress",
@@ -108,6 +122,7 @@ BROWSER_TOOLS_SCHEMA = [
             "type": "object",
             "properties": {
                 "selector": {"type": "string", "description": "CSS selector of the element to click."},
+                "expect": _EXPECT_DESC,
             },
             "required": ["selector"],
         },
@@ -210,6 +225,7 @@ BROWSER_TOOLS_SCHEMA = [
                     "type": "integer",
                     "description": "The numeric index from BrowserListInteractives (1-based).",
                 },
+                "expect": _EXPECT_DESC,
             },
             "required": ["index"],
         },
@@ -527,6 +543,17 @@ SYSTEM_PROMPT = (
     "and you will have to retry. This is not optional. Read-only tools "
     "(BrowserScreenshot, BrowserGetText, BrowserGetConsole, BrowserGetElements, BrowserWait) do not "
     "require ReportProgress.\n\n"
+
+    "## Act and confirm: trust only what you observe\n"
+    "Success is OBSERVED, never assumed. On any action that changes the page (click, "
+    "type, navigate), add `expect`: the change it should cause (a label, text, or the "
+    "element you expect to see). It's confirmed right after, a hit comes back fast and "
+    "you move on; a 'NOT confirmed' means it may not have worked, so check the page "
+    "instead of pressing on. For anything you CANNOT undo (Send, Submit, Pay, Post): "
+    "first make sure the goal isn't already done (e.g. your message isn't already the "
+    "last one in the thread), pass `expect` set to proof it landed, and NEVER fire it a "
+    "second time unless you have verified the first did NOT go through. This is how you "
+    "avoid both ghost-successes and double-sends.\n\n"
 
     "## Loop awareness\n"
     "If you see a tool result containing 'LOOP DETECTED' or '⚠️', it means you "

@@ -58,6 +58,13 @@ from backend.apps.tools_lib.tools_lib import load_builtin_permissions
 
 logger = logging.getLogger(__name__)
 
+# Mutating actions that can carry an `expect` (the change they should cause) and be
+# confirmed after running. Reads/waits aren't here, there's nothing to confirm.
+_CONFIRM_TOOLS = {
+    "BrowserClick", "BrowserClickIndex", "BrowserClickByName",
+    "BrowserType", "BrowserNavigate", "BrowserPressKey", "BrowserBatch",
+}
+
 
 async def execute_browser_tool(
     tool_name: str, tool_input: dict, browser_id: str, tab_id: str = "",
@@ -979,12 +986,13 @@ async def run_browser_agent(
                 tool_input = tu.input
                 if tu.name == "BrowserListInteractives" and current_next_goal:
                     tool_input = {**tu.input, "goal": current_next_goal}
+
+                async def _wait_exec(tool, params, bid, tid):
+                    return await _cancellable(execute_browser_tool(tool, params, bid, tid))
+
                 if tu.name == "BrowserWait":
-                    # Smart wait: return as soon as the page's network settles
-                    # instead of sleeping the full fixed duration (the audit's
-                    # 42%-of-time hog). Caps at the requested ms; never premature.
-                    async def _wait_exec(tool, params, bid, tid):
-                        return await _cancellable(execute_browser_tool(tool, params, bid, tid))
+                    # Smart wait: return as soon as the page is ready (target or DOM
+                    # settle), not on a blind timer (the audit's 42%-of-time hog).
                     result = await browser_wait.smart_wait(
                         _wait_exec, browser_id, tab_id, tu.input.get("milliseconds"),
                         until=(tu.input.get("until") or ""),
@@ -997,6 +1005,27 @@ async def run_browser_agent(
                     cancelled = True
                     break
                 elapsed_ms = int((time.time() - start) * 1000)
+
+                # Act-and-confirm: if the agent declared the change it expects, VERIFY
+                # it actually happened, success is observed, never assumed. A hit returns
+                # fast (act + confirm in one turn); a miss is a clear "may not have worked"
+                # (and a wedge surfaces as a clean not-confirmed, not a blind 20s timeout),
+                # so the agent never claims a success it didn't see or re-fires blindly.
+                _expect = (str(tu.input.get("expect") or "").strip()
+                           if isinstance(tu.input, dict) else "")
+                if _expect and "error" not in result and tu.name in _CONFIRM_TOOLS:
+                    _conf = await browser_wait.smart_wait(_wait_exec, browser_id, tab_id, 3500, until=_expect)
+                    if isinstance(_conf, dict):
+                        result["confirmed"] = bool(_conf.get("found"))
+                        if _conf.get("found"):
+                            result["text"] = f"{result.get('text') or ''}\nConfirmed: '{_expect}' is now present."
+                        else:
+                            result["text"] = (
+                                f"{result.get('text') or ''}\nNOT confirmed: '{_expect}' did not appear within "
+                                f"{_conf.get('waited_ms')}ms, so the action may not have worked. Check the page "
+                                "before assuming success, and never re-fire an irreversible action "
+                                "(Send/Submit/Pay/Post) without first verifying the previous one did not go through."
+                            )
 
                 action_log.append({
                     "tool": tu.name,

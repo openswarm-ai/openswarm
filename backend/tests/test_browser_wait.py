@@ -84,7 +84,7 @@ async def test_returns_early_once_settled():
     # first probe: still loading; second: settled -> should stop well under the cap
     ex = FakeExec([_probe(False, 0), _probe(True, 999)])
     out = await bw.smart_wait(ex, "b", "", 5000, poll_ms=20, floor_ms=20, quiet_window_ms=50)
-    assert out["settled"] is True
+    assert out["settled"] is True and out["found"] is False
     assert out["waited_ms"] < 5000
     assert "page settled" in out["text"]
 
@@ -117,7 +117,7 @@ async def test_returns_the_instant_target_is_found():
                    _probe(False, 5, elems=200, found=True)])
     out = await bw.smart_wait(ex, "b", "", 5000, until="Send",
                               poll_ms=20, floor_ms=800, quiet_window_ms=999)
-    assert out["settled"] is True and "found target" in out["text"]
+    assert out["settled"] is True and out["found"] is True and "found target" in out["text"]
     assert out["waited_ms"] < 800  # bypassed the floor because the target was there
 
 
