@@ -1209,29 +1209,6 @@ class AgentManager:
             # with no Anthropic path; Anthropic's hosted search is
             # higher-quality so we prefer it whenever it's reachable.
             _m = _router_model_id if isinstance(_router_model_id, str) else ""
-            _has_anthropic_path = (
-                getattr(global_settings, "connection_mode", "own_key") == "openswarm-pro"
-                or bool(getattr(global_settings, "anthropic_api_key", None))
-            )
-            # Collect the active 9Router anthropic-family provider ids so the
-            # web-search reliability check (below) can distinguish a STABLE
-            # credential (direct `anthropic`) from subscription OAuth
-            # (`claude`/`claude-code`), whose hosted-WebSearch delegation 401s on
-            # token rotation. Subscription OAuth must NOT suppress the DDG fallback.
-            _9r_provider_ids: list[str] = []
-            try:
-                from backend.apps.nine_router import get_providers as _9r_providers
-                _conns = await _9r_providers()
-                _9r_provider_ids = [
-                    c.get("provider")
-                    for c in _conns
-                    if isinstance(c, dict)
-                    and c.get("provider") in ("claude", "claude-code", "anthropic")
-                    and c.get("isActive")
-                ]
-            except Exception:
-                pass
-
             # When the primary is non-Claude we deliberately don't count
             # OpenSwarm Pro as an Anthropic path, using the Pro pool for
             # WebSearch on a GPT/Gemini session would drain it for the
@@ -1251,25 +1228,31 @@ class AgentManager:
             # MCP to register so WebSearch always cascades through our own
             # /api/web/search (Gemini → OpenAI → DuckDuckGo).
             _is_custom_session = _api_type_for_session == "custom"
-            # Only consider the user's own Anthropic API key sufficient
-            # if the conversation primary IS Claude. Pre-fix: any user
-            # with an Anthropic key set OR on OpenSwarm Pro skipped the
-            # openswarm-web MCP registration and the CLI's built-in
-            # WebSearch routed to Anthropic Haiku, which on a Codex
-            # /Gemini session drained the Pro pool's Haiku quota for
-            # WebSearch calls, even though the conversation primary
-            # (Codex/Gemini) supports native search via its own credits.
-            # Post-fix: non-Claude primaries always register openswarm-web,
-            # which cascades Gemini-native → OpenAI-native → subscriptions
-            # → DDG, only falling to Anthropic if everything else missing.
+            # The built-in WebSearch's aux haiku call only authenticates when it
+            # reaches an ENTITLED Anthropic endpoint. That's true in exactly two
+            # cases, mirroring the direct-Anthropic env-branch built further down:
+            # a direct Anthropic api-route model (base_url = api.anthropic.com
+            # with the user's key), or OpenSwarm Pro (entitled to the managed pool
+            # 9Router's anthropic/* resolves to). A SUBSCRIPTION-route Claude
+            # model (opus-4-8, route=None) routes the haiku call through 9Router
+            # to the managed pool and 401s for non-Pro users, so a bare key in
+            # settings is NOT enough; it must be a *-api route model. Everyone
+            # else registers openswarm-web and cascades through /api/web/search.
             from backend.apps.agents.tools.web import anthropic_web_search_is_reliable
+            from backend.apps.agents.providers.registry import _find_builtin_model as _fbm_web
+            _web_model_entry = _fbm_web(session.model)
+            _uses_direct_anthropic_api = (
+                _web_model_entry is not None
+                and _web_model_entry.get("route") == "api"
+                and _web_model_entry.get("api") == "anthropic"
+                and bool(getattr(global_settings, "anthropic_api_key", None))
+            )
             _has_anthropic_path = (
                 not _is_custom_session
                 and _primary_is_claude
                 and anthropic_web_search_is_reliable(
-                    has_direct_anthropic_key=bool(getattr(global_settings, "anthropic_api_key", None)),
+                    uses_direct_anthropic_api=_uses_direct_anthropic_api,
                     is_pro=(getattr(global_settings, "connection_mode", "own_key") == "openswarm-pro"),
-                    provider_ids=_9r_provider_ids,
                 )
             )
 

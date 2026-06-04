@@ -18,23 +18,34 @@ _USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
-# 9router provider ids that authenticate with a STABLE token. Subscription OAuth
-# ('claude'/'claude-code') is deliberately excluded: the CLI's built-in WebSearch
-# delegates to Haiku via the subscription's rotating OAuth token, which 401s
-# intermittently ("Invalid bearer token, reset after 2m"). Only stable creds are
-# reliable enough to suppress our free DuckDuckGo fallback.
-_STABLE_ANTHROPIC_PROVIDERS = ("anthropic",)
 
+class DDGRateLimited(Exception):
+    """DuckDuckGo answered with its throttle challenge (HTTP 202), not results.
 
-def anthropic_web_search_is_reliable(*, has_direct_anthropic_key: bool,
-                                     is_pro: bool, provider_ids) -> bool:
-    """Whether the Anthropic-hosted WebSearch path is reliable enough to suppress
-    the DuckDuckGo fallback. A subscription-OAuth-only user is NOT reliable (its
-    web-search delegation 401s on token rotation), so those users keep the free,
-    always-working DDG path instead of a flaky hosted one."""
-    if has_direct_anthropic_key or is_pro:
-        return True
-    return any(p in _STABLE_ANTHROPIC_PROVIDERS for p in (provider_ids or []))
+    Distinct from 'genuinely zero hits' so the caller can fail over to another
+    backend instead of reporting an empty search to the user. The throttle is
+    per-IP and burst-triggered; a quick retry on the same or the `lite` endpoint
+    does NOT clear it (both share the limiter), so the only cure is a different
+    backend or waiting it out."""
+
+def anthropic_web_search_is_reliable(*, uses_direct_anthropic_api: bool,
+                                     is_pro: bool) -> bool:
+    """Whether the CLI's built-in WebSearch is reliable enough to suppress the
+    DuckDuckGo fallback. The built-in tool fires an aux `claude-haiku` call, and
+    that call only authenticates when it reaches an ENTITLED Anthropic endpoint:
+
+      - `uses_direct_anthropic_api`: the session is pinned to a direct Anthropic
+        api-route model (base_url = api.anthropic.com with the user's own key),
+        so the haiku call hits Anthropic directly and works.
+      - `is_pro`: OpenSwarm Pro, entitled to the managed `anthropic` pool that
+        9Router's `anthropic/*` route resolves to.
+
+    A bare `anthropic_api_key` in settings is NOT sufficient: a SUBSCRIPTION-route
+    Claude model (e.g. `opus-4-8`, route=None) still sends the haiku call through
+    9Router to the managed pool, which 401s for non-Pro users ('Invalid bearer
+    token, reset after ~2m'). Only a `*-api` route model talks to Anthropic
+    directly. Everyone else keeps the free, always-working DDG path."""
+    return bool(uses_direct_anthropic_api or is_pro)
 
 
 def _truncate(text: str, limit: int = _MAX_OUTPUT_BYTES) -> str:
@@ -87,6 +98,11 @@ class WebSearchTool(BaseTool):
             if not results:
                 return [{"type": "text", "text": f"No search results found for: {query}"}]
             return [{"type": "text", "text": results}]
+        except DDGRateLimited:
+            return [{"type": "text", "text": (
+                "DuckDuckGo is rate-limiting this network right now (HTTP 202). "
+                "Wait a bit and retry, or use a different search source."
+            )}]
         except Exception as exc:
             return [{"type": "text", "text": f"Web search error: {exc}"}]
 
@@ -102,6 +118,11 @@ class WebSearchTool(BaseTool):
                 "https://html.duckduckgo.com/html/",
                 data={"q": query},
             )
+            # DDG serves its throttle challenge as 202 (a ~14KB no-results page),
+            # which is a 2xx so raise_for_status() sails right past it. Catch it
+            # explicitly so we report "rate-limited" instead of a bogus "no hits".
+            if resp.status_code == 202:
+                raise DDGRateLimited(query)
             resp.raise_for_status()
 
         body = resp.text
@@ -133,6 +154,13 @@ class WebSearchTool(BaseTool):
                 continue
 
             raw_url = html.unescape(link_match.group(1))
+
+            # Drop sponsored rows: DDG ads point at its own y.js click-tracker
+            # (ad_domain/ad_provider) instead of a real uddg= redirect, so they'd
+            # otherwise show up as junk "duckduckgo.com/y.js?ad_..." results.
+            if "/y.js?" in raw_url or "ad_provider=" in raw_url or "ad_domain=" in raw_url:
+                continue
+
             title = _strip_html(link_match.group(2)).strip()
 
             snippet_match = re.search(
