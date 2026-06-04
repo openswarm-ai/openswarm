@@ -614,15 +614,18 @@ async def run_browser_agent(
 
             # Track token usage from browser agent API calls
             if hasattr(response, 'usage') and response.usage:
-                session.tokens["input"] = session.tokens.get("input", 0) + (response.usage.input_tokens or 0)
-                session.tokens["output"] = session.tokens.get("output", 0) + (response.usage.output_tokens or 0)
-                # Cache-read tokens prove the prompt cache is working (climbs
-                # after turn 1). Logged so the speed win is verifiable, not assumed.
+                _out = response.usage.output_tokens or 0
+                _in = response.usage.input_tokens or 0
+                session.tokens["input"] = session.tokens.get("input", 0) + _in
+                session.tokens["output"] = session.tokens.get("output", 0) + _out
                 _cr = getattr(response.usage, "cache_read_input_tokens", 0) or 0
                 _cw = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
-                if _cr or _cw:
+                if _cr:
                     session.tokens["cache_read"] = session.tokens.get("cache_read", 0) + _cr
-                    logger.info(f"[browser-perf] turn {turn}: cache_read={_cr} cache_write={_cw} input={response.usage.input_tokens}")
+                # Per-turn OUTPUT tokens are the latency driver (generation is serial,
+                # input is cached), so log every turn: this is how we verify the plan-
+                # once/terse-execution prompt actually shrinks per-turn output live.
+                logger.info(f"[browser-tokens] turn={turn} out={_out} in={_in} cache_read={_cr} cache_write={_cw}")
 
             assistant_content = []
             text_parts = []
