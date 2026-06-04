@@ -31,7 +31,7 @@ const DashboardEmptyState: React.FC<{ c: ClaudeTokens }> = ({ c }) => (
         animation: 'empty-state-shimmer 6s linear infinite',
       }}
     >
-      Click the &quot;+&quot; button below to launch your first agent
+      Click the chat bubble below to launch your first agent
     </Typography>
   </Box>
 );
