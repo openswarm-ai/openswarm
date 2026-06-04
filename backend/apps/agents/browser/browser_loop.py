@@ -144,7 +144,10 @@ def stagnation_nudge(streak: int) -> str:
     base = _STAGNATION_NUDGE.format(streak=streak)
     if streak >= _STAGNATION_MAX:
         base += (
-            " If nothing here works, call RequestHumanIntervention instead of "
+            " Switching selectors hasn't worked, so the PLAN itself is likely "
+            "wrong: step back and revise your overall approach (a different page, "
+            "route, or entry point), not just the selector. If even a fresh plan "
+            "can't make progress, call RequestHumanIntervention instead of "
             "continuing to fail."
         )
     return base
