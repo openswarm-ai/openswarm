@@ -141,7 +141,10 @@ def _is_masked_secret(value: str | None) -> bool:
 def _preserve_masked_secret_writes(body: AppSettings, old: AppSettings) -> AppSettings:
     data = body.model_dump()
 
-    for field in SECRET_FIELDS | NEVER_RETURN_FIELDS:
+    for field in NEVER_RETURN_FIELDS:
+        data[field] = getattr(old, field, None)
+
+    for field in SECRET_FIELDS:
         value = data.get(field)
         if _is_masked_secret(value):
             data[field] = getattr(old, field, None)
@@ -336,7 +339,7 @@ async def reset_system_prompt():
     current = load_settings()
     current.default_system_prompt = DEFAULT_SYSTEM_PROMPT
     await save_settings_async(current)
-    return {"ok": True, "settings": current.model_dump()}
+    return {"ok": True, "settings": _redact_settings_for_read(current)}
 
 
 class BrowseResponse(BaseModel):
