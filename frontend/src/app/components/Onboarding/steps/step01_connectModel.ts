@@ -34,7 +34,7 @@ export const step01: OnboardingStep = {
           label: 'Open Swarm Pro subscription',
           thenOps: [
             { kind: 'move_to', target: S.settingsProSection },
-            { kind: 'popup', text: 'Pick a tier you like.' },
+            { kind: 'popup', text: 'Hit Subscribe and pick a tier.' },
           ],
         },
         {

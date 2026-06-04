@@ -4,14 +4,12 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import LinearProgress from '@mui/material/LinearProgress';
-import { useAppDispatch } from '@/shared/hooks';
-import { disconnectSubscription } from '@/shared/state/settingsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { API_BASE } from '@/shared/config';
-import PlanPicker from '@/app/components/overlays/PlanPicker';
+import PlanPickerModal from '@/app/components/overlays/PlanPickerModal';
 import type { OpenSwarmPlan } from '@/shared/subscription/checkout';
 
-/** Pro managed-subscription card: Subscribe CTA when disconnected, live usage + Manage/Disconnect when active. */
+/** Pro managed subscription: compact provider-style row when disconnected, live usage + Manage when active. */
 interface OpenSwarmProStatus {
   connected: boolean;
   connection_mode?: string;
@@ -38,9 +36,9 @@ const clampPickerPlan = (plan: string | null | undefined): OpenSwarmPlan => {
 
 const OpenSwarmProCard: React.FC = () => {
   const c = useClaudeTokens();
-  const dispatch = useAppDispatch();
   const [status, setStatus] = useState<OpenSwarmProStatus | null>(null);
-  const [busy, setBusy] = useState<'manage' | 'disconnect' | null>(null);
+  const [managing, setManaging] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   // Track fired usage thresholds so the event doesn't spam every 30s while counter hovers past the line.
   const firedUsageThresholds = useRef<Set<number>>(new Set());
 
@@ -64,7 +62,7 @@ const OpenSwarmProCard: React.FC = () => {
       plan: status?.plan ?? null,
       status: status?.status ?? null,
     });
-    setBusy('manage');
+    setManaging(true);
     try {
       const r = await fetch(`${API_BASE}/subscription/portal`, { method: 'POST' });
       if (r.ok) {
@@ -74,17 +72,7 @@ const OpenSwarmProCard: React.FC = () => {
         else if (url) window.open(url, '_blank');
       }
     } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    setBusy('disconnect');
-    try {
-      await dispatch(disconnectSubscription()).unwrap();
-      await refresh();
-    } finally {
-      setBusy(null);
+      setManaging(false);
     }
   };
 
@@ -108,11 +96,93 @@ const OpenSwarmProCard: React.FC = () => {
   // Don't flash a CTA that disappears on first fetch.
   if (!status) return null;
 
-  const isConnected = !!status.connected;
+  const lastPlan = clampPickerPlan(status.plan ?? status.last_plan);
+
+  if (!status.connected) {
+    const copy = (() => {
+      if (status.reason === 'expired' && status.last_plan) {
+        return {
+          desc: 'Your subscription ended. Pick a plan to get back in.',
+          cta: 'Resubscribe',
+          title: 'Resubscribe to OpenSwarm Pro',
+          subtitle: 'Keep using Claude Sonnet, Opus, and Haiku without a Claude account.',
+          currentPlan: lastPlan,
+        };
+      }
+      if (status.reason === 'revoked' && status.last_plan) {
+        return {
+          desc: 'Your access token was revoked. Pick a plan to reconnect.',
+          cta: 'Reconnect',
+          title: 'Reconnect OpenSwarm Pro',
+          subtitle: 'Pick a plan to restore access.',
+          currentPlan: lastPlan,
+        };
+      }
+      return {
+        desc: 'Claude Sonnet, Opus, and Haiku. No Claude account needed.',
+        cta: 'Subscribe',
+        title: 'Choose your plan',
+        subtitle: 'One subscription, we handle everything behind the scenes. Cancel anytime.',
+        currentPlan: undefined,
+      };
+    })();
+
+    return (
+      <>
+        <Box sx={{ p: 1.5, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}` }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, bgcolor: c.border.medium }} />
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 600, color: c.text.primary }}>
+                    OpenSwarm Pro
+                  </Typography>
+                  <Box sx={{ px: 0.7, py: 0.15, borderRadius: 999, bgcolor: `${c.accent.primary}15` }}>
+                    <Typography sx={{ fontSize: '0.6rem', color: c.accent.primary, fontWeight: 600 }}>
+                      RECOMMENDED
+                    </Typography>
+                  </Box>
+                </Box>
+                <Typography sx={{ fontSize: '0.65rem', color: c.text.muted }}>
+                  {copy.desc}
+                </Typography>
+              </Box>
+            </Box>
+            <Button
+              onClick={() => setPickerOpen(true)}
+              variant="contained"
+              size="small"
+              sx={{
+                textTransform: 'none', fontSize: '0.7rem', minWidth: 70,
+                borderRadius: `${c.radius.md}px`,
+                bgcolor: c.accent.primary, boxShadow: 'none',
+                '&:hover': { bgcolor: c.accent.hover, boxShadow: 'none' },
+              }}
+            >
+              {copy.cta}
+            </Button>
+          </Box>
+        </Box>
+        <PlanPickerModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          title={copy.title}
+          subtitle={copy.subtitle}
+          source="settings"
+          defaultPlan={copy.currentPlan}
+          currentPlan={copy.currentPlan}
+          onSubscribed={() => setPickerOpen(false)}
+        />
+      </>
+    );
+  }
+
   const usage = status.usage;
   // Pool utilization (0-100%) for the current 5h window of the routed subscription.
   const pct = Math.max(0, Math.min(100, Math.round(usage?.utilization ?? 0)));
   const windowEndsAt = usage?.window_ends_at;
+  const isCanceled = status.status === 'canceled';
 
   const expiresLabel = (() => {
     if (!status.expires) return null;
@@ -134,158 +204,118 @@ const OpenSwarmProCard: React.FC = () => {
   })();
 
   return (
-    <Box
-      sx={{
-        p: 2.5,
-        borderRadius: `${c.radius.lg}px`,
-        border: `1px solid ${isConnected ? c.accent.primary : c.border.subtle}`,
-        bgcolor: isConnected ? `${c.accent.primary}08` : c.bg.surface,
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: isConnected ? 1.5 : 0.5 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+    <>
+      <Box
+        sx={{
+          p: 2.5,
+          borderRadius: `${c.radius.lg}px`,
+          border: `1px solid ${c.accent.primary}`,
+          bgcolor: `${c.accent.primary}08`,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
           <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: c.text.primary }}>
             OpenSwarm Pro
           </Typography>
-          {isConnected && (
-            <Box
-              component="img"
-              src="./logo.png"
-              alt={planLabel}
-              title={planLabel}
-              sx={{ width: 18, height: 18, borderRadius: 0.5 }}
-            />
+          <Box
+            component="img"
+            src="./logo.png"
+            alt={planLabel}
+            title={planLabel}
+            sx={{ width: 18, height: 18, borderRadius: 0.5 }}
+          />
+        </Box>
+
+        {/* Canceled-in-grace banner: canceled in Stripe but still inside paid period. */}
+        {isCanceled && (
+          <Box sx={{
+            px: 1.2, py: 0.6, mb: 1.2, borderRadius: `${c.radius.sm}px`,
+            bgcolor: `${c.status.warning}15`, border: `1px solid ${c.status.warning}40`,
+          }}>
+            <Typography sx={{ fontSize: '0.72rem', color: c.status.warning, fontWeight: 500 }}>
+              Subscription canceled. You still have access until {expiresLabel || 'the end of the period'}.
+            </Typography>
+          </Box>
+        )}
+
+        {/* Usage bar; percentage only, no raw counts. */}
+        <Box sx={{ mb: 1.2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0.5 }}>
+            <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, fontWeight: 500 }}>
+              Current usage
+            </Typography>
+            <Typography sx={{ fontSize: '0.72rem', color: c.text.muted }}>
+              {pct}% used
+            </Typography>
+          </Box>
+          <LinearProgress
+            variant="determinate"
+            value={pct}
+            sx={{
+              height: 6,
+              borderRadius: 999,
+              bgcolor: `${c.accent.primary}15`,
+              '& .MuiLinearProgress-bar': {
+                bgcolor: pct >= 90 ? c.status.warning : pct >= 70 ? c.status.info : c.accent.primary,
+                borderRadius: 999,
+              },
+            }}
+          />
+          {windowEndsAt && (
+            <Typography sx={{ fontSize: '0.68rem', color: c.text.muted, mt: 0.4 }}>
+              Resets {(() => {
+                const diff = windowEndsAt - Date.now();
+                if (diff <= 0) return 'soon';
+                const hrs = Math.floor(diff / 3600000);
+                const mins = Math.floor((diff % 3600000) / 60000);
+                if (hrs > 0) return `in ${hrs} hr ${mins} min`;
+                return `in ${mins} min`;
+              })()}
+            </Typography>
           )}
-          {!isConnected && (
-            <Box sx={{ px: 0.9, py: 0.2, borderRadius: 999, bgcolor: `${c.accent.primary}15` }}>
-              <Typography sx={{ fontSize: '0.65rem', color: c.accent.primary, fontWeight: 600 }}>
-                RECOMMENDED
-              </Typography>
-            </Box>
+        </Box>
+        {expiresLabel && !isCanceled && (
+          <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, mb: 1.5 }}>
+            Renews on {expiresLabel}
+          </Typography>
+        )}
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          {isCanceled && (
+            <Button
+              onClick={() => setPickerOpen(true)}
+              size="small"
+              variant="contained"
+              sx={{ textTransform: 'none', fontSize: '0.78rem', borderRadius: `${c.radius.md}px` }}
+            >
+              Resubscribe
+            </Button>
           )}
+          <Button
+            onClick={handleManage}
+            disabled={managing}
+            size="small"
+            variant={isCanceled ? 'outlined' : 'contained'}
+            sx={{ textTransform: 'none', fontSize: '0.78rem', borderRadius: `${c.radius.md}px` }}
+          >
+            {managing ? 'Opening…' : 'Manage in Stripe'}
+          </Button>
         </Box>
       </Box>
 
-      {isConnected ? (
-        <>
-          {/* Canceled-in-grace banner: canceled in Stripe but still inside paid period. */}
-          {status.status === 'canceled' && (
-            <Box sx={{
-              px: 1.2, py: 0.6, mb: 1.2, borderRadius: `${c.radius.sm}px`,
-              bgcolor: `${c.status.warning}15`, border: `1px solid ${c.status.warning}40`,
-            }}>
-              <Typography sx={{ fontSize: '0.72rem', color: c.status.warning, fontWeight: 500 }}>
-                Subscription canceled. You still have access until {expiresLabel || 'the end of the period'}.
-              </Typography>
-            </Box>
-          )}
-
-          {/* Usage bar; percentage only, no raw counts. */}
-          <Box sx={{ mb: 1.2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0.5 }}>
-              <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, fontWeight: 500 }}>
-                Current usage
-              </Typography>
-              <Typography sx={{ fontSize: '0.72rem', color: c.text.muted }}>
-                {pct}% used
-              </Typography>
-            </Box>
-            <LinearProgress
-              variant="determinate"
-              value={pct}
-              sx={{
-                height: 6,
-                borderRadius: 999,
-                bgcolor: `${c.accent.primary}15`,
-                '& .MuiLinearProgress-bar': {
-                  bgcolor: pct >= 90 ? c.status.warning : pct >= 70 ? c.status.info : c.accent.primary,
-                  borderRadius: 999,
-                },
-              }}
-            />
-            {windowEndsAt && (
-              <Typography sx={{ fontSize: '0.68rem', color: c.text.muted, mt: 0.4 }}>
-                Resets {(() => {
-                  const diff = windowEndsAt - Date.now();
-                  if (diff <= 0) return 'soon';
-                  const hrs = Math.floor(diff / 3600000);
-                  const mins = Math.floor((diff % 3600000) / 60000);
-                  if (hrs > 0) return `in ${hrs} hr ${mins} min`;
-                  return `in ${mins} min`;
-                })()}
-              </Typography>
-            )}
-          </Box>
-          {expiresLabel && status.status !== 'canceled' && (
-            <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, mb: 1.5 }}>
-              Renews on {expiresLabel}
-            </Typography>
-          )}
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              onClick={handleManage}
-              disabled={busy !== null}
-              size="small"
-              variant={status.status === 'canceled' ? 'outlined' : 'contained'}
-              sx={{ textTransform: 'none', fontSize: '0.78rem', borderRadius: `${c.radius.md}px` }}
-            >
-              {busy === 'manage' ? 'Opening…' : 'Manage in Stripe'}
-            </Button>
-          </Box>
-
-          {/* Canceled-in-grace: 3-tier picker inline for resubscribe; active subs use Stripe's portal instead. */}
-          {status.status === 'canceled' && (
-            <>
-              <Box sx={{ mt: 2.5, mb: 1.5, borderTop: `1px solid ${c.border.subtle}`, pt: 2 }}>
-                <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, fontWeight: 500, mb: 0.3 }}>
-                  Resubscribe to keep access past {expiresLabel || 'your end date'}
-                </Typography>
-                <Typography sx={{ fontSize: '0.7rem', color: c.text.muted }}>
-                  Pick any plan below; you can keep your current tier or switch.
-                </Typography>
-              </Box>
-              <PlanPicker
-                source="settings"
-                defaultPlan={clampPickerPlan(status.plan ?? status.last_plan)}
-                currentPlan={clampPickerPlan(status.plan ?? status.last_plan)}
-              />
-            </>
-          )}
-        </>
-      ) : status.reason === 'expired' && status.last_plan ? (
-        // Expired: bearer's sub ended past grace; show picker with prior plan preselected.
-        <>
-          <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, mb: 1.5 }}>
-            Your OpenSwarm Pro subscription has ended. Pick a plan to keep using Claude Sonnet, Opus, and Haiku without a Claude account.
-          </Typography>
-          <PlanPicker
-            source="settings"
-            defaultPlan={clampPickerPlan(status.last_plan)}
-            currentPlan={clampPickerPlan(status.last_plan)}
-          />
-        </>
-      ) : status.reason === 'revoked' && status.last_plan ? (
-        // Token revoked but sub existed; CTA language differs so user knows this isn't billing.
-        <>
-          <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, mb: 1.5 }}>
-            Your OpenSwarm Pro access token was revoked. Pick a plan to reconnect.
-          </Typography>
-          <PlanPicker
-            source="settings"
-            defaultPlan={clampPickerPlan(status.last_plan)}
-            currentPlan={clampPickerPlan(status.last_plan)}
-          />
-        </>
-      ) : (
-        // Genuine new user; never had a subscription on this machine.
-        <>
-          <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 1.5 }}>
-            One subscription, no Claude account needed. We handle everything behind the scenes.
-          </Typography>
-          <PlanPicker source="settings" defaultPlan="pro_plus" />
-        </>
+      {/* Canceled-in-grace resubscribe; active subs use Stripe's portal instead. */}
+      {isCanceled && (
+        <PlanPickerModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          title="Resubscribe to OpenSwarm Pro"
+          subtitle={`Keep access past ${expiresLabel || 'your end date'}. Keep your current tier or switch.`}
+          source="settings"
+          defaultPlan={lastPlan}
+          currentPlan={lastPlan}
+          onSubscribed={() => setPickerOpen(false)}
+        />
       )}
-    </Box>
+    </>
   );
 };
 

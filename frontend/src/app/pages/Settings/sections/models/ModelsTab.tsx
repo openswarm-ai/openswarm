@@ -21,28 +21,23 @@ const ModelsTab: React.FC<{
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, gap: 2.5, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
 
-      <Box data-onboarding="settings-pro-section" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-          One Subscription, No Setup
+          Connect a Subscription
         </Typography>
 
         <Typography sx={{ ...descSx, mb: 0 }}>
-          Don't have a Claude account? We'll handle it for you. One simple subscription covers Claude Sonnet, Opus, and Haiku.
+          Already paying for Claude, ChatGPT, or Gemini? Connect it here at no extra cost. Or let OpenSwarm Pro cover everything in one subscription.
         </Typography>
 
-        <OpenSwarmProCard />
-      </Box>
-
-      <Box data-onboarding="settings-external-subs" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-        <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, mt: 1 }}>
-          Or Use Your Existing Subscriptions
-        </Typography>
-
-        <Typography sx={{ ...descSx, mb: 0 }}>
-          Already paying for Claude, ChatGPT, or Gemini? Connect your subscription, no API key needed, no extra cost.
-        </Typography>
-
-        <SubscriptionCards />
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box data-onboarding="settings-pro-section">
+            <OpenSwarmProCard />
+          </Box>
+          <Box data-onboarding="settings-external-subs">
+            <SubscriptionCards />
+          </Box>
+        </Box>
       </Box>
 
       <Box data-onboarding="settings-api-keys" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
