@@ -481,16 +481,19 @@ class WebSocketManager {
             store.dispatch(clearTurnLabel(session_id));
           }
         }
-        // Per-sub-agent close via browser_id; skip user-created cards (no spawned_by).
+        // Clean spawned browser cards when the PARENT finishes, never per
+        // sub-agent: the parent reuses the same browser_id for its next step,
+        // so deleting on sub-agent completion strands BrowserAgent(browser_id)
+        // on a dead card. 'stopped' skipped to allow inspect-after-manual-stop.
         if (
+          session_id &&
           (data.status === 'completed' || data.status === 'error') &&
-          data.session?.mode === 'browser-agent'
+          data.session?.mode !== 'browser-agent'
         ) {
-          const browserId = data.session.browser_id;
-          if (browserId) {
-            const card = store.getState().dashboardLayout.browserCards[browserId];
-            if (card && card.spawned_by) {
-              store.dispatch(removeBrowserCard(browserId));
+          const browserCards = store.getState().dashboardLayout.browserCards;
+          for (const card of Object.values(browserCards)) {
+            if (card.spawned_by === session_id) {
+              store.dispatch(removeBrowserCard(card.browser_id));
             }
           }
         }
