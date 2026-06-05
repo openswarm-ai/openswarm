@@ -1413,6 +1413,45 @@ async def run_browser_agent(
         }
 
 
+# Cards a sub-agent is actively driving in this process. Reuse must never hand
+# two agents one webview (their commands would interleave into chaos).
+_active_agent_cards: set[str] = set()
+# find+claim+create must be one critical section or two parallel dispatches
+# race to claim the same idle card (or both miss and double-create).
+_card_pick_lock = asyncio.Lock()
+
+
+def _find_reusable_card(dashboard_id: str, url: str, parent_session_id: str | None) -> str:
+    """An existing same-host spawned card to drive instead of stacking another
+    webview: concurrent same-site webviews wedge each other (shared-partition
+    lock contention), so a retry must REUSE, not multiply. The parent's own
+    card first, else one orphaned by a finished parent. User-created cards
+    (no spawned_by) are never grabbed implicitly."""
+    want = browser_skills.host_of(url)
+    if not (dashboard_id and want):
+        return ""
+    try:
+        from backend.apps.dashboards.dashboards import _load
+        cards = _load(dashboard_id).layout.browser_cards
+    except Exception:
+        return ""
+    from backend.apps.agents.agent_manager import agent_manager
+    own, orphan = "", ""
+    for bid, card in cards.items():
+        spawned = getattr(card, "spawned_by", None)
+        if not spawned or bid in _active_agent_cards:
+            continue
+        if browser_skills.host_of(getattr(card, "url", "") or "") != want:
+            continue
+        if spawned == parent_session_id:
+            own = own or bid
+        else:
+            parent = agent_manager.get_session(spawned)
+            if parent is None or getattr(parent, "status", "") != "running":
+                orphan = orphan or bid
+    return own or orphan
+
+
 async def _create_browser_card(dashboard_id: str, url: str, parent_session_id: str | None = None) -> str:
     """Create a new browser card on the dashboard and return its browser_id."""
     from backend.apps.dashboards.dashboards import _load, _save
@@ -1466,20 +1505,41 @@ async def run_browser_agents(
         task_text = task_def.get("task", "")
         url = task_def.get("url", "")
 
+        reused = False
         if not browser_id and dashboard_id:
-            browser_id = await _create_browser_card(dashboard_id, url, parent_session_id)
-            await asyncio.sleep(2.0)
+            async with _card_pick_lock:
+                browser_id = _find_reusable_card(dashboard_id, url, parent_session_id)
+                if browser_id:
+                    reused = True
+                else:
+                    browser_id = await _create_browser_card(dashboard_id, url, parent_session_id)
+                _active_agent_cards.add(browser_id)
+            if reused:
+                logger.info(f"[browser-agent] reusing same-host card {browser_id} instead of stacking another webview")
+                if url:
+                    # a retry starts from the task's entry URL, never the failed attempt's leftover page state
+                    try:
+                        await execute_browser_tool("BrowserNavigate", {"url": url}, browser_id)
+                    except Exception:
+                        pass
+            else:
+                await asyncio.sleep(2.0)
+        elif browser_id:
+            _active_agent_cards.add(browser_id)
 
         is_pre_selected = browser_id in pre_selected
-        return await run_browser_agent(
-            task=task_text,
-            browser_id=browser_id,
-            model=model,
-            dashboard_id=dashboard_id,
-            pre_selected=is_pre_selected,
-            initial_url=url if url and browser_id not in pre_selected else None,
-            parent_session_id=parent_session_id,
-        )
+        try:
+            return await run_browser_agent(
+                task=task_text,
+                browser_id=browser_id,
+                model=model,
+                dashboard_id=dashboard_id,
+                pre_selected=is_pre_selected,
+                initial_url=url if url and browser_id not in pre_selected else None,
+                parent_session_id=parent_session_id,
+            )
+        finally:
+            _active_agent_cards.discard(browser_id)
 
     results = await asyncio.gather(*[_run_one(t) for t in tasks], return_exceptions=True)
 

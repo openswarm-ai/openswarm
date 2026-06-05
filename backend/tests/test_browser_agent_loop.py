@@ -1094,3 +1094,52 @@ def test_prior_domain_hint_is_seeded_into_system_prompt(monkeypatch):
     if isinstance(system, list):
         assert system[-1].get("cache_control", {}).get("type") == "ephemeral"
     assert len(aux.calls) == 0  # no exhaustion, no adjudication on a clean run
+
+
+def test_find_reusable_card_reuses_own_then_orphan_never_user(monkeypatch):
+    # Concurrent same-site webviews wedge each other, so a re-dispatch must
+    # reuse the parent's own (or an orphaned) spawned card instead of stacking
+    # another. User-created cards (no spawned_by) are never grabbed implicitly.
+    import backend.apps.dashboards.dashboards as dash_mod
+    import backend.apps.agents.agent_manager as am_mod
+
+    class _Card:
+        def __init__(self, url, spawned_by):
+            self.url = url
+            self.spawned_by = spawned_by
+
+    class _Layout:
+        browser_cards = {
+            "b-user": _Card("https://www.linkedin.com/feed/", None),
+            "b-orphan": _Card("https://www.linkedin.com/search/x", "dead-parent"),
+            "b-own": _Card("https://www.linkedin.com/in/y", "p1"),
+            "b-hn": _Card("https://news.ycombinator.com/", "p1"),
+        }
+
+    class _Dash:
+        layout = _Layout()
+
+    monkeypatch.setattr(dash_mod, "_load", lambda did: _Dash(), raising=True)
+
+    class _Done:
+        status = "completed"
+    monkeypatch.setattr(am_mod.agent_manager, "get_session", lambda sid: _Done(), raising=False)
+
+    target = "https://www.linkedin.com/search/results/people/?keywords=t"
+    # the parent's own same-host card wins
+    assert BA._find_reusable_card("d1", target, "p1") == "b-own"
+    # a different parent skips p1's... unless that parent finished (orphan); first orphan wins
+    assert BA._find_reusable_card("d1", target, "p2") == "b-orphan"
+    # never a different host
+    assert BA._find_reusable_card("d1", "https://example.com/", "p1") == ""
+    # an actively-driven card is never grabbed
+    BA._active_agent_cards.update({"b-own", "b-orphan"})
+    try:
+        assert BA._find_reusable_card("d1", target, "p1") == ""
+    finally:
+        BA._active_agent_cards.clear()
+    # cards of a still-RUNNING other parent are off limits
+    class _Running:
+        status = "running"
+    monkeypatch.setattr(am_mod.agent_manager, "get_session", lambda sid: _Running(), raising=False)
+    assert BA._find_reusable_card("d1", target, "p2") == ""
