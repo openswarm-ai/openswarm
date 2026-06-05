@@ -1507,8 +1507,11 @@ async def run_browser_agents(
 
         reused = False
         if not browser_id and dashboard_id:
+            # the url param is often empty with the target buried in the task
+            # text; a url there still names the host we must not duplicate
+            host_src = url or next(iter(re.findall(r"https?://[^\s)\"'<>]+", task_text)), "")
             async with _card_pick_lock:
-                browser_id = _find_reusable_card(dashboard_id, url, parent_session_id)
+                browser_id = _find_reusable_card(dashboard_id, host_src, parent_session_id)
                 if browser_id:
                     reused = True
                 else:
