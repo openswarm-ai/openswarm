@@ -599,7 +599,6 @@ const BrowserCard: React.FC<Props> = ({
   const isSearch = isGoogleSearch(activeUrl);
 
   const accentColor = c.accent.primary;
-  const accentHover = c.accent.hover;
 
   const glowingBrowserCards = useAppSelector((s) => s.dashboardLayout.glowingBrowserCards);
   const isGlowingFromRedux = !!glowingBrowserCards[browserId];
@@ -688,26 +687,6 @@ const BrowserCard: React.FC<Props> = ({
         // No glow pulse on purpose: animated box-shadow repaints card+halo every frame over a webview; the static border and tether arrow say "in use" for free.
       }}
     >
-
-      {agentActive && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '2px',
-            zIndex: 20,
-            background: `linear-gradient(90deg, transparent, ${accentColor}, ${accentHover}, ${accentColor}, transparent)`,
-            backgroundSize: '200% 100%',
-            animation: 'border-shimmer 2s linear infinite',
-            '@keyframes border-shimmer': {
-              '0%': { backgroundPosition: '200% 0' },
-              '100%': { backgroundPosition: '-200% 0' },
-            },
-          }}
-        />
-      )}
 
       <Box
         ref={tabBarRef}
