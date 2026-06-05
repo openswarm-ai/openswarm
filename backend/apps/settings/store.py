@@ -66,10 +66,30 @@ def _preserve_corrupt_settings() -> None:
         pass
 
 
+# In-memory mirror of SETTINGS_FILE, revalidated by stat (mtime+size) on every load
+# so even a hand-edited file or an unexpected writer is picked up immediately. A stat
+# skips the open+parse+validate that Defender turns into 5-50ms on Windows. Copies on
+# both sides keep handler isolation: callers mutate their copy, never the cache.
+_cached_settings: AppSettings | None = None
+_cached_sig: tuple[int, int] | None = None
+
+
+def _settings_sig() -> tuple[int, int] | None:
+    try:
+        st = os.stat(SETTINGS_FILE)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
 def load_settings() -> AppSettings:
     """Load settings from JSON file, returning defaults if not found. Never raises
     on a corrupt or version-mismatched file: a single bad settings.json must not
     brick boot (it is read at startup, by the settings endpoint, and per dispatch)."""
+    global _cached_settings, _cached_sig
+    sig = _settings_sig()
+    if sig is not None and _cached_settings is not None and sig == _cached_sig:
+        return _cached_settings.model_copy(deep=True)
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE) as f:
@@ -84,6 +104,8 @@ def load_settings() -> AppSettings:
         settings = _coerce_settings(_migrate_legacy_fields(raw))
         if settings.default_system_prompt is None:
             settings.default_system_prompt = DEFAULT_SYSTEM_PROMPT
+        _cached_settings = settings.model_copy(deep=True)
+        _cached_sig = sig
         return settings
     return AppSettings()
 
@@ -94,6 +116,7 @@ _settings_write_lock = threading.Lock()
 
 def _atomic_write_settings(payload: dict) -> None:
     """Atomic SETTINGS_FILE write; call via save_settings*, not directly."""
+    global _cached_settings, _cached_sig
     with _settings_write_lock:
         os.makedirs(DATA_DIR, exist_ok=True)
         fd, tmp = tempfile.mkstemp(prefix=".settings.", suffix=".tmp", dir=DATA_DIR)
@@ -104,6 +127,11 @@ def _atomic_write_settings(payload: dict) -> None:
             for attempt in range(2):
                 try:
                     os.replace(tmp, SETTINGS_FILE)
+                    # Refresh the cache inside the lock so cache order matches disk order.
+                    _cached_settings = _coerce_settings(_migrate_legacy_fields(dict(payload)))
+                    if _cached_settings.default_system_prompt is None:
+                        _cached_settings.default_system_prompt = DEFAULT_SYSTEM_PROMPT
+                    _cached_sig = _settings_sig()
                     return
                 except PermissionError:
                     if attempt == 1:

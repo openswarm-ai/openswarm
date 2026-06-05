@@ -114,7 +114,33 @@ def _reclassify_existing_tools() -> None:
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
+# Tool JSONs total ~1.5MB and _load_all runs on every dispatch, prompt build, and
+# MCPSearch keystroke; the cache skips re-parsing, revalidated by a per-file stat
+# signature so any write (ours or external) invalidates instantly. Callers treat
+# the returned ToolDefinitions as immutable; mutate via _load(tool_id) + _save.
+_tools_cache: list[ToolDefinition] | None = None
+_tools_cache_sig: tuple | None = None
+
+
+def _tools_sig() -> tuple | None:
+    if not os.path.exists(DATA_DIR):
+        return ()
+    try:
+        entries = []
+        for fname in sorted(os.listdir(DATA_DIR)):
+            if fname.endswith(".json"):
+                st = os.stat(os.path.join(DATA_DIR, fname))
+                entries.append((fname, st.st_mtime_ns, st.st_size))
+        return tuple(entries)
+    except OSError:
+        return None
+
+
 def _load_all() -> list[ToolDefinition]:
+    global _tools_cache, _tools_cache_sig
+    sig = _tools_sig()
+    if sig is not None and _tools_cache is not None and sig == _tools_cache_sig:
+        return list(_tools_cache)
     result = []
     if not os.path.exists(DATA_DIR):
         return result
@@ -122,6 +148,9 @@ def _load_all() -> list[ToolDefinition]:
         if fname.endswith(".json"):
             with open(os.path.join(DATA_DIR, fname)) as f:
                 result.append(ToolDefinition(**json.load(f)))
+    if sig is not None:
+        _tools_cache = list(result)
+        _tools_cache_sig = sig
     return result
 
 
