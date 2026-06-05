@@ -1040,7 +1040,7 @@ const BrowserCard: React.FC<Props> = ({
               {...({ allowpopups: 'true' } as any) /* React drops boolean-valued unknown attrs, so string it stays; @types/react wrongly says boolean */}
               useragent={chromeUserAgent}
               {...(webviewPreloadPath ? { preload: webviewPreloadPath } : {})}
-              webpreferences="plugins=yes, autoplayPolicy=no-user-gesture-required"
+              webpreferences="plugins=yes, autoplayPolicy=no-user-gesture-required, backgroundThrottling=no" /* throttling: guests get occlusion-suspended on their own even with the host's disable-renderer-backgrounding, freezing agent JS when the window is covered */
               style={{
                 position: 'absolute',
                 top: 0,
