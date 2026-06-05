@@ -2357,16 +2357,31 @@ async function ensureDebuggerAttached(wc) {
     throw new Error(`debugger.attach failed: ${err.message || err}`);
   }
   // Auto-attach to cross-origin child frames so the agent can see/click into
-  // them. Non-fatal if it fails; single-frame perception still works.
+  // them. Non-fatal if it fails; single-frame perception still works. Raced
+  // so a dead pipe can't hang the attach path itself.
   wireChildSessions(wc);
   try {
-    await wc.debugger.sendCommand('Target.setAutoAttach',
-      { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+    await raceCdp(wc.debugger.sendCommand('Target.setAutoAttach',
+      { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }), 5000, 'setAutoAttach');
   } catch (_) {}
   // Tier-2: record the page's own XHR/fetch endpoints as the agent drives it.
   try {
-    await wc.debugger.sendCommand('Network.enable', {});
+    await raceCdp(wc.debugger.sendCommand('Network.enable', {}), 5000, 'Network.enable');
   } catch (_) {}
+}
+
+// debugger.sendCommand can hang FOREVER when the target's pipe breaks without
+// a detach event (renderer process swap, wedged guest). Unraced, one hung call
+// poisons the per-card queue and every later command "times out" while
+// navigate (non-CDP) keeps working: the exact wedge we kept chasing.
+const CDP_COMMAND_TIMEOUT_MS = 10000;
+
+function raceCdp(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 async function sendCdpCommandSerialized(wcId, method, params, sessionId) {
@@ -2382,7 +2397,22 @@ async function sendCdpCommandSerialized(wcId, method, params, sessionId) {
       await ensureDebuggerAttached(wc);
       // sessionId undefined routes to the root frame; a child-frame sessionId
       // routes into that OOPIF.
-      return await wc.debugger.sendCommand(method, params || {}, sessionId);
+      try {
+        return await raceCdp(
+          wc.debugger.sendCommand(method, params || {}, sessionId),
+          CDP_COMMAND_TIMEOUT_MS, `CDP ${method}`,
+        );
+      } catch (err) {
+        if (!String(err && err.message).includes('timed out after')) throw err;
+        // The pipe is likely dead; recycle the attachment and retry once.
+        console.log(`[cdp] ${method} hung on wcId ${wcId}; recycling debugger attachment`);
+        try { wc.debugger.detach(); } catch { /* already detached */ }
+        await ensureDebuggerAttached(wc);
+        return await raceCdp(
+          wc.debugger.sendCommand(method, params || {}, sessionId),
+          CDP_COMMAND_TIMEOUT_MS, `CDP ${method} (after reattach)`,
+        );
+      }
     });
   cdpQueueByWcId.set(wcId, next);
   try {
