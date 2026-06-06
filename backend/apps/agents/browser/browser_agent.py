@@ -1313,10 +1313,9 @@ async def run_browser_agent(
                 )
                 if _auto_state:
                     result["text"] = f"{result.get('text') or ''}{_auto_state}"
-                    # a mutation attached fresh state; it stays "available" through
-                    # intervening reads (Wait/Extract don't invalidate it), so a
-                    # later solo re-list is still caught as redundant.
-                    fresh_state_pending = True
+                # mutating actions hand back fresh state; reads don't. drives the
+                # redundant-read nudge below.
+                fresh_state_pending = bool(_auto_state)
 
                 # Deferred replay re-check: the orchestrator often opens a fresh
                 # card on the wrong host, so the dispatch-time replay missed. Once
@@ -1436,7 +1435,6 @@ async def run_browser_agent(
                 if (tu.name in ("BrowserListInteractives", "BrowserGetText")
                         and _had_fresh_state and "error" not in result):
                     redundant_read_nudges += 1
-                    fresh_state_pending = False  # nudge once per attached-state cluster
                     logger.info(
                         f"[browser-batching {session_id}] redundant-read nudge #{redundant_read_nudges} "
                         f"({tu.name}) at turn {turn}"
