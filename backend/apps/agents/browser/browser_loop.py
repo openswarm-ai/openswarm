@@ -32,6 +32,41 @@ _LOOP_REPEAT_THRESHOLD = 2  # the SECOND identical (tool,input,result) is alread
 _LOOP_HARD_CAP = 5
 
 
+# Universal close-affordance vocabulary for blocking popups (cookie walls,
+# upsells, app-install nags, coachmarks). These phrases sit on a throwaway
+# dismiss and NEVER on a control a real task needs (you never "No thanks" your
+# way through a send), so a mechanical dismiss of one cannot close something the
+# task required. Deliberately omits generic "Close"/"Dismiss"/"Skip", which DO
+# appear on needed dialogs (e.g. "Close your conversation"). Keys on the pattern,
+# not any one site, so it generalizes.
+_DISMISS_NAMES = frozenset({
+    "no thanks", "no, thanks", "maybe later", "not now", "skip for now",
+    "remind me later", "got it", "decline", "no, maybe later", "not interested",
+})
+# never dismiss anything that smells like security or a real decision
+_DANGER_NAME_RE = re.compile(r"verif|confirm|2fa|password|sign|pay|delete|send|post|submit", re.I)
+_ROW_RE = re.compile(r'<\s*([a-z]+)\s+"([^"]*)"', re.I)  # matches a [i]<role "name"> row
+
+
+def interstitial_dismiss_target(interactives_text: str) -> str | None:
+    """The accessible name of an unambiguous junk-popup close control on the
+    page, or None. Conservative by construction: matches only throwaway-dismiss
+    vocabulary that never sits on a task-needed control, on a button/link, and
+    never anything with security/confirm/commit wording, so a mechanical dismiss
+    can never close a dialog the task actually required."""
+    for line in (interactives_text or "").splitlines():
+        m = _ROW_RE.search(line)
+        if not m:
+            continue
+        role, name = m.group(1).lower(), m.group(2).strip()
+        if role not in ("button", "link"):
+            continue
+        norm = re.sub(r"[^a-z, ]", "", name.lower()).strip()
+        if norm in _DISMISS_NAMES and not _DANGER_NAME_RE.search(name):
+            return name
+    return None
+
+
 def _hash_tool_call(tool_name: str, tool_input: dict, result: dict) -> tuple[str, str, str]:
     """Build a stable hash key for a tool call, including its result.
 

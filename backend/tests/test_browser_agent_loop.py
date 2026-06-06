@@ -1301,3 +1301,30 @@ def test_informational_gate_strips_outcome_boilerplate_on_tie_break():
     assert not deliverable_is_informational(short_action, "")
     listy = "Found these:\n- a\n- b\n- c"
     assert deliverable_is_informational(listy, "")
+
+
+def test_interstitial_dismiss_target_generalizable_and_safe():
+    from backend.apps.agents.browser.browser_loop import interstitial_dismiss_target
+    # a junk popup with a throwaway-dismiss control gets found (any site)
+    page = '\n'.join([
+        '[3]<button "Try Premium for free">',
+        '[4]<button "No thanks">',
+        '[9]<textbox "Write a message…">',
+    ])
+    assert interstitial_dismiss_target(page) == "No thanks"
+    # cookie/upsell variants
+    assert interstitial_dismiss_target('[1]<button "Maybe later">') == "Maybe later"
+    assert interstitial_dismiss_target('[1]<button "Not now">') == "Not now"
+    assert interstitial_dismiss_target('[1]<link "Got it">') == "Got it"
+    # NEVER dismisses task-needed or security/commit controls
+    assert interstitial_dismiss_target('[1]<button "Send">') is None
+    assert interstitial_dismiss_target('[1]<button "Message">') is None
+    assert interstitial_dismiss_target('[1]<button "Close your conversation with Tyler">') is None
+    assert interstitial_dismiss_target('[1]<button "Confirm">') is None
+    assert interstitial_dismiss_target('[1]<button "Verify your identity">') is None
+    # generic "Close"/"Dismiss"/"Skip" are NOT matched (they sit on needed dialogs)
+    assert interstitial_dismiss_target('[1]<button "Close">') is None
+    assert interstitial_dismiss_target('[1]<button "Skip">') is None
+    # empty / no rows
+    assert interstitial_dismiss_target('') is None
+    assert interstitial_dismiss_target('just some text') is None

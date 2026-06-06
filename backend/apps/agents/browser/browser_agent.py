@@ -36,6 +36,7 @@ from backend.apps.agents.browser.browser_loop import (
     card_is_unavailable,
     completion_is_honest,
     deliverable_is_informational,
+    interstitial_dismiss_target,
     replay_recheck_is_safe,
     stagnation_exhausted,
 )
@@ -475,6 +476,7 @@ async def run_browser_agent(
     # auto candidate scan: aux-read results pages so pick-a-candidate happens in
     # the same turn as the landing, not a read-then-decide pair later
     auto_scanned_urls: set[str] = set()
+    dismissed_popup_urls: set[str] = set()  # interstitials auto-closed, once per URL
     auto_scan_count = 0
     llm_ms_total = 0
     out_tokens_total = 0  # sum of per-turn output tokens (the latency driver)
@@ -1434,6 +1436,29 @@ async def run_browser_agent(
                     # intervening reads (Wait/Extract don't invalidate it), so a
                     # later solo re-list is still caught as redundant.
                     fresh_state_pending = True
+
+                # Auto-dismiss a blocking junk popup (cookie wall / upsell /
+                # coachmark) before it costs the model a turn. Mechanical, once
+                # per URL, only on the tight throwaway-dismiss vocabulary that
+                # never sits on a task-needed control, so it can't close anything
+                # required. After closing, re-list so the model sees the page beneath.
+                if tu.name in _AUTO_STATE_TOOLS and "error" not in result:
+                    _pop_url = (result.get("url") or last_seen_url or "").split("#")[0]
+                    if _pop_url and _pop_url not in dismissed_popup_urls:
+                        _close = interstitial_dismiss_target("\n".join(attached_state_seen))
+                        if _close:
+                            dismissed_popup_urls.add(_pop_url)
+                            _dres = await _cancellable(execute_browser_tool(
+                                "BrowserClickByName", {"name": _close}, browser_id, tab_id))
+                            _dok = isinstance(_dres, dict) and "error" not in _dres
+                            logger.info(f"[browser-popup {session_id}] auto-dismissed '{_close}' "
+                                        f"ok={_dok} on {_pop_url[:80]}")
+                            if _dok:
+                                _fresh = await _post_action_state(
+                                    "BrowserClickByName", {}, _dres or {}, browser_id, tab_id,
+                                    _wait_exec, current_next_goal, seen_lines=attached_state_seen)
+                                result["text"] = (f"{result.get('text') or ''}\n\n[auto] Closed a blocking "
+                                                  f"popup ('{_close}'); the page beneath is now active.{_fresh}")
 
                 # Auto candidate scan: landing on a results-shaped page normally
                 # costs a read-then-decide turn pair; the cheap aux model reads it
