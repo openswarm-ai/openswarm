@@ -1463,14 +1463,22 @@ async def run_browser_agent(
                     # later solo re-list is still caught as redundant.
                     fresh_state_pending = True
 
-                # Endgame helper: the model just typed into a message composer
-                # (BrowserClickIndex with `text`); the worst part of the endgame is
-                # then re-hunting for the Send button (it reshuffles / sits off
-                # screen). Locate it from the fresh state and hand it over, so the
-                # model goes straight to the deliberate send. We NEVER click Send.
-                if (_COMPOSE_HELPER and tu.name == "BrowserClickIndex"
-                        and str((tu.input or {}).get("text") or "").strip()
-                        and "error" not in result):
+                # Endgame helper: the model just typed into a message composer; the
+                # worst part of the endgame is then re-hunting for the Send button
+                # (it renders a beat late). Locate it from fresh state and hand it
+                # over so the model goes straight to the deliberate send (we NEVER
+                # click Send). The fill can be a SOLO BrowserClickIndex(text) OR a
+                # click_index sub-action inside a BrowserBatch (caught live: r76
+                # batched the fill and the solo-only trigger missed it).
+                def _filled_composer(_tu) -> bool:
+                    if _tu.name == "BrowserClickIndex":
+                        return bool(str((_tu.input or {}).get("text") or "").strip())
+                    if _tu.name == "BrowserBatch":
+                        return any(a.get("type") == "click_index"
+                                   and str((a.get("params") or {}).get("text") or "").strip()
+                                   for a in ((_tu.input or {}).get("actions") or []))
+                    return False
+                if _COMPOSE_HELPER and "error" not in result and _filled_composer(tu):
                     # The compose Send button reliably renders a beat AFTER the text
                     # commits (diagnosed live: absent from BOTH the AX list and a DOM
                     # scan right after typing, then it appears in the AX list a few
