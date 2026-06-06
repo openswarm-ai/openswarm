@@ -652,6 +652,131 @@ def find_skill(host: str, task: str) -> dict | None:
     return hit
 
 
+# --- route hints (advisory reuse when mechanical replay can't run) ---------
+# Replay is exact-key and refuses send-class flows, so a known route often sits
+# unused while the model re-explores it. A route HINT closes that gap: the best
+# similar skill is rendered as advisory text the live agent adapts and verifies,
+# so it generalizes across wordings and stays send-safe (the agent still
+# confirms everything; a stale hint just wastes one glance).
+_HINT_MIN_OVERLAP = 0.5
+_HINT_MAX_STEPS = 10
+
+
+def find_similar_skill(host: str, task: str) -> tuple[dict | None, float]:
+    """Best non-quarantined skill on this host by templated-sig token overlap
+    (Jaccard). Returns (skill, score) or (None, 0.0). ADVISORY ONLY: replay
+    stays exact-key; this feeds route hints, never mechanical execution."""
+    if not host:
+        return None, 0.0
+    sig = _sig(task)
+    stoks = set(sig.split())
+    if not stoks:
+        return None, 0.0
+    best, best_score = None, 0.0
+    for other_sig, s in _host_skills(host).items():
+        if s.get("state") == _QUARANTINE or not s.get("steps"):
+            continue
+        otoks = set(other_sig.split())
+        if not otoks:
+            continue
+        score = len(stoks & otoks) / len(stoks | otoks)
+        # a proven skill wins ties against an unproven one
+        if score > best_score or (score == best_score and best is not None
+                                  and s.get("state") == _TRUSTED and best.get("state") != _TRUSTED):
+            best, best_score = s, score
+    if best and best_score >= _HINT_MIN_OVERLAP:
+        return best, best_score
+    return None, 0.0
+
+
+def _hint_step_line(step: dict, values: list[str]) -> str:
+    tool = step.get("tool", "")
+    p = step.get("params", {}) or {}
+    if tool == "BrowserNavigate":
+        return f"Navigate to {p.get('url', '')}"
+    if tool == "BrowserClickByName":
+        name = (p.get("name") or "")[:60]
+        role = p.get("role") or "element"
+        return f"Click the {role} named \"{name}\""
+    if tool == "BrowserClick":
+        return f"Click the element matching {p.get('selector', '')!r}"
+    if tool == "BrowserType":
+        if "value_slot" in p:
+            idx = p["value_slot"]
+            val = values[idx] if isinstance(idx, int) and 0 <= idx < len(values) else None
+            shown = f'"{val[:80]}"' if val else "the quoted text from your task"
+            return f"Type {shown} into {str(p.get('selector') or 'the input')[:50]}"
+        return f"Type \"{str(p.get('text') or '')[:80]}\" into {str(p.get('selector') or 'the input')[:50]}"
+    if tool == "BrowserPressKey":
+        return f"Press {p.get('key', '')}"
+    if tool == "BrowserScroll":
+        return f"Scroll {p.get('direction', 'down')}"
+    return f"{tool}({str(p)[:60]})"
+
+
+def render_route_hint(skill: dict, task: str, score: float) -> tuple[str, list[tuple]]:
+    """Compact advisory route block from a skill's steps, plus the step keys for
+    adoption measurement. Slots are filled from the LIVE task's quoted values
+    (never from disk); the first irreversible step is flagged solo-only."""
+    steps = (skill.get("steps") or [])[:_HINT_MAX_STEPS]
+    if not steps:
+        return "", []
+    from backend.apps.agents.browser import browser_batch_replay
+    _, values = template_task(task)
+    # first_unsafe_step is the batching boundary (it stops at composer typing
+    # too); the IRREVERSIBLE flag goes only on genuinely outward-facing clicks
+    unsafe_i, _why = first_unsafe_step(steps)
+    lines = []
+    for i, s in enumerate(steps):
+        mark = ""
+        if s.get("tool") in ("BrowserClickByName", "BrowserClick"):
+            p = s.get("params", {}) or {}
+            name = p.get("name") or p.get("selector") or ""
+            if len(name) <= 40 and browser_batch_replay.is_send_step({"action": "click", "name": name}):
+                mark = " [IRREVERSIBLE: do this SOLO with `expect` proof, never in a batch]"
+        lines.append(f"{i + 1}. {_hint_step_line(s, values)}{mark}")
+    trust = "proven by a verified rerun" if skill.get("state") == _TRUSTED else "from one verified success"
+    safe_until = unsafe_i if unsafe_i >= 0 else len(steps)
+    batch_line = (
+        f"Steps 1-{safe_until} are routine; combine them into ONE BrowserBatch where the page allows."
+        if safe_until >= 2 else ""
+    )
+    hint = (
+        f"\n\n[route hint, {int(score * 100)}% similar task done before on this site, {trust}] "
+        "Adapt where the live page differs and verify each step as usual:\n"
+        + "\n".join(lines) + (f"\n{batch_line}" if batch_line else "")
+    )
+    return hint, [_step_key(s) for s in steps]
+
+
+def hint_step_adopted(step_key: tuple, action_log: list[dict]) -> bool:
+    """Did any executed action match this hinted step? Loose identity on
+    purpose: name/url/selector containment, because the live page re-resolves
+    details. Powers the adoption metric only, never control flow."""
+    tool = step_key[0] if step_key else ""
+    for a in action_log:
+        atool = a.get("tool", "")
+        inp = a.get("input") or {}
+        if tool == "BrowserNavigate" and atool == "BrowserNavigate":
+            hinted = str(step_key[1] or "")
+            if hinted and str(inp.get("url", "")).split("?")[0] == hinted.split("?")[0]:
+                return True
+        elif tool == "BrowserClickByName":
+            hinted_name = str(step_key[2] or "").lower()
+            clicked = str(a.get("clicked_name") or inp.get("name") or "").lower()
+            if hinted_name and clicked and (hinted_name in clicked or clicked in hinted_name):
+                return True
+            for sub in (a.get("sub_results") or []):
+                sname = str((sub or {}).get("clicked_name") or "").lower()
+                if hinted_name and sname and (hinted_name in sname or sname in hinted_name):
+                    return True
+        elif tool == "BrowserType" and atool in ("BrowserType", "BrowserBatch"):
+            return True  # any typing counts; payloads vary by design
+        elif tool in ("BrowserPressKey", "BrowserScroll") and atool == tool:
+            return True
+    return False
+
+
 def mark_replay_succeeded(host: str, task: str) -> None:
     """A replay ran end to end. Count it and, if the skill was still on
     probation, PROMOTE it to trusted (the verify gate just passed)."""

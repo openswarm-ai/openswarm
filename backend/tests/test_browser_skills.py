@@ -591,3 +591,77 @@ def test_distill_batch_aborted_tail_and_missing_identities():
         "input": {"actions": [{"type": "click_index", "params": {"index": 1}}]},
     }
     assert distill_steps([old_shape]) == []
+
+
+# --- route hints (advisory reuse when replay can't run) ---------------------
+def _record_dm_skill(host="www.linkedin.com"):
+    log = [
+        {"tool": "BrowserNavigate", "input": {"url": f"https://{host}/search/results/people/?keywords=tyler+chen"}, "ok": True},
+        {"tool": "BrowserClickIndex", "input": {"index": 7}, "ok": True,
+         "clicked_role": "link", "clicked_name": "Tyler Chen"},
+        {"tool": "BrowserClickIndex", "input": {"index": 68}, "ok": True,
+         "clicked_role": "button", "clicked_name": "Message"},
+        {"tool": "BrowserType", "input": {"selector": "div.msg-form", "text": "hello there r1"}, "ok": True},
+        {"tool": "BrowserClickIndex", "input": {"index": 113}, "ok": True,
+         "clicked_role": "button", "clicked_name": "Send"},
+    ]
+    task = "go to tyler chen's linkedin and text him 'hello there r1'"
+    assert sk.record_skill(host, task, log)
+    return host, task
+
+
+def test_find_similar_skill_exact_and_variant(_isolated_skills):
+    host, task = _record_dm_skill()
+    s, score = sk.find_similar_skill(host, task)
+    assert s is not None and score == 1.0
+    # different quoted payload = same sig (slot), still exact
+    s2, score2 = sk.find_similar_skill(host, "go to tyler chen's linkedin and text him 'bye now r2'")
+    assert s2 is not None and score2 == 1.0
+    # reworded but overlapping task clears the threshold
+    s3, score3 = sk.find_similar_skill(host, "text tyler chen on linkedin 'yo r3'")
+    assert s3 is not None and 0.5 <= score3 < 1.0
+    # unrelated task does not
+    s4, _ = sk.find_similar_skill(host, "order a pizza from dominos")
+    assert s4 is None
+    # wrong host never matches
+    s5, _ = sk.find_similar_skill("www.reddit.com", task)
+    assert s5 is None
+
+
+def test_find_similar_skill_skips_quarantined(_isolated_skills):
+    host, task = _record_dm_skill()
+    sk.mark_replay_failed(host, task)  # probation -> quarantine
+    s, _ = sk.find_similar_skill(host, task)
+    assert s is None
+
+
+def test_render_route_hint_fills_slots_and_flags_send(_isolated_skills):
+    host, task = _record_dm_skill()
+    s, score = sk.find_similar_skill(host, "go to tyler chen's linkedin and text him 'fresh payload r9'")
+    hint, keys = sk.render_route_hint(s, "go to tyler chen's linkedin and text him 'fresh payload r9'", score)
+    assert "route hint" in hint and len(keys) == 5
+    # the live task's payload appears; the recorded one never does
+    assert "fresh payload r9" in hint and "hello there r1" not in hint
+    assert "IRREVERSIBLE" in hint and "SOLO" in hint
+    # the send step is flagged, not the earlier ones
+    lines = [l for l in hint.splitlines() if l[:1].isdigit()]
+    assert "IRREVERSIBLE" in lines[-1] and "IRREVERSIBLE" not in lines[0]
+    # routine prefix invites one batch
+    assert "BrowserBatch" in hint
+
+
+def test_route_hint_adoption_matching(_isolated_skills):
+    host, task = _record_dm_skill()
+    s, score = sk.find_similar_skill(host, task)
+    _, keys = sk.render_route_hint(s, task, score)
+    run_log = [
+        {"tool": "BrowserNavigate", "input": {"url": f"https://{host}/search/results/people/?keywords=tyler+chen&origin=GLOBAL"}, "ok": True},
+        {"tool": "BrowserClickIndex", "input": {"index": 3}, "ok": True,
+         "clicked_role": "link", "clicked_name": "Tyler Chen Premium 1st"},
+        {"tool": "BrowserType", "input": {"selector": "div.msg-form", "text": "x"}, "ok": True},
+    ]
+    adopted = [sk.hint_step_adopted(k, run_log) for k in keys]
+    # navigate (query-stripped match), profile click (containment), type all adopt;
+    # the Message and Send clicks did not run
+    assert adopted[0] and adopted[1] and adopted[3]
+    assert not adopted[2] and not adopted[4]
