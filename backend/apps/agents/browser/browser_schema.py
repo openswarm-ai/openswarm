@@ -264,14 +264,14 @@ BROWSER_TOOLS_SCHEMA = [
     {
         "name": "BrowserClickIndex",
         "description": (
-            "Click an element by its numeric index from BrowserListInteractives. "
+            "SOLO click, reserved for two cases: (1) the final IRREVERSIBLE step "
+            "(Send/Submit/Pay/Post), always alone with `expect` proof, and (2) "
+            "filling a text box via `text` (focused directly by node, so it works "
+            "inside messaging/compose overlays where coordinate clicks miss). "
+            "Routine clicks belong inside BrowserBatch as click_index sub-actions. "
             "Uses native OS-level mouse events (event.isTrusted=true) so it works "
-            "on sites that filter out synthetic JS events. Always call "
-            "BrowserListInteractives first to get a fresh index list. If the click "
-            "returns 'index no longer valid', the page changed; re-list and retry. "
-            "If the index is a TEXT BOX (role textbox or searchbox), it is "
-            "focused directly by node (no coordinates, so it works inside messaging/"
-            "compose overlays where clicks miss); pass `text` to fill it in one call."
+            "on sites that filter synthetic JS events. If the click returns "
+            "'index no longer valid', the page changed; re-list and retry."
         ),
         "input_schema": {
             "type": "object",
@@ -296,12 +296,13 @@ BROWSER_TOOLS_SCHEMA = [
     {
         "name": "BrowserBatch",
         "description": (
-            "Run a sequence of browser actions in one tool call. Each sub-action "
-            "is executed in order, with the URL captured before/after each one. "
-            "If the URL changes mid-batch (the page navigated), the rest of the "
-            "batch is aborted and you get a partial result. Use this when you "
-            "have a known sequence; typing then pressing Enter, swiping multiple "
-            "times, clicking through pagination. Max 5 actions per batch.\n\n"
+            "Your standard way to ACT on the page. Every mutation (navigate, "
+            "click, type, press, scroll) is a sub-action in this array, 1-5 per "
+            "call; an array of one is fine when that is genuinely all you know. "
+            "Each sub-action executes in order with the URL captured before/after. "
+            "If the URL changes mid-batch (the page navigated), the rest is "
+            "aborted and you get a partial result plus fresh state, so a "
+            "conservative batch costs nothing.\n\n"
             "Sub-action types and their params:\n"
             "- click_index: { index: int }\n"
             "- press_key: { key: str }\n"
@@ -547,6 +548,14 @@ BROWSER_TOOLS_SCHEMA = [
     },
 ]
 
+# Schema-forced batching: the model ignored every prompt-level batching
+# invitation (0 adoptions across 8 measured runs), so the single-step mutating
+# tools are not offered to it at all; acting means a BrowserBatch array, and
+# the one deliberate solo path is BrowserClickIndex (irreversible step with
+# expect, or a text-box fill). Executors and replay still support everything.
+_SOLO_MUTATORS_HIDDEN = {"BrowserNavigate", "BrowserClick", "BrowserType", "BrowserScroll", "BrowserPressKey"}
+MODEL_VISIBLE_TOOLS = [t for t in BROWSER_TOOLS_SCHEMA if t["name"] not in _SOLO_MUTATORS_HIDDEN]
+
 ACTION_MAP = {
     "BrowserScreenshot": "screenshot",
     "BrowserGetText": "get_text",
@@ -598,9 +607,8 @@ SYSTEM_PROMPT = (
     "waits. Fall back to the UI only when you don't know the site's URL pattern.\n\n"
 
     "## Required output structure: ReportProgress before every action\n"
-    "Before ANY action tool (BrowserClick, BrowserType, BrowserNavigate, "
-    "BrowserPressKey, BrowserScroll, BrowserEvaluate, BrowserClickIndex, "
-    "BrowserBatch), you MUST call the ReportProgress tool in the SAME turn. "
+    "Before ANY action tool (BrowserBatch, BrowserClickIndex, BrowserEvaluate), "
+    "you MUST call the ReportProgress tool in the SAME turn. "
     "ReportProgress takes three short fields:\n"
     "- evaluation_previous: did your last action work? what changed on the page?\n"
     "- working_memory: what have you learned about this site? what worked, what didn't?\n"
@@ -648,7 +656,7 @@ SYSTEM_PROMPT = (
     "## Try multiple strategies, learn from failures\n"
     "Sites vary wildly. When one approach fails, switch tactics; don't retry the same "
     "thing. The escalation ladder, fastest to slowest:\n"
-    "1. **Keyboard shortcuts via BrowserPressKey**; fastest and most reliable on sites "
+    "1. **Keyboard shortcuts via press_key sub-actions**; fastest and most reliable on sites "
     "that support them (Tinder swipes, Gmail navigation, Slack message jump, etc.). "
     "Always check if the site shows keyboard hints in the UI before falling back to clicks. "
     "BrowserPressKey sends real native events that pass the `event.isTrusted` check, so "
@@ -672,9 +680,9 @@ SYSTEM_PROMPT = (
     "To FILL a text box (a `<textbox>` like a message/compose field, including ones inside "
     "a messaging overlay where clicks miss), call BrowserClickIndex on it with a `text` arg: "
     "it focuses the box by node and types the whole string in ONE call, no coordinates, no "
-    "character-by-character. Then send with BrowserPressKey 'Enter' or the Send button.\n"
+    "character-by-character. Then send with a press_key 'Enter' sub-action or the Send button.\n"
     "3. **Semantic CSS selectors**; `button[aria-label='X']`, `[role='button']`, "
-    "`a[href*='...']`. Try these via BrowserGetElements + BrowserClick when the site "
+    "`a[href*='...']`. Try these via BrowserGetElements + a click sub-action when the site "
     "actually has semantic HTML.\n"
     "4. **Text-based JS query**; when both of the above fail, use BrowserEvaluate to "
     "find elements by visible text: `Array.from(document.querySelectorAll('*')).find(el => el.textContent.trim() === 'Like')`.\n"
@@ -682,27 +690,21 @@ SYSTEM_PROMPT = (
     "button visually, then click by approximate coords.\n\n"
 
     "## Speed: fewer turns is the #1 driver\n"
-    "Turns are slow model round-trips; tools are fast, so go fast by taking FEWER "
-    "turns. BATCH BY DEFAULT: every action result already ends with fresh page "
-    "state, so when that state shows you the next 2-3 steps, emit them as ONE "
-    "BrowserBatch instead of one tool per turn; single-action turns are for when "
-    "the next step genuinely depends on something you haven't seen. Good batches: "
-    "filling a form (type, type, click Next); a repeated action (5 swipes, 3 "
-    "scrolls); a deterministic flow (type query, press Enter, click first result); "
-    "or act-then-read by ending the batch with list_interactives, so click, wait, "
-    "list_interactives is ONE turn not three. Max 5 sub-actions. The batch runs "
-    "them in order and STOPS at the first that fails or if the URL changes, so "
-    "order them safely (never a maybe-failing step before a must-do one); a safe "
-    "stop means the rest is skipped and you just continue from the fresh state, so "
-    "a conservative batch costs you nothing. Go solo ONLY when you cannot yet NAME "
-    "the next action's target: its element is not in the state you are reading and "
-    "its name is not predictable. Needing to see a result AFTER acting is never a "
-    "reason to go solo (results auto-attach fresh state, and a failed or page-"
-    "changing step stops the batch safely). If your last 2 turns were single "
-    "actions whose targets were already visible beforehand, you are under-"
-    "batching: batch the next sequence. EXCEPTION: an irreversible step "
-    "(Send/Submit/Pay/Post) is always its own single action with `expect` proof, "
-    "never inside a batch.\n\n"
+    "Turns are slow model round-trips; tools are fast. You act through "
+    "BrowserBatch: an array of 1-5 actions per call (navigate, click_index, "
+    "type, press_key, scroll), executed in order with settle between steps. "
+    "When the state you are reading already names your next 2-3 targets, put "
+    "them in ONE array; an array of one is fine when the next step genuinely "
+    "depends on something you haven't seen. Good arrays: a deterministic flow "
+    "(type query, press Enter, click first result); a repeated action (5 "
+    "swipes); act-then-read by ending with list_interactives so click, wait, "
+    "read is ONE turn not three. The batch STOPS at the first failing or URL-"
+    "changing step and you continue from the fresh attached state, so a "
+    "conservative array costs nothing; order steps safely (never a maybe-"
+    "failing step before a must-do one). TWO solo exceptions, both via "
+    "BrowserClickIndex: the final irreversible step (Send/Submit/Pay/Post) "
+    "always alone with `expect` proof, and text-box fills via its `text` "
+    "param.\n\n"
 
     "## Doing the SAME flow for many inputs? Use BrowserRepeatFlow\n"
     "If you're about to repeat the same mechanical flow for a list (read 10 "
@@ -719,7 +721,7 @@ SYSTEM_PROMPT = (
     "- Do NOT screenshot after every single action. Screenshot ONLY when you genuinely "
     "don't know the page state (start of task, after navigation, after a failure).\n"
     "- NEVER call BrowserWait or BrowserListInteractives right after an action. Every "
-    "mutating action (navigate, click, type, press, scroll, batch) already settles on its "
+    "mutating action (every batch and every solo click) already settles on its "
     "own (waits for network/DOM quiet) and its result ends with '[page state after "
     "action]': a fresh numbered element list. To keep results lean it may show ONLY the "
     "rows that changed plus a count of unchanged ones; unchanged rows keep their numbers, "
@@ -727,14 +729,14 @@ SYSTEM_PROMPT = (
     "re-listing after an action is a wasted turn. Reserve BrowserWait for content you "
     "KNOW arrives late (pass `until` with the exact thing you expect), and "
     "BrowserListInteractives for re-orienting or when the attached list was truncated.\n"
-    "- When scrolling, stop as soon as BrowserScroll reports atTop/atBottom or a 0 delta; "
+    "- When scrolling, stop as soon as a scroll sub-action reports atTop/atBottom or a 0 delta; "
     "don't loop past the end.\n"
     "- Do NOT call BrowserGetElements on the entire body if you already know roughly "
     "where the target is. Scope it: `BrowserGetElements({selector: 'nav'})`.\n"
     "- Do NOT call the same failing tool twice with identical parameters. If selector "
     "X failed, try a DIFFERENT selector or a DIFFERENT strategy.\n"
     "- For repeated actions (swiping through profiles, going through inbox messages), "
-    "use BrowserPressKey if available; it's an order of magnitude faster than DOM clicks.\n"
+    "use press_key sub-actions if available; an order of magnitude faster than DOM clicks.\n"
     "- To RE-READ data you already loaded once (search results, a list, a detail page), "
     "check BrowserListRoutes and use BrowserReplayRoute to fetch it straight from the "
     "site's API instead of re-navigating and re-scraping; it's much faster. This is for "
