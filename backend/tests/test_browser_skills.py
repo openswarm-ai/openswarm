@@ -538,9 +538,27 @@ def test_long_card_blob_click_names_are_not_send_steps():
         {"tool": "BrowserClickByName", "params": {"name": "Send"}},
     ]
     i, why = first_unsafe_step(flow)
-    # the blob at step 1 must NOT be flagged; the conservative cut lands on the
-    # short "Message" composer-opener (shared wordlist), keeping sends live
-    assert i == 2, f"expected the Message click flagged, got {i}: {why}"
+    # the 100ch blob at step 1 isn't flagged (len guard); the composer OPENER
+    # "Message" at step 2 isn't either (reversible, it just opens the box); the
+    # boundary is the real "Send" at step 3, so the prefix can open the composer.
+    assert i == 3, f"expected the Send click flagged, got {i}: {why}"
+
+
+def test_composer_opener_is_not_the_replay_boundary():
+    from backend.apps.agents.browser.browser_skills import first_unsafe_step, replay_safety
+    # clicking "Message"/"DM" just OPENS the composer (reversible); the boundary
+    # is the real Send, so the open-the-composer steps can mechanically replay.
+    flow = [
+        {"tool": "BrowserClickByName", "params": {"role": "link", "name": "Message"}},
+        {"tool": "BrowserClickByName", "params": {"role": "textbox", "name": "Write a message…"}},
+        {"tool": "BrowserClickByName", "params": {"role": "button", "name": "Send"}},
+    ]
+    i, why = first_unsafe_step(flow)
+    assert i == 2 and "irreversible" in why  # the Send (step 3), not Message
+    # a skill that only OPENS a composer (no send) is fully safe to replay
+    opener_only = flow[:2]
+    assert first_unsafe_step(opener_only) == (-1, "")
+    assert replay_safety(opener_only) == (True, "")
 
 
 def test_distill_maps_batched_click_index_to_click_by_name():

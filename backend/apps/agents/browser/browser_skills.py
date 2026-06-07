@@ -342,9 +342,12 @@ def replay_settle_target(step: dict) -> str | None:
 
 
 def first_unsafe_step(steps: list[dict]) -> tuple[int, str]:
-    """Index of the first outward-facing step (click Send/Submit/Pay, type into
-    a composer), -1 if none. Reuses the batch replayer's wordlist so there is
-    exactly one definition of "irreversible"."""
+    """Index of the first GENUINELY irreversible step (click Send/Submit/Pay, type
+    into a composer), -1 if none. This is the prefix-replay/batch boundary, so a
+    composer OPENER ('Message'/'DM' click) is NOT it: opening the box is
+    reversible and replays fine, only the real Send crosses to the live agent.
+    Uses is_replay_boundary (the opener-excluded wordlist) for exactly one
+    definition of the boundary; is_send_step stays conservative for the live guard."""
     from backend.apps.agents.browser import browser_batch_replay
     for i, s in enumerate(steps):
         tool = s.get("tool", "")
@@ -359,7 +362,7 @@ def first_unsafe_step(steps: list[dict]) -> tuple[int, str]:
                 probe = {"action": "click", "name": name}
         elif tool == "BrowserType":
             probe = {"action": "type", "selector": p.get("selector") or ""}
-        if probe and browser_batch_replay.is_send_step(probe):
+        if probe and browser_batch_replay.is_replay_boundary(probe):
             what = probe.get("name") or probe.get("selector")
             return i, f"step {i+1} looks irreversible/outward-facing ({what!r})"
     return -1, ""
@@ -761,7 +764,7 @@ def render_route_hint(skill: dict, task: str, score: float) -> tuple[str, list[t
         if s.get("tool") in ("BrowserClickByName", "BrowserClick"):
             p = s.get("params", {}) or {}
             name = p.get("name") or p.get("selector") or ""
-            if len(name) <= 40 and browser_batch_replay.is_send_step({"action": "click", "name": name}):
+            if len(name) <= 40 and browser_batch_replay.is_replay_boundary({"action": "click", "name": name}):
                 mark = " [IRREVERSIBLE: do this SOLO with `expect` proof, never in a batch]"
         lines.append(f"{i + 1}. {_hint_step_line(s, values)}{mark}")
     trust = "proven by a verified rerun" if skill.get("state") == _TRUSTED else "from one verified success"

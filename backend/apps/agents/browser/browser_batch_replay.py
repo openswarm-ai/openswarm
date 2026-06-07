@@ -115,6 +115,21 @@ _LIVE_IRREVERSIBLE_RE = re.compile(
 )
 
 
+def is_replay_boundary(step: dict) -> bool:
+    """The genuinely irreversible step where a learned skill's mechanical replay
+    must STOP and hand to the live agent. Same as is_send_step EXCEPT a composer
+    OPENER ('Message'/'DM' click) is reversible and NOT a boundary: the prefix can
+    mechanically open the composer, and only the real Send (and composer typing)
+    crosses to the live model. Uses the same opener-excluded wordlist the live
+    send-guard already trusts, so a recorded Send still stops the prefix."""
+    action = step.get("action")
+    if action == "click" and _LIVE_IRREVERSIBLE_RE.search(str(step.get("name") or "")):
+        return True
+    if action == "type" and _COMPOSE_SEL_RE.search(str(step.get("selector") or "")):
+        return True
+    return False
+
+
 def live_batch_guard(actions, seen_lines, composer_pending: bool = False) -> str:
     """Reason string if a live BrowserBatch carries an irreversible step, else ''.
 

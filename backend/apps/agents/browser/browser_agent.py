@@ -43,18 +43,16 @@ from backend.apps.agents.browser.browser_loop import (
 )
 from backend.apps.agents.browser.browser_validator import adjudicate_stuck
 
-# Send-skill PREFIX replay (replay learned steps UP TO the gated Send, never the
-# Send). Settle-before-step + detour-pruning landed, but a live proof (r93/r94)
-# showed two upstream blockers still keep it 0-for-N, so it stays parked:
-#   1. is_send_step flags the composer OPENER ("Message") as irreversible, so a
-#      clean skill has no safe prefix to replay (unsafe_i=0). Openers are
-#      reversible; only the Send is not. Fixing this (shared with the send-guard)
-#      is the real unlock.
-#   2. the recorder sometimes captures a brittle long entity-card name that does
-#      not match at replay time, failing the prefix and quarantining the skill.
-# The mechanism itself FIRES and is safe (clean fallback, send still verified);
-# flip back on once #1 lands.
-_PREFIX_REPLAY_ENABLED = False
+# Send-skill PREFIX replay: replay the learned steps UP TO the irreversible Send
+# mechanically, then hand the gated Send to the live model (the Send is NEVER
+# replayed). Unlocked by first_unsafe_step now using is_replay_boundary, a
+# composer OPENER ("Message"/"DM" click) is reversible and no longer ends the
+# prefix (the r93/r94 blocker), so a clean skill replays [open composer ...] and
+# only the real Send crosses to the live agent. A still-brittle recorded name
+# self-heals: the prefix step fails, the skill quarantines, and the run falls
+# back to the full agent (send still verified). Both fixes that parked it
+# (settle-before-step, detour-pruning) already landed.
+_PREFIX_REPLAY_ENABLED = True
 
 # Single actions the model could have folded into one BrowserBatch turn;
 # reads, waits, and the batch tools themselves don't count toward the streak.
