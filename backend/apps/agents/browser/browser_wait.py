@@ -83,13 +83,18 @@ def decide_stop(ready, quiet_ms, dom_stable_ms, found, elapsed_ms,
 async def smart_wait(execute_fn, browser_id, tab_id, max_ms, *, until="",
                      poll_ms=_POLL_MS, floor_ms=_FLOOR_MS,
                      quiet_window_ms=_QUIET_WINDOW_MS,
-                     probe_timeout_s=_PROBE_TIMEOUT_S) -> dict:
+                     probe_timeout_s=_PROBE_TIMEOUT_S, target_only=False) -> dict:
     """Wait up to `max_ms`, returning early once the page is ready. `until` (optional)
     is a label / visible text / selector the agent expects to appear; the wait ends the
     INSTANT it's present, so the agent isn't waiting blind. `execute_fn` is an async
     (tool, params, browser_id, tab_id) -> result|None (None = cancelled). Never raises.
     If the page stops responding to probes (hung tab), returns fast with hung=True so the
-    caller can bail instead of inheriting the long command timeout."""
+    caller can bail instead of inheriting the long command timeout.
+
+    target_only: when True (used for confirming an action), the page merely SETTLING
+    is not enough, only the `until` target appearing ends the wait early. This catches
+    a result that renders a beat AFTER settle (a sent message landing in a thread under
+    load), which the settle-early path otherwise misses, reporting a false 'not confirmed'."""
     max_ms = max(100, min(int(max_ms or 1000), 10000))
     probe_js = _probe_js(until)
     start = time.monotonic()
@@ -141,6 +146,15 @@ async def smart_wait(execute_fn, browser_id, tab_id, max_ms, *, until="",
             last_elems = elems
             elems_changed_at = time.monotonic()
         dom_stable_ms = (time.monotonic() - elems_changed_at) * 1000
+        # Confirming an action (target_only): only the target appearing counts; a
+        # bare settle without it keeps waiting, so a late-rendering result isn't a
+        # false miss. Bounded by max_ms either way.
+        if target_only and until:
+            if probe.get("found"):
+                settled = True
+                found = True
+                break
+            continue
         if decide_stop(probe.get("ready"), probe.get("quiet", 0), dom_stable_ms,
                        probe.get("found"), _elapsed(),
                        floor_ms=floor_ms, settle_window_ms=quiet_window_ms):

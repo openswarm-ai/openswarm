@@ -1370,7 +1370,11 @@ async def run_browser_agent(
                 _expect = (str(tu.input.get("expect") or "").strip()
                            if isinstance(tu.input, dict) else "")
                 if _expect and "error" not in result and tu.name in _CONFIRM_TOOLS:
-                    _conf = await browser_wait.smart_wait(_wait_exec, browser_id, tab_id, 3500, until=_expect)
+                    # target_only: wait for the expected text to actually appear, don't
+                    # call it 'not confirmed' just because the page settled first (a sent
+                    # message lands in the thread a beat after settle, esp. under load)
+                    _conf = await browser_wait.smart_wait(_wait_exec, browser_id, tab_id, 4000,
+                                                          until=_expect, target_only=True)
                     if isinstance(_conf, dict):
                         result["confirmed"] = bool(_conf.get("found"))
                         if _conf.get("found"):
