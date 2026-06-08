@@ -176,7 +176,7 @@ jobs:
           $dir = 'electron/dist/squirrel-windows'
           pwsh -NoProfile -File scripts\gen-squirrel-latest-yml.ps1 -SetupPath "$dir/OpenSwarm-Setup-x64.exe" -Version $version -OutPath "$dir/latest.yml"
           # Experimental builds: electron-updater (allowPrerelease) fetches a channel
-          # yml named after the first semver-suffix id (1.1.72-rc.1 -> rc.yml). Same
+          # yml named after the first semver-suffix id (1.2.73-rc.1 -> rc.yml). Same
           # content as latest.yml; copy it so the experimental channel resolves.
           if ($version -match '-([0-9A-Za-z]+)') {
             Copy-Item "$dir/latest.yml" "$dir/$($matches[1]).yml" -Force

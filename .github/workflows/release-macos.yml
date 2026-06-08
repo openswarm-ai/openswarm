@@ -40,7 +40,7 @@ permissions:
 jobs:
   # Release-readiness gate (mirrors release-windows): the dogfood loop must have validated 12 consecutive clean runs per platform OR the v* tag halts before any DMG is built.
   release-gate:
-    if: false  # bypassed through v1.1.72: dogfood loop not yet at 12 clean runs, shipping Mac now (mirrors release-windows); remove this line to re-arm the gate
+    if: false  # bypassed through v1.2.73: dogfood loop not yet at 12 clean runs, shipping Mac now (mirrors release-windows); remove this line to re-arm the gate
     runs-on: ubuntu-latest
     permissions: { contents: read, actions: read }
     steps:
