@@ -109,9 +109,79 @@ async def save_settings_async(settings_obj: AppSettings) -> None:
     await loop.run_in_executor(None, _atomic_write_settings, payload)
 
 
+SECRET_FIELDS = {
+    "anthropic_api_key",
+    "openai_api_key",
+    "google_api_key",
+    "openrouter_api_key",
+    "claude_subscription_token",
+    "openai_subscription_token",
+    "gemini_subscription_token",
+    "openswarm_proxy_url",
+}
+
+NEVER_RETURN_FIELDS = {
+    "openswarm_bearer_token",
+}
+
+MASKED_SECRET_PLACEHOLDER = "********"
+
+def _mask_secret(value: str | None) -> str | None:
+    if not value:
+        return None
+    if len(value) <= 8:
+        return MASKED_SECRET_PLACEHOLDER
+    return f"{value[:4]}...{value[-4:]}"
+
+def _is_masked_secret(value: str | None) -> bool:
+    if not value:
+        return False
+    return value == MASKED_SECRET_PLACEHOLDER or "..." in value
+
+def _preserve_masked_secret_writes(body: AppSettings, old: AppSettings) -> AppSettings:
+    data = body.model_dump()
+
+    for field in NEVER_RETURN_FIELDS:
+        data[field] = getattr(old, field, None)
+
+    for field in SECRET_FIELDS:
+        value = data.get(field)
+        if _is_masked_secret(value):
+            data[field] = getattr(old, field, None)
+
+    old_custom_providers = getattr(old, "custom_providers", None) or []
+    new_custom_providers = data.get("custom_providers", []) or []
+
+    for idx, provider in enumerate(new_custom_providers):
+        api_key = provider.get("api_key")
+        if _is_masked_secret(api_key) and idx < len(old_custom_providers):
+            provider["api_key"] = getattr(old_custom_providers[idx], "api_key", "")
+
+    return AppSettings(**data)
+
+def _redact_settings_for_read(settings_obj: AppSettings) -> dict:
+    data = settings_obj.model_dump()
+
+    for field in NEVER_RETURN_FIELDS:
+        data.pop(field, None)
+
+    for field in SECRET_FIELDS:
+        if data.get(field):
+            data[field] = _mask_secret(data[field])
+
+    data["custom_providers"] = [
+        {
+            **provider,
+            "api_key": _mask_secret(provider.get("api_key")) if provider.get("api_key") else provider.get("api_key"),
+        }
+        for provider in data.get("custom_providers", [])
+    ]
+
+    return data
+
 @settings.router.get("")
 async def get_settings():
-    return load_settings().model_dump()
+    return _redact_settings_for_read(load_settings())
 
 
 @settings.router.put("")
@@ -119,6 +189,7 @@ async def update_settings(body: AppSettings):
     from backend.apps.service.client import sync as _sync
 
     old = load_settings()
+    body = _preserve_masked_secret_writes(body, old)
 
     secret_keys = {"anthropic_api_key", "openai_api_key", "google_api_key", "openrouter_api_key",
                    "claude_subscription_token", "openai_subscription_token", "gemini_subscription_token",
@@ -236,7 +307,7 @@ async def update_settings(body: AppSettings):
         except Exception as e:
             logger.warning(f"OpenSwarm-Pro → Claude sync failed: {e}")
 
-    return {"ok": True, "settings": body.model_dump()}
+    return {"ok": True, "settings": _redact_settings_for_read(body)}
 
 
 class AppThemeOverridePayload(BaseModel):
@@ -268,7 +339,7 @@ async def reset_system_prompt():
     current = load_settings()
     current.default_system_prompt = DEFAULT_SYSTEM_PROMPT
     await save_settings_async(current)
-    return {"ok": True, "settings": current.model_dump()}
+    return {"ok": True, "settings": _redact_settings_for_read(current)}
 
 
 class BrowseResponse(BaseModel):
