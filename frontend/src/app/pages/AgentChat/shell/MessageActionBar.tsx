@@ -21,6 +21,7 @@ import FeedbackDialog, { Sentiment } from './FeedbackDialog';
 interface BranchNavProps {
   currentIndex: number;
   totalBranches: number;
+  disabled?: boolean;
   onPrevious: () => void;
   onNext: () => void;
 }
@@ -108,7 +109,7 @@ const MessageActionBar: React.FC<Props> = ({
               <IconButton
                 size="small"
                 onClick={branchNav.onPrevious}
-                disabled={branchNav.currentIndex === 0}
+                disabled={branchNav.disabled || branchNav.currentIndex === 0}
                 sx={btnSx(c)}
               >
                 <ChevronLeftIcon sx={{ fontSize: 16 }} />
@@ -127,7 +128,7 @@ const MessageActionBar: React.FC<Props> = ({
               <IconButton
                 size="small"
                 onClick={branchNav.onNext}
-                disabled={branchNav.currentIndex === branchNav.totalBranches - 1}
+                disabled={branchNav.disabled || branchNav.currentIndex === branchNav.totalBranches - 1}
                 sx={btnSx(c)}
               >
                 <ChevronRightIcon sx={{ fontSize: 16 }} />
@@ -199,6 +200,7 @@ export default React.memo(MessageActionBar, (prev, next) => (
   && !!prev.onBranch === !!next.onBranch
   && prev.branchNav?.currentIndex === next.branchNav?.currentIndex
   && prev.branchNav?.totalBranches === next.branchNav?.totalBranches
+  && prev.branchNav?.disabled === next.branchNav?.disabled
   && prev.messageId === next.messageId
   && prev.sessionId === next.sessionId
 ));

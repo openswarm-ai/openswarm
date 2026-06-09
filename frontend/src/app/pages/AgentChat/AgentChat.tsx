@@ -906,6 +906,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   }
 
   const isActive = session.status === 'running' || session.status === 'waiting_approval' || session.status === 'draft';
+  const branchNavLocked = agentBusy || hasStreaming;
   const statusStyle = STATUS_STYLES[session.status] || { color: c.text.tertiary, bg: c.bg.secondary };
 
   return (
@@ -1365,11 +1366,14 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                           ? {
                               currentIndex: Math.max(0, currentBranchIdx),
                               totalBranches: siblings.length,
+                              disabled: branchNavLocked,
                               onPrevious: () => {
+                                if (branchNavLocked) return;
                                 const prevBranch = siblings[Math.max(0, currentBranchIdx - 1)];
                                 if (prevBranch && id) dispatch(switchBranch({ sessionId: id, branchId: prevBranch }));
                               },
                               onNext: () => {
+                                if (branchNavLocked) return;
                                 const nextBranch = siblings[Math.min(siblings.length - 1, currentBranchIdx + 1)];
                                 if (nextBranch && id) dispatch(switchBranch({ sessionId: id, branchId: nextBranch }));
                               },
