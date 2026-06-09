@@ -200,6 +200,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [showResumeBubble, setShowResumeBubble] = useState(false);
   const [awaitingResponse, setAwaitingResponse] = useState(false);
+  const [preSendActivityLabel, setPreSendActivityLabel] = useState<string | null>(null);
   const [activatingMcp, setActivatingMcp] = useState<string | null>(null);
   const [activateError, setActivateError] = useState<string | null>(null);
   const [mode, setMode] = useState('agent');
@@ -363,6 +364,18 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   // dormant during streaming; only the bubble updates per delta.
   const streamingMessageId = useAppSelector((s) => id ? s.streaming.bySession[id]?.id ?? null : null);
   const hasStreaming = !!streamingMessageId;
+
+  useEffect(() => {
+    if (
+      streamingMessageId ||
+      session?.turn_label?.label ||
+      session?.status === 'completed' ||
+      session?.status === 'error' ||
+      session?.status === 'stopped'
+    ) {
+      setPreSendActivityLabel(null);
+    }
+  }, [streamingMessageId, session?.turn_label?.label, session?.status]);
 
   useEffect(() => {
     if (reconcileTimer.current) {
@@ -1397,10 +1410,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 />
               </Box>
             )}
-            {(awaitingResponse || (session.status === 'running' && !streamingMessageId)) && (
+            {(preSendActivityLabel || awaitingResponse || (session.status === 'running' && !streamingMessageId)) && (
               <Box sx={{ overflowAnchor: 'none' }}>
                 <ThinkingBubble
-                  label={session.turn_label?.label}
+                  label={preSendActivityLabel || session.turn_label?.label}
                   seedKey={`${session.id}:${session.messages?.length ?? 0}`}
                 />
               </Box>
@@ -1765,6 +1778,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 autoFocus={autoFocus}
                 thinkingLevel={session?.thinking_level ?? 'auto'}
                 onThinkingLevelChange={handleThinkingLevelChange}
+                onActivityLabelChange={setPreSendActivityLabel}
               />
             </Box>
           </ClickAwayListener>

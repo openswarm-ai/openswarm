@@ -41,9 +41,10 @@ interface Props {
   queueLength?: number;
   thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'auto';
   onThinkingLevelChange?: (level: 'off' | 'low' | 'medium' | 'high' | 'auto') => void;
+  onActivityLabelChange?: (label: string | null) => void;
 }
 
-const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, provider, onProviderChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0, thinkingLevel = 'auto', onThinkingLevelChange }, ref) => {
+const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, provider, onProviderChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0, thinkingLevel = 'auto', onThinkingLevelChange, onActivityLabelChange }, ref) => {
   const c = useClaudeTokens();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,6 +74,9 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
   );
 
   const { allModelOptions, currentModelCtx, pdfSupported, imageSupported } = useChatInputModel(model);
+  const compactionInFlightRef = useRef(false);
+
+  useEffect(() => () => onActivityLabelChange?.(null), [onActivityLabelChange]);
 
   useEffect(() => {
     if (modesArr.length === 0) dispatch(fetchModes());
@@ -144,7 +148,8 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     if (!trimmed) return;
 
     const block = computeSendBlock({
-      trimmed, currentModelCtx,
+      trimmed,
+      currentModelCtx,
       historyUsed: contextEstimate?.used ?? 0,
       contextPaths, sessionFrameworkOverhead,
     });
@@ -159,19 +164,21 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
         return;
       }
       // kind === 'compacting': history is the overflow source, which we CAN
-      // shrink. Auto-compact, capture the send intent, flash a status banner.
-      if (sessionId) {
-        pendingSendRef.current = () => { handleSend(); };
-        try {
-          const tok = (() => { try { return getAuthToken(); } catch { return ''; } })();
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (tok) headers['Authorization'] = `Bearer ${tok}`;
-          await fetch(`${API_BASE}/agents/sessions/${sessionId}/compact`, { method: 'POST', headers });
-        } catch (err) { console.error('[auto-compact] failed:', err); pendingSendRef.current = null; }
+      // shrink. Auto-compact invisibly, then continue this same send.
+      if (!sessionId || compactionInFlightRef.current) return;
+      compactionInFlightRef.current = true;
+      setSendBlock(null);
+      onActivityLabelChange?.('Compacting memory');
+      try {
+        const tok = (() => { try { return getAuthToken(); } catch { return ''; } })();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (tok) headers['Authorization'] = `Bearer ${tok}`;
+        const resp = await fetch(`${API_BASE}/agents/sessions/${sessionId}/compact`, { method: 'POST', headers });
+        if (!resp.ok) throw new Error(`compact failed: ${resp.status}`);
+      } catch (err) {
+        console.error('[auto-compact] failed:', err);
       }
-      setSendBlock(block);
-      setTimeout(() => setSendBlock(null), 2000);
-      return;
+      compactionInFlightRef.current = false;
     }
 
     // Fits now (e.g. user shortened a too-long message): clear any lingering block banner.
@@ -227,7 +234,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     setAttachedSkills({});
     setHasContent(false);
     elementSelection?.clearOwnerElements(ownerId);
-  }, [disabled, images, contextPaths, forcedTools, onSend, elementSelection, ownerId, summarizingPath, summarizingAll, oversizeQueue, pendingSendRef, sessionId, currentModelCtx, contextEstimate, sessionFrameworkOverhead, setSendBlock]);
+  }, [disabled, images, contextPaths, forcedTools, onSend, elementSelection, ownerId, summarizingPath, summarizingAll, oversizeQueue, pendingSendRef, sessionId, currentModelCtx, contextEstimate, sessionFrameworkOverhead, setSendBlock, onActivityLabelChange]);
 
   const {
     picker: editorPicker, setPicker,
