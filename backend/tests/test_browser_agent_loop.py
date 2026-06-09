@@ -303,6 +303,24 @@ def test_send_shortcut_does_not_arm_on_a_gather_task(monkeypatch):
     assert "went through" not in result["summary"]
 
 
+def test_spin_backstop_nudges_a_clean_wrapup_instead_of_a_midthought(monkeypatch):
+    # The Airbnb mid-thought bug: a read-heavy run that trips the spin backstop must
+    # get ONE wrap-up nudge to summarize via Done, not be cut off mid-sentence. The
+    # final reply is the model's clean Done answer, and the nudge actually reached it.
+    BH._browser_history.clear(); BH._domain_notes.clear()
+    primary = FakeLLM([
+        Resp([_rp("open the list"), _tu("BrowserClickIndex", index=3)]),  # an action arms the backstop
+        *[Resp([_tu("BrowserScreenshot")]) for _ in range(6)],            # 6 read turns trip it
+        Resp([_tu("Done", message="Here are the top repos: a, b, c")]),   # obeys the wrap-up nudge
+    ])
+    aux = FakeAux()
+    _install(monkeypatch, primary, aux)
+    result = asyncio.run(BA.run_browser_agent(task="find me the top 10 repos", browser_id="b1", model="sonnet"))
+    assert any("Wrap up NOW" in json.dumps(c["messages"]) for c in primary.calls), "wrap-up nudge not delivered"
+    assert result["summary"] == "Here are the top repos: a, b, c"  # the model's answer, not a mid-thought
+    assert result.get("done") is True
+
+
 def test_early_perception_is_not_cut_short_before_any_action(monkeypatch):
     # Orienting on a cold/slow page can take several look-only turns; the stall
     # backstop must NOT fire before the agent has done anything (it only bounds a
