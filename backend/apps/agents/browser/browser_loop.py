@@ -308,7 +308,8 @@ def replay_recheck_is_safe(action_log: list[dict]) -> bool:
 # never replay (the answer must be fresh), an action ask can.
 _INFO_ASK_RE = re.compile(
     r"\b(tell me|what(?:'s| is| are)|how (?:many|much)|count|list|summari[sz]e|"
-    r"extract|find out|read (?:me|the)|get the|give me|which|who (?:is|are)|report back)\b",
+    r"extract|find (?:me|out)|show me|look up|read (?:me|the)|get the|give me|which|"
+    r"who (?:is|are)|report back|most (?:viewed|popular|liked|recent|rated|watched)|top \d+)\b",
     re.I,
 )
 _ACTION_ASK_RE = re.compile(

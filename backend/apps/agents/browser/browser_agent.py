@@ -2038,9 +2038,11 @@ async def run_browser_agent(
             "browser_id": browser_id,
             "summary": summary,
             # structured success signal the parent reads (replaces grepping the
-            # summary for a tag): true only if the run is honest AND, when the
-            # model called Done, it reported success. No-Done runs lean on honest.
-            "done": honest and (done_success if done_called else True),
+            # summary for a tag): true ONLY when the model explicitly finished via
+            # Done with success AND the honesty gate agreed. A run that just stopped
+            # (max turns, gave up, never called Done) is NOT a clean success, so the
+            # fast path recovers instead of shipping a silent half-finish.
+            "done": honest and done_called and done_success,
             # surface the honest failure to the parent so it doesn't treat a
             # did-nothing run as a success it can build on
             **({} if honest else {"error": summary}),

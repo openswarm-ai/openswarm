@@ -267,6 +267,21 @@ def test_done_tool_success_false_marks_not_done(monkeypatch):
     assert "login wall" in result["summary"]
 
 
+def test_run_that_never_calls_done_is_not_a_clean_success(monkeypatch):
+    # A run that does real work but stops with plain text (never calls Done) is a
+    # half-finish, not a clean success: done must be False so the fast path recovers
+    # instead of shipping a silent stop (the 'Task completed.' that wasn't).
+    BH._browser_history.clear(); BH._domain_notes.clear()
+    primary = FakeLLM([
+        Resp([_rp("click it"), _tu("BrowserClickIndex", index=3)]),
+        Resp([Blk("text", "I clicked the thing.")], stop_reason="end_turn"),
+    ])
+    aux = FakeAux()
+    _install(monkeypatch, primary, aux)
+    result = asyncio.run(BA.run_browser_agent(task="open the settings page", browser_id="b1", model="sonnet"))
+    assert result.get("done") is False  # no explicit Done -> not a clean success
+
+
 def test_early_perception_is_not_cut_short_before_any_action(monkeypatch):
     # Orienting on a cold/slow page can take several look-only turns; the stall
     # backstop must NOT fire before the agent has done anything (it only bounds a
@@ -1400,6 +1415,16 @@ def test_informational_gate_strips_outcome_boilerplate_on_tie_break():
     assert not deliverable_is_informational(short_action, "")
     listy = "Found these:\n- a\n- b\n- c"
     assert deliverable_is_informational(listy, "")
+
+
+def test_find_me_and_most_viewed_asks_are_informational():
+    from backend.apps.agents.browser.browser_loop import deliverable_is_informational
+    # the exact MKBHD task that previously slipped past the gate ("find me" + "most viewed")
+    assert deliverable_is_informational("", "find me his 50 most viewed vids")
+    assert deliverable_is_informational("", "show me the top 10 trending repos")
+    assert deliverable_is_informational("", "look up the cheapest flight")
+    # a pure action ask still is not informational
+    assert not deliverable_is_informational("", "send Tyler a message saying hi")
 
 
 def test_interstitial_dismiss_target_generalizable_and_safe():
