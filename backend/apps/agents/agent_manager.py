@@ -1776,27 +1776,20 @@ class AgentManager:
             except Exception as e:
                 logger.debug(f"thinking_level param injection skipped: {e}")
 
-            # MCPActivate fresh-restart path: when the session has prior
-            # turns AND the user just activated a new MCP, the bundled CLI
-            # won't re-read mcp_servers from a `resume + fork_session`
-            # combo (the transport snapshot from the original launch is
-            # what serves tool schemas). Symptom: model calls hallucinated
-            # names like `Searchgmail`/`Listemails` instead of the real
-            # `mcp__google-workspace__query_gmail_emails` because it
-            # never received the schemas. Soft restart: drop resume +
-            # sdk_session_id, replay history via the prompt, let the SDK
-            # build a clean transport with the activated server in its
-            # mcp_servers dict from the start. Costs one cold-start TTFT
-            # (~200-400ms) on the auto-continuation turn; that turn is
-            # already happening anyway because pending_continuation fires
-            # right after MCPActivate.
-            if session.needs_fresh_session and session.sdk_session_id:
-                logger.info(
-                    f"[MCP-DEBUG] Fresh-session restart for {session_id}: dropping "
-                    f"sdk_session_id={session.sdk_session_id} so the new MCP servers "
-                    f"({session.active_mcps}) take effect."
-                )
-                session.sdk_session_id = None
+            # Fresh-restart path: some session changes must not reuse the
+            # CLI's resume transcript. MCPActivate needs a new transport so
+            # tool schemas are reread; branch edits/switches need the model
+            # to see only _get_branch_messages(session), not facts from the
+            # old branch's SDK transcript. Soft restart: drop resume +
+            # sdk_session_id, replay local history via the prompt, let the
+            # SDK build a clean session from the current app state.
+            if session.needs_fresh_session:
+                if session.sdk_session_id:
+                    logger.info(
+                        f"Fresh-session restart for {session_id}: dropping "
+                        f"sdk_session_id={session.sdk_session_id}; active_mcps={session.active_mcps}"
+                    )
+                    session.sdk_session_id = None
                 session.needs_fresh_session = False
                 session.needs_fork = False  # superseded by the fresh restart
 
@@ -3420,6 +3413,7 @@ class AgentManager:
         )
         session.branches[new_branch_id] = new_branch
         session.active_branch_id = new_branch_id
+        session.needs_fresh_session = True
 
 
         edited_msg = Message(
@@ -3468,6 +3462,7 @@ class AgentManager:
         if branch_id not in session.branches:
             raise ValueError(f"Branch {branch_id} not found")
         session.active_branch_id = branch_id
+        session.needs_fresh_session = True
         await ws_manager.send_to_session(session_id, "agent:branch_switched", {
             "session_id": session_id,
             "active_branch_id": branch_id,
