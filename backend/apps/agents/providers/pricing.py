@@ -29,6 +29,8 @@ from __future__ import annotations
 # open / strong sub, 3 solid mid, 2 small specialised, 1 nano.
 MODEL_TIERS: dict[str, tuple[int, int, int]] = {
     # Anthropic
+    "claude-fable-5":               (5, 2, 5),
+    "anthropic/claude-fable-5":     (5, 2, 5),
     "claude-opus-4-8":              (5, 2, 5),
     "claude-opus-4.8":              (5, 2, 5),
     "anthropic/claude-opus-4.8":    (5, 2, 5),
