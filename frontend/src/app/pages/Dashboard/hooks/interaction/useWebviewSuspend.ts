@@ -20,6 +20,9 @@ const SNAPSHOT_MAX_W = 1024;
 // Below this on-screen width a live page is indistinguishable from its placeholder,
 // so booted-parked cards on a zoomed-out canvas stay parked until zoomed into.
 const RESUME_MIN_CARD_PX = 220;
+// Hard ceiling on simultaneous live webviews; past it the farthest-from-center
+// non-agent card gets parked, so heavy pages degrade gracefully instead of OOMing.
+const MAX_LIVE_WEBVIEWS = 8;
 
 interface Viewport {
   panX: number;
@@ -97,41 +100,77 @@ export function useWebviewSuspend(
       vpH: el ? el.clientHeight : 800,
     };
 
-    for (const id of Object.keys(suspended)) {
-      const card = browserCards[id];
-      if (!card) continue;
-      const bigEnough = card.width * zoom >= RESUME_MIN_CARD_PX;
-      if ((bigEnough && cardIntersectsViewport(card, vpRef.current, RESUME_MARGIN_PX)) || agentNeedsLive(id, card)) {
+    const liveCount = Object.keys(browserCards).filter((id) => !suspended[id]).length;
+    let budget = MAX_LIVE_WEBVIEWS - liveCount;
+    const parked = Object.keys(suspended)
+      .map((id) => [id, browserCards[id]] as const)
+      .filter(([, card]) => !!card)
+      .sort((a, b) => distFromCenter(a[1], vpRef.current) - distFromCenter(b[1], vpRef.current));
+    for (const [id, card] of parked) {
+      if (agentNeedsLive(id, card)) {
         dispatch(resumeBrowserCard(id));
+        budget--;
+        continue;
+      }
+      if (budget <= 0) continue;
+      const bigEnough = card.width * zoom >= RESUME_MIN_CARD_PX;
+      if (bigEnough && cardIntersectsViewport(card, vpRef.current, RESUME_MARGIN_PX)) {
+        dispatch(resumeBrowserCard(id));
+        budget--;
       }
     }
 
     const timer = setTimeout(async () => {
+      const isSuspended = (id: string) => !!store.getState().dashboardLayout.suspendedBrowserCards[id];
       for (const [id, card] of Object.entries(browserCards)) {
-        if (store.getState().dashboardLayout.suspendedBrowserCards[id]) continue;
+        if (isSuspended(id)) continue;
         if (cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX)) continue;
         if (agentNeedsLive(id, card)) continue;
-        const wv = getWebview(id, card.activeTabId);
-        if (!wv) continue;
-        try {
-          if (wv.isLoading()) continue;
-          const url = wv.getURL();
-          if (!url || url === 'about:blank') continue;
-          const image = await wv.capturePage();
-          if (image.isEmpty()) continue;
-          // The capture await yielded; conditions may have changed under us.
-          if (cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX)) continue;
-          if (agentNeedsLive(id, card)) continue;
-          const dataUrl = image.getSize().width > SNAPSHOT_MAX_W
-            ? image.resize({ width: SNAPSHOT_MAX_W, quality: 'good' }).toDataURL()
-            : image.toDataURL();
+        const dataUrl = await captureCard(id, card);
+        // The capture await yielded; conditions may have changed under us.
+        if (!dataUrl || cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX) || agentNeedsLive(id, card)) continue;
+        dispatch(suspendBrowserCard({ browserId: id, dataUrl }));
+      }
+
+      const countLive = () => Object.keys(browserCards).filter((id) => !isSuspended(id)).length;
+      if (countLive() > MAX_LIVE_WEBVIEWS) {
+        const candidates = Object.entries(browserCards)
+          .filter(([id, card]) => !isSuspended(id) && !agentNeedsLive(id, card))
+          .sort((a, b) => distFromCenter(b[1], vpRef.current) - distFromCenter(a[1], vpRef.current));
+        for (const [id, card] of candidates) {
+          if (countLive() <= MAX_LIVE_WEBVIEWS) break;
+          const dataUrl = await captureCard(id, card);
+          if (!dataUrl || agentNeedsLive(id, card)) continue;
           dispatch(suspendBrowserCard({ browserId: id, dataUrl }));
-        } catch {
-          // capture failed mid-teardown or mid-navigation; card just stays live
         }
       }
     }, SETTLE_MS);
 
     return () => clearTimeout(timer);
   }, [browserCards, suspended, panX, panY, zoom, viewportRef, dispatch, resizeTick]);
+}
+
+function distFromCenter(card: BrowserCardPosition, vp: Viewport): number {
+  const cx = (-vp.panX + vp.vpW / 2) / vp.zoom;
+  const cy = (-vp.panY + vp.vpH / 2) / vp.zoom;
+  const dx = card.x + card.width / 2 - cx;
+  const dy = card.y + card.height / 2 - cy;
+  return dx * dx + dy * dy;
+}
+
+async function captureCard(id: string, card: BrowserCardPosition): Promise<string | null> {
+  const wv = getWebview(id, card.activeTabId);
+  if (!wv) return null;
+  try {
+    if (wv.isLoading()) return null;
+    const url = wv.getURL();
+    if (!url || url === 'about:blank') return null;
+    const image = await wv.capturePage();
+    if (image.isEmpty()) return null;
+    return image.getSize().width > SNAPSHOT_MAX_W
+      ? image.resize({ width: SNAPSHOT_MAX_W, quality: 'good' }).toDataURL()
+      : image.toDataURL();
+  } catch {
+    return null;
+  }
 }
