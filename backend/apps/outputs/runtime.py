@@ -86,6 +86,11 @@ class AppRuntime:
         # so the preview pane doesn't try to navigate to an unbound port
         # and show a "Site can't be reached" error mid-npm-install.
         self._frontend_ready: bool = False
+        # True while the process tree is SIGSTOP'd in the idle pool. A frozen
+        # vite still holds its port but can't answer it, so frontend_url must
+        # stay null while suspended (else the webview loads a dead port = the
+        # ERR_FAILED on fast app-switching).
+        self._suspended: bool = False
         self.process: Optional[asyncio.subprocess.Process] = None
         self.log_buffer: deque[LogLine] = deque(maxlen=_LOG_BUFFER_LINES)
         self._subscribers: set[LogSubscriber] = set()
@@ -130,7 +135,9 @@ class AppRuntime:
         # Also gated on `running`: a vite that crashed or got orphaned still
         # has _frontend_ready=True, and handing the webview that dead port is
         # the ERR_FAILED you see on reopen. No live process, no URL.
-        if self.frontend_port and self._frontend_ready and self.running:
+        # And gated on `not _suspended`: a SIGSTOP'd idle runtime is "running"
+        # (returncode is None) but frozen, so its port won't answer.
+        if self.frontend_port and self._frontend_ready and self.running and not self._suspended:
             return f"http://127.0.0.1:{self.frontend_port}/"
         return None
 
@@ -527,6 +534,7 @@ class AppRuntimeManager:
                     # SIGCONT the process tree if A2 had it paused while
                     # idle. Pair with the SIGSTOP in detach() below.
                     _resume_process_tree(rt.process)
+                    rt._suspended = False
                 else:
                     if idle_rt is not None:
                         # Stale idle entry; process died while idling.
@@ -574,6 +582,7 @@ class AppRuntimeManager:
                 self._idle_lru[workspace_id] = rt
                 self._idle_lru.move_to_end(workspace_id)
                 _suspend_process_tree(rt.process)
+                rt._suspended = True
                 while len(self._idle_lru) > _MAX_IDLE_RUNTIMES:
                     _, old_rt = self._idle_lru.popitem(last=False)
                     # Reaping a stopped process: SIGCONT first so the
