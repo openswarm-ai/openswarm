@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import TextField from '@mui/material/TextField';
@@ -970,17 +969,13 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Typography noWrap sx={{ color: c.text.primary, fontWeight: 600 }}>{session.name}</Typography>
                 {!isDraft && statusStyle && (
-                  <Chip
-                    label={friendlyStatusLabel(session.status)}
-                    size="small"
-                    sx={{
-                      bgcolor: statusStyle.bg,
-                      color: statusStyle.color,
-                      fontWeight: 600,
-                      fontSize: '0.7rem',
-                      height: 20,
-                    }}
-                  />
+                  // Dot + word instead of a filled chip: one color cue, zero chrome.
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, flexShrink: 0 }}>
+                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: statusStyle.color, flexShrink: 0 }} />
+                    <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: c.text.secondary, whiteSpace: 'nowrap' }}>
+                      {friendlyStatusLabel(session.status)}
+                    </Typography>
+                  </Box>
                 )}
               </Box>
               {!isDraft && (
