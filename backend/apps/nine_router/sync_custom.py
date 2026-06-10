@@ -326,17 +326,17 @@ async def sync_openswarm_pro_as_claude(bearer_token: str | None, proxy_url: str 
 
 
 async def sync_pro_routing(settings_obj) -> None:
-    """Mirror the settings' pro-mode state into the 9Router Claude lane.
-    Call after any flow that changes connection_mode or the bearer
-    (activate, sign-in, sign-out, disconnect). Never raises."""
+    """Mirror the settings' cloud-proxy state (openswarm-pro OR free-trial) into
+    the 9Router Claude lane. Call after any flow that changes connection_mode or
+    the bearer (activate, sign-in, sign-out, disconnect, free-trial arm/clear).
+    Never raises."""
     try:
-        pro = getattr(settings_obj, "connection_mode", None) == "openswarm-pro"
-        bearer = getattr(settings_obj, "openswarm_bearer_token", None)
-        proxy = getattr(settings_obj, "openswarm_proxy_url", None) or "https://api.openswarm.com"
-        active = bool(pro and bearer)
+        from backend.apps.settings.credentials import proxy_auth
+        bearer, base = proxy_auth(settings_obj)
+        active = bool(bearer)
         await sync_openswarm_pro_as_claude(
             bearer if active else None,
-            proxy if active else None,
+            base if active else None,
         )
     except Exception as e:
         logger.warning(f"OpenSwarm-Pro → Claude sync failed: {e}")

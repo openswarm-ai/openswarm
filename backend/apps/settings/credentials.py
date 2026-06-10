@@ -10,6 +10,26 @@ if TYPE_CHECKING:
 
 OPENSWARM_DEFAULT_PROXY_URL = "https://api.openswarm.com"
 
+# Connection modes that route Claude traffic through our cloud proxy with a
+# bearer instead of a user-held key. Free-trial is openswarm-pro's cheaper
+# sibling: same proxy, but pointed at the /free sub-path the cloud meters and
+# forces to Haiku.
+PROXY_CONNECTION_MODES = ("openswarm-pro", "free-trial")
+
+
+def proxy_auth(settings: AppSettings) -> tuple[str | None, str | None]:
+    """(auth_token, base_url) for whichever cloud-proxy mode is active, else
+    (None, None). Consumers append /v1/messages to base_url as usual; for
+    free-trial the base carries the /free segment so the same SDK lands on the
+    metered route."""
+    mode = getattr(settings, "connection_mode", "own_key")
+    base = (getattr(settings, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL).rstrip("/")
+    if mode == "openswarm-pro":
+        return (getattr(settings, "openswarm_bearer_token", None), base)
+    if mode == "free-trial":
+        return (getattr(settings, "free_trial_token", None), base + "/free")
+    return (None, None)
+
 
 def _check_9router() -> bool:
     """Check if 9Router is running locally."""
@@ -34,8 +54,9 @@ def validate_credentials(settings: AppSettings, provider: str = "anthropic") -> 
         return
 
     if p == "anthropic":
-        if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
-            if not getattr(settings, "openswarm_bearer_token", None):
+        if getattr(settings, "connection_mode", "own_key") in PROXY_CONNECTION_MODES:
+            token, _ = proxy_auth(settings)
+            if not token:
                 raise ValueError("Open Swarm account not connected. Sign in via Settings -> API.")
             return
         if settings.anthropic_api_key:
@@ -72,10 +93,11 @@ def get_provider_credentials(settings: AppSettings, provider: str) -> dict[str, 
     validate_credentials(settings, provider)
 
     if p in ("anthropic", "claude"):
-        if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
+        if getattr(settings, "connection_mode", "own_key") in PROXY_CONNECTION_MODES:
+            token, base = proxy_auth(settings)
             return {
-                "auth_token": getattr(settings, "openswarm_bearer_token", "") or "",
-                "base_url": getattr(settings, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL,
+                "auth_token": token or "",
+                "base_url": base or OPENSWARM_DEFAULT_PROXY_URL,
             }
         return {"api_key": settings.anthropic_api_key or ""}
 
@@ -101,11 +123,11 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
     """Return an AsyncAnthropic client for the user's current connection mode."""
     import anthropic
 
-    if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
-        proxy_url = getattr(settings, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL
+    if getattr(settings, "connection_mode", "own_key") in PROXY_CONNECTION_MODES:
+        token, base = proxy_auth(settings)
         return anthropic.AsyncAnthropic(
-            auth_token=getattr(settings, "openswarm_bearer_token", None),
-            base_url=proxy_url,
+            auth_token=token,
+            base_url=base or OPENSWARM_DEFAULT_PROXY_URL,
         )
 
     # Prefer the user's own API key when present.

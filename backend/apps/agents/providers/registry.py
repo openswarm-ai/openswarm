@@ -248,7 +248,11 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     if entry.get("route") == "openrouter":
         return entry.get("router_model_id", short_name)
     if entry.get("api") == "anthropic":
-        if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
+        # openswarm-pro AND free-trial both proxy-route, so resolve to the bare
+        # id (the proxy serves it) instead of the cc/-prefixed id that 401s when
+        # no Claude subscription is connected. This is the line that otherwise
+        # turns a free-trial user's first run into "No AI provider connected".
+        if getattr(settings, "connection_mode", "own_key") in ("openswarm-pro", "free-trial"):
             return entry.get("model_id", short_name)
         if getattr(settings, "anthropic_api_key", None):
             return entry.get("model_id", short_name)
@@ -337,9 +341,11 @@ async def resolve_aux_model(
         if "openrouter" in connected:
             return (or_aux, base_url)
 
-    if getattr(settings, "connection_mode", "own_key") == "openswarm-pro":
-        proxy_url = getattr(settings, "openswarm_proxy_url", None) or "https://api.openswarm.com"
-        return (bare, proxy_url)
+    if getattr(settings, "connection_mode", "own_key") in ("openswarm-pro", "free-trial"):
+        from backend.apps.settings.credentials import proxy_auth
+        token, base = proxy_auth(settings)
+        if token:
+            return (bare, base)
 
     if getattr(settings, "anthropic_api_key", None):
         return (bare, None)

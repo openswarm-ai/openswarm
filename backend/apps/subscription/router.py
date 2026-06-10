@@ -344,6 +344,26 @@ async def portal():
 
 
 # ---------------------------------------------------------------------------
+# Free zero-config trial
+# ---------------------------------------------------------------------------
+
+@subscription.router.post("/free-trial/mint")
+async def free_trial_mint():
+    """Renderer calls this on launch when no model is connected. Mints (or
+    re-fetches) the machine's grant and arms free-trial mode if runs remain.
+    Best-effort: never raises, returns {armed: false, reason} on any miss."""
+    from backend.apps.subscription.free_trial import arm_free_trial
+    return await arm_free_trial(load_settings())
+
+
+@subscription.router.post("/free-trial/status")
+async def free_trial_status():
+    """Refresh remaining free runs from the cloud (drives the onboarding nudge)."""
+    from backend.apps.subscription.free_trial import refresh_free_trial
+    return await refresh_free_trial(load_settings())
+
+
+# ---------------------------------------------------------------------------
 # POST /api/subscription/disconnect
 # ---------------------------------------------------------------------------
 

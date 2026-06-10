@@ -31,6 +31,7 @@ _NON_TRANSIENT_PATTERNS = re.compile(
     r"|missing\s+bearer\s+token"
     r"|extra\s+usage\s+is\s+required\s+for\s+long\s+context"
     r"|long\s+context\s+(?:requests?\s+)?(?:requires?|not\s+(?:available|enabled))"
+    r"|free_trial_exhausted|used\s+your\s+free"
     r"|401|403)",
     re.IGNORECASE,
 )
@@ -48,6 +49,21 @@ def _is_long_context_error(exc: BaseException, extra_text: str = "") -> bool:
     return bool(re.search(
         r"extra\s+usage\s+is\s+required\s+for\s+long\s+context"
         r"|long\s+context\s+(?:requests?\s+)?(?:requires?|not\s+(?:available|enabled))",
+        combined,
+        re.IGNORECASE,
+    ))
+
+
+def _is_free_trial_exhausted(exc: BaseException, extra_text: str = "") -> bool:
+    """True when the cloud says the machine's free runs are spent (a 402 with
+    type free_trial_exhausted). The catch-all path uses this to flip back to
+    own_key and show a friendly connect-a-model upsell instead of a raw error.
+    """
+    combined = f"{exc!s}\n{extra_text}".strip()
+    if not combined:
+        return False
+    return bool(re.search(
+        r"free_trial_exhausted|used\s+your\s+free\s+(?:openswarm\s+)?runs",
         combined,
         re.IGNORECASE,
     ))

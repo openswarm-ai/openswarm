@@ -69,6 +69,13 @@ class AppSettings(BaseModel):
     connection_mode: str = "own_key"
     openswarm_bearer_token: Optional[str] = None
     openswarm_proxy_url: Optional[str] = None
+    # Zero-config free trial: server-funded runs for a brand-new user with no
+    # key and no subscription. connection_mode flips to "free-trial" while armed;
+    # the token + remaining count are server-owned (minted by the cloud, sticky
+    # per machine). remaining is cached for the onboarding "runs low" nudge.
+    free_trial_token: Optional[str] = None
+    free_trial_remaining: Optional[int] = None
+    free_trial_runs_limit: Optional[int] = None
     openswarm_subscription_plan: Optional[str] = None
     openswarm_subscription_expires: Optional[str] = None
     openswarm_usage_cached: Optional[dict] = None

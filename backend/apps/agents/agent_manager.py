@@ -30,6 +30,7 @@ from backend.apps.agents.core.error_classify import (
     _NON_TRANSIENT_PATTERNS,
     _TRANSIENT_CAPACITY_PATTERNS,
     _is_auth_error,
+    _is_free_trial_exhausted,
     _is_long_context_error,
     _is_transient_capacity_error,
 )
@@ -1252,7 +1253,7 @@ class AgentManager:
                 and _primary_is_claude
                 and anthropic_web_search_is_reliable(
                     uses_direct_anthropic_api=_uses_direct_anthropic_api,
-                    is_pro=(getattr(global_settings, "connection_mode", "own_key") == "openswarm-pro"),
+                    is_pro=(getattr(global_settings, "connection_mode", "own_key") in ("openswarm-pro", "free-trial")),
                 )
             )
 
@@ -1592,19 +1593,21 @@ class AgentManager:
                 env["ENABLE_TOOL_SEARCH"] = "auto"
                 options_kwargs["env"] = env
                 logger.info(f"[MCP-DEBUG] Using OpenRouter for {session.model}")
-            elif api_type == "anthropic" and not resolved_is_9router and getattr(global_settings, "connection_mode", "own_key") == "openswarm-pro":
-                proxy_url = getattr(global_settings, "openswarm_proxy_url", None) or "https://api.openswarm.com"
-                bearer = getattr(global_settings, "openswarm_bearer_token", "") or ""
+            elif api_type == "anthropic" and not resolved_is_9router and getattr(global_settings, "connection_mode", "own_key") in ("openswarm-pro", "free-trial"):
+                from backend.apps.settings.credentials import proxy_auth
+                bearer, proxy_url = proxy_auth(global_settings)
+                bearer = bearer or ""
                 options_kwargs["env"] = {
                     "ANTHROPIC_AUTH_TOKEN": bearer,
                     "ANTHROPIC_BASE_URL": proxy_url,
                     # Pin subagent ids; CLI default 'claude-haiku-4-5-20251001'
                     # gets rejected by Pro's surface as "No credentials for provider: anthropic".
+                    # (Free-trial down-routes all of these to Haiku server-side.)
                     "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4-6",
                     "ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4-5-20251001",
                     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5-20251001",
                 }
-                logger.info(f"[MCP-DEBUG] Using OpenSwarm Pro proxy at {proxy_url}")
+                logger.info(f"[MCP-DEBUG] Using OpenSwarm cloud proxy at {proxy_url}")
             elif api_type == "anthropic" and not resolved_is_9router and global_settings.anthropic_api_key:
                 options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
                 logger.info("[MCP-DEBUG] Using direct Anthropic API key")
@@ -2700,12 +2703,12 @@ class AgentManager:
                                     # showing the SDK's Anthropic-rate
                                     # estimate, which is meaningless here.
                                     _free_route = True
-                            if (
-                                api_type == "anthropic"
-                                and getattr(global_settings, "connection_mode", "own_key") == "openswarm-pro"
-                                and getattr(global_settings, "openswarm_bearer_token", None)
-                            ):
-                                _free_route = True
+                            if api_type == "anthropic":
+                                from backend.apps.settings.credentials import proxy_auth as _proxy_auth
+                                _pa_tok, _ = _proxy_auth(global_settings)
+                                # Pro and free-trial both run server-funded, so per-token cost to the user is 0.
+                                if _pa_tok:
+                                    _free_route = True
 
                             if _free_route:
                                 cost = 0.0
@@ -2943,6 +2946,29 @@ class AgentManager:
                     })
                 except Exception:
                     logger.debug("submit_diagnostic for context_overflow failed", exc_info=True)
+            elif _is_free_trial_exhausted(e, extra_text=_stderr_tail):
+                # Free runs spent. Flip back to own_key and show a friendly
+                # "connect a model" upsell instead of a raw 402.
+                try:
+                    from backend.apps.subscription.free_trial import clear_free_trial
+                    await clear_free_trial(load_settings())
+                except Exception:
+                    logger.debug("clear_free_trial after exhaustion failed", exc_info=True)
+                friendly_msg = (
+                    "You've used your free runs. Connect a model to keep going: "
+                    "your own API key, an AI subscription you already pay for, or "
+                    "OpenSwarm Pro."
+                )
+                error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
+                session.messages.append(error_msg)
+                await ws_manager.send_to_session(session_id, "agent:free_trial_exhausted", {
+                    "session_id": session_id,
+                    "message": friendly_msg,
+                })
+                await ws_manager.send_to_session(session_id, "agent:message", {
+                    "session_id": session_id,
+                    "message": error_msg.model_dump(mode="json"),
+                })
             elif _is_auth_error(e, extra_text=_stderr_tail):
                 # Three sub-cases the user can hit, with distinct fixes:
                 #   1. "No credentials for provider: claude", user picked a
