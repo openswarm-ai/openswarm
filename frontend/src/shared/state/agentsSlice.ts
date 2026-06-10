@@ -1017,9 +1017,13 @@ const agentsSlice = createSlice({
         const fetchedIds = new Set(action.payload.map((s) => s.id));
         const activeStatuses = new Set(['running', 'waiting_approval']);
 
-        // Strip stale fetched sessions; keep other dashboards, drafts, tracked, and active sessions.
+        // Strip sessions the server no longer has, but a dashboard's list is only
+        // authoritative for ITS OWN sessions: hopping dashboards must not eat the
+        // finished chat you were just reading (it looked like wiped history).
+        const fetchedDashboardId = action.meta.arg?.dashboardId;
         for (const [id, existing] of Object.entries(state.sessions)) {
           if (fetchedIds.has(id)) continue;
+          if (fetchedDashboardId && existing.dashboard_id !== fetchedDashboardId) continue;
           if (existing.status === 'draft') continue;
           if (state.trackedNotificationIds.includes(id)) continue;
           if (activeStatuses.has(existing.status)) continue;
