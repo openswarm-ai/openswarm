@@ -215,7 +215,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         />
 
         {sessionList.length === 0 && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0 ? (
-          <DashboardEmptyState c={c} />
+          <DashboardEmptyState c={c} onLaunch={onToolbarSend} />
         ) : (
           <div
             ref={canvas.contentRef}

@@ -3,12 +3,44 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
+import { useAppSelector } from '@/shared/hooks';
+import {
+  hasModelConnected,
+  hasFreeTrialActive,
+} from '@/app/components/Onboarding/steps/skipPredicates';
 import ChatBubbleTeardrop from '../ChatBubbleTeardrop';
 
-const DashboardEmptyState: React.FC<{ c: ClaudeTokens }> = ({ c }) => {
+// Broad, one-click-complete prompts so a brand-new user gets the "it works"
+// moment without thinking up a task. Each runs to a useful result on its own.
+const STARTER_PROMPTS = [
+  'Find the latest AI news and give me a short summary',
+  'Research the top 3 standing desks and compare them',
+  'Explain how RAG works like I\'m five',
+  'Write a short poem about the sea',
+];
+
+const DashboardEmptyState: React.FC<{
+  c: ClaudeTokens;
+  onLaunch?: (prompt: string, mode: string, model: string) => void;
+}> = ({ c, onLaunch }) => {
   // The host hides Dashboard with visibility:hidden (not display:none), which keeps
   // CSS animations ticking; gate on active so the shimmer only burns while watched.
   const active = useDashboardActive();
+  const model = useAppSelector((s) => s.settings.data.default_model);
+  const mode = useAppSelector((s) => s.settings.data.default_mode);
+  const canRun = useAppSelector((s) => hasFreeTrialActive(s) || hasModelConnected(s));
+  const [launching, setLaunching] = React.useState(false);
+
+  // Only offer chips once a run can actually succeed (free trial armed or a real
+  // model connected); otherwise fall back to the plain hint.
+  const showChips = !!onLaunch && canRun;
+
+  const launch = (prompt: string) => {
+    if (launching || !onLaunch) return;
+    setLaunching(true); // empty state unmounts on first session, but guard a fast double-click
+    onLaunch(prompt, mode, model);
+  };
+
   return (
     <Box
       sx={{
@@ -47,6 +79,48 @@ const DashboardEmptyState: React.FC<{ c: ClaudeTokens }> = ({ c }) => {
         </Box>
         below to launch your first agent
       </Typography>
+
+      {showChips && (
+        <Box
+          sx={{
+            mt: 3,
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            gap: 1,
+            maxWidth: 520,
+            pointerEvents: 'auto',
+          }}
+        >
+          <Typography sx={{ width: '100%', textAlign: 'center', color: c.text.ghost, fontSize: '0.8rem', mb: 0.5 }}>
+            or try one of these
+          </Typography>
+          {STARTER_PROMPTS.map((prompt) => (
+            <Box
+              component="button"
+              key={prompt}
+              onClick={() => launch(prompt)}
+              disabled={launching}
+              sx={{
+                px: 1.4,
+                py: 0.8,
+                borderRadius: 2,
+                border: `1px solid ${c.border.medium}`,
+                background: c.bg.surface,
+                color: c.text.secondary,
+                fontSize: '0.82rem',
+                cursor: launching ? 'default' : 'pointer',
+                opacity: launching ? 0.5 : 1,
+                fontFamily: 'inherit',
+                transition: 'background 150ms ease-in-out, border-color 150ms ease-in-out',
+                '&:hover': launching ? {} : { background: c.bg.elevated, borderColor: c.border.strong },
+              }}
+            >
+              {prompt}
+            </Box>
+          ))}
+        </Box>
+      )}
     </Box>
   );
 };
