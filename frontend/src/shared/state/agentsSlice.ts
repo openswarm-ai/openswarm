@@ -1252,7 +1252,12 @@ const agentsSlice = createSlice({
         // any local message the snapshot lacks; on a settled session the snapshot
         // is authoritative (so a server-side delete isn't resurrected).
         const incomingMsgs = session.messages ?? [];
-        const liveStatus = session.status === 'running' || session.status === 'waiting_approval';
+        // Live by EITHER side's account: a send on a completed chat flips local
+        // status to running while the racing snapshot still says completed and
+        // lacks the new turn; trusting only the snapshot wiped the user bubble
+        // until the run finished.
+        const isLive = (s?: string) => s === 'running' || s === 'waiting_approval';
+        const liveStatus = isLive(session.status) || isLive(existing?.status);
         const incomingClientIds = new Set(
           incomingMsgs.map((m) => m.client_message_id).filter(Boolean),
         );
