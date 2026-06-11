@@ -49,6 +49,62 @@ def test_atomic_write_preserves_existing_when_new_write_fails(tmp_path):
     assert read_json_or_none(p) == {"good": 1}
 
 
+def test_atomic_write_fsyncs_file_before_rename(tmp_path, monkeypatch):
+    # Without fsync before os.replace, we only get filename-atomicity, not
+    # data durability. Catch the regression by counting fsync calls before
+    # the rename happens.
+    from backend.config import json_store
+
+    fsync_count_at_replace = []
+    fsync_calls = []
+    real_fsync = os.fsync
+    real_replace = os.replace
+
+    def tracking_fsync(fd):
+        fsync_calls.append(fd)
+        return real_fsync(fd)
+
+    def tracking_replace(src, dst):
+        fsync_count_at_replace.append(len(fsync_calls))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(json_store.os, "fsync", tracking_fsync)
+    monkeypatch.setattr(json_store.os, "replace", tracking_replace)
+    atomic_write_json(str(tmp_path / "x.json"), {"k": "v"})
+
+    assert fsync_count_at_replace == [1], (
+        f"expected fsync on the tempfile before os.replace, saw "
+        f"{fsync_count_at_replace[0] if fsync_count_at_replace else 0} fsync calls"
+    )
+
+
+def test_atomic_write_fsyncs_directory_after_rename(tmp_path, monkeypatch):
+    # POSIX only: the rename is only durable once the parent dir is fsync'd.
+    if not hasattr(os, "O_RDONLY"):
+        pytest.skip("directory fsync not applicable on this platform")
+    from backend.config import json_store
+
+    fsync_targets = []
+    real_fsync = os.fsync
+
+    def tracking_fsync(fd):
+        try:
+            st = os.fstat(fd)
+            fsync_targets.append("dir" if (st.st_mode & 0o170000) == 0o040000 else "file")
+        except OSError:
+            fsync_targets.append("unknown")
+        return real_fsync(fd)
+
+    monkeypatch.setattr(json_store.os, "fsync", tracking_fsync)
+    atomic_write_json(str(tmp_path / "x.json"), {"k": "v"})
+
+    assert "file" in fsync_targets, "expected fsync on the data file"
+    assert "dir" in fsync_targets, "expected fsync on the parent directory"
+
+
+# ---------------- read_json_or_none ----------------
+
+
 # ---------------- read_json_or_none ----------------
 
 def test_read_missing_returns_none(tmp_path):
