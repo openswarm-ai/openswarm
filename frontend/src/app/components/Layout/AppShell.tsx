@@ -15,16 +15,16 @@ import Alert from '@mui/material/Alert';
 import InputBase from '@mui/material/InputBase';
 // One outlined icon language for the sidebar: thin monoline glyphs (not the
 // filled Material clip-art) so the rail reads as designed, not assembled.
-import DashboardIcon from '@mui/icons-material/SpaceDashboardOutlined';
+import { LayoutDashboard } from 'lucide-react';
 import PsychologyIcon from '@mui/icons-material/PsychologyOutlined';
 import BuildIcon from '@mui/icons-material/BuildOutlined';
 import TuneIcon from '@mui/icons-material/TuneOutlined';
-import ViewQuiltIcon from '@mui/icons-material/WidgetsOutlined';
+import { LayoutGrid } from 'lucide-react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
-import SettingsIcon from '@mui/icons-material/SettingsOutlined';
-import ExtensionIcon from '@mui/icons-material/PaletteOutlined';
-import ViewSidebarOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
+import { Settings as LucideSettings } from 'lucide-react';
+import { Palette } from 'lucide-react';
+import { PanelLeft } from 'lucide-react';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import ArrowForwardOutlinedIcon from '@mui/icons-material/ArrowForwardOutlined';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -398,7 +398,7 @@ const AppShell: React.FC = () => {
               '&:hover': { color: c.text.secondary, bgcolor: `${c.text.tertiary}14` },
             }}
           >
-            <ViewSidebarOutlinedIcon sx={{ fontSize: 18 }} />
+            <PanelLeft size={18} />
           </IconButton>
         </Tooltip>
         <Tooltip title="Back">
@@ -624,10 +624,10 @@ const AppShell: React.FC = () => {
           '&::-webkit-scrollbar': { width: 0 },
           // Tactile hover: the leading section icon springs once on row-hover, then settles.
           // Interaction-only, never ambient. Scoped to ListItemIcon so the +/chevron stay put.
-          '& .MuiListItemIcon-root .MuiSvgIcon-root': {
+          '& .MuiListItemIcon-root svg': {
             transition: 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
           },
-          '& .MuiListItemButton-root:hover .MuiListItemIcon-root .MuiSvgIcon-root': {
+          '& .MuiListItemButton-root:hover .MuiListItemIcon-root svg': {
             transform: 'scale(1.15)',
           },
         }}>
@@ -648,7 +648,7 @@ const AppShell: React.FC = () => {
               }}
             >
               <ListItemIcon sx={{ color: isDashboardRoute ? c.accent.primary : c.text.tertiary, minWidth: 28 }}>
-                <DashboardIcon sx={{ fontSize: 18 }} />
+                <LayoutDashboard size={18} />
               </ListItemIcon>
               <ListItemText
                 primary="Dashboards"
@@ -810,7 +810,7 @@ const AppShell: React.FC = () => {
               }}
             >
               <ListItemIcon sx={{ color: isCustomizationRoute ? c.accent.primary : c.text.tertiary, minWidth: 28 }}>
-                <ExtensionIcon sx={{ fontSize: 18 }} />
+                <Palette size={18} />
               </ListItemIcon>
               <ListItemText
                 primary="Customization"
@@ -905,7 +905,7 @@ const AppShell: React.FC = () => {
               }}
             >
               <ListItemIcon sx={{ color: isAppsRoute ? c.accent.primary : c.text.tertiary, minWidth: 28 }}>
-                <ViewQuiltIcon sx={{ fontSize: 18 }} />
+                <LayoutGrid size={18} />
               </ListItemIcon>
               <ListItemText
                 primary="Apps"
@@ -1021,7 +1021,7 @@ const AppShell: React.FC = () => {
             }}
           >
             <ListItemIcon sx={{ color: c.text.tertiary, minWidth: 28, position: 'relative' }}>
-              <SettingsIcon sx={{ fontSize: 18 }} />
+              <LucideSettings size={18} />
               {showUpdateDot && (
                 <Box
                   sx={{
