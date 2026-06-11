@@ -159,16 +159,28 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     setSearchPaletteOpen,
   });
 
-  // Starter-prompt prefill: opens the composer with the prompt typed in (unsent),
-  // so the user reviews and hits send. Bump a nonce so re-clicking the same prompt
-  // (after editing/clearing) still re-seeds. Cleared when the composer closes.
+  // Starter-prompt preview: HOVER opens the composer with the prompt typed in
+  // (translucent, unsent); leaving closes it again; CLICK locks it open so the
+  // user can move to the send button without it vanishing. Then they hit send.
   const [toolbarPrefill, setToolbarPrefill] = useState<string | undefined>(undefined);
-  const handleStarterPrefill = useCallback((prompt: string) => {
-    setToolbarPrefill(prompt);
-    setToolbarOpen(true);
+  const starterLockedRef = useRef(false);
+  const handleStarter = useCallback((action: 'hover' | 'leave' | 'commit', prompt?: string) => {
+    if (action === 'hover' && prompt) {
+      setToolbarPrefill(prompt);
+      setToolbarOpen(true);
+    } else if (action === 'commit' && prompt) {
+      starterLockedRef.current = true;
+      setToolbarPrefill(prompt);
+      setToolbarOpen(true);
+    } else if (action === 'leave' && !starterLockedRef.current) {
+      setToolbarOpen(false);
+    }
   }, [setToolbarOpen]);
   useEffect(() => {
-    if (!toolbarOpen && toolbarPrefill) setToolbarPrefill(undefined);
+    if (!toolbarOpen) {
+      starterLockedRef.current = false;
+      if (toolbarPrefill) setToolbarPrefill(undefined);
+    }
   }, [toolbarOpen, toolbarPrefill]);
 
   useDashboardClipboard({
@@ -266,7 +278,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     neighborDirections, toolbarOpen, searchPaletteOpen, newAgentBounce,
     toolbarRef, spawnOriginsRef, revealSpawnedRef, measuredHeightsRef, getCanvasState,
     toolbarPrefill,
-    onStarterPrefill: handleStarterPrefill,
+    onStarter: handleStarter,
     onViewportMouseDown: handleViewportMouseDown,
     onViewportMouseMove: handleViewportMouseMove,
     onViewportMouseUp: handleViewportMouseUp,

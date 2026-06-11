@@ -76,7 +76,6 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     prefilledRef.current = prefillPrompt;
     editor.style.opacity = '0.5';
     editor.style.transition = 'opacity 0.15s';
-    editor.focus();
     const solidify = () => {
       editor.style.opacity = '';
       editor.removeEventListener('keydown', solidify);

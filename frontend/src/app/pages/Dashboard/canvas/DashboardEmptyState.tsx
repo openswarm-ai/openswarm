@@ -62,9 +62,10 @@ const STARTER_CATEGORIES: StarterCategory[] = [
 const DashboardEmptyState: React.FC<{
   c: ClaudeTokens;
   onLaunch?: (prompt: string, mode: string, model: string) => void;
-  // Open the composer with the prompt typed in (unsent) so the user hits send.
-  onPrefill?: (prompt: string) => void;
-}> = ({ c, onLaunch, onPrefill }) => {
+  // hover = preview-open the composer (translucent), leave = close it,
+  // commit = lock it open so the user can move to send.
+  onStarter?: (action: 'hover' | 'leave' | 'commit', prompt?: string) => void;
+}> = ({ c, onLaunch, onStarter }) => {
   // The host hides Dashboard with visibility:hidden (not display:none), which keeps
   // CSS animations ticking; gate on active so the shimmer only burns while watched.
   const active = useDashboardActive();
@@ -81,17 +82,17 @@ const DashboardEmptyState: React.FC<{
   // model connected); otherwise fall back to the plain hint.
   const showChips = !!onLaunch && canRun;
 
+  const isAppBuilder = currentCategory?.target === 'app-builder';
+
+  // Click commits the query into the composer (locks it open); the user then sends.
   const launch = (prompt: string) => {
     if (launching) return;
-    // Build prompts open the App Builder (live preview) with the prompt auto-sent.
-    if (currentCategory?.target === 'app-builder') {
+    if (isAppBuilder) {
       navigate(`/apps/new?prompt=${encodeURIComponent(prompt)}`);
       return;
     }
-    // Open the composer with the prompt typed in, unsent: the user sees the chat
-    // open with their message ready and clicks send. Falls back to direct launch.
-    if (onPrefill) {
-      onPrefill(prompt);
+    if (onStarter) {
+      onStarter('commit', prompt);
       return;
     }
     if (!onLaunch) return;
@@ -201,12 +202,16 @@ const DashboardEmptyState: React.FC<{
                 >
                   <ArrowLeft size={15} /> back
                 </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, width: '100%', maxWidth: 480 }}>
+                <Box
+                  onMouseLeave={() => { if (!isAppBuilder) onStarter?.('leave'); }}
+                  sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, width: '100%', maxWidth: 480 }}
+                >
                   {currentPrompts.map((prompt) => (
                     <Box
                       component="button"
                       key={prompt}
                       onClick={() => launch(prompt)}
+                      onMouseEnter={() => { if (!isAppBuilder) onStarter?.('hover', prompt); }}
                       disabled={launching}
                       sx={{
                         textAlign: 'left',
