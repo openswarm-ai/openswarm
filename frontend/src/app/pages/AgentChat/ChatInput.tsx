@@ -63,6 +63,8 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
   }, [autoFocus]);
 
   // Drop the seeded prompt into the editor when it arrives (starter-prompt click).
+  // It renders translucent, reading as a pending suggestion, and solidifies the
+  // moment the user takes it (a keypress, including Enter-to-send, or any edit).
   const prefilledRef = useRef<string | null>(null);
   useEffect(() => {
     if (!prefillPrompt || prefilledRef.current === prefillPrompt) return;
@@ -72,7 +74,20 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     else editor.textContent = prefillPrompt;
     setHasContent(true);
     prefilledRef.current = prefillPrompt;
+    editor.style.opacity = '0.5';
+    editor.style.transition = 'opacity 0.15s';
     editor.focus();
+    const solidify = () => {
+      editor.style.opacity = '';
+      editor.removeEventListener('keydown', solidify);
+      editor.removeEventListener('input', solidify);
+    };
+    editor.addEventListener('keydown', solidify);
+    editor.addEventListener('input', solidify);
+    return () => {
+      editor.removeEventListener('keydown', solidify);
+      editor.removeEventListener('input', solidify);
+    };
   }, [prefillPrompt]);
 
   useDraftLoad(editorRef, ownerId);
