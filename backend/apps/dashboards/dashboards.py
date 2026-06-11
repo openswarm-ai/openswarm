@@ -424,17 +424,95 @@ async def duplicate_dashboard(dashboard_id: str):
     new_id = uuid4().hex
     now = datetime.now().isoformat()
 
+    from backend.apps.agents.agent_manager import agent_manager
+    from backend.apps.agents.manager.session.session_store import _save_session
+
+    source_layout = source_data.get("layout", {}) or {}
+    source_browser_cards = source_layout.get("browser_cards", {}) or {}
+    source_cards = source_layout.get("cards", {}) or {}
+
+    browser_id_remap: dict[str, str] = {old_bid: uuid4().hex for old_bid in source_browser_cards.keys()}
+    new_browser_cards: dict[str, dict] = {}
+    for old_bid, card in source_browser_cards.items():
+        new_bid = browser_id_remap[old_bid]
+        new_card = {**card, "browser_id": new_bid}
+        new_browser_cards[new_bid] = new_card
+
+    candidate_ids: set[str] = set()
+    for sid, sess in agent_manager.sessions.items():
+        if getattr(sess, "dashboard_id", None) == dashboard_id:
+            candidate_ids.add(sid)
+    if os.path.exists(SESSIONS_DIR):
+        for fname in os.listdir(SESSIONS_DIR):
+            if not fname.endswith(".json"):
+                continue
+            data = read_json_or_none(os.path.join(SESSIONS_DIR, fname))
+            if data and data.get("dashboard_id") == dashboard_id:
+                candidate_ids.add(fname[:-5])
+
+    session_id_remap: dict[str, str] = {}
+    duplicated_sessions = []  # (old_id, new_session)
+    for old_sid in candidate_ids:
+        try:
+            new_sess = await agent_manager.duplicate_session(old_sid, dashboard_id=new_id)
+        except Exception:
+            logger.warning(f"Failed to duplicate session {old_sid} during dashboard duplication", exc_info=True)
+            continue
+        session_id_remap[old_sid] = new_sess.id
+        duplicated_sessions.append((old_sid, new_sess))
+
+    for old_sid, new_sess in duplicated_sessions:
+        source_sess = agent_manager.sessions.get(old_sid)
+        old_browser_id = getattr(source_sess, "browser_id", None) if source_sess else None
+        old_parent_sid = getattr(source_sess, "parent_session_id", None) if source_sess else None
+        if old_browser_id is None or old_parent_sid is None:
+            data = read_json_or_none(os.path.join(SESSIONS_DIR, f"{old_sid}.json")) or {}
+            if old_browser_id is None:
+                old_browser_id = data.get("browser_id")
+            if old_parent_sid is None:
+                old_parent_sid = data.get("parent_session_id")
+        if old_browser_id and old_browser_id in browser_id_remap:
+            new_sess.browser_id = browser_id_remap[old_browser_id]
+        if old_parent_sid and old_parent_sid in session_id_remap:
+            new_sess.parent_session_id = session_id_remap[old_parent_sid]
+        _save_session(new_sess.id, new_sess.model_dump(mode="json"))
+
+    new_cards: dict[str, dict] = {}
+    for old_sid, card in source_cards.items():
+        new_sid = session_id_remap.get(old_sid)
+        if not new_sid:
+            continue
+        new_cards[new_sid] = {**card, "session_id": new_sid}
+
+    for new_card in new_browser_cards.values():
+        old_spawn = new_card.get("spawned_by")
+        if old_spawn and old_spawn in session_id_remap:
+            new_card["spawned_by"] = session_id_remap[old_spawn]
+        elif old_spawn:
+            new_card["spawned_by"] = None
+
+    new_expanded = [
+        session_id_remap[sid]
+        for sid in source_layout.get("expanded_session_ids", []) or []
+        if sid in session_id_remap
+    ]
+
+    new_layout = {
+        **source_layout,
+        "cards": new_cards,
+        "view_cards": source_layout.get("view_cards", {}) or {},
+        "browser_cards": new_browser_cards,
+        "notes": source_layout.get("notes", {}) or {},
+        "expanded_session_ids": new_expanded,
+    }
+
     new_dashboard = {
         **source_data,
         "id": new_id,
         "name": f"{source_data.get('name', 'Untitled')} (copy)",
         "created_at": now,
         "updated_at": now,
-        "layout": {
-            "cards": {},
-            "view_cards": source_data.get("layout", {}).get("view_cards", {}),
-            "browser_cards": source_data.get("layout", {}).get("browser_cards", {}),
-        },
+        "layout": new_layout,
     }
     atomic_write_json(os.path.join(DATA_DIR, f"{new_id}.json"), new_dashboard)
 
