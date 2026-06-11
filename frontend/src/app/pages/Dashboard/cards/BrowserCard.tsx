@@ -1380,7 +1380,7 @@ const BrowserCard: React.FC<Props> = ({
             position: 'absolute',
             cursor: CURSOR_MAP[dir],
             opacity: 0,
-            zIndex: 10,
+            zIndex: 20,
             ...sx,
           }}
         />
