@@ -56,6 +56,7 @@ from backend.apps.agents.manager.session.history_compaction import (
 )
 from backend.apps.agents.manager.prompt.prompt_context import (
     _build_browser_context,
+    _build_selected_app_context,
     _build_connected_tools_context,
     _build_mcp_registry_summary,
     _compose_system_prompt,
@@ -211,6 +212,9 @@ class AgentManager:
 
     def _build_browser_context(self, dashboard_id: str | None, selected_browser_ids: list[str] | None = None) -> str | None:
         return _build_browser_context(dashboard_id, selected_browser_ids)
+
+    def _build_selected_app_context(self, selected_app_output_ids: list[str] | None) -> str | None:
+        return _build_selected_app_context(selected_app_output_ids)
 
     def _get_pre_selected_browser_ids(self, dashboard_id: str | None) -> list[str]:
         return _get_pre_selected_browser_ids(dashboard_id)
@@ -384,7 +388,7 @@ class AgentManager:
     def _resolve_context_paths(self, context_paths: list | None) -> str:
         return _resolve_context_paths(context_paths)
 
-    async def _run_agent_loop(self, session_id: str, prompt: str, images: list | None = None, context_paths: list | None = None, forced_tools: list[str] | None = None, attached_skills: list | None = None, fork_session: bool = False, selected_browser_ids: list[str] | None = None):
+    async def _run_agent_loop(self, session_id: str, prompt: str, images: list | None = None, context_paths: list | None = None, forced_tools: list[str] | None = None, attached_skills: list | None = None, fork_session: bool = False, selected_browser_ids: list[str] | None = None, selected_app_output_ids: list[str] | None = None):
         """Run the Claude Agent SDK query loop for a session."""
         session = self.sessions.get(session_id)
         if not session:
@@ -1106,6 +1110,14 @@ class AgentManager:
                 from backend.apps.outputs.view_builder_templates import load_app_builder_skill
                 skill_block = f"<app_builder_reference>\n{load_app_builder_skill()}\n</app_builder_reference>"
                 composed_prompt = f"{composed_prompt}\n\n{skill_block}" if composed_prompt else skill_block
+
+            # App cards the user picked via the dashboard element picker: give
+            # the agent each app's on-disk path + meta + SKILL.md pointer so it
+            # can edit them in place (the dashboard card's runtime live-reloads).
+            # Additive and independent of view-builder mode above.
+            app_ctx = self._build_selected_app_context(selected_app_output_ids)
+            if app_ctx:
+                composed_prompt = f"{composed_prompt}\n\n{app_ctx}" if composed_prompt else app_ctx
 
             # Per-turn estimate of framework overhead (subtracted from displayed
             # input). Conservative on purpose so honest over-shows beat lies.
@@ -3214,6 +3226,7 @@ class AgentManager:
         attached_skills: list | None = None,
         hidden: bool = False,
         selected_browser_ids: list[str] | None = None,
+        selected_app_output_ids: list[str] | None = None,
         client_message_id: str | None = None,
     ):
         """Send a follow-up message to an existing session."""
@@ -3341,7 +3354,7 @@ class AgentManager:
         if fast_verdict != "no":
             task = asyncio.create_task(self._run_browser_fast_path(session_id, prompt, selected_browser_ids, fast_brief, fast_verdict))
         else:
-            task = asyncio.create_task(self._run_agent_loop(session_id, prompt, images=images, context_paths=context_paths, forced_tools=forced_tools, attached_skills=attached_skills, selected_browser_ids=selected_browser_ids))
+            task = asyncio.create_task(self._run_agent_loop(session_id, prompt, images=images, context_paths=context_paths, forced_tools=forced_tools, attached_skills=attached_skills, selected_browser_ids=selected_browser_ids, selected_app_output_ids=selected_app_output_ids))
         self.tasks[session_id] = task
 
     async def _run_browser_fast_path(self, session_id: str, prompt: str, selected_browser_ids: list[str] | None, brief: str = "", verdict: str = "act"):

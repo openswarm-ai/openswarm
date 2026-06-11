@@ -191,6 +191,7 @@ export interface SendMessagePayload {
   attachedSkills?: Array<{ id: string; name: string; content: string }>;
   hidden?: boolean;
   selectedBrowserIds?: string[];
+  selectedAppIds?: string[];
 }
 
 function _genOptimisticId(): string {
@@ -199,7 +200,7 @@ function _genOptimisticId(): string {
 
 export const sendMessage = createAsyncThunk(
   'agents/sendMessage',
-  async ({ sessionId, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, hidden, selectedBrowserIds }: SendMessagePayload, { dispatch }) => {
+  async ({ sessionId, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, hidden, selectedBrowserIds, selectedAppIds }: SendMessagePayload, { dispatch }) => {
     // Mint client id and dispatch optimistic bubble before awaiting the network; id round-trips for echo dedupe.
     const clientMessageId = _genOptimisticId();
     dispatch(addOptimisticMessage({
@@ -216,7 +217,7 @@ export const sendMessage = createAsyncThunk(
       const res = await fetch(`${AGENTS_API}/sessions/${sessionId}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, hidden, selected_browser_ids: selectedBrowserIds, client_message_id: clientMessageId }),
+        body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, hidden, selected_browser_ids: selectedBrowserIds, selected_app_output_ids: selectedAppIds, client_message_id: clientMessageId }),
       });
       if (!res.ok) throw new Error(`send failed: ${res.status}`);
     } catch (err) {
@@ -276,6 +277,7 @@ export interface LaunchAndSendPayload {
   attachedSkills?: Array<{ id: string; name: string; content: string }>;
   expand?: boolean;
   selectedBrowserIds?: string[];
+  selectedAppIds?: string[];
 }
 
 export const fetchSession = createAsyncThunk(
@@ -293,7 +295,7 @@ export const fetchSession = createAsyncThunk(
 
 export const launchAndSendFirstMessage = createAsyncThunk(
   'agents/launchAndSendFirstMessage',
-  async ({ draftId, config, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds }: LaunchAndSendPayload) => {
+  async ({ draftId, config, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedAppIds }: LaunchAndSendPayload) => {
     const launchRes = await fetch(`${AGENTS_API}/launch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -305,7 +307,7 @@ export const launchAndSendFirstMessage = createAsyncThunk(
     await fetch(`${AGENTS_API}/sessions/${session.id}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, selected_browser_ids: selectedBrowserIds }),
+      body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, selected_browser_ids: selectedBrowserIds, selected_app_output_ids: selectedAppIds }),
     });
 
     const refreshRes = await fetch(`${AGENTS_API}/sessions/${session.id}`);

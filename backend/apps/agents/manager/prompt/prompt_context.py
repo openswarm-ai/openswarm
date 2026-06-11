@@ -174,6 +174,65 @@ def _build_browser_context(dashboard_id: str | None, selected_browser_ids: list[
     return "\n".join(lines)
 
 
+def _build_selected_app_context(selected_app_output_ids: list[str] | None) -> str | None:
+    """Build a context block for dashboard App cards the user selected to edit.
+
+    Resolves each Output id to its on-disk workspace so the agent edits the
+    right files; the dashboard card's Vite runtime live-reloads on save. Skips
+    deleted apps / missing folders, returns None if nothing resolves.
+    """
+    if not selected_app_output_ids:
+        return None
+    import os
+    from backend.apps.outputs.workspace_io import load_output
+    from backend.config.paths import OUTPUTS_WORKSPACE_DIR
+
+    entries: list[str] = []
+    for output_id in selected_app_output_ids:
+        try:
+            output = load_output(output_id)
+        except Exception:
+            output = None
+        if not output or not output.workspace_id:
+            continue
+        path = os.path.abspath(os.path.join(OUTPUTS_WORKSPACE_DIR, output.workspace_id))
+        if not os.path.isdir(path):
+            continue
+        meta_raw = ""
+        meta_path = os.path.join(path, "meta.json")
+        if os.path.isfile(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta_raw = f.read().strip()
+            except Exception:
+                meta_raw = ""
+        name = output.name or "Untitled App"
+        lines = [
+            f'- App: "{name}"',
+            f"  Workspace path: {path}",
+            f"  Entry point: {os.path.join(path, 'index.html')}",
+        ]
+        if meta_raw:
+            lines.append(f"  meta.json: {meta_raw}")
+        lines.append(
+            f"  Before changing anything, Read {os.path.join(path, 'SKILL.md')} "
+            f"for the App platform spec."
+        )
+        entries.append("\n".join(lines))
+
+    if not entries:
+        return None
+    return (
+        "<selected_app_context>\n"
+        "The user selected these App cards on the dashboard for you to edit. "
+        "They are existing web apps; edit the files in place at the paths below "
+        "and the dashboard preview live-reloads on save. Do not scaffold a new "
+        "project or write files anywhere else.\n\n"
+        + "\n\n".join(entries)
+        + "\n</selected_app_context>"
+    )
+
+
 def _get_pre_selected_browser_ids(dashboard_id: str | None) -> list[str]:
     """Return browser_ids of all browser cards currently on the dashboard."""
     if not dashboard_id:
