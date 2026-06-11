@@ -375,14 +375,6 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
 
   const [initialDraftId, setInitialDraftId] = useState<string | null>(null);
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
-
-  // Seed prompt from a "Build" starter chip (#/apps/new?prompt=...). Captured once
-  // on mount so the later replaceState (/apps/new -> /apps/<id>) can't drop it.
-  const [seedPrompt] = useState<string | null>(() => {
-    const hash = window.location.hash;
-    const q = hash.indexOf('?');
-    return q < 0 ? null : new URLSearchParams(hash.slice(q + 1)).get('prompt');
-  });
   // Reuse the Output's workspace_id across remounts so we don't orphan agent edits or chat history.
   const [stableWorkspaceId] = useState(() => output?.workspace_id || `ws-${Date.now().toString(36)}`);
   const draftCreated = useRef(false);
@@ -1060,7 +1052,6 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
             key={effectiveSessionId}
             sessionId={effectiveSessionId}
             initialContextPaths={initialContextPaths}
-            initialPrompt={initialContextPaths ? (seedPrompt ?? undefined) : undefined}
           />
         ) : (
           <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

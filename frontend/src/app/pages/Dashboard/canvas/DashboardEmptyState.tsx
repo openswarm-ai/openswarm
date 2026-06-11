@@ -1,7 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Hammer, PenLine, GraduationCap, ArrowLeft } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -63,7 +62,8 @@ const DashboardEmptyState: React.FC<{
   c: ClaudeTokens;
   onLaunch?: (prompt: string, mode: string, model: string) => void;
   // Open the composer with the prompt typed in (translucent, unsent) on click.
-  onStarter?: (prompt: string) => void;
+  // Optional mode opens it in a specific mode (Build -> 'view-builder').
+  onStarter?: (prompt: string, mode?: string) => void;
 }> = ({ c, onLaunch, onStarter }) => {
   // The host hides Dashboard with visibility:hidden (not display:none), which keeps
   // CSS animations ticking; gate on active so the shimmer only burns while watched.
@@ -71,7 +71,6 @@ const DashboardEmptyState: React.FC<{
   const model = useAppSelector((s) => s.settings.data.default_model);
   const mode = useAppSelector((s) => s.settings.data.default_mode);
   const canRun = useAppSelector((s) => hasFreeTrialActive(s) || hasModelConnected(s));
-  const navigate = useNavigate();
   const [launching, setLaunching] = React.useState(false);
   const [expanded, setExpanded] = React.useState<string | null>(null);
   const currentCategory = STARTER_CATEGORIES.find((cat) => cat.id === expanded);
@@ -84,14 +83,12 @@ const DashboardEmptyState: React.FC<{
   const isAppBuilder = currentCategory?.target === 'app-builder';
 
   // Click opens the composer with the prompt typed in (unsent); the user then sends.
+  // Build opens it in App Builder mode so it builds on the dashboard (no Apps-page
+  // context switch); the others use the default mode.
   const launch = (prompt: string) => {
     if (launching) return;
-    if (isAppBuilder) {
-      navigate(`/apps/new?prompt=${encodeURIComponent(prompt)}`);
-      return;
-    }
     if (onStarter) {
-      onStarter(prompt);
+      onStarter(prompt, isAppBuilder ? 'view-builder' : undefined);
       return;
     }
     if (!onLaunch) return;

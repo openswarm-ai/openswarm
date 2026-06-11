@@ -59,6 +59,8 @@ interface Props {
   onNewAgentBounceEnd?: () => void;
   // Text to seed the composer with when it opens (starter-prompt click).
   prefillPrompt?: string;
+  // Mode to open the composer in (e.g. 'view-builder' for a Build starter).
+  prefillMode?: string;
 }
 
 const TOOLBAR_OWNER_ID = '__toolbar__';
@@ -102,7 +104,7 @@ function formatRelativeTime(dateStr: string | null): string {
 }
 
 const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
-  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, onAddNote, dashboardId, newAgentBounce, onNewAgentBounceEnd, prefillPrompt }, ref) => {
+  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, onAddNote, dashboardId, newAgentBounce, onNewAgentBounceEnd, prefillPrompt, prefillMode }, ref) => {
     const c = useClaudeTokens();
     const dispatch = useAppDispatch();
     const elementSelection = useElementSelection();
@@ -141,6 +143,12 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       }
       prevInputOpen.current = inputOpen;
     }, [inputOpen, settingsLoaded, defaultMode, defaultModel, defaultThinkingLevel]);
+    // A Build starter opens the composer in App Builder mode. Runs after the
+    // reset above (declaration order) so it wins; cleared back to default when
+    // prefillMode is gone (normal new chat).
+    useEffect(() => {
+      if (prefillMode) setMode(prefillMode);
+    }, [prefillMode]);
 
     // Writes toolbar picks through to global default; otherwise the reopen-reset effect would snap back next open.
     const promoteToDefault = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {

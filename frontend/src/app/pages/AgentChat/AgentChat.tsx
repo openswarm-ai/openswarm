@@ -157,13 +157,10 @@ interface AgentChatProps {
   isGlowing?: boolean;
   onDismissGlow?: () => void;
   initialContextPaths?: ContextPath[];
-  // One-shot seed: send this prompt automatically once the session is ready.
-  // App Builder "Build" starters use it so a chip click builds the app hands-free.
-  initialPrompt?: string;
   onBranch?: (newSessionId: string) => void;
 }
 
-const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, isGlowing, onDismissGlow, initialContextPaths, initialPrompt, onBranch }) => {
+const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, isGlowing, onDismissGlow, initialContextPaths, onBranch }) => {
   const c = useClaudeTokens();
   const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
     running: { color: c.status.success, bg: c.status.successBg },
@@ -596,17 +593,6 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     },
     [id, scrollToBottom, agentBusy, dispatchMessage],
   );
-
-  // Fire the seed prompt exactly once, through the same path a manual send takes
-  // (so draft-launch + queueing behave identically). Gated on id so we wait for
-  // the session to exist; the caller (ViewEditor) only passes initialPrompt once
-  // the workspace context is ready, so the build lands in the workspace.
-  const initialPromptSent = useRef(false);
-  useEffect(() => {
-    if (initialPromptSent.current || !initialPrompt || !id) return;
-    initialPromptSent.current = true;
-    handleSend(initialPrompt, undefined, initialContextPaths?.map((cp) => ({ path: cp.path, type: cp.type })));
-  }, [initialPrompt, id, initialContextPaths, handleSend]);
 
   const handleModeChange = useCallback((newMode: string) => {
     setMode(newMode);

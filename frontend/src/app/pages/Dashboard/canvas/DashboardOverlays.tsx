@@ -42,6 +42,7 @@ interface DashboardOverlaysProps {
   onTidy: () => void;
   onSearchPaletteClose: () => void;
   toolbarPrefill?: string;
+  toolbarPrefillMode?: string;
 }
 
 const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
@@ -70,6 +71,7 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
   onTidy,
   onSearchPaletteClose,
   toolbarPrefill,
+  toolbarPrefillMode,
 }) => {
   return (
     <>
@@ -89,6 +91,7 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
           newAgentBounce={newAgentBounce}
           onNewAgentBounceEnd={onNewAgentBounceEnd}
           prefillPrompt={toolbarPrefill}
+          prefillMode={toolbarPrefillMode}
         />
       </Box>
 

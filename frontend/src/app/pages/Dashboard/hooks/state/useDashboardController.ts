@@ -160,15 +160,22 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
   });
 
   // Starter-prompt click: opens the composer with the prompt typed in (translucent,
-  // unsent), so the user reviews and hits send. Cleared when the composer closes.
+  // unsent), so the user reviews and hits send. A Build starter also passes the
+  // App Builder mode ('view-builder') so it builds in-place on the dashboard, no
+  // context switch to the Apps page. Both cleared when the composer closes.
   const [toolbarPrefill, setToolbarPrefill] = useState<string | undefined>(undefined);
-  const handleStarter = useCallback((prompt: string) => {
+  const [toolbarPrefillMode, setToolbarPrefillMode] = useState<string | undefined>(undefined);
+  const handleStarter = useCallback((prompt: string, mode?: string) => {
     setToolbarPrefill(prompt);
+    setToolbarPrefillMode(mode);
     setToolbarOpen(true);
   }, [setToolbarOpen]);
   useEffect(() => {
-    if (!toolbarOpen && toolbarPrefill) setToolbarPrefill(undefined);
-  }, [toolbarOpen, toolbarPrefill]);
+    if (!toolbarOpen) {
+      if (toolbarPrefill) setToolbarPrefill(undefined);
+      if (toolbarPrefillMode) setToolbarPrefillMode(undefined);
+    }
+  }, [toolbarOpen, toolbarPrefill, toolbarPrefillMode]);
 
   useDashboardClipboard({
     isActive,
@@ -265,6 +272,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     neighborDirections, toolbarOpen, searchPaletteOpen, newAgentBounce,
     toolbarRef, spawnOriginsRef, revealSpawnedRef, measuredHeightsRef, getCanvasState,
     toolbarPrefill,
+    toolbarPrefillMode,
     onStarter: handleStarter,
     onViewportMouseDown: handleViewportMouseDown,
     onViewportMouseMove: handleViewportMouseMove,
