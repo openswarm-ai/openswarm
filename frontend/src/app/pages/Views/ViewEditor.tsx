@@ -373,7 +373,11 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     document.body.style.userSelect = '';
   }, []);
 
-  const [initialDraftId, setInitialDraftId] = useState<string | null>(null);
+  // Seed from the existing session id so a warm reopen resolves effectiveSessionId
+  // on the FIRST render (no "Initializing agent..." blank frame while the mount
+  // effect re-derives it). Cold opens still read null until fetchSession lands,
+  // because the selector requires the session to actually be in the store.
+  const [initialDraftId, setInitialDraftId] = useState<string | null>(output?.session_id ?? null);
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   // Reuse the Output's workspace_id across remounts so we don't orphan agent edits or chat history.
   const [stableWorkspaceId] = useState(() => output?.workspace_id || `ws-${Date.now().toString(36)}`);
