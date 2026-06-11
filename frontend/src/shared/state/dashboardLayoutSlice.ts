@@ -59,6 +59,8 @@ export interface BrowserCardPosition {
   zOrder: number;
   /** Agent session that spawned this browser; auto-removed when its owner reaches terminal state. */
   spawned_by?: string | null;
+  /** Dashboard this card belongs to; cards render and persist only on their owning dashboard. */
+  dashboard_id?: string;
 }
 
 export type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'gray';
@@ -975,10 +977,14 @@ const dashboardLayoutSlice = createSlice({
         // browsers spawn). The caller says which; never inferred from state.
         const isReconnectRefetch = action.meta.arg.isReconnect === true;
         state.initialized = true;
+        const ownerDashboardId = action.meta.arg.dashboardId;
         if (!isReconnectRefetch) {
           state.cards = action.payload.cards;
           state.viewCards = action.payload.viewCards;
           state.browserCards = action.payload.browserCards;
+          for (const card of Object.values(state.browserCards)) {
+            card.dashboard_id = ownerDashboardId;
+          }
           state.notes = action.payload.notes || {};
           // Cards boot parked (no guest process, title placeholder); the suspend
           // hook wakes viewport-sized and agent-driven ones on its first pass.
@@ -992,6 +998,9 @@ const dashboardLayoutSlice = createSlice({
           addMissingCards(state.cards, action.payload.cards, occupied);
           addMissingCards(state.viewCards, action.payload.viewCards, occupied);
           addMissingCards(state.browserCards, action.payload.browserCards, occupied);
+          for (const card of Object.values(state.browserCards)) {
+            if (!card.dashboard_id) card.dashboard_id = ownerDashboardId;
+          }
           addMissingCards(state.notes, action.payload.notes || {}, occupied);
         }
         state.persistedExpandedSessionIds = action.payload.expandedSessionIds;

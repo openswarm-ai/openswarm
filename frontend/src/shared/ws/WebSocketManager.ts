@@ -736,7 +736,14 @@ class WebSocketManager {
 
       case 'dashboard:browser_card_added':
         if (data.browser_card) {
-          store.dispatch(addBrowserCardFromBackend(data.browser_card));
+          // Tag with origin dashboard so the card renders only on the dashboard
+          // that spawned it , without this, a browser spawned by an agent on
+          // dashboard A leaks into whatever dashboard the user is currently
+          // viewing (the global browserCards dict + unfiltered render).
+          store.dispatch(addBrowserCardFromBackend({
+            ...data.browser_card,
+            dashboard_id: data.dashboard_id,
+          }));
           const parentId = data.parent_session_id;
           if (parentId) {
             const layoutState = store.getState().dashboardLayout;
