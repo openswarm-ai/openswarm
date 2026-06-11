@@ -111,8 +111,6 @@ export interface DomSelectorState {
 
 export function useDomElementSelector(): DomSelectorState {
   const ctx = useElementSelection();
-  // Dashboard stays mounted (visibility-hidden) on other routes; gate listeners
-  // so its select mode can't fire over the App Builder or other pages.
   const active = useDashboardActive();
   const [overlay, setOverlay] = useState<OverlayState>(EMPTY_OVERLAY);
   const [dragRect, setDragRect] = useState<DragRect>(EMPTY_DRAG);

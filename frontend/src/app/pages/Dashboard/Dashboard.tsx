@@ -9,8 +9,6 @@ import DashboardCanvas from './canvas/DashboardCanvas';
 const DashboardSelectionOverlay: React.FC = () => {
   const active = useDashboardActive();
   const { overlay, dragRect, dragPreview } = useDomElementSelector();
-  // Selection state stays in context so it restores on return; we just stop
-  // portaling highlights over whatever route is currently on top.
   if (!active) return null;
   return <SelectionOverlay overlay={overlay} dragRect={dragRect} dragPreview={dragPreview} />;
 };
