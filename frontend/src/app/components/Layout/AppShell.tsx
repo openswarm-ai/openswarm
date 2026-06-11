@@ -77,6 +77,31 @@ const AppShell: React.FC = () => {
     };
     return fn as typeof navigateRaw;
   }, [navigateRaw]);
+  // Rapid app-list clicks each mount a fresh ViewEditor (its WebGL placeholder + preview webview); churning heavy WebGL apps faster than the GPU recycles surfaces kills the GPU/host renderer and takes the whole app down. Open the first click at once (idle = no click in 400ms), then during a burst fire NOTHING until the clicks stop, so a spam-burst lands on at most two apps instead of a dozen.
+  const lastAppClickAt = useRef(0);
+  const pendingAppNav = useRef<string | null>(null);
+  const appNavTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const APP_NAV_IDLE_MS = 400;
+  const APP_NAV_TRAILING_MS = 320;
+  const navigateToApp = useCallback((id: string) => {
+    const now = Date.now();
+    const idle = now - lastAppClickAt.current >= APP_NAV_IDLE_MS;
+    lastAppClickAt.current = now;
+    if (appNavTimer.current) clearTimeout(appNavTimer.current);
+    if (idle) {
+      pendingAppNav.current = null;
+      navigate(`/apps/${id}`);
+      return;
+    }
+    pendingAppNav.current = id;
+    appNavTimer.current = setTimeout(() => {
+      appNavTimer.current = null;
+      const target = pendingAppNav.current;
+      pendingAppNav.current = null;
+      if (target) navigate(`/apps/${target}`);
+    }, APP_NAV_TRAILING_MS);
+  }, [navigate]);
+  useEffect(() => () => { if (appNavTimer.current) clearTimeout(appNavTimer.current); }, []);
   const location = useLocation();
   // React Router (HashRouter) stores a monotonic index in history state. location
   // re-renders on every nav, by which point window.history.state.idx is updated.
@@ -990,7 +1015,7 @@ const AppShell: React.FC = () => {
                   return (
                     <Box
                       key={app.id}
-                      onClick={() => navigate(`/apps/${app.id}`)}
+                      onClick={() => navigateToApp(app.id)}
                       sx={{
                         display: 'flex',
                         alignItems: 'center',

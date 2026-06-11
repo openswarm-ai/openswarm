@@ -1261,8 +1261,8 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
                   onContentLoad={onIframeContentLoad}
                 />
               )}
-              {/* Placeholder fades via opacity (never unmounts) so the PixelBlast canvas runs continuously. */}
-              {placeholderMounted && (
+              {/* previewSettled gate: PixelBlast spins up a WebGL2 context, and spinning one up per fast-switched-past app churns GL contexts faster than the renderer can recycle them, which crashes the host renderer (and the whole app) under app-list spam. Same 250ms gate as the webview. */}
+              {previewSettled && placeholderMounted && (
                 <Box
                   sx={{
                     position: 'absolute',
