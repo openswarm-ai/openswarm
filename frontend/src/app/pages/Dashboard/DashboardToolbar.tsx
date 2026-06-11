@@ -143,12 +143,15 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       }
       prevInputOpen.current = inputOpen;
     }, [inputOpen, settingsLoaded, defaultMode, defaultModel, defaultThinkingLevel]);
-    // A Build starter opens the composer in App Builder mode. Runs after the
-    // reset above (declaration order) so it wins; cleared back to default when
-    // prefillMode is gone (normal new chat).
+    // Prefill-driven mode: a Build starter opens the composer in App Builder mode
+    // ('view-builder'); a non-Build starter (no prefillMode) falls back to the
+    // default. Gated on inputOpen + declared last so it wins the reset effects
+    // above regardless of settings-load timing. A later manual pick survives
+    // because none of these deps change on a pick.
     useEffect(() => {
-      if (prefillMode) setMode(prefillMode);
-    }, [prefillMode]);
+      if (!inputOpen || !settingsLoaded) return;
+      setMode(prefillMode || defaultMode || 'agent');
+    }, [prefillMode, inputOpen, settingsLoaded, defaultMode]);
 
     // Writes toolbar picks through to global default; otherwise the reopen-reset effect would snap back next open.
     const promoteToDefault = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {

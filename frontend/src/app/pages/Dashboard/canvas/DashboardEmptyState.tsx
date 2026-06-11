@@ -26,7 +26,7 @@ const STARTER_CATEGORIES: StarterCategory[] = [
       'Find today\'s top news and summarize it for me',
       'Compare the 3 best standing desks and recommend one',
       'Plan a weekend trip to Tokyo with a day-by-day itinerary',
-      'Find the highest-rated wireless earbuds under $100',
+      'Find the strangest world record I could actually break',
     ],
   },
   {
@@ -35,7 +35,7 @@ const STARTER_CATEGORIES: StarterCategory[] = [
       'Build a focus timer that dings when the break starts',
       'Make a tip calculator that splits the bill',
       'Create a Snake game I can play right now',
-      'Build a daily habit tracker with a streak counter',
+      'Build a tiny Minecraft-style block world I can walk around in',
     ],
   },
   {
@@ -44,7 +44,7 @@ const STARTER_CATEGORIES: StarterCategory[] = [
       'Write a friendly email introducing myself to a new client',
       'Turn my rough notes into a polished update',
       'Write a product description for a coffee mug',
-      'Write a short poem about the sea',
+      'Write my morning routine as an epic fantasy quest',
     ],
   },
   {
@@ -53,7 +53,7 @@ const STARTER_CATEGORIES: StarterCategory[] = [
       'Explain how AI chatbots actually work, in plain English',
       'Teach me the basics of investing in 5 minutes',
       'Explain the stock market like I\'m five',
-      'Give me a 5-minute crash course on climate change',
+      'What would happen if the moon disappeared tomorrow?',
     ],
   },
 ];
