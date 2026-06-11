@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { SelectedElement, useElementSelection } from './ElementSelectionContext';
+import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
 
 const SELECT_ATTR = 'data-select-type';
 const SELECT_ID_ATTR = 'data-select-id';
@@ -110,6 +111,9 @@ export interface DomSelectorState {
 
 export function useDomElementSelector(): DomSelectorState {
   const ctx = useElementSelection();
+  // Dashboard stays mounted (visibility-hidden) on other routes; gate listeners
+  // so its select mode can't fire over the App Builder or other pages.
+  const active = useDashboardActive();
   const [overlay, setOverlay] = useState<OverlayState>(EMPTY_OVERLAY);
   const [dragRect, setDragRect] = useState<DragRect>(EMPTY_DRAG);
   const [dragPreview, setDragPreview] = useState<DragPreviewElement[]>([]);
@@ -330,7 +334,7 @@ export function useDomElementSelector(): DomSelectorState {
   }, [ctx]);
 
   useEffect(() => {
-    if (!ctx?.selectMode) {
+    if (!ctx?.selectMode || !active) {
       setOverlay(EMPTY_OVERLAY);
       setDragRect(EMPTY_DRAG);
       setDragPreview([]);
@@ -369,7 +373,7 @@ export function useDomElementSelector(): DomSelectorState {
       // Defensive: if select mode flips off mid-drag, drop the class so webviews regain interactivity.
       document.body.classList.remove('dashboard-marquee-active');
     };
-  }, [ctx?.selectMode, handleMouseMove, handleMouseDown, handleMouseUp, handleClick]);
+  }, [ctx?.selectMode, active, handleMouseMove, handleMouseDown, handleMouseUp, handleClick]);
 
   return { overlay, dragRect, dragPreview };
 }
