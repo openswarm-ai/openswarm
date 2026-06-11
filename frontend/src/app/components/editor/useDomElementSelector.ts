@@ -16,6 +16,8 @@ export interface OverlayState {
   width: number;
   height: number;
   label: string;
+  clipLeft: number;
+  clipTop: number;
 }
 
 export interface DragRect {
@@ -26,7 +28,7 @@ export interface DragRect {
   height: number;
 }
 
-const EMPTY_OVERLAY: OverlayState = { visible: false, top: 0, left: 0, width: 0, height: 0, label: '' };
+const EMPTY_OVERLAY: OverlayState = { visible: false, top: 0, left: 0, width: 0, height: 0, label: '', clipLeft: 0, clipTop: 0 };
 const EMPTY_DRAG: DragRect = { visible: false, top: 0, left: 0, width: 0, height: 0 };
 
 const SEMANTIC_LABELS: Record<string, string> = {
@@ -69,6 +71,50 @@ function rectsIntersect(
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
+export interface ClippedRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+  hidden: boolean;
+  clipLeft: number;
+  clipTop: number;
+}
+
+export function clipRectToAncestors(el: Element, raw: DOMRect): ClippedRect {
+  let left = raw.left;
+  let top = raw.top;
+  let right = raw.right;
+  let bottom = raw.bottom;
+  let clipLeft = -Infinity;
+  let clipTop = -Infinity;
+  let p: Element | null = el.parentElement;
+  while (p && p !== document.body && p !== document.documentElement) {
+    const s = getComputedStyle(p);
+    if (s.overflowX !== 'visible' || s.overflowY !== 'visible') {
+      const r = p.getBoundingClientRect();
+      left = Math.max(left, r.left);
+      top = Math.max(top, r.top);
+      right = Math.min(right, r.right);
+      bottom = Math.min(bottom, r.bottom);
+      clipLeft = Math.max(clipLeft, r.left);
+      clipTop = Math.max(clipTop, r.top);
+    }
+    p = p.parentElement;
+  }
+  const width = right - left;
+  const height = bottom - top;
+  return {
+    top,
+    left,
+    width,
+    height,
+    hidden: width <= 0 || height <= 0,
+    clipLeft: clipLeft === -Infinity ? raw.left : clipLeft,
+    clipTop: clipTop === -Infinity ? raw.top : clipTop,
+  };
+}
+
 function buildSelectedElement(el: Element): SelectedElement {
   const type = el.getAttribute(SELECT_ATTR) || '';
   const selectId = el.getAttribute(SELECT_ID_ATTR) || '';
@@ -99,6 +145,8 @@ export interface DragPreviewElement {
   height: number;
   label: string;
   action: 'add' | 'remove';
+  clipLeft: number;
+  clipTop: number;
 }
 
 const DRAG_THRESHOLD = 5;
@@ -182,18 +230,22 @@ export function useDomElementSelector(): DomSelectorState {
             const rect = el.getBoundingClientRect();
             if (rectsIntersect(b, { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom })) {
               if (seen.has(selectId)) return;
+              const clipped = clipRectToAncestors(el, rect);
+              if (clipped.hidden) return;
               seen.add(selectId);
               const type = el.getAttribute(SELECT_ATTR) || '';
               let meta: Record<string, any> = {};
               try { meta = JSON.parse(el.getAttribute(SELECT_META_ATTR) || '{}'); } catch {}
               preview.push({
                 selectId,
-                top: rect.top,
-                left: rect.left,
-                width: rect.width,
-                height: rect.height,
+                top: clipped.top,
+                left: clipped.left,
+                width: clipped.width,
+                height: clipped.height,
                 label: buildSemanticLabel(type, meta),
                 action: selectedIdsRef.current.has(selectId) ? 'remove' : 'add',
+                clipLeft: clipped.clipLeft,
+                clipTop: clipped.clipTop,
               });
             }
           });
@@ -228,17 +280,24 @@ export function useDomElementSelector(): DomSelectorState {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       const rect = selectable.getBoundingClientRect();
+      const clipped = clipRectToAncestors(selectable, rect);
+      if (clipped.hidden) {
+        setOverlay(EMPTY_OVERLAY);
+        return;
+      }
       const type = selectable.getAttribute(SELECT_ATTR) || '';
       let meta: Record<string, any> = {};
       try { meta = JSON.parse(selectable.getAttribute(SELECT_META_ATTR) || '{}'); } catch {}
       const label = buildSemanticLabel(type, meta);
       setOverlay({
         visible: true,
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
+        top: clipped.top,
+        left: clipped.left,
+        width: clipped.width,
+        height: clipped.height,
         label,
+        clipLeft: clipped.clipLeft,
+        clipTop: clipped.clipTop,
       });
     });
   }, []);

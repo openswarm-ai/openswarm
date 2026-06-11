@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { OverlayState, DragRect, DragPreviewElement } from './useDomElementSelector';
+import { OverlayState, DragRect, DragPreviewElement, clipRectToAncestors } from './useDomElementSelector';
 import { useElementSelection } from './ElementSelectionContext';
 
 const HIGHLIGHT_COLOR = '#3b82f6';
@@ -20,6 +20,8 @@ interface PersistentRect {
   width: number;
   height: number;
   label: string;
+  clipLeft: number;
+  clipTop: number;
 }
 
 interface Props {
@@ -52,13 +54,17 @@ const SelectionOverlay: React.FC<Props> = ({ overlay, dragRect, dragPreview = []
           const domEl = document.querySelector(sel.selectorPath);
           if (domEl) {
             const rect = domEl.getBoundingClientRect();
+            const clipped = clipRectToAncestors(domEl, rect);
+            if (clipped.hidden) continue;
             rects.push({
               id: sel.id,
-              top: rect.top,
-              left: rect.left,
-              width: rect.width,
-              height: rect.height,
+              top: clipped.top,
+              left: clipped.left,
+              width: clipped.width,
+              height: clipped.height,
               label: sel.semanticLabel || sel.tagName,
+              clipLeft: clipped.clipLeft,
+              clipTop: clipped.clipTop,
             });
           }
         } catch {
@@ -105,8 +111,8 @@ const SelectionOverlay: React.FC<Props> = ({ overlay, dragRect, dragPreview = []
           <div
             style={{
               position: 'fixed',
-              top: Math.max(0, r.top),
-              left: Math.max(0, r.left),
+              top: Math.max(r.clipTop, r.top),
+              left: Math.max(r.clipLeft, r.left),
               background: HIGHLIGHT_COLOR,
               color: '#fff',
               fontSize: 9,
@@ -171,8 +177,8 @@ const SelectionOverlay: React.FC<Props> = ({ overlay, dragRect, dragPreview = []
             <div
               style={{
                 position: 'fixed',
-                top: Math.max(0, p.top),
-                left: Math.max(0, p.left),
+                top: Math.max(p.clipTop, p.top),
+                left: Math.max(p.clipLeft, p.left),
                 background: labelBg,
                 color: '#fff',
                 fontSize: 9,
@@ -214,8 +220,8 @@ const SelectionOverlay: React.FC<Props> = ({ overlay, dragRect, dragPreview = []
           <div
             style={{
               position: 'fixed',
-              top: Math.max(0, overlay.top),
-              left: Math.max(0, overlay.left),
+              top: Math.max(overlay.clipTop, overlay.top),
+              left: Math.max(overlay.clipLeft, overlay.left),
               background: HIGHLIGHT_COLOR,
               color: '#fff',
               fontSize: 10,
