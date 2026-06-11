@@ -955,13 +955,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               gap: 1.5,
               px: 2,
               py: 1.5,
-              // Soften the seam: hairline border + match panel bg so the
-              // header reads as a band of typography inside the chat
-              // panel rather than a chunky stacked rectangle on top of
-              // it. Earlier revisions used bg.surface here, which in
-              // dark mode was visibly lighter than the chat body
-              // (bg.page) and pulled focus.
-              borderBottom: `0.5px solid ${c.border.subtle}`,
+              // No seam: the header is just a band of typography inside the chat
+              // panel; transparent bg + air carry it, no hairline. (An earlier
+              // bg.surface here read lighter than the body and pulled focus.)
               bgcolor: 'transparent',
             }}
           >
