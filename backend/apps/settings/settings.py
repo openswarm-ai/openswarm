@@ -30,6 +30,7 @@ async def settings_lifespan():
     try:
         from backend.apps.nine_router import (
             ensure_running as _9r_ensure,
+            is_running as _9r_running,
             sync_gemini_api_key,
             sync_openai_api_key,
             sync_openrouter_api_key,
@@ -53,12 +54,15 @@ async def settings_lifespan():
                     await _9r_ensure()
                 except Exception as e:
                     logger.warning(f"9Router lifespan boot failed: {e}")
-            if getattr(s, "google_api_key", None):
-                await sync_gemini_api_key(s.google_api_key)
-            if getattr(s, "openai_api_key", None):
-                await sync_openai_api_key(s.openai_api_key)
-            if getattr(s, "openrouter_api_key", None):
-                await sync_openrouter_api_key(s.openrouter_api_key)
+            # Reconcile, don't just add: pass the key OR None so a cleared/never-set key
+            # also REMOVES the managed connection 9Router persists across restarts. The
+            # old add-only guards left a zombie managed key alive after disconnect, which
+            # kept routing to it (the "still defaults to gemini") and blocked the free
+            # trial from arming. Only acts when 9Router is already up (_sync no-ops if not).
+            if _9r_running():
+                await sync_gemini_api_key(getattr(s, "google_api_key", None) or None)
+                await sync_openai_api_key(getattr(s, "openai_api_key", None) or None)
+                await sync_openrouter_api_key(getattr(s, "openrouter_api_key", None) or None)
             if getattr(s, "connection_mode", None) in ("openswarm-pro", "free-trial"):
                 from backend.apps.settings.credentials import proxy_auth
                 bearer, base = proxy_auth(s)
