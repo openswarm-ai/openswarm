@@ -13,12 +13,12 @@ import time
 
 logger = logging.getLogger(__name__)
 
-_ENTRY_RE = re.compile(r"^ENTRY:\s*(https?://\S+)", re.I | re.M)
-_MIN_PAGE_CHARS = 500
-_MAX_PAGE_CHARS = 24000
-_FETCH_ERROR_PREFIXES = ("HTTP error", "Error fetching", "Refused to fetch")
+P_ENTRY_RE = re.compile(r"^ENTRY:\s*(https?://\S+)", re.I | re.M)
+P_MIN_PAGE_CHARS = 500
+P_MAX_PAGE_CHARS = 24000
+P_FETCH_ERROR_PREFIXES = ("HTTP error", "Error fetching", "Refused to fetch")
 
-_ANSWER_SYSTEM = (
+P_ANSWER_SYSTEM = (
     "Answer the user's request using ONLY the page text provided. Be direct and "
     "complete in a few sentences; quote exact titles/values from the page. End "
     "with nothing else.\n"
@@ -28,16 +28,16 @@ _ANSWER_SYSTEM = (
 
 
 def extract_entry_url(brief: str) -> str:
-    m = _ENTRY_RE.search(brief or "")
+    m = P_ENTRY_RE.search(brief or "")
     return m.group(1).rstrip(").,") if m else ""
 
 
 def page_is_thin(text: str) -> bool:
     t = (text or "").strip()
-    if not t or t.startswith(_FETCH_ERROR_PREFIXES):
+    if not t or t.startswith(P_FETCH_ERROR_PREFIXES):
         return True
     body = t.split("\n\n", 1)[-1] if "\n\n" in t else t
-    return len(body.strip()) < _MIN_PAGE_CHARS
+    return len(body.strip()) < P_MIN_PAGE_CHARS
 
 
 async def try_fast_read(prompt: str, brief: str, settings, primary_api: str | None) -> str | None:
@@ -63,7 +63,7 @@ async def try_fast_read(prompt: str, brief: str, settings, primary_api: str | No
 
         from backend.apps.settings.credentials import get_anthropic_client_for_model
         from backend.apps.agents.providers.registry import resolve_aux_model
-        from backend.apps.agents.core.aux_llm import _safe_resp_text
+        from backend.apps.agents.core.aux_llm import safe_resp_text
 
         aux_model, _ = await resolve_aux_model(
             settings, preferred_tier="haiku", primary_api=primary_api,
@@ -75,15 +75,15 @@ async def try_fast_read(prompt: str, brief: str, settings, primary_api: str | No
                 model=aux_model,
                 max_tokens=500,
                 temperature=0,
-                system=_ANSWER_SYSTEM,
+                system=P_ANSWER_SYSTEM,
                 messages=[{
                     "role": "user",
-                    "content": f"Request: {prompt}\n\nPage text from {entry}:\n{text[:_MAX_PAGE_CHARS]}",
+                    "content": f"Request: {prompt}\n\nPage text from {entry}:\n{text[:P_MAX_PAGE_CHARS]}",
                 }],
             ),
             timeout=15.0,
         )
-        answer = _safe_resp_text(resp).strip()
+        answer = safe_resp_text(resp).strip()
         answer_ms = int((time.monotonic() - t1) * 1000)
         if not answer or answer.upper().startswith("INSUFFICIENT"):
             logger.info(f"[browser-fast-read] aux found page insufficient ({answer_ms}ms); browser fallback")

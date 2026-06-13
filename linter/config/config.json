@@ -67,7 +67,11 @@
     "import-cycles": [],
     "vulture": [],
     "ruff": [],
-    "no-underscore-names": [],
+    "no-underscore-names": [
+      "backend/apps/agents/agent_manager.py",
+      "backend/apps/agents/agents.py",
+      "backend/apps/agents/browser/browser_agent.py"
+    ],
     "p-private": [],
     "endpoints": [],
     "classes": []

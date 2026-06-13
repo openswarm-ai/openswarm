@@ -37,7 +37,7 @@ import re
 PLACEHOLDER = "{{value}}"
 
 # Agent-facing step action -> (tool_name, the param keys it carries).
-_STEP_TOOLS: dict[str, tuple[str, tuple[str, ...]]] = {
+P_STEP_TOOLS: dict[str, tuple[str, tuple[str, ...]]] = {
     "navigate":     ("BrowserNavigate",    ("url",)),
     "get_text":     ("BrowserGetText",     ()),
     "evaluate":     ("BrowserEvaluate",    ("expression",)),
@@ -49,27 +49,27 @@ _STEP_TOOLS: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 # Reads/navigation don't mutate anything irreversible; safe to loop freely.
-_READONLY_ACTIONS = {"navigate", "get_text", "evaluate", "scroll", "replay_route"}
+P_READONLY_ACTIONS = {"navigate", "get_text", "evaluate", "scroll", "replay_route"}
 
 # Irreversible / outward-facing words on a clicked control. Conservative on
 # purpose: we'd rather refuse a borderline loop than auto-send 10 messages.
-_SEND_NAME_RE = re.compile(
+P_SEND_NAME_RE = re.compile(
     r"\b(send|submit|post|publish|connect|invite|follow|like|react|comment|reply|"
     r"share|message|dm|pay|buy|order|checkout|purchase|place\s*order|book|"
     r"confirm|apply|accept|decline|delete|remove|unsend|withdraw|endorse)\b",
     re.I,
 )
 # A field that reads like a message/comment composer; typing here is part of a send.
-_COMPOSE_SEL_RE = re.compile(r"message|compose|comment|msg|reply|editor|body|tweet|post", re.I)
+P_COMPOSE_SEL_RE = re.compile(r"message|compose|comment|msg|reply|editor|body|tweet|post", re.I)
 
 
 def is_send_step(step: dict) -> bool:
     """True if this step is irreversible / outward-facing, so the whole loop must
     be gated rather than auto-replayed."""
     action = step.get("action")
-    if action == "click" and _SEND_NAME_RE.search(str(step.get("name") or "")):
+    if action == "click" and P_SEND_NAME_RE.search(str(step.get("name") or "")):
         return True
-    if action == "type" and _COMPOSE_SEL_RE.search(str(step.get("selector") or "")):
+    if action == "type" and P_COMPOSE_SEL_RE.search(str(step.get("selector") or "")):
         return True
     return False
 
@@ -83,9 +83,9 @@ def validate_template(steps) -> tuple[bool, str]:
         if not isinstance(step, dict):
             return False, f"step {i+1} is not an object"
         action = step.get("action")
-        spec = _STEP_TOOLS.get(action)
+        spec = P_STEP_TOOLS.get(action)
         if not spec:
-            return False, f"step {i+1}: unknown action {action!r} (allowed: {', '.join(_STEP_TOOLS)})"
+            return False, f"step {i+1}: unknown action {action!r} (allowed: {', '.join(P_STEP_TOOLS)})"
         _, required = spec
         for key in required:
             if step.get(key) in (None, ""):
@@ -105,9 +105,9 @@ def template_safety(steps) -> tuple[bool, str]:
     return True, ""
 
 
-# Like _SEND_NAME_RE minus composer-openers ("Message"/"DM" buttons open a
+# Like P_SEND_NAME_RE minus composer-openers ("Message"/"DM" buttons open a
 # compose box, they don't send), so routine flows still batch freely.
-_LIVE_IRREVERSIBLE_RE = re.compile(
+P_LIVE_IRREVERSIBLE_RE = re.compile(
     r"\b(send|submit|post|publish|connect|invite|follow|like|react|comment|reply|"
     r"share|pay|buy|order|checkout|purchase|place\s*order|book|"
     r"confirm|apply|accept|decline|delete|remove|unsend|withdraw|endorse)\b",
@@ -123,9 +123,9 @@ def is_replay_boundary(step: dict) -> bool:
     crosses to the live model. Uses the same opener-excluded wordlist the live
     send-guard already trusts, so a recorded Send still stops the prefix."""
     action = step.get("action")
-    if action == "click" and _LIVE_IRREVERSIBLE_RE.search(str(step.get("name") or "")):
+    if action == "click" and P_LIVE_IRREVERSIBLE_RE.search(str(step.get("name") or "")):
         return True
-    if action == "type" and _COMPOSE_SEL_RE.search(str(step.get("selector") or "")):
+    if action == "type" and P_COMPOSE_SEL_RE.search(str(step.get("selector") or "")):
         return True
     return False
 
@@ -152,7 +152,7 @@ def live_batch_guard(actions, seen_lines, composer_pending: bool = False) -> str
         elif typ == "click":
             label = str(params.get("selector") or "")
         elif typ == "type":
-            if _COMPOSE_SEL_RE.search(str(params.get("selector") or "")):
+            if P_COMPOSE_SEL_RE.search(str(params.get("selector") or "")):
                 typed_composer = True
             continue
         elif typ == "press_key":
@@ -164,7 +164,7 @@ def live_batch_guard(actions, seen_lines, composer_pending: bool = False) -> str
             continue
         # selectors hide words behind underscores/dashes (msg-form__send-button),
         # which defeat \b; flatten separators so the word check still sees them
-        if label and _LIVE_IRREVERSIBLE_RE.search(re.sub(r"[_\-./#\[\]]+", " ", label)):
+        if label and P_LIVE_IRREVERSIBLE_RE.search(re.sub(r"[_\-./#\[\]]+", " ", label)):
             return (f"sub-action {i+1} ({typ}) targets {label.strip()!r}, "
                     "which is irreversible/outward-facing")
     return ""
@@ -189,12 +189,12 @@ def send_payload_from_log(action_log, prompt: str = "") -> str:
             summ = str(a.get("result_summary") or "")
             # focus+type results carry no clicked fields (r47's live miss); the
             # executor's own "typed the text" wording is the surviving signal
-            if _COMPOSE_SEL_RE.search(name) or (len(text) >= 20 and (
+            if P_COMPOSE_SEL_RE.search(name) or (len(text) >= 20 and (
                     role == "textbox" or "typed the text" in summ.lower())):
                 typed.append(text)
         elif tool == "BrowserType":
             sel = str(inp.get("selector") or "")
-            if _COMPOSE_SEL_RE.search(sel) or (not sel and len(text) >= 20):
+            if P_COMPOSE_SEL_RE.search(sel) or (not sel and len(text) >= 20):
                 typed.append(text)
         elif tool == "BrowserBatch":
             for sub in (inp.get("actions") or []):
@@ -204,7 +204,7 @@ def send_payload_from_log(action_log, prompt: str = "") -> str:
                 sub_text = str(p.get("text") or "").strip()
                 sub_sel = str(p.get("selector") or "")
                 if sub.get("type") == "type" and sub_text and (
-                        _COMPOSE_SEL_RE.search(sub_sel)
+                        P_COMPOSE_SEL_RE.search(sub_sel)
                         or (not sub_sel and len(sub_text) >= 20)):
                     typed.append(sub_text)
     if not typed:
@@ -217,7 +217,7 @@ def send_payload_from_log(action_log, prompt: str = "") -> str:
     return typed[-1]
 
 
-def _sub(val, value: str):
+def p_sub(val, value: str):
     return value if val == PLACEHOLDER else (
         val.replace(PLACEHOLDER, value) if isinstance(val, str) else val
     )
@@ -227,14 +227,14 @@ def fill_step(step: dict, value: str) -> tuple[str, dict]:
     """Turn one template step + one value into (tool_name, params) ready for
     execute_browser_tool. Substitutes {{value}} anywhere it appears."""
     action = step["action"]
-    tool_name, keys = _STEP_TOOLS[action]
+    tool_name, keys = P_STEP_TOOLS[action]
     params = {}
     for k in keys:
         if k in step:
-            params[k] = _sub(step[k], value)
+            params[k] = p_sub(step[k], value)
     # carry an optional role default for clicks
     if action == "click" and "role" not in params:
-        params["role"] = _sub(step.get("role", ""), value)
+        params["role"] = p_sub(step.get("role", ""), value)
     return tool_name, params
 
 
@@ -245,19 +245,19 @@ def fill_template(steps, value: str) -> list[tuple[str, dict]]:
 def is_readonly_template(steps) -> bool:
     """True if every step is a pure read/navigation (no clicks/types at all), the
     safest class of loop."""
-    return all(s.get("action") in _READONLY_ACTIONS for s in steps)
+    return all(s.get("action") in P_READONLY_ACTIONS for s in steps)
 
 
 # A batch READ is useless if it doesn't hand the data back. We return each item's
 # read output, capped so a 20-item batch stays cheap, and stay honest about
 # failures (named, with the error) and truncation (named, never silently dropped).
-_MAX_ITEM_CHARS = 500
-_MAX_TOTAL_CHARS = 6000
+P_MAX_ITEM_CHARS = 500
+P_MAX_TOTAL_CHARS = 6000
 
 
 def summarize_batch(records: list[dict], readonly: bool,
-                    max_item_chars: int = _MAX_ITEM_CHARS,
-                    max_total_chars: int = _MAX_TOTAL_CHARS) -> str:
+                    max_item_chars: int = P_MAX_ITEM_CHARS,
+                    max_total_chars: int = P_MAX_TOTAL_CHARS) -> str:
     """Turn per-item batch results into the text the agent gets back.
 
     `records`: [{value, ok, text}]. For a successful item `text` is its read

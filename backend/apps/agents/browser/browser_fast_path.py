@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Zero-cost smell test: only prompts that mention the web at all are worth a
 # classifier call. False negatives just take the normal path.
-_BROWSY_RE = re.compile(
+P_BROWSY_RE = re.compile(
     r"https?://|www\.|\b[a-z0-9-]+\.(com|org|net|io|co|ai|dev|app)\b"
     r"|\b(browse|browser|website|web ?page|webpage|site|url|tab)\b"
     r"|\b(go to|open|visit|navigate|log ?in|sign ?in|search on|look up on|check on)\b"
@@ -34,7 +34,7 @@ _BROWSY_RE = re.compile(
     re.I,
 )
 
-_CLASSIFIER_SYSTEM = (
+P_CLASSIFIER_SYSTEM = (
     "You route requests to a web-browsing agent. It drives a real signed-in browser: "
     "navigating sites, reading or extracting or counting what is on pages, clicking, "
     "typing, and acting inside web apps (sending messages on LinkedIn or any site, "
@@ -87,10 +87,10 @@ def fast_path_eligible(
         return False
     if not prompt or not prompt.strip():
         return False
-    return bool(_BROWSY_RE.search(prompt))
+    return bool(P_BROWSY_RE.search(prompt))
 
 
-def _parse_verdict_and_brief(text: str) -> tuple[str, str]:
+def p_parse_verdict_and_brief(text: str) -> tuple[str, str]:
     """Line 1 carries READ/ACT/NO; the rest is the routing brief. Anything
     unparseable is 'no' (normal path)."""
     lines = (text or "").strip().splitlines()
@@ -105,14 +105,14 @@ def _parse_verdict_and_brief(text: str) -> tuple[str, str]:
     return verdict, brief[:700]
 
 
-_ENTRY_RE = re.compile(r"^\s*ENTRY:\s*(https?://\S+)", re.I | re.M)
+P_ENTRY_RE = re.compile(r"^\s*ENTRY:\s*(https?://\S+)", re.I | re.M)
 
 
 def entry_url_from_brief(brief: str) -> str:
     """The brief's ENTRY deep URL, or ''. Powers dispatch pre-navigation: a NEW
     card opens directly on it instead of google, killing the orient+navigate
     turns; a REUSED card is never moved (its deeper live state wins)."""
-    m = _ENTRY_RE.search(brief or "")
+    m = P_ENTRY_RE.search(brief or "")
     return m.group(1).rstrip(".,;)") if m else ""
 
 
@@ -211,7 +211,7 @@ def unverifiable_reply(payload: str, first_report: str) -> str:
     )
 
 
-def _normalize_for_classifier(prompt: str) -> str:
+def p_normalize_for_classifier(prompt: str) -> str:
     """Haiku reads bare 'text him' as SMS even with a site as context. In the
     browsy-prefiltered pool, text-with-no-phone-number is in-site messaging,
     so spell it out for the small model. Only the classifier sees this."""
@@ -237,13 +237,13 @@ async def classify_and_brief(prompt: str, settings, primary_api: str | None) -> 
                 model=aux_model,
                 max_tokens=250,
                 temperature=0,
-                system=_CLASSIFIER_SYSTEM,
-                messages=[{"role": "user", "content": _normalize_for_classifier(prompt[:2000])}],
+                system=P_CLASSIFIER_SYSTEM,
+                messages=[{"role": "user", "content": p_normalize_for_classifier(prompt[:2000])}],
             ),
             timeout=8.0,
         )
-        from backend.apps.agents.core.aux_llm import _safe_resp_text
-        verdict, brief = _parse_verdict_and_brief(_safe_resp_text(resp))
+        from backend.apps.agents.core.aux_llm import safe_resp_text
+        verdict, brief = p_parse_verdict_and_brief(safe_resp_text(resp))
         logger.info(
             f"[browser-fast-path] classifier: {verdict.upper()} brief={len(brief)}ch "
             f"model={aux_model} in {int((time.monotonic() - t0) * 1000)}ms"

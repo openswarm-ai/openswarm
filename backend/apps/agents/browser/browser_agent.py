@@ -14,13 +14,18 @@ import time
 from datetime import datetime
 from uuid import uuid4
 
-from backend.apps.agents.browser import browser_history
 from backend.apps.agents.browser.browser_history import (
-    _MAX_HISTORY_MESSAGES,
-    _trim_history_by_turns,
-    _validate_message_pairing,
+    BROWSER_HISTORY,
+    MAX_HISTORY_MESSAGES,
+    trim_history_by_turns,
+    validate_message_pairing,
     clear_browser_history,
+    prune_old_screenshots,
+    prune_stale_page_state,
+    place_cache_marker,
     PAGE_STATE_MARKER,
+    get_domain_note,
+    set_domain_note
 )
 from backend.apps.agents.browser.browser_loop import (
     _LOOP_DETECTION_EXCLUDED_TOOLS,
@@ -426,7 +431,7 @@ async def run_browser_agent(
     preloaded_perception = ""
     current_url = ""
     preloaded_reads: list[dict] = []  # real front-loaded reads, seeded into action_log
-    _resumed = bool(browser_history._browser_history.get(browser_id))
+    _resumed = bool(BROWSER_HISTORY.get(browser_id))
     if initial_url:
         nav_result = await execute_browser_tool(
             "BrowserNavigate", {"url": initial_url}, browser_id, tab_id,
@@ -499,8 +504,8 @@ async def run_browser_agent(
     # cycle every time the parent issues a new task. Defensively validate
     # the cache; if it's somehow corrupted (orphaned tool_use_ids), drop
     # it and start fresh rather than crash on the next API call.
-    prior_messages = browser_history._browser_history.get(browser_id) or []
-    if prior_messages and not _validate_message_pairing(prior_messages):
+    prior_messages = BROWSER_HISTORY.get(browser_id) or []
+    if prior_messages and not validate_message_pairing(prior_messages):
         logger.warning(
             f"[browser-agent {session_id}] cached history for {browser_id} has "
             f"orphaned tool_use_ids; dropping cache and starting fresh"
@@ -593,7 +598,7 @@ async def run_browser_agent(
     start_domain = _extract_domain(initial_url) if initial_url else None
     run_system_prompt = SYSTEM_PROMPT
     if start_domain:
-        prior_note = browser_history.get_domain_note(start_domain)
+        prior_note = get_domain_note(start_domain)
         if prior_note:
             run_system_prompt = (
                 SYSTEM_PROMPT
@@ -977,9 +982,9 @@ async def run_browser_agent(
             # current, stub the rest. Images are ~1.3-2k tokens each and get
             # re-read every turn, so this is the biggest per-turn context win on
             # any visual task (measured ~2.9x fewer image tokens, ~5x less upload).
-            browser_history.prune_old_screenshots(messages)
-            browser_history.prune_stale_page_state(messages)
-            browser_history.place_cache_marker(messages)
+            prune_old_screenshots(messages)
+            prune_stale_page_state(messages)
+            place_cache_marker(messages)
             _llm_t0 = time.monotonic()
             response = await _cancellable(client.messages.create(
                 model=api_model,
@@ -1214,7 +1219,7 @@ async def run_browser_agent(
                     )
                     single_domain = len(set(session.browser_domains)) <= 1
                     if note_domain and working_mem and single_domain:
-                        browser_history.set_domain_note(note_domain, working_mem)
+                        set_domain_note(note_domain, working_mem)
                     brain_text = (
                         f"📋 **Plan**\n"
                         + (f"_Previous_: {eval_prev}\n" if eval_prev else "")
@@ -1994,11 +1999,11 @@ async def run_browser_agent(
 
         # Persist conversation history so the next BrowserAgent call on this
         # browser can resume rather than re-orient. Trim to the most recent
-        # _MAX_HISTORY_MESSAGES turns to keep token usage bounded; but
+        # MAX_HISTORY_MESSAGES turns to keep token usage bounded; but
         # never split a tool_use ↔ tool_result pair across the cut, or the
         # next API request will 400.
-        browser_history._browser_history[browser_id] = _trim_history_by_turns(
-            messages, _MAX_HISTORY_MESSAGES,
+        BROWSER_HISTORY[browser_id] = trim_history_by_turns(
+            messages, MAX_HISTORY_MESSAGES,
         )
 
         # Honesty gate: the model declaring done is not proof the goal happened.

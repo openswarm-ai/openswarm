@@ -19,7 +19,7 @@ def clean_short_label(raw: str, max_words: int = 4, max_chars: int = 36) -> str:
     return label
 
 
-def _safe_resp_text(resp) -> str:
+def safe_resp_text(resp) -> str:
     """Extract text from an Anthropic-shape response, tolerating Gemini/OpenAI
     edge cases. Gemini through 9Router occasionally returns `content=[]` (e.g.
     safety stop, function-call-only turn) which makes `resp.content[0].text`

@@ -13,12 +13,12 @@ import re
 
 logger = logging.getLogger(__name__)
 
-_MAX_PAGE_CHARS = 12000
-_MAX_OUT_TOKENS = 1200
-_MAX_SCHEMA_CHARS = 2000
+P_MAX_PAGE_CHARS = 12000
+P_MAX_OUT_TOKENS = 1200
+P_MAX_SCHEMA_CHARS = 2000
 
 
-def _first_json(text: str) -> str:
+def p_first_json(text: str) -> str:
     """The model's output minus any prose/fences around the JSON, or ''."""
     cleaned = re.sub(r"```(?:json)?|```", "", text or "")
     m = re.search(r"\{.*\}|\[.*\]", cleaned, re.DOTALL)
@@ -38,7 +38,7 @@ async def extract_structured(
     if not aux_client or not aux_model or not page_text:
         return ""
     shape = (
-        f"Return JSON matching this schema exactly:\n{json.dumps(schema)[:_MAX_SCHEMA_CHARS]}"
+        f"Return JSON matching this schema exactly:\n{json.dumps(schema)[:P_MAX_SCHEMA_CHARS]}"
         if isinstance(schema, dict) and schema else "Return one compact JSON object."
     )
     prompt = (
@@ -47,15 +47,15 @@ async def extract_structured(
         "Output ONLY the JSON, no prose, no code fences. Use only what is on the "
         'page, never guess. If the requested data is not on the page, output '
         '{"not_found": true, "reason": "<one short line>"}.\n\n'
-        f"PAGE TEXT:\n{page_text[:_MAX_PAGE_CHARS]}"
+        f"PAGE TEXT:\n{page_text[:P_MAX_PAGE_CHARS]}"
     )
     try:
         resp = await aux_client.messages.create(
-            model=aux_model, max_tokens=_MAX_OUT_TOKENS,
+            model=aux_model, max_tokens=P_MAX_OUT_TOKENS,
             messages=[{"role": "user", "content": prompt}],
         )
         text = "".join(getattr(b, "text", "") for b in (resp.content or []))
-        return _first_json(text)
+        return p_first_json(text)
     except Exception as e:
         logger.debug(f"[browser-extract] aux extraction failed: {e}")
         return ""

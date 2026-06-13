@@ -156,7 +156,7 @@ def call_backend(tasks: list[dict]) -> dict:
 MAX_IMAGE_B64_BYTES = 400_000
 
 
-def _sniff_image_mime(b64: str) -> str:
+def p_sniff_image_mime(b64: str) -> str:
     """PNG vs JPEG from the base64 magic bytes. Capture now sends JPEG, but older
     callers / cached shots may be PNG, so we label by content, not assumption."""
     if b64.startswith("/9j/"):
@@ -214,7 +214,7 @@ def format_result(result: dict) -> dict:
     screenshot = result.get("final_screenshot")
     if screenshot:
         image_data = screenshot
-        mime_type = _sniff_image_mime(screenshot)
+        mime_type = p_sniff_image_mime(screenshot)
 
         if len(image_data) > MAX_IMAGE_B64_BYTES:
             compressed = compress_screenshot(image_data)

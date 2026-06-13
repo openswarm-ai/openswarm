@@ -11,39 +11,39 @@ writes route through here so there's a single source of truth.
 """
 
 # browser_id -> cached Anthropic message list for resume.
-_browser_history: dict[str, list[dict]] = {}
+BROWSER_HISTORY: dict[str, list[dict]] = {}
 # Cap history to prevent unbounded growth on long-lived browsers.
-_MAX_HISTORY_MESSAGES = 30
+MAX_HISTORY_MESSAGES = 30
 
 # Per-apex-domain advisory notes, distilled from the agent's own ReportProgress
 # working_memory. Process-lifetime only (never written to disk); seeds a later
 # agent on the same domain so it skips re-learning the same quirks. Advisory
 # text only, never auto-executed.
-_domain_notes: dict[str, str] = {}
-_MAX_DOMAIN_NOTE_CHARS = 600
+P_DOMAIN_NOTES: dict[str, str] = {}
+P_MAX_DOMAIN_NOTE_CHARS = 600
 
 
 def get_domain_note(domain: str) -> str:
     """Return the advisory note for a domain, or empty string if none."""
-    return _domain_notes.get(domain, "")
+    return P_DOMAIN_NOTES.get(domain, "")
 
 
 def set_domain_note(domain: str, note: str) -> None:
     """Store/overwrite the advisory note for a domain (trimmed + capped)."""
     if not domain or not note or not note.strip():
         return
-    _domain_notes[domain] = note.strip()[:_MAX_DOMAIN_NOTE_CHARS]
+    P_DOMAIN_NOTES[domain] = note.strip()[:P_MAX_DOMAIN_NOTE_CHARS]
 
 
 def clear_browser_history(browser_id: str) -> None:
     """Drop cached conversation history for a browser (e.g. when it's closed)."""
-    _browser_history.pop(browser_id, None)
+    BROWSER_HISTORY.pop(browser_id, None)
 
 
-_OMITTED_SCREENSHOT_STUB = "[earlier screenshot omitted to save context]"
+P_OMITTED_SCREENSHOT_STUB = "[earlier screenshot omitted to save context]"
 
 
-def _iter_image_block_refs(messages: list[dict]):
+def p_iter_image_block_refs(messages: list[dict]):
     """Yield (container_list, index) for every image block, in document order.
 
     Screenshots live either directly in a message's content list or nested inside
@@ -76,7 +76,7 @@ def prune_old_screenshots(messages: list[dict], keep_first: bool = True, keep_re
     are dropped, not the memory. If the agent must re-see, it just re-screenshots.
     Returns how many images were collapsed.
     """
-    refs = list(_iter_image_block_refs(messages))
+    refs = list(p_iter_image_block_refs(messages))
     keep_count = keep_recent + (1 if keep_first else 0)
     if len(refs) <= keep_count:
         return 0
@@ -89,7 +89,7 @@ def prune_old_screenshots(messages: list[dict], keep_first: bool = True, keep_re
     for idx, (container, i) in enumerate(refs):
         if idx in keep:
             continue
-        container[i] = {"type": "text", "text": _OMITTED_SCREENSHOT_STUB}
+        container[i] = {"type": "text", "text": P_OMITTED_SCREENSHOT_STUB}
         collapsed += 1
     return collapsed
 
@@ -97,9 +97,9 @@ def prune_old_screenshots(messages: list[dict], keep_first: bool = True, keep_re
 # Sentinel prefixing the auto-attached element list on mutating action results.
 # Lives here so the attacher (browser_agent) and the pruner share one spelling.
 PAGE_STATE_MARKER = "[page state after action]"
-_STATE_STUB = "[stale page state pruned; see the latest action result for current state]"
-_HEAVY_READ_TOOLS = {"BrowserListInteractives", "BrowserGetText"}
-_HEAVY_READ_MIN_CHARS = 600
+P_STATE_STUB = "[stale page state pruned; see the latest action result for current state]"
+P_HEAVY_READ_TOOLS = {"BrowserListInteractives", "BrowserGetText"}
+P_HEAVY_READ_MIN_CHARS = 600
 
 
 def prune_stale_page_state(messages: list[dict], keep_recent: int = 2) -> int:
@@ -136,12 +136,12 @@ def prune_stale_page_state(messages: list[dict], keep_recent: int = 2) -> int:
                 txt = ib.get("text") or ""
                 if PAGE_STATE_MARKER in txt:
                     attached.append(ib)
-                elif tool in _HEAVY_READ_TOOLS and len(txt) >= _HEAVY_READ_MIN_CHARS:
+                elif tool in P_HEAVY_READ_TOOLS and len(txt) >= P_HEAVY_READ_MIN_CHARS:
                     heavy.append(ib)
     pruned = 0
     for ib in attached[:-keep_recent] if keep_recent else attached:
         txt = ib["text"]
-        ib["text"] = txt[: txt.index(PAGE_STATE_MARKER)] + _STATE_STUB
+        ib["text"] = txt[: txt.index(PAGE_STATE_MARKER)] + P_STATE_STUB
         pruned += 1
     for ib in heavy[:-keep_recent] if keep_recent else heavy:
         head = (ib["text"] or "").splitlines()[0][:100]
@@ -175,7 +175,7 @@ def place_cache_marker(messages: list[dict], depth: int = 8) -> None:
             return
 
 
-def _validate_message_pairing(messages: list[dict]) -> bool:
+def validate_message_pairing(messages: list[dict]) -> bool:
     """Verify tool_use and tool_result blocks pair up BOTH ways, or the cached
     history 400s if sent to the API. Two failure shapes, both checked:
       - an orphan tool_result (references a tool_use_id that was never declared), and
@@ -209,7 +209,7 @@ def _validate_message_pairing(messages: list[dict]) -> bool:
     return declared_tool_use_ids.issubset(answered_tool_use_ids)
 
 
-def _is_fresh_user_message(msg: dict) -> bool:
+def p_is_fresh_user_message(msg: dict) -> bool:
     """A 'fresh' user message starts a new turn; string content or a list
     that contains no tool_result blocks. These are the only safe cut points
     because they don't reference any prior assistant tool_use blocks."""
@@ -225,7 +225,7 @@ def _is_fresh_user_message(msg: dict) -> bool:
     return False
 
 
-def _summarize_messages(messages: list[dict]) -> str:
+def p_summarize_messages(messages: list[dict]) -> str:
     """Build a programmatic summary of older browser-agent messages.
 
     Extracts the original user task, a count of tool calls by name with their
@@ -312,7 +312,7 @@ def _summarize_messages(messages: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def _trim_history_by_turns(messages: list[dict], max_messages: int) -> list[dict]:
+def trim_history_by_turns(messages: list[dict], max_messages: int) -> list[dict]:
     """Compact message history when it exceeds max_messages.
 
     The Anthropic API requires every `tool_result` block to reference a
@@ -341,7 +341,7 @@ def _trim_history_by_turns(messages: list[dict], max_messages: int) -> list[dict
     # First pass: walk forward looking for the EARLIEST clean cut point that
     # gets us under the cap. This preserves the most recent detail.
     for i in range(1, len(messages)):
-        if not _is_fresh_user_message(messages[i]):
+        if not p_is_fresh_user_message(messages[i]):
             continue
         if len(messages) - i <= target_tail_size:
             cut_index = i
@@ -353,7 +353,7 @@ def _trim_history_by_turns(messages: list[dict], max_messages: int) -> list[dict
     # safe history we can produce; and any compaction is better than none.
     if cut_index is None:
         for i in range(len(messages) - 1, 0, -1):
-            if _is_fresh_user_message(messages[i]):
+            if p_is_fresh_user_message(messages[i]):
                 cut_index = i
                 break
 
@@ -364,6 +364,6 @@ def _trim_history_by_turns(messages: list[dict], max_messages: int) -> list[dict
 
     # Compact: summarize messages[0..cut_index-1], prepend as a single
     # user-text message, then keep messages[cut_index..end] verbatim.
-    summary_text = _summarize_messages(messages[:cut_index])
+    summary_text = p_summarize_messages(messages[:cut_index])
     summary_msg = {"role": "user", "content": summary_text}
     return [summary_msg] + list(messages[cut_index:])
