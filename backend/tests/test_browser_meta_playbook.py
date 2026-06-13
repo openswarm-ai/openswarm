@@ -1,6 +1,5 @@
 """Cross-site meta-playbook (browser memory tier 3): seeds on day one, absorbs
 site-agnostic lessons with no extra LLM call, dedups + caps, survives a restart."""
-import os
 import tempfile
 
 import pytest

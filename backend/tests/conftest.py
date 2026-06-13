@@ -6,7 +6,6 @@ real ~/Library/Application Support/OpenSwarm/data tree (which would pollute the
 dev machine and let a stale persisted skill leak across test runs).
 """
 
-import os
 import tempfile
 
 import pytest

@@ -27,7 +27,7 @@ from fastapi import Body
 from backend.config.Apps import SubApp
 from backend.config.paths import SESSIONS_DIR
 from backend.apps.service import client as svc
-from backend.apps.service.version import APP_VERSION, _read_app_version
+from backend.apps.service.version import APP_VERSION
 
 logger = logging.getLogger(__name__)
 

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -14,7 +12,7 @@ from pydantic import BaseModel
 
 from backend.config.Apps import SubApp
 from backend.apps.settings.credentials import OPENSWARM_DEFAULT_PROXY_URL
-from backend.apps.settings.settings import SETTINGS_FILE, load_settings, save_settings_async
+from backend.apps.settings.settings import load_settings, save_settings_async
 
 logger = logging.getLogger(__name__)
 

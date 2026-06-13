@@ -13,12 +13,8 @@ from backend.config.Apps import SubApp
 from backend.apps.settings.models import AppSettings, DEFAULT_SYSTEM_PROMPT
 from backend.apps.settings.store import (
     DATA_DIR,
-    SETTINGS_FILE,
     load_settings,
-    save_settings,
-    _save_settings,
     _atomic_write_settings,
-    _migrate_legacy_fields,
 )
 
 logger = logging.getLogger(__name__)
@@ -310,7 +306,7 @@ UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "self-swarm-uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-def _sniff_file_kind(contents: bytes, name: str) -> tuple[str, str | None]:
+def _sniff_file_kind(contents: bytes) -> tuple[str, str | None]:
     """Classify an uploaded file as text/pdf/image/binary so the agent
     layer can route it (inline as text, send as native document/image
     block, or refuse). Returns (kind, media_type)."""

@@ -7,7 +7,7 @@ guidance that routes such tasks to ONE sub-agent with the whole list, so the
 batch path is actually usable (not stranded behind the delegation layer).
 """
 
-import types
+from types import SimpleNamespace
 
 from backend.apps.agents.manager.prompt import prompt_context as pc
 
@@ -17,10 +17,8 @@ def _fake_dashboard(monkeypatch):
     # gets past the load and emits the static delegation guidance.
     import backend.apps.dashboards.dashboards as dash
 
-    class _D:
-        def model_dump(self, mode="json"):
-            return {"layout": {"browser_cards": {}}}
-    monkeypatch.setattr(dash, "_load", lambda did: _D(), raising=True)
+    fake = SimpleNamespace(model_dump=lambda mode="json": {"layout": {"browser_cards": {}}})
+    monkeypatch.setattr(dash, "_load", lambda did: fake, raising=True)
 
 
 def test_orchestrator_routes_same_flow_batches_to_one_agent(monkeypatch):

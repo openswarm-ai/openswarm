@@ -157,7 +157,6 @@ async def registry_search(
     q: str = Query("", description="Search query"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    sort: str = Query("name", description="Sort by: name"),
     category: str = Query("", description="Filter by category"),
 ):
     pool = list(_cache.values())

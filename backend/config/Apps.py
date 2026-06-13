@@ -27,7 +27,7 @@ class MainApp:
         debug("START")
         
         @asynccontextmanager
-        async def lifespan(app: FastAPI):
+        async def lifespan(app: FastAPI): # noqa: ARG001 # NOTE: app is not used but required by FastAPI
             async with AsyncExitStack() as stack:
                 for sub_app in sub_apps:
                     debug(sub_app.name)

@@ -5,7 +5,7 @@ import mimetypes
 from datetime import datetime
 from typing import Optional
 from contextlib import asynccontextmanager
-from fastapi import HTTPException, Query
+from fastapi import HTTPException
 from fastapi.responses import Response
 from backend.auth import get_auth_token
 from backend.config.Apps import SubApp
@@ -22,10 +22,8 @@ from backend.apps.outputs.view_builder_templates import (
 from backend.apps.settings.settings import load_settings
 from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR as WORKSPACE_DIR
 from backend.apps.outputs.html_inject import (
-    MODEL_MAP,
     _get_anthropic_client,
     _validate_against_schema,
-    _build_data_injection,
     _inject_data_into_html,
     _backend_url_for_workspace,
     _inject_token_into_relative_urls,
@@ -35,7 +33,6 @@ from backend.apps.outputs.workspace_io import (
     _load_all,
     _save,
     _load,
-    load_output,
     _walk_directory,
 )
 from backend.apps.outputs.prompts import VIBE_CODE_SYSTEM_PROMPT
@@ -573,15 +570,6 @@ async def delete_output(output_id: str):
 @outputs.router.post("/vibe-code")
 async def vibe_code(body: VibeCodeRequest):
     """Use an LLM to generate or iterate on Output code from a natural language prompt."""
-    try:
-        import anthropic
-    except ImportError:
-        return {
-            "message": "anthropic SDK not installed. Install with: pip install anthropic",
-            "frontend_code": body.current_frontend_code,
-            "backend_code": body.current_backend_code,
-            "input_schema": body.current_schema,
-        }
 
     context_parts = []
     if body.current_frontend_code:

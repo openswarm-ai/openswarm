@@ -12,8 +12,6 @@ Mounted at `/api/web`.
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Any
-
-from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from typeguard import typechecked
 

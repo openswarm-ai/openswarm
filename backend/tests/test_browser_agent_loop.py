@@ -12,9 +12,12 @@ the four ported behaviors fire together in the actual loop, not just in isolatio
 import asyncio
 import json
 import uuid
+from unittest.mock import AsyncMock
+import pytest
 
 from backend.apps.agents.browser import browser_agent as BA
 from backend.apps.agents.browser import browser_history as BH
+
 
 
 # --- fake Anthropic-shaped objects -----------------------------------------
@@ -63,7 +66,7 @@ def _rp(goal, mem="Share dialog is a cross-origin iframe; use the index list."):
 DOC_URL = "https://docs.google.com/document/d/abc/edit"
 
 
-def _install(monkeypatch, primary, aux):
+def _install(mocker, monkeypatch: pytest.MonkeyPatch, primary, aux):
     # local imports inside run_browser_agent resolve from these source modules
     import backend.apps.settings.settings as settings_mod
     import backend.apps.settings.credentials as cred_mod
@@ -74,13 +77,16 @@ def _install(monkeypatch, primary, aux):
     monkeypatch.setattr(reg_mod, "_find_builtin_model", lambda m: object(), raising=True)
     monkeypatch.setattr(reg_mod, "resolve_model_id_for_sdk", lambda m, s: "primary-x", raising=True)
 
-    async def _aux_resolve(s, preferred_tier="haiku"):
-        return ("aux-x", None)
-    monkeypatch.setattr(reg_mod, "resolve_aux_model", _aux_resolve, raising=True)
+    # autospec keeps the stub honest to resolve_aux_model's real signature while
+    # ignoring its args; returns the fixed aux model id every test maps to `aux`.
+    mocker.patch.object(
+        reg_mod, "resolve_aux_model", autospec=True, return_value=("aux-x", None)
+    )
 
-    def _client_for(s, model):
-        return aux if model == "aux-x" else primary
-    monkeypatch.setattr(cred_mod, "get_anthropic_client_for_model", _client_for, raising=True)
+    monkeypatch.setattr(
+        cred_mod, "get_anthropic_client_for_model",
+        lambda s, model: aux if model == "aux-x" else primary, raising=True,
+    )
 
     monkeypatch.setattr(BA, "load_builtin_permissions", lambda: {}, raising=True)
     monkeypatch.setattr(am_mod.agent_manager, "_sync_session_close", lambda *a, **k: None, raising=False)
@@ -89,7 +95,12 @@ def _install(monkeypatch, primary, aux):
     sent = []
 
     async def _send_browser_command(request_id, action, browser_id, params, tab_id=""):
-        sent.append({"action": action, "params": params})
+        # record the whole call so tests can assert the target (browser_id/tab_id),
+        # not just the action/params.
+        sent.append({
+            "request_id": request_id, "action": action, "browser_id": browser_id,
+            "params": params, "tab_id": tab_id,
+        })
         # smart-wait probes via evaluate; report 'settled' so BrowserWait returns
         # fast in tests instead of riding the full cap.
         if action == "evaluate" and "getEntriesByType('resource')" in str(params.get("expression", "")):
@@ -126,15 +137,14 @@ def _install(monkeypatch, primary, aux):
             return {"text": f"GET {params.get('url')} -> HTTP 200\n{{\"docs\": []}}", "status": 200, "url": DOC_URL}
         return {"text": "ok", "url": DOC_URL}
 
-    async def _noop(*a, **k):
-        return None
-
     monkeypatch.setattr(BA.ws_manager, "send_browser_command", _send_browser_command, raising=False)
-    monkeypatch.setattr(BA.ws_manager, "send_to_session", _noop, raising=False)
+    monkeypatch.setattr(BA.ws_manager, "send_to_session", AsyncMock(return_value=None), raising=False)
     return sent
 
 
-def test_full_loop_goal_stagnation_adjudication_and_hint_write(monkeypatch):
+def test_full_loop_goal_stagnation_adjudication_and_hint_write(
+    monkeypatch: pytest.MonkeyPatch, mocker
+):
     BH._browser_history.clear(); BH._domain_notes.clear()
     primary = FakeLLM([
         Resp([_rp("click the Search button"), _tu("BrowserListInteractives")]),
@@ -146,7 +156,7 @@ def test_full_loop_goal_stagnation_adjudication_and_hint_write(monkeypatch):
         Resp([Blk("text", "Giving up cleanly.")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    sent = _install(mocker, monkeypatch, primary, aux)
 
     result = asyncio.run(BA.run_browser_agent(
         task="Share the doc with someone", browser_id="b1", model="sonnet",
@@ -170,7 +180,7 @@ def test_full_loop_goal_stagnation_adjudication_and_hint_write(monkeypatch):
     assert "cross-origin iframe" in BH.get_domain_note("google.com")
 
 
-def test_action_with_expect_is_confirmed(monkeypatch):
+def test_action_with_expect_is_confirmed(monkeypatch, mocker):
     # An action that declares `expect` is CONFIRMED after it runs: the loop issues a
     # target-aware confirm probe and feeds the next turn a tool_result stating the
     # expected change is present (observed success, never assumed).
@@ -181,7 +191,7 @@ def test_action_with_expect_is_confirmed(monkeypatch):
         Resp([Blk("text", "Confirmed and done.")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    sent = _install(mocker, monkeypatch, primary, aux)
 
     asyncio.run(BA.run_browser_agent(task="submit the form", browser_id="b1", model="sonnet"))
 
@@ -193,7 +203,7 @@ def test_action_with_expect_is_confirmed(monkeypatch):
     assert "Confirmed: 'Submitted' is now present." in all_msgs
 
 
-def test_missing_report_progress_runs_the_action_and_reminds_not_rejects(monkeypatch):
+def test_missing_report_progress_runs_the_action_and_reminds_not_rejects(monkeypatch, mocker):
     # The model acts WITHOUT ReportProgress. Old behavior rejected the turn (wasted
     # a round-trip); new behavior runs the action and folds in a one-line reminder.
     BH._browser_history.clear(); BH._domain_notes.clear()
@@ -202,7 +212,7 @@ def test_missing_report_progress_runs_the_action_and_reminds_not_rejects(monkeyp
         Resp([Blk("text", "done")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    sent = _install(mocker, monkeypatch, primary, aux)
 
     asyncio.run(BA.run_browser_agent(task="click result two", browser_id="b1", model="sonnet"))
 
@@ -214,7 +224,7 @@ def test_missing_report_progress_runs_the_action_and_reminds_not_rejects(monkeyp
     assert "REJECTED" not in all_msgs
 
 
-def test_confirmed_send_ends_the_run_instead_of_stalling(monkeypatch):
+def test_confirmed_send_ends_the_run_instead_of_stalling(monkeypatch, mocker):
     # After an irreversible send CONFIRMS, the model must not burn turns re-verifying.
     # Here it sends (index 99 = "Send", expect confirms) then tries to stall forever
     # with pure-perception turns; the loop must END within a turn or two, not spin.
@@ -226,7 +236,7 @@ def test_confirmed_send_ends_the_run_instead_of_stalling(monkeypatch):
         Resp([Blk("text", "OUTCOME: DONE - sent")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    sent = _install(mocker, monkeypatch, primary, aux)
 
     result = asyncio.run(BA.run_browser_agent(task="text Tyler hello", browser_id="b1", model="sonnet"))
 
@@ -240,7 +250,7 @@ def test_confirmed_send_ends_the_run_instead_of_stalling(monkeypatch):
     assert result["summary"].strip()
 
 
-def test_done_tool_delivers_a_clean_human_summary(monkeypatch):
+def test_done_tool_delivers_a_clean_human_summary(monkeypatch, mocker):
     # Canonical finish: the model calls Done(message); that message is the user's
     # reply verbatim (no OUTCOME tag, no UI mechanics) and `done` is True.
     BH._browser_history.clear(); BH._domain_notes.clear()
@@ -249,14 +259,14 @@ def test_done_tool_delivers_a_clean_human_summary(monkeypatch):
         Resp([_tu("Done", message="Sent your message to Tyler, it's in the thread now.")]),
     ])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     result = asyncio.run(BA.run_browser_agent(task="text Tyler hello", browser_id="b1", model="sonnet"))
     assert result["summary"] == "Sent your message to Tyler, it's in the thread now."
     assert result.get("done") is True
     assert "OUTCOME" not in result["summary"]
 
 
-def test_done_tool_success_false_marks_not_done(monkeypatch):
+def test_done_tool_success_false_marks_not_done(monkeypatch, mocker):
     # Done(success=false) is the honest "couldn't finish": done is False so the
     # fast path knows to recover, and the message still reads like a person wrote it.
     BH._browser_history.clear(); BH._domain_notes.clear()
@@ -265,13 +275,13 @@ def test_done_tool_success_false_marks_not_done(monkeypatch):
         Resp([_tu("Done", message="I hit a login wall, so I couldn't open the chat.", success=False)]),
     ])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     result = asyncio.run(BA.run_browser_agent(task="text Tyler hello", browser_id="b1", model="sonnet"))
     assert result.get("done") is False
     assert "login wall" in result["summary"]
 
 
-def test_run_that_never_calls_done_is_not_a_clean_success(monkeypatch):
+def test_run_that_never_calls_done_is_not_a_clean_success(monkeypatch, mocker):
     # A run that does real work but stops with plain text (never calls Done) is a
     # half-finish, not a clean success: done must be False so the fast path recovers
     # instead of shipping a silent stop (the 'Task completed.' that wasn't).
@@ -281,12 +291,12 @@ def test_run_that_never_calls_done_is_not_a_clean_success(monkeypatch):
         Resp([Blk("text", "I clicked the thing.")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     result = asyncio.run(BA.run_browser_agent(task="open the settings page", browser_id="b1", model="sonnet"))
     assert result.get("done") is False  # no explicit Done -> not a clean success
 
 
-def test_send_shortcut_does_not_arm_on_a_gather_task(monkeypatch):
+def test_send_shortcut_does_not_arm_on_a_gather_task(monkeypatch, mocker):
     # The Airbnb bug: a send-class click (here the index-99 sentinel = "Send", same
     # as a cookie "Accept all" tripping the detector) on a FIND/gather task must NOT
     # arm the send-completion shortcut, there is no send to confirm. If it did, the
@@ -299,7 +309,7 @@ def test_send_shortcut_does_not_arm_on_a_gather_task(monkeypatch):
         Resp([_tu("Done", message="Here are the top items: a, b, c")]),
     ])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     result = asyncio.run(BA.run_browser_agent(task="find me the top 10 repos", browser_id="b1", model="sonnet"))
     # the send shortcut never armed: it ran past the 2-turn post-send cutoff toward
     # the 6-turn perception budget, and no send-confirmation line leaked
@@ -307,7 +317,7 @@ def test_send_shortcut_does_not_arm_on_a_gather_task(monkeypatch):
     assert "went through" not in result["summary"]
 
 
-def test_browser_save_data_writes_a_file_and_returns_a_receipt(monkeypatch, tmp_path):
+def test_browser_save_data_writes_a_file_and_returns_a_receipt(monkeypatch, tmp_path, mocker):
     # BrowserSaveData should run the JS, write the result to a sandboxed file, and
     # return a path receipt (NOT the data), so a big list lands in one step instead
     # of a dozen reply-chunks. The mock's evaluate echoes its expression as the data.
@@ -319,7 +329,7 @@ def test_browser_save_data_writes_a_file_and_returns_a_receipt(monkeypatch, tmp_
         Resp([_tu("Done", message="Saved the full set to rows.json.")]),
     ])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     result = asyncio.run(BA.run_browser_agent(task="get every row and save it", browser_id="b1", model="sonnet"))
     # the file exists under the sandbox subdir, and the receipt (a tool_result) named a path
     saved = list(tmp_path.glob("**/browser-data/rows.json"))
@@ -336,7 +346,7 @@ def test_browser_save_data_writes_a_file_and_returns_a_receipt(monkeypatch, tmp_
         Resp([_tu("Done", message="Gathered all pages: 250 listings. Airbnb caps SF at ~15 pages.")]),
     ])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     result = asyncio.run(BA.run_browser_agent(task="find me all the airbnbs in sf", browser_id="b1", model="sonnet"))
     # it ran the full gather (all 9 extract turns) and finished on its own Done,
     # NOT cut short by a wrap-up nudge at turn 6
@@ -345,7 +355,7 @@ def test_browser_save_data_writes_a_file_and_returns_a_receipt(monkeypatch, tmp_
     assert result.get("done") is True
 
 
-def test_spin_backstop_nudges_a_clean_wrapup_instead_of_a_midthought(monkeypatch):
+def test_spin_backstop_nudges_a_clean_wrapup_instead_of_a_midthought(monkeypatch, mocker):
     # The Airbnb mid-thought bug: a read-heavy run that trips the spin backstop must
     # get ONE wrap-up nudge to summarize via Done, not be cut off mid-sentence. The
     # final reply is the model's clean Done answer, and the nudge actually reached it.
@@ -357,14 +367,14 @@ def test_spin_backstop_nudges_a_clean_wrapup_instead_of_a_midthought(monkeypatch
         Resp([_tu("Done", message="Here are the top repos: a, b, c")]),    # obeys the wrap-up nudge
     ])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     result = asyncio.run(BA.run_browser_agent(task="find me the top 10 repos", browser_id="b1", model="sonnet"))
     assert any("Wrap up NOW" in json.dumps(c["messages"]) for c in primary.calls), "wrap-up nudge not delivered"
     assert result["summary"] == "Here are the top repos: a, b, c"  # the model's answer, not a mid-thought
     assert result.get("done") is True
 
 
-def test_early_perception_is_not_cut_short_before_any_action(monkeypatch):
+def test_early_perception_is_not_cut_short_before_any_action(monkeypatch, mocker):
     # Orienting on a cold/slow page can take several look-only turns; the stall
     # backstop must NOT fire before the agent has done anything (it only bounds a
     # POST-action spin). Here 7 perception turns precede the finish; all must run.
@@ -377,13 +387,13 @@ def test_early_perception_is_not_cut_short_before_any_action(monkeypatch):
         Resp([Blk("text", "OUTCOME: NOT DONE - could not find it")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     asyncio.run(BA.run_browser_agent(task="find the thing", browser_id="b1", model="sonnet"))
     # it ran all 8 scripted turns (was NOT force-ended at the 6-perception backstop)
     assert primary.turn >= 8, f"early orientation was cut short at turn {primary.turn}"
 
 
-def test_aux_adjudication_fires_even_when_loop_detector_trips(monkeypatch):
+def test_aux_adjudication_fires_even_when_loop_detector_trips(monkeypatch, mocker):
     # Repeated IDENTICAL failing clicks trip the exact-repeat loop detector AND
     # reach stagnation exhaustion on the same turn. The aux escape hatch must
     # still fire (it was previously suppressed by the `not is_loop` guard).
@@ -394,7 +404,7 @@ def test_aux_adjudication_fires_even_when_loop_detector_trips(monkeypatch):
         Resp([Blk("text", "done")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
 
     asyncio.run(BA.run_browser_agent(
         task="Share the doc", browser_id="b3", model="sonnet",
@@ -407,7 +417,7 @@ def test_aux_adjudication_fires_even_when_loop_detector_trips(monkeypatch):
     assert "Suggested next step" in all_msgs
 
 
-def test_tier1_and_tier2_tools_drive_through_the_real_loop(monkeypatch):
+def test_tier1_and_tier2_tools_drive_through_the_real_loop(monkeypatch, mocker):
     # The agent can call the new tier-1 (WebMCP detect) and tier-2 (list/replay)
     # tools through the actual run_browser_agent loop, and replay threads its url.
     BH._browser_history.clear(); BH._domain_notes.clear()
@@ -418,7 +428,7 @@ def test_tier1_and_tier2_tools_drive_through_the_real_loop(monkeypatch):
         Resp([Blk("text", "Got the data via the API.")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    sent = _install(mocker, monkeypatch, primary, aux)
 
     asyncio.run(BA.run_browser_agent(
         task="Read my docs list", browser_id="b4", model="sonnet",
@@ -433,7 +443,7 @@ def test_tier1_and_tier2_tools_drive_through_the_real_loop(monkeypatch):
     assert "HTTP 200" in all_msgs
 
 
-def test_skill_is_recorded_then_replayed_with_zero_llm_calls(monkeypatch):
+def test_skill_is_recorded_then_replayed_with_zero_llm_calls(monkeypatch, mocker):
     # Run 1: full LLM agent completes a click task -> records a skill.
     # Run 2: same task/host -> replays via the no-LLM fast path (the speed win).
     import backend.apps.agents.browser.browser_skills as SK
@@ -445,7 +455,7 @@ def test_skill_is_recorded_then_replayed_with_zero_llm_calls(monkeypatch):
         Resp([Blk("text", "Done, clicked Search.")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    sent = _install(mocker, monkeypatch, primary, aux)
 
     # Run 1 (learns). initial_url gives the host for record+replay keying.
     r1 = asyncio.run(BA.run_browser_agent(
@@ -466,7 +476,7 @@ def test_skill_is_recorded_then_replayed_with_zero_llm_calls(monkeypatch):
     assert any(c["action"] == "click_by_name" for c in sent), "replay should re-resolve by name"
 
 
-def test_replay_falls_back_to_full_agent_when_a_step_fails(monkeypatch):
+def test_replay_falls_back_to_full_agent_when_a_step_fails(monkeypatch, mocker):
     # If the page changed and a replay step errors, we must abort replay and run
     # the full LLM agent instead (never ghost-succeed on a stale skill).
     import backend.apps.agents.browser.browser_skills as SK
@@ -479,7 +489,7 @@ def test_replay_falls_back_to_full_agent_when_a_step_fails(monkeypatch):
     ])
     primary = FakeLLM([Resp([Blk("text", "handled by full agent")], stop_reason="end_turn")])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    sent = _install(mocker, monkeypatch, primary, aux)
     # make click_by_name FAIL (target gone) so replay must fall back
     orig = BA.ws_manager.send_browser_command
     async def _fail_cbn(request_id, action, browser_id, params, tab_id=""):
@@ -497,7 +507,7 @@ def test_replay_falls_back_to_full_agent_when_a_step_fails(monkeypatch):
     assert len(primary.calls) > 0, "fell back to the full LLM agent"
 
 
-def test_deferred_replay_fires_after_navigating_to_the_right_host(monkeypatch):
+def test_deferred_replay_fires_after_navigating_to_the_right_host(monkeypatch, mocker):
     # The #30 fix: the orchestrator opens a fresh card on the WRONG host (google),
     # so the dispatch-time replay check misses. Once the agent navigates to the
     # host that DOES have a skill, and nothing has dirtied the page yet, the
@@ -515,7 +525,7 @@ def test_deferred_replay_fires_after_navigating_to_the_right_host(monkeypatch):
         Resp([_rp("now click"), _tu("BrowserClick", selector=".submit")]),
         Resp([Blk("text", "done")], stop_reason="end_turn"),
     ])
-    sent = _install(monkeypatch, primary, FakeAux())
+    sent = _install(mocker, monkeypatch, primary, FakeAux())
     GOOGLE = "https://www.google.com/"
     orig = BA.ws_manager.send_browser_command
 
@@ -538,7 +548,7 @@ def test_deferred_replay_fires_after_navigating_to_the_right_host(monkeypatch):
     assert SK.find_skill("docs.google.com", "click the Search button")["state"] == SK._TRUSTED
 
 
-def test_deferred_replay_does_not_fire_after_the_page_was_dirtied(monkeypatch):
+def test_deferred_replay_does_not_fire_after_the_page_was_dirtied(monkeypatch, mocker):
     # Safety guard: if the agent already typed/clicked before reaching the right
     # host, replaying from here is NOT equivalent to a clean dispatch (the page
     # state is dirty), so the re-check must stay disabled and the LLM finishes.
@@ -555,7 +565,7 @@ def test_deferred_replay_does_not_fire_after_the_page_was_dirtied(monkeypatch):
         Resp([_rp("now go"), _tu("BrowserNavigate", url=DOC_URL)]),
         Resp([Blk("text", "All done.")], stop_reason="end_turn"),
     ])
-    sent = _install(monkeypatch, primary, FakeAux())
+    sent = _install(mocker, monkeypatch, primary, FakeAux())
     GOOGLE = "https://www.google.com/"
     orig = BA.ws_manager.send_browser_command
 
@@ -574,7 +584,7 @@ def test_deferred_replay_does_not_fire_after_the_page_was_dirtied(monkeypatch):
     assert len(primary.calls) >= 3, "the LLM loop finished normally"
 
 
-def test_replay_resolves_host_from_live_page_when_no_initial_url(monkeypatch):
+def test_replay_resolves_host_from_live_page_when_no_initial_url(monkeypatch, mocker):
     # The real-flow fix: the parent often delegates to an EXISTING browser card
     # with no initial_url (and the backend doesn't track where that card
     # navigated). The agent must perceive the live page, learn its host, and STILL
@@ -590,7 +600,7 @@ def test_replay_resolves_host_from_live_page_when_no_initial_url(monkeypatch):
     ])
     primary = FakeLLM([Resp([Blk("text", "should not be needed")], stop_reason="end_turn")])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    sent = _install(mocker, monkeypatch, primary, aux)
     # NOTE: no initial_url passed; the fake browser reports url=DOC_URL via perception
     r = asyncio.run(BA.run_browser_agent(
         task="Please click the Search button", browser_id="b1", model="sonnet",
@@ -600,7 +610,7 @@ def test_replay_resolves_host_from_live_page_when_no_initial_url(monkeypatch):
     assert any(c["action"] == "click_by_name" for c in sent)
 
 
-def test_skill_keys_on_parent_user_message_so_reformulations_share_a_skill(monkeypatch):
+def test_skill_keys_on_parent_user_message_so_reformulations_share_a_skill(monkeypatch, mocker):
     # The measured real-flow blocker: the orchestrator reformulates the same user
     # request differently each run ("click the search box" vs "find the search
     # box"), so exact-key replay never hits. Keying on the parent's STABLE user
@@ -625,7 +635,7 @@ def test_skill_keys_on_parent_user_message_so_reformulations_share_a_skill(monke
         Resp([_rp("click it"), _tu("BrowserClickIndex", index=1)]),
         Resp([Blk("text", "Done.")], stop_reason="end_turn"),
     ])
-    _install(monkeypatch, primary1, FakeAux())
+    _install(mocker, monkeypatch, primary1, FakeAux())
     asyncio.run(BA.run_browser_agent(
         task="Go to wikipedia, click the search box, type Ada Lovelace, then submit",
         browser_id="b1", model="sonnet", initial_url=DOC_URL, parent_session_id="p1",
@@ -636,7 +646,7 @@ def test_skill_keys_on_parent_user_message_so_reformulations_share_a_skill(monke
     # Run 2: a DIFFERENT reformulation, same parent intent -> must REPLAY (the
     # exact thing that failed live, now fixed).
     primary2 = FakeLLM([Resp([Blk("text", "should not be needed")], stop_reason="end_turn")])
-    sent = _install(monkeypatch, primary2, FakeAux())
+    _install(mocker, monkeypatch, primary2, FakeAux())
     r = asyncio.run(BA.run_browser_agent(
         task="Navigate to wikipedia, find the search field, and submit Ada Lovelace",
         browser_id="b1", model="sonnet", initial_url=DOC_URL, parent_session_id="p1",
@@ -645,7 +655,7 @@ def test_skill_keys_on_parent_user_message_so_reformulations_share_a_skill(monke
     assert len(primary2.calls) == 0, "replay must make zero LLM calls"
 
 
-def test_skill_key_falls_back_to_delegated_task_on_multi_quote_message(monkeypatch):
+def test_skill_key_falls_back_to_delegated_task_on_multi_quote_message(monkeypatch, mocker):
     # Guard against same-host collisions: a user message with several quoted
     # values could spawn several same-host sub-tasks that must NOT share one key.
     import backend.apps.agents.browser.browser_skills as SK
@@ -665,7 +675,7 @@ def test_skill_key_falls_back_to_delegated_task_on_multi_quote_message(monkeypat
         Resp([_rp("go"), _tu("BrowserClickIndex", index=1)]),
         Resp([Blk("text", "Done.")], stop_reason="end_turn"),
     ])
-    _install(monkeypatch, primary, FakeAux())
+    _install(mocker, monkeypatch, primary, FakeAux())
     asyncio.run(BA.run_browser_agent(
         task="search wikipedia for Ada Lovelace", browser_id="b1", model="sonnet",
         initial_url=DOC_URL, parent_session_id="p1",
@@ -675,7 +685,7 @@ def test_skill_key_falls_back_to_delegated_task_on_multi_quote_message(monkeypat
     assert SK.find_skill("docs.google.com", "search wikipedia for Ada Lovelace") is not None
 
 
-def test_replay_success_promotes_skill_to_trusted_through_the_loop(monkeypatch):
+def test_replay_success_promotes_skill_to_trusted_through_the_loop(monkeypatch, mocker):
     # The verify gate, end to end: run 1 learns a PROBATION skill; run 2 replays
     # it successfully, which must PROMOTE it to trusted (proven by a real replay).
     import backend.apps.agents.browser.browser_skills as SK
@@ -687,7 +697,7 @@ def test_replay_success_promotes_skill_to_trusted_through_the_loop(monkeypatch):
         Resp([Blk("text", "Done.")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     asyncio.run(BA.run_browser_agent(
         task="click the Search button", browser_id="b1", model="sonnet", initial_url=DOC_URL,
     ))
@@ -699,7 +709,7 @@ def test_replay_success_promotes_skill_to_trusted_through_the_loop(monkeypatch):
     assert SK.find_skill("docs.google.com", "click the Search button")["state"] == SK._TRUSTED
 
 
-def test_skill_with_send_step_never_replays_silently(monkeypatch):
+def test_skill_with_send_step_never_replays_silently(monkeypatch, mocker):
     # The audit finding: replay bypasses act-and-confirm and the per-tool gate,
     # so a recorded Send/Submit must NOT auto-replay; the live agent (which
     # confirms before anything outward) runs instead, and trust is untouched.
@@ -711,7 +721,7 @@ def test_skill_with_send_step_never_replays_silently(monkeypatch):
          "clicked_role": "button", "clicked_name": "Send"},
     ])
     primary = FakeLLM([Resp([Blk("text", "handled live with confirmation")], stop_reason="end_turn")])
-    sent = _install(monkeypatch, primary, FakeAux())
+    sent = _install(mocker, monkeypatch, primary, FakeAux())
     r = asyncio.run(BA.run_browser_agent(
         task="message tyler saying hi", browser_id="b1", model="sonnet", initial_url=DOC_URL,
     ))
@@ -722,7 +732,7 @@ def test_skill_with_send_step_never_replays_silently(monkeypatch):
         "skipping replay is not a replay failure; trust stays untouched"
 
 
-def test_unproven_skill_that_fails_is_quarantined_and_never_retried(monkeypatch):
+def test_unproven_skill_that_fails_is_quarantined_and_never_retried(monkeypatch, mocker):
     # The anti-ghost guard, end to end: an unproven skill that fails a replay must
     # be quarantined so the NEXT run does not even attempt the (known-bad) replay,
     # it goes straight to the pure-LLM baseline. A silent re-fail would be a ghost.
@@ -735,7 +745,7 @@ def test_unproven_skill_that_fails_is_quarantined_and_never_retried(monkeypatch)
     ])  # probation, unproven
     primary = FakeLLM([Resp([Blk("text", "full agent handled it")], stop_reason="end_turn")])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    sent = _install(mocker, monkeypatch, primary, aux)
     orig = BA.ws_manager.send_browser_command
 
     async def _fail_cbn(request_id, action, browser_id, params, tab_id=""):
@@ -762,7 +772,7 @@ def test_unproven_skill_that_fails_is_quarantined_and_never_retried(monkeypatch)
         "a quarantined skill must never be replayed again (would be a ghost re-fail)"
 
 
-def test_informational_run_records_no_skill_to_avoid_thin_ghost(monkeypatch):
+def test_informational_run_records_no_skill_to_avoid_thin_ghost(monkeypatch, mocker):
     # The 'find me 10 X' guard: a run that did real productive actions AND
     # succeeded, but whose deliverable is gathered/judged content (a list), must
     # NOT record a replayable skill, because replay would redo the clicks and
@@ -775,7 +785,7 @@ def test_informational_run_records_no_skill_to_avoid_thin_ghost(monkeypatch):
         Resp([_rp("search"), _tu("BrowserClickIndex", index=1)]),  # a real productive action
         Resp([Blk("text", ten)], stop_reason="end_turn"),          # ...but the answer is a gathered list
     ])
-    _install(monkeypatch, primary, FakeAux())
+    _install(mocker, monkeypatch, primary, FakeAux())
     r = asyncio.run(BA.run_browser_agent(
         task="find me 10 cracked design engineers", browser_id="b1", model="sonnet", initial_url=DOC_URL,
     ))
@@ -785,7 +795,7 @@ def test_informational_run_records_no_skill_to_avoid_thin_ghost(monkeypatch):
     assert SK.find_skill("docs.google.com", "find me 10 cracked design engineers") is None
 
 
-def test_read_answered_from_frontloaded_perception_is_not_a_ghost(monkeypatch):
+def test_read_answered_from_frontloaded_perception_is_not_a_ghost(monkeypatch, mocker):
     # REGRESSION: front-loading reads perception into turn 1; if the agent answers
     # a read task straight from that (zero further tools), the honesty gate must
     # NOT flag it as 'declared done without taking a single action'. The front-
@@ -796,7 +806,7 @@ def test_read_answered_from_frontloaded_perception_is_not_a_ghost(monkeypatch):
         Resp([Blk("text", "The first sentence is: Alan Turing was a mathematician.")], stop_reason="end_turn"),
     ])
     captured = {}
-    _install(monkeypatch, primary, FakeAux())
+    _install(mocker, monkeypatch, primary, FakeAux())
     orig = BA.ws_manager.send_to_session
 
     async def _cap(session_id, event, payload):
@@ -813,7 +823,7 @@ def test_read_answered_from_frontloaded_perception_is_not_a_ghost(monkeypatch):
     assert not r.get("error")
 
 
-def test_ghost_completion_is_reported_as_error_not_completed(monkeypatch):
+def test_ghost_completion_is_reported_as_error_not_completed(monkeypatch, mocker):
     # The measured ghost, end to end: the model does a bunch of failing clicks
     # then declares done. The honesty gate must report 'error' (not 'completed')
     # and must NOT record a skill from a run that accomplished nothing.
@@ -826,7 +836,7 @@ def test_ghost_completion_is_reported_as_error_not_completed(monkeypatch):
         Resp([Blk("text", "All done, submitted successfully!")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     # every click errors (the fake returns an error for action 'click')
     captured = {}
     orig_send = BA.ws_manager.send_to_session
@@ -848,7 +858,7 @@ def test_ghost_completion_is_reported_as_error_not_completed(monkeypatch):
     assert SK.find_skill("docs.google.com", "Submit the form") is None
 
 
-def test_dead_browser_card_aborts_fast_without_spinning(monkeypatch):
+def test_dead_browser_card_aborts_fast_without_spinning(monkeypatch, mocker):
     # The measured waste: a sub-agent dispatched to a released card retried the
     # dead webview for many turns. Now a gone card must abort fast (a couple of
     # turns, not the whole budget) and report the precise reason.
@@ -861,11 +871,13 @@ def test_dead_browser_card_aborts_fast_without_spinning(monkeypatch):
         + [Resp([Blk("text", "done")], stop_reason="end_turn")]
     )
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
 
-    async def _card_gone(request_id, action, browser_id, params, tab_id=""):
-        return {"error": f"Browser card '{browser_id}' not found or not an Electron webview"}
-    monkeypatch.setattr(BA.ws_manager, "send_browser_command", _card_gone, raising=False)
+    # a released card returns the same not-found error to every command
+    card_gone = AsyncMock(return_value={
+        "error": "Browser card 'b1' not found or not an Electron webview",
+    })
+    monkeypatch.setattr(BA.ws_manager, "send_browser_command", card_gone, raising=False)
     captured = {}
     orig = BA.ws_manager.send_to_session
 
@@ -883,7 +895,7 @@ def test_dead_browser_card_aborts_fast_without_spinning(monkeypatch):
     assert "unresponsive" in r["summary"].lower()
 
 
-def test_hung_browser_card_aborts_fast_not_a_20_minute_loop(monkeypatch):
+def test_hung_browser_card_aborts_fast_not_a_20_minute_loop(monkeypatch, mocker):
     # THE regression from the user's 20-min LinkedIn freeze: a HUNG tab returns
     # "Browser command timed out" on every command (not "card not found"), so the
     # gone-detector never tripped and the agent spun for minutes. Now a hung card
@@ -895,11 +907,11 @@ def test_hung_browser_card_aborts_fast_not_a_20_minute_loop(monkeypatch):
         [Resp([_rp("read"), _tu("BrowserGetText")]) for _ in range(8)]
         + [Resp([Blk("text", "done")], stop_reason="end_turn")]
     )
-    _install(monkeypatch, primary, FakeAux())
+    _install(mocker, monkeypatch, primary, FakeAux())
 
-    async def _hung(request_id, action, browser_id, params, tab_id=""):
-        return {"error": "Browser command timed out"}  # what a wedged tab returns
-    monkeypatch.setattr(BA.ws_manager, "send_browser_command", _hung, raising=False)
+    # a wedged tab returns the same timeout error to every command
+    hung = AsyncMock(return_value={"error": "Browser command timed out"})
+    monkeypatch.setattr(BA.ws_manager, "send_browser_command", hung, raising=False)
     captured = {}
     orig = BA.ws_manager.send_to_session
 
@@ -917,14 +929,14 @@ def test_hung_browser_card_aborts_fast_not_a_20_minute_loop(monkeypatch):
     assert "unresponsive" in r["summary"].lower()
 
 
-def test_perception_is_frontloaded_into_first_turn(monkeypatch):
+def test_perception_is_frontloaded_into_first_turn(monkeypatch, mocker):
     # With a known start URL, the agent should prefetch the element list + page
     # text and put them in the FIRST user message, so the model can act on turn 1
     # instead of spending early turns orienting.
     BH._browser_history.clear(); BH._domain_notes.clear()
     primary = FakeLLM([Resp([Blk("text", "done")], stop_reason="end_turn")])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     asyncio.run(BA.run_browser_agent(
         task="click submit", browser_id="bp", model="sonnet", initial_url=DOC_URL,
     ))
@@ -935,14 +947,14 @@ def test_perception_is_frontloaded_into_first_turn(monkeypatch):
     assert "act directly" in text
 
 
-def test_prompt_caching_markers_present(monkeypatch):
+def test_prompt_caching_markers_present(monkeypatch, mocker):
     # The fixed system+tools prefix must carry cache_control so it's cached
     # across turns (the first-run speed/cost win). Without the marker the
     # ~4k-token prefix is reprocessed every turn.
     BH._browser_history.clear(); BH._domain_notes.clear()
     primary = FakeLLM([Resp([Blk("text", "done")], stop_reason="end_turn")])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     asyncio.run(BA.run_browser_agent(task="hi", browser_id="bz", model="sonnet"))
     call = primary.calls[0]
     sys = call["system"]
@@ -953,7 +965,7 @@ def test_prompt_caching_markers_present(monkeypatch):
     assert sum(1 for t in tools if t.get("cache_control")) == 1
 
 
-def test_agent_can_list_and_deprecate_its_own_skills(monkeypatch):
+def test_agent_can_list_and_deprecate_its_own_skills(monkeypatch, mocker):
     # The agent calls BrowserListSkills + BrowserDeprecateSkill inline (backend-
     # handled, never sent to the webview), giving it agency over its own memory.
     import backend.apps.agents.browser.browser_skills as SK
@@ -969,7 +981,7 @@ def test_agent_can_list_and_deprecate_its_own_skills(monkeypatch):
         Resp([Blk("text", "Pruned the stale shortcut.")], stop_reason="end_turn"),
     ])
     aux = FakeAux()
-    sent = _install(monkeypatch, primary, aux)
+    sent = _install(mocker, monkeypatch, primary, aux)
     asyncio.run(BA.run_browser_agent(
         task="manage my shortcuts", browser_id="bm", model="sonnet", initial_url=DOC_URL,
     ))
@@ -983,7 +995,7 @@ def test_agent_can_list_and_deprecate_its_own_skills(monkeypatch):
     assert SK.find_skill("docs.google.com", "share the doc now") is None
 
 
-def test_playbook_distills_on_success_survives_restart_and_seeds_next_run(monkeypatch):
+def test_playbook_distills_on_success_survives_restart_and_seeds_next_run(monkeypatch, mocker):
     # The tier-2 memory, end to end: a substantive judgment run distills a durable
     # strategy playbook (one aux call), it persists across a restart, and the NEXT
     # run on the same host gets it seeded into the system prompt, so the model
@@ -997,10 +1009,10 @@ def test_playbook_distills_on_success_survives_restart_and_seeds_next_run(monkey
     # aux returns a strategy playbook as JSON (the distill+reconcile reply)
     class PBAux:
         def __init__(self):
-            self.calls = 0
+            self.calls = []
             self.messages = self
         async def create(self, **kw):
-            self.calls += 1
+            self.calls.append(kw)
             txt = _json.dumps({"playbook": [
                 "generic 'design engineer' returns hardware engineers",
                 "search Vercel/Linear + React to surface real design engineers",
@@ -1016,11 +1028,11 @@ def test_playbook_distills_on_success_survives_restart_and_seeds_next_run(monkey
         Resp([Blk("text", "Done. Found the people; the reliable method was company+React.")], stop_reason="end_turn"),
     ])
     pbaux = PBAux()
-    _install(monkeypatch, primary1, pbaux)
+    _install(mocker, monkeypatch, primary1, pbaux)
     asyncio.run(BA.run_browser_agent(
         task="find design engineers", browser_id="b1", model="sonnet", initial_url=DOC_URL,
     ))
-    assert pbaux.calls >= 1, "a substantive success must trigger the distill aux call"
+    assert len(pbaux.calls) >= 1, "a substantive success must trigger the distill aux call"
     assert PB.get_playbook("docs.google.com"), "playbook recorded for the host"
 
     # Restart: drop in-memory, keep disk.
@@ -1029,7 +1041,7 @@ def test_playbook_distills_on_success_survives_restart_and_seeds_next_run(monkey
 
     # Run 2: fresh task, same host -> playbook must be seeded into the system prompt.
     primary2 = FakeLLM([Resp([Blk("text", "done")], stop_reason="end_turn")])
-    _install(monkeypatch, primary2, FakeAux())
+    _install(mocker, monkeypatch, primary2, FakeAux())
     asyncio.run(BA.run_browser_agent(
         task="find more engineers", browser_id="b2", model="sonnet", initial_url=DOC_URL,
     ))
@@ -1039,7 +1051,7 @@ def test_playbook_distills_on_success_survives_restart_and_seeds_next_run(monkey
     assert "Vercel/Linear + React" in system_text
 
 
-def test_ambient_memory_signals_fire_calmly(monkeypatch):
+def test_ambient_memory_signals_fire_calmly(monkeypatch, mocker):
     # Perceived value, zero clicks: the user should SEE the agent (a) pick up what
     # it learned when strategy is seeded, and (b) note new learning at the end,
     # both as calm one-liners in the existing stream, only when real.
@@ -1050,8 +1062,11 @@ def test_ambient_memory_signals_fire_calmly(monkeypatch):
     BH._browser_history.clear()
 
     class PBAux:
-        def __init__(self): self.messages = self
+        def __init__(self):
+            self.calls = []
+            self.messages = self
         async def create(self, **kw):
+            self.calls.append(kw)
             return Resp([Blk("text", _json.dumps({"playbook": ["search company+React, not generic"]}))],
                         stop_reason="end_turn")
     msgs = []
@@ -1074,7 +1089,7 @@ def test_ambient_memory_signals_fire_calmly(monkeypatch):
         ])
 
     # Run 1: nothing learned yet -> NO recall line, but it learns -> closing line.
-    _install(monkeypatch, _run(), PBAux())
+    _install(mocker, monkeypatch, _run(), PBAux())
     monkeypatch.setattr(BA.ws_manager, "send_to_session", _cap, raising=False)
     asyncio.run(BA.run_browser_agent(task="find engineers", browser_id="b1", model="sonnet", initial_url=DOC_URL))
     joined1 = " ".join(msgs)
@@ -1083,13 +1098,13 @@ def test_ambient_memory_signals_fire_calmly(monkeypatch):
 
     # Run 2: now there's a playbook -> recall line fires.
     msgs.clear()
-    _install(monkeypatch, _run(), PBAux())
+    _install(mocker, monkeypatch, _run(), PBAux())
     monkeypatch.setattr(BA.ws_manager, "send_to_session", _cap, raising=False)
     asyncio.run(BA.run_browser_agent(task="find more", browser_id="b2", model="sonnet", initial_url=DOC_URL))
     assert any("Picking up what I learned about docs.google.com" in m for m in msgs), "recall line on a return visit"
 
 
-def test_playbook_not_learned_from_a_ghost_completion(monkeypatch):
+def test_playbook_not_learned_from_a_ghost_completion(monkeypatch, mocker):
     # Fail-safe: a dishonest 'completion' (all actions errored) must NOT distill a
     # playbook, garbage strategy from a failed run would mislead future runs.
     import backend.apps.agents.browser.browser_playbook as PB
@@ -1099,10 +1114,10 @@ def test_playbook_not_learned_from_a_ghost_completion(monkeypatch):
 
     class CountingAux:
         def __init__(self):
-            self.calls = 0
+            self.calls = []
             self.messages = self
         async def create(self, **kw):
-            self.calls += 1
+            self.calls.append(kw)
             return Resp([Blk("text", "Try something else.")], stop_reason="end_turn")
 
     # every click errors -> the honesty gate marks the run an error (ghost)
@@ -1114,7 +1129,7 @@ def test_playbook_not_learned_from_a_ghost_completion(monkeypatch):
         Resp([Blk("text", "All set!")], stop_reason="end_turn"),
     ])
     aux = CountingAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
     asyncio.run(BA.run_browser_agent(
         task="do the thing", browser_id="b1", model="sonnet", initial_url=DOC_URL,
     ))
@@ -1123,7 +1138,7 @@ def test_playbook_not_learned_from_a_ghost_completion(monkeypatch):
     assert PB.get_playbook("docs.google.com") == []
 
 
-def test_batch_replay_runs_a_read_loop_for_all_values(monkeypatch):
+def test_batch_replay_runs_a_read_loop_for_all_values(monkeypatch, mocker):
     # The win: do one item the slow way, then BrowserRepeatFlow runs the same
     # read flow for the rest at machine speed, one tool turn, no screenshots.
     BH._browser_history.clear()
@@ -1133,10 +1148,13 @@ def test_batch_replay_runs_a_read_loop_for_all_values(monkeypatch):
         Resp([_rp("batch the rest"), _tu("BrowserRepeatFlow", steps=steps, values=["ada", "grace", "alan"])]),
         Resp([Blk("text", "Read all three.")], stop_reason="end_turn"),
     ])
-    sent = _install(monkeypatch, primary, FakeAux())
+    sent = _install(mocker, monkeypatch, primary, FakeAux())
 
     async def _data(request_id, action, browser_id, params, tab_id=""):
-        sent.append({"action": action, "params": params})
+        sent.append({
+            "request_id": request_id, "action": action, "browser_id": browser_id,
+            "params": params, "tab_id": tab_id,
+        })
         if action == "evaluate":
             # return value-specific data so we can prove the DATA comes back
             who = params["expression"].split("'")[1]
@@ -1155,7 +1173,7 @@ def test_batch_replay_runs_a_read_loop_for_all_values(monkeypatch):
     assert "ada: bio of ada" in all_msgs and "grace: bio of grace" in all_msgs and "alan: bio of alan" in all_msgs
 
 
-def test_batch_replay_is_ghost_proof_when_an_item_does_not_match(monkeypatch):
+def test_batch_replay_is_ghost_proof_when_an_item_does_not_match(monkeypatch, mocker):
     # THE anti-ghost test: per-item pages vary. Value 'grace' errors mid-flow ->
     # it must be reported as needs-manual, the others still succeed, and the tally
     # is HONEST ('2 of 3'), never a silent 'did them all'.
@@ -1166,10 +1184,13 @@ def test_batch_replay_is_ghost_proof_when_an_item_does_not_match(monkeypatch):
         Resp([_rp("batch"), _tu("BrowserRepeatFlow", steps=steps, values=["ada", "grace", "alan"])]),
         Resp([Blk("text", "Handled.")], stop_reason="end_turn"),
     ])
-    sent = _install(monkeypatch, primary, FakeAux())
+    sent = _install(mocker, monkeypatch, primary, FakeAux())
 
     async def _vary(request_id, action, browser_id, params, tab_id=""):
-        sent.append({"action": action, "params": params})
+        sent.append({
+            "request_id": request_id, "action": action, "browser_id": browser_id,
+            "params": params, "tab_id": tab_id,
+        })
         if action == "navigate" and "grace" in params.get("url", ""):
             return {"error": "Page not found for grace (different layout)"}
         if action == "navigate":
@@ -1188,7 +1209,7 @@ def test_batch_replay_is_ghost_proof_when_an_item_does_not_match(monkeypatch):
     assert reads == {"read('ada')", "read('alan')"}, "exactly the matching items ran"
 
 
-def test_batch_replay_refuses_a_send_loop_and_executes_nothing(monkeypatch):
+def test_batch_replay_refuses_a_send_loop_and_executes_nothing(monkeypatch, mocker):
     # The send gate: a flow that clicks 'Send message' must be REFUSED outright,
     # nothing is clicked, so we can never auto-message N people.
     BH._browser_history.clear()
@@ -1200,7 +1221,7 @@ def test_batch_replay_refuses_a_send_loop_and_executes_nothing(monkeypatch):
         Resp([_rp("blast messages"), _tu("BrowserRepeatFlow", steps=steps, values=["a", "b", "c"])]),
         Resp([Blk("text", "Okay, individually then.")], stop_reason="end_turn"),
     ])
-    sent = _install(monkeypatch, primary, FakeAux())
+    sent = _install(mocker, monkeypatch, primary, FakeAux())
     asyncio.run(BA.run_browser_agent(task="message people", browser_id="b1", model="sonnet", initial_url=DOC_URL))
     all_msgs = json.dumps([c["messages"] for c in primary.calls])
     assert "Refused to auto-repeat" in all_msgs and "one at a time" in all_msgs
@@ -1209,7 +1230,7 @@ def test_batch_replay_refuses_a_send_loop_and_executes_nothing(monkeypatch):
     assert not any(c["action"] == "click_by_name" for c in sent)
 
 
-def test_batch_replay_uses_the_fast_network_route_per_value(monkeypatch):
+def test_batch_replay_uses_the_fast_network_route_per_value(monkeypatch, mocker):
     # Folds in the audit finding: a read-loop can hit a captured API endpoint
     # (replay_route) per value instead of clicking the UI, the fast tier.
     BH._browser_history.clear()
@@ -1218,13 +1239,13 @@ def test_batch_replay_uses_the_fast_network_route_per_value(monkeypatch):
         Resp([_rp("fetch via api"), _tu("BrowserRepeatFlow", steps=steps, values=["ada", "grace"])]),
         Resp([Blk("text", "Got both via API.")], stop_reason="end_turn"),
     ])
-    sent = _install(monkeypatch, primary, FakeAux())
+    sent = _install(mocker, monkeypatch, primary, FakeAux())
     asyncio.run(BA.run_browser_agent(task="fetch two", browser_id="b1", model="sonnet", initial_url=DOC_URL))
     routes = [c["params"]["url"] for c in sent if c["action"] == "replay_route"]
     assert any("u=ada" in u for u in routes) and any("u=grace" in u for u in routes)
 
 
-def test_captured_routes_are_surfaced_once_per_host(monkeypatch):
+def test_captured_routes_are_surfaced_once_per_host(monkeypatch, mocker):
     # Drives the dead network tier: when a READ shows safe GET routes were captured
     # (sampled on get_text, after the SPA's XHRs fired, not on navigate), the agent
     # gets a ONE-TIME nudge per host toward BrowserReplayRoute, not on every read.
@@ -1234,7 +1255,7 @@ def test_captured_routes_are_surfaced_once_per_host(monkeypatch):
         Resp([_rp("read 2"), _tu("BrowserEvaluate", expression="document.title")]),
         Resp([Blk("text", "done")], stop_reason="end_turn"),
     ])
-    sent = _install(monkeypatch, primary, FakeAux())
+    _install(mocker, monkeypatch, primary, FakeAux())
     orig = BA.ws_manager.send_browser_command
 
     async def _with_routes(request_id, action, browser_id, params, tab_id=""):
@@ -1250,7 +1271,7 @@ def test_captured_routes_are_surfaced_once_per_host(monkeypatch):
     assert final_convo.count("API endpoint(s) were captured") == 1
 
 
-def test_browser_wait_routes_through_smart_wait_and_returns_early(monkeypatch):
+def test_browser_wait_routes_through_smart_wait_and_returns_early(monkeypatch, mocker):
     # BrowserWait must no longer be a blind sleep: it probes the page (evaluate)
     # and returns as soon as it's settled, well under the requested cap.
     BH._browser_history.clear()
@@ -1258,7 +1279,7 @@ def test_browser_wait_routes_through_smart_wait_and_returns_early(monkeypatch):
         Resp([_rp("let it settle"), _tu("BrowserWait", milliseconds=8000)]),
         Resp([Blk("text", "Settled, moving on.")], stop_reason="end_turn"),
     ])
-    sent = _install(monkeypatch, primary, FakeAux())
+    sent = _install(mocker, monkeypatch, primary, FakeAux())
     import time as _t
     t0 = _t.time()
     asyncio.run(BA.run_browser_agent(task="wait then act", browser_id="b1", model="sonnet", initial_url=DOC_URL))
@@ -1270,12 +1291,12 @@ def test_browser_wait_routes_through_smart_wait_and_returns_early(monkeypatch):
     assert elapsed < 4.0, "smart wait returned early instead of sleeping the full cap"
 
 
-def test_prior_domain_hint_is_seeded_into_system_prompt(monkeypatch):
+def test_prior_domain_hint_is_seeded_into_system_prompt(monkeypatch, mocker):
     BH._browser_history.clear(); BH._domain_notes.clear()
     BH.set_domain_note("google.com", "REMEMBERED: Share button is index 43; Tab into the dialog.")
     primary = FakeLLM([Resp([Blk("text", "done")], stop_reason="end_turn")])
     aux = FakeAux()
-    _install(monkeypatch, primary, aux)
+    _install(mocker, monkeypatch, primary, aux)
 
     asyncio.run(BA.run_browser_agent(
         task="open the doc", browser_id="b2", model="sonnet", initial_url=DOC_URL,
@@ -1341,65 +1362,66 @@ def test_find_reusable_card_reuses_own_then_orphan_never_user(monkeypatch):
     assert BA._find_reusable_card("d1", target, "p2") == ""
 
 
-def _fake_settle(calls):
-    async def fake_smart_wait(execute_fn, browser_id, tab_id, max_ms, **kw):
-        calls.append(("settle", max_ms))
-        return {"settled": True, "hung": False}
-    return fake_smart_wait
+def _settle_mock(hung=False):
+    # smart_wait returns a canned settle verdict; AsyncMock records every call
+    # (execute_fn/browser_id/tab_id/max_ms) in .await_args_list for assertions.
+    return AsyncMock(return_value={"settled": not hung, "hung": hung})
 
 
-def _fake_exec(calls, list_text='3 interactive elements\n[1]<button "A">'):
-    async def wait_exec(tool, params, bid, tid):
-        calls.append((tool, dict(params)))
-        return {"text": list_text}
-    return wait_exec
+def _exec_mock(list_text='3 interactive elements\n[1]<button "A">'):
+    # the exec callback returns a fixed interactive list; AsyncMock captures the
+    # (tool, params, browser_id, tab_id) it was invoked with.
+    return AsyncMock(return_value={"text": list_text})
 
 
 def test_post_action_state_settles_then_attaches(monkeypatch):
     import asyncio
     from backend.apps.agents.browser import browser_agent as ba
-    calls = []
-    monkeypatch.setattr(ba.browser_wait, "smart_wait", _fake_settle(calls))
+    settle = _settle_mock()
+    monkeypatch.setattr(ba.browser_wait, "smart_wait", settle)
+    exec_fn = _exec_mock()
     out = asyncio.run(ba._post_action_state(
         "BrowserClickIndex", {"index": 1}, {"text": "Clicked"},
-        "b1", "", _fake_exec(calls), "find tyler",
+        "b1", "", exec_fn, "find tyler",
     ))
     assert ba.PAGE_STATE_MARKER in out and '[1]<button "A">' in out
-    assert ("settle", 1200) in calls
-    assert ("BrowserListInteractives", {"goal": "find tyler"}) in calls
+    assert settle.await_args.args[3] == 1200  # auto-settle cap for a click
+    assert ("BrowserListInteractives", {"goal": "find tyler"}, "b1", "") in [
+        c.args for c in exec_fn.await_args_list
+    ]
 
 
 def test_post_action_state_navigate_gets_longer_settle(monkeypatch):
     import asyncio
     from backend.apps.agents.browser import browser_agent as ba
-    calls = []
-    monkeypatch.setattr(ba.browser_wait, "smart_wait", _fake_settle(calls))
+    settle = _settle_mock()
+    monkeypatch.setattr(ba.browser_wait, "smart_wait", settle)
     asyncio.run(ba._post_action_state(
         "BrowserNavigate", {"url": "https://x.com"}, {"text": "Navigated"},
-        "b1", "", _fake_exec(calls), "",
+        "b1", "", _exec_mock(), "",
     ))
-    assert ("settle", 2500) in calls
+    assert settle.await_args.args[3] == 2500  # navigate gets a longer settle cap
 
 
 def test_post_action_state_expect_skips_double_settle(monkeypatch):
     import asyncio
     from backend.apps.agents.browser import browser_agent as ba
-    calls = []
-    monkeypatch.setattr(ba.browser_wait, "smart_wait", _fake_settle(calls))
+    settle = _settle_mock()
+    monkeypatch.setattr(ba.browser_wait, "smart_wait", settle)
     out = asyncio.run(ba._post_action_state(
         "BrowserClickIndex", {"index": 2, "expect": "Sent"}, {"text": "Clicked"},
-        "b1", "", _fake_exec(calls), "",
+        "b1", "", _exec_mock(), "",
     ))
-    assert not any(c[0] == "settle" for c in calls)
+    settle.assert_not_awaited()
     assert ba.PAGE_STATE_MARKER in out
 
 
 def test_post_action_state_skips_errors_reads_and_batch_reads(monkeypatch):
     import asyncio
     from backend.apps.agents.browser import browser_agent as ba
-    calls = []
-    monkeypatch.setattr(ba.browser_wait, "smart_wait", _fake_settle(calls))
-    exec_fn = _fake_exec(calls)
+    settle = _settle_mock()
+    monkeypatch.setattr(ba.browser_wait, "smart_wait", settle)
+    exec_fn = _exec_mock()
     assert asyncio.run(ba._post_action_state(
         "BrowserClickIndex", {"index": 1}, {"error": "nope"}, "b", "", exec_fn, "")) == ""
     assert asyncio.run(ba._post_action_state(
@@ -1408,18 +1430,18 @@ def test_post_action_state_skips_errors_reads_and_batch_reads(monkeypatch):
                             {"type": "list_interactives", "params": {}}]}
     assert asyncio.run(ba._post_action_state(
         "BrowserBatch", batch_in, {"text": "ran 2"}, "b", "", exec_fn, "")) == ""
-    assert calls == []
+    settle.assert_not_awaited()
+    exec_fn.assert_not_awaited()
 
 
 def test_post_action_state_truncates_long_lists(monkeypatch):
     import asyncio
     from backend.apps.agents.browser import browser_agent as ba
-    calls = []
-    monkeypatch.setattr(ba.browser_wait, "smart_wait", _fake_settle(calls))
+    monkeypatch.setattr(ba.browser_wait, "smart_wait", _settle_mock())
     long_list = "\n".join(f'[{i}]<button "b{i}">' for i in range(60))
     out = asyncio.run(ba._post_action_state(
         "BrowserType", {"selector": "#q", "text": "hi"}, {"text": "Typed"},
-        "b1", "", _fake_exec(calls, long_list), "",
+        "b1", "", _exec_mock(long_list), "",
     ))
     assert "(+25 more rows" in out and '[34]<button "b34">' in out and '[35]' not in out
 
@@ -1427,15 +1449,14 @@ def test_post_action_state_truncates_long_lists(monkeypatch):
 def test_post_action_state_hung_settle_attaches_nothing(monkeypatch):
     import asyncio
     from backend.apps.agents.browser import browser_agent as ba
-    calls = []
-    async def hung_wait(execute_fn, browser_id, tab_id, max_ms, **kw):
-        return {"settled": False, "hung": True}
-    monkeypatch.setattr(ba.browser_wait, "smart_wait", hung_wait)
+    monkeypatch.setattr(ba.browser_wait, "smart_wait", _settle_mock(hung=True))
+    exec_fn = _exec_mock()
     out = asyncio.run(ba._post_action_state(
         "BrowserClick", {"selector": "a"}, {"text": "Clicked"},
-        "b1", "", _fake_exec(calls), "",
+        "b1", "", exec_fn, "",
     ))
-    assert out == "" and calls == []
+    assert out == ""
+    exec_fn.assert_not_awaited()
 
 
 def test_delta_state_first_attach_sends_full_list():

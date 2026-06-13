@@ -7,6 +7,8 @@ controls are proven, including that forget actually clears both tiers.
 
 import asyncio
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from backend.apps.agents import agents as agents_mod
 from backend.apps.agents.browser import browser_playbook as pb
@@ -21,17 +23,11 @@ def _seed_skill(host, task):
 
 
 async def _seed_strategy(host, *bullets):
-    class _Blk:
-        def __init__(self, t): self.text = t
-
-    class _Resp:
-        def __init__(self, t): self.content = [_Blk(t)]
-
-    class _Aux:
-        def __init__(self): self.messages = self
-        async def create(self, **kw):
-            return _Resp(json.dumps({"playbook": list(bullets)}))
-    await pb.distill_and_store(host, "t", "m", "s", _Aux(), "aux")
+    resp = SimpleNamespace(
+        content=[SimpleNamespace(text=json.dumps({"playbook": list(bullets)}))]
+    )
+    aux = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock(return_value=resp)))
+    await pb.distill_and_store(host, "t", "m", "s", aux, "aux")
 
 
 def test_list_browser_memory_groups_skills_and_strategy_by_site():

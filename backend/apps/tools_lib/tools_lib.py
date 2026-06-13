@@ -13,7 +13,7 @@ from fastapi import HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 from backend.config.Apps import SubApp
 from backend.apps.tools_lib.models import ToolDefinition, ToolCreate, ToolUpdate, BUILTIN_TOOLS
-from backend.config.paths import DATA_ROOT, TOOLS_DIR as DATA_DIR, BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH, TRUSTED_SENSITIVE_PATHS_PATH
+from backend.config.paths import TOOLS_DIR as DATA_DIR, BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH, TRUSTED_SENSITIVE_PATHS_PATH
 
 # oauth_config runs the dotenv load (leaf) so OPENSWARM_OAUTH_BASE_URL is set
 # before anything reads it; re-exported here for the route handlers below.
@@ -412,7 +412,7 @@ async def m365_device_login(tool_id: str):
     """
     import subprocess
 
-    tool = _load(tool_id)
+    _load(tool_id)
     script = _m365_server_script()
     if not os.path.isfile(script):
         raise HTTPException(status_code=500, detail="M365 MCP server not installed")

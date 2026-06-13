@@ -42,7 +42,8 @@ def reset_settings():
 # /api/auth/signin-activate
 # ---------------------------------------------------------------------------
 
-def test_signin_activate_persists_user_id(client, reset_settings):
+@pytest.mark.usefixtures("reset_settings")
+def test_signin_activate_persists_user_id(client):
     fake_response = AsyncMock()
     fake_response.status_code = 200
     fake_response.json = lambda: {
@@ -78,7 +79,8 @@ def test_signin_activate_persists_user_id(client, reset_settings):
     assert s.signin_method == "google"
 
 
-def test_signin_activate_paid_user_flips_pro_mode(client, reset_settings):
+@pytest.mark.usefixtures("reset_settings")
+def test_signin_activate_paid_user_flips_pro_mode(client):
     """A signed-in user who already has a Stripe subscription should also
     flip into openswarm-pro routing, covers the Google-then-Stripe and
     Stripe-then-Google merge cases."""
@@ -111,7 +113,8 @@ def test_signin_activate_paid_user_flips_pro_mode(client, reset_settings):
     assert s.openswarm_subscription_expires == "2027-01-01T00:00:00.000Z"
 
 
-def test_signin_activate_invalid_token_returns_401(client, reset_settings):
+@pytest.mark.usefixtures("reset_settings")
+def test_signin_activate_invalid_token_returns_401(client):
     fake_response = AsyncMock()
     fake_response.status_code = 401
     fake_response.text = "Invalid token"
@@ -126,7 +129,8 @@ def test_signin_activate_invalid_token_returns_401(client, reset_settings):
     assert r.status_code == 401
 
 
-def test_signin_activate_short_token_rejected_locally(client, reset_settings):
+@pytest.mark.usefixtures("reset_settings")
+def test_signin_activate_short_token_rejected_locally(client):
     """Short tokens rejected before we even hit the cloud, saves a round trip."""
     r = client.post(
         "/api/auth/signin-activate",
@@ -139,7 +143,8 @@ def test_signin_activate_short_token_rejected_locally(client, reset_settings):
 # /api/auth/signout
 # ---------------------------------------------------------------------------
 
-def test_signout_clears_local_identity(client, reset_settings):
+@pytest.mark.usefixtures("reset_settings")
+def test_signout_clears_local_identity(client):
     from backend.apps.settings.settings import load_settings, _save_settings
     s = load_settings()
     s.user_id = "u-bye"
@@ -166,7 +171,8 @@ def test_signout_clears_local_identity(client, reset_settings):
     assert s2.connection_mode == "own_key"
 
 
-def test_signout_succeeds_even_when_cloud_unreachable(client, reset_settings):
+@pytest.mark.usefixtures("reset_settings")
+def test_signout_succeeds_even_when_cloud_unreachable(client):
     """A flaky network shouldn't strand the user signed-in locally."""
     from backend.apps.settings.settings import load_settings, _save_settings
     s = load_settings()

@@ -19,7 +19,7 @@ import os
 import sqlite3
 import threading
 from contextlib import contextmanager
-from typing import Iterator, Optional
+from typing import Iterator
 
 logger = logging.getLogger(__name__)
 

@@ -264,7 +264,7 @@ async def drain_spool(batch_size: int = 50) -> int:
 # Public API
 # --------------------------------------------------------------------------
 
-def _log(kind: str, payload: dict) -> None:
+def _log(kind: str) -> None:
     """Append to the rolling operational log for diagnostics."""
     try:
         from backend.apps.service.ring_buffer import record
@@ -310,7 +310,7 @@ def sync(data: dict | None = None) -> None:
 _DEFAULT_SYNC_PATH = "/api/service/sync"
 
 
-def submit(kind: str, payload: dict) -> None:
+def submit(payload: dict) -> None:
     """Routes through sync(). The cloud demuxes by payload shape (state /
     sync / diagnostic / event), so kind here is informational; the routing
     happens server-side in openswarm-cloud/src/routes/service/ingest.ts.
@@ -351,7 +351,6 @@ def submit_event(
     *,
     session_id: Optional[str] = None,
     dashboard_id: Optional[str] = None,
-    kind: str = "event",
 ) -> None:
     """Legacy event-shape submit. Bundles surface/action into the opaque
     payload and hands off via submit()."""
@@ -363,10 +362,6 @@ def submit_event(
         "dashboard_id": dashboard_id,
     }
     submit("event", p)
-
-
-def submit_state(*, sessions_open: int = 0, connectors_active: int = 0) -> None:
-    submit("state", {"sessions_open": sessions_open, "connectors_active": connectors_active})
 
 
 def submit_session_close(session_dump: dict, activity: Optional[dict] = None) -> None:
