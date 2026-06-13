@@ -39,6 +39,7 @@ import { useLastDashboardId } from '@/shared/hooks/useLastDashboardId';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { shallowEqual } from 'react-redux';
 import { fetchDashboards, createDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
+import { Typewriter } from '@/app/components/feedback/Animated';
 import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import { addBrowserCard, addBrowserTab } from '@/shared/state/dashboardLayoutSlice';
 import { setPendingBrowserUrl } from '@/shared/state/tempStateSlice';
@@ -991,20 +992,24 @@ const AppShell: React.FC = () => {
                         transition: 'background-color 0.12s',
                       }}
                     >
-                      <Typography
-                        sx={{
-                          color: isActive ? c.text.secondary : c.text.ghost,
-                          fontSize: '0.86rem',
-                          fontWeight: isActive ? 500 : 400,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          flex: 1,
-                          minWidth: 0,
-                        }}
-                      >
-                        {app.name}
-                      </Typography>
+                      <Typewriter value={app.name || 'Untitled App'} enabled={!!app.name && app.name !== 'Untitled App'}>
+                        {(t) => (
+                          <Typography
+                            sx={{
+                              color: isActive ? c.text.secondary : c.text.ghost,
+                              fontSize: '0.86rem',
+                              fontWeight: isActive ? 500 : 400,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              flex: 1,
+                              minWidth: 0,
+                            }}
+                          >
+                            {t}
+                          </Typography>
+                        )}
+                      </Typewriter>
                     </Box>
                   );
                 })}

@@ -32,6 +32,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
 import { createDraftSession, removeDraftSession, fetchSession } from '@/shared/state/agentsSlice';
 import { createOutput, updateOutput, upsertOutput, fetchOutputs, Output, SERVE_BASE } from '@/shared/state/outputsSlice';
+import { truncateForTitle } from '@/shared/state/sessionDisplay';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import AgentChat from '../AgentChat/AgentChat';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -648,8 +649,11 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
 
   // Mirror the aux-LLM session title into the App's name as soon as the chat
   // gets one, so the sidebar reflects what the user just asked for instead of
-  // sitting at "Untitled App" while the agent works. A later meta.json write
-  // still wins because the user hasn't typed a name themselves.
+  // sitting at "Untitled App" while the agent works. Truncate to the title-cap
+  // (same rule as the chat header) so the right-panel input and sidebar never
+  // exceed their width. Typewriter-animate the React `name` state so the input
+  // field char-by-char swaps from "Untitled App" to the new name; the sidebar
+  // animates independently off its own Typewriter wrapper.
   useEffect(() => {
     if (nameSetByUserRef.current) return;
     if (!sessionName) return;
@@ -657,10 +661,29 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     if (!eid) return;
     const row = store.getState().outputs.items[eid];
     if (!row) return;
-    if (row.name === sessionName) return;
+    const target = truncateForTitle(sessionName) || sessionName;
+    if (row.name === target) return;
     if (row.name !== '' && row.name !== 'Untitled App') return;
-    dispatch(upsertOutput({ ...row, name: sessionName }));
-    setName((prev) => (prev === '' || prev === 'Untitled App') ? sessionName : prev);
+    dispatch(upsertOutput({ ...row, name: target }));
+
+    let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    const tick = () => {
+      if (cancelled) return;
+      setName((prev) => {
+        if (nameSetByUserRef.current) { cancelled = true; return prev; }
+        if (prev === target) { cancelled = true; return prev; }
+        let commonLen = 0;
+        while (commonLen < prev.length && commonLen < target.length && prev[commonLen] === target[commonLen]) commonLen++;
+        const next = prev.length > commonLen
+          ? prev.substring(0, prev.length - 1)
+          : target.substring(0, prev.length + 1);
+        if (next !== target) timerId = setTimeout(tick, 14);
+        return next;
+      });
+    };
+    timerId = setTimeout(tick, 14);
+    return () => { cancelled = true; if (timerId) clearTimeout(timerId); };
   }, [sessionName, output?.id, dispatch]);
 
   const prevAgentActive = useRef(false);

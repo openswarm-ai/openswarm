@@ -39,7 +39,8 @@ import {
   clearSessionMessages,
   clearMcpSuggestions,
 } from '@/shared/state/agentsSlice';
-import { displaySessionName } from '@/shared/state/sessionDisplay';
+import { displayChatTitle, isLegacyAutoName } from '@/shared/state/sessionDisplay';
+import { Typewriter } from '@/app/components/feedback/Animated';
 import { store } from '@/shared/state/store';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { createSessionWs, acquireSessionWs, releaseSessionWs } from '@/shared/ws/WebSocketManager';
@@ -964,7 +965,12 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
           >
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography noWrap sx={{ color: c.text.primary, fontWeight: 600 }}>{displaySessionName(session.name)}</Typography>
+                <Typewriter
+                  value={displayChatTitle(session)}
+                  enabled={!!session.name && !isLegacyAutoName(session.name)}
+                >
+                  {(t) => <Typography noWrap sx={{ color: c.text.primary, fontWeight: 600 }}>{t}</Typography>}
+                </Typewriter>
                 {!isDraft && statusStyle && session.status !== 'completed' && session.status !== 'stopped' && (
                   // Status speaks only when it needs the user; finished work sits quiet.
                   <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>

@@ -20,7 +20,8 @@ import {
   collapseSession,
   closeSession,
 } from '@/shared/state/agentsSlice';
-import { displaySessionName } from '@/shared/state/sessionDisplay';
+import { displayChatTitle, isLegacyAutoName } from '@/shared/state/sessionDisplay';
+import { Typewriter } from '@/app/components/feedback/Animated';
 import {
   setCardPosition,
   setCardSize,
@@ -745,9 +746,16 @@ const AgentCard: React.FC<Props> = ({
               borderRadius: 1,
             }}
           >
-            <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {displaySessionName(session.name)}
-            </Typography>
+            <Typewriter
+              value={displayChatTitle(session)}
+              enabled={!!session.name && !isLegacyAutoName(session.name)}
+            >
+              {(t) => (
+                <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {t}
+                </Typography>
+              )}
+            </Typewriter>
             {/* Status speaks only when it needs the user; finished work sits quiet. */}
             {session.status !== 'completed' && session.status !== 'stopped' && (
               <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
