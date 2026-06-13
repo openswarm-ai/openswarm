@@ -97,7 +97,8 @@ function formatTokens(n: number): string {
 /** Parses raw error text into a friendly card; returns null when the error isn't one we recognize. */
 function parseOpenSwarmError(text: string, ctx?: OverflowContext): OpenSwarmErrorInfo | null {
   if (!text) return null;
-  if (/rate_limit_error|reached your OpenSwarm.*plan limit|Usage cap exceeded/i.test(text)) {
+  // A real OpenSwarm-side plan cap (has a reset window) -> offer the upgrade.
+  if (/reached your OpenSwarm.*plan limit|Usage cap exceeded|Resets in /i.test(text)) {
     const reset = text.match(/Resets in ([\dhms\s]+)/)?.[1];
     return {
       kind: 'cap',
@@ -107,6 +108,15 @@ function parseOpenSwarmError(text: string, ctx?: OverflowContext): OpenSwarmErro
         : 'Upgrade to keep going now, or wait for your usage window to reset.',
       ctaLabel: 'Upgrade plan',
       ctaAction: 'upgrade',
+    };
+  }
+  // Transient throttle: Anthropic's upstream 429/overload or our own pool-shed. Not the user's
+  // fault and not a plan cap, so don't say "upgrade", just tell them it's busy. claude.ai-style.
+  if (/rate_limit_error|free_pool_busy|overloaded_error|too many requests/i.test(text)) {
+    return {
+      kind: 'network',
+      title: 'OpenSwarm is busy right now',
+      detail: 'A lot of requests are coming through at once. Wait a few seconds, then send your message again.',
     };
   }
   if (/free_trial_exhausted|used your free|free OpenSwarm runs/i.test(text)) {
@@ -198,6 +208,15 @@ function parseOpenSwarmError(text: string, ctx?: OverflowContext): OpenSwarmErro
       kind: 'network',
       title: 'Connection issue',
       detail: "We couldn't reach the service. Once your connection is back, send a new message to continue.",
+    };
+  }
+  // Last resort: a raw API error or SDK traceback we don't have specific copy for. Never let JSON
+  // or a stack trace land in the card; give a calm retry instead (the raw text is in the console).
+  if (/API Error:|invalid_request_error|"type"\s*:\s*"error"|Command failed with exit code/i.test(text)) {
+    return {
+      kind: 'network',
+      title: 'That request hit a snag',
+      detail: 'Something went wrong on that one. Send your message again to retry.',
     };
   }
   return null;
