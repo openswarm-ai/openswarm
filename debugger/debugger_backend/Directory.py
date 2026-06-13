@@ -41,7 +41,7 @@ class Directory:
             ordered_abspaths.append({"abspath": full_path, "instance": dir})
             # print(f"\t[construct_ordered_abspaths]: Full path: {full_path}")
             for child in dir.children:
-                child_abspath = os.path.join(root_dir, child.path).lower()
+                child_abspath = os.path.join(root_dir, child.path)
                 if os.path.isdir(child_abspath):
                     construct_ordered_abspaths(child, ordered_abspaths)
                 elif os.path.isfile(child_abspath):

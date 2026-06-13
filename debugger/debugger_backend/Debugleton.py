@@ -1,5 +1,6 @@
 # Haik: sorry bout the filename
 
+import sys
 import threading
 from debugger_backend.project_scanner import update_debug_toggles
 from debugger_backend.Directory import Directory
@@ -75,12 +76,15 @@ class Debugleton:
         return self.sync_lock.locked()
 
     def find_file_info(self, filepath: str):
-        filepath = filepath.lower()
         # print(f"Finding file info for {filepath}")
         if self.needs_resync():
             self.sync_to_saved()
         try:
-            filepath_id = self.abspaths.index(filepath)
+            if sys.platform == "darwin":
+                abspaths = [p.lower() for p in self.abspaths]
+                filepath_id = abspaths.index(filepath.lower())
+            else:
+                filepath_id = self.abspaths.index(filepath)
             match = self.instances[filepath_id]
             return match.color, match.is_toggled, match.emoji
         except ValueError:
