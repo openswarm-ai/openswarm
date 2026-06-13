@@ -663,19 +663,19 @@ def test_active_mcps_persistence_on_session():
 
 def test_long_context_pattern_caught():
     """The 'extra usage required' 429 must NOT silently retry."""
-    from backend.apps.agents.agent_manager import _NON_TRANSIENT_PATTERNS
+    from backend.apps.agents.core.error_classify import P_NON_TRANSIENT_PATTERNS # p-private-ignore
     cases = [
         "Extra usage is required for long context requests",
         "extra usage is required for long context",
         "EXTRA USAGE IS REQUIRED FOR LONG CONTEXT",
     ]
     for case in cases:
-        assert _NON_TRANSIENT_PATTERNS.search(case), f"missed: {case!r}"
+        assert P_NON_TRANSIENT_PATTERNS.search(case), f"missed: {case!r}"
 
 
 def test_transient_capacity_patterns():
     """Real transient errors that SHOULD retry."""
-    from backend.apps.agents.agent_manager import _TRANSIENT_CAPACITY_PATTERNS, _NON_TRANSIENT_PATTERNS
+    from backend.apps.agents.core.error_classify import P_TRANSIENT_CAPACITY_PATTERNS, P_NON_TRANSIENT_PATTERNS # p-private-ignore
     transients = [
         "Error 429: rate_limit_error",
         "503 Service Unavailable",
@@ -687,18 +687,18 @@ def test_transient_capacity_patterns():
         "overloaded",
     ]
     for t in transients:
-        assert _TRANSIENT_CAPACITY_PATTERNS.search(t), f"transient missed: {t!r}"
+        assert P_TRANSIENT_CAPACITY_PATTERNS.search(t), f"transient missed: {t!r}"
         # Importantly: must NOT also match non-transient (no double-classification)
         # except for the fuzzy edge cases. Spot-check a couple:
         if "429" in t and "rate_limit" in t.lower():
             # rate_limit_error is transient; non-transient should not match this exact text
-            assert not _NON_TRANSIENT_PATTERNS.search(t)
+            assert not P_NON_TRANSIENT_PATTERNS.search(t)
 
 
 def test_long_context_does_not_match_normal_429():
     """Generic 429 is transient, only the long-context variant is non-transient."""
-    from backend.apps.agents.agent_manager import _NON_TRANSIENT_PATTERNS
-    assert not _NON_TRANSIENT_PATTERNS.search("Error 429: rate_limit_error")
+    from backend.apps.agents.core.error_classify import P_NON_TRANSIENT_PATTERNS # p-private-ignore
+    assert not P_NON_TRANSIENT_PATTERNS.search("Error 429: rate_limit_error")
 
 
 # ===========================================================================

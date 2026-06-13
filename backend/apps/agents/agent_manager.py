@@ -26,11 +26,11 @@ from backend.apps.tools_lib.tools_lib import (
 )
 from backend.apps.tools_lib.mcp_config import sanitize_mcp_server_name
 from backend.apps.agents.core.error_classify import (
-    _is_auth_error,
-    _is_free_trial_exhausted,
-    _is_long_context_error,
-    _is_transient_capacity_error,
-    _is_unknown_model_error,
+    is_auth_error,
+    is_free_trial_exhausted,
+    is_long_context_error,
+    is_transient_capacity_error,
+    is_unknown_model_error,
 )
 from backend.apps.agents.manager.session.session_store import (
     _delete_session_file,
@@ -2791,7 +2791,7 @@ class AgentManager:
                     _ticker_task = None
                     stderr_snapshot = "\n".join(_stderr_buffer[-50:])
                     if (
-                        _is_transient_capacity_error(e, extra_text=stderr_snapshot)
+                        is_transient_capacity_error(e, extra_text=stderr_snapshot)
                         and capacity_retry_attempt < len(_CAPACITY_BACKOFFS)
                     ):
                         wait = _CAPACITY_BACKOFFS[capacity_retry_attempt]
@@ -2877,7 +2877,7 @@ class AgentManager:
             # subsequent step (title gen, follow-up tool turn, etc.).
             # Don't blast a "context exceeded" card over a completed reply.
             _streamed_substantive = bool(stream_text_msg_id) and _current_turn_emitted
-            if _streamed_substantive and _is_long_context_error(e, extra_text=_stderr_tail):
+            if _streamed_substantive and is_long_context_error(e, extra_text=_stderr_tail):
                 # Mark the session completed (not error), keep the assistant
                 # reply visible, and skip the overflow card. The next user
                 # turn will properly hit the pre-send guard if the chat is
@@ -2892,7 +2892,7 @@ class AgentManager:
                     except Exception:
                         pass
                 return
-            if _is_long_context_error(e, extra_text=_stderr_tail):
+            if is_long_context_error(e, extra_text=_stderr_tail):
                 friendly_msg = (
                     "This conversation has grown too large for your account's "
                     "standard context window. Long-context requests require an "
@@ -2936,7 +2936,7 @@ class AgentManager:
                     })
                 except Exception:
                     logger.debug("submit_diagnostic for context_overflow failed", exc_info=True)
-            elif _is_free_trial_exhausted(e, extra_text=_stderr_tail):
+            elif is_free_trial_exhausted(e, extra_text=_stderr_tail):
                 # Free runs spent. Flip back to own_key and show a friendly
                 # "connect a model" upsell instead of a raw 402.
                 try:
@@ -2959,7 +2959,7 @@ class AgentManager:
                     "session_id": session_id,
                     "message": error_msg.model_dump(mode="json"),
                 })
-            elif _is_auth_error(e, extra_text=_stderr_tail):
+            elif is_auth_error(e, extra_text=_stderr_tail):
                 # Three sub-cases the user can hit, with distinct fixes:
                 #   1. "No credentials for provider: claude", user picked a
                 #      -cc route but doesn't have Claude Pro/Max connected
@@ -3025,7 +3025,7 @@ class AgentManager:
                     "session_id": session_id,
                     "message": error_msg.model_dump(mode="json"),
                 })
-            elif _is_unknown_model_error(e, extra_text=_stderr_tail):
+            elif is_unknown_model_error(e, extra_text=_stderr_tail):
                 # Upstream rejected the model code itself (e.g. Codex 1211 on a
                 # ChatGPT plan that lacks our GPT ids). Track it; the friendly
                 # "add an API key / pick another model" card is rendered frontend-side.

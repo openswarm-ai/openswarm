@@ -14,7 +14,7 @@ This folder contains the project's code quality tooling: a structural linter, de
 
 **No leading-underscore names (`no-underscore-names`)** — Bans names that start with `_` in backend Python: functions, methods, arguments, classes, variable bindings, instance/class attribute writes (`self._x = ...`), and import aliases. The prefix is a blind spot — Pylance's `reportUnusedVariable`, ruff's `dummy-variable-rgx` (`F841`/`ARG0xx`), and vulture all treat a leading underscore as "intentionally private/unused" and stop reporting it, so dead `_name` code slips through every dead-code tool at once. Dunders (`__init__`, `__repr__`, … — required by Python) and the bare `_` throwaway (`for _ in …`) are exempt; name-mangled `__x` is **not**. The rule ships strict with no exceptions seeded — offenders are renamed by hand.
 
-**`p_` private convention (`p-private`)** — Enforces the `p_` prefix as a real access modifier with **Java `private` semantics** over backend Python. Module-level `p_` symbols (top-level `def`/`class`/assignment) are **file-private** — usable anywhere in their own file, nowhere else. Class members (`def p_m`, `self.p_x = …`, class-body fields `p_x: T`) are **class-private** — a `recv.p_x` access is legal only lexically inside the owning class (or a class nested within it). Strict like Java `private`, not `protected`: a subclass in another file reaching a base's `p_` member is flagged. Nested/inner classes may reach the enclosing class's members (the whole enclosing-class stack is checked). Detection is access-form based — attribute access governs class members, bare-name/import governs module-level — so no type inference is needed. No exemptions: tests and `__init__.py` re-exports are enforced. Greenfield today (zero `p_` in the tree), so it ships green and only fires once the convention is used.
+**`p_` private convention (`p-private`)** — Enforces the `p_` prefix (case-insensitive on the leading `p`, so `P_` UPPER_SNAKE constants count too) as a real access modifier with **Java `private` semantics** over backend Python. Module-level `p_` symbols (top-level `def`/`class`/assignment) are **file-private** — usable anywhere in their own file, nowhere else. Class members (`def p_m`, `self.p_x = …`, class-body fields `p_x: T`) are **class-private** — a `recv.p_x` access is legal only lexically inside the owning class (or a class nested within it). Strict like Java `private`, not `protected`: a subclass in another file reaching a base's `p_` member is flagged. Nested/inner classes may reach the enclosing class's members (the whole enclosing-class stack is checked). Detection is access-form based — attribute access governs class members, bare-name/import governs module-level — so no type inference is needed. No exemptions: tests and `__init__.py` re-exports are enforced. Greenfield today (zero `p_` in the tree), so it ships green and only fires once the convention is used.
 
 These rules apply to `.py`, `.ts`, `.tsx`, `.js`, and `.jsx` files (the `no-underscore-names` rule is Python-only).
 
@@ -135,6 +135,21 @@ gauth.get_credentials = _patched_get_credentials  # vulture-ignore: get_credenti
 ```
 
 Prefer the whitelist for symbols exempt across many call sites; prefer an inline ignore when the exemption is local and benefits from sitting next to the code.
+
+### p-private inline ignores
+
+For a deliberate cross-scope access to a `p_` symbol (e.g. a sanctioned legacy call site), drop a comment on the **reference line** — the line the error is reported on (the `recv.p_x` access or the `from … import p_x` statement).
+
+| Comment | Effect |
+|---------|--------|
+| `# p-private-ignore` | Silences any p-private finding on that line |
+| `# p-private-ignore: p_x, p_y` | Silences only when the finding names one of the listed symbols |
+
+The scoped form is preferred — it can't accidentally swallow an unrelated future finding on the same line. Example:
+
+```python
+value = legacy_obj.p_state  # p-private-ignore: p_state
+```
 
 ### ESLint
 

@@ -1,7 +1,8 @@
 """Cross-file/class privacy for the ``p_`` naming convention (Java ``private``).
 
-A name prefixed with ``p_`` is private to the scope that owns it, enforced the
-way Java enforces ``private``:
+A name prefixed with ``p_`` (or ``P_`` -- the leading p is case-insensitive, so
+UPPER_SNAKE constants like ``P_SECRET`` count too) is private to the scope that
+owns it, enforced the way Java enforces ``private``:
 
   * **Module-level** ``p_`` symbols (top-level ``def`` / ``class`` / assignment)
     are **file-private** -- usable anywhere in their own file, nowhere else.
@@ -30,11 +31,19 @@ Scoped to ``backend/`` Python, like checks/classes.py.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 from . import is_excepted, is_excluded, is_lintignored
 
 RULE = "p-private"
+
+# Inline suppression, mirroring vulture's: `# p-private-ignore` (bare) silences
+# any p-private finding on the line; `# p-private-ignore: p_x, p_y` only silences
+# when the finding names one of the listed symbols (the noqa-with-codes form).
+# The comment goes on the *reference* line (where the error is reported), e.g.
+# `legacy.p_state  # p-private-ignore: p_state`.
+_INLINE_IGNORE_RE = re.compile(r"#\s*p-private-ignore\b(?::\s*(?P<names>.*))?")
 
 # name -> set of relative file paths that define it at module level
 ModuleOwners = dict[str, set[str]]
@@ -43,7 +52,9 @@ ClassOwners = dict[str, set[tuple[str, str]]]
 
 
 def _is_p(name: str) -> bool:
-    return len(name) > 2 and name.startswith("p_")
+    # Case-insensitive on the leading p so UPPER_SNAKE constants (P_SECRET) count
+    # as private too, not just lowercase p_ functions/vars.
+    return len(name) > 2 and name[:2] in ("p_", "P_")
 
 
 # --------------------------------------------------------------------------- #
@@ -101,7 +112,26 @@ def _collect(node: ast.AST, rel: str, stack: list[str], container: str, mp: Modu
 # Phase 2: reference checking                                                  #
 # --------------------------------------------------------------------------- #
 
-def _emit(out: list[str], seen: set[tuple[int, int, str]], rel: str, node: ast.AST, msg: str) -> None:
+def _inline_ignored(lines: tuple[str, ...], lineno: int, name: str) -> bool:
+    """True when the reported line carries a matching ``# p-private-ignore``."""
+    if not (1 <= lineno <= len(lines)):
+        return False
+    m = _INLINE_IGNORE_RE.search(lines[lineno - 1])
+    if not m:
+        return False
+    names = m.group("names")
+    if not names:
+        return True  # bare form silences any p-private finding on the line
+    wanted = {n.strip() for n in names.replace(",", " ").split() if n.strip()}
+    return name in wanted
+
+
+def _emit(
+    out: list[str], seen: set[tuple[int, int, str]], rel: str, node: ast.AST,
+    name: str, msg: str, lines: tuple[str, ...],
+) -> None:
+    if _inline_ignored(lines, node.lineno, name):
+        return
     key = (node.lineno, node.col_offset, msg)
     if key in seen:
         return
@@ -112,52 +142,55 @@ def _emit(out: list[str], seen: set[tuple[int, int, str]], rel: str, node: ast.A
 def _check_attr(
     node: ast.Attribute, rel: str, stack: list[str],
     mp: ModuleOwners, cp: ClassOwners, out: list[str], seen: set[tuple[int, int, str]],
+    lines: tuple[str, ...],
 ) -> None:
     name = node.attr
     if name in cp:
         if cp[name] & {(rel, q) for q in stack}:
             return  # lexically inside an owning class -> legal
         owners = ", ".join(sorted(f"{q} ({r})" for r, q in cp[name]))
-        _emit(out, seen, rel, node, f"class-private '{name}' accessed outside its class (owner: {owners})")
+        _emit(out, seen, rel, node, name, f"class-private '{name}' accessed outside its class (owner: {owners})", lines)
         return
     if name in mp:
         if rel in mp[name]:
             return
         owners = ", ".join(sorted(mp[name]))
-        _emit(out, seen, rel, node, f"module-private '{name}' accessed outside its file (defined in {owners})")
+        _emit(out, seen, rel, node, name, f"module-private '{name}' accessed outside its file (defined in {owners})", lines)
 
 
 def _check_import(
     name: str, node: ast.AST, rel: str,
     mp: ModuleOwners, out: list[str], seen: set[tuple[int, int, str]],
+    lines: tuple[str, ...],
 ) -> None:
     if name in mp and rel not in mp[name]:
         owners = ", ".join(sorted(mp[name]))
-        _emit(out, seen, rel, node, f"module-private '{name}' imported outside its file (defined in {owners})")
+        _emit(out, seen, rel, node, name, f"module-private '{name}' imported outside its file (defined in {owners})", lines)
 
 
 def _check_refs(
     node: ast.AST, rel: str, stack: list[str],
     mp: ModuleOwners, cp: ClassOwners, out: list[str], seen: set[tuple[int, int, str]],
+    lines: tuple[str, ...],
 ) -> None:
     if isinstance(node, ast.ClassDef):
         qual = f"{stack[-1]}.{node.name}" if stack else node.name
         # Decorators/bases are evaluated in the enclosing scope, not inside the class.
         for outer in (*node.decorator_list, *node.bases, *node.keywords):
-            _check_refs(outer, rel, stack, mp, cp, out, seen)
+            _check_refs(outer, rel, stack, mp, cp, out, seen, lines)
         for child in node.body:
-            _check_refs(child, rel, [*stack, qual], mp, cp, out, seen)
+            _check_refs(child, rel, [*stack, qual], mp, cp, out, seen, lines)
         return
     if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) and _is_p(node.attr):
-        _check_attr(node, rel, stack, mp, cp, out, seen)
+        _check_attr(node, rel, stack, mp, cp, out, seen, lines)
     elif isinstance(node, ast.ImportFrom):
         for alias in node.names:
             if alias.name != "*" and _is_p(alias.name):
-                _check_import(alias.name, node, rel, mp, out, seen)
+                _check_import(alias.name, node, rel, mp, out, seen, lines)
     # A function does not open a new *class* scope, so the class stack is carried
     # through unchanged; that's why generic descent (not an early return) is right.
     for child in ast.iter_child_nodes(node):
-        _check_refs(child, rel, stack, mp, cp, out, seen)
+        _check_refs(child, rel, stack, mp, cp, out, seen, lines)
 
 
 # --------------------------------------------------------------------------- #
@@ -176,8 +209,9 @@ def run_p_private_check(
         return []
 
     # Parse once; phase 1 must see *every* file (even exempted ones) so ownership
-    # is known when a non-exempt file reaches into them.
-    trees: list[tuple[Path, str, ast.AST]] = []
+    # is known when a non-exempt file reaches into them. The source lines are kept
+    # so phase 2 can honor inline `# p-private-ignore` comments.
+    trees: list[tuple[Path, str, ast.AST, tuple[str, ...]]] = []
     mp: ModuleOwners = {}
     cp: ClassOwners = {}
     for pyfile in sorted(backend.rglob("*.py")):
@@ -185,23 +219,24 @@ def run_p_private_check(
             continue
         rel = str(pyfile.relative_to(root))
         try:
-            tree = ast.parse(pyfile.read_text(), filename=rel)
+            source = pyfile.read_text()
+            tree = ast.parse(source, filename=rel)
         except (OSError, SyntaxError):
             continue
-        trees.append((pyfile, rel, tree))
+        trees.append((pyfile, rel, tree, tuple(source.splitlines())))
         for child in ast.iter_child_nodes(tree):
             _collect(child, rel, [], "module", mp, cp)
 
     # Phase 2 reports only for files that aren't exempted/lintignored.
     errors: list[str] = []
-    for pyfile, rel, tree in trees:
+    for pyfile, rel, tree, lines in trees:
         if is_excepted(rel, RULE, exceptions):
             continue
         if ignores and is_lintignored(pyfile, root, RULE, ignores):
             continue
         seen: set[tuple[int, int, str]] = set()
         out: list[str] = []
-        _check_refs(tree, rel, [], mp, cp, out, seen)
+        _check_refs(tree, rel, [], mp, cp, out, seen, lines)
         errors.extend(out)
 
     return errors
