@@ -130,10 +130,6 @@ def is_replay_boundary(step: dict) -> bool:
     return False
 
 
-# A genuine "this click just completed the outward send" signal, kept tighter
-# than _LIVE_IRREVERSIBLE_RE so a Drive 'Share' menuitem (opens a recipient
-# dialog) doesn't get treated as the send itself. Used only for the post-send
-# wind-down hint; batch/replay guards stay conservative on the looser regex.
 _SEND_COMPLETED_RE = re.compile(
     r"\b(send|submit|pay|place\s*order|complete\s*(order|purchase|checkout|payment))\b",
     re.I,
