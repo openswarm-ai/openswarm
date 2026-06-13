@@ -654,7 +654,9 @@ async function clickBackendNode(
   // the wrong element (the box model is frame-local but the click dispatches in the root
   // frame), while DOM.focus reaches the node in any frame. With a `text` arg we then
   // insert the whole string at once, no clicking, no character-by-character typing.
-  if (/\b(textbox|searchbox)\b/i.test(opts.role || '')) {
+  const _role = opts.role || '';
+  const _wantsText = typeof opts.text === 'string' && opts.text.length > 0;
+  if (/\b(textbox|searchbox)\b/i.test(_role) || (/\bcombobox\b/i.test(_role) && _wantsText)) {
     try {
       await sendCdp(wv, 'DOM.focus', { backendNodeId }, sessionId);
     } catch (err: any) {
