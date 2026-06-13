@@ -30,11 +30,12 @@ _FP_SALT = "openswarm-free-trial-v1"
 
 
 def _enabled() -> bool:
-    # Default OFF: the cloud free-trial proxy is staging-only, so on a shipped
-    # build arming would 404. Flip to "1" once the cloud ships to prod and the
-    # packaged-build fingerprint is verified. Off = the reorder gate falls back
-    # to today's connect-model-first onboarding (no regression).
-    return os.environ.get("OPENSWARM_FREE_TRIAL_ENABLED", "0") == "1"
+    # Default ON as of 1.2.80: the cloud free-trial proxy is live on prod
+    # (api.openswarm.com) and arming + metered Haiku were verified end to end.
+    # Set OPENSWARM_FREE_TRIAL_ENABLED=0 to force it off. The pool-shed gate +
+    # daily global budget on the cloud cap total spend; arming only happens for a
+    # truly-unconnected user (no key, no sub), so paid users are never touched.
+    return os.environ.get("OPENSWARM_FREE_TRIAL_ENABLED", "1") == "1"
 
 
 def _raw_hardware_id() -> str | None:
