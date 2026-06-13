@@ -1586,10 +1586,12 @@ async def run_browser_agent(
                 # send click is proof enough; drive to the OUTCOME.
                 if task_is_send and not send_confirmed and "error" not in result and tu.name in _CONFIRM_TOOLS:
                     _cn = result.get("clickedName") or ""
-                    _send_click = browser_batch_replay.is_replay_boundary(
-                        {"action": "click", "name": _cn}) or any(
-                        browser_batch_replay.is_replay_boundary(
-                            {"action": "click", "name": r.get("clickedName") or ""})
+                    _cr = result.get("clickedRole") or ""
+                    _send_click = browser_batch_replay.is_send_completed(
+                        {"action": "click", "name": _cn, "role": _cr}) or any(
+                        browser_batch_replay.is_send_completed(
+                            {"action": "click", "name": r.get("clickedName") or "",
+                             "role": r.get("clickedRole") or ""})
                         for r in (result.get("results") or []))
                     if _send_click:
                         send_confirmed = True

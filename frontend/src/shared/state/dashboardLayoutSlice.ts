@@ -96,6 +96,8 @@ export interface DashboardLayoutState {
   pendingFocusNoteId: string | null;
   /** Transient: snapshot stand-ins for off-screen webviews; never rides the layout PUT. */
   suspendedBrowserCards: Record<string, { dataUrl: string; capturedAt: number }>;
+  /** Transient: spawned cards that are about to be removed; surfaces the fade + Keep pill. */
+  endingBrowserCards: Record<string, { status: 'completed' | 'error'; at: number }>;
 }
 
 const initialState: DashboardLayoutState = {
@@ -113,6 +115,7 @@ const initialState: DashboardLayoutState = {
   pendingFocusBrowserId: null,
   pendingFocusNoteId: null,
   suspendedBrowserCards: {},
+  endingBrowserCards: {},
 };
 
 interface LayoutPayload {
@@ -635,6 +638,21 @@ const dashboardLayoutSlice = createSlice({
     removeBrowserCard(state, action: PayloadAction<string>) {
       delete state.browserCards[action.payload];
       delete state.suspendedBrowserCards[action.payload];
+      delete state.endingBrowserCards[action.payload];
+    },
+
+    markBrowserCardEnding(
+      state, action: PayloadAction<{ browserId: string; status: 'completed' | 'error' }>,
+    ) {
+      if (!state.browserCards[action.payload.browserId]) return;
+      state.endingBrowserCards[action.payload.browserId] = {
+        status: action.payload.status,
+        at: Date.now(),
+      };
+    },
+
+    cancelBrowserCardEnding(state, action: PayloadAction<string>) {
+      delete state.endingBrowserCards[action.payload];
     },
 
     suspendBrowserCard(state, action: PayloadAction<{ browserId: string; dataUrl: string }>) {
@@ -959,6 +977,7 @@ const dashboardLayoutSlice = createSlice({
       state.initialized = false;
       state.pendingFocusNoteId = null;
       state.suspendedBrowserCards = {};
+      state.endingBrowserCards = {};
     },
 
   },
@@ -1068,6 +1087,8 @@ export const {
   removeBrowserCard,
   suspendBrowserCard,
   resumeBrowserCard,
+  markBrowserCardEnding,
+  cancelBrowserCardEnding,
   pasteBrowserCard,
   updateBrowserCardUrl,
   addBrowserTab,

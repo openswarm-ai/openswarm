@@ -23,7 +23,7 @@ import {
   clearTurnLabel,
 } from '../state/agentsSlice';
 import { streamStart, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
-import { addBrowserCardFromBackend, removeBrowserCard, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
+import { addBrowserCardFromBackend, markBrowserCardEnding, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
 import { upsertOutput } from '../state/outputsSlice';
 import { getAuthToken } from '../config';
 import { notifyAgentCompletion } from '../notifications';
@@ -500,6 +500,8 @@ class WebSocketManager {
         // sub-agent: the parent reuses the same browser_id for its next step,
         // so deleting on sub-agent completion strands BrowserAgent(browser_id)
         // on a dead card. 'stopped' skipped to allow inspect-after-manual-stop.
+        // Mark the card as ending instead of removing immediately so the card
+        // shows a fade + Keep pill; BrowserCard owns the 3s timer to remove.
         if (
           session_id &&
           (data.status === 'completed' || data.status === 'error') &&
@@ -508,7 +510,9 @@ class WebSocketManager {
           const browserCards = store.getState().dashboardLayout.browserCards;
           for (const card of Object.values(browserCards)) {
             if (card.spawned_by === session_id) {
-              store.dispatch(removeBrowserCard(card.browser_id));
+              store.dispatch(markBrowserCardEnding({
+                browserId: card.browser_id, status: data.status,
+              }));
             }
           }
         }
@@ -723,11 +727,15 @@ class WebSocketManager {
           // Auto-delete browsers spawned by this agent when it finishes
           // normally or errors out. We intentionally skip 'stopped' , the
           // user may want to inspect the browser after manually stopping.
+          // Mark for removal so BrowserCard renders a fade + Keep pill;
+          // the card itself runs the 3s timer to dispatch removeBrowserCard.
           if (closedStatus === 'completed' || closedStatus === 'error') {
             const browserCards = store.getState().dashboardLayout.browserCards;
             for (const card of Object.values(browserCards)) {
               if (card.spawned_by === session_id) {
-                store.dispatch(removeBrowserCard(card.browser_id));
+                store.dispatch(markBrowserCardEnding({
+                  browserId: card.browser_id, status: closedStatus,
+                }));
               }
             }
           }

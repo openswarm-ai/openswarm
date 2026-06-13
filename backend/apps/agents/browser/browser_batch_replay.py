@@ -130,6 +130,26 @@ def is_replay_boundary(step: dict) -> bool:
     return False
 
 
+_SEND_COMPLETED_RE = re.compile(
+    r"\b(send|submit|pay|place\s*order|complete\s*(order|purchase|checkout|payment))\b",
+    re.I,
+)
+_OPENER_ROLES = frozenset({"menuitem", "menuitemcheckbox", "menuitemradio", "link", "tab"})
+
+
+def is_send_completed(step: dict) -> bool:
+    """True only when the click was a non-opener role AND the label matches an
+    unambiguous send-completion verb. Menuitems, links, and tabs label proximate
+    UI rather than the action itself, so they never count even if their name
+    matches (Drive's 'Share' menuitem was the false positive that prompted this)."""
+    if step.get("action") != "click":
+        return False
+    role = str(step.get("role") or "").lower()
+    if role in _OPENER_ROLES:
+        return False
+    return bool(_SEND_COMPLETED_RE.search(str(step.get("name") or "")))
+
+
 def live_batch_guard(actions, seen_lines, composer_pending: bool = False) -> str:
     """Reason string if a live BrowserBatch carries an irreversible step, else ''.
 

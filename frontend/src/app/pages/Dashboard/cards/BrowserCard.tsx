@@ -26,6 +26,7 @@ import {
   setBrowserCardSize,
   removeBrowserCard,
   resumeBrowserCard,
+  cancelBrowserCardEnding,
   addBrowserTab,
   removeBrowserTab,
   setActiveBrowserTab,
@@ -219,6 +220,7 @@ const BrowserCard: React.FC<Props> = ({
   const browserAgentSession = useAppSelector(selectBrowserAgentSession);
 
   const suspendedSnap = useAppSelector((state) => state.dashboardLayout.suspendedBrowserCards[browserId]);
+  const endingState = useAppSelector((state) => state.dashboardLayout.endingBrowserCards[browserId]);
 
   // Arm the Windows webview crash-safety marker synchronously, before React commits
   // the <webview> below. Cleared on dom-ready; a leftover marker next launch tells
@@ -236,6 +238,7 @@ const BrowserCard: React.FC<Props> = ({
   const [tabLocalStates, setTabLocalStates] = useState<Record<string, TabLocalState>>({});
   // Electron webviews can't trigger OS platform auth; preload sends "passkey-detected" and we explain via modal.
   const [passkeyDialogOpen, setPasskeyDialogOpen] = useState(false);
+  const [crashedTabs, setCrashedTabs] = useState<Set<string>>(new Set());
   const updateTabLocal = useCallback((tabId: string, update: Partial<TabLocalState>) => {
     setTabLocalStates((prev) => {
       const existing = prev[tabId] ?? { loading: false, canGoBack: false, canGoForward: false };
@@ -268,6 +271,17 @@ const BrowserCard: React.FC<Props> = ({
   useEffect(() => {
     if (suspendedSnap) initializedTabs.current.clear();
   }, [suspendedSnap]);
+
+  // Spawned cards get marked "ending" by WebSocketManager when the parent agent
+  // finishes; show the fade pill for ~3s, then dispatch the real remove. Keep
+  // clears the flag and the cleanup below cancels the pending remove.
+  useEffect(() => {
+    if (!endingState) return;
+    const timer = setTimeout(() => {
+      dispatch(removeBrowserCard(browserId));
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [endingState, browserId, dispatch]);
 
   const tabIdKey = tabs.map((t) => t.id).join(',');
   useEffect(() => {
@@ -342,6 +356,20 @@ const BrowserCard: React.FC<Props> = ({
         updateTabLocal(tabId, { loading: false });
         onNavigate();
         onTitleUpdate();
+        setCrashedTabs((prev) => {
+          if (!prev.has(tabId)) return prev;
+          const next = new Set(prev);
+          next.delete(tabId);
+          return next;
+        });
+      };
+      const onProcessGone = () => {
+        setCrashedTabs((prev) => {
+          if (prev.has(tabId)) return prev;
+          const next = new Set(prev);
+          next.add(tabId);
+          return next;
+        });
       };
 
       const onFaviconUpdate = (e: any) => {
@@ -366,6 +394,8 @@ const BrowserCard: React.FC<Props> = ({
       wv.addEventListener('page-favicon-updated', onFaviconUpdate);
       wv.addEventListener('ipc-message', onIpcMessage as any);
       wv.addEventListener('new-window', onNewWindow as any);
+      wv.addEventListener('render-process-gone', onProcessGone as any);
+      wv.addEventListener('crashed', onProcessGone as any);
 
       cleanups.push(() => {
         unregisterWebview(browserId, tabId);
@@ -377,6 +407,8 @@ const BrowserCard: React.FC<Props> = ({
         wv.removeEventListener('page-favicon-updated', onFaviconUpdate);
         wv.removeEventListener('ipc-message', onIpcMessage as any);
         wv.removeEventListener('new-window', onNewWindow as any);
+        wv.removeEventListener('render-process-gone', onProcessGone as any);
+        wv.removeEventListener('crashed', onProcessGone as any);
       });
     }
 
@@ -1118,31 +1150,104 @@ const BrowserCard: React.FC<Props> = ({
               </Box>
             )
           ) : (
-          tabs.map((tab) => (
-            <webview
-              key={tab.id}
-              ref={(el: any) => {
-                if (el) webviewMap.current.set(tab.id, el as unknown as WebviewElement);
-                else webviewMap.current.delete(tab.id);
-              }}
-              data-tab-id={tab.id}
-              src="about:blank"
-              {...({ allowpopups: 'true' } as any) /* React drops boolean-valued unknown attrs, so string it stays; @types/react wrongly says boolean */}
-              useragent={chromeUserAgent}
-              {...(webviewPreloadPath ? { preload: webviewPreloadPath } : {})}
-              webpreferences="plugins=yes, autoplayPolicy=no-user-gesture-required, backgroundThrottling=no" /* throttling: guests get occlusion-suspended on their own even with the host's disable-renderer-backgrounding, freezing agent JS when the window is covered */
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                border: 'none',
-                visibility: tab.id === activeTabId ? 'visible' : 'hidden',
-                zIndex: tab.id === activeTabId ? 1 : 0,
-              }}
-            />
-          ))
+          <>
+            {tabs.map((tab) => (
+              <webview
+                key={tab.id}
+                ref={(el: any) => {
+                  if (el) webviewMap.current.set(tab.id, el as unknown as WebviewElement);
+                  else webviewMap.current.delete(tab.id);
+                }}
+                data-tab-id={tab.id}
+                src="about:blank"
+                {...({ allowpopups: 'true' } as any) /* React drops boolean-valued unknown attrs, so string it stays; @types/react wrongly says boolean */}
+                useragent={chromeUserAgent}
+                {...(webviewPreloadPath ? { preload: webviewPreloadPath } : {})}
+                webpreferences="plugins=yes, autoplayPolicy=no-user-gesture-required, backgroundThrottling=no" /* throttling: guests get occlusion-suspended on their own even with the host's disable-renderer-backgrounding, freezing agent JS when the window is covered */
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                  visibility: tab.id === activeTabId ? 'visible' : 'hidden',
+                  zIndex: tab.id === activeTabId ? 1 : 0,
+                }}
+              />
+            ))}
+            <Fade in={!!endingState && !crashedTabs.has(activeTabId)} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 5,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 1.25,
+                  bgcolor: c.bg.surface,
+                }}
+              >
+                <Typography sx={{ color: c.text.primary, fontSize: '0.95rem', fontWeight: 500 }}>
+                  {endingState?.status === 'error' ? 'Task ended with an error.' : 'Task done.'}
+                </Typography>
+                <Button
+                  onClick={() => dispatch(cancelBrowserCardEnding(browserId))}
+                  sx={{
+                    textTransform: 'none',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    bgcolor: c.accent.primary,
+                    color: '#fff',
+                    borderRadius: `${c.radius.md}px`,
+                    px: 2.25,
+                    py: 0.6,
+                    '&:hover': { bgcolor: c.accent.hover || c.accent.primary },
+                  }}
+                >
+                  Keep
+                </Button>
+              </Box>
+            </Fade>
+            <Fade in={crashedTabs.has(activeTabId)} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 6,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 1.25,
+                  bgcolor: c.bg.surface,
+                }}
+              >
+                <Typography sx={{ color: c.text.primary, fontSize: '0.95rem', fontWeight: 500 }}>
+                  This page stopped responding.
+                </Typography>
+                <Button
+                  onClick={() => webviewMap.current.get(activeTabId)?.reload()}
+                  startIcon={<RefreshIcon sx={{ fontSize: '1rem' }} />}
+                  sx={{
+                    textTransform: 'none',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    bgcolor: c.accent.primary,
+                    color: '#fff',
+                    borderRadius: `${c.radius.md}px`,
+                    px: 2.25,
+                    py: 0.6,
+                    '&:hover': { bgcolor: c.accent.hover || c.accent.primary },
+                  }}
+                >
+                  Reload
+                </Button>
+              </Box>
+            </Fade>
+          </>
           )
         ) : null}
         <Dialog

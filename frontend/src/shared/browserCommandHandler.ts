@@ -532,6 +532,8 @@ async function frameOffset(
 const _AX_ROOT_TIMEOUT_MS = 8000;
 const _AX_CHILD_TIMEOUT_MS = 2500;
 const _MAX_AX_CHILD_FRAMES = 6;
+const _PAGE_TREE_TIMEOUT_MS = 1500;
+const _MAX_TOTAL_FRAMES = 12;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   p.catch(() => {}); // swallow a late rejection if the timeout wins the race first
@@ -542,30 +544,78 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
 }
 
+function flattenFrameTree(tree: any, out: string[] = []): string[] {
+  if (!tree) return out;
+  const id = tree?.frame?.id;
+  if (id) out.push(id);
+  for (const c of tree.childFrames || []) flattenFrameTree(c, out);
+  return out;
+}
+
 async function enumerateCandidates(wv: BrowserWebview): Promise<RankItem[]> {
   const candidates: RankItem[] = [];
-  let rootTree;
-  try {
-    rootTree = await withTimeout(
-      sendCdp(wv, 'Accessibility.getFullAXTree', {}), _AX_ROOT_TIMEOUT_MS, 'page perception');
-  } catch (err: any) {
+  let framesWalked = 0;
+  let framesDropped = 0;
+
+  const walkSession = async (
+    sessionId: string | undefined, budgetMs: number, label: string,
+  ): Promise<{ ok: boolean; lastErr?: any }> => {
+    const sessionStart = Date.now();
+    const remaining = () => Math.max(1, budgetMs - (Date.now() - sessionStart));
+
+    let frameIds: string[] = [];
+    try {
+      const tree = await withTimeout(
+        sendCdp(wv, 'Page.getFrameTree', {}, sessionId),
+        Math.min(_PAGE_TREE_TIMEOUT_MS, remaining()), `${label} frame tree`);
+      frameIds = flattenFrameTree(tree?.frameTree);
+    } catch { /* fall through to a single AX call below */ }
+
+    if (frameIds.length === 0) {
+      if (framesWalked >= _MAX_TOTAL_FRAMES) { framesDropped++; return { ok: true }; }
+      try {
+        const ax = await withTimeout(
+          sendCdp(wv, 'Accessibility.getFullAXTree', {}, sessionId), remaining(), label);
+        candidates.push(...axNodesToCandidates(ax?.nodes || [], sessionId));
+        framesWalked++;
+        return { ok: true };
+      } catch (err: any) {
+        return { ok: false, lastErr: err };
+      }
+    }
+
+    let lastErr: any;
+    let anySuccess = false;
+    for (const frameId of frameIds) {
+      if (framesWalked >= _MAX_TOTAL_FRAMES) { framesDropped++; continue; }
+      if (remaining() <= 1) { framesDropped++; continue; }
+      try {
+        const ax = await withTimeout(
+          sendCdp(wv, 'Accessibility.getFullAXTree', { frameId }, sessionId), remaining(), label);
+        candidates.push(...axNodesToCandidates(ax?.nodes || [], sessionId));
+        anySuccess = true;
+      } catch (err: any) { lastErr = err; }
+      framesWalked++;
+    }
+    return { ok: anySuccess, lastErr };
+  };
+
+  const root = await walkSession(undefined, _AX_ROOT_TIMEOUT_MS, 'page perception');
+  if (!root.ok) {
     // A saturated/hung renderer can't answer; surface a clear, actionable signal
     // instead of silently blocking to the hard command timeout, so the agent can
     // wait a beat and retry (the freeze is often intermittent) rather than abort.
     throw new Error(
-      `the page is too busy to read right now (${err?.message || 'timed out'}); `
+      `the page is too busy to read right now (${root.lastErr?.message || 'timed out'}); `
       + 'wait a moment with BrowserWait and try again, or reload the page.');
   }
-  candidates.push(...axNodesToCandidates(rootTree?.nodes || []));
   const children = (await getChildSessions(wv)).slice(0, _MAX_AX_CHILD_FRAMES);
   for (const child of children) {
-    try {
-      const childTree = await withTimeout(
-        sendCdp(wv, 'Accessibility.getFullAXTree', {}, child.sessionId), _AX_CHILD_TIMEOUT_MS, 'child frame');
-      candidates.push(...axNodesToCandidates(childTree?.nodes || [], child.sessionId));
-    } catch {
-      // skip a slow/unresponsive frame rather than stalling the whole list
-    }
+    if (framesWalked >= _MAX_TOTAL_FRAMES) { framesDropped++; continue; }
+    await walkSession(child.sessionId, _AX_CHILD_TIMEOUT_MS, 'child frame');
+  }
+  if (framesDropped > 0) {
+    console.log(`[cdp] enumerateCandidates capped at ${_MAX_TOTAL_FRAMES} frames; dropped ${framesDropped}`);
   }
   return candidates;
 }
@@ -604,7 +654,9 @@ async function clickBackendNode(
   // the wrong element (the box model is frame-local but the click dispatches in the root
   // frame), while DOM.focus reaches the node in any frame. With a `text` arg we then
   // insert the whole string at once, no clicking, no character-by-character typing.
-  if (/\b(textbox|searchbox)\b/i.test(opts.role || '')) {
+  const _role = opts.role || '';
+  const _wantsText = typeof opts.text === 'string' && opts.text.length > 0;
+  if (/\b(textbox|searchbox)\b/i.test(_role) || (/\bcombobox\b/i.test(_role) && _wantsText)) {
     try {
       await sendCdp(wv, 'DOM.focus', { backendNodeId }, sessionId);
     } catch (err: any) {
