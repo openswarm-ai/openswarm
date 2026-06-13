@@ -40,7 +40,7 @@ def _patched_get_credentials():
     )
 
 
-gauth.get_credentials = _patched_get_credentials
+gauth.get_credentials = _patched_get_credentials # vulture-ignore: get_credentials
 
 
 from google_workspace_mcp import __main__ as _gw_main  # noqa: E402,F401

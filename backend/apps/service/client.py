@@ -296,7 +296,7 @@ def sync(data: dict | None = None) -> None:
         "t": time.time(),
         "submission_id": uuid4().hex,
     }
-    _log("s", payload)
+    _log("s")
     if _test_sink is not None:
         try:
             _test_sink("s", body)

@@ -16,7 +16,6 @@ from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.tools_lib.tools_lib import (
     _load_all as load_all_tools,
-    _sanitize_server_name,
     derive_mcp_config,
     load_builtin_permissions,
     load_trusted_sensitive_paths,
@@ -25,6 +24,7 @@ from backend.apps.tools_lib.tools_lib import (
     refresh_hubspot_token,
     save_trusted_sensitive_paths,
 )
+from backend.apps.tools_lib.mcp_config import sanitize_mcp_server_name
 from backend.apps.agents.core.error_classify import (
     _is_auth_error,
     _is_free_trial_exhausted,
@@ -173,7 +173,7 @@ class AgentManager:
                     logger.info(f"[MCP-DEBUG] SKIPPED {tool.name}: '{tool_ref}' not in allowed_tools")
                     continue
 
-            server_name = _sanitize_server_name(tool.name)
+            server_name = sanitize_mcp_server_name(tool.name)
             if active_set is not None and server_name not in active_set:
                 logger.info(f"[MCP-DEBUG] GATED {server_name}: not in session.active_mcps, model must call MCPActivate first")
                 continue
@@ -664,7 +664,7 @@ class AgentManager:
                 for t in load_all_tools():
                     if not t.mcp_config or not t.enabled:
                         continue
-                    if _sanitize_server_name(t.name) == server_slug:
+                    if sanitize_mcp_server_name(t.name) == server_slug:
                         return t.tool_permissions.get(mcp_tool_name, "ask")
             return _default_for(tool_name)
 
@@ -1039,7 +1039,7 @@ class AgentManager:
             # Emit a context_status event so the model and UI both know.
             try:
                 _enabled = {
-                    _sanitize_server_name(t.name)
+                    sanitize_mcp_server_name(t.name)
                     for t in load_all_tools()
                     if t.mcp_config and t.enabled and t.auth_status in ("configured", "connected")
                 }
@@ -1340,7 +1340,7 @@ class AgentManager:
 
                     tool_def = next(
                         (t for t in all_tools_list
-                         if t.mcp_config and t.enabled and _sanitize_server_name(t.name) == name),
+                         if t.mcp_config and t.enabled and sanitize_mcp_server_name(t.name) == name),
                         None,
                     )
                     if tool_def:

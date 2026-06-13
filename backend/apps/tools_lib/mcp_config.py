@@ -11,7 +11,7 @@ from backend.apps.tools_lib.oauth_config import OPENSWARM_OAUTH_BASE_URL
 logger = logging.getLogger(__name__)
 
 
-def _sanitize_server_name(name: str) -> str:
+def sanitize_mcp_server_name(name: str) -> str:
     """Convert a tool name into a valid MCP server identifier (alphanumeric + hyphens)."""
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 

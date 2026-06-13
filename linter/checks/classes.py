@@ -12,16 +12,7 @@ import ast
 from pathlib import Path
 
 from . import is_excepted, is_excluded, is_lintignored
-
-FRAMEWORK_BASES = {"BaseModel"}
-
-
-def _is_framework_model(cls: ast.ClassDef) -> bool:
-    return any(
-        (isinstance(b, ast.Name) and b.id in FRAMEWORK_BASES)
-        or (isinstance(b, ast.Attribute) and b.attr in FRAMEWORK_BASES)
-        for b in cls.bases
-    )
+from ._models import is_framework_model
 
 
 def run_class_check(
@@ -53,7 +44,7 @@ def run_class_check(
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
-            if _is_framework_model(node):
+            if is_framework_model(node):
                 continue
             # Tier 2 placeholder: non-framework classes are skipped until
             # cross-reference analysis is implemented.

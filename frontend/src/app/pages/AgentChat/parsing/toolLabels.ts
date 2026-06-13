@@ -267,7 +267,7 @@ const VARIANTS: Record<string, ToolLabel[]> = {
   ],
 };
 
-// Keys match backend _sanitize_server_name in tools_lib.
+// Keys match backend sanitize_mcp_server_name in tools_lib.
 const MCP_SERVER_BRAND: Record<string, string> = {
   'google-workspace': 'Google Workspace',
   'microsoft-365': 'Microsoft 365',

@@ -12,7 +12,9 @@ This folder contains the project's code quality tooling: a structural linter, de
 
 **Unused Python code (Vulture)** — Flags unused functions, classes, variables, and imports in the backend. Integrated into the linter's watch loop — findings appear as warnings in the Problems panel alongside structural errors. Confidence thresholds are configurable via `vulture-min-confidence` and `vulture-error-threshold`.
 
-These rules apply to `.py`, `.ts`, `.tsx`, `.js`, and `.jsx` files.
+**No leading-underscore names (`no-underscore-names`)** — Bans names that start with `_` in backend Python: functions, methods, arguments, classes, variable bindings, instance/class attribute writes (`self._x = ...`), and import aliases. The prefix is a blind spot — Pylance's `reportUnusedVariable`, ruff's `dummy-variable-rgx` (`F841`/`ARG0xx`), and vulture all treat a leading underscore as "intentionally private/unused" and stop reporting it, so dead `_name` code slips through every dead-code tool at once. Dunders (`__init__`, `__repr__`, … — required by Python) and the bare `_` throwaway (`for _ in …`) are exempt; name-mangled `__x` is **not**. The rule ships strict with no exceptions seeded — offenders are renamed by hand.
+
+These rules apply to `.py`, `.ts`, `.tsx`, `.js`, and `.jsx` files (the `no-underscore-names` rule is Python-only).
 
 ### Orphaned endpoints
 
@@ -82,6 +84,7 @@ Or use the `knip:check` VS Code task (`Cmd+Shift+P` → "Run Task" → "knip:che
     "max-folder-items": true,
     "no-nested-imports": true,
     "vulture": true,
+    "no-underscore-names": true,
     "eslint": true,
     "knip": true,
     "endpoints": true,
@@ -112,6 +115,23 @@ Set any key in `"enabled"` to `false` to skip that check entirely. Missing keys 
 ### Vulture whitelist
 
 `config/vulture_whitelist.py` suppresses false positives — symbols used by frameworks, entry points, or external consumers that vulture can't detect statically. Add bare names to the file to mark them as intentionally used.
+
+### Vulture inline ignores
+
+For one-off false positives where the suppression reads best next to the code, drop a comment on the flagged line. Vulture points at the definition line (the `def`/`class` line, or the assignment line for an attribute), which is where the comment goes.
+
+| Comment | Effect |
+|---------|--------|
+| `# vulture-ignore` | Silences any vulture finding on that line |
+| `# vulture-ignore: name1, name2` | Silences only when the finding names one of the listed symbols |
+
+The scoped form is preferred — it can't accidentally swallow an unrelated future finding on the same line. Example:
+
+```python
+gauth.get_credentials = _patched_get_credentials  # vulture-ignore: get_credentials
+```
+
+Prefer the whitelist for symbols exempt across many call sites; prefer an inline ignore when the exemption is local and benefits from sitting next to the code.
 
 ### ESLint
 
@@ -155,6 +175,7 @@ linter/
   checks/              # check implementations
     __init__.py        # shared filter/match utilities + .lintignore support
     structural.py      # file length, folder size, nested imports
+    no_underscore_names.py # bans leading-underscore Python names
     vulture.py         # vulture dead-code runner
     eslint.py          # eslint runner
     knip.py            # knip unused-code runner
@@ -181,6 +202,7 @@ deferred.
 | `max-file-lines` (300) | on | Our 300-line precedence. Active for new files; existing debt is grandfathered (see below). |
 | `max-folder-items` (7) | on | Grandfathered per subtree via `.lintignore-max-folder-items` markers in `backend/`, `frontend/`, `debugger/`, `electron/`, `scripts/`. |
 | `vulture` | on | Dead-code detection over `backend/`. Runs against `backend/.venv/bin/vulture`. |
+| `no-underscore-names` | on | Bans leading-underscore Python names over `backend/`. Pure-AST, no external tool. Strict with no seeded exceptions — existing offenders are renamed by hand. |
 | `no-nested-imports` | off | We deliberately use function-level / lazy imports to break import cycles (400+ sites). Flagging them all is wrong for this codebase. |
 | `eslint`, `knip` | off | Node tooling, deferred to a later pass. |
 | `endpoints` | off | Orphaned-endpoint triage deferred. |

@@ -6,6 +6,7 @@
     "no-nested-imports": false,
     "vulture": true,
     "ruff": true,
+    "no-underscore-names": false,
     "eslint": false,
     "knip": false,
     "endpoints": false,
@@ -16,6 +17,7 @@
     "eslint-knip": "Node tooling deferred to a later pass.",
     "classes": "Placeholder check, not wired up. endpoints: orphaned-endpoint triage deferred.",
     "ruff-vulture-split": "ruff owns per-file/per-scope checks (F401 unused imports, F811 redefinitions, F841 unused locals, ARG001/ARG002 unused args), which it does AST-accurately and which vulture either gets wrong (global name-set hides per-file dead imports) or rates as noisy 60% findings. vulture is narrowed in checks/vulture.py to whole-program reachability only (dead functions/methods/classes/attributes), the one thing ruff structurally cannot do since it never builds a cross-module symbol graph. F401 honors __all__ and the redundant-alias form (import x as x) for intentional re-exports; add one of those if F401 flags a deliberate re-export.",
+    "no-underscore-names": "Bans leading-underscore names in backend/ Python (functions, methods, args, classes, variables, instance/class attribute writes, import aliases). The prefix is a blind spot: Pylance reportUnusedVariable, ruff dummy-variable-rgx (F841/ARG0xx), and vulture all treat it as intentionally-private/unused and stop reporting, so dead _name code hides. Exempt: dunders (__x__, required by Python) and the bare _ throwaway. Name-mangled __x IS flagged. Intentionally strict with no exceptions seeded -- offenders are renamed by hand.",
     "max-file-lines-exceptions": "Grandfather list of pre-existing >300-line files (existing debt, not new). Paths updated after the folder-tree restructure moved several of them.",
     "max-folder-items-exceptions": "Exact-path allow for folders intentionally over the cap. The rule trips at >7 (7 items is fine, the 8th tips it), so only genuinely 8+ folders are listed. backend/ and backend/apps are FastAPI feature-package registries (each child is an app mounted in main.py); agents/ aggregates agent subsystems; core/, tools_lib/, tests/ are conventionally flat. Frontend: app/pages is the page registry, AgentChat/ChatInput/Settings-sections/Onboarding are organizational parents, and shared/state (Redux slices) plus hooks/steps/mcp-cards/Views are flat peer collections. scripts/, electron/, linter/checks/ are flat tool dirs. These replaced blanket .lintignore-max-folder-items sentinels (backend, frontend, scripts, electron, linter/checks) so the rule still catches NEW unplanned bloat everywhere else. Kept as whole-subtree sentinels on purpose: debugger/ (self-contained injected sub-tool with its own Vite GUI), webapp_template (Vite scaffold payload), and vendored mcp-bundles.",
     "import-cycles": "Flags RUNTIME circular imports only (SCC>1). Skips type-only imports (import type / export type) and dynamic import() since neither runs at module init, which is why the idiomatic Redux store<->hooks type cycle is not flagged. Frontend alias resolution comes from import-cycle-aliases. Zero cycles today; the check keeps it that way."
@@ -63,6 +65,7 @@
     "import-cycles": [],
     "vulture": [],
     "ruff": [],
+    "no-underscore-names": [],
     "endpoints": [],
     "classes": []
   }

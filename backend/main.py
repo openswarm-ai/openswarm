@@ -550,7 +550,8 @@ async def mcp_meta(action: str, request: Request):
         valid options instead of activating (anti-hallucination).
     """
     from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.tools_lib.tools_lib import _load_all as load_all_tools, _sanitize_server_name
+    from backend.apps.tools_lib.tools_lib import _load_all as load_all_tools
+    from backend.apps.tools_lib.mcp_config import sanitize_mcp_server_name
 
     body = await request.json()
     parent_session_id = body.get("parent_session_id", "")
@@ -586,7 +587,7 @@ async def mcp_meta(action: str, request: Request):
         for t in load_all_tools():
             if not (t.mcp_config and t.enabled and t.auth_status in ("configured", "connected")):
                 continue
-            sanitized = _sanitize_server_name(t.name)
+            sanitized = sanitize_mcp_server_name(t.name)
             # Pull tool sub-action names from tool_permissions._tool_descriptions
             # so MCPSearch can match against capability names (e.g. "send_email").
             action_names: list[str] = []
@@ -710,7 +711,7 @@ async def mcp_meta(action: str, request: Request):
         tool_hint = ""
         try:
             for t in load_all_tools():
-                if _sanitize_server_name(t.name) != server_name:
+                if sanitize_mcp_server_name(t.name) != server_name:
                     continue
                 descs = (t.tool_permissions or {}).get("_tool_descriptions", {}) or {}
                 if not descs:

@@ -3,8 +3,8 @@ from typing import Callable
 from backend.apps.modes.modes import load_mode
 from backend.apps.tools_lib.tools_lib import (
     _load_all as load_all_tools,
-    _sanitize_server_name,
 )
+from backend.apps.tools_lib.mcp_config import sanitize_mcp_server_name
 from backend.apps.agents.manager.prompt.tool_catalog import _get_denied_tool_names, _is_fully_denied
 
 
@@ -34,7 +34,7 @@ def _build_connected_tools_context(allowed_tools: list[str], get_all_tool_names:
         if _is_fully_denied(tool):
             continue
 
-        server_name = _sanitize_server_name(tool.name)
+        server_name = sanitize_mcp_server_name(tool.name)
         denied = _get_denied_tool_names(tool)
         tool_descs = {
             k: v for k, v in tool.tool_permissions.get("_tool_descriptions", {}).items()
@@ -263,7 +263,7 @@ def _build_mcp_registry_summary(allowed_tools: list[str], active_mcps: list[str]
             continue
         if _is_fully_denied(tool):
             continue
-        server_name = _sanitize_server_name(tool.name)
+        server_name = sanitize_mcp_server_name(tool.name)
         desc = (getattr(tool, "description", None) or "").strip()
         if not desc:
             # Fall back to a generic blurb keyed on the tool name so the
@@ -373,7 +373,7 @@ def _resolve_forced_tools(forced_tools: list[str] | None) -> str:
         if not t.enabled or not t.tool_permissions:
             continue
         tool_descs = t.tool_permissions.get("_tool_descriptions", {})
-        server_name = _sanitize_server_name(t.name)
+        server_name = sanitize_mcp_server_name(t.name)
         for tn, td in tool_descs.items():
             desc_map[tn] = td
             tool_to_server[tn] = server_name
