@@ -1,4 +1,5 @@
 import { useEffect, RefObject } from 'react';
+import { PASTE_CARD_ATTR, getPasteContent } from '@/app/components/editor/richEditorUtils';
 
 // Module-level draft store keyed by sessionId; survives unmount/remount and preserves skill pills via innerHTML.
 const _draftStore = new Map<string, string>();
@@ -40,6 +41,11 @@ export function useDraftLoad(editorRef: RefObject<HTMLDivElement>, ownerId: stri
     }
     if (!editor.textContent?.trim()) {
       editor.innerHTML = saved;
+      const staleCards = editor.querySelectorAll(`[${PASTE_CARD_ATTR}]`);
+      staleCards.forEach((el) => {
+        const pid = el.getAttribute(PASTE_CARD_ATTR);
+        if (!pid || !getPasteContent(pid)) el.remove();
+      });
       const range = document.createRange();
       range.selectNodeContents(editor);
       range.collapse(false);

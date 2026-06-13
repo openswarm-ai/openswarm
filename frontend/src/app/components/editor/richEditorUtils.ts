@@ -1,6 +1,30 @@
 export const SKILL_PILL_ATTR = 'data-skill-id';
 export const SKILL_COLOR = '#7B61BD';
 
+// Paste cards hold large pasted text outside Chromium's contentEditable text-node tree, so the editor stays fast.
+export const PASTE_CARD_ATTR = 'data-paste-id';
+export const PASTE_CARD_COLOR = '#5A8FBF';
+export const LARGE_PASTE_CHARS = 500;
+const _pasteStore = new Map<string, string>();
+let _pasteCounter = 0;
+
+export function getPasteContent(id: string): string | undefined {
+  return _pasteStore.get(id);
+}
+
+export function setPasteContent(id: string, text: string): void {
+  _pasteStore.set(id, text);
+}
+
+export function deletePasteContent(id: string): void {
+  _pasteStore.delete(id);
+}
+
+export function createPasteId(): string {
+  _pasteCounter += 1;
+  return `paste_${Date.now().toString(36)}_${_pasteCounter}`;
+}
+
 export interface AttachedSkill {
   id: string;
   name: string;
@@ -63,6 +87,69 @@ export function createSkillPillElement(
   return pill;
 }
 
+function formatPasteLabel(charCount: number): string {
+  return `Pasted text (${charCount.toLocaleString()} chars)`;
+}
+
+export function createPasteCardElement(
+  pasteId: string,
+  charCount: number,
+  onExpand: (id: string) => void,
+  onRemove: (id: string) => void,
+  monoFont: string,
+  errorColor: string,
+): HTMLSpanElement {
+  const card = document.createElement('span');
+  card.setAttribute(PASTE_CARD_ATTR, pasteId);
+  card.contentEditable = 'false';
+  Object.assign(card.style, {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '1px 4px 1px 8px',
+    margin: '0 1px',
+    borderRadius: '6px',
+    background: `${PASTE_CARD_COLOR}1A`,
+    color: PASTE_CARD_COLOR,
+    fontSize: '0.72rem',
+    fontFamily: monoFont,
+    lineHeight: '1.8',
+    verticalAlign: 'baseline',
+    userSelect: 'none',
+    whiteSpace: 'nowrap' as const,
+    cursor: 'pointer',
+  });
+
+  const label = document.createElement('span');
+  label.textContent = formatPasteLabel(charCount);
+  Object.assign(label.style, { maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis' });
+  label.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); onExpand(pasteId); });
+
+  const closeBtn = document.createElement('span');
+  closeBtn.textContent = '×';
+  Object.assign(closeBtn.style, {
+    cursor: 'pointer',
+    fontSize: '13px',
+    lineHeight: '1',
+    opacity: '0.6',
+    marginLeft: '2px',
+    fontWeight: '700',
+    borderRadius: '50%',
+    width: '14px',
+    height: '14px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  });
+  closeBtn.addEventListener('mouseover', () => { closeBtn.style.opacity = '1'; closeBtn.style.color = errorColor; });
+  closeBtn.addEventListener('mouseout', () => { closeBtn.style.opacity = '0.6'; closeBtn.style.color = 'inherit'; });
+  closeBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); onRemove(pasteId); });
+
+  card.appendChild(label);
+  card.appendChild(closeBtn);
+  return card;
+}
+
 const SKILL_MARKER_RE = /\{\{skill:(.+?)\}\}/g;
 
 export function deserializeToEditor(
@@ -119,6 +206,15 @@ export function serializeEditorContent(editor: HTMLElement, skills: Record<strin
           parts.push(`{{skill:${skills[sid].name}}}`);
           return;
         }
+        const pid = el.getAttribute(PASTE_CARD_ATTR);
+        if (pid) {
+          const content = _pasteStore.get(pid);
+          if (content) {
+            hasOutput = true;
+            parts.push(content);
+          }
+          return;
+        }
         if (el.tagName === 'BR') { parts.push('\n'); return; }
         if (el.tagName === 'DIV' || el.tagName === 'P') {
           if (hasOutput) parts.push('\n');
@@ -163,7 +259,9 @@ export function detectEditorTrigger(): TriggerState | null {
 
   let triggerIdx = -1;
   let triggerChar: '/' | '@' | null = null;
-  for (let i = before.length - 1; i >= 0; i--) {
+  const MAX_TRIGGER_SCAN = 256;
+  const scanFloor = Math.max(0, before.length - MAX_TRIGGER_SCAN);
+  for (let i = before.length - 1; i >= scanFloor; i--) {
     const ch = before[i];
     if (ch === ' ' || ch === '\n') break;
     if (ch === '@') {

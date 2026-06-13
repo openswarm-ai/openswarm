@@ -3,8 +3,14 @@ import { CommandPickerItem } from '@/app/components/editor/CommandPicker';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import {
   SKILL_PILL_ATTR,
+  PASTE_CARD_ATTR,
+  LARGE_PASTE_CHARS,
   AttachedSkill,
   createSkillPillElement,
+  createPasteCardElement,
+  createPasteId,
+  setPasteContent,
+  deletePasteContent,
   detectEditorTrigger,
   TriggerState,
   EMPTY_TRIGGER,
@@ -54,13 +60,14 @@ interface Params {
   addImageFiles: (files: FileList | File[]) => void;
   uploadAndAttachFiles: (files: File[]) => void;
   handleSend: () => void;
+  onPasteExpand: (pasteId: string) => void;
 }
 
 export function useEditorHandlers(p: Params) {
   const {
     editorRef, generalFileInputRef, ownerId, sessionId, autoRunMode, c, skills,
     elementSelection, setHasContent, setAttachedSkills, setForcedTools, onModeChange,
-    addImageFiles, uploadAndAttachFiles, handleSend,
+    addImageFiles, uploadAndAttachFiles, handleSend, onPasteExpand,
   } = p;
   const dispatch = useAppDispatch();
   const [picker, setPicker] = useState<TriggerState>(EMPTY_TRIGGER);
@@ -94,6 +101,16 @@ export function useEditorHandlers(p: Params) {
       return next;
     });
   }, []);
+
+  const removePasteCard = useCallback((pasteId: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const card = editor.querySelector(`[${PASTE_CARD_ATTR}="${pasteId}"]`);
+    if (card) card.remove();
+    deletePasteContent(pasteId);
+    updateHasContent();
+    editor.focus();
+  }, [updateHasContent]);
 
   const removeSkillPill = useCallback((skillId: string) => {
     const editor = editorRef.current;
@@ -251,11 +268,54 @@ export function useEditorHandlers(p: Params) {
     }
     e.preventDefault();
     const plain = e.clipboardData.getData('text/plain');
-    if (plain) {
-      justPastedRef.current = true;
-      document.execCommand('insertText', false, plain);
+    if (!plain) return;
+
+    // Card path applies only to contentEditable; the Windows textarea fallback handles big text natively without lag and can't host child nodes.
+    if (plain.length > LARGE_PASTE_CHARS && !isTextareaEl(editorRef.current)) {
+      const pasteId = createPasteId();
+      setPasteContent(pasteId, plain);
+      const card = createPasteCardElement(
+        pasteId,
+        plain.length,
+        onPasteExpand,
+        removePasteCard,
+        c.font.mono,
+        c.status.error,
+      );
+
+      const editor = editorRef.current;
+      if (!editor) return;
+      editor.focus();
+      const sel = window.getSelection();
+      let inserted = false;
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        if (editor.contains(range.startContainer)) {
+          range.deleteContents();
+          range.insertNode(card);
+          const spacer = document.createTextNode('​');
+          card.after(spacer);
+          const newRange = document.createRange();
+          newRange.setStartAfter(spacer);
+          newRange.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(newRange);
+          inserted = true;
+        }
+      }
+      if (!inserted) {
+        editor.appendChild(card);
+        const spacer = document.createTextNode('​');
+        editor.appendChild(spacer);
+      }
+      setHasContent(true);
+      scheduleDraftSave(ownerId, () => readEditorHTML(editor));
+      return;
     }
-  }, [addImageFiles, elementSelection, ownerId]);
+
+    justPastedRef.current = true;
+    document.execCommand('insertText', false, plain);
+  }, [addImageFiles, elementSelection, ownerId, onPasteExpand, removePasteCard, c.font.mono, c.status.error, setHasContent]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();

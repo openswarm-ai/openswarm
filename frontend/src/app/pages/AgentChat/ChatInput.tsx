@@ -16,6 +16,7 @@ import { useContextFiles } from './ChatInput/hooks/useContextFiles';
 import { useModelPicker } from './ChatInput/hooks/useModelPicker';
 import { useEditorHandlers } from './ChatInput/hooks/useEditorHandlers';
 import { ChatInputView } from './ChatInput/view/ChatInputView';
+import { PastePreviewDialog } from './ChatInput/view/PastePreviewDialog';
 import { ICON_MAP, FALLBACK_MODE_BASE } from './ChatInput/modeConfig';
 import { AttachedImage, ForcedToolGroup, ChatInputHandle } from './ChatInput/types';
 
@@ -93,6 +94,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
 
   const [hasContent, setHasContent] = useState(() => !!loadDraft(ownerId));
   const [attachedSkills, setAttachedSkills] = useState<Record<string, AttachedSkill>>({});
+  const [previewPasteId, setPreviewPasteId] = useState<string | null>(null);
   const attachedSkillsRef = useRef(attachedSkills);
   attachedSkillsRef.current = attachedSkills;
 
@@ -275,6 +277,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     editorRef, generalFileInputRef, ownerId, sessionId, autoRunMode, c, skills,
     elementSelection, setHasContent, setAttachedSkills, setForcedTools, onModeChange,
     addImageFiles, uploadAndAttachFiles, handleSend,
+    onPasteExpand: setPreviewPasteId,
   });
 
   const currentMode = modesMap[mode];
@@ -287,6 +290,8 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
   const hasAttachments = images.length > 0 || contextPaths.length > 0 || forcedTools.length > 0 || selectedElements.length > 0;
 
   return (
+    <>
+    <PastePreviewDialog pasteId={previewPasteId} onClose={() => setPreviewPasteId(null)} />
     <ChatInputView
       c={c}
       containerRef={containerRef}
@@ -365,6 +370,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
       summarizeError={summarizeError}
       setSummarizeError={setSummarizeError}
     />
+    </>
   );
 });
 
