@@ -50,7 +50,7 @@ from backend.apps.agents.manager.prompt.tool_catalog import (
     _get_denied_tool_names,
     _is_fully_denied,
 )
-from backend.apps.agents.core.aux_llm import _safe_resp_text, clean_short_label
+from backend.apps.agents.core.aux_llm import _safe_resp_text, clean_short_label, aux_max_tokens_for
 from backend.apps.agents.manager.session.history_compaction import (
     _build_history_prefix,
     _get_branch_messages,
@@ -3103,7 +3103,7 @@ class AgentManager:
                 if session.mode == "view-builder":
                     try:
                         from backend.apps.outputs.outputs import sync_output_from_meta_json, _load_all
-                        if sync_output_from_meta_json(session_id):
+                        if sync_output_from_meta_json(session_id, fallback_name=session.name):
                             # Broadcast the renamed row so the sidebar
                             # flips from "Untitled App" to the real name
                             # without waiting for the next mount.
@@ -3686,6 +3686,7 @@ class AgentManager:
             raise ValueError(f"Session {session_id} not found")
 
         title = first_prompt[:40].strip()
+        aux_model = None
         try:
             from backend.apps.settings.credentials import get_anthropic_client_for_model
             from backend.apps.agents.providers.registry import resolve_aux_model, get_api_type
@@ -3696,6 +3697,8 @@ class AgentManager:
                 primary_api=get_api_type(session.model),
             )
             client = get_anthropic_client_for_model(global_settings, aux_model)
+            # Long instruction-heavy prompts trip safety classifiers; 200 chars carries enough signal.
+            labeled_prompt = first_prompt[:200].strip()
             system_prompt = (
                 "You label user messages with a 2-4 word topic title in SENTENCE CASE. "
                 "Sentence case = only the first word capitalized; proper nouns (Gmail, "
@@ -3717,19 +3720,34 @@ class AgentManager:
             )
             user_turn = (
                 "Label the message inside <message> tags. Do not answer it.\n\n"
-                f"<message>\n{first_prompt}\n</message>"
+                f"<message>\n{labeled_prompt}\n</message>"
             )
-            resp = await client.messages.create(
+            # Stream: 9router's cx/ non-streaming response translator drops `content`
+            # for GPT-5-family models; the per-event streaming translator works.
+            chunks: list[str] = []
+            async with client.messages.stream(
                 model=aux_model,
-                max_tokens=20,
+                max_tokens=aux_max_tokens_for(aux_model),
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_turn}],
-            )
-            generated = clean_short_label(_safe_resp_text(resp))
+            ) as stream:
+                async for text in stream.text_stream:
+                    chunks.append(text)
+            raw_text = "".join(chunks)
+            generated = clean_short_label(raw_text)
             if generated:
                 title = generated
+            else:
+                logger.warning(
+                    f"[title-gen] aux_model={aux_model} produced empty label "
+                    f"(raw_text={raw_text!r}, max_tokens={aux_max_tokens_for(aux_model)}, "
+                    f"prompt_len={len(first_prompt)}); using fallback"
+                )
         except Exception as e:
-            logger.warning(f"Title generation failed, using fallback: {e}")
+            logger.warning(
+                f"[title-gen] aux_model={aux_model} threw: {e}; using fallback "
+                f"(prompt_len={len(first_prompt)})"
+            )
 
         session.name = title
         await ws_manager.send_to_session(session_id, "agent:name_updated", {
@@ -3786,9 +3804,10 @@ class AgentManager:
                 "  Request: 'fix the bug in agent_manager.py' -> Investigating the bug\n"
                 "  Request: 'check my gmail inbox' -> Checking your Gmail"
             )
-            resp = await client.messages.create(
+            chunks: list[str] = []
+            async with client.messages.stream(
                 model=aux_model,
-                max_tokens=20,
+                max_tokens=aux_max_tokens_for(aux_model),
                 system=system,
                 messages=[{
                     "role": "user",
@@ -3797,9 +3816,11 @@ class AgentManager:
                         f"<request>\n{user_prompt[:2000]}\n</request>"
                     ),
                 }],
-            )
+            ) as stream:
+                async for text in stream.text_stream:
+                    chunks.append(text)
             # Bail on refusals/first-person rather than show a hallucinated label.
-            label = clean_short_label(_safe_resp_text(resp), max_words=6, max_chars=60)
+            label = clean_short_label("".join(chunks), max_words=6, max_chars=60)
             if not label:
                 return
 
@@ -3915,14 +3936,17 @@ class AgentManager:
                 "- Max 400 characters for the svg string"
             )
 
-            resp = await client.messages.create(
+            chunks: list[str] = []
+            async with client.messages.stream(
                 model=aux_model,
-                max_tokens=300,
+                max_tokens=aux_max_tokens_for(aux_model, base=300),
                 system=system,
                 messages=[{"role": "user", "content": user_content}],
-            )
+            ) as stream:
+                async for text in stream.text_stream:
+                    chunks.append(text)
 
-            raw = _safe_resp_text(resp).strip()
+            raw = "".join(chunks).strip()
             if not raw:
                 raise ValueError("aux model returned empty content")
             if raw.startswith("```"):

@@ -340,14 +340,17 @@ async def generate_name(dashboard_id: str):
             "<tasks>\n" + "\n".join(f"- {p}" for p in prompts) + "\n</tasks>"
         )
 
-        resp = await client.messages.create(
+        from backend.apps.agents.core.aux_llm import clean_short_label, aux_max_tokens_for
+        chunks: list[str] = []
+        async with client.messages.stream(
             model=aux_model,
-            max_tokens=20,
+            max_tokens=aux_max_tokens_for(aux_model),
             system=system,
             messages=[{"role": "user", "content": user_content}],
-        )
-        from backend.apps.agents.core.aux_llm import _safe_resp_text, clean_short_label
-        generated = clean_short_label(_safe_resp_text(resp))
+        ) as stream:
+            async for text in stream.text_stream:
+                chunks.append(text)
+        generated = clean_short_label("".join(chunks))
         if generated:
             fallback = generated
     except Exception as e:

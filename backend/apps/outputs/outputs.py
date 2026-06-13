@@ -146,33 +146,25 @@ async def read_workspace(workspace_id: str):
     return {"files": files, "meta": meta, "path": os.path.abspath(folder)}
 
 
-def sync_output_from_meta_json(workspace_id: str) -> bool:
-    """Read meta.json from the workspace folder; if it has a non-empty
-    name or description that differs from the linked Output row, update
-    the row. Returns True if anything changed.
-
-    Idempotent and best-effort: missing workspace, missing meta.json,
-    malformed JSON, or no linked Output all return False silently.
-
-    Why this exists: the Apps editor's React component polls meta.json
-    every few seconds and propagates name/description into the Output
-    via autosave. The canvas-chat App Builder launch has no such
-    poller, so apps stayed named "Untitled App" forever even after
-    the agent wrote a real name into meta.json. Calling this from the
-    session-complete hook closes that gap on the one event we know
-    fires exactly once per session.
-    """
+def sync_output_from_meta_json(workspace_id: str, fallback_name: str | None = None) -> bool:
+    """Sync the Output row's name/description from meta.json (or fallback_name when
+    meta.json has no name). Only overwrites placeholder values; user renames win."""
     try:
         folder = os.path.join(WORKSPACE_DIR, workspace_id)
         meta_path = os.path.join(folder, "meta.json")
-        if not os.path.exists(meta_path):
-            return False
-        with open(meta_path) as f:
-            meta = json.load(f)
-        if not isinstance(meta, dict):
-            return False
-        name = str(meta.get("name") or "").strip()
-        description = str(meta.get("description") or "").strip()
+        name = ""
+        description = ""
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path) as f:
+                    meta = json.load(f)
+                if isinstance(meta, dict):
+                    name = str(meta.get("name") or "").strip()
+                    description = str(meta.get("description") or "").strip()
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+        if not name and fallback_name:
+            name = str(fallback_name).strip()
         if not name and not description:
             return False
         matching = [o for o in _load_all() if o.workspace_id == workspace_id]
@@ -180,9 +172,6 @@ def sync_output_from_meta_json(workspace_id: str) -> bool:
             return False
         output = matching[0]
         changed = False
-        # Only overwrite the default placeholder ("Untitled App" / "") so a
-        # user who explicitly renamed the app in the UI isn't clobbered by
-        # a stale meta.json from a prior agent turn.
         if name and output.name in ("", "Untitled App") and output.name != name:
             output.name = name
             changed = True
@@ -193,8 +182,6 @@ def sync_output_from_meta_json(workspace_id: str) -> bool:
             output.updated_at = datetime.now().isoformat()
             _save(output)
         return changed
-    except (OSError, json.JSONDecodeError, ValueError):
-        return False
     except Exception:
         logger.exception("sync_output_from_meta_json failed for %s", workspace_id)
         return False

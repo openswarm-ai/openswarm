@@ -298,7 +298,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
   const createdIdRef = useRef<string | null>(null);
   const effectiveId = output?.id ?? createdId;
 
-  const [name, setName] = useState(output?.name ?? '');
+  const [name, setName] = useState(output?.name || 'Untitled App');
   const [description, setDescription] = useState(output?.description ?? '');
 
   const initialFiles = useMemo<Record<string, string>>(() => {
@@ -548,14 +548,6 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     return state.agents.sessions[effectiveSessionId]?.status ?? null;
   });
 
-  // Aux-LLM-generated session title from the user's first prompt. Used as an
-  // early signal for the App's display name so the sidebar doesn't sit at
-  // "Untitled App" while the agent is still working toward its first meta.json write.
-  const sessionName = useAppSelector((state) => {
-    if (!effectiveSessionId) return '';
-    return state.agents.sessions[effectiveSessionId]?.name ?? '';
-  });
-
   const isLaunched = !!effectiveSessionId && effectiveSessionId !== initialDraftId;
   const isAgentActive = agentStatus === 'running' || agentStatus === 'waiting_approval';
 
@@ -572,12 +564,57 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPollRef = useRef<string>('');
 
-  // Tracks whether the user has explicitly typed in the name input. Once set,
-  // session-title and meta.json syncs leave the name alone so we don't clobber
-  // a user-chosen name.
+  // Once true, meta.json syncs stop touching the field so a user rename isn't clobbered.
   const nameSetByUserRef = useRef(false);
+  const descriptionSetByUserRef = useRef(false);
 
   const [fileVersion, setFileVersion] = useState(0);
+
+  const nameTypewriterCancelRef = useRef<(() => void) | null>(null);
+  const descTypewriterCancelRef = useRef<(() => void) | null>(null);
+
+  const driveTypewriter = useCallback((
+    target: string,
+    setter: React.Dispatch<React.SetStateAction<string>>,
+    userTypedRef: React.MutableRefObject<boolean>,
+    cancelRef: React.MutableRefObject<(() => void) | null>,
+    charDelayMs: number = 14,
+  ) => {
+    if (cancelRef.current) cancelRef.current();
+    let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    const tick = () => {
+      if (cancelled) return;
+      setter((prev) => {
+        if (userTypedRef.current) { cancelled = true; return prev; }
+        if (prev === target) { cancelled = true; return prev; }
+        let commonLen = 0;
+        while (commonLen < prev.length && commonLen < target.length && prev[commonLen] === target[commonLen]) commonLen++;
+        const next = prev.length > commonLen
+          ? prev.substring(0, prev.length - 1)
+          : target.substring(0, prev.length + 1);
+        if (next !== target) timerId = setTimeout(tick, charDelayMs);
+        return next;
+      });
+    };
+    timerId = setTimeout(tick, charDelayMs);
+    cancelRef.current = () => {
+      cancelled = true;
+      if (timerId) clearTimeout(timerId);
+    };
+  }, []);
+
+  const driveNameTypewriter = useCallback((target: string) => {
+    driveTypewriter(target, setName, nameSetByUserRef, nameTypewriterCancelRef);
+  }, [driveTypewriter]);
+  const driveDescriptionTypewriter = useCallback((target: string) => {
+    driveTypewriter(target, setDescription, descriptionSetByUserRef, descTypewriterCancelRef);
+  }, [driveTypewriter]);
+
+  useEffect(() => () => {
+    if (nameTypewriterCancelRef.current) nameTypewriterCancelRef.current();
+    if (descTypewriterCancelRef.current) descTypewriterCancelRef.current();
+  }, []);
 
   const pollWorkspace = useCallback(async () => {
     if (!workspaceId) return;
@@ -594,29 +631,25 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
         setFileVersion(v => v + 1);
       }
 
-      if (data.meta && !nameSetByUserRef.current) {
+      if (data.meta) {
         const eid = output?.id ?? createdIdRef.current;
-        if (data.meta.name) {
-          setName(data.meta.name);
-          if (eid) {
-            const row = store.getState().outputs.items[eid];
-            if (row && row.name !== data.meta.name) {
-              dispatch(upsertOutput({ ...row, name: data.meta.name }));
-            }
+        if (data.meta.name && eid && !nameSetByUserRef.current) {
+          const row = store.getState().outputs.items[eid];
+          if (row && row.name !== data.meta.name) {
+            dispatch(upsertOutput({ ...row, name: data.meta.name }));
+            driveNameTypewriter(data.meta.name);
           }
         }
-        if (data.meta.description) {
-          setDescription(data.meta.description);
-          if (eid) {
-            const row = store.getState().outputs.items[eid];
-            if (row && row.description !== data.meta.description) {
-              dispatch(upsertOutput({ ...row, description: data.meta.description }));
-            }
+        if (data.meta.description && eid && !descriptionSetByUserRef.current) {
+          const row = store.getState().outputs.items[eid];
+          if (row && row.description !== data.meta.description) {
+            dispatch(upsertOutput({ ...row, description: data.meta.description }));
+            driveDescriptionTypewriter(data.meta.description);
           }
         }
       }
     } catch {}
-  }, [workspaceId, output?.id, dispatch]);
+  }, [workspaceId, output?.id, dispatch, driveNameTypewriter, driveDescriptionTypewriter]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -646,45 +679,6 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
       stopPoll();
     };
   }, [workspaceId, pollWorkspace, isAgentActive]);
-
-  // Mirror the aux-LLM session title into the App's name as soon as the chat
-  // gets one, so the sidebar reflects what the user just asked for instead of
-  // sitting at "Untitled App" while the agent works. Truncate to the title-cap
-  // (same rule as the chat header) so the right-panel input and sidebar never
-  // exceed their width. Typewriter-animate the React `name` state so the input
-  // field char-by-char swaps from "Untitled App" to the new name; the sidebar
-  // animates independently off its own Typewriter wrapper.
-  useEffect(() => {
-    if (nameSetByUserRef.current) return;
-    if (!sessionName) return;
-    const eid = output?.id ?? createdIdRef.current;
-    if (!eid) return;
-    const row = store.getState().outputs.items[eid];
-    if (!row) return;
-    const target = truncateForTitle(sessionName) || sessionName;
-    if (row.name === target) return;
-    if (row.name !== '' && row.name !== 'Untitled App') return;
-    dispatch(upsertOutput({ ...row, name: target }));
-
-    let cancelled = false;
-    let timerId: ReturnType<typeof setTimeout> | null = null;
-    const tick = () => {
-      if (cancelled) return;
-      setName((prev) => {
-        if (nameSetByUserRef.current) { cancelled = true; return prev; }
-        if (prev === target) { cancelled = true; return prev; }
-        let commonLen = 0;
-        while (commonLen < prev.length && commonLen < target.length && prev[commonLen] === target[commonLen]) commonLen++;
-        const next = prev.length > commonLen
-          ? prev.substring(0, prev.length - 1)
-          : target.substring(0, prev.length + 1);
-        if (next !== target) timerId = setTimeout(tick, 14);
-        return next;
-      });
-    };
-    timerId = setTimeout(tick, 14);
-    return () => { cancelled = true; if (timerId) clearTimeout(timerId); };
-  }, [sessionName, output?.id, dispatch]);
 
   const prevAgentActive = useRef(false);
   useEffect(() => {
@@ -1184,7 +1178,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
           <TextField
             value={name}
             onChange={(e) => { nameSetByUserRef.current = true; setName(e.target.value); }}
-            placeholder="App name"
+            placeholder="Untitled App"
             variant="standard"
             sx={{
               flex: 1,
@@ -1202,7 +1196,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
 
           <TextField
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => { descriptionSetByUserRef.current = true; setDescription(e.target.value); }}
             placeholder="Description"
             variant="standard"
             sx={{

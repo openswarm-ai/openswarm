@@ -58,31 +58,33 @@ export function CrossFadeOnChange<T>({ value, children, durationMs }: CrossFadeP
 interface TypewriterProps {
   value: string;
   children: (current: string) => React.ReactNode;
-  /** Per-char delay during delete + type phases. Default 14ms. Total swap ~ (deleteCount + typeCount) * delay. */
   charDelayMs?: number;
-  /** Set false to snap-render the value (e.g. while no real title exists yet). */
   enabled?: boolean;
+  snapOnFirstTransition?: boolean;
 }
 
-/**
- * Char-by-char delete-then-type swap. When `value` changes, the displayed string
- * deletes down to the longest common prefix with the new value, then types the rest in.
- * Respects useReducedMotion. Use for title swaps where the user should see the chars
- * scrub through, not a cross-fade.
- */
-export function Typewriter({ value, children, charDelayMs = 14, enabled = true }: TypewriterProps) {
+export function Typewriter({ value, children, charDelayMs = 14, enabled = true, snapOnFirstTransition = false }: TypewriterProps) {
   const reduced = useReducedMotion();
   const [displayed, setDisplayed] = useState(value);
   const targetRef = useRef(value);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasTransitionedRef = useRef(false);
 
   useEffect(() => {
     targetRef.current = value;
     if (!enabled || reduced) {
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
       setDisplayed(value);
+      if (value !== displayed) hasTransitionedRef.current = true;
       return;
     }
+    if (value === displayed) return;
+    if (snapOnFirstTransition && !hasTransitionedRef.current) {
+      hasTransitionedRef.current = true;
+      setDisplayed(value);
+      return;
+    }
+    hasTransitionedRef.current = true;
     if (timerRef.current) clearTimeout(timerRef.current);
     const tick = () => {
       setDisplayed((prev) => {
@@ -93,8 +95,8 @@ export function Typewriter({ value, children, charDelayMs = 14, enabled = true }
           commonLen++;
         }
         const next = prev.length > commonLen
-          ? prev.substring(0, prev.length - 1)        // delete one char from end
-          : target.substring(0, prev.length + 1);     // type next char from target
+          ? prev.substring(0, prev.length - 1)
+          : target.substring(0, prev.length + 1);
         if (next !== target) {
           timerRef.current = setTimeout(tick, charDelayMs);
         }
@@ -105,7 +107,7 @@ export function Typewriter({ value, children, charDelayMs = 14, enabled = true }
     return () => {
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     };
-  }, [value, enabled, reduced, charDelayMs]);
+  }, [value, enabled, reduced, charDelayMs, snapOnFirstTransition, displayed]);
 
   return <>{children(displayed)}</>;
 }

@@ -384,7 +384,7 @@ Common deps already in the template:
 
 - **Edits are auto-saved**. As soon as you write a file via the Edit/Write tool, it's on disk. Vite HMR re-renders the preview within ~100ms.
 - **Hard Reload (right-click the reload button)** restarts the runtime — useful after you `bash backend_init.sh` or change `.env` values.
-- **`meta.json`** at workspace root is shown in the OpenSwarm Apps page UI. Update its `name` and `description` when the app's purpose changes.
+- **`meta.json`** at workspace root drives the app's name + description in the OpenSwarm sidebar, App Builder header, and Apps page. Write it FIRST when starting a new app (see step 1 of the Quick start checklist), and revise it any time the app's purpose shifts.
 
 ---
 
@@ -459,14 +459,22 @@ not.
 
 When making a new app from scratch:
 
-1. **REPLACE** `frontend/src/pages/index.tsx` FIRST. The starter ships with a
+1. **WRITE `meta.json` FIRST**, before any other tool call. Put a 1-3 word product
+   name (Title Case) in `name` and a one-sentence description in `description`.
+   The Apps sidebar and the App Builder header show this name to the user; until
+   you write it, both surfaces sit at "Untitled App". Don't wait until the end of
+   the turn to fill it in — pick a name from the user's prompt and ship it now.
+   Example: prompt "make doodle jump" → `{"name": "Doodle Jumper", "description":
+   "Endless platform-hopper inspired by Doodle Jump."}`. You can revise it later
+   if the app's purpose shifts.
+2. **REPLACE** `frontend/src/pages/index.tsx`. The starter ships with a
    "Brewing your app" placeholder — this is intentional, it's what the user
    sees between React mounting and your first edit landing, and it must
    disappear the moment your real home page is ready. Rewrite the whole
    file with your app's actual `<Home>` component. (There's also an even
    earlier inline splash in `index.html` that paints before any JS bundle
    loads — leave that alone; React's first commit clears it automatically.)
-2. **Sidebar / shell is OPT-IN.** `Main.tsx` no longer wraps pages in
+3. **Sidebar / shell is OPT-IN.** `Main.tsx` no longer wraps pages in
    `<AppShell>`. If your app needs a sidebar (SaaS-style dashboards,
    multi-page apps), import `AppShell` from
    `@/app/components/Layout/AppShell` and wrap your page in it yourself:
@@ -479,9 +487,8 @@ When making a new app from scratch:
    Most apps DON'T want a sidebar (games, canvases, single-screen tools,
    previewers, full-bleed visualizations) — just render your content directly
    and the page will be full-bleed. Don't add a shell out of habit.
-3. Add additional pages under `frontend/src/pages/`.
-4. If using a sidebar, update its nav entries in
+4. Add additional pages under `frontend/src/pages/`.
+5. If using a sidebar, update its nav entries in
    `frontend/src/app/components/Layout/Sidebar.tsx`.
-5. Style with `useClaudeTokens()` and MUI's `sx`.
-6. If you need a backend: `bash backend_init.sh`, then add a SubApp under `backend/apps/<name>/`.
-7. Update `meta.json` with the app's name + description.
+6. Style with `useClaudeTokens()` and MUI's `sx`.
+7. If you need a backend: `bash backend_init.sh`, then add a SubApp under `backend/apps/<name>/`.

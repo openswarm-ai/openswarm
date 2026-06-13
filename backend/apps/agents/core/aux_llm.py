@@ -19,6 +19,13 @@ def clean_short_label(raw: str, max_words: int = 4, max_chars: int = 36) -> str:
     return label
 
 
+def aux_max_tokens_for(model: str | None, base: int = 100) -> int:
+    # GPT-5 reasoners burn reasoning tokens before output; floor at 4K so a label can land.
+    if isinstance(model, str) and "gpt-5" in model.lower():
+        return max(base, 4096)
+    return base
+
+
 def _safe_resp_text(resp) -> str:
     """Extract text from an Anthropic-shape response, tolerating Gemini/OpenAI
     edge cases. Gemini through 9Router occasionally returns `content=[]` (e.g.
