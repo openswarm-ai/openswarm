@@ -158,6 +158,18 @@ fi
 # directly), so the env stays unset in production and uvicorn boots in
 # its leaner non-reload mode.
 export OPENSWARM_DEV=1
+
+# --- Lint preflight: surface violations before the dev loop starts ---
+# print_errors.sh -> linter/lint.py needs watchfiles + vulture, which live in
+# the backend venv (installed by backend/run.sh when OPENSWARM_DEV=1). Prepend
+# the venv's bin to PATH so the script's bare `python3` resolves there. Skip
+# silently on a fresh checkout where the venv isn't built yet.
+VENV_BIN="$PROJECT_ROOT/backend/.venv/bin"
+if [ -x "$VENV_BIN/python3" ]; then
+    echo -e "${YELLOW}${BOLD}[lint]${RESET}     Checking for linter violations..."
+    PATH="$VENV_BIN:$PATH" bash "$PROJECT_ROOT/linter/print_errors.sh" "$PROJECT_ROOT"
+fi
+
 echo -e "${BLUE}${BOLD}[backend]${RESET}  Starting backend server..."
 bash "$PROJECT_ROOT/backend/run.sh" > >(
     while IFS= read -r line; do

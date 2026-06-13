@@ -1,5 +1,11 @@
 {
   "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
-  "python.terminal.activateEnvironment": true,
+  "terminal.integrated.profiles.osx": {
+    "bash + venv": {
+      "path": "/opt/homebrew/bin/bash",
+      "args": ["--rcfile", "${workspaceFolder}/.vscode/terminal-init.sh"]
+    }
+  },
+  "terminal.integrated.defaultProfile.osx": "bash + venv",
   "terminal.integrated.enablePersistentSessions": false
 }
