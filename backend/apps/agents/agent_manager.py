@@ -62,7 +62,6 @@ from backend.apps.agents.manager.prompt.prompt_context import (
     _build_connected_tools_context,
     _build_mcp_registry_summary,
     _compose_system_prompt,
-    _get_pre_selected_browser_ids,
     _resolve_attached_skills,
     _resolve_forced_tools,
     _resolve_mode,
@@ -217,9 +216,6 @@ class AgentManager:
 
     def _build_selected_app_context(self, selected_app_output_ids: list[str] | None) -> str | None:
         return _build_selected_app_context(selected_app_output_ids)
-
-    def _get_pre_selected_browser_ids(self, dashboard_id: str | None) -> list[str]:
-        return _get_pre_selected_browser_ids(dashboard_id)
 
     def _build_mcp_registry_summary(self, allowed_tools: list[str], active_mcps: list[str]) -> str | None:
         return _build_mcp_registry_summary(allowed_tools, active_mcps, get_all_tool_names)
@@ -1153,14 +1149,11 @@ class AgentManager:
                     os.path.dirname(__file__), "browser_agent_mcp_server.py"
                 )
                 backend_port = os.environ.get("OPENSWARM_PORT", "8324")
-                # The browser the user picked in select-mode must be driven, not duplicated.
-                # Put their selection FIRST so the dispatch claims it for the task; keep the
-                # rest of the dashboard's cards in the list so their host/no-renavigate
-                # semantics still hold. Without the user's selection here the sub-agent fell
-                # back to host-based auto-create and opened its own browser.
-                _user_sel = [b for b in (selected_browser_ids or []) if b]
-                _all_bids = self._get_pre_selected_browser_ids(session.dashboard_id)
-                pre_selected_bids = _user_sel + [b for b in _all_bids if b not in _user_sel]
+                # Only the card the user actually picked in select-mode gets claimed for the
+                # task, so the sub drives that one instead of opening its own duplicate. Passing
+                # EVERY dashboard card here (the old behavior) made the sub force-grab a random,
+                # usually-parked card and never navigate it, which broke the bulk of browser tasks.
+                pre_selected_bids = [b for b in (selected_browser_ids or []) if b]
                 from backend.auth import get_auth_token as _get_auth_token
                 _auth_tok = _get_auth_token()
                 mcp_servers["openswarm-browser-agent"] = {

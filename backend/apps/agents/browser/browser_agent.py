@@ -2328,7 +2328,8 @@ async def run_browser_agents(
                 model=model,
                 dashboard_id=dashboard_id,
                 pre_selected=is_pre_selected,
-                initial_url=_nav_url if _nav_url and browser_id not in pre_selected else None,
+                # an explicit url means "go here" even on the user's picked card; with none, a picked card stays on the page they parked it
+                initial_url=_nav_url if _nav_url and (url or browser_id not in pre_selected) else None,
                 parent_session_id=parent_session_id,
             )
         finally:

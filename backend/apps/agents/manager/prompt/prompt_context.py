@@ -233,20 +233,6 @@ def _build_selected_app_context(selected_app_output_ids: list[str] | None) -> st
     )
 
 
-def _get_pre_selected_browser_ids(dashboard_id: str | None) -> list[str]:
-    """Return browser_ids of all browser cards currently on the dashboard."""
-    if not dashboard_id:
-        return []
-    try:
-        from backend.apps.dashboards.dashboards import _load as load_dashboard
-        dashboard = load_dashboard(dashboard_id)
-    except Exception:
-        return []
-    raw = dashboard.model_dump(mode="json")
-    browser_cards = raw.get("layout", {}).get("browser_cards", {})
-    return [card.get("browser_id", "") for card in browser_cards.values() if card.get("browser_id")]
-
-
 def _build_mcp_registry_summary(allowed_tools: list[str], active_mcps: list[str], get_all_tool_names: Callable[[], list[str]]) -> str | None:
     """Compact registry of installed MCP servers, one line per server.
 
