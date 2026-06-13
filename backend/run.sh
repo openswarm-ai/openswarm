@@ -28,7 +28,7 @@ trap cleanup EXIT INT TERM
 VENV_DIR="$BACKEND_DIR_ABSPATH/.venv"
 if [[ ! -d "$VENV_DIR" ]]; then
     echo "Creating virtual environment..."
-    python3 -m venv "$VENV_DIR"
+    python3.13 -m venv "$VENV_DIR"
 fi
 source "$VENV_DIR/bin/activate"
 

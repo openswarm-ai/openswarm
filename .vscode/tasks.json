@@ -1,0 +1,42 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "linter: watch",
+      "type": "shell",
+      "command": "${workspaceFolder}/backend/.venv/bin/python",
+      "args": [
+        "${workspaceFolder}/linter/lint.py",
+        "--watch",
+        "--root",
+        "${workspaceFolder}"
+      ],
+      "isBackground": true,
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "never",
+        "panel": "dedicated",
+        "close": true
+      },
+      "problemMatcher": {
+        "owner": "openswarm-linter",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^structural: checking\\.\\.\\.$",
+          "endsPattern": "^import-cycles: done\\."
+        },
+        "pattern": {
+          "regexp": "^(.+):(\\d+):(\\d+):\\s+(error|warning):\\s+(.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      }
+    }
+  ]
+}
