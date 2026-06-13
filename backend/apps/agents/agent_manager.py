@@ -1142,7 +1142,7 @@ class AgentManager:
             # dispatch layer (see _build_mcp_servers docstring).
             mcp_servers = await self._build_mcp_servers(session.allowed_tools, session.active_mcps)
 
-            _browser_delegation_tools = ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents"]
+            _browser_delegation_tools = ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents", "AppAgent"]
             _browser_all_denied = all(
                 _builtin_perms.get(t, "always_allow") == "deny"
                 for t in _browser_delegation_tools
@@ -1165,6 +1165,8 @@ class AgentManager:
                         "OPENSWARM_AGENT_MODEL": session.model,
                         "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
                         "OPENSWARM_PRE_SELECTED_BROWSER_IDS": ",".join(pre_selected_bids),
+                        # Apps the user selected this turn; AppAgent may only target these.
+                        "OPENSWARM_SELECTED_APP_IDS": ",".join(selected_app_output_ids or []),
                         "OPENSWARM_PARENT_SESSION_ID": session.id,
                     },
                     "type": "stdio",

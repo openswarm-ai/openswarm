@@ -209,6 +209,7 @@ def _build_selected_app_context(selected_app_output_ids: list[str] | None) -> st
         name = output.name or "Untitled App"
         lines = [
             f'- App: "{name}"',
+            f"  App id (for AppAgent): {output_id}",
             f"  Workspace path: {path}",
             f"  Entry point: {os.path.join(path, 'index.html')}",
         ]
@@ -224,10 +225,14 @@ def _build_selected_app_context(selected_app_output_ids: list[str] | None) -> st
         return None
     return (
         "<selected_app_context>\n"
-        "The user selected these App cards on the dashboard for you to edit. "
-        "They are existing web apps; edit the files in place at the paths below "
-        "and the dashboard preview live-reloads on save. Do not scaffold a new "
-        "project or write files anywhere else.\n\n"
+        "The user selected these App cards on the dashboard. You can do two things "
+        "with them:\n"
+        "- EDIT them: change the files in place at the paths below and the dashboard "
+        "preview live-reloads on save. Do not scaffold a new project or write files "
+        "elsewhere.\n"
+        "- OPERATE them: to actually use a running app (e.g. 'graph y=x^2', 'fill in "
+        "the form'), call AppAgent(output_id, task) with the App id below. A "
+        "dedicated agent drives the live app through its own actions, no editing.\n\n"
         + "\n\n".join(entries)
         + "\n</selected_app_context>"
     )

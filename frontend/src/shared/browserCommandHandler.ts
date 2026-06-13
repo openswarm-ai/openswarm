@@ -1,4 +1,4 @@
-import { getWebview, type BrowserWebview } from './browserRegistry';
+import { getWebview, registeredKeys, type BrowserWebview } from './browserRegistry';
 import { store } from './state/store';
 import { resumeBrowserCard } from './state/dashboardLayoutSlice';
 import { dashboardWs } from './ws/WebSocketManager';
@@ -1330,8 +1330,13 @@ async function handleReplayRoute(wv: BrowserWebview, params: Record<string, any>
 async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
   const expression = params.expression as string;
   if (!expression) return { error: 'expression parameter is required' };
+  // [app-agent] step trace: surface what the app's bridge actually returned.
+  const _bridgeCall = expression.includes('OPENSWARM_APP');
   try {
     const result = await wv.executeJavaScript(expression);
+    if (_bridgeCall) {
+      console.log(`[app-agent] BRIDGE eval -> ${typeof result === 'string' ? result : JSON.stringify(result)}`);
+    }
     const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
     // evaluate is the agent's main read path; sample routes here too (XHRs have
     // fired by now) so the backend can surface the fast network tier once.
@@ -1397,13 +1402,26 @@ async function runBrowserCommand(
   request_id: string, action: string, browser_id: string, tab_id: string | undefined,
   params: Record<string, any>,
 ) {
+  // [app-agent] step trace: only for app targets so browser-agent runs stay quiet.
+  const _appTrace = String(browser_id || '').startsWith('app:');
+  if (_appTrace) {
+    console.log(`[app-agent] CMD recv: action=${action} browser_id=${browser_id} tab_id=${tab_id ?? ''} registered=[${registeredKeys().join(', ')}]`);
+  }
   const wv = await awaitWebview(browser_id, tab_id || undefined);
   if (!wv) {
+    if (_appTrace) {
+      console.warn(`[app-agent] LOOKUP MISS: no webview for '${browser_id}' (registered keys: [${registeredKeys().join(', ')}]) -> the app card isn't mounted on the active dashboard`);
+    }
     dashboardWs.send('browser:result', {
       request_id,
       error: `Browser card '${browser_id}'${tab_id ? ` tab '${tab_id}'` : ''} not found or not an Electron webview`,
     });
     return;
+  }
+  if (_appTrace) {
+    let _url = '';
+    try { _url = wv.getURL(); } catch (_e) {}
+    console.log(`[app-agent] LOOKUP HIT: webview for '${browser_id}' found, url=${_url} loading=${(() => { try { return wv.isLoading(); } catch { return '?'; } })()}`);
   }
 
   const detail = params.url || params.selector || params.expression || undefined;

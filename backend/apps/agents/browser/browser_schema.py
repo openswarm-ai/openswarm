@@ -668,6 +668,80 @@ ACTION_MAP = {
     "BrowserClickByName": "click_by_name",
 }
 
+# --- App agent: driving an OpenSwarm-built app via its native bridge ---------
+# Apps expose window.OPENSWARM_APP = { describe(), getState(), invoke(name,args) }.
+# The agent reads structure/state and acts through that bridge in single
+# executeJavaScript round-trips, no screenshots or accessibility tree. These
+# three tools are translated to BrowserEvaluate in execute_browser_tool, so they
+# need no frontend command-handler changes.
+APP_TOOLS_SCHEMA = [
+    {
+        "name": "AppDescribe",
+        "description": (
+            "Read the app's CURRENT list of actions you can take, straight from the "
+            "app itself (window.OPENSWARM_APP.describe()). Returns an array of "
+            "{name, args, description}. The app's controls are DYNAMIC, they appear "
+            "and disappear as state changes, so call this again after any AppInvoke "
+            "that could add or remove actions; never assume the list is stable. "
+            "Returns null if the app does not expose the bridge (then fall back to "
+            "BrowserListInteractives/BrowserScreenshot)."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "AppGetState",
+        "description": (
+            "Read a small JSON snapshot of the app's current state "
+            "(window.OPENSWARM_APP.getState()). Use it to check what's on screen "
+            "and to verify an action landed. Returns null if the bridge is absent."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "AppInvoke",
+        "description": (
+            "Perform one app action by name with arguments "
+            "(window.OPENSWARM_APP.invoke(name, args)). The name MUST be one that "
+            "AppDescribe just returned; never invent or modify actions, only invoke "
+            "the ones the app exposes. Returns the action's result, or an "
+            "{__error__} if it threw. After invoking, re-AppDescribe if the action "
+            "may have changed which controls exist."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Action name from AppDescribe."},
+                "args": {
+                    "type": "object",
+                    "description": "Arguments object for the action; {} if none.",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+]
+
+# Bridge tool names -> the JS the app exposes. execute_browser_tool maps these to
+# a BrowserEvaluate. Each expression returns a JSON string (so it round-trips as
+# text) and never throws (errors are returned as JSON).
+APP_BRIDGE_TOOLS = {"AppDescribe", "AppGetState", "AppInvoke"}
+
+# Lean toolset for app mode: bridge tools first, then a UI-driving fallback for
+# apps that don't expose the bridge. Built by name-selecting the shared defs so
+# their schemas stay in one place.
+_APP_FALLBACK_TOOL_NAMES = [
+    "ReportProgress", "Done",
+    "BrowserScreenshot", "BrowserGetText",
+    "BrowserListInteractives", "BrowserClickIndex", "BrowserBatch",
+]
+_app_fallback_tools = [t for t in BROWSER_TOOLS_SCHEMA if t["name"] in _APP_FALLBACK_TOOL_NAMES]
+# ReportProgress + Done lead, then the bridge tools, then UI fallback.
+APP_VISIBLE_TOOLS = (
+    [t for t in _app_fallback_tools if t["name"] in ("ReportProgress", "Done")]
+    + APP_TOOLS_SCHEMA
+    + [t for t in _app_fallback_tools if t["name"] not in ("ReportProgress", "Done")]
+)
+
 SYSTEM_PROMPT = (
     "You are a website-agnostic browser automation agent. You can operate on ANY "
     "website the user is signed into; social media, dating apps, email, productivity "
@@ -892,6 +966,56 @@ SYSTEM_PROMPT = (
 
 MAX_TURNS = 40
 
+# App mode: drive an OpenSwarm-built app through its native bridge. This is the
+# global "how to operate an app" guidance (decision: one global doc, not per-app;
+# per-app specifics come live from AppDescribe). Deliberately short, the bridge
+# does the heavy lifting and future models need less hand-holding.
+APP_SYSTEM_PROMPT = (
+    "You operate an OpenSwarm-built app (a small web app the user created, e.g. a "
+    "graphing tool or a form). The app is ALREADY open in front of you; do not "
+    "navigate anywhere.\n\n"
+
+    "## How you see and act: the app's own bridge (this is the fast path)\n"
+    "The app exposes a native bridge, window.OPENSWARM_APP, with three calls you "
+    "reach through tools:\n"
+    "- AppDescribe -> the CURRENT list of actions {name, args, description}.\n"
+    "- AppGetState -> a small JSON snapshot of what's on screen.\n"
+    "- AppInvoke(name, args) -> perform one action.\n"
+    "Always start with AppDescribe to learn the real action names and arg shapes, "
+    "then AppInvoke them. This reads the app's true structure directly, so you do "
+    "NOT need screenshots, the DOM, or the accessibility tree.\n"
+    "Only ever call actions that AppDescribe actually returned. You operate the app, "
+    "you do NOT change it: never invent action names, and never try to add, remove, "
+    "or redefine the app's available actions or edit its code. If what the user wants "
+    "isn't reachable through the exposed actions, say so in Done.\n\n"
+
+    "## Controls are DYNAMIC\n"
+    "Actions and state change as you interact (the app adds and removes controls). "
+    "Never cache the action list: after any AppInvoke that could change what's "
+    "available, call AppDescribe again before relying on it. Verify outcomes with "
+    "AppGetState rather than assuming.\n\n"
+
+    "## If there is no bridge\n"
+    "If AppDescribe (or AppGetState) returns null, this app doesn't expose the "
+    "bridge. Fall back to driving the UI directly: BrowserListInteractives to find "
+    "controls, BrowserClickIndex / BrowserBatch to act, BrowserScreenshot to see. "
+    "If you truly cannot operate it, say so plainly in Done with success=false.\n\n"
+
+    "## ReportProgress before acting\n"
+    "Before any AppInvoke (or UI action), call ReportProgress in the SAME turn with "
+    "a telegraphic next_goal and working_memory. AppDescribe and AppGetState are "
+    "reads and do not require it.\n\n"
+
+    "## Speed\n"
+    "Fewer model turns is the #1 driver. Once AppDescribe tells you the actions, "
+    "fire the AppInvokes you need; don't re-describe between every step unless the "
+    "action list could have changed. Keep your notes a few words each.\n\n"
+
+    "When finished, end by calling Done; put a plain one or two sentence reply in "
+    "its message (what you did and the proof, e.g. what's now graphed), zero "
+    "interface words. Set success=false if you couldn't finish."
+)
+
 # Tools that count as "action tools"; calling any of these in a turn requires
 # the model to also call ReportProgress in the same turn (after the first
 # turn). Read-only tools and meta tools are exempt.
@@ -904,4 +1028,5 @@ _ACTION_TOOLS_REQUIRING_REPORT = {
     "BrowserEvaluate",
     "BrowserClickIndex",  # Phase 3
     "BrowserBatch",  # Phase 4
+    "AppInvoke",  # app mode: invoking an app action mutates state
 }

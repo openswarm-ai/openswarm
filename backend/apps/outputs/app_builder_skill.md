@@ -325,6 +325,61 @@ export const JOBS_LIST = '/api/jobs/list';
 
 ---
 
+## Make the app agent-operable — the `OPENSWARM_APP` bridge
+
+An agent can drive this app on the user's behalf (e.g. "graph y=x^2 on my
+Desmos app"). It does NOT do that by clicking pixels or scraping the DOM —
+that's slow and an app's DOM is often a bare `<canvas>`. Instead, expose a
+tiny bridge on `window` and the agent reads/acts through it in one fast
+`executeJavaScript` call. **Always add this bridge to every app you build.**
+
+Set `window.OPENSWARM_APP` with three functions:
+
+- `describe()` → the **current** list of actions, `[{ name, args?, description? }]`.
+  Recompute it live on every call; controls are dynamic, so return only what's
+  actually available right now.
+- `getState()` → a **small** JSON snapshot of the app's relevant state (used to
+  verify an action landed). Keep it compact — this is the latency budget.
+- `invoke(name, args)` → perform the named action and return a result (or throw
+  a string the agent will read).
+
+Keep `args` shapes simple (strings, numbers, booleans, small objects). The agent
+only ever calls actions that `describe()` returned; it never edits your code.
+
+```tsx
+// Register once the app's core object exists (e.g. after the calculator mounts).
+// `calc` here is the app's own API (Desmos example); use whatever yours exposes.
+function registerAgentBridge(calc: any) {
+  (window as any).OPENSWARM_APP = {
+    describe() {
+      const actions = [
+        { name: 'addExpr', args: { latex: 'string' }, description: 'Add a graph expression, e.g. y=x^2' },
+        { name: 'clear', description: 'Remove all expressions' },
+      ];
+      // Dynamic: only offer removeExpr when something is on the graph.
+      if (calc.getExpressions().length > 0) {
+        actions.push({ name: 'removeExpr', args: { id: 'string' }, description: 'Remove one expression by id' });
+      }
+      return actions;
+    },
+    getState() {
+      return { expressions: calc.getExpressions().map((e: any) => ({ id: e.id, latex: e.latex })) };
+    },
+    invoke(name: string, args: any = {}) {
+      if (name === 'addExpr') { const id = String(Date.now()); calc.setExpression({ id, latex: args.latex }); return { id }; }
+      if (name === 'removeExpr') { calc.removeExpression({ id: args.id }); return { ok: true }; }
+      if (name === 'clear') { calc.setBlank(); return { ok: true }; }
+      throw `Unknown action: ${name}`;
+    },
+  };
+}
+```
+
+If you skip the bridge the agent falls back to slow UI-driving, so apps meant to
+be agent-operated should always register it.
+
+---
+
 ## Debugging — use `swarm_debug`, not `print()`
 
 The backend has `swarm_debug` pre-installed. It's a colored frame-aware

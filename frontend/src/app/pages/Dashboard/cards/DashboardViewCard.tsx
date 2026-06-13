@@ -587,6 +587,7 @@ const DashboardOutputPreview: React.FC<{
       frontendCode={output.files?.['index.html'] ?? ''}
       inputData={inputData}
       backendResult={backendResult}
+      agentBrowserId={`app:${output.id}`}
     />
   );
 };

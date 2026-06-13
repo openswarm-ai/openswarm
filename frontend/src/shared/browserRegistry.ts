@@ -51,6 +51,11 @@ export function setActiveTab(browserId: string, tabId: string): void {
   activeTabMap.set(browserId, tabId);
 }
 
+// [app-agent] diagnostic: list currently-registered keys ("browserId:tabId").
+export function registeredKeys(): string[] {
+  return Array.from(registry.keys());
+}
+
 export function getWebview(browserId: string, tabId?: string): BrowserWebview | undefined {
   const resolvedTabId = tabId || activeTabMap.get(browserId);
   if (!resolvedTabId) return undefined;

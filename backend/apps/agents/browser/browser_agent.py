@@ -71,6 +71,9 @@ from backend.apps.agents.browser import browser_schema
 from backend.apps.agents.browser.browser_schema import (
     _ACTION_TOOLS_REQUIRING_REPORT,
     ACTION_MAP,
+    APP_BRIDGE_TOOLS,
+    APP_SYSTEM_PROMPT,
+    APP_VISIBLE_TOOLS,
     BROWSER_TOOLS_SCHEMA,
     MAX_TURNS,
     MODEL_MAP,
@@ -90,19 +93,64 @@ _CONFIRM_TOOLS = {
 }
 
 
+def _app_bridge_expression(tool_name: str, tool_input: dict) -> str:
+    """JS for an app bridge tool. Each expression returns a JSON STRING (so it
+    round-trips as text) and never throws; bridge errors come back as JSON."""
+    if tool_name == "AppDescribe":
+        call = "window.OPENSWARM_APP.describe()"
+    elif tool_name == "AppGetState":
+        call = "window.OPENSWARM_APP.getState()"
+    else:  # AppInvoke
+        name = json.dumps(tool_input.get("name", ""))
+        args = json.dumps(tool_input.get("args") or {})
+        call = f"window.OPENSWARM_APP.invoke({name}, {args})"
+    return (
+        "(function(){try{"
+        "var A=window.OPENSWARM_APP;"
+        "if(!A||typeof A.describe!=='function'){return JSON.stringify(null);}"
+        f"var r={call};"
+        "return JSON.stringify(r===undefined?null:r);"
+        "}catch(e){return JSON.stringify({__error__:String((e&&e.message)||e)});}})()"
+    )
+
+
 async def execute_browser_tool(
     tool_name: str, tool_input: dict, browser_id: str, tab_id: str = "",
 ) -> dict:
     """Execute a browser tool via ws_manager directly (no MCP/HTTP round-trip)."""
+    # [app-agent] step trace: only for app targets / bridge tools so normal
+    # browser-agent runs stay quiet. Greppable prefix; remove when done.
+    _trace = browser_id.startswith("app:") or tool_name in APP_BRIDGE_TOOLS
+
+    # App bridge tools translate to a single BrowserEvaluate against the app's
+    # window.OPENSWARM_APP, so they need no frontend command-handler changes.
+    if tool_name in APP_BRIDGE_TOOLS:
+        action = "evaluate"
+        expr = _app_bridge_expression(tool_name, tool_input)
+        params = {"expression": expr}
+        request_id = uuid4().hex
+        if _trace:
+            logger.info(f"[app-agent] DISPATCH {tool_name} -> {browser_id} (req {request_id[:8]}) js={expr[:120]}")
+        result = await ws_manager.send_browser_command(
+            request_id, action, browser_id, params, tab_id=tab_id,
+        )
+        if _trace:
+            logger.info(f"[app-agent] RESULT   {tool_name} <- {browser_id}: {json.dumps(result)[:300]}")
+        return result
+
     action = ACTION_MAP.get(tool_name)
     if not action:
         return {"error": f"Unknown browser tool: {tool_name}"}
 
     params = {k: v for k, v in tool_input.items()}
     request_id = uuid4().hex
+    if _trace:
+        logger.info(f"[app-agent] DISPATCH {tool_name}/{action} -> {browser_id} (req {request_id[:8]})")
     result = await ws_manager.send_browser_command(
         request_id, action, browser_id, params, tab_id=tab_id,
     )
+    if _trace:
+        logger.info(f"[app-agent] RESULT   {tool_name} <- {browser_id}: {json.dumps(result)[:300]}")
     return result
 
 
@@ -352,27 +400,36 @@ async def run_browser_agent(
     pre_selected: bool = False,
     initial_url: str | None = None,
     parent_session_id: str | None = None,
+    app_mode: bool = False,
 ) -> dict:
     """Run a browser sub-agent loop for a single browser card.
 
     Creates a visible AgentSession, streams progress via WebSocket,
     and returns the full action log + summary + final screenshot.
+
+    When app_mode is set, browser_id points at an OpenSwarm-built app's webview
+    (registered as "app:<output_id>"). The agent drives it through the app's
+    native bridge (window.OPENSWARM_APP) instead of web perception: no initial
+    navigate, no AX-tree front-load, and a lean app toolset + prompt.
     """
     from backend.apps.agents.agent_manager import agent_manager
 
     _browser_perms = load_builtin_permissions()
 
+    if app_mode:
+        logger.info(f"[app-agent] START loop: browser_id={browser_id} task={task[:140]!r}")
+
     session_id = uuid4().hex
     cancel_event = asyncio.Event()
     session = AgentSession(
         id=session_id,
-        name=f"Browser Agent",
+        name="App Agent" if app_mode else "Browser Agent",
         model=model,
         mode="browser-agent",
         status="running",
         dashboard_id=dashboard_id,
         browser_id=browser_id,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=APP_SYSTEM_PROMPT if app_mode else SYSTEM_PROMPT,
         parent_session_id=parent_session_id,
     )
     session._cancel_event = cancel_event
@@ -431,16 +488,20 @@ async def run_browser_agent(
     current_url = ""
     preloaded_reads: list[dict] = []  # real front-loaded reads, seeded into action_log
     _resumed = bool(browser_history._browser_history.get(browser_id))
-    if initial_url:
-        nav_result = await execute_browser_tool(
-            "BrowserNavigate", {"url": initial_url}, browser_id, tab_id,
-        )
-        logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
-        preloaded_perception, current_url, preloaded_reads = await _perceive(initial_url)
-    elif not _resumed:
-        # Fresh task on an existing card: perceive the current page to learn its
-        # host (for replay) and front-load turn 1 (this path used to start cold).
-        preloaded_perception, current_url, preloaded_reads = await _perceive("")
+    # App mode skips this whole block: the app is already loaded and its DOM is
+    # uninformative (often a bare <canvas>), so the agent perceives via the bridge
+    # (AppDescribe) on turn 1 instead of navigating or front-loading the AX tree.
+    if not app_mode:
+        if initial_url:
+            nav_result = await execute_browser_tool(
+                "BrowserNavigate", {"url": initial_url}, browser_id, tab_id,
+            )
+            logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
+            preloaded_perception, current_url, preloaded_reads = await _perceive(initial_url)
+        elif not _resumed:
+            # Fresh task on an existing card: perceive the current page to learn its
+            # host (for replay) and front-load turn 1 (this path used to start cold).
+            preloaded_perception, current_url, preloaded_reads = await _perceive("")
 
     from backend.apps.settings.settings import load_settings
     from backend.apps.settings.credentials import get_anthropic_client_for_model
@@ -594,8 +655,8 @@ async def run_browser_agent(
     # Advisory per-domain hints: seed the system prompt with what a prior agent
     # learned about this domain (if we know the domain at start), and keep the
     # store fresh from each ReportProgress. Re-verify, never blindly trust.
-    start_domain = _extract_domain(initial_url) if initial_url else None
-    run_system_prompt = SYSTEM_PROMPT
+    start_domain = None if app_mode else (_extract_domain(initial_url) if initial_url else None)
+    run_system_prompt = APP_SYSTEM_PROMPT if app_mode else SYSTEM_PROMPT
     if start_domain:
         prior_note = browser_history.get_domain_note(start_domain)
         if prior_note:
@@ -611,20 +672,23 @@ async def run_browser_agent(
     # from past successful runs) so the model skips re-discovery. Advisory text,
     # re-verified by the agent, never auto-run. Keyed by full host like skills.
     pb_seeded = False  # whether tier-2 strategy was injected, for measuring its effect
-    _pb_host = browser_skills.host_of(initial_url or current_url or "")
-    if _pb_host:
-        _pb_block = browser_playbook.format_for_prompt(_pb_host)
-        if _pb_block:
-            run_system_prompt = run_system_prompt + _pb_block
-            pb_seeded = True
-    # Tier-3 memory: the cross-site priors learned on EVERY other site, injected on
-    # every run (host-agnostic) so a brand-new site isn't fully cold. Advisory, capped.
-    try:
-        _meta_block = browser_meta_playbook.format_for_prompt()
-        if _meta_block:
-            run_system_prompt = run_system_prompt + _meta_block
-    except Exception:
-        pass
+    # Playbooks are web-only (keyed by host); app mode has no host, the bridge is
+    # the whole strategy, so skip both tiers.
+    if not app_mode:
+        _pb_host = browser_skills.host_of(initial_url or current_url or "")
+        if _pb_host:
+            _pb_block = browser_playbook.format_for_prompt(_pb_host)
+            if _pb_block:
+                run_system_prompt = run_system_prompt + _pb_block
+                pb_seeded = True
+        # Tier-3 memory: the cross-site priors learned on EVERY other site, injected
+        # on every run (host-agnostic) so a brand-new site isn't fully cold.
+        try:
+            _meta_block = browser_meta_playbook.format_for_prompt()
+            if _meta_block:
+                run_system_prompt = run_system_prompt + _meta_block
+        except Exception:
+            pass
 
     # Prompt-caching shapes built once: system as a single cached text block,
     # and the last tool carrying the cache_control marker (Anthropic keys on the
@@ -633,7 +697,7 @@ async def run_browser_agent(
         "type": "text", "text": run_system_prompt,
         "cache_control": {"type": "ephemeral"},
     }]
-    _cached_tools = [dict(t) for t in browser_schema.MODEL_VISIBLE_TOOLS]
+    _cached_tools = [dict(t) for t in (APP_VISIBLE_TOOLS if app_mode else browser_schema.MODEL_VISIBLE_TOOLS)]
     if _cached_tools:
         _cached_tools[-1] = {**_cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
@@ -2277,6 +2341,9 @@ async def run_browser_agents(
         browser_id = task_def.get("browser_id", "")
         task_text = task_def.get("task", "")
         url = task_def.get("url", "")
+        # App mode: browser_id is a pre-registered app webview ("app:<output_id>");
+        # never create/reuse a browser card, never navigate (the app is loaded).
+        app_mode = bool(task_def.get("app_mode"))
         # advisory deep entry (from the fast-path brief): a NEW card opens on it
         # directly (no google detour); a REUSED card is never moved by it, so a
         # warm card's deeper page state always wins
@@ -2306,7 +2373,7 @@ async def run_browser_agents(
                         pass
             else:
                 await asyncio.sleep(2.0)
-        elif browser_id:
+        elif browser_id and not app_mode:
             _active_agent_cards.add(browser_id)
 
         is_pre_selected = browser_id in pre_selected
@@ -2318,11 +2385,13 @@ async def run_browser_agents(
                 model=model,
                 dashboard_id=dashboard_id,
                 pre_selected=is_pre_selected,
-                initial_url=_nav_url if _nav_url and browser_id not in pre_selected else None,
+                initial_url=None if app_mode else (_nav_url if _nav_url and browser_id not in pre_selected else None),
                 parent_session_id=parent_session_id,
+                app_mode=app_mode,
             )
         finally:
-            _active_agent_cards.discard(browser_id)
+            if not app_mode:
+                _active_agent_cards.discard(browser_id)
 
     results = await asyncio.gather(*[_run_one(t) for t in tasks], return_exceptions=True)
 
