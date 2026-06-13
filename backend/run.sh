@@ -53,6 +53,13 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
+# Dev-only deps (pytest + vulture for linter/lint.py). Gated on OPENSWARM_DEV
+# so packaged builds never pull these in — mirrors the --reload gating below.
+if [[ "${OPENSWARM_DEV:-}" == "1" && -f requirements-dev.txt ]]; then
+    echo "OPENSWARM_DEV=1 detected — installing dev dependencies..."
+    pip3 install -r requirements-dev.txt
+fi
+
 # --- Start the backend server ---
 # IMPORTANT: --reload-exclude must cover every path the running backend
 # itself may WRITE to. Without this, the App Builder agent writing into

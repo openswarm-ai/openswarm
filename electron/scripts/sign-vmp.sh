@@ -36,6 +36,14 @@ fi
 # Always fix symlinks first (npm git installs strip them)
 fix_framework_symlinks
 
+# Honor the dev-loop opt-out set by run.sh's EVS preflight (covers the "user
+# chose skip" and non-interactive cases). Symlinks are already repaired above;
+# we only skip the signing/auth network calls.
+if [ "${OPENSWARM_SKIP_VMP:-}" = "1" ]; then
+  echo "[vmp] OPENSWARM_SKIP_VMP=1 - skipping VMP signing (DRM limited to previews)"
+  exit 0
+fi
+
 if ! python3 -c "import castlabs_evs" 2>/dev/null; then
   echo "[vmp] castlabs-evs not installed. Install with: pip3 install --user castlabs-evs"
   echo "[vmp] Skipping VMP signing — DRM playback will be limited"

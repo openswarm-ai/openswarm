@@ -97,6 +97,61 @@ if lsof -ti :8324 >/dev/null 2>&1; then
     sleep 0.3
 fi
 
+# --- EVS / Widevine VMP auth preflight (macOS only) ---
+# DRM playback needs a CastLabs VMP signature, which needs a CastLabs EVS
+# account. Only the ACCOUNT auth is interactive, so settle it HERE, before the
+# backend/frontend background logs start streaming to this terminal (otherwise
+# the prompt interleaves with [backend] output). Hybrid model:
+#   1. Shared team account: creds from gitignored .env.evs (zero-touch, CI-friendly).
+#   2. Per-dev fallback: skippable interactive signup when no shared creds exist.
+# Once a token is cached locally, neither path prompts again. Fail-soft and fully
+# skippable; skipping only limits DRM media to previews. OPENSWARM_SKIP_VMP=1
+# silences the whole step. The actual signing still runs later via sign-vmp.sh,
+# non-interactively, because the token (or env creds) are in place by then.
+if [[ "$OSTYPE" == "darwin"* && "${OPENSWARM_SKIP_VMP:-}" != "1" ]]; then
+    # castlabs-evs reads EVS_ACCOUNT_NAME / EVS_PASSWD from the env for both
+    # reauth and sign-pkg, so sourcing the team file is all the wiring needed.
+    EVS_ENV_FILE="$PROJECT_ROOT/.env.evs"
+    [[ -f "$EVS_ENV_FILE" ]] && { set -a; source "$EVS_ENV_FILE"; set +a; }
+
+    if ! python3 -c "import castlabs_evs" 2>/dev/null; then
+        echo -e "${YELLOW}${BOLD}[vmp]${RESET}      Installing castlabs-evs (one-time)..."
+        pip3 install --user --quiet castlabs-evs 2>/dev/null || true
+    fi
+
+    # Short connect timeout so an offline dev isn't stalled 60s at boot.
+    EVS_TO=(--connect-timeout 10 --auth-timeout 10)
+    if python3 -c "import castlabs_evs" 2>/dev/null; then
+        if python3 -m castlabs_evs.account -n "${EVS_TO[@]}" refresh </dev/null >/dev/null 2>&1; then
+            # Cached token still valid: nothing to do.
+            echo -e "${YELLOW}${BOLD}[vmp]${RESET}      EVS already authenticated - DRM signing enabled."
+        elif [[ -n "${EVS_ACCOUNT_NAME:-}" && -n "${EVS_PASSWD:-}" ]]; then
+            # Path 1: shared account, fully non-interactive.
+            if python3 -m castlabs_evs.account -n "${EVS_TO[@]}" reauth </dev/null >/dev/null 2>&1; then
+                echo -e "${YELLOW}${BOLD}[vmp]${RESET}      EVS authenticated (shared account) - DRM signing enabled."
+            else
+                echo -e "${YELLOW}${BOLD}[vmp]${RESET}      EVS auth failed - check .env.evs creds. Continuing (DRM = previews)."
+            fi
+        elif [[ -t 0 ]]; then
+            # Path 2: no shared creds, interactive terminal: offer skippable signup.
+            echo ""
+            echo -e "${YELLOW}${BOLD}[vmp]${RESET}      First-time DRM signing setup (free CastLabs account, ~1 min)."
+            echo -e "${YELLOW}${BOLD}[vmp]${RESET}      Enables full DRM playback. Skip to do it later, or share a .env.evs."
+            read -r -p "      Set up now? [Enter = yes, s = skip]: " _evs_ans
+            if [[ "$_evs_ans" == "s" || "$_evs_ans" == "S" ]]; then
+                echo -e "${YELLOW}${BOLD}[vmp]${RESET}      Skipped - DRM limited to previews (OPENSWARM_SKIP_VMP=1 to silence)."
+                export OPENSWARM_SKIP_VMP=1
+            else
+                python3 -m castlabs_evs.account signup \
+                    || echo -e "${YELLOW}${BOLD}[vmp]${RESET}      Signup didn't complete - continuing without DRM signing."
+            fi
+        else
+            # No creds and no TTY (piped / CI-like): never block, just skip.
+            echo -e "${YELLOW}${BOLD}[vmp]${RESET}      No EVS creds and non-interactive shell - skipping DRM signing (previews only)."
+        fi
+    fi
+fi
+
 # --- Start backend ---
 # Mark this as a dev launch so backend/run.sh enables --reload. Packaged
 # builds never run this top-level script (Electron spawns backend
