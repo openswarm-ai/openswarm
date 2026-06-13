@@ -14,8 +14,6 @@ import time
 from datetime import datetime
 from uuid import uuid4
 
-import anthropic
-
 from backend.apps.agents.browser import browser_history
 from backend.apps.agents.browser.browser_history import (
     _MAX_HISTORY_MESSAGES,
@@ -71,9 +69,7 @@ from backend.apps.agents.browser import browser_schema
 from backend.apps.agents.browser.browser_schema import (
     _ACTION_TOOLS_REQUIRING_REPORT,
     ACTION_MAP,
-    BROWSER_TOOLS_SCHEMA,
     MAX_TURNS,
-    MODEL_MAP,
     SYSTEM_PROMPT,
 )
 from backend.apps.agents.core.models import AgentSession, ApprovalRequest, Message

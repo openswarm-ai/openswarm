@@ -13,17 +13,7 @@ from typing import Any, TYPE_CHECKING
 
 from .openrouter import (
     _OPENROUTER_VALUE_PREFIX,
-    fetch_openrouter_models,
-    get_direct_pricing,
-    get_openrouter_pricing,
-    invalidate_openrouter_cache,
 )
-from .pricing import (
-    compute_billing_kind,
-    compute_tiers,
-    _heuristic_tiers,
-)
-from .thinking import thinking_params_for
 
 if TYPE_CHECKING:
     from backend.apps.settings.models import AppSettings
@@ -372,7 +362,7 @@ async def resolve_aux_model(
     )
 
 
-def get_context_window(provider: str, model: str, settings: AppSettings | None = None) -> int:
+def get_context_window(model: str, settings: AppSettings | None = None) -> int:
     """Look up context window for any model."""
     # Check built-in models first
     for models in BUILTIN_MODELS.values():

@@ -11,9 +11,6 @@ from backend.apps.dashboards.models import (
     DashboardCreate,
     DashboardUpdate,
     DashboardLayout,
-    CardPosition,
-    ViewCardPosition,
-    BrowserCardPosition,
 )
 from fastapi import HTTPException
 
@@ -142,7 +139,6 @@ async def create_dashboard(body: DashboardCreate):
 @dashboards.router.post("/{dashboard_id}/seed-demo")
 async def seed_demo(dashboard_id: str):
     """Create a pre-populated demo session for onboarding."""
-    dashboard = _load(dashboard_id)
 
     session_id = uuid4().hex
     now = datetime.now()

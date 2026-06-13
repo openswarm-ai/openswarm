@@ -90,7 +90,6 @@ def _find_9router_dir() -> str | None:
     _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
 
     if _is_packaged:
-        import sys
         _resources = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         _candidate = os.path.join(_resources, "router")
         if os.path.isdir(_candidate):

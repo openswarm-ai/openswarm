@@ -25,10 +25,7 @@ from backend.apps.tools_lib.tools_lib import (
     refresh_hubspot_token,
     save_trusted_sensitive_paths,
 )
-from backend.config.paths import SESSIONS_DIR
 from backend.apps.agents.core.error_classify import (
-    _NON_TRANSIENT_PATTERNS,
-    _TRANSIENT_CAPACITY_PATTERNS,
     _is_auth_error,
     _is_free_trial_exhausted,
     _is_long_context_error,
@@ -315,8 +312,6 @@ class AgentManager:
         )
         _apply_context_window(session, global_settings)
         self.sessions[session_id] = session
-
-        from backend.apps.service.version import APP_VERSION
 
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
@@ -750,7 +745,7 @@ class AgentManager:
             })
             return decision
 
-        async def can_use_tool(tool_name, input_data, context):
+        async def can_use_tool(tool_name, input_data):
             sensitive_pattern: str | None = None
             if tool_name != "AskUserQuestion":
                 policy, sensitive_pattern = _maybe_override_policy(
@@ -772,7 +767,7 @@ class AgentManager:
 
         tool_start_times: dict[str, float] = {}
 
-        async def pre_tool_hook(input_data, tool_use_id, context):
+        async def pre_tool_hook(input_data, tool_use_id):
             tool_name = input_data.get("tool_name", "")
             hook_event = input_data.get("hook_event_name", "PreToolUse")
 
@@ -815,7 +810,7 @@ class AgentManager:
                 tool_start_times[tool_use_id] = time.time()
             return {}
 
-        async def post_tool_hook(input_data, tool_use_id, context):
+        async def post_tool_hook(input_data, tool_use_id):
             elapsed_ms = None
             if tool_use_id and tool_use_id in tool_start_times:
                 elapsed_ms = int((time.time() - tool_start_times.pop(tool_use_id)) * 1000)
@@ -1645,29 +1640,11 @@ class AgentManager:
                     }
                 # Pin subagent ids to whichever lane the user has, else CLI's
                 # default Haiku 4.5 hits 9Router with no Claude route and 401s.
-                try:
-                    _sub_conns = _conns  # reuse list fetched above
-                except NameError:
-                    _sub_conns = []
-                _active = {c.get("provider") for c in _sub_conns
-                           if isinstance(c, dict) and c.get("isActive")}
                 _sub_model = None
                 _small_model = None
                 if global_settings.anthropic_api_key:
                     _sub_model = "claude-sonnet-4-6"
                     _small_model = "claude-haiku-4-5-20251001"
-                elif "claude" in _active or "anthropic" in _active:
-                    _sub_model = "cc/claude-sonnet-4-6"
-                    _small_model = "cc/claude-haiku-4-5-20251001"
-                elif "antigravity" in _active:
-                    _sub_model = "ag/gemini-3-flash"
-                    _small_model = "ag/gemini-3-flash"
-                elif "gemini-cli" in _active:
-                    _sub_model = "gc/gemini-2.5-flash"
-                    _small_model = "gc/gemini-2.5-flash"
-                elif "codex" in _active:
-                    _sub_model = "cx/gpt-5.4-mini"
-                    _small_model = "cx/gpt-5.4-mini"
                 if _sub_model:
                     env["CLAUDE_CODE_SUBAGENT_MODEL"] = _sub_model
                 if _small_model:
@@ -3281,7 +3258,6 @@ class AgentManager:
         prompt: str,
         mode: str | None = None,
         model: str | None = None,
-        provider: str | None = None,
         images: list | None = None,
         context_paths: list | None = None,
         forced_tools: list[str] | None = None,
@@ -4079,14 +4055,6 @@ class AgentManager:
 
         session = AgentSession(**data)
         _apply_context_window(session)
-
-        hours_since_closed = 0
-        if data.get("closed_at"):
-            try:
-                closed = datetime.fromisoformat(data["closed_at"][:19])
-                hours_since_closed = round((datetime.now() - closed).total_seconds() / 3600, 1)
-            except Exception:
-                pass
 
         session.closed_at = None
         self.sessions[session_id] = session

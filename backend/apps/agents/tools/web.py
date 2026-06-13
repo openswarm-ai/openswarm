@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import html
 import re
-from typing import Any
 
 import httpx
 
-from backend.apps.agents.tools.base import BaseTool, ToolContext
+from backend.apps.agents.tools.base import BaseTool
 from backend.apps.agents.tools.ssrf_guard import SSRFBlocked, safe_fetch
 
 _HTTP_TIMEOUT = 30
@@ -89,7 +88,7 @@ class WebSearchTool(BaseTool):
             "additionalProperties": False,
         }
 
-    async def execute(self, input_data: dict, context: ToolContext) -> list[dict]:
+    async def execute(self, input_data: dict) -> list[dict]:
         query: str = input_data["query"]
         num_results: int = input_data.get("num_results", 5)
 
@@ -210,7 +209,7 @@ class WebFetchTool(BaseTool):
             "additionalProperties": False,
         }
 
-    async def execute(self, input_data: dict, context: ToolContext) -> list[dict]:
+    async def execute(self, input_data: dict) -> list[dict]:
         url: str = input_data["url"]
         prompt: str | None = input_data.get("prompt")
 

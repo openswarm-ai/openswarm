@@ -1,12 +1,9 @@
 from backend.config.Apps import SubApp
 from backend.apps.agents.agent_manager import agent_manager
-from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.core.models import AgentConfig, ApprovalResponse
 from contextlib import asynccontextmanager
-from fastapi import WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import HTTPException
 import asyncio
-import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -547,7 +544,9 @@ async def list_models():
     def _serialize(models: list[dict]) -> list[dict]:
         # Tiers describe the model; billing_kind describes the wallet. Pricing shown only for paid.
         from backend.apps.agents.providers.registry import (
-            COST_PER_1M_TOKENS,
+            COST_PER_1M_TOKENS
+        )
+        from backend.apps.agents.providers.pricing import (
             compute_tiers,
             compute_billing_kind,
         )
@@ -645,6 +644,8 @@ async def list_models():
     has_openrouter_key = bool(getattr(settings, "openrouter_api_key", None))
     from backend.apps.agents.providers.registry import (
         COST_PER_1M_TOKENS as _CPM,
+    )
+    from backend.apps.agents.providers.pricing import (
         compute_tiers as _ct_native,
         compute_billing_kind as _cbk_native,
     )

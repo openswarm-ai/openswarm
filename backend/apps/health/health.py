@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi.responses import PlainTextResponse
 from typeguard import typechecked
 import debug
-from fastapi import status, HTTPException
+from fastapi import status
 
 @asynccontextmanager
 async def health_lifespan():

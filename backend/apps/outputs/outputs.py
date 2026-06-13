@@ -23,7 +23,6 @@ from backend.apps.settings.settings import load_settings
 from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR as WORKSPACE_DIR
 from backend.apps.outputs.html_inject import (
     MODEL_MAP,
-    _resolve_model,
     _get_anthropic_client,
     _validate_against_schema,
     _build_data_injection,

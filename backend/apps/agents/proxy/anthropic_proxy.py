@@ -96,7 +96,6 @@ def _rewrite_document_to_openai_file(parsed: dict) -> None:
     msgs = parsed.get("messages") if isinstance(parsed, dict) else None
     if not isinstance(msgs, list):
         return
-    counter = 0
     for m in msgs:
         content = m.get("content") if isinstance(m, dict) else None
         if not isinstance(content, list):
