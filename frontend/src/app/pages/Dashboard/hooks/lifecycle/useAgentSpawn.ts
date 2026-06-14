@@ -205,7 +205,12 @@ export function useAgentSpawn({
               (s) => s.status !== 'draft' && s.dashboard_id === dashboardId,
             ).length;
             const NAME_GEN_TRIGGERS = [1, 3, 6];
-            if (NAME_GEN_TRIGGERS.includes(agentCount)) {
+            const currentDash = store.getState().dashboards.items[dashboardId];
+            const canAutoName =
+              currentDash &&
+              (currentDash.auto_named || currentDash.name === 'Untitled Dashboard');
+
+            if (NAME_GEN_TRIGGERS.includes(agentCount) && canAutoName) {
               dispatch(generateDashboardName(dashboardId));
             }
           }

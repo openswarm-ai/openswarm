@@ -143,7 +143,7 @@ def test_migration_survives_corrupt_session(tmp_path, monkeypatch):
     (sess_dir / "good.json").write_text(json.dumps({"id": "good"}))
     (sess_dir / "bad.json").write_text("{ truncated ,,,")
 
-    dmod.migrate_if_needed()  # must not raise despite the corrupt session
+    dmod._migrate_if_needed()  # must not raise despite the corrupt session
 
     dashboards = dmod._load_all()
     assert len(dashboards) == 1
