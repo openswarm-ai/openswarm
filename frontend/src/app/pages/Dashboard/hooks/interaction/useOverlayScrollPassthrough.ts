@@ -22,6 +22,8 @@ export function useOverlayScrollPassthrough(active: boolean) {
         dy *= 20;
       }
 
+      const horizontalDominant = Math.abs(dx) > Math.abs(dy);
+
       let node = underneath as HTMLElement | null;
       while (node) {
         if (node.tagName === 'WEBVIEW') {
@@ -51,6 +53,14 @@ export function useOverlayScrollPassthrough(active: boolean) {
         const canScrollX =
           node.scrollWidth > node.clientWidth &&
           (cs.overflowX === 'auto' || cs.overflowX === 'scroll');
+
+        // Horizontal-dominant gesture over a vertically-only scrollable
+        // container: don't absorb it (scrollBy with dx would be a no-op).
+        // Let it bubble to the canvas wheel handler so the canvas pans.
+        if (horizontalDominant && !canScrollX) {
+          node = node.parentElement;
+          continue;
+        }
 
         if (canScrollY || canScrollX) {
           e.stopPropagation();

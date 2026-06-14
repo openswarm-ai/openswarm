@@ -136,46 +136,142 @@ try {
     }
   });
 
+  // When the host marks this webview as "interactive" (user clicked into the
+  // app), the preload stops forwarding wheel/middle gestures to the canvas
+  // and lets the app handle everything. Host pushes via webview.send.
+  let isInteractive = false;
+  try {
+    ipcRenderer.on('openswarm:set-interactive', (_event, payload) => {
+      isInteractive = !!(payload && payload.interactive);
+    });
+  } catch (_) {}
+
+  // First in-guest mousedown tells the host to activate interact mode. Never
+  // preventDefault so the click still reaches the app (Minecraft etc).
+  const onMouseDownNotify = (e) => {
+    if (isInteractive) return;
+    try { ipcRenderer.sendToHost('app-clicked', { button: e.button }); } catch (_) {}
+  };
+  window.addEventListener('mousedown', onMouseDownNotify, { capture: true });
+
   // ---------------------------------------------------------------------------
-  // Canvas zoom passthrough (ctrl/meta + wheel)
+  // Horizontal scroll passthrough to canvas pan
   //
-  // A <webview> is an out-of-process Chromium guest; wheel events that
-  // originate inside it never bubble to the embedding renderer. Without
-  // intercepting here, ctrl+wheel over a browser card just zooms the
-  // embedded page (Chromium's default) and the dashboard canvas never
-  // sees the gesture — issue #27.
-  //
-  // Capture-phase + passive:false so we run before the page's own listeners
-  // and can preventDefault to suppress the in-page page-zoom. We then
-  // forward the gesture (deltaY + guest-local cursor coords) to the host
-  // via sendToHost; BrowserCard's ipc-message handler turns it back into a
-  // synthetic WheelEvent dispatched from the webview element, which bubbles
-  // naturally to useCanvasControls' wheel listener.
+  // <webview> is an out-of-process guest; wheel events inside it never bubble
+  // to the embedding renderer. Vertical scroll and ctrl/meta+wheel zoom stay
+  // with the page (chromium default). A horizontal-dominant gesture, however,
+  // should pan the dashboard canvas if the guest page has nothing horizontal
+  // to scroll, to match the behavior over chat panels (which never have a
+  // horizontal scroller and always pan the canvas).
+  const pageCanScrollX = (node, dx) => {
+    let t = node;
+    while (t) {
+      const sw = t.scrollWidth || 0;
+      const cw = t.clientWidth || 0;
+      if (sw > cw) {
+        let style;
+        try { style = getComputedStyle(t); } catch (_) {}
+        const ox = style ? style.overflowX : 'visible';
+        if (ox === 'auto' || ox === 'scroll') {
+          const atRight = t.scrollLeft + cw >= sw - 1;
+          const atLeft = t.scrollLeft <= 1;
+          const atBoundary = (dx > 0 && atRight) || (dx < 0 && atLeft);
+          if (!atBoundary) return true;
+        }
+      }
+      t = t.parentElement;
+    }
+    const docEl = document.scrollingElement || document.documentElement;
+    if (docEl && docEl.scrollWidth > docEl.clientWidth) {
+      const atRight = docEl.scrollLeft + docEl.clientWidth >= docEl.scrollWidth - 1;
+      const atLeft = docEl.scrollLeft <= 1;
+      const atBoundary = (dx > 0 && atRight) || (dx < 0 && atLeft);
+      if (!atBoundary) return true;
+    }
+    return false;
+  };
+
   const onWheelCapture = (e) => {
-    if (!(e.ctrlKey || e.metaKey)) return;
+    if (isInteractive) return;
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      const iw = window.innerWidth || 1;
+      const ih = window.innerHeight || 1;
+      try {
+        ipcRenderer.sendToHost('canvas-wheel-zoom', {
+          deltaY: e.deltaY,
+          deltaMode: e.deltaMode,
+          fracX: Math.max(0, Math.min(1, e.clientX / iw)),
+          fracY: Math.max(0, Math.min(1, e.clientY / ih)),
+        });
+      } catch (_) {}
+      return;
+    }
+    // Vertical-dominant scroll stays with the page.
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    // Horizontal-dominant: defer to the page if anything inside can absorb
+    // it; otherwise forward to the host as a canvas pan.
+    if (pageCanScrollX(e.target, e.deltaX)) return;
     e.preventDefault();
     e.stopPropagation();
     try {
-      console.warn('[openswarm:webview-preload] ctrl+wheel intercept → sendToHost', {
-        deltaY: e.deltaY,
-        clientX: e.clientX,
-        clientY: e.clientY,
-      });
-      ipcRenderer.sendToHost('canvas-wheel-zoom', {
+      ipcRenderer.sendToHost('canvas-wheel-pan', {
+        deltaX: e.deltaX,
         deltaY: e.deltaY,
         deltaMode: e.deltaMode,
-        clientX: e.clientX,
-        clientY: e.clientY,
       });
-    } catch (err) {
-      console.warn('[openswarm:webview-preload] sendToHost failed', err);
-    }
+    } catch (_) {}
   };
   // Listen on both window and document in capture phase so we run before any
   // page-level handler that might swallow the event. passive:false is required
   // to call preventDefault on a wheel event.
   window.addEventListener('wheel', onWheelCapture, { capture: true, passive: false });
   document.addEventListener('wheel', onWheelCapture, { capture: true, passive: false });
+
+  // ---------------------------------------------------------------------------
+  // Middle-mouse-button drag → canvas pan
+  //
+  // Empty canvas and agent cards already get middle-button pan because the
+  // event bubbles to the dashboard's mousedown handler. <webview> is a
+  // separate compositor layer that eats mouse events, so middle-drag over a
+  // browser silently did nothing. Intercept here and forward the per-event
+  // movement as a pan delta through the existing canvas-wheel-pan channel
+  // (negated, since drag pans panX += dx while wheel pans panX -= dx).
+  // Always pans regardless of capture state — middle-drag is unambiguously
+  // a canvas gesture.
+  let middleDragging = false;
+  const onMouseDownMiddle = (e) => {
+    if (isInteractive) return;
+    if (e.button !== 1) return;
+    e.preventDefault();
+    e.stopPropagation();
+    middleDragging = true;
+  };
+  const onMouseMoveMiddle = (e) => {
+    if (!middleDragging) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const dx = e.movementX || 0;
+    const dy = e.movementY || 0;
+    if (dx === 0 && dy === 0) return;
+    try {
+      ipcRenderer.sendToHost('canvas-wheel-pan', { deltaX: -dx, deltaY: -dy, deltaMode: 0 });
+    } catch (_) {}
+  };
+  const onMouseUpMiddle = (e) => {
+    if (e.button !== 1) return;
+    middleDragging = false;
+  };
+  // Chromium starts auxiliary-scroll on middle-click; auxclick prevents that.
+  const onAuxClickSuppress = (e) => {
+    if (isInteractive) return;
+    if (e.button === 1) { e.preventDefault(); e.stopPropagation(); }
+  };
+  window.addEventListener('mousedown', onMouseDownMiddle, { capture: true });
+  window.addEventListener('mousemove', onMouseMoveMiddle, { capture: true });
+  window.addEventListener('mouseup', onMouseUpMiddle, { capture: true });
+  window.addEventListener('auxclick', onAuxClickSuppress, { capture: true });
 
   // ---------------------------------------------------------------------------
   // Double-click to fit the browser card (parity with agent-chat dblclick).

@@ -55,6 +55,10 @@ interface Props {
   onConsoleMessage?: (level: string, text: string) => void;
   /** Fires once the embedded app has actually painted, so cold-start placeholders don't unmount during the vite-ready to first-paint gap. */
   onContentLoad?: () => void;
+  /** True when the user has clicked into the app; preload stops forwarding canvas gestures and lets the app handle all events. */
+  interactive?: boolean;
+  /** Fired when the preload reports a mousedown inside the guest, so the host can flip the card into interactive mode. */
+  onAppClicked?: () => void;
 }
 
 function buildSrcdoc(
@@ -92,6 +96,8 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
   style,
   onConsoleMessage,
   onContentLoad,
+  interactive = false,
+  onAppClicked,
 }, ref) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const webviewRef = useRef<any>(null);
@@ -219,22 +225,72 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
     }
   }, [srcdoc, useWebview]);
 
-  // Forward webview-console events (preload wraps console.*) to onConsoleMessage; iframe path has no equivalent.
+  // Listen for preload IPC: console forwarding, canvas wheel forwarding
+  // (matches BrowserCard so apps share the same dashboard pan/zoom defaults),
+  // and the app-clicked notification that flips the card into interact mode.
   useEffect(() => {
-    if (!useWebview || !onConsoleMessage) return;
+    if (!useWebview) return;
     const wv = webviewRef.current;
     if (!wv) return;
     const handler = (e: any) => {
-      if (e?.channel !== 'webview-console') return;
-      const arg = Array.isArray(e.args) ? e.args[0] : undefined;
-      if (!arg) return;
-      onConsoleMessage(arg.level || 'log', arg.text || '');
+      if (e?.channel === 'webview-console') {
+        if (!onConsoleMessage) return;
+        const arg = Array.isArray(e.args) ? e.args[0] : undefined;
+        if (!arg) return;
+        onConsoleMessage(arg.level || 'log', arg.text || '');
+        return;
+      }
+      if (e?.channel === 'canvas-wheel-zoom') {
+        const payload = e.args?.[0] || {};
+        const wvRect = wv.getBoundingClientRect();
+        const fx = typeof payload.fracX === 'number' ? payload.fracX : 0.5;
+        const fy = typeof payload.fracY === 'number' ? payload.fracY : 0.5;
+        window.dispatchEvent(
+          new CustomEvent('openswarm:canvas-wheel-zoom', {
+            detail: {
+              deltaY: payload.deltaY ?? 0,
+              deltaMode: payload.deltaMode ?? 0,
+              clientX: wvRect.left + fx * wvRect.width,
+              clientY: wvRect.top + fy * wvRect.height,
+            },
+          }),
+        );
+        return;
+      }
+      if (e?.channel === 'canvas-wheel-pan') {
+        const payload = e.args?.[0] || {};
+        window.dispatchEvent(
+          new CustomEvent('openswarm:canvas-wheel-pan', {
+            detail: {
+              deltaX: payload.deltaX ?? 0,
+              deltaY: payload.deltaY ?? 0,
+              deltaMode: payload.deltaMode ?? 0,
+            },
+          }),
+        );
+        return;
+      }
+      if (e?.channel === 'app-clicked') {
+        onAppClicked?.();
+        return;
+      }
     };
     wv.addEventListener?.('ipc-message', handler);
     return () => {
       try { wv.removeEventListener?.('ipc-message', handler); } catch (_e) {}
     };
-  }, [useWebview, onConsoleMessage, iframeSrc]);
+  }, [useWebview, onConsoleMessage, onAppClicked, iframeSrc]);
+
+  // Mirror `interactive` into a ref so the once-per-load did-finish-load
+  // listener can read the latest value when it pushes initial state.
+  const interactiveRef = useRef(interactive);
+  interactiveRef.current = interactive;
+  useEffect(() => {
+    if (!useWebview) return;
+    const wv = webviewRef.current;
+    if (!wv) return;
+    try { wv.send?.('openswarm:set-interactive', { interactive }); } catch (_e) {}
+  }, [useWebview, interactive]);
 
   // Webviews use did-finish-load instead of onLoad; did-fail-load retries with 500ms to 5s backoff (Vite may not have bound yet when frontend_url arrives).
   useEffect(() => {
@@ -256,6 +312,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
       retryDelay = 500;
       cancelRetry();
       handleNavigationLoad();
+      try { wv.send?.('openswarm:set-interactive', { interactive: interactiveRef.current }); } catch (_) {}
     };
     const onFail = (e: any) => {
       // Guard on isMainFrame (subresource 404s fire too) and ERR_ABORTED (user-cancel).

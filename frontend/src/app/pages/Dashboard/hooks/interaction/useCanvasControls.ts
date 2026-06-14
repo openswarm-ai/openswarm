@@ -261,6 +261,15 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
           // Re-read scrollHeight/clientHeight; cached decision is structural, scroll position is dynamic.
           const canScrollY = target.scrollHeight > target.clientHeight;
           const canScrollX = target.scrollWidth > target.clientWidth;
+
+          // Horizontal-dominant gestures over a container that only scrolls
+          // vertically (e.g., chat) should pan the canvas instead of being
+          // silently absorbed by the child's no-op horizontal handling.
+          if (Math.abs(dx) > Math.abs(dy) && !canScrollX) {
+            target = target.parentElement;
+            continue;
+          }
+
           const atYBoundary = !canScrollY ||
             (dy > 0 && target.scrollTop + target.clientHeight >= target.scrollHeight - 1) ||
             (dy < 0 && target.scrollTop <= 1);
@@ -302,11 +311,6 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
 
     el.addEventListener('wheel', onWheel, { passive: false });
 
-    // ctrl/meta+wheel events that originate inside an Electron <webview>
-    // never bubble out of the guest into the host DOM, so the wheel
-    // listener above can't see them. BrowserCard's preload-bridge
-    // forwards those gestures via this CustomEvent (issue #27); we run
-    // the same zoom-around-cursor math the wheel handler uses.
     const onForwardedZoom = (e: Event) => {
       const detail = (e as CustomEvent).detail || {};
       const dy = detail.deltaMode === 1 ? detail.deltaY * 40 : detail.deltaY;
@@ -324,9 +328,27 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     };
     window.addEventListener('openswarm:canvas-wheel-zoom', onForwardedZoom);
 
+    // Plain wheel inside a webview can't bubble out either; the preload
+    // forwards horizontal-dominant scrolls as a pan when the guest page
+    // has nothing to scroll horizontally, plus middle-mouse drag deltas.
+    const onForwardedPan = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      const dy = detail.deltaMode === 1 ? (detail.deltaY ?? 0) * 40 : (detail.deltaY ?? 0);
+      const dx = detail.deltaMode === 1 ? (detail.deltaX ?? 0) * 40 : (detail.deltaX ?? 0);
+      if (inertiaFrameRef.current) {
+        cancelAnimationFrame(inertiaFrameRef.current);
+        inertiaFrameRef.current = null;
+      }
+      pendingPanDx += dx;
+      pendingPanDy += dy;
+      scheduleWheelFlush();
+    };
+    window.addEventListener('openswarm:canvas-wheel-pan', onForwardedPan);
+
     return () => {
       el.removeEventListener('wheel', onWheel);
       window.removeEventListener('openswarm:canvas-wheel-zoom', onForwardedZoom);
+      window.removeEventListener('openswarm:canvas-wheel-pan', onForwardedPan);
       if (wheelRafId != null) cancelAnimationFrame(wheelRafId);
       if (wheelIdleTimer != null) clearTimeout(wheelIdleTimer);
       // Don't leave the flag stuck on if the canvas unmounts mid-gesture.

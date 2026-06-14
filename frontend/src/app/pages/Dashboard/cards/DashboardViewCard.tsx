@@ -9,8 +9,8 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CloseIcon from '@mui/icons-material/Close';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import { Output, SERVE_BASE } from '@/shared/state/outputsSlice';
-import { setViewCardPosition, setViewCardSize, removeViewCard } from '@/shared/state/dashboardLayoutSlice';
-import { useAppDispatch } from '@/shared/hooks';
+import { setViewCardPosition, setViewCardSize, removeViewCard, setActiveViewCardId } from '@/shared/state/dashboardLayoutSlice';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { API_BASE, getAuthToken } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ViewPreview, { ViewPreviewHandle } from '@/app/pages/Views/ViewPreview';
@@ -75,6 +75,23 @@ const DashboardViewCard: React.FC<Props> = ({
   const dispatch = useAppDispatch();
   const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
   const previewRef = useRef<ViewPreviewHandle>(null);
+  const activeViewCardId = useAppSelector((s) => s.dashboardLayout.activeViewCardId);
+  const interactive = activeViewCardId === output.id;
+
+  // Deselecting the card exits interact mode (click anywhere else on canvas).
+  useEffect(() => {
+    if (!isSelected && interactive) dispatch(setActiveViewCardId(null));
+  }, [isSelected, interactive, dispatch]);
+
+  // Escape exits interact mode.
+  useEffect(() => {
+    if (!interactive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') dispatch(setActiveViewCardId(null));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [interactive, dispatch]);
 
   const [inputData] = useState<Record<string, any>>(() => getDefault(output.input_schema));
   const [backendResult] = useState<Record<string, any> | null>(null);
@@ -288,7 +305,9 @@ const DashboardViewCard: React.FC<Props> = ({
         borderRadius: `${c.radius.lg}px`,
         border: isHighlighted
           ? `2px solid ${c.accent.primary}`
-          : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`,
+          : interactive
+            ? `2px solid ${c.accent.primary}`
+            : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`,
         bgcolor: c.bg.surface,
         boxShadow: isHighlighted
           ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
@@ -406,6 +425,8 @@ const DashboardViewCard: React.FC<Props> = ({
           output={output}
           inputData={inputData}
           backendResult={backendResult}
+          interactive={interactive}
+          onAppClicked={() => dispatch(setActiveViewCardId(output.id))}
         />
       </Box>
 
@@ -487,7 +508,9 @@ const DashboardOutputPreview: React.FC<{
   output: Output;
   inputData: Record<string, any>;
   backendResult: any;
-}> = ({ previewRef, output, inputData, backendResult }) => {
+  interactive: boolean;
+  onAppClicked: () => void;
+}> = ({ previewRef, output, inputData, backendResult, interactive, onAppClicked }) => {
   const tokens = useClaudeTokens();
   const dispatch = useAppDispatch();
   const workspaceId = output.workspace_id ?? null;
@@ -587,6 +610,8 @@ const DashboardOutputPreview: React.FC<{
       frontendCode={output.files?.['index.html'] ?? ''}
       inputData={inputData}
       backendResult={backendResult}
+      interactive={interactive}
+      onAppClicked={onAppClicked}
     />
   );
 };
