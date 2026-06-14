@@ -80,7 +80,7 @@ async def send_message(session_id: str, body: dict):
 
         async def _emit_preflight():
             try:
-                result = await run_preflight(prompt)
+                result = await run_preflight(prompt, task_id=session_id)
                 if result.get("suggestions") or result.get("is_vague"):
                     await _ws.send_to_session(session_id, "agent:mcp_suggestions", {
                         "session_id": session_id,

@@ -85,7 +85,7 @@ def _is_obviously_local(prompt: str) -> bool:
     return False
 
 
-async def run_preflight(prompt: str, timeout_s: float = 2.0) -> dict:
+async def run_preflight(prompt: str, timeout_s: float = 2.0, task_id: str | None = None) -> dict:
     """Classify the prompt and return {is_vague, suggestions}; never raises."""
     default: dict[str, Any] = {"is_vague": False, "suggestions": []}
 
@@ -100,7 +100,7 @@ async def run_preflight(prompt: str, timeout_s: float = 2.0) -> dict:
         available = _build_available_shortlist(settings)
 
         result = await asyncio.wait_for(
-            _call_classifier(settings, prompt, available),
+            _call_classifier(settings, prompt, available, task_id),
             timeout=timeout_s,
         )
         # Re-validate ids against the curated shortlist so hallucinations can't reach the frontend.
@@ -151,7 +151,7 @@ def _decorate(llm_suggestion: dict, available: list[CuratedEntry]) -> dict | Non
     }
 
 
-async def _call_classifier(settings, prompt: str, available: list[CuratedEntry]) -> dict:
+async def _call_classifier(settings, prompt: str, available: list[CuratedEntry], task_id: str | None = None) -> dict:
     """One aux-model call, returns validated JSON {is_vague, suggestions}."""
     aux_model, _base = await resolve_aux_model(settings, preferred_tier="haiku")
     client = get_anthropic_client_for_model(settings, aux_model)
@@ -191,6 +191,8 @@ async def _call_classifier(settings, prompt: str, available: list[CuratedEntry])
         max_tokens=300,
         system=system,
         messages=[{"role": "user", "content": user_turn}],
+        # Rides on its query's free-trial run instead of opening its own; ignored off the free lane.
+        extra_headers={"X-Openswarm-Task-Id": task_id} if task_id else {},
     )
 
     text = ""
