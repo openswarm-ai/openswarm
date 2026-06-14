@@ -136,6 +136,24 @@ try {
     }
   });
 
+  // When the host marks this webview as "interactive" (user clicked into the
+  // app), the preload stops forwarding wheel/middle gestures to the canvas
+  // and lets the app handle everything. Host pushes via webview.send.
+  let isInteractive = false;
+  try {
+    ipcRenderer.on('openswarm:set-interactive', (_event, payload) => {
+      isInteractive = !!(payload && payload.interactive);
+    });
+  } catch (_) {}
+
+  // First in-guest mousedown tells the host to activate interact mode. Never
+  // preventDefault so the click still reaches the app (Minecraft etc).
+  const onMouseDownNotify = (e) => {
+    if (isInteractive) return;
+    try { ipcRenderer.sendToHost('app-clicked', { button: e.button }); } catch (_) {}
+  };
+  window.addEventListener('mousedown', onMouseDownNotify, { capture: true });
+
   // ---------------------------------------------------------------------------
   // Horizontal scroll passthrough to canvas pan
   //
@@ -174,6 +192,7 @@ try {
   };
 
   const onWheelCapture = (e) => {
+    if (isInteractive) return;
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
@@ -223,6 +242,7 @@ try {
   // a canvas gesture.
   let middleDragging = false;
   const onMouseDownMiddle = (e) => {
+    if (isInteractive) return;
     if (e.button !== 1) return;
     e.preventDefault();
     e.stopPropagation();
@@ -245,6 +265,7 @@ try {
   };
   // Chromium starts auxiliary-scroll on middle-click; auxclick prevents that.
   const onAuxClickSuppress = (e) => {
+    if (isInteractive) return;
     if (e.button === 1) { e.preventDefault(); e.stopPropagation(); }
   };
   window.addEventListener('mousedown', onMouseDownMiddle, { capture: true });
