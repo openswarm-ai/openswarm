@@ -6,11 +6,17 @@ import { ArrowLeft } from 'lucide-react';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { STARTER_CATEGORIES } from '@/shared/starterCategories';
 
-const GREETING = "Hi, I'm your AI team. What do you want done?";
+// Reads like a real chat welcome: a heading that types in, then a warm intro that leans on what
+// only OpenSwarm can do (act right on your laptop), then the quick-reply chips. No em-dashes.
+const HEADING = "Hi, I'm OpenSwarm, your personal AI team.";
+const BODY =
+  "I can do just about anything right on your laptop, so bring me anything: a tough problem, " +
+  "a half-formed idea, something you need to write. We'll figure it out together. " +
+  'Where do you want to start?';
 
 // One-shot typewriter for a fixed string (no infinite loop; stops at the end). startDelayMs
 // holds the start so the header title can stream first (sequential reveal).
-function useTypewriter(text: string, speedMs = 45, startDelayMs = 0): { shown: string; done: boolean } {
+function useTypewriter(text: string, speedMs = 38, startDelayMs = 0): { shown: string; done: boolean } {
   const [shown, setShown] = React.useState('');
   React.useEffect(() => {
     setShown('');
@@ -28,17 +34,15 @@ function useTypewriter(text: string, speedMs = 45, startDelayMs = 0): { shown: s
   return { shown, done: shown.length >= text.length };
 }
 
-// The first-run welcome: the greeting streams in like typing, then the quick-reply chips
-// pop in (staggered). Two-level: category -> concrete prompts. Research/Write/Learn -> onPick
-// (real run); Build -> onPickBuilder (App Builder). Pure UI; no run until the parent fires.
+// First-run welcome. Two-level chips: category -> concrete prompts. Research/Write/Learn ->
+// onPick (real run); Build -> onPickBuilder (App Builder). Pure UI; no run until the parent fires.
 const WelcomeQuickReplies: React.FC<{
   c: ClaudeTokens;
   onPick: (prompt: string) => void;
   onPickBuilder: (prompt: string) => void;
 }> = ({ c, onPick, onPickBuilder }) => {
-  // Sequence: card pops, the header title streams, THEN the greeting types out, THEN the chips
-  // slide in. Brisk but smooth.
-  const { shown: greeting, done: greetingDone } = useTypewriter(GREETING, 42, 450);
+  // Sequence: card pops, header title streams, heading types, THEN body + chips slide in.
+  const { shown: heading, done: headingDone } = useTypewriter(HEADING, 38, 450);
   const [expanded, setExpanded] = React.useState<string | null>(null);
   const currentCategory = STARTER_CATEGORIES.find((cat) => cat.id === expanded);
   const isAppBuilder = currentCategory?.target === 'app-builder';
@@ -50,48 +54,36 @@ const WelcomeQuickReplies: React.FC<{
   };
 
   return (
-    <Box sx={{ px: 1.5, pt: 1.5, pb: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-      {/* Greeting bubble, typed out like a real reply. */}
-      <Box
-        sx={{
-          maxWidth: '88%',
-          px: 1.6, py: 1.1, mb: 1.8,
-          borderRadius: '4px 14px 14px 14px',
-          border: `1px solid ${c.border.subtle}`,
-          background: c.bg.surface,
-          color: c.text.primary,
-          fontSize: '0.98rem',
-          minHeight: '1.4rem',
-        }}
-      >
-        {greeting}
-      </Box>
+    <Box sx={{ px: 2.2, pt: 2.2, pb: 1.2, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+      <Typography sx={{ fontSize: '1.18rem', fontWeight: 600, color: c.text.primary, mb: 1, minHeight: '1.7rem', lineHeight: 1.4 }}>
+        {heading}
+      </Typography>
 
-      {/* The chips block slides up + fades in once the greeting finishes (the outer motion.div),
-          then each chip springs in staggered (inner). */}
-      {greetingDone && (
+      {/* Body + chips slide up + fade in once the heading finishes. */}
+      {headingDone && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-          style={{ width: '100%', alignSelf: 'stretch' }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
         >
+          <Typography sx={{ fontSize: '0.96rem', color: c.text.secondary, lineHeight: 1.6, mb: 2.4 }}>
+            {BODY}
+          </Typography>
+
           <AnimatePresence mode="wait" initial={false}>
             {expanded === null ? (
               <motion.div key="categories" initial={false} style={{ display: 'flex', flexDirection: 'column' }}>
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
-                  <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem', mb: 1 }}>
-                    pick one, or just type below
-                  </Typography>
-                </motion.div>
+                <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem', mb: 1.1 }}>
+                  pick one, or just type below
+                </Typography>
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
                   {STARTER_CATEGORIES.map((cat, i) => (
                     <motion.button
                       key={cat.id}
                       onClick={() => setExpanded(cat.id)}
-                      initial={{ opacity: 0, scale: 0.85 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ type: 'spring', stiffness: 480, damping: 24, delay: 0.12 + i * 0.08 }}
+                      initial={{ opacity: 0, scale: 0.86, y: 6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      transition={{ type: 'spring', stiffness: 360, damping: 24, delay: 0.25 + i * 0.13 }}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 8,
                         padding: '10px 14px',
@@ -137,9 +129,9 @@ const WelcomeQuickReplies: React.FC<{
                     <motion.button
                       key={prompt}
                       onClick={() => pick(prompt)}
-                      initial={{ opacity: 0, scale: 0.9 }}
+                      initial={{ opacity: 0, scale: 0.92 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      transition={{ type: 'spring', stiffness: 520, damping: 26, delay: i * 0.05 }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 26, delay: i * 0.06 }}
                       style={{
                         textAlign: 'left',
                         padding: '9px 14px',

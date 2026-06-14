@@ -1358,14 +1358,17 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   </Box>
                 )}
               </Box>
-              {!isDraft && (
+              {(!isDraft || session.is_welcome_draft) && (
+                // Welcome draft shows just the model so the header isn't bare; real runs add branch + cost.
                 <Box sx={{ display: 'flex', gap: 1.5, mt: 0.25, alignItems: 'center' }}>
                   <Typography variant="caption" sx={{ color: c.text.tertiary }}>
                     {resolveModelLabel(session.model)}
                   </Typography>
-                  <Typography variant="caption" sx={{ color: c.text.tertiary }}>
-                    {session.branch_name}
-                  </Typography>
+                  {!isDraft && session.branch_name && (
+                    <Typography variant="caption" sx={{ color: c.text.tertiary }}>
+                      {session.branch_name}
+                    </Typography>
+                  )}
                   {(() => {
                     if (!(session.cost_usd > 0)) return null;
                     // The SDK reports a per-call $ figure regardless of how

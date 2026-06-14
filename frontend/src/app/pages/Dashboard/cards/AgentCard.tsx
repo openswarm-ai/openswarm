@@ -765,6 +765,12 @@ const AgentCard: React.FC<Props> = ({
                 </Typography>
               </Box>
             )}
+            {/* Welcome chat has no status to show, so name the model instead, otherwise the header reads bare. */}
+            {session.is_welcome_draft && friendlyModelLabel && (
+              <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: c.text.tertiary, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {friendlyModelLabel}
+              </Typography>
+            )}
             {/* Calm, zero-click signal: the agent recalled or built up memory of
                 this site, so the user feels it getting smarter on its own. */}
             <Fade in={session.memory_recalled || session.memory_learned} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
