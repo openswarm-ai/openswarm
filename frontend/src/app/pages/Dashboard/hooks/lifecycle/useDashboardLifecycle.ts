@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { useEffect, useRef, type MutableRefObject, type RefObject } from 'react';
 import { report } from '@/shared/serviceClient';
 import { store } from '@/shared/state/store';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -12,6 +12,7 @@ import {
   fetchLayout,
   reconcileSessions,
   addBrowserCard,
+  addViewCard,
   resetLayout,
   removeViewCard,
   clearPendingFocusBrowserId,
@@ -39,6 +40,7 @@ interface UseDashboardLifecycleArgs {
   handleHighlightCard: (cardId: string) => void;
   hasFittedRef: MutableRefObject<boolean>;
   restoredExpandedRef: MutableRefObject<boolean>;
+  pendingViewBuilderSessionsRef: RefObject<Set<string>>;
 }
 
 export function useDashboardLifecycle({
@@ -55,6 +57,7 @@ export function useDashboardLifecycle({
   handleHighlightCard,
   hasFittedRef,
   restoredExpandedRef,
+  pendingViewBuilderSessionsRef,
 }: UseDashboardLifecycleArgs) {
   const dispatch = useAppDispatch();
   const pendingBrowserUrl = useAppSelector((state) => state.tempState.pendingBrowserUrl);
@@ -252,6 +255,40 @@ export function useDashboardLifecycle({
       if (!outputs[outputId]) dispatch(removeViewCard(outputId));
     }
   }, [layoutInitialized, outputsLoaded, viewCards, outputs, dispatch]);
+
+  // App Builder auto-open: when a view-builder session launched on this
+  // dashboard, useAgentSpawn parks its id in pendingViewBuilderSessionsRef.
+  // The backend then seeds an Output row and broadcasts agent:output_upserted;
+  // when that lands in outputsSlice we drop a ViewCard next to the chat so the
+  // user sees the app appear without a manual "open" step. Per-mount tracked
+  // (not redux) so a manual close after auto-open stays closed.
+  useEffect(() => {
+    if (!layoutInitialized) return;
+    const pending = pendingViewBuilderSessionsRef.current;
+    if (!pending || pending.size === 0) return;
+    for (const output of Object.values(outputs)) {
+      const sid = output.session_id;
+      if (!sid || !pending.has(sid)) continue;
+      if (viewCards[output.id]) {
+        pending.delete(sid);
+        continue;
+      }
+      // Let addViewCard pick a collision-free grid cell; the auto-fit below
+      // pans/zooms to show the chat + new view card together regardless.
+      dispatch(addViewCard({ outputId: output.id, expandedSessionIds }));
+      pending.delete(sid);
+      const outputId = output.id;
+      setTimeout(() => {
+        const vc = store.getState().dashboardLayout.viewCards[outputId];
+        if (!vc) return;
+        const rects = [{ x: vc.x, y: vc.y, width: vc.width, height: vc.height }];
+        const ac = store.getState().dashboardLayout.cards[sid];
+        if (ac) rects.push({ x: ac.x, y: ac.y, width: ac.width, height: ac.height });
+        canvasActions.fitToCards(rects, 1.15, true);
+        handleHighlightCard(outputId);
+      }, 200);
+    }
+  }, [layoutInitialized, outputs, viewCards, expandedSessionIds, dispatch, canvasActions, handleHighlightCard, pendingViewBuilderSessionsRef]);
 
   const namedOnFirstMessageRef = useRef<string | null>(null);
   useEffect(() => {

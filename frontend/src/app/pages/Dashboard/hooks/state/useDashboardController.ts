@@ -113,6 +113,13 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     contentRef: canvas.contentRef,
   });
 
+  // Session ids that just launched in App Builder ('view-builder') mode and
+  // are still awaiting their backend-seeded Output row. useAgentSpawn writes
+  // here; useDashboardLifecycle consumes it to auto-open the view card the
+  // moment the output upsert arrives. Per-mount ref (not redux) so a manual
+  // close after auto-open stays closed.
+  const pendingViewBuilderSessionsRef = useRef<Set<string>>(new Set());
+
   useDashboardLifecycle({
     isActive,
     dashboardId,
@@ -127,6 +134,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     handleHighlightCard,
     hasFittedRef,
     restoredExpandedRef,
+    pendingViewBuilderSessionsRef,
   });
 
   // ---- Auto-reveal / collapse / unreveal sub-agent cards ----
@@ -221,6 +229,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     setToolbarOpen,
     setAutoFocusSessionId,
     setPendingSelectSessionId,
+    pendingViewBuilderSessionsRef,
   });
 
   const {
