@@ -282,7 +282,7 @@ export function useDashboardLifecycle({
       if (sess.dashboard_id !== dashboardId) continue;
       autoOpenedOutputsRef.current.add(output.id);
       if (viewCards[output.id]) continue;
-      dispatch(addViewCard({ outputId: output.id, expandedSessionIds }));
+      dispatch(addViewCard({ outputId: output.id, expandedSessionIds, parentSessionId: sid }));
       const outputId = output.id;
       setTimeout(() => {
         const vc = store.getState().dashboardLayout.viewCards[outputId];

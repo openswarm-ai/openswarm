@@ -38,6 +38,8 @@ export interface ViewCardPosition {
   width: number;
   height: number;
   zOrder: number;
+  /** Chat session that spawned this view card; drives column-snap on initial placement. */
+  parent_session_id?: string | null;
 }
 
 export interface BrowserTab {
@@ -518,27 +520,53 @@ const dashboardLayoutSlice = createSlice({
 
     addViewCard(state, action: PayloadAction<{
       outputId: string; expandedSessionIds?: string[];
+      parentSessionId?: string | null;
       x?: number; y?: number; width?: number; height?: number;
     }>) {
-      const { outputId, expandedSessionIds, x, y, width, height } = action.payload;
+      const { outputId, expandedSessionIds, parentSessionId, x, y, width, height } = action.payload;
       if (state.viewCards[outputId]) return;
+      const w = width || DEFAULT_VIEW_CARD_W;
+      const h = height || DEFAULT_VIEW_CARD_H;
       let posX: number, posY: number;
       if (x != null && y != null) {
         posX = x;
         posY = y;
       } else {
-        const rects = collectOccupiedRects(state, expandedSessionIds);
-        const pos = findOpenGridCell(rects, DEFAULT_VIEW_CARD_W, DEFAULT_VIEW_CARD_H);
-        posX = pos.x;
-        posY = pos.y;
+        const parentCard = parentSessionId ? state.cards[parentSessionId] : null;
+        if (parentCard) {
+          // Mirror the agent-spawned browser flow (WebSocketManager.ts): drop the
+          // new card into a column to the right of its parent chat, stacking
+          // under any siblings (browser OR view) already in that column so a
+          // single chat's outputs read as one cluster instead of scattering
+          // across the canvas via the global grid scan.
+          const targetX = parentCard.x + parentCard.width + GRID_GAP * 12;
+          let targetY = parentCard.y;
+          const siblings = [
+            ...Object.values(state.browserCards),
+            ...Object.values(state.viewCards),
+          ].filter((c) => Math.abs(c.x - targetX) < 50);
+          if (siblings.length > 0) {
+            targetY = Math.max(...siblings.map((c) => c.y + c.height)) + GRID_GAP;
+          }
+          const rects = collectOccupiedRects(state, expandedSessionIds);
+          const pos = findOpenSpotNear(targetX, targetY, rects, w, h);
+          posX = pos.x;
+          posY = pos.y;
+        } else {
+          const rects = collectOccupiedRects(state, expandedSessionIds);
+          const pos = findOpenGridCell(rects, w, h);
+          posX = pos.x;
+          posY = pos.y;
+        }
       }
       state.viewCards[outputId] = {
         output_id: outputId,
         x: posX,
         y: posY,
-        width: width || DEFAULT_VIEW_CARD_W,
-        height: height || DEFAULT_VIEW_CARD_H,
+        width: w,
+        height: h,
         zOrder: state.nextZOrder++,
+        parent_session_id: parentSessionId || null,
       };
     },
 
