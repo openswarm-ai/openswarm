@@ -62,7 +62,7 @@ async def test_ddg_is_tried_first_and_wins(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def testddg_throttled_falls_over_to_openai(monkeypatch):
+async def test_ddg_throttled_falls_over_to_openai(monkeypatch):
     ddg_throttled(monkeypatch)
     monkeypatch.setattr(W, "_resolve_openai_api_key", lambda: "okey")
 

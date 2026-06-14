@@ -50,7 +50,7 @@ def test_swallows_provider_error_and_returns_empty():
     assert out == ""
 
 
-def testp_extract_text_joins_text_blocks_and_ignores_others():
+def test_extract_text_joins_text_blocks_and_ignores_others():
     resp = Resp([Block("text", "First."), Block("tool_use"), Block("text", "Second.")])
     assert p_extract_text(resp) == "First. Second."
 

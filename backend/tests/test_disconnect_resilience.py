@@ -511,7 +511,7 @@ def test_terminate_during_disconnect_is_observable(trial, patch_persist_dir):
 # ---------------------------------------------------------------------------
 
 
-def test_disconnect_does_not_touch_agent_task(patch_persist_dir):
+def test_disconnect_does_not_touch_agent_task():
     """If a future refactor adds task cancellation to disconnect_session,
     this test will catch it. We import agent_manager lazily so the
     `tasks` dict starts empty; we register a sentinel task and confirm
@@ -528,7 +528,7 @@ def test_disconnect_does_not_touch_agent_task(patch_persist_dir):
     assert "tasks" not in src
 
 
-def test_main_ws_endpoints_still_gated_by_auth(patch_persist_dir):
+def test_main_ws_endpoints_still_gated_by_auth():
     src = open(os.path.join(os.path.dirname(__file__), "..", "main.py")).read()
     assert "_ws_auth_ok(websocket)" in src, (
         "main.py WS endpoints must still call _ws_auth_ok before accepting "

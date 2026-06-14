@@ -18,13 +18,13 @@ def fail(url="https://a.com"):
     return {"text": "Element not found: '.x'", "url": url}
 
 
-def testp_looks_like_failure_positive():
+def test_looks_like_failure_positive():
     assert p_looks_like_failure("Element not found: '.foo'")
     assert p_looks_like_failure("Index 4 is no longer valid")
     assert p_looks_like_failure("Error: something broke")
 
 
-def testp_looks_like_failure_negative():
+def test_looks_like_failure_negative():
     assert not p_looks_like_failure("Clicked element: button#submit")
     assert not p_looks_like_failure("Typed into: input#email")
 

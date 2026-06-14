@@ -48,7 +48,7 @@ def test_exhaustion_is_classified_and_not_retried():
     assert not is_transient_capacity_error(Exception("free_trial_exhausted"))
 
 
-def testhas_own_model_never_shadows_a_real_provider():
+def test_has_own_model_never_shadows_a_real_provider():
     assert not has_own_model(AppSettings(connection_mode="free-trial", free_trial_token="x"))
     assert not has_own_model(AppSettings())
     assert has_own_model(AppSettings(anthropic_api_key="sk-ant-x"))
