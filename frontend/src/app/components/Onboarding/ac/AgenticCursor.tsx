@@ -64,7 +64,7 @@ const WIN_EASE_MS = 420;
 
 // A little spark when the cursor pops into existence: short orange lines shoot out from the
 // tip and fade. Re-keyed on each pop so it replays. One-shot per mount (no infinite loop).
-const BURST_SPOKES = 8;
+const BURST_SPOKES = 6;
 const CursorBurst: React.FC<{ color: string }> = ({ color }) => (
   <>
     {Array.from({ length: BURST_SPOKES }).map((_, i) => (
@@ -73,10 +73,10 @@ const CursorBurst: React.FC<{ color: string }> = ({ color }) => (
         style={{ position: 'absolute', left: 3, top: 3, transform: `rotate(${(i / BURST_SPOKES) * 360}deg)` }}
       >
         <motion.div
-          initial={{ y: -1, opacity: 0.95, scaleY: 0.35 }}
-          animate={{ y: -15, opacity: 0, scaleY: 1 }}
-          transition={{ duration: 0.45, ease: 'easeOut' }}
-          style={{ position: 'absolute', left: -1, top: 0, width: 2, height: 8, borderRadius: 2, background: color }}
+          initial={{ y: -1, opacity: 1, scaleY: 0.4 }}
+          animate={{ y: -23, opacity: 0, scaleY: 1 }}
+          transition={{ duration: 0.62, ease: 'easeOut' }}
+          style={{ position: 'absolute', left: -1.5, top: 0, width: 3, height: 12, borderRadius: 2, background: color, boxShadow: `0 0 6px ${color}` }}
         />
       </div>
     ))}
