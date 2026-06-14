@@ -756,8 +756,9 @@ const AgentCard: React.FC<Props> = ({
                 </Typography>
               )}
             </Typewriter>
-            {/* Status speaks only when it needs the user; finished work sits quiet. */}
-            {session.status !== 'completed' && session.status !== 'stopped' && (
+            {/* Status speaks only when it needs the user; finished work sits quiet. The welcome
+                chat hides its 'draft' label so the title reads clean. */}
+            {session.status !== 'completed' && session.status !== 'stopped' && !session.is_welcome_draft && (
               <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                 <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: c.text.tertiary, whiteSpace: 'nowrap' }}>
                   {friendlyStatusLabel(session.status)}

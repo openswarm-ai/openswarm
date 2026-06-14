@@ -36,9 +36,9 @@ const WelcomeQuickReplies: React.FC<{
   onPick: (prompt: string) => void;
   onPickBuilder: (prompt: string) => void;
 }> = ({ c, onPick, onPickBuilder }) => {
-  // Slow + delayed so it reads as a calm sequence: card pops, the header title streams, THEN
-  // the greeting types out unhurried, THEN the chips pop in.
-  const { shown: greeting, done: greetingDone } = useTypewriter(GREETING, 78, 850);
+  // Sequence: card pops, the header title streams, THEN the greeting types out, THEN the chips
+  // slide in. Brisk but smooth.
+  const { shown: greeting, done: greetingDone } = useTypewriter(GREETING, 42, 450);
   const [expanded, setExpanded] = React.useState<string | null>(null);
   const currentCategory = STARTER_CATEGORIES.find((cat) => cat.id === expanded);
   const isAppBuilder = currentCategory?.target === 'app-builder';
@@ -65,14 +65,17 @@ const WelcomeQuickReplies: React.FC<{
         }}
       >
         {greeting}
-        {!greetingDone && (
-          <Box component="span" sx={{ ml: '1px', color: c.accent.primary }}>▌</Box>
-        )}
       </Box>
 
-      {/* Chips reveal only once the greeting finishes, each popping in with a stagger. */}
+      {/* The chips block slides up + fades in once the greeting finishes (the outer motion.div),
+          then each chip springs in staggered (inner). */}
       {greetingDone && (
-        <Box sx={{ width: '100%', alignSelf: 'stretch' }}>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          style={{ width: '100%', alignSelf: 'stretch' }}
+        >
           <AnimatePresence mode="wait" initial={false}>
             {expanded === null ? (
               <motion.div key="categories" initial={false} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -86,9 +89,9 @@ const WelcomeQuickReplies: React.FC<{
                     <motion.button
                       key={cat.id}
                       onClick={() => setExpanded(cat.id)}
-                      initial={{ opacity: 0, scale: 0.82 }}
+                      initial={{ opacity: 0, scale: 0.85 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      transition={{ type: 'spring', stiffness: 420, damping: 22, delay: 0.25 + i * 0.18 }}
+                      transition={{ type: 'spring', stiffness: 480, damping: 24, delay: 0.12 + i * 0.08 }}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 8,
                         padding: '10px 14px',
@@ -155,7 +158,7 @@ const WelcomeQuickReplies: React.FC<{
               </motion.div>
             )}
           </AnimatePresence>
-        </Box>
+        </motion.div>
       )}
     </Box>
   );

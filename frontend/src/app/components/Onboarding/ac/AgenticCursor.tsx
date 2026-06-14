@@ -120,13 +120,13 @@ const AgenticCursor = forwardRef<AgenticCursorHandle>((_props, ref) => {
       controls.set({ x: from.x, y: from.y, opacity: 0, scale: 0.3 });
       setVisible(true);
       setBurstKey((k) => k + 1); // replay the orange spark on each pop
-      // A little "pop!": scale overshoots past 1 then settles, while opacity snaps in.
+      // An exaggerated "POP!": scale shoots way past 1 then settles back, opacity snaps in.
       await controls.start({
         opacity: 1,
-        scale: [0.3, 1.15, 1],
+        scale: [0.1, 1.45, 0.92, 1],
         transition: {
-          opacity: { duration: 0.16, ease: 'easeOut' },
-          scale: { duration: 0.36, ease: 'easeOut', times: [0, 0.62, 1] },
+          opacity: { duration: 0.14, ease: 'easeOut' },
+          scale: { duration: 0.5, ease: 'easeOut', times: [0, 0.55, 0.8, 1] },
         },
       });
     },
