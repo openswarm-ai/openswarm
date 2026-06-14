@@ -98,6 +98,8 @@ export interface DashboardLayoutState {
   suspendedBrowserCards: Record<string, { dataUrl: string; capturedAt: number }>;
   /** Transient: spawned cards that are about to be removed; surfaces the fade + Keep pill. */
   endingBrowserCards: Record<string, { status: 'completed' | 'error'; at: number }>;
+  /** Transient: id of the view card the user has clicked into; preload stops forwarding canvas gestures while set. */
+  activeViewCardId: string | null;
 }
 
 const initialState: DashboardLayoutState = {
@@ -116,6 +118,7 @@ const initialState: DashboardLayoutState = {
   pendingFocusNoteId: null,
   suspendedBrowserCards: {},
   endingBrowserCards: {},
+  activeViewCardId: null,
 };
 
 interface LayoutPayload {
@@ -565,6 +568,11 @@ const dashboardLayoutSlice = createSlice({
 
     removeViewCard(state, action: PayloadAction<string>) {
       delete state.viewCards[action.payload];
+      if (state.activeViewCardId === action.payload) state.activeViewCardId = null;
+    },
+
+    setActiveViewCardId(state, action: PayloadAction<string | null>) {
+      state.activeViewCardId = action.payload;
     },
 
     addBrowserCard(state, action: PayloadAction<{ url: string; expandedSessionIds?: string[] }>) {
@@ -1080,6 +1088,7 @@ export const {
   setViewCardPosition,
   setViewCardSize,
   removeViewCard,
+  setActiveViewCardId,
   addBrowserCard,
   addBrowserCardFromBackend,
   setBrowserCardPosition,
