@@ -14,7 +14,7 @@ export type ACMultiChoiceOption = {
 
 export type ACOp =
   | { kind: 'move_to'; target: Selector; offset?: { x: number; y: number } }
-  | { kind: 'popup'; text: string; cta?: string }
+  | { kind: 'popup'; text: string; cta?: string; dwellMs?: number }
   | { kind: 'multi_choice'; opId: string; question: string; options: ACMultiChoiceOption[] }
   | { kind: 'highlight_section'; target: Selector; popup?: string; durationMs?: number }
   | {

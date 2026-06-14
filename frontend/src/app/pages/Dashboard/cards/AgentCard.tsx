@@ -756,13 +756,20 @@ const AgentCard: React.FC<Props> = ({
                 </Typography>
               )}
             </Typewriter>
-            {/* Status speaks only when it needs the user; finished work sits quiet. */}
-            {session.status !== 'completed' && session.status !== 'stopped' && (
+            {/* Status speaks only when it needs the user; finished work sits quiet. The welcome
+                chat hides its 'draft' label so the title reads clean. */}
+            {session.status !== 'completed' && session.status !== 'stopped' && !session.is_welcome_draft && (
               <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                 <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: c.text.tertiary, whiteSpace: 'nowrap' }}>
                   {friendlyStatusLabel(session.status)}
                 </Typography>
               </Box>
+            )}
+            {/* Welcome chat has no status to show, so name the model instead, otherwise the header reads bare. */}
+            {session.is_welcome_draft && friendlyModelLabel && (
+              <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: c.text.tertiary, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {friendlyModelLabel}
+              </Typography>
             )}
             {/* Calm, zero-click signal: the agent recalled or built up memory of
                 this site, so the user feels it getting smarter on its own. */}

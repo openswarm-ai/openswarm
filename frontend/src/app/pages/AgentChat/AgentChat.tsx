@@ -45,6 +45,8 @@ import { store } from '@/shared/state/store';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { createSessionWs, acquireSessionWs, releaseSessionWs } from '@/shared/ws/WebSocketManager';
 import StreamingBubble from './bubbles/StreamingBubble';
+import WelcomeQuickReplies from './WelcomeQuickReplies';
+import { useWelcomeGreeting } from './useWelcomeGreeting';
 import MessageBubble from './bubbles/MessageBubble';
 import { estimateRenderedTextHeight, RECHECK_VISIBILITY_EVENT } from './bubbles/markdownMeasure';
 import CompactionMarker from './bubbles/CompactionMarker';
@@ -325,6 +327,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const [dropTargetIdx, setDropTargetIdx] = useState<number | null>(null);
 
   const isDraft = session?.status === 'draft';
+  const { greetingDone: welcomeGreetingDone } = useWelcomeGreeting(session, isDraft);
 
   useEffect(() => {
     if (!id || isDraft) return;
@@ -404,6 +407,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       const config: Record<string, any> = { model, mode };
       if (session?.system_prompt) config.system_prompt = session.system_prompt;
       if (session?.target_directory) config.target_directory = session.target_directory;
+      // Carry the draft's dashboard so the launched session stays ON this dashboard; without it the
+      // session lands dashboard_id=null, drops out of the reconcile filter, and its card vanishes
+      // the instant you send (looked like "the chat quit when I clicked an option").
+      if (session?.dashboard_id) config.dashboard_id = session.dashboard_id;
       dispatch(
         launchAndSendFirstMessage({ draftId: id, config, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds, selectedAppIds: msg.selectedAppIds })
       ).then((action) => {
@@ -426,7 +433,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
           }
         });
     }
-  }, [id, isDraft, mode, model, session?.system_prompt, session?.target_directory, dispatch]);
+  }, [id, isDraft, mode, model, session?.system_prompt, session?.target_directory, session?.dashboard_id, dispatch]);
 
   statusRef.current = session?.status;
 
@@ -1357,14 +1364,17 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   </Box>
                 )}
               </Box>
-              {!isDraft && (
+              {(!isDraft || session.is_welcome_draft) && (
+                // Welcome draft shows just the model so the header isn't bare; real runs add branch + cost.
                 <Box sx={{ display: 'flex', gap: 1.5, mt: 0.25, alignItems: 'center' }}>
                   <Typography variant="caption" sx={{ color: c.text.tertiary }}>
                     {resolveModelLabel(session.model)}
                   </Typography>
-                  <Typography variant="caption" sx={{ color: c.text.tertiary }}>
-                    {session.branch_name}
-                  </Typography>
+                  {!isDraft && session.branch_name && (
+                    <Typography variant="caption" sx={{ color: c.text.tertiary }}>
+                      {session.branch_name}
+                    </Typography>
+                  )}
                   {(() => {
                     if (!(session.cost_usd > 0)) return null;
                     // The SDK reports a per-call $ figure regardless of how
@@ -1811,6 +1821,15 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   onStreamGrew={stickToBottomIfNeeded}
                 />
               </Box>
+            )}
+            {/* First-run welcome chips: sit UNDER the streamed greeting, appear once it finishes,
+                vanish the moment the user answers. The greeting itself is a real assistant bubble. */}
+            {session.is_welcome_draft && isDraft && welcomeGreetingDone && !session.messages.some((m) => m.role === 'user') && (
+              <WelcomeQuickReplies
+                c={c}
+                onPick={(p) => handleSend(p)}
+                onPickBuilder={(p) => chatInputRef.current?.setContent(p)}
+              />
             )}
             {(preSendActivityLabel || awaitingResponse || (session.status === 'running' && !streamingMessageId)) && (
               <Box sx={{ overflowAnchor: 'none' }}>

@@ -38,6 +38,9 @@ interface UseAgentSpawnArgs {
   setToolbarOpen: Dispatch<SetStateAction<boolean>>;
   setAutoFocusSessionId: Dispatch<SetStateAction<string | null>>;
   setPendingSelectSessionId: Dispatch<SetStateAction<string | null>>;
+  /** First run only: clicking New Agent spawns the welcome chat instead of the composer. */
+  welcomeEligible?: boolean;
+  onWelcomeNewAgent?: () => void;
 }
 
 export function useAgentSpawn({
@@ -54,6 +57,8 @@ export function useAgentSpawn({
   setToolbarOpen,
   setAutoFocusSessionId,
   setPendingSelectSessionId,
+  welcomeEligible,
+  onWelcomeNewAgent,
 }: UseAgentSpawnArgs) {
   const dispatch = useAppDispatch();
 
@@ -100,8 +105,13 @@ export function useAgentSpawn({
   );
 
   const handleNewAgent = useCallback(() => {
+    // First run: spawn the welcome chat (cursor-clicked or hand-clicked) instead of the composer.
+    if (welcomeEligible && onWelcomeNewAgent) {
+      onWelcomeNewAgent();
+      return;
+    }
     setToolbarOpen(true);
-  }, []);
+  }, [welcomeEligible, onWelcomeNewAgent, setToolbarOpen]);
 
   const handleToolbarCancel = useCallback(() => {
     setToolbarOpen(false);

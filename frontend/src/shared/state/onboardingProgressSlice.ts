@@ -32,6 +32,8 @@ export interface OnboardingProgressState {
   disableSkipIf: boolean;
   /** True once we've gently auto-opened the panel after the first agent win (once, ever). */
   revealedAfterWin?: boolean;
+  /** True once the first-run welcome chat has been created (once ever, survives reload). */
+  welcomeShown?: boolean;
 }
 
 export function loadFromStorage(): OnboardingProgressState | null {
@@ -53,6 +55,8 @@ export function loadFromStorage(): OnboardingProgressState | null {
       initialized: true,
       justCompletedStepId: null,
       disableSkipIf: Boolean((parsed as any).disableSkipIf),
+      revealedAfterWin: Boolean((parsed as any).revealedAfterWin),
+      welcomeShown: Boolean((parsed as any).welcomeShown),
     };
   } catch {
     return null;
@@ -101,6 +105,7 @@ const initialState: OnboardingProgressState = {
   justCompletedStepId: null,
   disableSkipIf: false,
   revealedAfterWin: false,
+  welcomeShown: false,
 };
 
 const slice = createSlice({
@@ -129,6 +134,7 @@ const slice = createSlice({
       state.initialized = true;
       state.disableSkipIf = Boolean(action.payload.disableSkipIf);
       state.revealedAfterWin = false;
+      state.welcomeShown = false;
     },
     hydrate(state, action: PayloadAction<OnboardingProgressState>) {
       Object.assign(state, action.payload, { running: false, initialized: true });
@@ -162,6 +168,9 @@ const slice = createSlice({
     markRevealedAfterWin(state) {
       state.revealedAfterWin = true;
     },
+    markWelcomeShown(state) {
+      state.welcomeShown = true;
+    },
     unmarkStepCompleted(state, action: PayloadAction<string>) {
       state.completedSteps = state.completedSteps.filter((id) => id !== action.payload);
     },
@@ -186,6 +195,7 @@ const slice = createSlice({
       state.running = false;
       state.startedAt = Date.now();
       state.revealedAfterWin = false;
+      state.welcomeShown = false;
       // Explicit restart: suppress skipIf so residual prior-tour data can't auto-mark.
       state.disableSkipIf = true;
     },
@@ -200,6 +210,7 @@ export const {
   markStepCompleted,
   clearJustCompleted,
   markRevealedAfterWin,
+  markWelcomeShown,
   unmarkStepCompleted,
   setRunning,
   recordMultiChoice,

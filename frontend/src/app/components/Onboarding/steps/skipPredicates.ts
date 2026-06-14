@@ -59,7 +59,17 @@ export function isYoutubeEnabled(s: RootState): boolean {
 
 export function hasAnyAgentLaunched(s: RootState): boolean {
   const sessions = s.agents?.sessions ?? {};
-  return Object.keys(sessions).length > 0;
+  // A draft is an unsent chat, not a launched agent. Counting drafts let the welcome draft
+  // pre-satisfy launch_agent at baseline-capture time, which froze the step as "pre-existing"
+  // so it never auto-completed, leaving "Launch your first Agent" stuck to-do after the chat.
+  return Object.values(sessions).some((x: any) => x?.status && x.status !== 'draft');
+}
+
+/** True once any agent has actually FINISHED (not just started). Used to hold the
+ *  onboarding reveal until after the first win, so it never pops mid-run. */
+export function hasAnyAgentCompleted(s: RootState): boolean {
+  const sessions = s.agents?.sessions ?? {};
+  return Object.values(sessions).some((x: any) => x?.status === 'completed');
 }
 
 export function hasAnySkillInstalled(s: RootState): boolean {

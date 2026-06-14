@@ -16,6 +16,8 @@ export const S = {
   newAgentButton: 'new-agent-button',
   browserButton: 'browser-button',
   canvasControls: 'canvas-controls',
+  /** The top-right onboarding pill ("Continue"); the first-run welcome nudge points here. */
+  onboardingContinueButton: 'onboarding-continue-button',
 
   dashboardToolbarApps: 'dashboard-toolbar-apps',
 
