@@ -61,8 +61,8 @@ def _delete(dashboard_id: str):
         os.remove(path)
 
 
-def _migrate_if_needed():
-    """One-time migration: if no dashboards exist, create 'Dashboard 1' from old layout."""
+def migrate_if_needed():
+    """One-time migration: if no dashboards exist, create the default from old layout."""
     existing = _load_all()
     if existing:
         return
@@ -80,7 +80,7 @@ def _migrate_if_needed():
         except Exception:
             logger.exception("Failed to read old layout.json, using empty layout")
 
-    dashboard = Dashboard(name="Dashboard 1", layout=layout)
+    dashboard = Dashboard(name="Untitled Dashboard", layout=layout)
     _save(dashboard)
     logger.info(f"Created default dashboard: {dashboard.id}")
 
@@ -105,7 +105,7 @@ def _migrate_if_needed():
 @asynccontextmanager
 async def dashboards_lifespan():
     os.makedirs(DATA_DIR, exist_ok=True)
-    _migrate_if_needed()
+    migrate_if_needed()
     yield
 
 
