@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # Map each tool to the waterfall tier it represents, so per-tier speed/cost
 # rolls up cleanly. Control/meta tools are their own bucket.
-_TIER = {
+P_TIER = {
     "BrowserDetectWebMCP": "t1_webmcp",
     "BrowserListRoutes": "t2_route_list",
     "BrowserReplayRoute": "t2_route_replay",
@@ -53,18 +53,18 @@ _TIER = {
 }
 
 
-def tier_for(tool_name: str) -> str:
-    return _TIER.get(tool_name, "other")
+def p_tier_for(tool_name: str) -> str:
+    return P_TIER.get(tool_name, "other")
 
 
-_metrics_dir_cache: str | None = None
+P_METRICS_DIR_CACHE: str | None = None
 
 
-def _metrics_dir() -> str:
+def metrics_dir() -> str:
     # Resolved + mkdir'd once, not on every tool call (this runs in the hot path).
-    global _metrics_dir_cache
-    if _metrics_dir_cache is not None:
-        return _metrics_dir_cache
+    global P_METRICS_DIR_CACHE
+    if P_METRICS_DIR_CACHE is not None:
+        return P_METRICS_DIR_CACHE
     override = os.environ.get("OPENSWARM_BROWSER_METRICS_DIR")
     if override:
         base = override
@@ -79,13 +79,13 @@ def _metrics_dir() -> str:
         os.makedirs(base, mode=0o700, exist_ok=True)
     except Exception:
         pass
-    _metrics_dir_cache = base
+    P_METRICS_DIR_CACHE = base
     return base
 
 
-def _append(filename: str, obj: dict) -> None:
+def p_append(filename: str, obj: dict) -> None:
     try:
-        path = os.path.join(_metrics_dir(), filename)
+        path = os.path.join(metrics_dir(), filename)
         # owner-only: these lines can carry task text and error snippets
         fd = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
         with os.fdopen(fd, "a", encoding="utf-8") as f:
@@ -97,28 +97,28 @@ def _append(filename: str, obj: dict) -> None:
 # A task prompt can carry a literal secret ("log in with password hunter2");
 # scrub the value before it lands in tasks.jsonl. Keyword+value and known
 # token prefixes only; the task's normal words stay greppable.
-_TASK_SECRET_RE = re.compile(
+P_TASK_SECRET_RE = re.compile(
     r"\b(password|passcode|passphrase|pin|otp|token|secret|api[_-]?key)\b\s*(?:is|[:=])?\s*\S+",
     re.I,
 )
-_TASK_TOKEN_RE = re.compile(r"\b(sk-|ghp_|gho_|pk_|xox[bap]-|AIza|eyJ)[A-Za-z0-9_\-.]{8,}")
+P_TASK_TOKEN_RE = re.compile(r"\b(sk-|ghp_|gho_|pk_|xox[bap]-|AIza|eyJ)[A-Za-z0-9_\-.]{8,}")
 
 
-def _scrub_task(task: str) -> str:
-    t = _TASK_SECRET_RE.sub(lambda m: f"{m.group(1)} [redacted]", task or "")
-    return _TASK_TOKEN_RE.sub("[redacted]", t)
+def p_scrub_task(task: str) -> str:
+    t = P_TASK_SECRET_RE.sub(lambda m: f"{m.group(1)} [redacted]", task or "")
+    return P_TASK_TOKEN_RE.sub("[redacted]", t)
 
 
 def record_tool(session_id, browser_id, turn, tool, elapsed_ms, ok, error,
                 is_loop, stagnation_streak, result_len) -> None:
     """One line per executed tool call. Best-effort."""
-    _append("events.jsonl", {
+    p_append("events.jsonl", {
         "ts": time.time(),
         "session_id": session_id,
         "browser_id": browser_id,
         "turn": turn,
         "tool": tool,
-        "tier": tier_for(tool),
+        "tier": p_tier_for(tool),
         "elapsed_ms": elapsed_ms,
         "ok": bool(ok),
         "error": (error or "")[:160] if not ok else "",
@@ -129,7 +129,7 @@ def record_tool(session_id, browser_id, turn, tool, elapsed_ms, ok, error,
     # Human-greppable one-liner too, so it shows in the [backend] terminal pane.
     status = "OK" if ok else "ERR"
     logger.info(
-        f"[browser-metrics] {tool} tier={tier_for(tool)} {elapsed_ms}ms {status} "
+        f"[browser-metrics] {tool} tier={p_tier_for(tool)} {elapsed_ms}ms {status} "
         f"turn={turn}{' LOOP' if is_loop else ''}"
         f"{f' STAGN={stagnation_streak}' if stagnation_streak else ''}"
     )
@@ -140,7 +140,7 @@ def record_skill_event(kind, host, task_sig, rev=0, state="", extra=None) -> Non
     learn / edit / promote / quarantine / demote / compose / invalidate. This is
     what lets the analyzer prove the skill layer is helping (promotes accumulate,
     repeats replay) vs. silently thrashing (re-learn loops, never promotes)."""
-    _append("skill_events.jsonl", {
+    p_append("skill_events.jsonl", {
         "ts": time.time(), "kind": kind, "host": host, "task_sig": task_sig,
         "rev": rev, "state": state, "extra": extra or {},
     })
@@ -158,7 +158,7 @@ def record_task(session_id, browser_id, task, status, started_at, turns,
     err_counter = Counter()
     for a in action_log:
         tool = a.get("tool", "?")
-        tier = tier_for(tool)
+        tier = p_tier_for(tool)
         slot = by_tier.setdefault(tier, {"calls": 0, "total_ms": 0, "errors": 0})
         slot["calls"] += 1
         slot["total_ms"] += int(a.get("elapsed_ms", 0) or 0)
@@ -172,7 +172,7 @@ def record_task(session_id, browser_id, task, status, started_at, turns,
         "ts": time.time(),
         "session_id": session_id,
         "browser_id": browser_id,
-        "task": _scrub_task(task)[:200],
+        "task": p_scrub_task(task)[:200],
         "task_sig": task_sig,
         "path": path,
         "playbook_seeded": bool(playbook_seeded),
@@ -186,36 +186,36 @@ def record_task(session_id, browser_id, task, status, started_at, turns,
         "by_tier": by_tier,
         "recurring_errors": err_counter.most_common(5),
     }
-    _append("tasks.jsonl", summary)
+    p_append("tasks.jsonl", summary)
     logger.info(
         f"[browser-metrics] TASK {status} path={path} total={total_ms}ms turns={turns} "
         f"tools={len(action_log)} tok_in={summary['tokens_in']} tok_out={summary['tokens_out']} "
         f"recurring_errs={summary['recurring_errors'][:2]}"
     )
-    _maybe_self_audit()
+    p_maybe_self_audit()
     return summary
 
 
-_AUDIT_EVERY_N = 25   # refresh the learning self-audit roughly this often
-_task_count = 0
+P_AUDIT_EVERY_N = 25   # refresh the learning self-audit roughly this often
+P_TASK_COUNT = 0
 
 
-def _maybe_self_audit() -> None:
+def p_maybe_self_audit() -> None:
     """Every N finished tasks, refresh the self-audit report in a daemon thread so
     it never adds latency to a run (the audit is ~3ms but stays off the hot path).
     Proposal-only: it writes a report a human reads, it changes nothing."""
-    global _task_count
-    _task_count += 1
-    if _task_count % _AUDIT_EVERY_N != 0:
+    global P_TASK_COUNT
+    P_TASK_COUNT += 1
+    if P_TASK_COUNT % P_AUDIT_EVERY_N != 0:
         return
 
-    def _run():
+    def p_run():
         try:
             from backend.apps.agents.browser import browser_self_audit
             browser_self_audit.run_and_write()
         except Exception:
             pass
     try:
-        threading.Thread(target=_run, name="browser-self-audit", daemon=True).start()
+        threading.Thread(target=p_run, name="browser-self-audit", daemon=True).start()
     except Exception:
         pass

@@ -605,8 +605,8 @@ async def vibe_code(body: VibeCodeRequest):
             system=VIBE_CODE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
         )
-        from backend.apps.agents.core.aux_llm import _safe_resp_text
-        raw = _safe_resp_text(resp).strip()
+        from backend.apps.agents.core.aux_llm import safe_resp_text
+        raw = safe_resp_text(resp).strip()
         if not raw:
             return {
                 "message": "Aux model returned no content. Please try again.",

@@ -342,8 +342,8 @@ async def generate_name(dashboard_id: str):
             system=system,
             messages=[{"role": "user", "content": user_content}],
         )
-        from backend.apps.agents.core.aux_llm import _safe_resp_text, clean_short_label
-        generated = clean_short_label(_safe_resp_text(resp))
+        from backend.apps.agents.core.aux_llm import safe_resp_text, clean_short_label
+        generated = clean_short_label(safe_resp_text(resp))
         if generated:
             fallback = generated
     except Exception as e:

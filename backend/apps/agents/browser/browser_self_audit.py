@@ -21,13 +21,13 @@ from collections import defaultdict
 logger = logging.getLogger(__name__)
 
 # Thresholds for flagging; conservative so the report stays signal, not noise.
-_THRASH_MIN_RELEARNS = 3      # a skill re-versioned this many times with 0 replays = stuck
-_STALL_TURN_FACTOR = 2.0      # a run 2x the host's median turns is a stall worth noting
-_MIN_RUNS_FOR_MEDIAN = 4      # don't call a "norm" from too few runs
-_ERROR_RATE_FLAG = 0.25       # >25% of a host's tool calls erroring = something systemic
+P_THRASH_MIN_RELEARNS = 3      # a skill re-versioned this many times with 0 replays = stuck
+P_STALL_TURN_FACTOR = 2.0      # a run 2x the host's median turns is a stall worth noting
+P_MIN_RUNS_FOR_MEDIAN = 4      # don't call a "norm" from too few runs
+P_ERROR_RATE_FLAG = 0.25       # >25% of a host's tool calls erroring = something systemic
 
 
-def _read_jsonl(path: str, cap: int = 20000) -> list[dict]:
+def p_read_jsonl(path: str, cap: int = 20000) -> list[dict]:
     out: list[dict] = []
     if not path or not os.path.exists(path):
         return out
@@ -48,7 +48,7 @@ def _read_jsonl(path: str, cap: int = 20000) -> list[dict]:
     return out
 
 
-def _median(xs: list[float]) -> float:
+def p_median(xs: list[float]) -> float:
     s = sorted(xs)
     n = len(s)
     if not n:
@@ -56,11 +56,11 @@ def _median(xs: list[float]) -> float:
     return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
 
 
-def audit(metrics_dir: str) -> dict:
+def p_audit(metrics_dir: str) -> dict:
     """Read the metrics + skill events and return a structured findings dict.
     Pure read; safe to call anytime. The caller renders/persists it."""
-    tasks = _read_jsonl(os.path.join(metrics_dir, "tasks.jsonl"))
-    skill_events = _read_jsonl(os.path.join(metrics_dir, "skill_events.jsonl"))
+    tasks = p_read_jsonl(os.path.join(metrics_dir, "tasks.jsonl"))
+    skill_events = p_read_jsonl(os.path.join(metrics_dir, "skill_events.jsonl"))
     findings: list[dict] = []
 
     # 1) THRASH: a skill re-versioned (edit) or sent to quarantine many times but
@@ -76,7 +76,7 @@ def audit(metrics_dir: str) -> dict:
         elif kind == "promote":
             promotes[key] += 1
     for key, n in churn.items():
-        if n >= _THRASH_MIN_RELEARNS and promotes.get(key, 0) == 0:
+        if n >= P_THRASH_MIN_RELEARNS and promotes.get(key, 0) == 0:
             findings.append({
                 "kind": "thrash",
                 "host": key[0],
@@ -89,19 +89,19 @@ def audit(metrics_dir: str) -> dict:
     # 2) STALL: runs far above the host's median turn count.
     by_host_turns: dict[str, list[int]] = defaultdict(list)
     for t in tasks:
-        h = _host_of_task(t)
+        h = p_host_of_task(t)
         if t.get("turns"):
             by_host_turns[h].append(int(t["turns"]))
     for h, turns in by_host_turns.items():
-        if len(turns) < _MIN_RUNS_FOR_MEDIAN:
+        if len(turns) < P_MIN_RUNS_FOR_MEDIAN:
             continue
-        med = _median([float(x) for x in turns])
-        stalls = [x for x in turns if med and x >= med * _STALL_TURN_FACTOR]
+        med = p_median([float(x) for x in turns])
+        stalls = [x for x in turns if med and x >= med * P_STALL_TURN_FACTOR]
         if stalls:
             findings.append({
                 "kind": "stall",
                 "host": h,
-                "detail": f"{len(stalls)} run(s) at >= {_STALL_TURN_FACTOR}x the median "
+                "detail": f"{len(stalls)} run(s) at >= {P_STALL_TURN_FACTOR}x the median "
                           f"{med:.0f} turns (worst {max(stalls)})",
                 "suggestion": "a few runs spike well above normal, likely a perception/verify "
                               "loop or an env hang; check whether a prompt prior or mechanical "
@@ -112,13 +112,13 @@ def audit(metrics_dir: str) -> dict:
     err = defaultdict(int)
     tot = defaultdict(int)
     for t in tasks:
-        h = _host_of_task(t)
+        h = p_host_of_task(t)
         rc = t.get("recurring_errors") or {}
         tot[h] += int(t.get("tool_calls") or 0)
         if isinstance(rc, dict):
             err[h] += sum(int(v) for v in rc.values() if isinstance(v, (int, float)))
     for h in tot:
-        if tot[h] >= 20 and err[h] / max(1, tot[h]) >= _ERROR_RATE_FLAG:
+        if tot[h] >= 20 and err[h] / max(1, tot[h]) >= P_ERROR_RATE_FLAG:
             findings.append({
                 "kind": "error_rate",
                 "host": h,
@@ -135,13 +135,13 @@ def audit(metrics_dir: str) -> dict:
     }
 
 
-def _host_of_task(task: dict) -> str:
+def p_host_of_task(task: dict) -> str:
     # tasks.jsonl doesn't store host directly; task_sig is host-agnostic, so fall
     # back to a coarse bucket. browser_id groups a card's runs well enough for norms.
     return task.get("browser_id") or task.get("task_sig") or "unknown"
 
 
-def render_report(result: dict) -> str:
+def p_render_report(result: dict) -> str:
     """A human-readable proposal. Read it, then YOU decide what (if anything) to change."""
     lines = [
         "# Browser self-audit (proposal only , nothing was changed)",
@@ -170,10 +170,10 @@ def run_and_write(metrics_dir: str | None = None) -> str | None:
     path written, or None. Never raises into the caller."""
     try:
         if metrics_dir is None:
-            from backend.apps.agents.browser import browser_metrics
-            metrics_dir = browser_metrics._metrics_dir()
-        result = audit(metrics_dir)
-        report = render_report(result)
+            from backend.apps.agents.browser.browser_metrics import metrics_dir as metrics_dir_func
+            metrics_dir = metrics_dir_func()
+        result = p_audit(metrics_dir)
+        report = p_render_report(result)
         path = os.path.join(metrics_dir, "self_audit_report.md")
         with open(path, "w", encoding="utf-8") as f:
             f.write(report)

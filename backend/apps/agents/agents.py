@@ -241,9 +241,10 @@ async def list_browser_memory():
     """Everything the browser agent has learned, per site, so the user can see it
     and clear it: tier-1 skills (replayable shortcuts) + tier-2 playbook (strategy
     text). Read-only; pure introspection."""
-    from backend.apps.agents.browser import browser_playbook, browser_skills
+    from backend.apps.agents.browser import browser_skills
+    from backend.apps.agents.browser.browser_playbook import list_hosts
     sites: dict[str, dict] = {}
-    for entry in browser_playbook.list_hosts():
+    for entry in list_hosts():
         sites.setdefault(entry["host"], {"host": entry["host"], "skills": [], "strategy": []})
         sites[entry["host"]]["strategy"] = entry["bullets"]
         sites[entry["host"]]["updated_at"] = entry.get("updated_at", 0)
@@ -256,8 +257,9 @@ async def list_browser_memory():
 async def forget_browser_memory(host: str):
     """Clear what the browser agent learned about one site (strategy + skills); it
     re-learns on the next successful run."""
-    from backend.apps.agents.browser import browser_playbook, browser_skills
-    forgot_strategy = browser_playbook.forget(host)
+    from backend.apps.agents.browser import browser_skills
+    from backend.apps.agents.browser.browser_playbook import forget
+    forgot_strategy = forget(host)
     forgot_skills = browser_skills.forget_host(host)
     return {"ok": True, "host": host, "forgot_strategy": forgot_strategy, "forgot_skills": forgot_skills}
 

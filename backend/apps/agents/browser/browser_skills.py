@@ -60,8 +60,8 @@ def _event(kind: str, host: str, sig: str, rev: int = 0, state: str = "", **extr
     prove the skill layer helps vs. silently thrashes. Lazy + best-effort: this
     module never hard-depends on metrics, and a metrics failure never propagates."""
     try:
-        from . import browser_metrics
-        browser_metrics.record_skill_event(kind, host, sig, rev=rev, state=state, extra=extra or None)
+        from backend.apps.agents.browser.browser_metrics import record_skill_event
+        record_skill_event(kind, host, sig, rev=rev, state=state, extra=extra or None)
     except Exception:
         pass
 

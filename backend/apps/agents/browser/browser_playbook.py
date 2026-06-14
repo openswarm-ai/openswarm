@@ -38,18 +38,18 @@ from backend.apps.agents.browser.seed_playbooks import seed_for
 
 logger = logging.getLogger(__name__)
 
-_PLAYBOOK_FORMAT_VERSION = 1
-_MAX_BULLETS = 8          # cap per site; reconcile keeps the most useful
-_MAX_BULLET_CHARS = 160
-_MAX_DISK_PLAYBOOKS = 500
-_MIN_TURNS_TO_LEARN = 4   # a 1-3 turn run taught nothing worth a durable bullet
+P_PLAYBOOK_FORMAT_VERSION = 1
+P_MAX_BULLETS = 8          # cap per site; reconcile keeps the most useful
+P_MAX_BULLET_CHARS = 160
+P_MAX_DISK_PLAYBOOKS = 500
+P_MIN_TURNS_TO_LEARN = 4   # a 1-3 turn run taught nothing worth a durable bullet
 
 # In-memory hot cache: host -> list[str] bullets.
-_cache: dict[str, list[str]] = {}
+P_CACHE: dict[str, list[str]] = {}
 
 # Same sensitivity guard the skill layer uses: a strategy bullet must never carry
 # a secret (email/token/etc.). We scrub bullets through this before persisting.
-_SECRET_RE = re.compile(
+P_SECRET_RE = re.compile(
     r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"      # email
     r"|\b(sk-|ghp_|gho_|pk_|xox[bap]-|AIza|eyJ)[A-Za-z0-9._-]+"  # token prefixes
     r"|\b(?:\d[ -]?){13,19}\b"                              # card-ish
@@ -64,19 +64,19 @@ def host_of(url: str) -> str:
         return ""
 
 
-def _has_secret(text: str) -> bool:
-    return bool(_SECRET_RE.search(text or ""))
+def p_has_secret(text: str) -> bool:
+    return bool(P_SECRET_RE.search(text or ""))
 
 
-def _clean_bullet(b: str) -> str | None:
+def clean_bullet(b: str) -> str | None:
     b = re.sub(r"\s+", " ", str(b or "")).strip().lstrip("-*• ").strip()
-    if not b or _has_secret(b):
+    if not b or p_has_secret(b):
         return None
-    return b[:_MAX_BULLET_CHARS]
+    return b[:P_MAX_BULLET_CHARS]
 
 
 # --- persistence (mirrors browser_skills, separate dir) -------------------
-def _dir() -> str | None:
+def p_dir() -> str | None:
     base = os.environ.get("OPENSWARM_BROWSER_PLAYBOOK_DIR")
     if not base:
         try:
@@ -91,20 +91,20 @@ def _dir() -> str | None:
     return base
 
 
-def _path(host: str) -> str | None:
+def p_path(host: str) -> str | None:
     import hashlib
-    d = _dir()
+    d = p_dir()
     if not d:
         return None
     h = hashlib.sha256(host.encode("utf-8")).hexdigest()[:32]
     return os.path.join(d, f"{h}.json")
 
 
-def _persist(host: str, bullets: list[str]) -> None:
-    path = _path(host)
+def p_persist(host: str, bullets: list[str]) -> None:
+    path = p_path(host)
     if not path:
         return
-    payload = {"version": _PLAYBOOK_FORMAT_VERSION, "host": host,
+    payload = {"version": P_PLAYBOOK_FORMAT_VERSION, "host": host,
                "bullets": bullets, "updated_at": time.time()}
     try:
         d = os.path.dirname(path)
@@ -112,18 +112,18 @@ def _persist(host: str, bullets: list[str]) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(payload, f)
         os.replace(tmp, path)  # atomic; a reader never sees a half-written file
-        _evict_if_over_cap(d)
+        p_evict_if_over_cap(d)
     except Exception as e:
         logger.debug(f"[browser-playbook] persist failed: {e}")
 
 
-def _evict_if_over_cap(d: str) -> None:
+def p_evict_if_over_cap(d: str) -> None:
     try:
         files = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".json")]
-        if len(files) <= _MAX_DISK_PLAYBOOKS:
+        if len(files) <= P_MAX_DISK_PLAYBOOKS:
             return
         files.sort(key=lambda p: os.path.getmtime(p))
-        for p in files[: len(files) - _MAX_DISK_PLAYBOOKS]:
+        for p in files[: len(files) - P_MAX_DISK_PLAYBOOKS]:
             try:
                 os.remove(p)
             except Exception:
@@ -132,14 +132,14 @@ def _evict_if_over_cap(d: str) -> None:
         pass
 
 
-def _load(host: str) -> list[str]:
-    path = _path(host)
+def p_load(host: str) -> list[str]:
+    path = p_path(host)
     if not path or not os.path.exists(path):
         return []
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        if data.get("version") != _PLAYBOOK_FORMAT_VERSION:
+        if data.get("version") != P_PLAYBOOK_FORMAT_VERSION:
             return []
         return [b for b in (data.get("bullets") or []) if isinstance(b, str)]
     except Exception:
@@ -155,10 +155,10 @@ def get_playbook(host: str) -> list[str]:
     writes a learned playbook that supersedes it."""
     if not host:
         return []
-    if host in _cache:
-        return _cache[host]
-    bullets = _load(host) or seed_for(host)
-    _cache[host] = bullets
+    if host in P_CACHE:
+        return P_CACHE[host]
+    bullets = p_load(host) or seed_for(host)
+    P_CACHE[host] = bullets
     return bullets
 
 
@@ -167,7 +167,7 @@ def format_for_prompt(host: str) -> str:
     bullets = get_playbook(host)
     if not bullets:
         return ""
-    lines = "\n".join(f"- {b}" for b in bullets[:_MAX_BULLETS])
+    lines = "\n".join(f"- {b}" for b in bullets[:P_MAX_BULLETS])
     return (
         f"\n\n## What you learned about {host} on past visits\n"
         "Use these as a head start to skip re-discovery, but re-verify since the "
@@ -175,19 +175,19 @@ def format_for_prompt(host: str) -> str:
     )
 
 
-def _store(host: str, bullets: list[str]) -> list[str]:
+def p_store(host: str, bullets: list[str]) -> list[str]:
     """Clean, cap, persist, warm cache. Returns the stored list."""
     cleaned: list[str] = []
     seen = set()
     for b in bullets:
-        cb = _clean_bullet(b)
+        cb = clean_bullet(b)
         if cb and cb.lower() not in seen:
             seen.add(cb.lower())
             cleaned.append(cb)
-        if len(cleaned) >= _MAX_BULLETS:
+        if len(cleaned) >= P_MAX_BULLETS:
             break
-    _cache[host] = cleaned
-    _persist(host, cleaned)
+    P_CACHE[host] = cleaned
+    p_persist(host, cleaned)
     return cleaned
 
 
@@ -195,10 +195,10 @@ def _store(host: str, bullets: list[str]) -> list[str]:
 def should_learn(honest: bool, turns: int) -> bool:
     """Only learn from a verified, substantive success: a ghost teaches nothing,
     and a 1-3 turn run has no durable site strategy worth a bullet."""
-    return bool(honest) and turns >= _MIN_TURNS_TO_LEARN
+    return bool(honest) and turns >= P_MIN_TURNS_TO_LEARN
 
 
-def _build_prompt(host: str, task: str, working_memory: str, summary: str,
+def p_build_prompt(host: str, task: str, working_memory: str, summary: str,
                   existing: list[str]) -> str:
     ex = "\n".join(f"{i+1}. {b}" for i, b in enumerate(existing)) or "(empty)"
     return (
@@ -214,7 +214,7 @@ def _build_prompt(host: str, task: str, working_memory: str, summary: str,
         "lessons that are SITE-AGNOSTIC (true on ANY website, e.g. how composers/Send "
         "buttons behave in general), so other sites can reuse them. `universal` may be "
         "empty; never put site-specific URLs, selectors, or names in it. Rules:\n"
-        f"- At most {_MAX_BULLETS} bullets, each under {_MAX_BULLET_CHARS} chars, "
+        f"- At most {P_MAX_BULLETS} bullets, each under {P_MAX_BULLET_CHARS} chars, "
         "atomic and REUSABLE for ANY task on this site.\n"
         "- Keep only durable site strategy: which queries/filters/URLs work, what "
         "to avoid, where things live, walls that are safe to ignore.\n"
@@ -234,7 +234,7 @@ def _build_prompt(host: str, task: str, working_memory: str, summary: str,
     )
 
 
-def _parse(text: str) -> list[str] | None:
+def p_parse(text: str) -> list[str] | None:
     """Pull the bullet list out of the aux reply. Tolerant of code fences/prose."""
     if not text:
         return None
@@ -251,7 +251,7 @@ def _parse(text: str) -> list[str] | None:
     return [str(x) for x in pb if isinstance(x, (str, int, float))]
 
 
-def _parse_universal(text: str) -> list[str]:
+def p_parse_universal(text: str) -> list[str]:
     """The site-agnostic subset the distill flagged, for the cross-site meta-playbook.
     Tolerant: missing/garbled `universal` just yields nothing (the site distill still runs)."""
     if not text:
@@ -279,22 +279,22 @@ async def distill_and_store(host, task, working_memory, summary,
         if not host or not aux_client or not aux_model:
             return False
         existing = get_playbook(host)
-        prompt = _build_prompt(host, task or "", working_memory or "", summary or "", existing)
+        prompt = p_build_prompt(host, task or "", working_memory or "", summary or "", existing)
         resp = await aux_client.messages.create(
             model=aux_model, max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )
         text = "".join(getattr(b, "text", "") for b in (resp.content or []))
-        new_bullets = _parse(text)
+        new_bullets = p_parse(text)
         if new_bullets is None:
             return False
-        stored = _store(host, new_bullets)
+        stored = p_store(host, new_bullets)
         changed = stored != existing
         # Fold any site-agnostic lessons into the cross-site meta-playbook (no extra
         # LLM call, they rode along in this same reply). Best-effort, never fatal.
         try:
-            from backend.apps.agents.browser import browser_meta_playbook
-            browser_meta_playbook.absorb(_parse_universal(text))
+            from backend.apps.agents.browser.browser_meta_playbook import absorb
+            absorb(p_parse_universal(text))
         except Exception:
             pass
         if changed:
@@ -310,7 +310,7 @@ async def distill_and_store(host, task, working_memory, summary,
 def list_hosts() -> list[dict]:
     """Every site we have a playbook for, for a 'what has it learned' view."""
     out = []
-    d = _dir()
+    d = p_dir()
     if d:
         try:
             for f in os.listdir(d):
@@ -333,8 +333,8 @@ def forget(host: str) -> bool:
     """User-facing: drop a site's learned strategy (it re-learns next success)."""
     if not host:
         return False
-    _cache.pop(host, None)
-    path = _path(host)
+    P_CACHE.pop(host, None)
+    path = p_path(host)
     if path and os.path.exists(path):
         try:
             os.remove(path)
@@ -347,9 +347,9 @@ def forget(host: str) -> bool:
 
 def clear(wipe_disk: bool = False) -> None:
     """Clear the in-memory cache (tests). With wipe_disk, also remove files."""
-    _cache.clear()
+    P_CACHE.clear()
     if wipe_disk:
-        d = _dir()
+        d = p_dir()
         if d:
             try:
                 for f in os.listdir(d):

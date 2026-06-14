@@ -28,13 +28,13 @@ from backend.apps.agents.browser.browser_history import (
     set_domain_note
 )
 from backend.apps.agents.browser.browser_loop import (
-    _LOOP_DETECTION_EXCLUDED_TOOLS,
-    _LOOP_HARD_CAP,
-    _LOOP_WARNING_TEXT,
-    _LOOP_WINDOW_SIZE,
-    _detect_loop,
-    _hash_tool_call,
-    _CARD_GONE_LIMIT,
+    LOOP_DETECTION_EXCLUDED_TOOLS,
+    LOOP_HARD_CAP,
+    LOOP_WARNING_TEXT,
+    LOOP_WINDOW_SIZE,
+    detect_loop,
+    hash_tool_call,
+    CARD_GONE_LIMIT,
     advance_stagnation,
     card_is_unavailable,
     completion_is_honest,
@@ -64,15 +64,20 @@ _WRAPUP_NUDGE = (
 )
 from backend.apps.agents.browser import browser_batch_replay
 from backend.apps.agents.browser import browser_extract
-from backend.apps.agents.browser import browser_metrics
-from backend.apps.agents.browser import browser_playbook
-from backend.apps.agents.browser import browser_save
-from backend.apps.agents.browser import browser_meta_playbook
+from backend.apps.agents.browser.browser_metrics import record_tool, record_task
+from backend.apps.agents.browser.browser_playbook import (
+    format_for_prompt as normal_format_for_prompt,
+    get_playbook,
+    should_learn,
+    distill_and_store,
+)
+from backend.apps.agents.browser.browser_save import save_page_data
+from backend.apps.agents.browser.browser_meta_playbook import format_for_prompt as meta_format_for_prompt
 from backend.apps.agents.browser import browser_skills
 from backend.apps.agents.browser import browser_wait
-from backend.apps.agents.browser import browser_schema
 from backend.apps.agents.browser.browser_schema import (
-    _ACTION_TOOLS_REQUIRING_REPORT,
+    MODEL_VISIBLE_TOOLS,
+    ACTION_TOOLS_REQUIRING_REPORT,
     ACTION_MAP,
     MAX_TURNS,
     SYSTEM_PROMPT,
@@ -614,14 +619,14 @@ async def run_browser_agent(
     pb_seeded = False  # whether tier-2 strategy was injected, for measuring its effect
     _pb_host = browser_skills.host_of(initial_url or current_url or "")
     if _pb_host:
-        _pb_block = browser_playbook.format_for_prompt(_pb_host)
+        _pb_block = normal_format_for_prompt(_pb_host)
         if _pb_block:
             run_system_prompt = run_system_prompt + _pb_block
             pb_seeded = True
     # Tier-3 memory: the cross-site priors learned on EVERY other site, injected on
     # every run (host-agnostic) so a brand-new site isn't fully cold. Advisory, capped.
     try:
-        _meta_block = browser_meta_playbook.format_for_prompt()
+        _meta_block = meta_format_for_prompt()
         if _meta_block:
             run_system_prompt = run_system_prompt + _meta_block
     except Exception:
@@ -634,7 +639,7 @@ async def run_browser_agent(
         "type": "text", "text": run_system_prompt,
         "cache_control": {"type": "ephemeral"},
     }]
-    _cached_tools = [dict(t) for t in browser_schema.MODEL_VISIBLE_TOOLS]
+    _cached_tools = [dict(t) for t in MODEL_VISIBLE_TOOLS]
     if _cached_tools:
         _cached_tools[-1] = {**_cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
@@ -772,7 +777,7 @@ async def run_browser_agent(
                     return None
                 el_ms = int((time.time() - st) * 1000)
                 step_ok = "error" not in res
-                browser_metrics.record_tool(
+                record_tool(
                     session_id, browser_id, -1, step["tool"], el_ms,
                     ok=step_ok, error=res.get("error", ""), is_loop=False,
                     stagnation_streak=0, result_len=len(str(res.get("text") or res.get("error") or "")),
@@ -823,7 +828,7 @@ async def run_browser_agent(
                 "result_summary": str(res.get("text", res.get("error", "")))[:200],
                 "elapsed_ms": el_ms, "ok": step_ok,
             })
-            browser_metrics.record_tool(
+            record_tool(
                 session_id, browser_id, -1, step["tool"], el_ms,
                 ok=step_ok, error=res.get("error", ""), is_loop=False,
                 stagnation_streak=0, result_len=len(str(res.get("text") or res.get("error") or "")),
@@ -836,7 +841,7 @@ async def run_browser_agent(
                 last_seen_url = res["url"]
         if ok and rlog:
             browser_skills.mark_replay_succeeded(host, skill_key_task)
-            summary = browser_metrics.record_task(
+            summary = record_task(
                 session_id, browser_id, task, "completed", metrics_started_at,
                 turns_spent, rlog, session.tokens,
                 path="replay", task_sig=browser_skills._sig(skill_key_task),
@@ -1045,7 +1050,7 @@ async def run_browser_agent(
             # tool is the redundant narration the prompt now forbids; count it so
             # the bench can verify the prose actually went away.
             if any(t.strip() for t in text_parts) and any(
-                tu.name in _ACTION_TOOLS_REQUIRING_REPORT for tu in tool_uses
+                tu.name in ACTION_TOOLS_REQUIRING_REPORT for tu in tool_uses
             ):
                 narration_turns += 1
 
@@ -1085,7 +1090,7 @@ async def run_browser_agent(
             # the brain state is recorded before any actions execute.
             has_report_progress = any(tu.name == "ReportProgress" for tu in tool_uses)
             has_action_tools = any(
-                tu.name in _ACTION_TOOLS_REQUIRING_REPORT for tu in tool_uses
+                tu.name in ACTION_TOOLS_REQUIRING_REPORT for tu in tool_uses
             )
             # Violation: action tools without ReportProgress in the same turn.
             # The model MUST articulate its evaluation/memory/goal before acting.
@@ -1102,7 +1107,7 @@ async def run_browser_agent(
                 rp_violations += 1
                 rp_reminder_pending = True
                 if not current_next_goal or current_next_goal == task:
-                    _synth = next((t.name for t in tool_uses if t.name in _ACTION_TOOLS_REQUIRING_REPORT), "act")
+                    _synth = next((t.name for t in tool_uses if t.name in ACTION_TOOLS_REQUIRING_REPORT), "act")
                     current_next_goal = f"(continuing) {_synth.replace('Browser', '').lower()}"
                 logger.info(
                     f"[browser-agent {session_id}] ReportProgress omitted; running the action "
@@ -1247,7 +1252,7 @@ async def run_browser_agent(
                     cur_host = browser_skills.host_of(last_seen_url) or replay_host
                     if tu.name == "BrowserListSkills":
                         skills = browser_skills.list_skills(cur_host) if cur_host else []
-                        playbook = browser_playbook.get_playbook(cur_host) if cur_host else []
+                        playbook = get_playbook(cur_host) if cur_host else []
                         parts = []
                         if skills:
                             _tag = {"trusted": "proven", "probation": "unproven", "quarantine": "disabled"}
@@ -1307,7 +1312,7 @@ async def run_browser_agent(
                         "result_summary": ex_text[:200],
                         "elapsed_ms": int((time.time() - st) * 1000), "ok": ex_ok,
                     })
-                    browser_metrics.record_tool(
+                    record_tool(
                         session_id, browser_id, turn, "BrowserExtract",
                         int((time.time() - st) * 1000), ok=ex_ok,
                         error="" if ex_ok else ex_text[:160], is_loop=False,
@@ -1342,7 +1347,7 @@ async def run_browser_agent(
                             if parent_session_id:
                                 _ps = agent_manager.get_session(parent_session_id)
                                 _cwd = getattr(_ps, "cwd", None) if _ps else None
-                            sv_text = browser_save.save_page_data(
+                            sv_text = save_page_data(
                                 _cwd, parent_session_id or session_id, _fname, str((_ev or {}).get("text") or ""))
                             sv_ok = sv_text.startswith("Saved")
                     action_log.append({
@@ -1396,7 +1401,7 @@ async def run_browser_agent(
                                     "result_summary": str(res.get("text", res.get("error", "")))[:200],
                                     "elapsed_ms": el, "ok": step_ok,
                                 })
-                                browser_metrics.record_tool(
+                                record_tool(
                                     session_id, browser_id, turn, tool_name, el, ok=step_ok,
                                     error=res.get("error", ""), is_loop=False, stagnation_streak=0,
                                     result_len=len(str(res.get("text") or res.get("error") or "")),
@@ -1663,7 +1668,7 @@ async def run_browser_agent(
 
                 # One gentle nudge per violating turn, folded onto the action that
                 # ran, so the model self-corrects next turn without us costing it one.
-                if rp_reminder_pending and tu.name in _ACTION_TOOLS_REQUIRING_REPORT:
+                if rp_reminder_pending and tu.name in ACTION_TOOLS_REQUIRING_REPORT:
                     rp_reminder_pending = False
                     result["text"] = (f"{result.get('text') or ''}\n\n[note] Action ran. Next turn, "
                                        "include ReportProgress (working_memory + next_goal) alongside "
@@ -1713,7 +1718,7 @@ async def run_browser_agent(
                                 "tool": "BrowserExtract", "input": {"instruction": "(auto candidate scan)"},
                                 "result_summary": _scan_json[:200], "elapsed_ms": _sc_ms, "ok": True,
                             })
-                            browser_metrics.record_tool(
+                            record_tool(
                                 session_id, browser_id, turn, "BrowserExtract", _sc_ms, ok=True,
                                 error="", is_loop=False, stagnation_streak=0, result_len=len(_scan_json),
                             )
@@ -1765,16 +1770,16 @@ async def run_browser_agent(
                 # acknowledge it on its next turn.
                 # Loop detection only covers the non-excluded tools, so skip the
                 # hash entirely for the excluded ones; otherwise a screenshot/read
-                # serializes its full ~1MB result here just for _detect_loop to
+                # serializes its full ~1MB result here just for detect_loop to
                 # discard it (it short-circuits excluded tools to False anyway).
-                if tu.name in _LOOP_DETECTION_EXCLUDED_TOOLS:
+                if tu.name in LOOP_DETECTION_EXCLUDED_TOOLS:
                     is_loop = False
                 else:
-                    call_key = _hash_tool_call(tu.name, tu.input, result)
-                    is_loop = _detect_loop(recent_tool_calls, call_key)
+                    call_key = hash_tool_call(tu.name, tu.input, result)
+                    is_loop = detect_loop(recent_tool_calls, call_key)
                     recent_tool_calls.append(call_key)
-                    if len(recent_tool_calls) > _LOOP_WINDOW_SIZE * 2:
-                        recent_tool_calls = recent_tool_calls[-_LOOP_WINDOW_SIZE * 2:]
+                    if len(recent_tool_calls) > LOOP_WINDOW_SIZE * 2:
+                        recent_tool_calls = recent_tool_calls[-LOOP_WINDOW_SIZE * 2:]
 
                 content_blocks = _format_tool_result(result, tu.name)
                 try:
@@ -1803,7 +1808,7 @@ async def run_browser_agent(
                 if is_loop:
                     loop_trigger_count += 1
                     repeat_count = sum(1 for c in recent_tool_calls if c == call_key)
-                    warning = _LOOP_WARNING_TEXT.format(count=repeat_count)
+                    warning = LOOP_WARNING_TEXT.format(count=repeat_count)
                     logger.warning(
                         f"[browser-agent {session_id}] loop detected on {tu.name} "
                         f"(trigger #{loop_trigger_count}): {warning}"
@@ -1886,7 +1891,7 @@ async def run_browser_agent(
                                 ]
 
                 _ok = "error" not in result
-                browser_metrics.record_tool(
+                record_tool(
                     session_id, browser_id, turn, tu.name, elapsed_ms,
                     ok=_ok, error=result.get("error", ""),
                     is_loop=is_loop, stagnation_streak=stagnation_streak,
@@ -1942,10 +1947,10 @@ async def run_browser_agent(
             # Hard cap on loops: if the model keeps repeating itself even
             # after we warn it, force-exit so we don't burn the entire turn
             # budget on a stuck agent.
-            if loop_trigger_count >= _LOOP_HARD_CAP:
+            if loop_trigger_count >= LOOP_HARD_CAP:
                 logger.warning(
                     f"[browser-agent {session_id}] hit loop hard cap "
-                    f"({_LOOP_HARD_CAP}); force-exiting"
+                    f"({LOOP_HARD_CAP}); force-exiting"
                 )
                 break
 
@@ -1953,7 +1958,7 @@ async def run_browser_agent(
             # out / the page never responds). Either way the agent can't make
             # progress, so stop retrying after a short streak and report honestly,
             # instead of the 20-minute spin on a wedged tab.
-            if card_gone_streak >= _CARD_GONE_LIMIT:
+            if card_gone_streak >= CARD_GONE_LIMIT:
                 logger.warning(
                     f"[browser-agent {session_id}] browser card {browser_id} is unusable "
                     f"({card_gone_streak} consecutive gone/hung results); aborting fast"
@@ -1962,7 +1967,7 @@ async def run_browser_agent(
 
         if cancel_event.is_set():
             session.status = "stopped"
-            browser_metrics.record_task(session_id, browser_id, task, "stopped",
+            record_task(session_id, browser_id, task, "stopped",
                                         metrics_started_at, turn + 1, action_log, session.tokens)
             await ws_manager.send_to_session(session_id, "agent:status", {
                 "session_id": session_id,
@@ -2010,7 +2015,7 @@ async def run_browser_agent(
         # If the run did no real work (zero actions, all actions errored, or only
         # looked around), report the truth instead of a ghost "completed". A gone
         # card gets its own precise reason instead of the generic verdict.
-        if card_gone_streak >= _CARD_GONE_LIMIT:
+        if card_gone_streak >= CARD_GONE_LIMIT:
             honest, dishonest_reason = False, "the browser became unresponsive (the tab hung or was closed); it needs a fresh browser to continue"
         else:
             honest, dishonest_reason = completion_is_honest(action_log)
@@ -2064,7 +2069,7 @@ async def run_browser_agent(
             f"mean_out_per_turn={out_tokens_total // max(1, _nt)} narration_turns={narration_turns}/{_nt} "
             f"trailing_reads={_trailing_reads}"
         )
-        browser_metrics.record_task(session_id, browser_id, task, final_status,
+        record_task(session_id, browser_id, task, final_status,
                                     metrics_started_at, turn + 1, action_log, session.tokens,
                                     path="llm_fallback" if replay_attempted else "llm",
                                     task_sig=browser_skills._sig(skill_key_task),
@@ -2099,12 +2104,12 @@ async def run_browser_agent(
         # the DURABLE strategy playbook (one cheap aux call, mem0-style distill+
         # reconcile). Fires for BOTH mechanical and judgment tasks, it's how the
         # judgment ones (which can't be skills) still get faster/wiser next time.
-        if browser_playbook.should_learn(honest, turn + 1):
+        if should_learn(honest, turn + 1):
             try:
                 pb_host = browser_skills.host_of(last_seen_url)
                 if pb_host:
                     aux_client, aux_model = await _get_aux_client()
-                    changed = await browser_playbook.distill_and_store(
+                    changed = await distill_and_store(
                         pb_host, skill_key_task, latest_working_mem, summary,
                         aux_client, aux_model,
                     )
@@ -2148,7 +2153,7 @@ async def run_browser_agent(
     except Exception as e:
         logger.exception(f"Browser agent {session_id} error: {e}")
         session.status = "error"
-        browser_metrics.record_task(session_id, browser_id, task, "error",
+        record_task(session_id, browser_id, task, "error",
                                     metrics_started_at, locals().get("turn", -1) + 1,
                                     action_log, session.tokens)
         error_msg = Message(role="system", content=f"Error: {str(e)}")

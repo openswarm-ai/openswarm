@@ -10,15 +10,15 @@ workspace subdir. Returns a short receipt for the model, never the data itself.
 import json
 import os
 
-_MAX_BYTES = 25 * 1024 * 1024  # a page can't realistically hold more scraped data
-_ALLOWED_EXT = {".json", ".ndjson", ".csv", ".tsv", ".txt", ".md"}
-_SUBDIR = "browser-data"  # never the workspace root, so we can't clobber project files
+P_MAX_BYTES = 25 * 1024 * 1024  # a page can't realistically hold more scraped data
+P_ALLOWED_EXT = {".json", ".ndjson", ".csv", ".tsv", ".txt", ".md"}
+P_SUBDIR = "browser-data"  # never the workspace root, so we can't clobber project files
 
 
-def _dest_dir(cwd: str | None, session_id: str) -> str:
+def p_dest_dir(cwd: str | None, session_id: str) -> str:
     base = cwd if (cwd and os.path.isdir(cwd)) else os.path.join(
         os.path.expanduser("~"), ".openswarm", "workspaces", session_id or "browser")
-    dest = os.path.join(base, _SUBDIR)
+    dest = os.path.join(base, P_SUBDIR)
     os.makedirs(dest, exist_ok=True)
     return dest
 
@@ -31,15 +31,15 @@ def save_page_data(cwd: str | None, session_id: str, filename: str, content: str
     if not name:
         return "Save failed: give a plain filename like results.json."
     ext = os.path.splitext(name)[1].lower()
-    if ext not in _ALLOWED_EXT:
+    if ext not in P_ALLOWED_EXT:
         return (f"Save failed: '{ext or 'no extension'}' isn't allowed; this tool is for data, "
-                f"not code. Use one of: {', '.join(sorted(_ALLOWED_EXT))}.")
+                f"not code. Use one of: {', '.join(sorted(P_ALLOWED_EXT))}.")
     body = content or ""
-    if len(body.encode("utf-8", "ignore")) > _MAX_BYTES:
-        return f"Save failed: that's over the {_MAX_BYTES // (1024 * 1024)}MB cap; save fewer fields or rows."
+    if len(body.encode("utf-8", "ignore")) > P_MAX_BYTES:
+        return f"Save failed: that's over the {P_MAX_BYTES // (1024 * 1024)}MB cap; save fewer fields or rows."
 
     try:
-        dest_dir = _dest_dir(cwd, session_id)
+        dest_dir = p_dest_dir(cwd, session_id)
         dest_real = os.path.realpath(dest_dir)
         full = os.path.realpath(os.path.join(dest_dir, name))
         # realpath + os.sep guard: defeats traversal, absolute paths, symlinks, AND a

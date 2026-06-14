@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 #   elems  - element count; the loop watches it stop changing = DOM/visual settle
 #   found  - the agent's `until` target is present + visible (visible text or selector)
 # `until` is JSON-encoded into a string literal, so it's data, never executable.
-def _probe_js(until: str) -> str:
+def p_probe_js(until: str) -> str:
     spec = json.dumps(until or "")
     return (
         "(()=>{const n=performance.now();"
@@ -50,21 +50,21 @@ def _probe_js(until: str) -> str:
         "quiet:Math.round(n-last),elems:document.getElementsByTagName('*').length,found});})()"
     )
 
-_QUIET_WINDOW_MS = 400   # network must be silent this long to count as settled
-_FLOOR_MS = 250          # never return before this (a momentary gap isn't 'settled')
-_POLL_MS = 150
+P_QUIET_WINDOW_MS = 400   # network must be silent this long to count as settled
+P_FLOOR_MS = 250          # never return before this (a momentary gap isn't 'settled')
+P_POLL_MS = 150
 # A healthy probe is tens of ms. A busy-but-fine SPA (heavy main-thread work mid-
 # hydration) can occasionally block longer, so a slow probe is NOT proof of death,
 # it's just a reason to stop THIS wait early instead of inheriting the 30s command
 # timeout. We bound each probe at this, and after a few consecutive non-responses
 # we surface hung=True as a SIGNAL (the loop folds it into a cross-command streak
 # and only then acts), never as a unilateral abort from a single wait.
-_PROBE_TIMEOUT_S = 2.5
-_MAX_PROBE_TIMEOUTS = 3
+P_PROBE_TIMEOUT_S = 2.5
+P_MAX_PROBE_TIMEOUTS = 3
 
 
-def decide_stop(ready, quiet_ms, dom_stable_ms, found, elapsed_ms,
-                floor_ms=_FLOOR_MS, settle_window_ms=_QUIET_WINDOW_MS) -> bool:
+def p_decide_stop(ready, quiet_ms, dom_stable_ms, found, elapsed_ms,
+                floor_ms=P_FLOOR_MS, settle_window_ms=P_QUIET_WINDOW_MS) -> bool:
     """Pure decision. Stop the INSTANT the agent's target is present (no floor, it's
     exactly what we were waiting for). Otherwise, past the floor and once the document
     is complete, stop as soon as it has gone quiet by EITHER the network OR the DOM
@@ -81,9 +81,9 @@ def decide_stop(ready, quiet_ms, dom_stable_ms, found, elapsed_ms,
 
 
 async def smart_wait(execute_fn, browser_id, tab_id, max_ms, *, until="",
-                     poll_ms=_POLL_MS, floor_ms=_FLOOR_MS,
-                     quiet_window_ms=_QUIET_WINDOW_MS,
-                     probe_timeout_s=_PROBE_TIMEOUT_S, target_only=False) -> dict:
+                     poll_ms=P_POLL_MS, floor_ms=P_FLOOR_MS,
+                     quiet_window_ms=P_QUIET_WINDOW_MS,
+                     probe_timeout_s=P_PROBE_TIMEOUT_S, target_only=False) -> dict:
     """Wait up to `max_ms`, returning early once the page is ready. `until` (optional)
     is a label / visible text / selector the agent expects to appear; the wait ends the
     INSTANT it's present, so the agent isn't waiting blind. `execute_fn` is an async
@@ -96,7 +96,7 @@ async def smart_wait(execute_fn, browser_id, tab_id, max_ms, *, until="",
     a result that renders a beat AFTER settle (a sent message landing in a thread under
     load), which the settle-early path otherwise misses, reporting a false 'not confirmed'."""
     max_ms = max(100, min(int(max_ms or 1000), 10000))
-    probe_js = _probe_js(until)
+    probe_js = p_probe_js(until)
     start = time.monotonic()
     settled = False
     found = False
@@ -106,12 +106,12 @@ async def smart_wait(execute_fn, browser_id, tab_id, max_ms, *, until="",
     last_elems = None
     elems_changed_at = start  # DOM-settle clock: when the element count last changed
 
-    def _elapsed():
+    def p_elapsed():
         return (time.monotonic() - start) * 1000
 
-    while _elapsed() < max_ms:
-        await asyncio.sleep(min(poll_ms, max(0, max_ms - _elapsed())) / 1000)
-        if _elapsed() >= max_ms:
+    while p_elapsed() < max_ms:
+        await asyncio.sleep(min(poll_ms, max(0, max_ms - p_elapsed())) / 1000)
+        if p_elapsed() >= max_ms:
             break
         # Bound each probe so a wedged tab can't make us inherit the 30s command
         # timeout. A timeout is a not-responding signal (not a verdict): count
@@ -124,7 +124,7 @@ async def smart_wait(execute_fn, browser_id, tab_id, max_ms, *, until="",
             )
         except asyncio.TimeoutError:
             probe_timeouts += 1
-            if probe_timeouts >= _MAX_PROBE_TIMEOUTS:
+            if probe_timeouts >= P_MAX_PROBE_TIMEOUTS:
                 hung = True
                 break
             continue
@@ -155,14 +155,14 @@ async def smart_wait(execute_fn, browser_id, tab_id, max_ms, *, until="",
                 found = True
                 break
             continue
-        if decide_stop(probe.get("ready"), probe.get("quiet", 0), dom_stable_ms,
-                       probe.get("found"), _elapsed(),
+        if p_decide_stop(probe.get("ready"), probe.get("quiet", 0), dom_stable_ms,
+                       probe.get("found"), p_elapsed(),
                        floor_ms=floor_ms, settle_window_ms=quiet_window_ms):
             settled = True
             found = bool(probe.get("found"))
             break
 
-    waited = round(_elapsed())
+    waited = round(p_elapsed())
     if found:
         state = "found target"
     elif settled:

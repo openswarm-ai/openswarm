@@ -13,7 +13,7 @@ import re
 # Tools that are read-only / idempotent and should NOT count toward loop
 # detection. Repeating these is normal (scrolling through a feed, taking
 # successive screenshots, polling for an element to appear).
-_LOOP_DETECTION_EXCLUDED_TOOLS = {
+LOOP_DETECTION_EXCLUDED_TOOLS = {
     "BrowserScreenshot",
     "BrowserGetText",
     "BrowserGetConsole",  # read-only diagnostic; reading it repeatedly is fine
@@ -27,9 +27,9 @@ _LOOP_DETECTION_EXCLUDED_TOOLS = {
     "BrowserRepeatFlow",      # batch: drives its own verified per-item loop
 }
 
-_LOOP_WINDOW_SIZE = 5
-_LOOP_REPEAT_THRESHOLD = 2  # the SECOND identical (tool,input,result) is already a wall
-_LOOP_HARD_CAP = 5
+LOOP_WINDOW_SIZE = 5
+P_LOOP_REPEAT_THRESHOLD = 2  # the SECOND identical (tool,input,result) is already a wall
+LOOP_HARD_CAP = 5
 
 
 # Universal close-affordance vocabulary for blocking popups (cookie walls,
@@ -39,13 +39,13 @@ _LOOP_HARD_CAP = 5
 # task required. Deliberately omits generic "Close"/"Dismiss"/"Skip", which DO
 # appear on needed dialogs (e.g. "Close your conversation"). Keys on the pattern,
 # not any one site, so it generalizes.
-_DISMISS_NAMES = frozenset({
+P_DISMISS_NAMES = frozenset({
     "no thanks", "no, thanks", "maybe later", "not now", "skip for now",
     "remind me later", "got it", "decline", "no, maybe later", "not interested",
 })
 # never dismiss anything that smells like security or a real decision
-_DANGER_NAME_RE = re.compile(r"verif|confirm|2fa|password|sign|pay|delete|send|post|submit", re.I)
-_ROW_RE = re.compile(r'<\s*([a-z]+)\s+"([^"]*)"', re.I)  # matches a [i]<role "name"> row
+P_DANGER_NAME_RE = re.compile(r"verif|confirm|2fa|password|sign|pay|delete|send|post|submit", re.I)
+P_ROW_RE = re.compile(r'<\s*([a-z]+)\s+"([^"]*)"', re.I)  # matches a [i]<role "name"> row
 
 
 def interstitial_dismiss_target(interactives_text: str) -> str | None:
@@ -55,19 +55,19 @@ def interstitial_dismiss_target(interactives_text: str) -> str | None:
     never anything with security/confirm/commit wording, so a mechanical dismiss
     can never close a dialog the task actually required."""
     for line in (interactives_text or "").splitlines():
-        m = _ROW_RE.search(line)
+        m = P_ROW_RE.search(line)
         if not m:
             continue
         role, name = m.group(1).lower(), m.group(2).strip()
         if role not in ("button", "link"):
             continue
         norm = re.sub(r"[^a-z, ]", "", name.lower()).strip()
-        if norm in _DISMISS_NAMES and not _DANGER_NAME_RE.search(name):
+        if norm in P_DISMISS_NAMES and not P_DANGER_NAME_RE.search(name):
             return name
     return None
 
 
-def _hash_tool_call(tool_name: str, tool_input: dict, result: dict) -> tuple[str, str, str]:
+def hash_tool_call(tool_name: str, tool_input: dict, result: dict) -> tuple[str, str, str]:
     """Build a stable hash key for a tool call, including its result.
 
     Including the result hash means that legitimate progress (same input,
@@ -86,24 +86,24 @@ def _hash_tool_call(tool_name: str, tool_input: dict, result: dict) -> tuple[str
     return (tool_name, input_key, result_key)
 
 
-def _detect_loop(
+def detect_loop(
     recent_calls: list[tuple[str, str, str]],
     new_call: tuple[str, str, str],
 ) -> bool:
     """Return True if `new_call` constitutes a loop given recent history.
 
     A loop is when the same (tool, input, result) has appeared at least
-    `_LOOP_REPEAT_THRESHOLD` times within the last `_LOOP_WINDOW_SIZE`
+    `P_LOOP_REPEAT_THRESHOLD` times within the last `LOOP_WINDOW_SIZE`
     state-mutating calls (the new call counts as one of those occurrences).
     """
-    if new_call[0] in _LOOP_DETECTION_EXCLUDED_TOOLS:
+    if new_call[0] in LOOP_DETECTION_EXCLUDED_TOOLS:
         return False
-    window = recent_calls[-(_LOOP_WINDOW_SIZE - 1):] + [new_call]
+    window = recent_calls[-(LOOP_WINDOW_SIZE - 1):] + [new_call]
     matches = sum(1 for c in window if c == new_call)
-    return matches >= _LOOP_REPEAT_THRESHOLD
+    return matches >= P_LOOP_REPEAT_THRESHOLD
 
 
-_LOOP_WARNING_TEXT = (
+LOOP_WARNING_TEXT = (
     "LOOP DETECTED: the same action got the same result {count} times, so repeating "
     "it will NOT help. Diagnose the REAL cause before anything else, do not assume: "
     "read the exact error in the result; call BrowserGetConsole to see the page's own "
@@ -128,20 +128,20 @@ _LOOP_WARNING_TEXT = (
 
 # Read-only / meta tools don't count toward stagnation (same exemption set as
 # the loop detector): re-orienting is not "being stuck".
-_STAGNATION_NEUTRAL_TOOLS = _LOOP_DETECTION_EXCLUDED_TOOLS
-_STAGNATION_ESCALATION_AT = 3
-_STAGNATION_MAX = 5
+P_STAGNATION_NEUTRAL_TOOLS = LOOP_DETECTION_EXCLUDED_TOOLS
+P_STAGNATION_ESCALATION_AT = 3
+P_STAGNATION_MAX = 5
 
-_FAILURE_MARKERS = (
+P_FAILURE_MARKERS = (
     "error", "not found", "no longer valid", "no box model",
     "no valid bounding rect", "failed", "rejected", "timed out",
     "could not", "unable to", "denied",
 )
 
 
-def _looks_like_failure(text: str) -> bool:
+def p_looks_like_failure(text: str) -> bool:
     low = text.lower()
-    return any(m in low for m in _FAILURE_MARKERS)
+    return any(m in low for m in P_FAILURE_MARKERS)
 
 
 def is_unproductive(
@@ -156,7 +156,7 @@ def is_unproductive(
     action, all with no URL change. Neutral tools (screenshot, get_text, etc.)
     never count.
     """
-    if tool_name in _STAGNATION_NEUTRAL_TOOLS:
+    if tool_name in P_STAGNATION_NEUTRAL_TOOLS:
         return False
     new_url = str(result.get("url") or "")
     if new_url and prev_url and new_url != prev_url:
@@ -164,14 +164,14 @@ def is_unproductive(
     if "error" in result:
         return True
     text = str(result.get("text") or result.get("error") or "")
-    if _looks_like_failure(text):
+    if p_looks_like_failure(text):
         return True
     if prev_text and text[:200] == prev_text[:200]:
         return True
     return False
 
 
-_STAGNATION_NUDGE = (
+P_STAGNATION_NUDGE = (
     "NO PROGRESS: your last {streak} actions changed nothing and looked like "
     "failures. Before trying yet another variation, find out WHY: read the exact "
     "errors; call BrowserGetConsole for the page's own JS/network errors; use "
@@ -185,8 +185,8 @@ _STAGNATION_NUDGE = (
 
 
 def stagnation_nudge(streak: int) -> str:
-    base = _STAGNATION_NUDGE.format(streak=streak)
-    if streak >= _STAGNATION_MAX:
+    base = P_STAGNATION_NUDGE.format(streak=streak)
+    if streak >= P_STAGNATION_MAX:
         base += (
             " Switching selectors hasn't worked, so the PLAN itself is likely "
             "wrong: step back and revise your overall approach (a different page, "
@@ -207,7 +207,7 @@ def advance_stagnation(
     return a nudge string when the streak crosses an escalation threshold.
     Returns (new_streak, new_prev_url, new_prev_text, nudge_or_None).
     """
-    if tool_name in _STAGNATION_NEUTRAL_TOOLS:
+    if tool_name in P_STAGNATION_NEUTRAL_TOOLS:
         return streak, prev_url, prev_text, None
     if is_unproductive(tool_name, result, prev_url, prev_text):
         streak += 1
@@ -217,7 +217,7 @@ def advance_stagnation(
     new_text = str(result.get("text") or result.get("error") or "")[:200]
     nudge = (
         stagnation_nudge(streak)
-        if streak in (_STAGNATION_ESCALATION_AT, _STAGNATION_MAX)
+        if streak in (P_STAGNATION_ESCALATION_AT, P_STAGNATION_MAX)
         else None
     )
     return streak, new_url, new_text, nudge
@@ -226,7 +226,7 @@ def advance_stagnation(
 def stagnation_exhausted(streak: int) -> bool:
     """True once deterministic nudging has been exhausted; the caller may then
     escalate to a one-shot aux-LLM adjudication (see browser_validator)."""
-    return streak >= _STAGNATION_MAX
+    return streak >= P_STAGNATION_MAX
 
 
 # --- completion honesty gate ----------------------------------------------
@@ -236,12 +236,12 @@ def stagnation_exhausted(streak: int) -> bool:
 # status say "done", so a fake success is reported as the failure it actually is.
 
 # State-changing tools: a task that needed to DO something must land one of these.
-_PRODUCTIVE_TOOLS = {
+P_PRODUCTIVE_TOOLS = {
     "BrowserClick", "BrowserClickIndex", "BrowserType", "BrowserNavigate",
     "BrowserPressKey", "BrowserScroll", "BrowserBatch",
 }
 # Read/extract tools: a look-only task's evidence is that a read returned content.
-_READ_TOOLS = {
+P_READ_TOOLS = {
     "BrowserGetText", "BrowserGetElements", "BrowserListInteractives",
     "BrowserListRoutes", "BrowserReplayRoute", "BrowserScreenshot", "BrowserEvaluate",
 }
@@ -253,18 +253,18 @@ _READ_TOOLS = {
 # 20-minute LinkedIn spin), so we fail fast. The streak (reset on any good result)
 # absorbs a one-off transient; only a SUSTAINED pattern trips it, so a merely-busy
 # page that recovers is never mistaken for dead.
-_CARD_GONE_MARKERS = (
+P_CARD_GONE_MARKERS = (
     "not an electron webview",   # card closed / destroyed
     "no dashboard is connected", # dashboard view not mounted
     "command timed out",         # hung: the command never came back
     "page unresponsive",         # hung: smart-wait gave up probing the tab
 )
-_CARD_GONE_LIMIT = 2  # consecutive misses before we give up (absorbs a transient)
+CARD_GONE_LIMIT = 2  # consecutive misses before we give up (absorbs a transient)
 
 
 def card_is_unavailable(result: dict) -> bool:
     err = str(result.get("error") or "").lower()
-    return any(m in err for m in _CARD_GONE_MARKERS)
+    return any(m in err for m in P_CARD_GONE_MARKERS)
 
 
 # Errors where the action MISSED but the page is alive (stale index after a
@@ -272,7 +272,7 @@ def card_is_unavailable(result: dict) -> bool:
 # itself is fine, so re-attaching the CURRENT element list to the error lets the
 # model re-act next turn instead of burning a turn re-listing. This NEVER retries
 # the action (no double-send risk); it only enriches the error with fresh state.
-_RECOVERABLE_ERR_MARKERS = (
+P_RECOVERABLE_ERR_MARKERS = (
     "no longer valid", "no node with given id", "page may have changed",
     "covered it", "obscured", "intercepted", "not clickable",
     "box model", "try scrolling", "not visible",
@@ -283,15 +283,15 @@ def recoverable_tool_error(err: str) -> bool:
     """True for a 'the action missed but the page is alive' error worth showing
     fresh state for. False for a dead card (handled separately) or no error."""
     e = (err or "").lower()
-    if not e or any(m in e for m in _CARD_GONE_MARKERS):
+    if not e or any(m in e for m in P_CARD_GONE_MARKERS):
         return False
-    return any(m in e for m in _RECOVERABLE_ERR_MARKERS)
+    return any(m in e for m in P_RECOVERABLE_ERR_MARKERS)
 
 
 # Actions that DIRTY the page so replay-from-here is no longer equivalent to a
 # clean dispatch. Navigation and reads don't dirty anything (they just get us to
 # the page), so the deferred replay re-check is allowed after only those.
-_REPLAY_DIRTYING_TOOLS = {
+P_REPLAY_DIRTYING_TOOLS = {
     "BrowserType", "BrowserClick", "BrowserClickIndex",
     "BrowserPressKey", "BrowserScroll", "BrowserBatch",
 }
@@ -301,18 +301,18 @@ def replay_recheck_is_safe(action_log: list[dict]) -> bool:
     """True if nothing in the run so far has mutated page state, so switching to
     a learned-skill replay now is equivalent to replaying from a clean dispatch
     (the agent only navigated / looked around to get to the right host)."""
-    return not any(a.get("tool") in _REPLAY_DIRTYING_TOOLS for a in action_log)
+    return not any(a.get("tool") in P_REPLAY_DIRTYING_TOOLS for a in action_log)
 
 
 # What the user ASKED FOR outranks how the sub narrated it: an info ask can
 # never replay (the answer must be fresh), an action ask can.
-_INFO_ASK_RE = re.compile(
+P_INFO_ASK_RE = re.compile(
     r"\b(tell me|what(?:'s| is| are)|how (?:many|much)|count|list|summari[sz]e|"
     r"extract|find (?:me|out)|show me|look up|read (?:me|the)|get the|give me|which|"
     r"who (?:is|are)|report back|most (?:viewed|popular|liked|recent|rated|watched)|top \d+)\b",
     re.I,
 )
-_ACTION_ASK_RE = re.compile(
+P_ACTION_ASK_RE = re.compile(
     r"\b(open|go to|navigate|click|send|post|submit|fill|type|search for|log ?in|"
     r"sign ?in|upload|download|book|order|buy|add|create|delete|message|dm|text)\b",
     re.I,
@@ -333,9 +333,9 @@ def deliverable_is_informational(summary: str, task: str = "") -> bool:
     (re-run via the LLM), never a ghost completion."""
     t = (task or "").strip()
     if t:
-        if _INFO_ASK_RE.search(t):
+        if P_INFO_ASK_RE.search(t):
             return True
-        if _ACTION_ASK_RE.search(t):
+        if P_ACTION_ASK_RE.search(t):
             return False
     s = (summary or "").strip()
     s = re.sub(r"OUTCOME:.*$", "", s, flags=re.S).strip()
@@ -358,11 +358,11 @@ def completion_is_honest(action_log: list[dict]) -> tuple[bool, str]:
     """
     if not action_log:
         return False, "declared done without taking a single action"
-    actions = [a for a in action_log if a.get("tool") in _PRODUCTIVE_TOOLS]
+    actions = [a for a in action_log if a.get("tool") in P_PRODUCTIVE_TOOLS]
     actions_ok = [a for a in actions if a.get("ok")]
     reads_ok = [
         a for a in action_log
-        if a.get("tool") in _READ_TOOLS and a.get("ok")
+        if a.get("tool") in P_READ_TOOLS and a.get("ok")
         and str(a.get("result_summary") or "").strip()
     ]
     if actions and not actions_ok:

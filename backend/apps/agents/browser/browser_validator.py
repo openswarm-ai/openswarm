@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_ADJUDICATION_PROMPT = (
+P_ADJUDICATION_PROMPT = (
     "A browser automation agent is stuck: its recent actions produced no "
     "progress on the page.\n\n"
     "GOAL: {goal}\n\n"
@@ -27,7 +27,7 @@ _ADJUDICATION_PROMPT = (
 )
 
 
-def _extract_text(response) -> str:
+def p_extract_text(response) -> str:
     """Pull the text out of an Anthropic-style response object."""
     parts = []
     for block in getattr(response, "content", None) or []:
@@ -40,7 +40,7 @@ async def adjudicate_stuck(
     client, model: str, goal: str, recent_actions: str, page_text: str,
 ) -> str:
     """One cheap aux call returning concrete guidance, or "" on any failure."""
-    prompt = _ADJUDICATION_PROMPT.format(
+    prompt = P_ADJUDICATION_PROMPT.format(
         goal=(goal or "(unknown)")[:400],
         recent=(recent_actions or "(none)")[:1200],
         page=(page_text or "(empty)")[:1500],
@@ -54,4 +54,4 @@ async def adjudicate_stuck(
     except Exception as e:
         logger.warning(f"[browser-validator] adjudication call failed: {e}")
         return ""
-    return _extract_text(response)
+    return p_extract_text(response)

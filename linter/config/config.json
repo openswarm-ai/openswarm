@@ -70,7 +70,8 @@
     "no-underscore-names": [
       "backend/apps/agents/agent_manager.py",
       "backend/apps/agents/agents.py",
-      "backend/apps/agents/browser/browser_agent.py"
+      "backend/apps/agents/browser/browser_agent.py",
+      "backend/apps/agents/browser/browser_skills.py"
     ],
     "p-private": [],
     "endpoints": [],

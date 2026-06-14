@@ -47,7 +47,7 @@ from backend.apps.agents.manager.prompt.tool_catalog import (
     _get_denied_tool_names,
     _is_fully_denied,
 )
-from backend.apps.agents.core.aux_llm import _safe_resp_text, clean_short_label
+from backend.apps.agents.core.aux_llm import safe_resp_text, clean_short_label
 from backend.apps.agents.manager.session.history_compaction import (
     _build_history_prefix,
     _get_branch_messages,
@@ -3714,7 +3714,7 @@ class AgentManager:
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_turn}],
             )
-            generated = clean_short_label(_safe_resp_text(resp))
+            generated = clean_short_label(safe_resp_text(resp))
             if generated:
                 title = generated
         except Exception as e:
@@ -3788,7 +3788,7 @@ class AgentManager:
                 }],
             )
             # Bail on refusals/first-person rather than show a hallucinated label.
-            label = clean_short_label(_safe_resp_text(resp), max_words=6, max_chars=60)
+            label = clean_short_label(safe_resp_text(resp), max_words=6, max_chars=60)
             if not label:
                 return
 
@@ -3911,7 +3911,7 @@ class AgentManager:
                 messages=[{"role": "user", "content": user_content}],
             )
 
-            raw = _safe_resp_text(resp).strip()
+            raw = safe_resp_text(resp).strip()
             if not raw:
                 raise ValueError("aux model returned empty content")
             if raw.startswith("```"):
