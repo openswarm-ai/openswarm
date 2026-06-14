@@ -9,6 +9,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import Icon from '@mui/material/Icon';
 import { Output } from '@/shared/state/outputsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import ShareButton from '@/app/components/share/ShareButton';
 
 interface Props {
   output: Output;
@@ -106,6 +107,7 @@ const ViewCard: React.FC<Props> = ({ output, onClick, onDelete, onRun }) => {
               <PlayArrowIcon sx={{ fontSize: 16 }} />
             </IconButton>
           </Tooltip>
+          <ShareButton target={{ kind: 'app', id: output.id, name: output.name }} tone="chip" iconFontSize={16} />
           <Tooltip title="Delete">
             <IconButton
               size="small"

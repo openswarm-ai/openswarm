@@ -18,11 +18,19 @@ interface Props {
   target: ShareTarget;
   size?: 'small' | 'medium';
   variant?: 'icon' | 'menuItem';
+  tone?: 'plain' | 'chip'; // 'chip' matches floating card-action buttons
   iconFontSize?: number;
   onOpen?: () => void; // let a parent close its overflow menu when we take over
 }
 
-const ShareButton: React.FC<Props> = ({ target, size = 'small', variant = 'icon', iconFontSize = 18, onOpen }) => {
+const ShareButton: React.FC<Props> = ({
+  target,
+  size = 'small',
+  variant = 'icon',
+  tone = 'plain',
+  iconFontSize = 18,
+  onOpen,
+}) => {
   const c = useClaudeTokens();
   const [open, setOpen] = useState(false);
 
@@ -31,6 +39,11 @@ const ShareButton: React.FC<Props> = ({ target, size = 'small', variant = 'icon'
     onOpen?.();
     setOpen(true);
   };
+
+  const iconSx =
+    tone === 'chip'
+      ? { bgcolor: c.bg.surface, color: c.accent.primary, boxShadow: c.shadow.sm, '&:hover': { bgcolor: c.bg.elevated } }
+      : { color: c.text.tertiary, '&:hover': { color: c.accent.primary } };
 
   return (
     <>
@@ -43,11 +56,7 @@ const ShareButton: React.FC<Props> = ({ target, size = 'small', variant = 'icon'
         </MenuItem>
       ) : (
         <Tooltip title="Share">
-          <IconButton
-            size={size}
-            onClick={start}
-            sx={{ color: c.text.tertiary, '&:hover': { color: c.accent.primary } }}
-          >
+          <IconButton size={size} onClick={start} sx={iconSx}>
             <IosShareIcon sx={{ fontSize: iconFontSize }} />
           </IconButton>
         </Tooltip>

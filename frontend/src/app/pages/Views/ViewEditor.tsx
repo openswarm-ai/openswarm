@@ -34,6 +34,7 @@ import { createDraftSession, removeDraftSession, fetchSession } from '@/shared/s
 import { createOutput, updateOutput, upsertOutput, fetchOutputs, Output, SERVE_BASE } from '@/shared/state/outputsSlice';
 import { truncateForTitle } from '@/shared/state/sessionDisplay';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import ShareButton from '@/app/components/share/ShareButton';
 import AgentChat from '../AgentChat/AgentChat';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ViewPreview, { ViewPreviewHandle } from './ViewPreview';
@@ -1234,6 +1235,11 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
             }}
           />
 
+          {effectiveId && (
+            <Box sx={{ ml: 'auto', alignSelf: 'center' }}>
+              <ShareButton target={{ kind: 'app', id: effectiveId, name: name || 'Untitled App' }} />
+            </Box>
+          )}
         </Box>
 
         {/* Tab bar */}

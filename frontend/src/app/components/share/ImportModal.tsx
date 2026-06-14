@@ -117,6 +117,23 @@ const ImportModal: React.FC<Props> = ({ file, open, onClose }) => {
           ) : preflight ? (
             <>
               <IncludesList summary={preflight.summary} />
+              {preflight.review && preflight.review.findings.length > 0 && (
+                <Box
+                  sx={{
+                    mt: 1.5,
+                    p: 1.5,
+                    borderRadius: `${c.radius.md}px`,
+                    border: `1px solid ${c.status.warning}55`,
+                    bgcolor: c.status.warningBg,
+                  }}
+                >
+                  {preflight.review.findings.map((f, i) => (
+                    <Typography key={`rv-${i}`} sx={{ fontSize: '0.78rem', color: c.text.secondary, lineHeight: 1.5 }}>
+                      {f}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
               {preflight.conflicts.length > 0 && (
                 <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mt: 1.5 }}>
                   Some items already exist and will be added as copies.

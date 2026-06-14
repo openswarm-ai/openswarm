@@ -36,11 +36,18 @@ export interface ExportPreflight {
   link_supported: boolean;
 }
 
+export interface ReviewSummary {
+  verdict: 'clean' | 'warn' | 'block';
+  findings: string[];
+  scanned_files: string[];
+}
+
 export interface ImportPreflight {
   ok: boolean;
   summary: BundleSummary;
   staging_token: string;
   conflicts: IncludeItem[];
+  review?: ReviewSummary | null;
   warnings: string[];
 }
 
