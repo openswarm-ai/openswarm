@@ -62,12 +62,34 @@ const IS_WIN = typeof navigator !== 'undefined' && navigator.userAgent.includes(
 // before the next step's instant write lands.
 const WIN_EASE_MS = 420;
 
+// A little spark when the cursor pops into existence: short orange lines shoot out from the
+// tip and fade. Re-keyed on each pop so it replays. One-shot per mount (no infinite loop).
+const BURST_SPOKES = 6;
+const CursorBurst: React.FC<{ color: string }> = ({ color }) => (
+  <>
+    {Array.from({ length: BURST_SPOKES }).map((_, i) => (
+      <div
+        key={i}
+        style={{ position: 'absolute', left: 3, top: 3, transform: `rotate(${(i / BURST_SPOKES) * 360}deg)` }}
+      >
+        <motion.div
+          initial={{ y: -1, opacity: 1, scaleY: 0.4 }}
+          animate={{ y: -23, opacity: 0, scaleY: 1 }}
+          transition={{ duration: 0.62, ease: 'easeOut' }}
+          style={{ position: 'absolute', left: -1.5, top: 0, width: 3, height: 12, borderRadius: 2, background: color, boxShadow: `0 0 6px ${color}` }}
+        />
+      </div>
+    ))}
+  </>
+);
+
 const AgenticCursor = forwardRef<AgenticCursorHandle>((_props, ref) => {
   const c = useClaudeTokens();
   const controls = useAnimationControls();
   const storePos = useCursorPosition();
   const posRef = useRef({ x: 0, y: 0 });
   const [visible, setVisible] = useState(false);
+  const [burstKey, setBurstKey] = useState(0);
   const [popup, setPopup] = useState<PopupState | null>(null);
   const [multiChoice, setMultiChoice] = useState<MultiChoiceState | null>(null);
 
@@ -95,12 +117,17 @@ const AgenticCursor = forwardRef<AgenticCursorHandle>((_props, ref) => {
     async fadeIn(from) {
       stopTrackingInternal();
       writePos(from.x, from.y, true);
-      controls.set({ x: from.x, y: from.y, opacity: 0, scale: 0.5 });
+      controls.set({ x: from.x, y: from.y, opacity: 0, scale: 0.3 });
       setVisible(true);
+      setBurstKey((k) => k + 1); // replay the orange spark on each pop
+      // An exaggerated "POP!": scale shoots way past 1 then settles back, opacity snaps in.
       await controls.start({
         opacity: 1,
-        scale: 1,
-        transition: { duration: 0.32, ease: 'easeOut' },
+        scale: [0.1, 1.45, 0.92, 1],
+        transition: {
+          opacity: { duration: 0.14, ease: 'easeOut' },
+          scale: { duration: 0.5, ease: 'easeOut', times: [0, 0.55, 0.8, 1] },
+        },
       });
     },
     async moveTo(x, y, transition) {
@@ -304,22 +331,28 @@ const AgenticCursor = forwardRef<AgenticCursorHandle>((_props, ref) => {
         }}
       >
         {visible && (
-          <motion.div
-            animate={{
-              scale: [1, 1.04, 1],
-            }}
-            transition={{
-              duration: 1.8,
-              repeat: Infinity,
-              ease: 'easeInOut',
-            }}
-            style={{
-              transform: 'translate(-2px, -2px)',
-              filter: `drop-shadow(0 0 6px ${c.accent.primary}cc) drop-shadow(0 0 14px ${c.accent.primary}55)`,
-            }}
-          >
-            <CursorArrow color={c.accent.primary} />
-          </motion.div>
+          <>
+            {/* Orange spark behind the arrow, replays each pop via burstKey. */}
+            <div key={burstKey} style={{ position: 'absolute', top: 0, left: 0 }}>
+              <CursorBurst color={c.accent.primary} />
+            </div>
+            <motion.div
+              animate={{
+                scale: [1, 1.04, 1],
+              }}
+              transition={{
+                duration: 1.8,
+                repeat: Infinity,
+                ease: 'easeInOut',
+              }}
+              style={{
+                transform: 'translate(-2px, -2px)',
+                filter: `drop-shadow(0 0 6px ${c.accent.primary}cc) drop-shadow(0 0 14px ${c.accent.primary}55)`,
+              }}
+            >
+              <CursorArrow color={c.accent.primary} />
+            </motion.div>
+          </>
         )}
       </motion.div>
 

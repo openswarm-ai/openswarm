@@ -37,6 +37,8 @@ interface RunContext {
   findStep: (id: string) => OnboardingStep | undefined;
   highlightCleanup: { current: (() => void) | null };
   popupShownAt: { current: number | null };
+  // Per-popup dwell override; null falls back to MIN_POPUP_DWELL_MS. Lets a short one-liner (welcome nudge) move on fast instead of sitting the full 6s.
+  popupDwellMs: { current: number | null };
 }
 
 // 6s = streaming typewriter cadence + ~3s post-stream read time; floor for popups that auto-transition without an explicit user action.
@@ -58,11 +60,32 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+// Resolve after `ms`, OR early the moment `stepId` lands in completedSteps. Lets a stale recovery
+// popup auto-dismiss when the step it was apologizing for actually completes (e.g. launch_agent
+// auto-completing right after a transient throw), instead of sitting the full read-timeout.
+function sleepOrStepComplete(store: Store<RootState>, stepId: string, ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const isDone = () => (store.getState().onboardingProgress?.completedSteps ?? []).includes(stepId);
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      unsub();
+      resolve();
+    };
+    const timer = window.setTimeout(finish, ms);
+    const unsub = store.subscribe(() => { if (isDone()) finish(); });
+    if (isDone()) finish();
+  });
+}
+
 async function ensurePopupDwell(ctx: RunContext): Promise<void> {
   const shownAt = ctx.popupShownAt.current;
   if (shownAt == null) return;
+  const dwell = ctx.popupDwellMs.current ?? MIN_POPUP_DWELL_MS;
   const elapsed = performance.now() - shownAt;
-  const remaining = MIN_POPUP_DWELL_MS - elapsed;
+  const remaining = dwell - elapsed;
   if (remaining > 0) await abortableSleep(remaining, ctx.signal);
 }
 
@@ -89,6 +112,7 @@ export async function runStep(args: RunStepArgs): Promise<void> {
 
   const highlightCleanup: { current: (() => void) | null } = { current: null };
   const popupShownAt: { current: number | null } = { current: null };
+  const popupDwellMs: { current: number | null } = { current: null };
   const ctx: RunContext = {
     ac,
     store,
@@ -100,6 +124,7 @@ export async function runStep(args: RunStepArgs): Promise<void> {
     findStep,
     highlightCleanup,
     popupShownAt,
+    popupDwellMs,
   };
 
   try {
@@ -119,6 +144,7 @@ export async function runStep(args: RunStepArgs): Promise<void> {
           report('dependency_walk', { step_id: step.id, dep_id: dep.stepId });
           ac.showPopup('Quick setup before we continue.');
           ctx.popupShownAt.current = performance.now();
+          ctx.popupDwellMs.current = null;
           await sleep(700);
           // Non-silent dep-walk so each move_to has a label; telemetry stays per-step to avoid double-count.
           await runOps(depStep.ops, { ...ctx, silent: false, stepId: depStep.id });
@@ -193,8 +219,10 @@ export async function runStep(args: RunStepArgs): Promise<void> {
           "No worries, feel free to explore. Tap Show me whenever you're ready." +
             debugSuffix,
         );
-        // 14s: ACPopup streams at ~30ms/char + ~210ms/punct, so a 240-char popup takes ~10s to finish streaming; needs time for streamer + read.
-        await new Promise<void>((r) => window.setTimeout(r, 14000));
+        // 14s read window (ACPopup streams ~30ms/char), but bail the instant the step completes
+        // so a transient throw on a step that then auto-completes doesn't leave a dead-end "Show me".
+        await sleepOrStepComplete(store, step.id, 14000);
+        ac.hidePopup();
       }
     } catch {
       /* defensive; never let cleanup throw */
@@ -276,6 +304,7 @@ async function runOp(op: ACOp, ctx: RunContext): Promise<void> {
     await ensurePopupDwell(ctx);
     ac.hidePopup();
     ctx.popupShownAt.current = null;
+    ctx.popupDwellMs.current = null;
     ac.stopTracking();
     if (ctx.highlightCleanup.current) {
       ctx.highlightCleanup.current();
@@ -363,6 +392,7 @@ async function runOp(op: ACOp, ctx: RunContext): Promise<void> {
       await ensurePopupDwell(ctx);
       ac.showPopup(op.text);
       ctx.popupShownAt.current = performance.now();
+      ctx.popupDwellMs.current = op.dwellMs ?? null;
       return;
     }
     case 'multi_choice': {
@@ -398,6 +428,7 @@ async function runOp(op: ACOp, ctx: RunContext): Promise<void> {
         await ensurePopupDwell(ctx);
         ac.showPopup(op.popup);
         ctx.popupShownAt.current = performance.now();
+        ctx.popupDwellMs.current = null;
       }
       await sleep(op.durationMs ?? 600);
       return;
@@ -580,6 +611,7 @@ async function runOp(op: ACOp, ctx: RunContext): Promise<void> {
         });
         ac.showPopup("Didn't seem to go through. Try again?");
         ctx.popupShownAt.current = performance.now();
+        ctx.popupDwellMs.current = null;
         await waitForCondition(
           op.condition,
           signal,

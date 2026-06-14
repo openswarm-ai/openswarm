@@ -14,7 +14,8 @@ export type OnboardingEvent =
   | 'element_selection:toggled'
   | 'agent:spawned'
   | 'agent:completed'
-  | 'agent:attached_to_browser';
+  | 'agent:attached_to_browser'
+  | 'welcome:shown';
 
 type Handler = (...args: unknown[]) => void;
 

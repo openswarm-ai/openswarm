@@ -15,6 +15,7 @@ import { useDashboardClipboard } from '../interaction/useDashboardClipboard';
 import { useCardDrag } from '../interaction/useCardDrag';
 import { useSubAgentLifecycle } from '../lifecycle/useSubAgentLifecycle';
 import { useDashboardLifecycle } from '../lifecycle/useDashboardLifecycle';
+import { useWelcomeDraft } from '../lifecycle/useWelcomeDraft';
 import { useDashboardThumbnail } from './useDashboardThumbnail';
 import { useSiblingRestack } from '../lifecycle/useSiblingRestack';
 import { useAgentSpawn } from '../lifecycle/useAgentSpawn';
@@ -129,6 +130,17 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     restoredExpandedRef,
   });
 
+  // First-run: the onboarding cursor clicks New Agent -> handleNewAgent -> createWelcomeDraft,
+  // spawning the welcome chat. A manual New Agent click does the same when eligible.
+  const { welcomeEligible, createWelcomeDraft } = useWelcomeDraft({
+    dashboardId,
+    canvasEmpty,
+    expandedSessionIds,
+    viewportRef: canvas.viewportRef,
+    canvasStateRef,
+    spawnOriginsRef,
+  });
+
   // ---- Auto-reveal / collapse / unreveal sub-agent cards ----
   useSubAgentLifecycle({
     isActive,
@@ -221,6 +233,8 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     setToolbarOpen,
     setAutoFocusSessionId,
     setPendingSelectSessionId,
+    welcomeEligible,
+    onWelcomeNewAgent: createWelcomeDraft,
   });
 
   const {

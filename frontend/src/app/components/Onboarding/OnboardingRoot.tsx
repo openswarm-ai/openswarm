@@ -18,7 +18,7 @@ import {
 import AgenticCursor, { type AgenticCursorHandle } from './ac/AgenticCursor';
 import { onboardingDirector } from './OnboardingDirector';
 import { STEPS } from './steps';
-import { hasAnyAgentLaunched } from './steps/skipPredicates';
+import { hasAnyAgentCompleted, hasFreeTrialActive, hasModelConnected } from './steps/skipPredicates';
 import OnboardingPanel from './OnboardingPanel';
 import { onboardingBus } from './eventBus';
 import { report } from './telemetry';
@@ -32,23 +32,59 @@ const OnboardingRoot: React.FC = () => {
   const tokens = useClaudeTokens();
   const progress = useAppSelector((s) => s.onboardingProgress);
   const settingsLoaded = useAppSelector((s) => s.settings.loaded);
-  const firstAgentLaunched = useAppSelector(hasAnyAgentLaunched);
+  const firstAgentDone = useAppSelector(hasAnyAgentCompleted);
 
-  // The one gentle nudge: after the first agent win, open the quiet pill ONCE so
-  // the user sees "here's what's next". Respects a panel they've hidden or already
-  // expanded themselves, and never re-fires (revealedAfterWin sticks).
+  // The one gentle nudge: open the quiet pill ONCE, but only AFTER the first agent
+  // actually finishes, so it never pops mid-run. Respects a panel they've hidden or
+  // already expanded themselves, and never re-fires (revealedAfterWin sticks).
   useEffect(() => {
-    if (!progress.initialized || !firstAgentLaunched) return;
+    if (!progress.initialized || !firstAgentDone) return;
     if (progress.revealedAfterWin || progress.panelMode !== 'pill') return;
     dispatch(setPanelMode('expanded'));
     dispatch(markRevealedAfterWin());
   }, [
-    firstAgentLaunched,
+    firstAgentDone,
     progress.initialized,
     progress.revealedAfterWin,
     progress.panelMode,
     dispatch,
   ]);
+
+  // The welcome chat IS the user launching their first agent, so once it finishes, mark
+  // launch_agent done. Without this the post-win nudge repeats "Launch your first Agent" they
+  // just did: the skipIf baseline-capture re-arms on every completedSteps change and tends to
+  // snapshot the real send as "pre-existing", which freezes the step as un-completable.
+  useEffect(() => {
+    if (!progress.initialized || !firstAgentDone) return;
+    if ((progress.completedSteps ?? []).includes('launch_agent')) return;
+    dispatch(markStepCompleted('launch_agent'));
+  }, [firstAgentDone, progress.initialized, progress.completedSteps, dispatch]);
+
+  // First run: the cursor pops into existence, pauses, then moves to and clicks the New Agent
+  // button (welcome_open step) which spawns the welcome chat. Fires once, only on the dashboard
+  // with a way to run and nothing launched yet. Fail-safe: if the cursor can't run, a manual
+  // New Agent click spawns the same welcome chat (handleNewAgent is welcome-aware).
+  const welcomeOpenReady = useAppSelector(
+    (s) =>
+      s.settings.loaded &&
+      (hasFreeTrialActive(s) || hasModelConnected(s)) &&
+      !s.onboardingProgress.welcomeShown &&
+      !(s.onboardingProgress.completedSteps ?? []).includes('launch_agent') &&
+      Object.keys(s.agents?.sessions ?? {}).length === 0,
+  );
+  const welcomeFiredRef = useRef(false);
+  const welcomeTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (welcomeFiredRef.current || !progress.initialized || !welcomeOpenReady) return;
+    if (!window.location.hash.includes('/dashboard/') || onboardingDirector.isRunning()) return;
+    welcomeFiredRef.current = true;
+    welcomeTimerRef.current = window.setTimeout(() => {
+      if (!window.location.hash.includes('/dashboard/') || onboardingDirector.isRunning()) return;
+      // Pop near center, then the step walks the cursor down to the New Agent button and clicks.
+      onboardingDirector.startStep('welcome_open', { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    }, 600);
+    return () => { if (welcomeTimerRef.current) window.clearTimeout(welcomeTimerRef.current); };
+  }, [progress.initialized, welcomeOpenReady]);
 
   useEffect(() => {
     if (progress.initialized) return;
