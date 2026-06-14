@@ -452,7 +452,7 @@ _SUCCESS_HTML = (
     '<div style="text-align:center">'
     '<div style="width:64px;height:64px;border-radius:50%;background:#22c55e20;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px">&#10003;</div>'
     '<h2 style="margin:0 0 8px">Connected!</h2>'
-    '<p style="color:#888;margin:0">You can close this window</p>'
+    '<p style="color:#888;margin:0">You can close this tab, and any other Claude login tab still open.</p>'
     '</div>'
     '<script>setTimeout(()=>window.close(),1500)</script>'
     '</body></html>'
