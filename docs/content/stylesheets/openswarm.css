@@ -1,0 +1,135 @@
+/*
+ * Anthropic-inspired theme for the Zensical (Material) docs site.
+ *
+ * Brand palette: a warm clay/coral accent on a soft ivory canvas in light mode,
+ * and the same clay against a warm charcoal in dark mode. Editorial serif
+ * headings (Fraunces) echo Anthropic's display type; the body keeps a clean
+ * humanist sans. Both schemes are driven by `primary = "custom"` in
+ * zensical.toml, so the values below are what actually paint the UI.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap");
+
+:root {
+  /* Core brand tones (shared across schemes). */
+  --anthropic-clay: #d97757;
+  --anthropic-clay-dark: #bd5d3a;
+  --anthropic-clay-light: #e6a085;
+  --anthropic-ivory: #faf9f5;
+  --anthropic-cloud: #f0eee6;
+  --anthropic-ink: #1a1915;
+  --anthropic-slate-bg: #262624;
+  --anthropic-slate-surface: #30302d;
+  --anthropic-slate-border: #3d3d39;
+
+  --md-text-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ----------------------------------------------------------------------------
+ * Light scheme (default)
+ * ------------------------------------------------------------------------- */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--anthropic-clay);
+  --md-primary-fg-color--light: var(--anthropic-clay-light);
+  --md-primary-fg-color--dark: var(--anthropic-clay-dark);
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: hsla(0, 0%, 100%, 0.72);
+
+  --md-accent-fg-color: var(--anthropic-clay-dark);
+  --md-accent-fg-color--transparent: hsla(15, 63%, 54%, 0.1);
+
+  --md-default-bg-color: var(--anthropic-ivory);
+  --md-default-fg-color: hsla(48, 12%, 9%, 0.92);
+  --md-default-fg-color--light: hsla(48, 12%, 9%, 0.62);
+  --md-default-fg-color--lighter: hsla(48, 12%, 9%, 0.34);
+  --md-default-fg-color--lightest: hsla(48, 12%, 9%, 0.1);
+
+  --md-typeset-a-color: var(--anthropic-clay-dark);
+  --md-code-bg-color: var(--anthropic-cloud);
+  --md-code-fg-color: #4a3a2e;
+  --md-footer-bg-color: #211f1a;
+  --md-footer-bg-color--dark: #1a1915;
+}
+
+/* ----------------------------------------------------------------------------
+ * Dark scheme (slate) — warmed toward Anthropic's charcoal
+ * ------------------------------------------------------------------------- */
+[data-md-color-scheme="slate"] {
+  /* Warm the derived greys away from Material's default blueish slate. */
+  --md-hue: 40;
+
+  --md-primary-fg-color: var(--anthropic-clay);
+  --md-primary-fg-color--light: var(--anthropic-clay-light);
+  --md-primary-fg-color--dark: var(--anthropic-clay-dark);
+  --md-primary-bg-color: #f7f4ee;
+  --md-primary-bg-color--light: hsla(40, 30%, 96%, 0.72);
+
+  --md-accent-fg-color: var(--anthropic-clay-light);
+
+  --md-default-bg-color: var(--anthropic-slate-bg);
+  --md-default-fg-color: hsla(44, 22%, 92%, 0.9);
+  --md-default-fg-color--light: hsla(44, 22%, 92%, 0.58);
+  --md-default-fg-color--lighter: hsla(44, 22%, 92%, 0.32);
+  --md-default-fg-color--lightest: hsla(44, 22%, 92%, 0.12);
+
+  --md-typeset-a-color: var(--anthropic-clay-light);
+  --md-code-bg-color: var(--anthropic-slate-surface);
+  --md-code-fg-color: #e8e2d6;
+  --md-footer-bg-color: #1c1b18;
+  --md-footer-bg-color--dark: #161512;
+}
+
+/* ----------------------------------------------------------------------------
+ * Typography — editorial serif headings, refined site title
+ * ------------------------------------------------------------------------- */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-header__topic > .md-ellipsis {
+  font-family: "Fraunces", Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.md-typeset h1 {
+  font-weight: 600;
+  color: var(--md-default-fg-color);
+}
+
+/* ----------------------------------------------------------------------------
+ * Header & tabs — subtle depth and a hairline divider
+ * ------------------------------------------------------------------------- */
+.md-header {
+  box-shadow: 0 1px 0 hsla(40, 12%, 50%, 0.16);
+}
+
+.md-header--shadow {
+  box-shadow: 0 2px 12px hsla(40, 20%, 10%, 0.16);
+}
+
+/* ----------------------------------------------------------------------------
+ * Links, code, admonitions — small clay accents
+ * ------------------------------------------------------------------------- */
+.md-typeset a {
+  text-underline-offset: 0.15em;
+}
+
+.md-typeset code {
+  border-radius: 0.3rem;
+}
+
+.md-typeset pre > code {
+  border-radius: 0.4rem;
+}
+
+/* Active nav item gets the clay accent bar. */
+.md-nav__link--active,
+.md-nav__item .md-nav__link--active {
+  color: var(--md-typeset-a-color);
+  font-weight: 600;
+}
+
+/* Search input rounded to match the soft brand feel. */
+.md-search__form {
+  border-radius: 0.4rem;
+}

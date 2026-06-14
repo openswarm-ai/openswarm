@@ -56,7 +56,7 @@ def run_ruff(
         "--select", select,
         "--output-format", "concise",
         "--no-fix",
-        "--exclude", ".venv,__pycache__,data,uv-bin,webapp_template",
+        "--exclude", ".venv,__pycache__,data,uv-bin,webapp_template,.runner-venv",
     ]
 
     try:

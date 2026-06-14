@@ -1,0 +1,6 @@
+# Doc-site dependencies. Installed into docs/.venv by run.sh.
+# These never touch backend/.venv — docs tooling stays fully isolated.
+zensical                 # static site generator (Material for MkDocs team)
+mkdocstrings              # API-reference engine (preliminary Zensical support)
+mkdocstrings-python       # the Python handler (Griffe-based, ships separately)
+black                     # lets mkdocstrings pretty-format function signatures

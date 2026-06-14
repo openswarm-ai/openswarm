@@ -1,0 +1,9 @@
+# Generated / local-only artifacts.
+.venv/
+site/
+
+# Doc pages generated from the codebase by gen_pages.py (real files on disk now,
+# since Zensical builds from disk rather than a plugin's virtual filesystem).
+content/reference/
+content/guides/
+content/frontend/

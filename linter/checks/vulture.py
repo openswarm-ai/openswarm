@@ -130,7 +130,7 @@ def run_vulture(
         cmd.append(str(whitelist))
     cmd.extend([
         "--min-confidence", str(min_confidence),
-        "--exclude", ".venv,__pycache__,data,uv-bin",
+        "--exclude", ".venv,.runner-venv,__pycache__,data,uv-bin",
         "--ignore-decorators", "@*.router.*,@*.websocket,@app.*,@pytest.fixture,@pytest.fixture*",
         "--ignore-names", "cls",
     ])

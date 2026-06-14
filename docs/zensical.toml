@@ -1,0 +1,111 @@
+# Zensical configuration. Build/preview via ./docs/run.sh, or directly:
+#   ( cd docs && .venv/bin/zensical build )
+#   ( cd docs && .venv/bin/zensical serve -o )
+#
+# Navigation is INFERRED from the directory tree under content/ (Zensical doesn't
+# run the mkdocs-literate-nav plugin). gen_pages.py writes that tree on each run,
+# so the nav mirrors the codebase automatically — top-level dirs become sections:
+#   content/reference/  -> "reference" (backend API, from docstrings via mkdocstrings)
+#   content/guides/     -> "guides"    (every README + loose Markdown doc)
+#   content/frontend/   -> "frontend"  (TypeDoc reference, when present)
+
+[project]
+site_name = "Open Swarm Analytics — Docs"
+site_description = "Auto-generated docs sourced from docstrings, READMEs, and the frontend."
+docs_dir = "content"
+site_dir = "site"
+use_directory_urls = false
+
+# Open Swarm - inspired theming (clay accent, ivory/charcoal canvases, serif
+# headings). The actual colors live in content/stylesheets/openswarm.css, keyed off
+# the "custom" palette entries below.
+extra_css = ["stylesheets/openswarm.css"]
+
+# Seed the search modal with a few "suggested pages" while the query is empty, so
+# it isn't blank on open (command-palette style). See the script header for how it
+# slots into the modal's shadow DOM.
+extra_javascript = ["javascripts/search-suggestions.js"]
+
+# Drop the "Made with Zensical" attribution from the footer (copyright.html
+# skips the generator block when this is false).
+[project.extra]
+generator = false
+
+[project.theme]
+# Template overrides (resolved relative to this file → docs/overrides/).
+# Currently just reorders the header so the theme toggle sits to the right of
+# the search bar; see overrides/partials/header.html.
+custom_dir = "overrides"
+# Brand logo (header, top-left) and browser-tab favicon. Both resolve relative
+# to docs_dir → content/assets/logo.png (copied in, not wiped by gen_pages.py).
+logo = "assets/logo.png"
+favicon = "assets/logo.png"
+features = [
+    "navigation.sections",
+    "navigation.indexes",
+    "navigation.top",
+    "navigation.tracking",
+    "navigation.footer",
+    "toc.follow",
+    "content.code.copy",
+    "search.suggest",
+    "search.highlight",
+]
+
+# Light/dark palettes with a toggle button in the header. Each entry follows the
+# system preference by default (`media`) and can be flipped manually via the
+# toggle, which persists the choice. `primary`/`accent` are "custom" so the clay
+# brand colors from openswarm.css take over.
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "custom"
+accent = "custom"
+[project.theme.palette.toggle]
+icon = "material/brightness-7"
+name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "custom"
+accent = "custom"
+[project.theme.palette.toggle]
+icon = "material/brightness-4"
+name = "Switch to light mode"
+
+# --- Markdown extensions (each table = one enabled extension) ----------------
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.md_in_html]
+[project.markdown_extensions.tables]
+
+[project.markdown_extensions.toc]
+permalink = true
+
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+
+[project.markdown_extensions.pymdownx.superfences]
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.details]
+
+# --- API reference from docstrings (mkdocstrings, preliminary in Zensical) ----
+# The Python handler ships separately (mkdocstrings-python, see requirements.txt).
+[project.plugins.mkdocstrings.handlers.python]
+# Relative to this config file → repo root, so `import backend` resolves under
+# Griffe's static analysis. (External paths aren't watched for live reload yet.)
+paths = [".."]
+inventories = ["https://docs.python.org/3/objects.inv"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+show_source = true
+show_root_heading = true
+show_root_full_path = true
+show_if_no_docstring = true
+members_order = "source"
+separate_signature = true
+show_signature_annotations = true
+merge_init_into_class = true
+filters = ["!^_[^_]"]
