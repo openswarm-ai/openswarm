@@ -11,7 +11,7 @@ import os
 import httpx
 
 from .process import NINE_ROUTER_API, NINE_ROUTER_PORT, NINE_ROUTER_V1
-from backend.apps.oauth_state import _pending_oauth, _mark_oauth_completed
+from backend.apps.oauth_state import PENDING_OAUTH, mark_oauth_completed
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 # 1455 that serves the same postMessage/BroadcastChannel/localStorage relay so
 # the frontend's existing popup + msgHandler flow works unchanged.
 
-_CODEX_CALLBACK_PORT = 1455
-_CODEX_CALLBACK_PATH = "/auth/callback"
-_CODEX_CALLBACK_HTML = b"""<!DOCTYPE html>
+P_CODEX_CALLBACK_PORT = 1455
+P_CODEX_CALLBACK_PATH = "/auth/callback"
+P_CODEX_CALLBACK_HTML = b"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Authorization Complete</title>
 <style>body{font-family:-apple-system,system-ui,sans-serif;background:#111;color:#eee;
 text-align:center;padding:60px 20px;margin:0}h1{font-weight:600;margin:0 0 12px}
@@ -59,7 +59,7 @@ p{color:#888;margin:0}</style></head><body>
 </body></html>"""
 
 
-async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base_events.Server | None:
+async def p_start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base_events.Server | None:
     """Spawn a one-shot HTTP listener on 127.0.0.1:1455 for the Codex OAuth callback.
 
     Serves GET /auth/callback with _CODEX_CALLBACK_HTML. After serving the
@@ -80,7 +80,7 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
 
     callback_served = asyncio.Event()
 
-    async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         try:
             # Read the request line ("GET /auth/callback?... HTTP/1.1\r\n")
             raw_request_line = await asyncio.wait_for(reader.readline(), timeout=5.0)
@@ -96,7 +96,7 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
             path = parts[1] if len(parts) >= 2 else ""
             method = parts[0] if parts else ""
 
-            if method == "GET" and path.startswith(_CODEX_CALLBACK_PATH):
+            if method == "GET" and path.startswith(P_CODEX_CALLBACK_PATH):
                 # Parse code/state out of the query string and exchange
                 # server-side before serving the HTML. Duplicate exchanges
                 # are harmless (single-use auth codes fail the second call,
@@ -109,7 +109,7 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
                     code = (q.get("code") or [""])[0]
                     state = (q.get("state") or [""])[0]
                     if code and state:
-                        pending = _pending_oauth.pop(state, None)
+                        pending = PENDING_OAUTH.pop(state, None)
                         if pending:
                             try:
                                 await exchange_oauth(
@@ -119,7 +119,7 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
                                     pending["code_verifier"],
                                     state,
                                 )
-                                _mark_oauth_completed(state)
+                                mark_oauth_completed(state)
                                 logger.info(
                                     f"Codex callback: server-side exchange succeeded for state {state[:8]}..."
                                 )
@@ -129,14 +129,14 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
                                 # /agents/subscriptions/exchange still
                                 # has a shot. Safe because we only popped
                                 # it a moment ago.
-                                _pending_oauth[state] = pending
+                                PENDING_OAUTH[state] = pending
                                 logger.debug(
                                     f"Codex callback: server-side exchange failed ({e}); leaving for frontend retry"
                                 )
                 except Exception as e:
                     logger.debug(f"Codex callback listener pre-exchange error: {e}")
 
-                body = _CODEX_CALLBACK_HTML
+                body = P_CODEX_CALLBACK_HTML
                 response = (
                     b"HTTP/1.1 200 OK\r\n"
                     b"Content-Type: text/html; charset=utf-8\r\n"
@@ -165,17 +165,17 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
                 pass
 
     try:
-        server = await asyncio.start_server(_handle, "127.0.0.1", _CODEX_CALLBACK_PORT)
+        server = await asyncio.start_server(handle, "127.0.0.1", P_CODEX_CALLBACK_PORT)
     except OSError as e:
         # Port already in use; probably another Codex connect attempt still
         # running, or an actual Codex CLI process holding 1455. Log and bail.
         logger.warning(
-            f"Could not start Codex callback listener on port {_CODEX_CALLBACK_PORT}: {e}. "
+            f"Could not start Codex callback listener on port {P_CODEX_CALLBACK_PORT}: {e}. "
             "If another connection attempt is in progress, wait for it to finish or time out."
         )
         return None
 
-    async def _lifecycle():
+    async def lifecycle():
         try:
             await asyncio.wait_for(callback_served.wait(), timeout=timeout)
             # Give the served HTML a moment to run its JS (postMessage +
@@ -193,8 +193,8 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
             except Exception:
                 pass
 
-    asyncio.create_task(_lifecycle())
-    logger.info(f"Started Codex callback listener on http://localhost:{_CODEX_CALLBACK_PORT}{_CODEX_CALLBACK_PATH}")
+    asyncio.create_task(lifecycle())
+    logger.info(f"Started Codex callback listener on http://localhost:{P_CODEX_CALLBACK_PORT}{P_CODEX_CALLBACK_PATH}")
     return server
 
 
@@ -207,14 +207,14 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
 #   embed detection + regional checks); system browser surfaces the real error.
 # The callback for gemini-cli/antigravity lands on /api/subscriptions/callback
 # and runs the exchange server-side; codex uses its fixed 1455 listener.
-_EXTERNAL_BROWSER_PROVIDERS: set[str] = {"gemini-cli", "antigravity", "codex"}
+P_EXTERNAL_BROWSER_PROVIDERS: set[str] = {"gemini-cli", "antigravity", "codex"}
 
 
-def _should_use_external_browser(provider: str) -> bool:
-    return provider in _EXTERNAL_BROWSER_PROVIDERS
+def p_should_use_external_browser(provider: str) -> bool:
+    return provider in P_EXTERNAL_BROWSER_PROVIDERS
 
 
-def _backend_port() -> int:
+def p_backend_port() -> int:
     """Best-effort lookup of the OpenSwarm backend HTTP port.
 
     Falls back to 8324 (the default in backend/main.py) if OPENSWARM_PORT
@@ -228,7 +228,7 @@ def _backend_port() -> int:
         return 8324
 
 
-def _callback_uri_for_provider(provider: str) -> str:
+def p_callback_uri_for_provider(provider: str) -> str:
     """Return the redirect URI to pass to 9Router's authorize endpoint.
 
     Most providers accept 9Router's built-in callback page at port 20128.
@@ -243,9 +243,9 @@ def _callback_uri_for_provider(provider: str) -> str:
       on OpenSwarm's port rather than 9Router's.
     """
     if provider == "codex":
-        return f"http://localhost:{_CODEX_CALLBACK_PORT}{_CODEX_CALLBACK_PATH}"
-    if provider in _EXTERNAL_BROWSER_PROVIDERS:
-        return f"http://localhost:{_backend_port()}/api/subscriptions/callback"
+        return f"http://localhost:{P_CODEX_CALLBACK_PORT}{P_CODEX_CALLBACK_PATH}"
+    if provider in P_EXTERNAL_BROWSER_PROVIDERS:
+        return f"http://localhost:{p_backend_port()}/api/subscriptions/callback"
     return f"http://localhost:{NINE_ROUTER_PORT}/callback"
 
 
@@ -271,9 +271,9 @@ async def start_oauth(provider: str) -> dict:
         except Exception:
             pass
 
-        callback_url = _callback_uri_for_provider(provider)
+        callback_url = p_callback_uri_for_provider(provider)
         if provider == "codex":
-            await _start_codex_callback_listener()
+            await p_start_codex_callback_listener()
 
         r = await client.get(
             f"{NINE_ROUTER_API}/oauth/{provider}/authorize",
@@ -287,7 +287,7 @@ async def start_oauth(provider: str) -> dict:
             "code_verifier": data.get("codeVerifier", ""),
             "state": data.get("state", ""),
             "redirect_uri": callback_url,
-            "use_external_browser": _should_use_external_browser(provider),
+            "use_external_browser": p_should_use_external_browser(provider),
         }
 
 

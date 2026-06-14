@@ -24,7 +24,7 @@ from google.oauth2.credentials import Credentials
 
 
 @functools.lru_cache(maxsize=1)
-def _patched_get_credentials():
+def p_patched_get_credentials():
     refresh_token = os.environ.get("GOOGLE_WORKSPACE_REFRESH_TOKEN")
     if not refresh_token:
         raise ValueError("GOOGLE_WORKSPACE_REFRESH_TOKEN env var is required")
@@ -40,10 +40,10 @@ def _patched_get_credentials():
     )
 
 
-gauth.get_credentials = _patched_get_credentials # vulture-ignore: get_credentials
+gauth.get_credentials = p_patched_get_credentials # vulture-ignore: get_credentials
 
 
-from google_workspace_mcp import __main__ as _gw_main  # noqa: E402,F401
+from google_workspace_mcp import __main__ as gw_main  # noqa: E402,F401
 from google_workspace_mcp.app import mcp  # noqa: E402
 
 

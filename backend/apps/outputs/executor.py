@@ -17,7 +17,7 @@ TIMEOUT_SECONDS = 30
 # pairs with cwd=tempdir + minimal env so the blast radius is small even if
 # a payload slips past. Keep this list to "data shaping" libraries; no I/O,
 # no networking, no subprocess.
-_ALLOWED_MODULES = frozenset({
+P_ALLOWED_MODULES = frozenset({
     "json", "math", "re", "datetime", "collections", "itertools",
     "functools", "statistics", "decimal", "fractions", "random",
     "string", "textwrap", "unicodedata", "csv", "copy", "enum",
@@ -29,7 +29,7 @@ _ALLOWED_MODULES = frozenset({
 # calls (e.g. `eval(...)`) are caught here. Attribute-style calls
 # (`__builtins__.eval(...)`) are blocked by the preamble's `delattr` loop in
 # the subprocess.
-_BLOCKED_BUILTINS = frozenset({
+P_BLOCKED_BUILTINS = frozenset({
     "exec", "eval", "compile", "__import__", "open", "input",
     "breakpoint", "exit", "quit",
 })
@@ -62,7 +62,7 @@ def get_code_warnings(code: str) -> list[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 root = alias.name.split(".")[0]
-                if root not in _ALLOWED_MODULES:
+                if root not in P_ALLOWED_MODULES:
                     msg = f"Imports '{alias.name}' (outside the safe-data-shaping allowlist)"
                     if msg not in seen:
                         seen.add(msg)
@@ -70,13 +70,13 @@ def get_code_warnings(code: str) -> list[str]:
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 root = node.module.split(".")[0]
-                if root not in _ALLOWED_MODULES:
+                if root not in P_ALLOWED_MODULES:
                     msg = f"Imports from '{node.module}' (outside the safe-data-shaping allowlist)"
                     if msg not in seen:
                         seen.add(msg)
                         warnings.append(msg)
         elif isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id in _BLOCKED_BUILTINS:
+            if isinstance(node.func, ast.Name) and node.func.id in P_BLOCKED_BUILTINS:
                 msg = f"Calls builtin '{node.func.id}()' which can escape the sandbox"
                 if msg not in seen:
                     seen.add(msg)
@@ -84,7 +84,7 @@ def get_code_warnings(code: str) -> list[str]:
     return warnings
 
 
-def _validate_code_safety(code: str) -> None:
+def p_validate_code_safety(code: str) -> None:
     """Raise UnsafeCodeError on the first AST-visible risk. Thin wrapper
     around get_code_warnings for callers that want the strict-reject
     behavior (the default `execute_backend_code` path). Callers that want
@@ -99,7 +99,7 @@ def _validate_code_safety(code: str) -> None:
 # Env vars we always scrub from the subprocess, regardless of strict-vs-force.
 # These are the keys an attacker would actually want; install token, provider
 # API keys, cloud credentials. Everything else is local-machine convenience.
-_SCRUBBED_ENV_KEYS = frozenset({
+P_SCRUBBED_ENV_KEYS = frozenset({
     "OPENSWARM_AUTH_TOKEN",
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
@@ -116,7 +116,7 @@ _SCRUBBED_ENV_KEYS = frozenset({
 })
 
 
-def _minimal_env(force: bool = False) -> dict:
+def p_minimal_env(force: bool = False) -> dict:
     """Build the env for the executor subprocess.
 
     Strict mode (force=False): only language essentials. AST-validated code
@@ -130,11 +130,11 @@ def _minimal_env(force: bool = False) -> dict:
     minus credentials, so an `open(os.path.expanduser("~/data.csv"))`
     actually works instead of silently misbehaving.
 
-    Both modes scrub _SCRUBBED_ENV_KEYS so even force-mode code never
+    Both modes scrub P_SCRUBBED_ENV_KEYS so even force-mode code never
     sees the install token or provider API keys.
     """
     if force:
-        env = {k: v for k, v in os.environ.items() if k not in _SCRUBBED_ENV_KEYS}
+        env = {k: v for k, v in os.environ.items() if k not in P_SCRUBBED_ENV_KEYS}
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         # Force UTF-8 even if the parent somehow lacked it (dev mode where
         # Electron didn't inject PYTHONUTF8). Without this, a child reading
@@ -192,7 +192,7 @@ async def execute_backend_code(
     """
 
     if not skip_validation:
-        _validate_code_safety(code)
+        p_validate_code_safety(code)
 
     preamble = (
         "import json, sys, io, builtins\n"
@@ -229,7 +229,7 @@ async def execute_backend_code(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=workdir,
-            env=_minimal_env(force=skip_validation),
+            env=p_minimal_env(force=skip_validation),
         )
 
         try:

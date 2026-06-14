@@ -12,12 +12,12 @@ from .process import NINE_ROUTER_API
 logger = logging.getLogger(__name__)
 
 
-def _nr():
+def nr():
     """The package module. is_running / get_providers / httpx are read off it
     at call time so tests that patch `backend.apps.nine_router.<name>` still
     take effect after the split (they used to all live on one module)."""
-    from backend.apps import nine_router
-    return nine_router
+    from backend.apps.nine_router import process
+    return process
 
 # API-key auth (provider="gemini", authType="apikey") and OAuth hit different
 # Google quotas: OAuth uses the Code Assist free tier (aggressively rate-limited;
@@ -35,9 +35,9 @@ NINE_ROUTER_CLAUDE_PRO_NAME = "OpenSwarm Pro (OpenSwarm-managed)"
 NINE_ROUTER_OPENAI_KEYED_PREFIX = "cp-openai"
 
 
-async def _find_keyed_connection(provider: str, name: str) -> dict | None:
+async def find_keyed_connection(provider: str, name: str) -> dict | None:
     """Return the 9Router connection we manage for this provider, if any."""
-    conns = await _nr().get_providers()
+    conns = await nr().get_providers()
     if not isinstance(conns, list):
         return None
     for c in conns:
@@ -51,7 +51,7 @@ async def _find_keyed_connection(provider: str, name: str) -> dict | None:
     return None
 
 
-async def _sync_apikey_provider(
+async def p_sync_apikey_provider(
     provider: str,
     api_key: str | None,
     name: str,
@@ -59,12 +59,12 @@ async def _sync_apikey_provider(
     label: str,
 ) -> None:
     """Create/update/delete an OpenSwarm-managed apikey connection. Silent if 9Router is down."""
-    if not _nr().is_running():
+    if not nr().is_running():
         return
 
-    existing = await _find_keyed_connection(provider, name)
+    existing = await find_keyed_connection(provider, name)
     try:
-        async with _nr().httpx.AsyncClient(timeout=5.0) as client:
+        async with nr().httpx.AsyncClient(timeout=5.0) as client:
             if api_key:
                 payload = {
                     "provider": provider,
@@ -100,7 +100,7 @@ async def _sync_apikey_provider(
 
 async def sync_gemini_api_key(api_key: str | None) -> None:
     """Mirror google_api_key into 9Router; bypasses Code Assist's tight quota."""
-    await _sync_apikey_provider(
+    await p_sync_apikey_provider(
         "gemini", api_key, NINE_ROUTER_KEYED_NAME, label="Gemini"
     )
 
@@ -128,12 +128,12 @@ async def sync_openai_api_key(api_key: str | None) -> None:
     above) so 9Router's translator dispatches to this provider-node
     instead of the built-in `openai` provider.
     """
-    from .sync_custom import _sync_openai_compat_node
-    await _sync_openai_compat_node(api_key)
+    from backend.apps.nine_router.sync_custom import sync_openai_compat_node
+    await sync_openai_compat_node(api_key)
 
 
 async def sync_openrouter_api_key(api_key: str | None) -> None:
     """Mirror openrouter_api_key into 9Router; supplies bearer for openrouter/ routes."""
-    await _sync_apikey_provider(
+    await p_sync_apikey_provider(
         "openrouter", api_key, NINE_ROUTER_OPENROUTER_KEYED_NAME, label="OpenRouter"
     )

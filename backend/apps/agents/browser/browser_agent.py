@@ -2195,8 +2195,8 @@ def _find_reusable_card(dashboard_id: str, url: str, parent_session_id: str | No
     if not (dashboard_id and want):
         return ""
     try:
-        from backend.apps.dashboards.dashboards import _load
-        cards = _load(dashboard_id).layout.browser_cards
+        from backend.apps.dashboards.dashboards import load as load_dashboard
+        cards = load_dashboard(dashboard_id).layout.browser_cards
     except Exception:
         return ""
     from backend.apps.agents.agent_manager import agent_manager
@@ -2218,10 +2218,10 @@ def _find_reusable_card(dashboard_id: str, url: str, parent_session_id: str | No
 
 async def _create_browser_card(dashboard_id: str, url: str, parent_session_id: str | None = None) -> str:
     """Create a new browser card on the dashboard and return its browser_id."""
-    from backend.apps.dashboards.dashboards import _load, _save
+    from backend.apps.dashboards.dashboards import load as load_dashboard, save as save_dashboard
     from backend.apps.dashboards.models import BrowserCardPosition, BrowserTab
 
-    dashboard = _load(dashboard_id)
+    dashboard = load_dashboard(dashboard_id)
     browser_id = f"browser-{uuid4().hex[:8]}"
     tab_id = f"tab-{uuid4().hex[:8]}"
     tab = BrowserTab(id=tab_id, url=url or "https://www.google.com", title="")
@@ -2238,7 +2238,7 @@ async def _create_browser_card(dashboard_id: str, url: str, parent_session_id: s
     )
     dashboard.layout.browser_cards[browser_id] = card
     dashboard.updated_at = datetime.now()
-    _save(dashboard)
+    save_dashboard(dashboard)
 
     await ws_manager.broadcast_global("dashboard:browser_card_added", {
         "dashboard_id": dashboard_id,

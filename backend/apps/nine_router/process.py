@@ -23,9 +23,9 @@ import httpx
 logger = logging.getLogger(__name__)
 
 NINE_ROUTER_PORT = 20128
-NINE_ROUTER_URL = f"http://localhost:{NINE_ROUTER_PORT}"
-NINE_ROUTER_API = f"{NINE_ROUTER_URL}/api"
-NINE_ROUTER_V1 = f"{NINE_ROUTER_URL}/v1"
+P_NINE_ROUTER_URL = f"http://localhost:{NINE_ROUTER_PORT}"
+NINE_ROUTER_API = f"{P_NINE_ROUTER_URL}/api"
+NINE_ROUTER_V1 = f"{P_NINE_ROUTER_URL}/v1"
 
 # Pinned 9router npm package version. Stays at 0.3.60.
 #
@@ -56,7 +56,7 @@ NINE_ROUTER_V1 = f"{NINE_ROUTER_URL}/v1"
 # `openai-compatible` provider-node that honors `baseUrl`.
 NINE_ROUTER_NPM_VERSION = "0.3.60"
 
-_process: subprocess.Popen | None = None
+P_PROCESS: subprocess.Popen | None = None
 
 # Short TTL cache for positive is_running() results. The probe is a sync
 # httpx.get that blocks the event loop, and under load (9Router busy
@@ -65,46 +65,46 @@ _process: subprocess.Popen | None = None
 # negatives without masking a real crash for more than _IS_RUNNING_TTL seconds.
 # Negative results are NOT cached so startup detection in ensure_running()
 # remains correct.
-_IS_RUNNING_TTL = 10.0
-_is_running_last_ok: float = 0.0
+P_IS_RUNNING_TTL = 10.0
+P_IS_RUNNING_LAST_OK: float = 0.0
 
 
 def is_running() -> bool:
     """Check if 9Router is running."""
-    global _is_running_last_ok
+    global P_IS_RUNNING_LAST_OK
     now = time.monotonic()
-    if now - _is_running_last_ok < _IS_RUNNING_TTL:
+    if now - P_IS_RUNNING_LAST_OK < P_IS_RUNNING_TTL:
         return True
     try:
         r = httpx.get(f"{NINE_ROUTER_V1}/models", timeout=2.0)
         if r.status_code == 200:
-            _is_running_last_ok = now
+            P_IS_RUNNING_LAST_OK = now
             return True
         return False
     except Exception:
         return False
 
 
-def _find_9router_dir() -> str | None:
+def p_find_9router_dir() -> str | None:
     """Locate the bundled 9Router directory (works in both dev and packaged mode)."""
-    _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+    is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
 
-    if _is_packaged:
-        _resources = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        _candidate = os.path.join(_resources, "router")
-        if os.path.isdir(_candidate):
-            return _candidate
+    if is_packaged:
+        resources = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        candidate = os.path.join(resources, "router")
+        if os.path.isdir(candidate):
+            return candidate
     else:
-        _backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        _project_root = os.path.dirname(_backend_dir)
-        _candidate = os.path.join(_project_root, "router")
-        if os.path.isdir(_candidate):
-            return _candidate
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        project_root = os.path.dirname(backend_dir)
+        candidate = os.path.join(project_root, "router")
+        if os.path.isdir(candidate):
+            return candidate
 
     return None
 
 
-def _gpt5_patch_path() -> str | None:
+def p_gpt5_patch_path() -> str | None:
     """Absolute path to backend/apps/agents/9router_gpt5_patch.js, used as
     `node --require <path>` when spawning 9router.
 
@@ -127,7 +127,7 @@ def _gpt5_patch_path() -> str | None:
     return candidate if os.path.exists(candidate) else None
 
 
-def _find_node() -> str | None:
+def p_find_node() -> str | None:
     """Find a Node.js binary (works in both dev and packaged mode).
 
     Priority order:
@@ -157,7 +157,7 @@ def _find_node() -> str | None:
     return None
 
 
-def _dev_router_cache_dir() -> str:
+def p_dev_router_cache_dir() -> str:
     """Cache dir for the npm 9router package used in dev mode.
 
     Pinned per version so bumping NINE_ROUTER_NPM_VERSION triggers a fresh
@@ -169,7 +169,7 @@ def _dev_router_cache_dir() -> str:
     return os.path.join(base, "openswarm-router", NINE_ROUTER_NPM_VERSION)
 
 
-def _ensure_router_cached() -> str | None:
+def p_ensure_router_cached() -> str | None:
     """Ensure the npm 9router package is installed in the dev cache.
 
     Returns the absolute path to `app/server.js` on success, or None if
@@ -181,7 +181,7 @@ def _ensure_router_cached() -> str | None:
     no update-check spinner, and no accidental-quit foot-gun when a
     non-developer right-clicks the "9" tray icon and picks Quit.
     """
-    cache_dir = _dev_router_cache_dir()
+    cache_dir = p_dev_router_cache_dir()
     server_js = os.path.join(cache_dir, "node_modules", "9router", "app", "server.js")
     if os.path.exists(server_js):
         return server_js
@@ -223,22 +223,21 @@ def _ensure_router_cached() -> str | None:
 
 async def ensure_running():
     """Start 9Router if not already running."""
-    global _process
-    _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+    global P_PROCESS
+    is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
 
     if is_running():
         # In dev mode, kill stale standalone servers (from previous builds)
         # so we can start `next dev` which always uses latest source code
-        if not _is_packaged:
-            import subprocess as _sp
+        if not is_packaged:
             try:
-                result = _sp.run(
+                result = subprocess.run(
                     ["pgrep", "-f", "next-server"],
                     capture_output=True, text=True, timeout=3,
                 )
                 if result.stdout.strip():
                     logger.info("Dev mode: killing stale standalone 9Router to use next dev instead")
-                    _sp.run(["pkill", "-f", "next-server"], timeout=5)
+                    subprocess.run(["pkill", "-f", "next-server"], timeout=5)
                     await asyncio.sleep(2)
                 else:
                     logger.info("9Router already running on port %d", NINE_ROUTER_PORT)
@@ -249,28 +248,28 @@ async def ensure_running():
         else:
             logger.info("9Router already running on port %d", NINE_ROUTER_PORT)
             return
-    _9router_dir = _find_9router_dir()
+    nine_router_dir = p_find_9router_dir()
 
-    if _is_packaged and _9router_dir:
+    if is_packaged and nine_router_dir:
         # Packaged mode; run the pre-built standalone server staged at
         # <resources>/router/server.js by scripts/fetch-router.sh at build time.
-        standalone_server = os.path.join(_9router_dir, "server.js")
+        standalone_server = os.path.join(nine_router_dir, "server.js")
         if not os.path.exists(standalone_server):
-            standalone_server = os.path.join(_9router_dir, ".next", "standalone", "server.js")
+            standalone_server = os.path.join(nine_router_dir, ".next", "standalone", "server.js")
         if not os.path.exists(standalone_server):
-            logger.warning("9Router standalone build not found in %s", _9router_dir)
+            logger.warning("9Router standalone build not found in %s", nine_router_dir)
             return
 
-        node = _find_node()
+        node = p_find_node()
         if not node:
             logger.warning("Node.js not found; cannot start 9Router in packaged mode.")
             return
 
         logger.info("Starting 9Router (production) on port %d...", NINE_ROUTER_PORT)
         cmd = [node]
-        _patch = _gpt5_patch_path()
-        if _patch:
-            cmd += ["--require", _patch]
+        patch = p_gpt5_patch_path()
+        if patch:
+            cmd += ["--require", patch]
         cmd.append(standalone_server)
         cwd = os.path.dirname(standalone_server)
         env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production"}
@@ -284,11 +283,11 @@ async def ensure_running():
         # avoids its menu-bar tray icon (which users confusingly quit,
         # silently killing their subscription routing), its update-check
         # spinner, and the interactive TUI.
-        cached_server = _ensure_router_cached()
+        cached_server = p_ensure_router_cached()
         if not cached_server:
             return
 
-        node = _find_node()
+        node = p_find_node()
         if not node:
             logger.warning("Node.js not found; cannot start 9Router in dev mode.")
             return
@@ -298,9 +297,9 @@ async def ensure_running():
             NINE_ROUTER_NPM_VERSION, NINE_ROUTER_PORT,
         )
         cmd = [node]
-        _patch = _gpt5_patch_path()
-        if _patch:
-            cmd += ["--require", _patch]
+        patch = p_gpt5_patch_path()
+        if patch:
+            cmd += ["--require", patch]
         cmd.append(cached_server)
         cwd = os.path.dirname(cached_server)
         env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production"}
@@ -311,29 +310,29 @@ async def ensure_running():
     # before launching the backend; output will then be appended to
     # backend/data/9router.log line-buffered, which can be `tail -f`'d.
     if os.environ.get("OPENSWARM_DEBUG_9ROUTER"):
-        _log_path = os.path.join(
+        log_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
             "data",
             "9router.log",
         )
-        os.makedirs(os.path.dirname(_log_path), exist_ok=True)
-        _stdout = open(_log_path, "a", buffering=1)  # line-buffered
-        _stderr = subprocess.STDOUT
-        logger.info(f"9Router debug logging enabled → {_log_path}")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        stdout = open(log_path, "a", buffering=1)  # line-buffered
+        stderr = subprocess.STDOUT
+        logger.info(f"9Router debug logging enabled → {log_path}")
     else:
-        _stdout = subprocess.DEVNULL
-        _stderr = subprocess.DEVNULL
+        stdout = subprocess.DEVNULL
+        stderr = subprocess.DEVNULL
 
     try:
-        _process = subprocess.Popen(
+        P_PROCESS = subprocess.Popen(
             cmd,
             cwd=cwd,
-            stdout=_stdout,
-            stderr=_stderr,
+            stdout=stdout,
+            stderr=stderr,
             env=env,
         )
 
-        timeout = 20 if _is_packaged else 30
+        timeout = 20 if is_packaged else 30
         for _ in range(timeout * 2):
             await asyncio.sleep(0.5)
             if is_running():
@@ -347,17 +346,17 @@ async def ensure_running():
 
 def stop():
     """Stop the 9Router subprocess."""
-    global _process
-    if _process:
+    global P_PROCESS
+    if P_PROCESS:
         try:
-            _process.terminate()
-            _process.wait(timeout=5)
+            P_PROCESS.terminate()
+            P_PROCESS.wait(timeout=5)
         except Exception:
             try:
-                _process.kill()
+                P_PROCESS.kill()
             except Exception:
                 pass
-        _process = None
+        P_PROCESS = None
         logger.info("9Router stopped")
 
 

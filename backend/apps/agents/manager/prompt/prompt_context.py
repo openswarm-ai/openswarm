@@ -107,7 +107,7 @@ def build_browser_context(dashboard_id: str | None, selected_browser_ids: list[s
     if not dashboard_id:
         return None
     try:
-        from backend.apps.dashboards.dashboards import _load as load_dashboard
+        from backend.apps.dashboards.dashboards import load as load_dashboard
         dashboard = load_dashboard(dashboard_id)
     except Exception:
         return None

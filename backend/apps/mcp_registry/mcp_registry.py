@@ -12,21 +12,21 @@ from backend.config.Apps import SubApp
 
 logger = logging.getLogger(__name__)
 
-REGISTRY_BASE = "https://registry.modelcontextprotocol.io/v0.1"
-PAGE_LIMIT = 100
-REFRESH_INTERVAL_S = 3600
+P_REGISTRY_BASE = "https://registry.modelcontextprotocol.io/v0.1"
+P_PAGE_LIMIT = 100
+P_REFRESH_INTERVAL_S = 3600
 
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_BATCH = 4000 if GITHUB_TOKEN else 50
-GITHUB_CONCURRENT = 10
+P_GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+P_GITHUB_BATCH = 4000 if P_GITHUB_TOKEN else 50
+P_GITHUB_CONCURRENT = 10
 
-_cache: dict[str, dict] = {}
-_cache_updated_at: float = 0
-_refresh_task: Optional[asyncio.Task] = None
-_stars_cache: dict[str, int] = {}
+P_CACHE: dict[str, dict] = {}
+P_CACHE_UPDATED_AT: float = 0
+P_REFRESH_TASK: Optional[asyncio.Task] = None
+P_STARS_CACHE: dict[str, int] = {}
 
 
-def _extract_gh_repo(repo_url: str) -> Optional[str]:
+def p_extract_gh_repo(repo_url: str) -> Optional[str]:
     """Parse 'owner/repo' from a GitHub URL."""
     if not repo_url or "github.com" not in repo_url:
         return None
@@ -42,7 +42,7 @@ def _extract_gh_repo(repo_url: str) -> Optional[str]:
     return None
 
 
-def _extract_server(entry: dict) -> Optional[dict]:
+def p_extract_server(entry: dict) -> Optional[dict]:
     """Extract a flat server record from a registry entry, keeping only latest versions."""
     meta = entry.get("_meta", {}).get("io.modelcontextprotocol.registry/official", {})
     if not meta.get("isLatest"):
@@ -96,7 +96,7 @@ def _extract_server(entry: dict) -> Optional[dict]:
     }
 
 
-async def _fetch_all_servers() -> dict[str, dict]:
+async def p_fetch_all_servers() -> dict[str, dict]:
     """Paginate through the full registry and return a dict keyed by server name."""
     servers: dict[str, dict] = {}
     cursor: Optional[str] = None
@@ -104,12 +104,12 @@ async def _fetch_all_servers() -> dict[str, dict]:
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         while True:
-            params: dict = {"limit": PAGE_LIMIT}
+            params: dict = {"limit": P_PAGE_LIMIT}
             if cursor:
                 params["cursor"] = cursor
 
             try:
-                resp = await client.get(f"{REGISTRY_BASE}/servers", params=params)
+                resp = await client.get(f"{P_REGISTRY_BASE}/servers", params=params)
                 resp.raise_for_status()
                 data = resp.json()
             except Exception as e:
@@ -121,7 +121,7 @@ async def _fetch_all_servers() -> dict[str, dict]:
                 break
 
             for entry in entries:
-                record = _extract_server(entry)
+                record = p_extract_server(entry)
                 if record:
                     servers[record["name"]] = record
 
@@ -135,16 +135,16 @@ async def _fetch_all_servers() -> dict[str, dict]:
     return servers
 
 
-GOOGLE_README_URL = "https://raw.githubusercontent.com/google/mcp/main/README.md"
-GOOGLE_ICON_URL = "https://github.com/google.png?size=64"
-_ENTRY_RE = re.compile(r"\[\*\*(.+?)\*\*\]\((.+?)\)(?:[,\s]*(.+))?")
+P_GOOGLE_README_URL = "https://raw.githubusercontent.com/google/mcp/main/README.md"
+P_GOOGLE_ICON_URL = "https://github.com/google.png?size=64"
+P_ENTRY_RE = re.compile(r"\[\*\*(.+?)\*\*\]\((.+?)\)(?:[,\s]*(.+))?")
 
 
-def _slugify(name: str) -> str:
+def p_slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
-def _parse_google_readme(text: str) -> dict[str, dict]:
+def p_parse_google_readme(text: str) -> dict[str, dict]:
     servers: dict[str, dict] = {}
     section: Optional[str] = None
 
@@ -164,7 +164,7 @@ def _parse_google_readme(text: str) -> dict[str, dict]:
         if section is None:
             continue
 
-        m = _ENTRY_RE.search(stripped)
+        m = P_ENTRY_RE.search(stripped)
         if not m:
             continue
 
@@ -172,7 +172,7 @@ def _parse_google_readme(text: str) -> dict[str, dict]:
         url = m.group(2).strip()
         desc_raw = (m.group(3) or "").strip().rstrip(".")
 
-        slug = _slugify(title)
+        slug = p_slugify(title)
         key = f"google/{slug}"
 
         is_github = "github.com" in url or "go.dev" in url
@@ -195,7 +195,7 @@ def _parse_google_readme(text: str) -> dict[str, dict]:
             "repositoryUrl": repo_url,
             "remoteUrl": "",
             "remoteType": remote_type,
-            "iconUrl": GOOGLE_ICON_URL,
+            "iconUrl": P_GOOGLE_ICON_URL,
             "environmentVariables": [],
             "keywords": ["google", section],
             "license": "Apache-2.0",
@@ -206,13 +206,13 @@ def _parse_google_readme(text: str) -> dict[str, dict]:
     return servers
 
 
-async def _fetch_google_servers() -> dict[str, dict]:
+async def p_fetch_google_servers() -> dict[str, dict]:
     """Fetch and parse Google's MCP server catalog from their GitHub README."""
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(GOOGLE_README_URL)
+            resp = await client.get(P_GOOGLE_README_URL)
             resp.raise_for_status()
-            servers = _parse_google_readme(resp.text)
+            servers = p_parse_google_readme(resp.text)
             logger.info(f"Google MCP catalog: parsed {len(servers)} servers")
             return servers
     except Exception as e:
@@ -220,40 +220,40 @@ async def _fetch_google_servers() -> dict[str, dict]:
         return {}
 
 
-async def _fetch_github_stars(servers: dict[str, dict]):
+async def p_fetch_github_stars(servers: dict[str, dict]):
     """Batch-fetch GitHub star counts for servers with GitHub repos.
 
     Uses an in-memory cache so stars accumulate across refresh cycles even
     when rate-limited (60 req/hr unauthenticated, 5 000 with GITHUB_TOKEN).
     """
-    global _stars_cache
+    global P_STARS_CACHE
 
     needed: list[str] = []
     for srv in servers.values():
-        gh = _extract_gh_repo(srv.get("repositoryUrl", ""))
-        if gh and gh not in _stars_cache and gh not in needed:
+        gh = p_extract_gh_repo(srv.get("repositoryUrl", ""))
+        if gh and gh not in P_STARS_CACHE and gh not in needed:
             needed.append(gh)
 
     if not needed:
-        logger.info(f"GitHub stars: all {len(_stars_cache)} repos cached, 0 to fetch")
-        _apply_stars(servers)
+        logger.info(f"GitHub stars: all {len(P_STARS_CACHE)} repos cached, 0 to fetch")
+        p_apply_stars(servers)
         return
 
-    to_fetch = needed[: GITHUB_BATCH]
+    to_fetch = needed[: P_GITHUB_BATCH]
     logger.info(
         f"GitHub stars: fetching {len(to_fetch)} repos "
-        f"({len(_stars_cache)} cached, {len(needed)} pending)"
+        f"({len(P_STARS_CACHE)} cached, {len(needed)} pending)"
     )
 
     headers: dict[str, str] = {"Accept": "application/vnd.github.v3+json"}
-    if GITHUB_TOKEN:
-        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+    if P_GITHUB_TOKEN:
+        headers["Authorization"] = f"token {P_GITHUB_TOKEN}"
 
-    sem = asyncio.Semaphore(GITHUB_CONCURRENT)
+    sem = asyncio.Semaphore(P_GITHUB_CONCURRENT)
     rate_limited = False
     fetched = 0
 
-    async def _fetch_one(client: httpx.AsyncClient, repo: str):
+    async def p_fetch_one(client: httpx.AsyncClient, repo: str):
         nonlocal rate_limited, fetched
         if rate_limited:
             return
@@ -265,56 +265,56 @@ async def _fetch_github_stars(servers: dict[str, dict]):
                     f"https://api.github.com/repos/{repo}", headers=headers
                 )
                 if resp.status_code == 200:
-                    _stars_cache[repo] = resp.json().get("stargazers_count", 0)
+                    P_STARS_CACHE[repo] = resp.json().get("stargazers_count", 0)
                     fetched += 1
                 elif resp.status_code in (403, 429):
                     rate_limited = True
                     logger.warning("GitHub API rate-limited, stopping star fetch")
                 elif resp.status_code == 404:
-                    _stars_cache[repo] = 0
+                    P_STARS_CACHE[repo] = 0
                     fetched += 1
             except Exception as exc:
                 logger.debug(f"GitHub stars fetch failed for {repo}: {exc}")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        await asyncio.gather(*[_fetch_one(client, r) for r in to_fetch])
+        await asyncio.gather(*[p_fetch_one(client, r) for r in to_fetch])
 
-    logger.info(f"GitHub stars: fetched {fetched} new, {len(_stars_cache)} total cached")
-    _apply_stars(servers)
+    logger.info(f"GitHub stars: fetched {fetched} new, {len(P_STARS_CACHE)} total cached")
+    p_apply_stars(servers)
 
 
-def _apply_stars(servers: dict[str, dict]):
+def p_apply_stars(servers: dict[str, dict]):
     for srv in servers.values():
-        gh = _extract_gh_repo(srv.get("repositoryUrl", ""))
-        srv["stars"] = _stars_cache.get(gh) if gh else None
+        gh = p_extract_gh_repo(srv.get("repositoryUrl", ""))
+        srv["stars"] = P_STARS_CACHE.get(gh) if gh else None
 
 
-async def _refresh_loop():
+async def p_refresh_loop():
     """Background loop that refreshes the cache on startup and then hourly."""
-    global _cache, _cache_updated_at
+    global P_CACHE, P_CACHE_UPDATED_AT
     while True:
         try:
             community, google = await asyncio.gather(
-                _fetch_all_servers(),
-                _fetch_google_servers(),
+                p_fetch_all_servers(),
+                p_fetch_google_servers(),
             )
-            _cache = {**community, **google}
-            await _fetch_github_stars(_cache)
-            _cache_updated_at = time.time()
+            P_CACHE = {**community, **google}
+            await p_fetch_github_stars(P_CACHE)
+            P_CACHE_UPDATED_AT = time.time()
         except Exception as e:
             logger.exception(f"MCP registry refresh error: {e}")
-        await asyncio.sleep(REFRESH_INTERVAL_S)
+        await asyncio.sleep(P_REFRESH_INTERVAL_S)
 
 
 @asynccontextmanager
 async def mcp_registry_lifespan():
-    global _refresh_task
-    _refresh_task = asyncio.create_task(_refresh_loop())
+    global P_REFRESH_TASK
+    P_REFRESH_TASK = asyncio.create_task(p_refresh_loop())
     yield
-    if _refresh_task:
-        _refresh_task.cancel()
+    if P_REFRESH_TASK:
+        P_REFRESH_TASK.cancel()
         try:
-            await _refresh_task
+            await P_REFRESH_TASK
         except asyncio.CancelledError:
             pass
 
@@ -324,13 +324,13 @@ mcp_registry = SubApp("mcp-registry", mcp_registry_lifespan)
 
 @mcp_registry.router.get("/stats")
 async def registry_stats():
-    google = sum(1 for s in _cache.values() if s.get("source") == "google")
-    community = sum(1 for s in _cache.values() if s.get("source") == "community")
+    google = sum(1 for s in P_CACHE.values() if s.get("source") == "google")
+    community = sum(1 for s in P_CACHE.values() if s.get("source") == "community")
     return {
-        "total": len(_cache),
+        "total": len(P_CACHE),
         "google": google,
         "community": community,
-        "lastUpdated": _cache_updated_at,
+        "lastUpdated": P_CACHE_UPDATED_AT,
     }
 
 
@@ -342,7 +342,7 @@ async def registry_search(
     sort: str = Query("name", description="Sort by: name, stars"),
     source: str = Query("", description="Filter by source: google, community, or empty for all"),
 ):
-    pool = _cache.values()
+    pool = P_CACHE.values()
     if source:
         pool = [s for s in pool if s.get("source") == source]
 
@@ -387,7 +387,7 @@ async def registry_search(
 
 @mcp_registry.router.get("/detail/{server_name:path}")
 async def registry_detail(server_name: str):
-    srv = _cache.get(server_name)
+    srv = P_CACHE.get(server_name)
     if not srv:
         return {"error": "Server not found"}, 404
     return {"server": srv}

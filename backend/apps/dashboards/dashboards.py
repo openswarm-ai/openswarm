@@ -22,7 +22,7 @@ from backend.config.json_store import read_json_or_none, atomic_write_json
 OLD_LAYOUT_FILE = os.path.join(OLD_LAYOUT_DIR, "layout.json")
 
 
-def _load_all() -> list[Dashboard]:
+def p_load_all() -> list[Dashboard]:
     result = []
     if not os.path.exists(DATA_DIR):
         return result
@@ -40,11 +40,11 @@ def _load_all() -> list[Dashboard]:
     return result
 
 
-def _save(dashboard: Dashboard):
+def save(dashboard: Dashboard):
     atomic_write_json(os.path.join(DATA_DIR, f"{dashboard.id}.json"), dashboard.model_dump(mode="json"))
 
 
-def _load(dashboard_id: str) -> Dashboard:
+def load(dashboard_id: str) -> Dashboard:
     path = os.path.join(DATA_DIR, f"{dashboard_id}.json")
     data = read_json_or_none(path)
     if data is None:
@@ -52,15 +52,15 @@ def _load(dashboard_id: str) -> Dashboard:
     return Dashboard(**data)
 
 
-def _delete(dashboard_id: str):
+def p_delete(dashboard_id: str):
     path = os.path.join(DATA_DIR, f"{dashboard_id}.json")
     if os.path.exists(path):
         os.remove(path)
 
 
-def _migrate_if_needed():
+def p_migrate_if_needed():
     """One-time migration: if no dashboards exist, create 'Dashboard 1' from old layout."""
-    existing = _load_all()
+    existing = p_load_all()
     if existing:
         return
 
@@ -78,7 +78,7 @@ def _migrate_if_needed():
             logger.exception("Failed to read old layout.json, using empty layout")
 
     dashboard = Dashboard(name="Dashboard 1", layout=layout)
-    _save(dashboard)
+    save(dashboard)
     logger.info(f"Created default dashboard: {dashboard.id}")
 
     if os.path.exists(SESSIONS_DIR):
@@ -102,7 +102,7 @@ def _migrate_if_needed():
 @asynccontextmanager
 async def dashboards_lifespan():
     os.makedirs(DATA_DIR, exist_ok=True)
-    _migrate_if_needed()
+    p_migrate_if_needed()
     yield
 
 
@@ -111,7 +111,7 @@ dashboards = SubApp("dashboards", dashboards_lifespan)
 
 @dashboards.router.get("/list")
 async def list_dashboards():
-    all_dashboards = _load_all()
+    all_dashboards = p_load_all()
     all_dashboards.sort(key=lambda d: d.updated_at or d.created_at, reverse=True)
     items = []
     for d in all_dashboards:
@@ -132,7 +132,7 @@ async def list_dashboards():
 @dashboards.router.post("/create")
 async def create_dashboard(body: DashboardCreate):
     dashboard = Dashboard(name=body.name)
-    _save(dashboard)
+    save(dashboard)
     return dashboard.model_dump(mode="json")
 
 
@@ -212,7 +212,7 @@ async def seed_orchestration_demo(dashboard_id: str):
     drags it into a new agent and asks for a PDF report; which
     delegates back to this seeded agent.
     """
-    _load(dashboard_id)  # validate dashboard exists
+    load(dashboard_id)  # validate dashboard exists
 
     session_id = uuid4().hex
     now = datetime.now()
@@ -294,7 +294,7 @@ async def seed_orchestration_demo(dashboard_id: str):
 
 @dashboards.router.post("/{dashboard_id}/generate-name")
 async def generate_name(dashboard_id: str):
-    dashboard = _load(dashboard_id)
+    dashboard = load(dashboard_id)
 
     if not dashboard.auto_named and dashboard.name != "Untitled Dashboard":
         return {"name": dashboard.name, "auto_named": dashboard.auto_named}
@@ -319,7 +319,7 @@ async def generate_name(dashboard_id: str):
         from backend.apps.settings.credentials import get_anthropic_client_for_model
         from backend.apps.agents.providers.registry import resolve_aux_model
         global_settings = load_settings()
-        aux_model, _aux_base = await resolve_aux_model(global_settings, preferred_tier="haiku")
+        aux_model, _ = await resolve_aux_model(global_settings, preferred_tier="haiku")
         client = get_anthropic_client_for_model(global_settings, aux_model)
 
         # Mirrors generate_title's hardening: the tasks are inert text to LABEL, never answer,
@@ -352,19 +352,19 @@ async def generate_name(dashboard_id: str):
     dashboard.name = fallback
     dashboard.auto_named = True
     dashboard.updated_at = datetime.now()
-    _save(dashboard)
+    save(dashboard)
     return {"name": dashboard.name, "auto_named": True}
 
 
 @dashboards.router.get("/{dashboard_id}")
 async def get_dashboard(dashboard_id: str):
-    dashboard = _load(dashboard_id)
+    dashboard = load(dashboard_id)
     return dashboard.model_dump(mode="json")
 
 
 @dashboards.router.put("/{dashboard_id}")
 async def update_dashboard(dashboard_id: str, body: DashboardUpdate):
-    dashboard = _load(dashboard_id)
+    dashboard = load(dashboard_id)
     if body.name is not None:
         dashboard.name = body.name
         dashboard.auto_named = False
@@ -377,13 +377,13 @@ async def update_dashboard(dashboard_id: str, body: DashboardUpdate):
         # Only a real screenshot write moves the sort key; layout/rename saves don't reorder.
         dashboard.preview_updated_at = now
     dashboard.updated_at = now
-    _save(dashboard)
+    save(dashboard)
     return dashboard.model_dump(mode="json")
 
 
 @dashboards.router.delete("/{dashboard_id}")
 async def delete_dashboard(dashboard_id: str):
-    _load(dashboard_id)
+    load(dashboard_id)
 
     if os.path.exists(SESSIONS_DIR):
         for fname in os.listdir(SESSIONS_DIR):
@@ -409,13 +409,13 @@ async def delete_dashboard(dashboard_id: str):
         except Exception:
             logger.warning(f"Failed to delete active session {sid} during dashboard deletion")
 
-    _delete(dashboard_id)
+    p_delete(dashboard_id)
     return {"ok": True}
 
 
 @dashboards.router.post("/{dashboard_id}/duplicate")
 async def duplicate_dashboard(dashboard_id: str):
-    source = _load(dashboard_id)
+    source = load(dashboard_id)
     source_data = source.model_dump(mode="json")
     new_id = uuid4().hex
     now = datetime.now().isoformat()
