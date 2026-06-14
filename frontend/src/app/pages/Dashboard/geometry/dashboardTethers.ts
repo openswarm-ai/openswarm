@@ -1,7 +1,8 @@
 import { useMemo, type RefObject } from 'react';
-import type { CardPosition, BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
+import type { CardPosition, BrowserCardPosition, ViewCardPosition } from '@/shared/state/dashboardLayoutSlice';
 import { EXPANDED_CARD_MIN_H } from '@/shared/state/dashboardLayoutSlice';
 import type { AgentSession } from '@/shared/state/agentsSlice';
+import type { Output } from '@/shared/state/outputsSlice';
 
 const ELBOW_RADIUS = 16;
 
@@ -60,6 +61,8 @@ interface UseTethersArgs {
   glowingBrowserCards: Record<string, GlowingBrowserCard>;
   cards: Record<string, CardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
+  viewCards: Record<string, ViewCardPosition>;
+  outputs: Record<string, Output>;
   expandedSessionIds: string[];
   liveDragInfo: LiveDragInfo | null;
   measuredHeightsRef: RefObject<Record<string, number>>;
@@ -72,6 +75,8 @@ export function useTethers({
   glowingBrowserCards,
   cards,
   browserCards,
+  viewCards,
+  outputs,
   expandedSessionIds,
   liveDragInfo,
   measuredHeightsRef,
@@ -226,9 +231,124 @@ export function useTethers({
 
     const browserTethers = Array.from(glowTethers.values()).filter(Boolean) as Tether[];
 
-    return [...agentTethers, ...browserTethers];
+    // Edit tether: same anchor-pairing as browserTether (chat <-> view card).
+    // Used to visually link an App Builder chat to the running app while the
+    // session is actively editing.
+    function viewTether(
+      outputId: string,
+      sourceId: string,
+      label: string,
+    ): Tether | null {
+      const src = cards[sourceId];
+      const dst = viewCards[outputId];
+      if (!src || !dst) return null;
+
+      let srcX = src.x, srcY = src.y;
+      let dstX = dst.x, dstY = dst.y;
+      if (liveDragInfo) {
+        if (liveDragInfo.cardId === sourceId) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
+        if (liveDragInfo.cardId === outputId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
+      }
+
+      const srcMeasured = measuredHeightsRef.current![sourceId];
+      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
+        ? Math.max(EXPANDED_CARD_MIN_H, src.height)
+        : src.height);
+      const dstH = dst.height;
+
+      const srcCx = srcX + src.width / 2;
+      const dstCx = dstX + dst.width / 2;
+
+      const srcAnchors: Anchor[] = [
+        { x: srcX + src.width, y: srcY + srcH * 0.54, side: 'right' },
+        { x: srcX, y: srcY + srcH * 0.54, side: 'left' },
+        { x: srcCx, y: srcY, side: 'top' },
+        { x: srcCx, y: srcY + srcH, side: 'bottom' },
+      ];
+      const dstAnchors: Anchor[] = [
+        { x: dstX, y: dstY + dstH * 0.54, side: 'left' },
+        { x: dstX + dst.width, y: dstY + dstH * 0.54, side: 'right' },
+        { x: dstCx, y: dstY, side: 'top' },
+        { x: dstCx, y: dstY + dstH, side: 'bottom' },
+      ];
+
+      let bestSrc = srcAnchors[0], bestDst = dstAnchors[0];
+      let bestDist = Infinity;
+      for (const sa of srcAnchors) {
+        for (const da of dstAnchors) {
+          const d = Math.hypot(sa.x - da.x, sa.y - da.y);
+          if (d < bestDist) { bestDist = d; bestSrc = sa; bestDst = da; }
+        }
+      }
+
+      const x1 = bestSrc.x, y1 = bestSrc.y;
+      const x2 = bestDst.x, y2 = bestDst.y;
+
+      const isVertical = (bestSrc.side === 'top' || bestSrc.side === 'bottom')
+        && (bestDst.side === 'top' || bestDst.side === 'bottom');
+
+      let pathD: string;
+      if (isVertical) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const midY = y1 + dy / 2;
+        const r = (Math.abs(dx) < 1 || Math.abs(dy) < ELBOW_RADIUS * 2)
+          ? 0
+          : Math.min(ELBOW_RADIUS, Math.abs(dx) / 2, Math.abs(dy) / 4);
+        const sx = dx >= 0 ? 1 : -1;
+        const sy = dy >= 0 ? 1 : -1;
+        pathD = [
+          `M ${x1},${y1}`,
+          `V ${midY - sy * r}`,
+          `Q ${x1},${midY} ${x1 + sx * r},${midY}`,
+          `H ${x2 - sx * r}`,
+          `Q ${x2},${midY} ${x2},${midY + sy * r}`,
+          `V ${y2}`,
+        ].join(' ');
+      } else {
+        pathD = elbowPath(x1, y1, x2, y2);
+      }
+
+      const midX = x1 + (x2 - x1) / 2;
+      const midY = y1 + (y2 - y1) / 2;
+      const labelX = isVertical ? midX : midX + (x2 - midX) * 0.15;
+      const labelY = isVertical ? midY + (y2 - midY) * 0.15 : y2;
+
+      return {
+        key: `view-${outputId}`,
+        path: pathD,
+        labelX,
+        labelY,
+        label,
+        fading: false,
+      };
+    }
+
+    // Index outputs by their owning session so the per-session lookup below
+    // doesn't scan the whole outputs map for every view-builder chat.
+    const outputsBySession = new Map<string, string[]>();
+    for (const o of Object.values(outputs)) {
+      if (!o.session_id) continue;
+      const arr = outputsBySession.get(o.session_id);
+      if (arr) arr.push(o.id); else outputsBySession.set(o.session_id, [o.id]);
+    }
+
+    const viewTethers: Tether[] = [];
+    for (const s of sessionList) {
+      if (s.mode !== 'view-builder') continue;
+      if (s.status !== 'running' && s.status !== 'waiting_approval') continue;
+      const outIds = outputsBySession.get(s.id);
+      if (!outIds) continue;
+      for (const outputId of outIds) {
+        if (!viewCards[outputId]) continue;
+        const t = viewTether(outputId, s.id, 'Editing');
+        if (t) viewTethers.push(t);
+      }
+    }
+
+    return [...agentTethers, ...browserTethers, ...viewTethers];
   // measuredHeightsTick re-runs the memo once ResizeObserver reports a new
   // height after a collapse (the ref read is invisible to the dep checker).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, viewCards, outputs, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
 }
