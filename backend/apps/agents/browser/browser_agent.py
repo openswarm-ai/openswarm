@@ -129,7 +129,7 @@ def _extract_domain(url: str) -> str | None:
         return None
 
 
-def _strip_lone_surrogates(s: str) -> str:
+def p_strip_lone_surrogates(s: str) -> str:
     # The JS/webview hands us page text as UTF-16, so an emoji can arrive as half
     # of its surrogate pair; Python carries the orphan but .encode('utf-8') later
     # (the SDK serializing the request to the LLM) detonates with "surrogates not
@@ -137,10 +137,10 @@ def _strip_lone_surrogates(s: str) -> str:
     return re.sub(r"[\ud800-\udfff]", "�", s) if s else s
 
 
-def _format_tool_result(result: dict, tool_name: str) -> list[dict]:
+def p_format_tool_result(result: dict, tool_name: str) -> list[dict]:
     """Convert a browser command result dict into Anthropic API content blocks."""
     if "error" in result:
-        return [{"type": "text", "text": _strip_lone_surrogates(f"Error: {result['error']}")}]
+        return [{"type": "text", "text": p_strip_lone_surrogates(f"Error: {result['error']}")}]
 
     if tool_name == "BrowserScreenshot" and result.get("image"):
         blocks = [
@@ -157,7 +157,7 @@ def _format_tool_result(result: dict, tool_name: str) -> list[dict]:
         return blocks
 
     text = result.get("text", json.dumps(result))
-    return [{"type": "text", "text": _strip_lone_surrogates(str(text))}]
+    return [{"type": "text", "text": p_strip_lone_surrogates(str(text))}]
 
 
 # Mutating tools whose results get fresh page state attached (the browser-use
@@ -190,7 +190,7 @@ def _truncate_state(text: str, max_lines: int = _AUTO_STATE_MAX_LINES) -> str:
     )
 
 
-def _delta_state(text: str, seen_lines: set[str]) -> str:
+def p_delta_state(text: str, seen_lines: set[str]) -> str:
     """Shrink an attached element list to the rows that changed since the last
     attach; stable indices make a line's identity meaningful, so re-sending 30
     unchanged rows every action is pure token burn. Mutates `seen_lines` to the
@@ -219,7 +219,7 @@ def _delta_state(text: str, seen_lines: set[str]) -> str:
 _SEND_ROW_RE = re.compile(r'\[(\d+)\]\*?<\s*button\s+"([^"]*)"', re.I)
 
 
-def _send_index_in_state(state_text: str):
+def p_send_index_in_state(state_text: str):
     """(index, name) of a real Send button in an interactives list, or None.
     Strict exact match so it never grabs an upsell or a profile 'Send a message' link."""
     for line in (state_text or "").splitlines():
@@ -229,7 +229,7 @@ def _send_index_in_state(state_text: str):
     return None
 
 
-def _is_composer_fill(tool_name: str, tool_input: dict) -> bool:
+def p_is_composer_fill(tool_name: str, tool_input: dict) -> bool:
     """True if this action typed a message into a composer (the moment the Send
     button is about to matter). Covers the solo fill, BrowserType, and a batched
     fill, the three ways the model composes."""
@@ -262,7 +262,7 @@ async def _post_action_state(
         )
         if settle.get("hung"):
             return ""
-    _composer_fill = _is_composer_fill(tool_name, tool_input)
+    _composer_fill = p_is_composer_fill(tool_name, tool_input)
     params = {"goal": goal} if goal else {}
     lst = None
     _send_si = None
@@ -281,7 +281,7 @@ async def _post_action_state(
                 break
             if isinstance(_l, dict) and "error" not in _l and _l.get("text"):
                 lst = _l
-                _send_si = _send_index_in_state(_l["text"])
+                _send_si = p_send_index_in_state(_l["text"])
                 if _send_si:
                     break
             if time.monotonic() >= _deadline:
@@ -296,7 +296,7 @@ async def _post_action_state(
             return ""
     if not isinstance(lst, dict) or "error" in lst or not lst.get("text"):
         return ""
-    state = lst["text"] if seen_lines is None else _delta_state(lst["text"], seen_lines)
+    state = lst["text"] if seen_lines is None else p_delta_state(lst["text"], seen_lines)
     out = f"\n\n{PAGE_STATE_MARKER}\n{_truncate_state(state)}"
     # Hand the Send button's index over so the model clicks it directly instead of
     # scanning the list or hunting via CSS/JS/screenshots (the polled list above is what
@@ -1781,7 +1781,7 @@ async def run_browser_agent(
                     if len(recent_tool_calls) > LOOP_WINDOW_SIZE * 2:
                         recent_tool_calls = recent_tool_calls[-LOOP_WINDOW_SIZE * 2:]
 
-                content_blocks = _format_tool_result(result, tu.name)
+                content_blocks = p_format_tool_result(result, tu.name)
                 try:
                     url = result.get("url") or (tu.input or {}).get("url")
                     if url:

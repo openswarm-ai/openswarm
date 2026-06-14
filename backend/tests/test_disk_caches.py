@@ -29,7 +29,7 @@ def tools_tmp(tmp_path, monkeypatch):
     return d
 
 
-def _bump_mtime(path):
+def bump_mtime(path):
     # FAT32-style coarse clocks could hide a same-size rewrite; force a distinct mtime.
     st = os.stat(path)
     os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
@@ -53,7 +53,7 @@ def test_settings_external_edit_detected(settings_tmp):
     raw = json.loads(settings_tmp.read_text())
     raw["theme"] = "light"
     settings_tmp.write_text(json.dumps(raw))
-    _bump_mtime(settings_tmp)
+    bump_mtime(settings_tmp)
     assert store.load_settings().theme == "light"
 
 
@@ -75,7 +75,7 @@ def test_tools_write_then_list_is_fresh(tools_tmp):
     assert tools_lib._load_all() == []
     t = ToolDefinition(name="Alpha", description="a")
     tools_lib._save(t)
-    _bump_mtime(tools_tmp / f"{t.id}.json")
+    bump_mtime(tools_tmp / f"{t.id}.json")
     names = [x.name for x in tools_lib._load_all()]
     assert names == ["Alpha"]
 
@@ -98,7 +98,7 @@ def test_tools_in_place_rewrite_detected(tools_tmp):
     assert [x.name for x in tools_lib._load_all()] == ["Old"]
     t.name = "New"
     tools_lib._save(t)
-    _bump_mtime(tools_tmp / f"{t.id}.json")
+    bump_mtime(tools_tmp / f"{t.id}.json")
     assert [x.name for x in tools_lib._load_all()] == ["New"]
 
 

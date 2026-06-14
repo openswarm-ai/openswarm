@@ -30,15 +30,15 @@ from unittest.mock import patch, AsyncMock
 import pytest
 
 
-_TMPROOT = tempfile.mkdtemp(prefix="openswarm-v2-invariants-")
-os.environ.setdefault("OPENSWARM_DATA_DIR", _TMPROOT)
+TMPROOT = tempfile.mkdtemp(prefix="openswarm-v2-invariants-")
+os.environ.setdefault("OPENSWARM_DATA_DIR", TMPROOT)
 
 
 # ---------------------------------------------------------------------------
 # Fixture: build a fake ToolDefinition without touching disk.
 # ---------------------------------------------------------------------------
 
-def _fake_tool(
+def fake_tool(
     name: str,
     *,
     enabled: bool = True,
@@ -73,9 +73,9 @@ async def test_gate_blocks_when_active_mcps_empty():
     """Connected MCPs + active_mcps=[] → SDK gets empty mcp_servers dict."""
     from backend.apps.agents.agent_manager import AgentManager
     fake_tools = [
-        _fake_tool("Gmail"),
-        _fake_tool("Slack"),
-        _fake_tool("Notion"),
+        fake_tool("Gmail"),
+        fake_tool("Slack"),
+        fake_tool("Notion"),
     ]
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools), \
          patch("backend.apps.agents.agent_manager.refresh_google_token", new=AsyncMock(return_value=True)):
@@ -93,9 +93,9 @@ async def test_gate_allows_only_activated_servers():
     """active_mcps=['gmail'] → only gmail server in dispatch dict, others blocked."""
     from backend.apps.agents.agent_manager import AgentManager
     fake_tools = [
-        _fake_tool("Gmail"),
-        _fake_tool("Slack"),
-        _fake_tool("Notion"),
+        fake_tool("Gmail"),
+        fake_tool("Slack"),
+        fake_tool("Notion"),
     ]
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools), \
          patch("backend.apps.agents.agent_manager.refresh_google_token", new=AsyncMock(return_value=True)):
@@ -114,7 +114,7 @@ async def test_gate_allows_only_activated_servers():
 async def test_gate_unset_active_mcps_legacy_allows_all():
     """Pre-gate sessions use active_mcps=None → everything allowed (back-compat)."""
     from backend.apps.agents.agent_manager import AgentManager
-    fake_tools = [_fake_tool("Gmail"), _fake_tool("Slack")]
+    fake_tools = [fake_tool("Gmail"), fake_tool("Slack")]
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools), \
          patch("backend.apps.agents.agent_manager.refresh_google_token", new=AsyncMock(return_value=True)):
         mgr = AgentManager()
@@ -130,7 +130,7 @@ async def test_gate_unset_active_mcps_legacy_allows_all():
 async def test_gate_disabled_tool_blocked_even_when_activated():
     """Tool with enabled=False stays blocked even if in active_mcps."""
     from backend.apps.agents.agent_manager import AgentManager
-    fake_tools = [_fake_tool("Gmail", enabled=False)]
+    fake_tools = [fake_tool("Gmail", enabled=False)]
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools):
         mgr = AgentManager()
         result = await mgr._build_mcp_servers(
@@ -144,7 +144,7 @@ async def test_gate_disabled_tool_blocked_even_when_activated():
 async def test_gate_unauthed_tool_blocked():
     """Tool with auth_status='disconnected' stays blocked."""
     from backend.apps.agents.agent_manager import AgentManager
-    fake_tools = [_fake_tool("Gmail", auth_status="disconnected")]
+    fake_tools = [fake_tool("Gmail", auth_status="disconnected")]
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools):
         mgr = AgentManager()
         result = await mgr._build_mcp_servers(
@@ -158,7 +158,7 @@ async def test_gate_unauthed_tool_blocked():
 async def test_gate_allowed_tools_filter_intersects_active_mcps():
     """Activate gmail+slack but allowed_tools only has gmail → only gmail passes."""
     from backend.apps.agents.agent_manager import AgentManager
-    fake_tools = [_fake_tool("Gmail"), _fake_tool("Slack")]
+    fake_tools = [fake_tool("Gmail"), fake_tool("Slack")]
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools), \
          patch("backend.apps.agents.agent_manager.refresh_google_token", new=AsyncMock(return_value=True)):
         mgr = AgentManager()
@@ -180,7 +180,7 @@ async def test_gate_stress_random_activations():
     for _ in range(40):
         connected_count = random.randint(2, 8)
         connected_idx = random.sample(range(len(server_pool)), connected_count)
-        fake_tools = [_fake_tool(raw_names[i]) for i in connected_idx]
+        fake_tools = [fake_tool(raw_names[i]) for i in connected_idx]
         connected_sanitized = [server_pool[i] for i in connected_idx]
 
         # active set is a random subset of connected
@@ -533,7 +533,7 @@ def test_router_auth_pattern_does_not_falsely_match_normal_text():
 
 def test_is_auth_error_classifier():
     """The classifier at agent_manager.py:_is_auth_error covers many shapes."""
-    from backend.apps.agents.agent_manager import _is_auth_error
+    from backend.apps.agents.agent_manager import is_auth_error
 
     # Real shapes that must be caught
     matches = [
@@ -546,7 +546,7 @@ def test_is_auth_error_classifier():
         Exception("Provider not configured: gemini"),
     ]
     for e in matches:
-        assert _is_auth_error(e), f"should match: {e}"
+        assert is_auth_error(e), f"should match: {e}"
 
     # Non-auth errors must not match
     non_matches = [
@@ -556,15 +556,15 @@ def test_is_auth_error_classifier():
         Exception("File not found"),
     ]
     for e in non_matches:
-        assert not _is_auth_error(e), f"should NOT match: {e}"
+        assert not is_auth_error(e), f"should NOT match: {e}"
 
 
 def test_is_auth_error_with_stderr_tail():
     """The classifier also reads stderr buffer text."""
-    from backend.apps.agents.agent_manager import _is_auth_error
+    from backend.apps.agents.agent_manager import is_auth_error
     e = Exception("Command failed with exit code 1")
     stderr = "...\n[codex/gpt-5.5] [401]: Provided authentication token is expired"
-    assert _is_auth_error(e, extra_text=stderr)
+    assert is_auth_error(e, extra_text=stderr)
 
 
 # ===========================================================================
@@ -733,7 +733,7 @@ def test_active_mcps_default_factory_creates_new_list():
 async def test_concurrent_gate_calls_isolated():
     """Two concurrent _build_mcp_servers calls with different active_mcps must not cross-contaminate."""
     from backend.apps.agents.agent_manager import AgentManager
-    fake_tools = [_fake_tool("Gmail"), _fake_tool("Slack"), _fake_tool("Notion")]
+    fake_tools = [fake_tool("Gmail"), fake_tool("Slack"), fake_tool("Notion")]
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools), \
          patch("backend.apps.agents.agent_manager.refresh_google_token", new=AsyncMock(return_value=True)):
         mgr = AgentManager()
@@ -880,20 +880,20 @@ def test_custom_provider_round_trip():
 @pytest.mark.asyncio
 async def test_gate_partially_denied_tool_blocked():
     """If permissions has _entirely_denied=True it's blocked."""
-    from backend.apps.agents.agent_manager import _is_fully_denied
-    fake = _fake_tool("Gmail", permissions={
+    from backend.apps.agents.agent_manager import is_fully_denied
+    fake = fake_tool("Gmail", permissions={
         "_tool_descriptions": {"send_email": "Send email"},
         "send_email": "deny",
     })
-    # Build a minimal class that has the perms_dict shape _is_fully_denied expects
-    assert _is_fully_denied(fake) in (True, False)
+    # Build a minimal class that has the perms_dict shape is_fully_denied expects
+    assert is_fully_denied(fake) in (True, False)
 
 
 @pytest.mark.asyncio
 async def test_gate_handles_missing_refresh_token_gracefully():
     """Tool with auth_status='configured' and no oauth shouldn't crash the gate."""
     from backend.apps.agents.agent_manager import AgentManager
-    fake = _fake_tool("MyApiTool", auth_status="configured")
+    fake = fake_tool("MyApiTool", auth_status="configured")
     fake.auth_type = None  # no oauth
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=[fake]):
         mgr = AgentManager()
@@ -964,13 +964,13 @@ def test_get_api_type_openai():
 
 
 def test_find_builtin_model_returns_none_for_unknown():
-    from backend.apps.agents.providers.registry import _find_builtin_model
-    assert _find_builtin_model("not-a-real-model-xyz") is None
+    from backend.apps.agents.providers.registry import find_builtin_model
+    assert find_builtin_model("not-a-real-model-xyz") is None
 
 
 def test_find_builtin_model_returns_dict_for_known():
-    from backend.apps.agents.providers.registry import _find_builtin_model
-    sonnet = _find_builtin_model("sonnet")
+    from backend.apps.agents.providers.registry import find_builtin_model
+    sonnet = find_builtin_model("sonnet")
     assert sonnet is not None
     assert sonnet.get("api") == "anthropic"
 
@@ -998,16 +998,16 @@ def test_apply_context_window_overwrites_default_for_opus_4_7():
     the real 1M value from the registry for opus-4-7 / sonnet so the
     soft-cap trim and the % meter both reflect the real model cap."""
     from backend.apps.agents.core.models import AgentSession
-    from backend.apps.agents.agent_manager import _apply_context_window
+    from backend.apps.agents import agent_manager
     s = AgentSession(id="x", name="t", model="opus-4-7", mode="agent")
     assert s.context_window == 200_000
-    _apply_context_window(s)
+    agent_manager._apply_context_window(s)
     assert s.context_window == 1_000_000
     s2 = AgentSession(id="y", name="t", model="sonnet", mode="agent")
-    _apply_context_window(s2)
+    agent_manager._apply_context_window(s2)
     assert s2.context_window == 1_000_000
     s3 = AgentSession(id="z", name="t", model="haiku", mode="agent")
-    _apply_context_window(s3)
+    agent_manager._apply_context_window(s3)
     assert s3.context_window == 200_000
 
 
@@ -1016,27 +1016,27 @@ def test_apply_context_window_silent_on_unknown_model():
     that aren't in the registry fall back to the 128k registry default
     without breaking session creation."""
     from backend.apps.agents.core.models import AgentSession
-    from backend.apps.agents.agent_manager import _apply_context_window
+    from backend.apps.agents import agent_manager
     s = AgentSession(id="x", name="t", model="nonexistent-model-xyz", mode="agent")
-    _apply_context_window(s)
+    agent_manager._apply_context_window(s)
     assert s.context_window > 0
 
 
 def test_estimate_pdf_tokens_floors_empty_pdf_at_byte_heuristic():
     """A truly empty / minimal PDF still returns a non-zero estimate so
     the dry-run guard doesn't allow many tiny PDFs through silently."""
-    from backend.apps.settings.settings import _estimate_pdf_tokens
-    assert _estimate_pdf_tokens(b"") >= 1_000
-    assert _estimate_pdf_tokens(b"%PDF-1.4\n") >= 1_000
+    from backend.apps.settings.settings import p_estimate_pdf_tokens  # p-private-ignore: p_estimate_pdf_tokens
+    assert p_estimate_pdf_tokens(b"") >= 1_000
+    assert p_estimate_pdf_tokens(b"%PDF-1.4\n") >= 1_000
 
 
 def test_estimate_pdf_tokens_takes_max_of_pages_and_bytes():
     """An image-heavy PDF with low page count should still report high
     tokens via the byte-size signal; we never under-report."""
-    from backend.apps.settings.settings import _estimate_pdf_tokens
+    from backend.apps.settings.settings import p_estimate_pdf_tokens  # p-private-ignore: p_estimate_pdf_tokens
     # 8MB PDF with 1 page (image-heavy), byte heuristic should dominate.
     fake = b"%PDF-1.4\n/Type /Pages /Count 1\n" + b"X" * (8 * 1024 * 1024)
-    tokens = _estimate_pdf_tokens(fake)
+    tokens = p_estimate_pdf_tokens(fake)
     # byte heuristic: 8MB / 80 = 100k tokens > pages * 750 = 750
     assert tokens >= 100_000
 
@@ -1044,9 +1044,9 @@ def test_estimate_pdf_tokens_takes_max_of_pages_and_bytes():
 def test_estimate_pdf_tokens_caps_malformed_count():
     """A PDF with /Count 999999 (malformed or hostile) does NOT bypass
     the 10k pages sanity cap; falls through to byte heuristic instead."""
-    from backend.apps.settings.settings import _estimate_pdf_tokens
+    from backend.apps.settings.settings import p_estimate_pdf_tokens  # p-private-ignore: p_estimate_pdf_tokens
     fake = b"%PDF-1.4\n/Type /Pages /Count 999999\n"
-    t = _estimate_pdf_tokens(fake)
+    t = p_estimate_pdf_tokens(fake)
     # Should NOT be 999999 * 750 = 750 million.
     assert t < 50_000_000
 
@@ -1201,7 +1201,7 @@ def test_sniff_recognises_macos_paths_with_spaces():
     try:
         with open(path, "wb") as f:
             f.write(b"%PDF-1.4\n")
-        _t, native, refusals = mgr._resolve_attachments(
+        _, native, refusals = mgr._resolve_attachments(
             [{"path": path, "type": "file"}], api_type="anthropic", model="opus-4-7",
         )
         assert native and native[0]["type"] == "document"
@@ -1236,20 +1236,20 @@ def test_resolve_attachments_uses_os_path_basename_for_windows_paths():
 def test_sniff_file_kind_consistent_across_platforms():
     """The sniffer reads bytes, never paths. So platform doesn't matter
     for the classification logic, same bytes → same kind on Windows/Mac/Linux."""
-    from backend.apps.settings.settings import _sniff_file_kind
-    assert _sniff_file_kind(b"%PDF-1.4\n", "x.pdf") == ("pdf", "application/pdf")
-    assert _sniff_file_kind(b"\x89PNG\r\n\x1a\n", "x.png") == ("image", "image/png")
-    assert _sniff_file_kind(b"PK\x03\x04", "x.zip") == ("binary", None)
-    assert _sniff_file_kind(b"MZ\x90\x00", "x.exe") == ("binary", None)
-    assert _sniff_file_kind(b"hello world", "x.txt") == ("text", "text/plain")
+    from backend.apps.settings.settings import sniff_file_kind
+    assert sniff_file_kind(b"%PDF-1.4\n", "x.pdf") == ("pdf", "application/pdf")
+    assert sniff_file_kind(b"\x89PNG\r\n\x1a\n", "x.png") == ("image", "image/png")
+    assert sniff_file_kind(b"PK\x03\x04", "x.zip") == ("binary", None)
+    assert sniff_file_kind(b"MZ\x90\x00", "x.exe") == ("binary", None)
+    assert sniff_file_kind(b"hello world", "x.txt") == ("text", "text/plain")
 
 
 def test_estimate_pdf_tokens_consistent_across_platforms():
     """Same byte-level math regardless of OS."""
-    from backend.apps.settings.settings import _estimate_pdf_tokens
+    from backend.apps.settings.settings import p_estimate_pdf_tokens  # p-private-ignore: p_estimate_pdf_tokens
     # 5MB PDF should always estimate ≥ 5MB/80 = 65536 tokens.
     fake = b"%PDF-1.4\n" + b"X" * (5 * 1024 * 1024)
-    assert _estimate_pdf_tokens(fake) >= 65000
+    assert p_estimate_pdf_tokens(fake) >= 65000
 
 
 def test_sniff_handles_windows_style_backslash_path_string():
@@ -1261,7 +1261,7 @@ def test_sniff_handles_windows_style_backslash_path_string():
     from backend.apps.agents.agent_manager import AgentManager
     mgr = AgentManager()
     # A path that doesn't exist (POSIX cannot interpret backslashes as separator)
-    _t, native, refusals = mgr._resolve_attachments(
+    _, native, refusals = mgr._resolve_attachments(
         [{"path": r"C:\fake\path\nope.pdf", "type": "file"}],
         api_type="anthropic", model="opus-4-7",
     )
@@ -1300,7 +1300,7 @@ def test_resolve_attachments_classifies_renamed_binary_as_binary_not_pdf():
         fh.write(b"PK\x03\x04fake zip masquerading as pdf")
         path = fh.name
     try:
-        _t, native, refusals = mgr._resolve_attachments(
+        _, native, refusals = mgr._resolve_attachments(
             [{"path": path, "type": "file"}], api_type="anthropic", model="opus-4-7",
         )
         assert not native
@@ -1314,7 +1314,7 @@ def test_gemini_proxy_rewrites_document_to_openai_image_url_for_9router():
     Anthropic-shape image/document blocks get stringified. We rewrite to
     OpenAI image_url with data: URL so 9router emits Gemini inlineData."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_gemini
+    from backend.apps.agents.proxy.anthropic_proxy import p_scrub_request_for_gemini  # p-private-ignore: p_scrub_request_for_gemini
     body = json.dumps({
         "model": "gemini-3.1-pro-preview",
         "messages": [{
@@ -1329,7 +1329,7 @@ def test_gemini_proxy_rewrites_document_to_openai_image_url_for_9router():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_gemini(body))
+    out = json.loads(p_scrub_request_for_gemini(body))
     blocks = out["messages"][0]["content"]
     assert blocks[0]["type"] == "text"
     assert blocks[1]["type"] == "image_url"
@@ -1340,7 +1340,7 @@ def test_gemini_proxy_also_rewrites_anthropic_image_blocks_to_image_url():
     """Same fix applies to plain images: Anthropic image → OpenAI image_url
     with data: URL, so 9router's filter preserves it instead of stringifying."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_gemini
+    from backend.apps.agents.proxy.anthropic_proxy import p_scrub_request_for_gemini  # p-private-ignore: p_scrub_request_for_gemini
     body = json.dumps({
         "model": "gemini-3-pro-preview",
         "messages": [{
@@ -1354,7 +1354,7 @@ def test_gemini_proxy_also_rewrites_anthropic_image_blocks_to_image_url():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_gemini(body))
+    out = json.loads(p_scrub_request_for_gemini(body))
     block = out["messages"][0]["content"][0]
     assert block["type"] == "image_url"
     assert block["image_url"]["url"] == "data:image/png;base64,iVBORw0KGgo="
@@ -1373,7 +1373,7 @@ def test_anthropic_document_block_schema_matches_docs():
         fh.write(b"%PDF-1.4\n%canonical schema test\n")
         path = fh.name
     try:
-        _t, native, _r = mgr._resolve_attachments(
+        _, native, _ = mgr._resolve_attachments(
             [{"path": path, "type": "file"}], api_type="anthropic", model="opus-4-7",
         )
         block = native[0]
@@ -1388,8 +1388,8 @@ def test_anthropic_document_block_schema_matches_docs():
         if "cache_control" in block:
             assert block["cache_control"] == {"type": "ephemeral"}
         # Base64 data must decode cleanly back to PDF magic header.
-        import base64 as _b64
-        decoded = _b64.b64decode(src["data"])
+        import base64
+        decoded = base64.b64decode(src["data"])
         assert decoded.startswith(b"%PDF-")
     finally:
         os.unlink(path)
@@ -1401,7 +1401,7 @@ def test_gemini_translated_block_matches_9router_image_url_filter():
     (it stringifies any other shape). Our translator must emit exactly that
     shape for PDFs and images both."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_gemini
+    from backend.apps.agents.proxy.anthropic_proxy import p_scrub_request_for_gemini  # p-private-ignore: p_scrub_request_for_gemini
     body = json.dumps({
         "model": "gemini-3.1-pro-preview",
         "messages": [{"role": "user", "content": [
@@ -1412,7 +1412,7 @@ def test_gemini_translated_block_matches_9router_image_url_filter():
             }},
         ]}],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_gemini(body))
+    out = json.loads(p_scrub_request_for_gemini(body))
     block = out["messages"][0]["content"][0]
     assert block["type"] == "image_url"
     assert "image_url" in block
@@ -1425,7 +1425,7 @@ def test_openrouter_plugin_array_matches_docs():
     at the top level. Engines: pdf-text (free, deprecated → cloudflare),
     mistral-ocr ($2/1k pages), native (model-supported)."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _inject_openrouter_file_parser
+    from backend.apps.agents.proxy.anthropic_proxy import p_inject_openrouter_file_parser  # p-private-ignore: p_inject_openrouter_file_parser
     body = json.dumps({
         "model": "openrouter/qwen/qwen-2.5-72b-instruct",
         "messages": [{"role": "user", "content": [
@@ -1434,7 +1434,7 @@ def test_openrouter_plugin_array_matches_docs():
             }},
         ]}],
     }).encode("utf-8")
-    out = json.loads(_inject_openrouter_file_parser(body))
+    out = json.loads(p_inject_openrouter_file_parser(body))
     plugins = out["plugins"]
     assert isinstance(plugins, list)
     fp = [p for p in plugins if p.get("id") == "file-parser"][0]
@@ -1450,7 +1450,7 @@ def test_openai_translated_image_block_matches_image_url_data_uri():
     translator rewrites Anthropic image blocks; document blocks are
     refused upstream in agent_manager."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_openai_gpt5
+    from backend.apps.agents.proxy.anthropic_proxy import p_scrub_request_for_openai_gpt5  # p-private-ignore: p_scrub_request_for_openai_gpt5
     body = json.dumps({
         "model": "gpt-5.5",
         "max_tokens": 100,
@@ -1462,7 +1462,7 @@ def test_openai_translated_image_block_matches_image_url_data_uri():
             }},
         ]}],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_openai_gpt5(body))
+    out = json.loads(p_scrub_request_for_openai_gpt5(body))
     block = out["messages"][0]["content"][0]
     assert block["type"] == "image_url"
     assert block["image_url"]["url"] == "data:image/png;base64,iVBORw0KGgo="
@@ -1472,7 +1472,7 @@ def test_openai_proxy_rewrites_image_block_only_documents_pass_through():
     """OpenAI image_url only accepts image/* mime; documents are refused
     upstream. Translator handles images, leaves documents untouched."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_openai_gpt5
+    from backend.apps.agents.proxy.anthropic_proxy import p_scrub_request_for_openai_gpt5  # p-private-ignore: p_scrub_request_for_openai_gpt5
     body = json.dumps({
         "model": "gpt-5.5",
         "max_tokens": 500,
@@ -1488,7 +1488,7 @@ def test_openai_proxy_rewrites_image_block_only_documents_pass_through():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_openai_gpt5(body))
+    out = json.loads(p_scrub_request_for_openai_gpt5(body))
     blocks = out["messages"][0]["content"]
     assert blocks[0]["type"] == "text"
     assert blocks[1]["type"] == "image_url"
@@ -1500,13 +1500,13 @@ def test_openai_proxy_rewrites_image_block_only_documents_pass_through():
 def test_openai_proxy_skips_rewrite_when_no_document():
     """Pure text turn on GPT-5 should only get the max_tokens rename."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_openai_gpt5
+    from backend.apps.agents.proxy.anthropic_proxy import p_scrub_request_for_openai_gpt5  # p-private-ignore: p_scrub_request_for_openai_gpt5
     body = json.dumps({
         "model": "gpt-5.5",
         "max_tokens": 100,
         "messages": [{"role": "user", "content": "hi"}],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_openai_gpt5(body))
+    out = json.loads(p_scrub_request_for_openai_gpt5(body))
     assert out["messages"][0]["content"] == "hi"
     assert out.get("max_completion_tokens") == 100
 
@@ -1516,7 +1516,7 @@ def test_openai_proxy_defensive_on_malformed_document_blocks():
     through untouched so the upstream returns a proper error rather
     than us silently dropping the file."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_openai_gpt5
+    from backend.apps.agents.proxy.anthropic_proxy import p_scrub_request_for_openai_gpt5  # p-private-ignore: p_scrub_request_for_openai_gpt5
     body = json.dumps({
         "model": "gpt-5.5",
         "messages": [{
@@ -1528,7 +1528,7 @@ def test_openai_proxy_defensive_on_malformed_document_blocks():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_openai_gpt5(body))
+    out = json.loads(p_scrub_request_for_openai_gpt5(body))
     for b in out["messages"][0]["content"]:
         assert b["type"] == "document"
 
@@ -1544,7 +1544,7 @@ def test_resolve_attachments_openai_codex_refused_for_pdfs():
         fh.write(b"%PDF-1.4\n%test\n")
         path = fh.name
     try:
-        _t, native, refusals = mgr._resolve_attachments(
+        _, native, refusals = mgr._resolve_attachments(
             [{"path": path, "type": "file"}], api_type="openai", model="gpt-5.3-codex",
         )
         assert not native
@@ -1563,7 +1563,7 @@ def test_resolve_attachments_openai_codex_still_refuses_pdf():
         fh.write(b"%PDF-1.4\n%test\n")
         path = fh.name
     try:
-        _t, native, refusals = mgr._resolve_attachments(
+        _, native, refusals = mgr._resolve_attachments(
             [{"path": path, "type": "file"}], api_type="openai", model="gpt-5.3-codex",
         )
         assert not native
@@ -1576,7 +1576,7 @@ def test_openrouter_proxy_injects_file_parser_plugin_when_document_present():
     """OR's universal-PDF feature requires top-level plugins:[{id:file-parser,...}].
     When a document block is in the request bound for OR, inject it."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _inject_openrouter_file_parser
+    from backend.apps.agents.proxy.anthropic_proxy import p_inject_openrouter_file_parser  # p-private-ignore: p_inject_openrouter_file_parser
     body = json.dumps({
         "model": "openrouter/qwen/qwen-2.5-72b-instruct",
         "messages": [{
@@ -1591,7 +1591,7 @@ def test_openrouter_proxy_injects_file_parser_plugin_when_document_present():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_inject_openrouter_file_parser(body))
+    out = json.loads(p_inject_openrouter_file_parser(body))
     plugins = out.get("plugins")
     assert isinstance(plugins, list) and len(plugins) >= 1
     fp = next((p for p in plugins if p.get("id") == "file-parser"), None)
@@ -1602,19 +1602,19 @@ def test_openrouter_proxy_skips_plugin_when_no_document():
     """No document block → don't inject the plugin (costs nothing, but
     keeps the request body clean)."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _inject_openrouter_file_parser
+    from backend.apps.agents.proxy.anthropic_proxy import p_inject_openrouter_file_parser  # p-private-ignore: p_inject_openrouter_file_parser
     body = json.dumps({
         "model": "openrouter/qwen/qwen-2.5-72b-instruct",
         "messages": [{"role": "user", "content": "just a question"}],
     }).encode("utf-8")
-    out = json.loads(_inject_openrouter_file_parser(body))
+    out = json.loads(p_inject_openrouter_file_parser(body))
     assert "plugins" not in out
 
 
 def test_openrouter_proxy_dedupes_existing_file_parser_plugin():
     """If a caller already provided file-parser, don't duplicate it."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _inject_openrouter_file_parser
+    from backend.apps.agents.proxy.anthropic_proxy import p_inject_openrouter_file_parser  # p-private-ignore: p_inject_openrouter_file_parser
     body = json.dumps({
         "model": "openrouter/qwen/qwen-2.5-72b-instruct",
         "plugins": [{"id": "file-parser", "pdf": {"engine": "mistral-ocr"}}],
@@ -1625,7 +1625,7 @@ def test_openrouter_proxy_dedupes_existing_file_parser_plugin():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_inject_openrouter_file_parser(body))
+    out = json.loads(p_inject_openrouter_file_parser(body))
     fps = [p for p in out["plugins"] if p.get("id") == "file-parser"]
     assert len(fps) == 1
     assert fps[0]["pdf"]["engine"] == "mistral-ocr"  # caller's engine wins
@@ -1636,7 +1636,7 @@ def test_gemini_proxy_defensive_on_malformed_blocks():
     must NOT be rewritten; they pass through so the upstream sees the
     error rather than a silently-corrupted block."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_gemini
+    from backend.apps.agents.proxy.anthropic_proxy import p_scrub_request_for_gemini  # p-private-ignore: p_scrub_request_for_gemini
     body = json.dumps({
         "model": "gemini-3.1-pro-preview",
         "messages": [{
@@ -1649,7 +1649,7 @@ def test_gemini_proxy_defensive_on_malformed_blocks():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_gemini(body))
+    out = json.loads(p_scrub_request_for_gemini(body))
     for b in out["messages"][0]["content"]:
         assert b["type"] == "document"
 
@@ -1686,7 +1686,7 @@ def test_resolve_attachments_openai_accepts_pdf_via_bypass_translator():
         fh.write(b"%PDF-1.4\n%test\n")
         path = fh.name
     try:
-        _text, native, refusals = mgr._resolve_attachments(
+        _, native, refusals = mgr._resolve_attachments(
             [{"path": path, "type": "file"}], api_type="openai", model="gpt-5.5",
         )
         assert native and native[0]["type"] == "document"
@@ -1699,23 +1699,23 @@ def test_bypass_estimate_body_bytes_sums_image_url_and_file_blocks():
     """The size estimator must sum payload bytes across BOTH content
     types the translator emits (image_url with data: URL, file with
     file_data) so the pre-flight reject can fire before httpx serializes."""
-    from backend.apps.agents.proxy.anthropic_to_openai import _estimate_body_bytes
+    from backend.apps.agents.proxy.anthropic_to_openai import p_estimate_body_bytes  # p-private-ignore: p_estimate_body_bytes
     body = {"messages": [{"role": "user", "content": [
         {"type": "text", "text": "hi"},
         {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJDRA=="}},  # 8 bytes b64
         {"type": "file", "file": {"file_data": "data:application/pdf;base64,RUZHSA=="}},  # 8 bytes b64
     ]}]}
-    assert _estimate_body_bytes(body) == 16
+    assert p_estimate_body_bytes(body) == 16
 
 
 def test_bypass_concurrency_semaphore_serializes_excess_requests():
     """The semaphore caps in-flight bypass requests to prevent OOM. Cap=2
     means a third concurrent request waits rather than allocating another
     ~40MB buffer."""
-    from backend.apps.agents.proxy.anthropic_to_openai import _bypass_sema, _BYPASS_CONCURRENCY
+    from backend.apps.agents.proxy.anthropic_to_openai import p_bypass_sema, P_BYPASS_CONCURRENCY  # p-private-ignore: p_bypass_sema, P_BYPASS_CONCURRENCY
     assert _BYPASS_CONCURRENCY == 2
     # Initial value matches the cap (no in-flight at import time).
-    assert _bypass_sema._value == _BYPASS_CONCURRENCY
+    assert p_bypass_sema._value == P_BYPASS_CONCURRENCY
 
 
 def test_anthropic_to_openai_should_bypass_fires_for_gpt5_pdf():
@@ -1778,7 +1778,7 @@ def test_resolve_attachments_gemini_emits_native_document_after_translator_fix()
         fh.write(b"%PDF-1.4\n%test\n")
         path = fh.name
     try:
-        _text, native, refusals = mgr._resolve_attachments(
+        _, native, refusals = mgr._resolve_attachments(
             [{"path": path, "type": "file"}], api_type="gemini", model="gemini-3.1-pro-api",
         )
         assert native and native[0]["type"] == "document"
@@ -1817,7 +1817,7 @@ def test_resolve_attachments_pdf_refused_when_too_large():
         fh.write(b"X" * (25 * 1024 * 1024))
         path = fh.name
     try:
-        _t, native, refusals = mgr._resolve_attachments(
+        _, native, refusals = mgr._resolve_attachments(
             [{"path": path, "type": "file"}], api_type="anthropic", model="opus-4-7",
         )
         assert not native
@@ -1843,7 +1843,7 @@ def test_resolve_attachments_refuses_when_total_exceeds_request_cap():
                 fh.write(b"%PDF-1.4\n")
                 fh.write(b"X" * (8 * 1024 * 1024))
                 paths.append(fh.name)
-        _t, native, refusals = mgr._resolve_attachments(
+        _, native, refusals = mgr._resolve_attachments(
             [{"path": p, "type": "file"} for p in paths],
             api_type="anthropic", model="opus-4-7",
         )
@@ -1869,7 +1869,7 @@ def test_resolve_attachments_anthropic_marks_last_document_ephemeral_for_cache()
             with tempfile.NamedTemporaryFile(suffix=f"_{i}.pdf", delete=False) as fh:
                 fh.write(b"%PDF-1.4\n%test\n")
                 paths.append(fh.name)
-        _t, native, _r = mgr._resolve_attachments(
+        _, native, _ = mgr._resolve_attachments(
             [{"path": p, "type": "file"} for p in paths],
             api_type="anthropic", model="opus-4-7",
         )
@@ -1893,11 +1893,11 @@ def test_resolve_attachments_anthropic_does_mark_ephemeral_but_only_anthropic():
         fh.write(b"%PDF-1.4\n%test\n")
         path = fh.name
     try:
-        _t, ant_native, _r = mgr._resolve_attachments(
+        _, ant_native, _ = mgr._resolve_attachments(
             [{"path": path, "type": "file"}], api_type="anthropic", model="opus-4-7",
         )
         assert ant_native and ant_native[0].get("cache_control") == {"type": "ephemeral"}
-        _t, or_native, _r = mgr._resolve_attachments(
+        _, or_native, _ = mgr._resolve_attachments(
             [{"path": path, "type": "file"}], api_type="openrouter", model="openrouter/openai/gpt-5",
         )
         assert or_native and "cache_control" not in or_native[0]
@@ -1910,7 +1910,7 @@ def test_apply_context_window_respects_custom_provider_value():
     via settings.custom_providers. _apply_context_window must look them
     up the same way get_context_window does."""
     from backend.apps.agents.core.models import AgentSession
-    from backend.apps.agents.agent_manager import _apply_context_window
+    from backend.apps.agents import agent_manager
     from backend.apps.settings.models import AppSettings, CustomProvider
     s = AgentSession(id="x", name="t", provider="custom", model="custom/ollama/qwen2.5:7b", mode="agent")
     settings = AppSettings(custom_providers=[
@@ -1921,7 +1921,7 @@ def test_apply_context_window_respects_custom_provider_value():
             models=[{"value": "qwen2.5:7b", "label": "Qwen 2.5 7B", "context_window": 32_000}],
         ),
     ])
-    _apply_context_window(s, settings)
+    agent_manager._apply_context_window(s, settings)
     assert s.context_window == 32_000
 
 
@@ -1935,8 +1935,8 @@ def test_custom_provider_value_synthesises_route_api_entry():
     api='custom' entry whose model_id is the 9Router routing string
     `cp-<slug>/<bare>`. agent_manager keys on api='custom' and resolved_model
     must be the cp- prefixed string for 9Router to forward correctly."""
-    from backend.apps.agents.providers.registry import _find_builtin_model
-    entry = _find_builtin_model("custom/ollama-cloud/gpt-oss:120b")
+    from backend.apps.agents.providers.registry import find_builtin_model
+    entry = find_builtin_model("custom/ollama-cloud/gpt-oss:120b")
     assert entry is not None
     assert entry.get("api") == "custom"
     assert entry.get("route") == "api"
@@ -1955,8 +1955,8 @@ def test_custom_provider_value_with_multi_segment_model_id():
     """Model ids may contain '/' (e.g. meta-llama/llama-3-70b-instruct on
     Together AI). Synthesis must use partition on the FIRST '/' so the
     rest of the model id stays intact."""
-    from backend.apps.agents.providers.registry import _find_builtin_model
-    entry = _find_builtin_model("custom/together-ai/meta-llama/llama-3-70b-instruct")
+    from backend.apps.agents.providers.registry import find_builtin_model
+    entry = find_builtin_model("custom/together-ai/meta-llama/llama-3-70b-instruct")
     assert entry is not None
     assert entry.get("model_id") == "cp-together-ai/meta-llama/llama-3-70b-instruct"
 
@@ -1965,18 +1965,18 @@ def test_custom_provider_lookup_finds_entry_by_slug():
     """_find_custom_provider_for_value must slugify the same way as the
     UI/sync layer so name 'Ollama Cloud' resolves to the value
     'custom/ollama-cloud/...'."""
-    from backend.apps.agents.providers.registry import _find_custom_provider_for_value
+    from backend.apps.agents.providers.registry import find_custom_provider_for_value
     from backend.apps.settings.models import AppSettings, CustomProvider
     s = AppSettings(custom_providers=[
         CustomProvider(name="Ollama Cloud", base_url="https://ollama.com/v1", api_key="x"),
         CustomProvider(name="Together AI", base_url="https://api.together.xyz/v1", api_key="y"),
     ])
-    cp = _find_custom_provider_for_value(s, "custom/ollama-cloud/gpt-oss:120b")
+    cp = find_custom_provider_for_value(s, "custom/ollama-cloud/gpt-oss:120b")
     assert cp is not None and cp.name == "Ollama Cloud"
-    cp2 = _find_custom_provider_for_value(s, "custom/together-ai/meta-llama/llama-3-70b")
+    cp2 = find_custom_provider_for_value(s, "custom/together-ai/meta-llama/llama-3-70b")
     assert cp2 is not None and cp2.name == "Together AI"
     # Unknown slug → None.
-    assert _find_custom_provider_for_value(s, "custom/nonexistent/whatever") is None
+    assert find_custom_provider_for_value(s, "custom/nonexistent/whatever") is None
 
 
 def test_get_context_window_custom_provider_value_format():
@@ -2000,22 +2000,22 @@ def test_custom_provider_slug_is_url_safe():
     """The slug must be alnum-and-dash only, it's used both as the 9Router
     prefix and as a URL path segment. Spaces, slashes, and special chars
     must all be folded to dashes."""
-    from backend.apps.agents.providers.registry import _custom_provider_slug_for_lookup
-    assert _custom_provider_slug_for_lookup("Ollama Cloud") == "ollama-cloud"
-    assert _custom_provider_slug_for_lookup("My/Local LM!!!") == "my-local-lm"
-    assert _custom_provider_slug_for_lookup("") == "custom"
-    assert _custom_provider_slug_for_lookup("   ") == "custom"
+    from backend.apps.agents.providers.registry import custom_provider_slug_for_lookup
+    assert custom_provider_slug_for_lookup("Ollama Cloud") == "ollama-cloud"
+    assert custom_provider_slug_for_lookup("My/Local LM!!!") == "my-local-lm"
+    assert custom_provider_slug_for_lookup("") == "custom"
+    assert custom_provider_slug_for_lookup("   ") == "custom"
 
 
 def test_custom_provider_slug_unicode_collapses_safely():
     """Unicode names are folded to ASCII-safe dashes; emojis/accents drop."""
-    from backend.apps.agents.providers.registry import _custom_provider_slug_for_lookup
+    from backend.apps.agents.providers.registry import custom_provider_slug_for_lookup
     # Accented chars get stripped (regex is [a-zA-Z0-9-] only).
-    assert _custom_provider_slug_for_lookup("Tögether AI 🚀") == "t-gether-ai"
+    assert custom_provider_slug_for_lookup("Tögether AI 🚀") == "t-gether-ai"
     # Pure-emoji name → fallback "custom".
-    assert _custom_provider_slug_for_lookup("🚀💎") == "custom"
+    assert custom_provider_slug_for_lookup("🚀💎") == "custom"
     # Trailing/leading dashes get stripped.
-    assert _custom_provider_slug_for_lookup("---weird---") == "weird"
+    assert custom_provider_slug_for_lookup("---weird---") == "weird"
 
 
 def test_custom_provider_slug_does_not_collide_with_routing_prefixes():
@@ -2023,8 +2023,8 @@ def test_custom_provider_slug_does_not_collide_with_routing_prefixes():
     built-in prefixes (cc/, cx/, gc/, ag/, gemini/, openrouter/) used by
     resolved_is_9router. cp- starts with 'c' and dash so it can't be
     confused with cc/, but verify the dispatch logic agrees."""
-    from backend.apps.agents.providers.registry import _find_builtin_model
-    entry = _find_builtin_model("custom/cc/whatever")  # adversarial slug "cc"
+    from backend.apps.agents.providers.registry import find_builtin_model
+    entry = find_builtin_model("custom/cc/whatever")  # adversarial slug "cc"
     assert entry is not None
     routed = entry["model_id"]
     assert routed == "cp-cc/whatever"
@@ -2037,7 +2037,7 @@ def test_custom_provider_models_with_special_chars():
     (deepseek 'deepseek-v3.1'), version suffixes (':free'), and slashes
     (Together 'meta-llama/Llama-3-70B'). All must round-trip without
     being mangled."""
-    from backend.apps.agents.providers.registry import _find_builtin_model
+    from backend.apps.agents.providers.registry import find_builtin_model
     cases = [
         "custom/ollama/gpt-oss:120b",
         "custom/together/meta-llama/Llama-3.3-70B-Instruct",
@@ -2046,7 +2046,7 @@ def test_custom_provider_models_with_special_chars():
         "custom/groq/llama-3.3-70b-versatile",
     ]
     for v in cases:
-        e = _find_builtin_model(v)
+        e = find_builtin_model(v)
         assert e is not None, f"failed: {v}"
         # Bare-model portion is everything after first slash after the slug.
         rest = v[len("custom/"):]
@@ -2056,12 +2056,12 @@ def test_custom_provider_models_with_special_chars():
 
 def test_custom_provider_value_with_invalid_format_returns_none():
     """Malformed picker values (no slug, no model) must not synthesise a
-    bogus entry, they should miss _find_builtin_model entirely so the
+    bogus entry, they should miss find_builtin_model entirely so the
     dispatch loop falls through to the 'unknown model' branch."""
-    from backend.apps.agents.providers.registry import _find_builtin_model
-    assert _find_builtin_model("custom/") is None
-    assert _find_builtin_model("custom/onlyslug") is None
-    assert _find_builtin_model("custom//onlymodel") is None  # empty slug
+    from backend.apps.agents.providers.registry import find_builtin_model
+    assert find_builtin_model("custom/") is None
+    assert find_builtin_model("custom/onlyslug") is None
+    assert find_builtin_model("custom//onlymodel") is None  # empty slug
 
 
 def test_custom_provider_get_api_type_returns_custom():
@@ -2121,10 +2121,10 @@ def test_custom_provider_two_providers_get_distinct_slugs():
     """Two custom providers with different display names must produce
     two different slugs / routing prefixes, otherwise 9Router will route
     both to whichever connection was created last."""
-    from backend.apps.agents.providers.registry import _custom_provider_slug_for_lookup
-    a = _custom_provider_slug_for_lookup("Ollama Cloud")
-    b = _custom_provider_slug_for_lookup("Together AI")
-    c = _custom_provider_slug_for_lookup("Groq")
+    from backend.apps.agents.providers.registry import custom_provider_slug_for_lookup
+    a = custom_provider_slug_for_lookup("Ollama Cloud")
+    b = custom_provider_slug_for_lookup("Together AI")
+    c = custom_provider_slug_for_lookup("Groq")
     assert len({a, b, c}) == 3
 
 
@@ -2135,10 +2135,10 @@ def test_custom_provider_slug_collision_after_sanitize():
     test just documents that post-slug collisions DO collide and the
     UI-level uniqueness check (in Settings.tsx) is the right enforcement
     layer, backend resolution would always pick the first match."""
-    from backend.apps.agents.providers.registry import _custom_provider_slug_for_lookup
-    assert _custom_provider_slug_for_lookup("Ollama Cloud") == \
-           _custom_provider_slug_for_lookup("ollama-cloud") == \
-           _custom_provider_slug_for_lookup("OLLAMA cloud")
+    from backend.apps.agents.providers.registry import custom_provider_slug_for_lookup
+    assert custom_provider_slug_for_lookup("Ollama Cloud") == \
+           custom_provider_slug_for_lookup("ollama-cloud") == \
+           custom_provider_slug_for_lookup("OLLAMA cloud")
 
 
 def test_list_models_includes_complete_custom_providers_excludes_incomplete():
@@ -2269,11 +2269,11 @@ def test_custom_provider_resolve_aux_model_unaffected():
 def test_custom_provider_with_very_long_name_still_works():
     """No upper bound on name length anywhere in the pipeline. Verify a
     250-char name slugs cleanly."""
-    from backend.apps.agents.providers.registry import _custom_provider_slug_for_lookup, _find_builtin_model
+    from backend.apps.agents.providers.registry import custom_provider_slug_for_lookup, find_builtin_model
     long_name = "a" * 250
-    slug = _custom_provider_slug_for_lookup(long_name)
+    slug = custom_provider_slug_for_lookup(long_name)
     assert slug == long_name
-    entry = _find_builtin_model(f"custom/{slug}/some-model")
+    entry = find_builtin_model(f"custom/{slug}/some-model")
     assert entry is not None
     assert entry["model_id"] == f"cp-{slug}/some-model"
 
@@ -2283,7 +2283,7 @@ def test_custom_provider_with_very_long_name_still_works():
 # ===========================================================================
 
 
-def _make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=None):
+def make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=None):
     """Build a mock httpx.AsyncClient that simulates 9Router's HTTP API.
     Tracks state across requests so we can assert idempotency.
     Returns (mock_client_class, state_dict), state_dict is mutated by calls."""
@@ -2296,61 +2296,61 @@ def _make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=No
     }
     fail = fail_endpoints or set()
 
-    def _resp(status_code=200, payload=None):
+    def mk_resp(status_code=200, payload=None):
         r = MagicMock()
         r.status_code = status_code
         r.text = "" if not payload else str(payload)
         r.json = MagicMock(return_value=payload or {})
         return r
 
-    async def _get(url, **kw):
+    async def do_get(url, **kw):
         state["calls"].append(("GET", url, None, kw))
         if "/api/provider-nodes" in url and "GET:provider-nodes" in fail:
-            return _resp(500)
+            return mk_resp(500)
         if url.endswith("/api/provider-nodes"):
-            return _resp(200, {"nodes": state["nodes"]})
+            return mk_resp(200, {"nodes": state["nodes"]})
         if url.endswith("/api/providers"):
-            return _resp(200, {"connections": state["connections"]})
-        return _resp(404)
+            return mk_resp(200, {"connections": state["connections"]})
+        return mk_resp(404)
 
-    async def _post(url, json=None, **kw):
+    async def do_post(url, json=None, **kw):
         state["calls"].append(("POST", url, json, kw))
         if "/api/provider-nodes" in url and not url.endswith("/provider-nodes/"):
             if "POST:provider-nodes" in fail:
-                return _resp(500, {"error": "fail"})
+                return mk_resp(500, {"error": "fail"})
             node_id = f"openai-compatible-chat-{state['next_id']}"
             state["next_id"] += 1
             new_node = {**(json or {}), "id": node_id}
             state["nodes"].append(new_node)
-            return _resp(201, {"node": new_node})
+            return mk_resp(201, {"node": new_node})
         if "/api/providers" in url:
             if "POST:providers" in fail:
-                return _resp(500, {"error": "fail"})
+                return mk_resp(500, {"error": "fail"})
             conn_id = f"conn-{state['next_id']}"
             state["next_id"] += 1
             new_conn = {**(json or {}), "id": conn_id, "isActive": True}
             state["connections"].append(new_conn)
-            return _resp(201, {"connection": new_conn})
-        return _resp(404)
+            return mk_resp(201, {"connection": new_conn})
+        return mk_resp(404)
 
-    async def _put(url, json=None, **kw):
+    async def do_put(url, json=None, **kw):
         state["calls"].append(("PUT", url, json, kw))
         # /api/provider-nodes/<id>
         for n in state["nodes"]:
             if url.endswith(f"/provider-nodes/{n['id']}"):
                 n.update(json or {})
-                return _resp(200, {"node": n})
-        return _resp(404)
+                return mk_resp(200, {"node": n})
+        return mk_resp(404)
 
-    async def _patch(url, json=None, **kw):
+    async def do_patch(url, json=None, **kw):
         state["calls"].append(("PATCH", url, json, kw))
         for c in state["connections"]:
             if url.endswith(f"/providers/{c['id']}"):
                 c.update(json or {})
-                return _resp(200, {"connection": c})
-        return _resp(404)
+                return mk_resp(200, {"connection": c})
+        return mk_resp(404)
 
-    async def _delete(url, **kw):
+    async def do_delete(url, **kw):
         state["calls"].append(("DELETE", url, None, kw))
         for n in list(state["nodes"]):
             if url.endswith(f"/provider-nodes/{n['id']}"):
@@ -2359,12 +2359,12 @@ def _make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=No
                 state["connections"] = [
                     c for c in state["connections"] if c.get("provider") != n["id"]
                 ]
-                return _resp(200, {"success": True})
+                return mk_resp(200, {"success": True})
         for c in list(state["connections"]):
             if url.endswith(f"/providers/{c['id']}"):
                 state["connections"].remove(c)
-                return _resp(200, {"success": True})
-        return _resp(404)
+                return mk_resp(200, {"success": True})
+        return mk_resp(404)
 
     class MockClient:
         def __init__(self, *a, **kw):
@@ -2373,11 +2373,11 @@ def _make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=No
             return self
         async def __aexit__(self, *a):
             return False
-        get = AsyncMock(side_effect=_get)
-        post = AsyncMock(side_effect=_post)
-        put = AsyncMock(side_effect=_put)
-        patch = AsyncMock(side_effect=_patch)
-        delete = AsyncMock(side_effect=_delete)
+        get = AsyncMock(side_effect=do_get)
+        post = AsyncMock(side_effect=do_post)
+        put = AsyncMock(side_effect=do_put)
+        patch = AsyncMock(side_effect=do_patch)
+        delete = AsyncMock(side_effect=do_delete)
 
     return MockClient, state
 
@@ -2405,10 +2405,10 @@ def test_sync_custom_providers_creates_node_and_connection_for_new_provider():
     from backend.apps.nine_router import sync_custom_providers
     from backend.apps.settings.models import CustomProvider
 
-    MockClient, state = _make_mock_9router()
+    MockClient, state = make_mock_9router()
     with upatch("backend.apps.nine_router.is_running", return_value=True), \
          upatch("backend.apps.nine_router.httpx.AsyncClient", MockClient), \
-         upatch("backend.apps.nine_router.get_providers", new=lambda: _async_return([])):
+         upatch("backend.apps.nine_router.get_providers", new=lambda: async_return([])):
         asyncio.run(sync_custom_providers([
             CustomProvider(name="Ollama Cloud", base_url="https://ollama.com/v1",
                           api_key="key1", models=[]),
@@ -2437,10 +2437,10 @@ def test_sync_custom_providers_appends_v1_when_baseurl_has_no_path():
     from backend.apps.nine_router import sync_custom_providers
     from backend.apps.settings.models import CustomProvider
 
-    MockClient, state = _make_mock_9router()
+    MockClient, state = make_mock_9router()
     with upatch("backend.apps.nine_router.is_running", return_value=True), \
          upatch("backend.apps.nine_router.httpx.AsyncClient", MockClient), \
-         upatch("backend.apps.nine_router.get_providers", new=lambda: _async_return([])):
+         upatch("backend.apps.nine_router.get_providers", new=lambda: async_return([])):
         asyncio.run(sync_custom_providers([
             CustomProvider(name="Local Ollama", base_url="http://10.0.0.5:11434",
                            api_key="", models=[]),
@@ -2481,10 +2481,10 @@ def test_sync_custom_providers_updates_existing_node_in_place():
             "apiKey": "old-key",
         },
     ]
-    MockClient, state = _make_mock_9router(existing_nodes, existing_conns)
+    MockClient, state = make_mock_9router(existing_nodes, existing_conns)
     with upatch("backend.apps.nine_router.is_running", return_value=True), \
          upatch("backend.apps.nine_router.httpx.AsyncClient", MockClient), \
-         upatch("backend.apps.nine_router.get_providers", new=lambda: _async_return(existing_conns)):
+         upatch("backend.apps.nine_router.get_providers", new=lambda: async_return(existing_conns)):
         asyncio.run(sync_custom_providers([
             CustomProvider(
                 name="Together AI",
@@ -2528,10 +2528,10 @@ def test_sync_custom_providers_deletes_orphaned_managed_nodes():
             "type": "openai-compatible",
         },
     ]
-    MockClient, state = _make_mock_9router(existing_nodes, [])
+    MockClient, state = make_mock_9router(existing_nodes, [])
     with upatch("backend.apps.nine_router.is_running", return_value=True), \
          upatch("backend.apps.nine_router.httpx.AsyncClient", MockClient), \
-         upatch("backend.apps.nine_router.get_providers", new=lambda: _async_return([])):
+         upatch("backend.apps.nine_router.get_providers", new=lambda: async_return([])):
         asyncio.run(sync_custom_providers([]))  # empty list → delete all managed
 
     deletes = [c for c in state["calls"] if c[0] == "DELETE"]
@@ -2550,10 +2550,10 @@ def test_sync_custom_providers_skips_incomplete_entries():
     from backend.apps.nine_router import sync_custom_providers
     from backend.apps.settings.models import CustomProvider
 
-    MockClient, state = _make_mock_9router()
+    MockClient, state = make_mock_9router()
     with upatch("backend.apps.nine_router.is_running", return_value=True), \
          upatch("backend.apps.nine_router.httpx.AsyncClient", MockClient), \
-         upatch("backend.apps.nine_router.get_providers", new=lambda: _async_return([])):
+         upatch("backend.apps.nine_router.get_providers", new=lambda: async_return([])):
         asyncio.run(sync_custom_providers([
             CustomProvider(name="", base_url="https://x/v1", api_key="k"),
             CustomProvider(name="OnlyName", base_url="", api_key="k"),
@@ -2572,10 +2572,10 @@ def test_sync_custom_providers_handles_node_post_failure_without_crashing():
     from backend.apps.nine_router import sync_custom_providers
     from backend.apps.settings.models import CustomProvider
 
-    MockClient, state = _make_mock_9router(fail_endpoints={"POST:provider-nodes"})
+    MockClient, state = make_mock_9router(fail_endpoints={"POST:provider-nodes"})
     with upatch("backend.apps.nine_router.is_running", return_value=True), \
          upatch("backend.apps.nine_router.httpx.AsyncClient", MockClient), \
-         upatch("backend.apps.nine_router.get_providers", new=lambda: _async_return([])):
+         upatch("backend.apps.nine_router.get_providers", new=lambda: async_return([])):
         # Should NOT raise.
         asyncio.run(sync_custom_providers([
             CustomProvider(name="A", base_url="https://a/v1", api_key="k1"),
@@ -2591,10 +2591,10 @@ def test_sync_custom_providers_three_distinct_providers_create_three_nodes():
     from backend.apps.nine_router import sync_custom_providers
     from backend.apps.settings.models import CustomProvider
 
-    MockClient, state = _make_mock_9router()
+    MockClient, state = make_mock_9router()
     with upatch("backend.apps.nine_router.is_running", return_value=True), \
          upatch("backend.apps.nine_router.httpx.AsyncClient", MockClient), \
-         upatch("backend.apps.nine_router.get_providers", new=lambda: _async_return([])):
+         upatch("backend.apps.nine_router.get_providers", new=lambda: async_return([])):
         asyncio.run(sync_custom_providers([
             CustomProvider(name="Ollama Cloud", base_url="https://ollama.com/v1", api_key="k1"),
             CustomProvider(name="Together AI", base_url="https://api.together.xyz/v1", api_key="k2"),
@@ -2611,12 +2611,12 @@ def test_sync_custom_providers_three_distinct_providers_create_three_nodes():
         f"prefixes: {prefixes}"
 
 
-def _async_return(value):
+def async_return(value):
     """Helper: return a coroutine that resolves to value (for mocking
     `get_providers` which is called WITHOUT being awaited as a function)."""
-    async def _f():
+    async def inner():
         return value
-    return _f()
+    return inner()
 
 
 # ===========================================================================
@@ -2660,7 +2660,7 @@ def test_view_builder_mode_has_default_folder():
 @pytest.mark.asyncio
 async def test_gate_100_sequential_calls_no_leak():
     from backend.apps.agents.agent_manager import AgentManager
-    fake_tools = [_fake_tool(f"Server{i}") for i in range(10)]
+    fake_tools = [fake_tool(f"Server{i}") for i in range(10)]
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools), \
          patch("backend.apps.agents.agent_manager.refresh_google_token", new=AsyncMock(return_value=True)):
         mgr = AgentManager()
@@ -2775,7 +2775,7 @@ async def test_e2e_session_lifecycle_with_mcp_activation():
     """
     from backend.apps.agents.agent_manager import AgentManager
     from backend.apps.agents.core.models import AgentSession
-    fake_tools = [_fake_tool("Gmail"), _fake_tool("Slack")]
+    fake_tools = [fake_tool("Gmail"), fake_tool("Slack")]
     with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools), \
          patch("backend.apps.agents.agent_manager.refresh_google_token", new=AsyncMock(return_value=True)):
         mgr = AgentManager()
@@ -2820,7 +2820,7 @@ async def test_e2e_50_random_activation_sequences():
     raw_names = [r for r, _ in server_pool]
     sanitized = [s for _, s in server_pool]
     with patch("backend.apps.agents.agent_manager.load_all_tools",
-               return_value=[_fake_tool(r) for r in raw_names]), \
+               return_value=[fake_tool(r) for r in raw_names]), \
          patch("backend.apps.agents.agent_manager.refresh_google_token", new=AsyncMock(return_value=True)):
         mgr = AgentManager()
         for _ in range(50):

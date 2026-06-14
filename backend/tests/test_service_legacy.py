@@ -17,18 +17,18 @@ import tempfile
 import pytest
 
 # Sandbox the data dir before any module import touches settings on disk.
-_tmpdir = tempfile.mkdtemp()
-os.environ.setdefault("OPENSWARM_DATA_DIR", _tmpdir)
+tmpdir = tempfile.mkdtemp()
+os.environ.setdefault("OPENSWARM_DATA_DIR", tmpdir)
 
 # Captured syncs from this test run.
-_captured_syncs: list[dict] = []
+captured_syncs: list[dict] = []
 
 
 @pytest.fixture(autouse=True)
-def reset_captured_syncs():
-    _captured_syncs.clear()
+def resetcaptured_syncs():
+    captured_syncs.clear()
     yield
-    _captured_syncs.clear()
+    captured_syncs.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -39,7 +39,7 @@ def install_sync_sink():
     bag so existing tests can keep their assertions terse."""
     import backend.apps.service.client as svc_client
 
-    def _sink(label: str, body: dict):
+    def sink_fn(label: str, body: dict):
         cs = body.get("client_state") or {}
         payload = body.get("d") or body.get("payload") or {}
 
@@ -74,20 +74,20 @@ def install_sync_sink():
         props.setdefault("os", cs.get("os", ""))
         props.setdefault("platform", cs.get("os", ""))
 
-        _captured_syncs.append({
+        captured_syncs.append({
             "kind": kind,
             "label": label,
             "distinct_id": cs.get("install_id", ""),
             "properties": props,
         })
 
-    old_sink = svc_client._test_sink
-    old_iid = svc_client._install_id
-    svc_client.set_test_sink(_sink)
-    svc_client._install_id = "test-install-id"
+    old_sink = svc_client.P_TEST_SINK  # p-private-ignore: P_TEST_SINK
+    old_iid = svc_client.P_INSTALL_ID  # p-private-ignore: P_INSTALL_ID
+    svc_client.set_test_sink(sink_fn)
+    svc_client.P_INSTALL_ID = "test-install-id"
     yield
     svc_client.set_test_sink(old_sink)
-    svc_client._install_id = old_iid
+    svc_client.P_INSTALL_ID = old_iid
 
 
 @pytest.fixture(autouse=True)
@@ -122,14 +122,14 @@ def mock_sessions_dir(tmp_path):
 def syncs(kind: str | None = None) -> list[dict]:
     """Return captured syncs, optionally filtered by inferred kind."""
     if kind:
-        return [s for s in _captured_syncs if s["kind"] == kind]
-    return list(_captured_syncs)
+        return [s for s in captured_syncs if s["kind"] == kind]
+    return list(captured_syncs)
 
 
 def last_sync(kind: str) -> dict:
     """Return the last captured sync of a given inferred kind."""
     matching = syncs(kind)
-    assert matching, f"No {kind} syncs captured. Got: {[s['kind'] for s in _captured_syncs]}"
+    assert matching, f"No {kind} syncs captured. Got: {[s['kind'] for s in captured_syncs]}"
     return matching[-1]
 
 

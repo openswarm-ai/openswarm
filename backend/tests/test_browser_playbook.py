@@ -13,14 +13,14 @@ from backend.apps.agents.browser import browser_playbook as pb
 
 
 # --- a fake aux client that returns a scripted JSON playbook -----------------
-class _Blk:
+class Blk:
     def __init__(self, text):
         self.text = text
 
 
-class _Resp:
+class Resp:
     def __init__(self, text):
-        self.content = [_Blk(text)]
+        self.content = [Blk(text)]
 
 
 class FakeAux:
@@ -37,14 +37,14 @@ class FakeAux:
         prompt = kw["messages"][0]["content"]
         self.prompts.append(prompt)
         r = self.reply(prompt) if callable(self.reply) else self.reply
-        return _Resp(r)
+        return Resp(r)
 
 
-def _pb(*bullets):
+def pb_json(*bullets):
     return json.dumps({"playbook": list(bullets)})
 
 
-async def _distill(host, task, mem, summary, aux):
+async def distill(host, task, mem, summary, aux):
     return await pb.distill_and_store(host, task, mem, summary, aux, "aux-model")
 
 
@@ -52,8 +52,8 @@ async def _distill(host, task, mem, summary, aux):
 @pytest.mark.asyncio
 async def test_first_success_creates_a_playbook():
     pb.clear(wipe_disk=True)
-    aux = FakeAux(_pb("generic 'design engineer' = hardware; add React or a company name"))
-    changed = await _distill("linkedin.com", "find design engineers", "notes", "done", aux)
+    aux = FakeAux(pb_json("generic 'design engineer' = hardware; add React or a company name"))
+    changed = await distill("linkedin.com", "find design engineers", "notes", "done", aux)
     assert changed
     # the distill must use the configured aux model on a bounded token budget
     assert aux.calls[0]["model"] == "aux-model"
@@ -67,15 +67,15 @@ async def test_second_run_accumulates_not_overwrites():
     # THE BUG THIS FIXES: the old domain-note store overwrote. The reconcile must
     # ACCUMULATE: run 2's reply (which the aux builds from existing+new) grows it.
     pb.clear(wipe_disk=True)
-    await _distill("linkedin.com", "t1", "m1", "s1", FakeAux(_pb("Vercel/Linear+React surfaces real design engineers")))
+    await distill("linkedin.com", "t1", "m1", "s1", FakeAux(pb_json("Vercel/Linear+React surfaces real design engineers")))
     # the aux on run 2 is handed the existing bullet (we assert that), and returns existing + a new one
     seen = {}
 
     def reply(prompt):
         seen["prompt"] = prompt
-        return _pb("Vercel/Linear+React surfaces real design engineers",
+        return pb_json("Vercel/Linear+React surfaces real design engineers",
                    "the add-a-role wall is fine, read the top card")
-    await _distill("linkedin.com", "t2", "m2", "s2", FakeAux(reply))
+    await distill("linkedin.com", "t2", "m2", "s2", FakeAux(reply))
     bullets = pb.get_playbook("linkedin.com")
     assert len(bullets) == 2
     # the existing bullet was actually given to the aux so it could reconcile
@@ -86,8 +86,8 @@ async def test_second_run_accumulates_not_overwrites():
 async def test_reconcile_can_drop_a_contradicted_bullet():
     # mem0 DELETE: the aux returns a list WITHOUT the stale bullet -> it's gone.
     pb.clear(wipe_disk=True)
-    await _distill("x.com", "t", "m", "s", FakeAux(_pb("old way: click the big blue button")))
-    await _distill("x.com", "t", "m", "s", FakeAux(_pb("new way: use the keyboard shortcut /")))
+    await distill("x.com", "t", "m", "s", FakeAux(pb_json("old way: click the big blue button")))
+    await distill("x.com", "t", "m", "s", FakeAux(pb_json("new way: use the keyboard shortcut /")))
     bullets = pb.get_playbook("x.com")
     assert bullets == ["new way: use the keyboard shortcut /"]
 
@@ -95,8 +95,8 @@ async def test_reconcile_can_drop_a_contradicted_bullet():
 @pytest.mark.asyncio
 async def test_secrets_are_scrubbed_before_persisting():
     pb.clear(wipe_disk=True)
-    aux = FakeAux(_pb("log in works", "the account email is eric@example.com", "token sk-ant-api03-abc lives in header"))
-    await _distill("site.com", "log in", "m", "s", aux)
+    aux = FakeAux(pb_json("log in works", "the account email is eric@example.com", "token sk-ant-api03-abc lives in header"))
+    await distill("site.com", "log in", "m", "s", aux)
     bullets = pb.get_playbook("site.com")
     blob = " ".join(bullets)
     assert "eric@example.com" not in blob and "sk-ant-api03" not in blob
@@ -107,14 +107,14 @@ async def test_secrets_are_scrubbed_before_persisting():
 async def test_playbook_is_capped():
     pb.clear(wipe_disk=True)
     many = [f"strategy bullet number {i}" for i in range(20)]
-    await _distill("big.com", "t", "m", "s", FakeAux(_pb(*many)))
+    await distill("big.com", "t", "m", "s", FakeAux(pb_json(*many)))
     assert len(pb.get_playbook("big.com")) <= pb._MAX_BULLETS
 
 
 @pytest.mark.asyncio
 async def test_dedup_identical_bullets():
     pb.clear(wipe_disk=True)
-    await _distill("d.com", "t", "m", "s", FakeAux(_pb("same thing", "same thing", "Same Thing")))
+    await distill("d.com", "t", "m", "s", FakeAux(pb_json("same thing", "same thing", "Same Thing")))
     assert len(pb.get_playbook("d.com")) == 1
 
 
@@ -122,7 +122,7 @@ async def test_dedup_identical_bullets():
 @pytest.mark.asyncio
 async def test_playbook_survives_a_restart():
     pb.clear(wipe_disk=True)
-    await _distill("persist.com", "t", "m", "s", FakeAux(_pb("durable lesson one", "durable lesson two")))
+    await distill("persist.com", "t", "m", "s", FakeAux(pb_json("durable lesson one", "durable lesson two")))
     pb.clear(wipe_disk=False)            # restart: memory gone, disk intact
     assert not pb._cache
     bullets = pb.get_playbook("persist.com")
@@ -132,10 +132,10 @@ async def test_playbook_survives_a_restart():
 @pytest.mark.asyncio
 async def test_garbage_aux_reply_leaves_playbook_untouched():
     pb.clear(wipe_disk=True)
-    await _distill("safe.com", "t", "m", "s", FakeAux(_pb("good bullet")))
+    await distill("safe.com", "t", "m", "s", FakeAux(pb_json("good bullet")))
     before = pb.get_playbook("safe.com")
     # aux returns non-JSON prose -> must NOT wipe the existing playbook
-    changed = await _distill("safe.com", "t", "m", "s", FakeAux("sorry, I cannot help with that"))
+    changed = await distill("safe.com", "t", "m", "s", FakeAux("sorry, I cannot help with that"))
     assert changed is False
     assert pb.get_playbook("safe.com") == before
 
@@ -158,7 +158,7 @@ def test_should_learn_only_on_substantive_verified_success():
 async def test_format_for_prompt_seeds_bullets():
     pb.clear(wipe_disk=True)
     assert pb.format_for_prompt("seed.com") == ""   # nothing yet -> no block
-    await _distill("seed.com", "t", "m", "s", FakeAux(_pb("do X before Y", "avoid Z")))
+    await distill("seed.com", "t", "m", "s", FakeAux(pb_json("do X before Y", "avoid Z")))
     block = pb.format_for_prompt("seed.com")
     assert "What you learned about seed.com" in block and "do X before Y" in block
     assert "re-verify" in block                      # honesty hedge present
@@ -167,8 +167,8 @@ async def test_format_for_prompt_seeds_bullets():
 @pytest.mark.asyncio
 async def test_forget_and_list_hosts_for_ux():
     pb.clear(wipe_disk=True)
-    await _distill("a.com", "t", "m", "s", FakeAux(_pb("a lesson")))
-    await _distill("b.com", "t", "m", "s", FakeAux(_pb("b lesson")))
+    await distill("a.com", "t", "m", "s", FakeAux(pb_json("a lesson")))
+    await distill("b.com", "t", "m", "s", FakeAux(pb_json("b lesson")))
     hosts = {h["host"] for h in pb.list_hosts()}
     assert hosts == {"a.com", "b.com"}
     assert pb.forget("a.com") is True

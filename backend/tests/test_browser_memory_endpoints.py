@@ -15,14 +15,14 @@ from backend.apps.agents.browser import browser_playbook as pb
 from backend.apps.agents.browser import browser_skills as sk
 
 
-def _seed_skill(host, task):
+def seed_skill(host, task):
     sk.record_skill(host, task, [
         {"tool": "BrowserClickIndex", "input": {}, "ok": True,
          "clicked_role": "button", "clicked_name": "Go"},
     ])
 
 
-async def _seed_strategy(host, *bullets):
+async def seed_strategy(host, *bullets):
     resp = SimpleNamespace(
         content=[SimpleNamespace(text=json.dumps({"playbook": list(bullets)}))]
     )
@@ -32,9 +32,9 @@ async def _seed_strategy(host, *bullets):
 
 def test_list_browser_memory_groups_skills_and_strategy_by_site():
     sk.clear(); pb.clear(wipe_disk=True)
-    _seed_skill("shop.com", "search now")
-    asyncio.run(_seed_strategy("shop.com", "use the search box at the top"))
-    asyncio.run(_seed_strategy("docs.com", "share lives behind the blue button"))
+    seed_skill("shop.com", "search now")
+    asyncio.run(seed_strategy("shop.com", "use the search box at the top"))
+    asyncio.run(seed_strategy("docs.com", "share lives behind the blue button"))
 
     out = asyncio.run(agents_mod.list_browser_memory())
     sites = {s["host"]: s for s in out["sites"]}
@@ -46,8 +46,8 @@ def test_list_browser_memory_groups_skills_and_strategy_by_site():
 
 def test_forget_clears_both_tiers_for_a_site():
     sk.clear(); pb.clear(wipe_disk=True)
-    _seed_skill("gone.com", "do it now")
-    asyncio.run(_seed_strategy("gone.com", "a strategy bullet"))
+    seed_skill("gone.com", "do it now")
+    asyncio.run(seed_strategy("gone.com", "a strategy bullet"))
     # sanity: present
     assert pb.get_playbook("gone.com") and sk.list_skills("gone.com")
 

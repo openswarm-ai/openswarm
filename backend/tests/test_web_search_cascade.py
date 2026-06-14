@@ -22,36 +22,36 @@ from backend.apps.agents.tools.web import WebSearchTool, DDGRateLimited
 
 
 @pytest.fixture(autouse=True)
-def _no_network(monkeypatch):
+def no_network(monkeypatch):
     # Default everything to "unavailable / no network"; each test opts paths in.
     monkeypatch.setattr(W, "_resolve_gemini_api_key", lambda: None)
     monkeypatch.setattr(W, "_resolve_openai_api_key", lambda: None)
 
-    async def _no_subs():
+    async def no_subs():
         return set()
-    monkeypatch.setattr(W, "_refresh_9r_connected", _no_subs)
+    monkeypatch.setattr(W, "_refresh_9r_connected", no_subs)
 
     # subscription helpers hit localhost:20128 otherwise
     monkeypatch.setattr(W, "_gemini_grounded_via_9router", AsyncMock(return_value={}))
     monkeypatch.setattr(W, "_openai_websearch_via_9router", AsyncMock(return_value={}))
 
 
-def _ddg_returns(monkeypatch, text):
+def ddg_returns(monkeypatch, text):
     monkeypatch.setattr(WebSearchTool, "_search_ddg", staticmethod(AsyncMock(return_value=text)))
 
 
-def _ddg_throttled(monkeypatch):
+def ddg_throttled(monkeypatch):
     monkeypatch.setattr(WebSearchTool, "_search_ddg",
                         staticmethod(AsyncMock(side_effect=DDGRateLimited("throttled"))))
 
 
 @pytest.mark.asyncio
 async def test_ddg_is_tried_first_and_wins(monkeypatch):
-    _ddg_returns(monkeypatch, "[1] Foo\n    https://foo.example")
+    ddg_returns(monkeypatch, "[1] Foo\n    https://foo.example")
     # grounded would raise if reached; prove it isn't
-    async def _boom(*a, **k):
+    async def boom(*a, **k):
         raise AssertionError(f"grounded should not be called when DDG has results (args={a!r}, kwargs={k!r})")
-    monkeypatch.setattr(W, "_gemini_grounded_call", _boom)
+    monkeypatch.setattr(W, "_gemini_grounded_call", boom)
 
     t = time.monotonic()
     res = await search(SearchBody(query="foo"))
@@ -62,8 +62,8 @@ async def test_ddg_is_tried_first_and_wins(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ddg_throttled_falls_over_to_openai(monkeypatch):
-    _ddg_throttled(monkeypatch)
+async def testddg_throttled_falls_over_to_openai(monkeypatch):
+    ddg_throttled(monkeypatch)
     monkeypatch.setattr(W, "_resolve_openai_api_key", lambda: "okey")
 
     monkeypatch.setattr(W, "_openai_websearch",
@@ -78,15 +78,15 @@ async def test_ddg_throttled_falls_over_to_openai(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_hung_grounded_attempt_is_bounded(monkeypatch):
-    _ddg_throttled(monkeypatch)
+    ddg_throttled(monkeypatch)
     monkeypatch.setattr(W, "_GROUNDED_ATTEMPT_TIMEOUT", 0.3)
     monkeypatch.setattr(W, "_resolve_gemini_api_key", lambda: "gkey")
 
     attempts = []
-    async def _hangs(*a, **k):
+    async def hangs(*a, **k):
         attempts.append((a, k))
         await asyncio.sleep(30)
-    monkeypatch.setattr(W, "_gemini_grounded_call", _hangs)
+    monkeypatch.setattr(W, "_gemini_grounded_call", hangs)
 
     t = time.monotonic()
     res = await search(SearchBody(query="x"))
@@ -99,7 +99,7 @@ async def test_a_hung_grounded_attempt_is_bounded(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_primary_openai_reorders_grounded_tier(monkeypatch):
-    _ddg_throttled(monkeypatch)
+    ddg_throttled(monkeypatch)
     monkeypatch.setattr(W, "_resolve_gemini_api_key", lambda: "gkey")
     monkeypatch.setattr(W, "_resolve_openai_api_key", lambda: "okey")
 
@@ -116,7 +116,7 @@ async def test_primary_openai_reorders_grounded_tier(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_everything_fails_is_honest_not_empty(monkeypatch):
-    _ddg_throttled(monkeypatch)  # no keys, no subs (from fixture)
+    ddg_throttled(monkeypatch)  # no keys, no subs (from fixture)
     res = await search(SearchBody(query="obscure thing"))
     assert res["backend"] == "none"
     assert "obscure thing" in res["results"]
@@ -131,15 +131,15 @@ async def test_everything_fails_is_honest_not_empty(monkeypatch):
 
 from backend.apps.web.web import fetch, FetchBody
 from backend.apps.agents.tools.web import WebFetchTool
-import backend.apps.agents.tools.ssrf_guard as _ssrf
+import backend.apps.agents.tools.ssrf_guard as ssrf
 
 
 @pytest.fixture(autouse=True)
-def _allow_urls(monkeypatch):
-    monkeypatch.setattr(_ssrf, "assert_safe_url", AsyncMock(return_value=None))
+def allow_urls(monkeypatch):
+    monkeypatch.setattr(ssrf, "assert_safe_url", AsyncMock(return_value=None))
 
 
-def _local_returns(monkeypatch, text):
+def local_returns(monkeypatch, text):
     monkeypatch.setattr(WebFetchTool, "execute",
                         AsyncMock(return_value=[{"type": "text", "text": text}]))
 
@@ -147,10 +147,10 @@ def _local_returns(monkeypatch, text):
 @pytest.mark.asyncio
 async def test_fetch_local_first_wins_and_is_fast(monkeypatch):
     big = "Contents of https://x.example:\n\n" + ("real article body " * 50)
-    _local_returns(monkeypatch, big)
-    async def _boom(*a, **k):
+    local_returns(monkeypatch, big)
+    async def boom(*a, **k):
         raise AssertionError(f"grounded fetch should not run when local has content (args={a!r}, kwargs={k!r})")
-    monkeypatch.setattr(W, "_gemini_grounded_call", _boom)
+    monkeypatch.setattr(W, "_gemini_grounded_call", boom)
 
     t = time.monotonic()
     res = await fetch(FetchBody(url="https://x.example"))
@@ -161,7 +161,7 @@ async def test_fetch_local_first_wins_and_is_fast(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_thin_local_falls_to_grounded(monkeypatch):
-    _local_returns(monkeypatch, "Contents of https://spa.example:\n\n")  # JS wall, empty body
+    local_returns(monkeypatch, "Contents of https://spa.example:\n\n")  # JS wall, empty body
     monkeypatch.setattr(W, "_resolve_gemini_api_key", lambda: "gkey")
     monkeypatch.setattr(W, "_gemini_grounded_call",
                         AsyncMock(return_value={"text": "rendered page text from grounding", "chunks": []}))
@@ -173,7 +173,7 @@ async def test_fetch_thin_local_falls_to_grounded(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_local_error_returned_as_last_resort(monkeypatch):
-    _local_returns(monkeypatch, "HTTP error 403 fetching https://blocked.example")
+    local_returns(monkeypatch, "HTTP error 403 fetching https://blocked.example")
     # no grounded keys/subs (autouse fixtures) -> all grounded skip/fail
     res = await fetch(FetchBody(url="https://blocked.example"))
     assert res["backend"] == "local"

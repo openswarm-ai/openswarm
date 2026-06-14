@@ -9,7 +9,7 @@ import pytest
 from backend.config.json_store import read_json_or_none, atomic_write_json
 
 
-class _NotSerializable:
+class NotSerializable:
     pass
 
 
@@ -36,7 +36,7 @@ def test_atomic_write_fully_replaces(tmp_path):
 def test_atomic_write_cleans_temp_and_raises_on_bad_payload(tmp_path):
     p = str(tmp_path / "x.json")
     with pytest.raises(TypeError):
-        atomic_write_json(p, {"bad": _NotSerializable()})
+        atomic_write_json(p, {"bad": NotSerializable()})
     assert [f for f in os.listdir(tmp_path) if f.startswith(".tmp-")] == []
     assert not os.path.exists(p)
 
@@ -45,7 +45,7 @@ def test_atomic_write_preserves_existing_when_new_write_fails(tmp_path):
     p = str(tmp_path / "x.json")
     atomic_write_json(p, {"good": 1})
     with pytest.raises(TypeError):
-        atomic_write_json(p, {"bad": _NotSerializable()})
+        atomic_write_json(p, {"bad": NotSerializable()})
     assert read_json_or_none(p) == {"good": 1}
 
 

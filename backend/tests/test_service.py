@@ -23,8 +23,8 @@ from unittest.mock import patch
 
 import pytest
 
-_tmpdir = tempfile.mkdtemp()
-os.environ.setdefault("OPENSWARM_DATA_DIR", _tmpdir)
+tmpdir = tempfile.mkdtemp()
+os.environ.setdefault("OPENSWARM_DATA_DIR", tmpdir)
 
 
 @pytest.fixture(autouse=True)
@@ -44,11 +44,11 @@ def patch_settings(tmp_path):
 @pytest.fixture(autouse=True)
 def fresh_client(tmp_path):
     import backend.apps.service.client as client
-    client._install_id = None
-    client._user_id = None
-    client._test_sink = None
+    client.P_INSTALL_ID = None
+    client.P_USER_ID = None
+    client.P_TEST_SINK = None
     spool = tmp_path / "spool.db"
-    with patch.object(client, "_spool_path", lambda: str(spool)):
+    with patch.object(client, "spool_path", lambda: str(spool)):
         yield
 
 
@@ -291,7 +291,7 @@ def test_install_id_persisted(sink, tmp_path):
     import backend.apps.settings.store as settings_mod
     settings_mod.SETTINGS_FILE = str(sf)
     import backend.apps.service.client as client
-    client._install_id = None
+    client.P_INSTALL_ID = None
     from backend.apps.service.client import sync
     sync({})
     _, body = sink[0]
@@ -349,7 +349,7 @@ async def test_endpoint_spool_count(tmp_path):
     from backend.apps.service import client as svc, buffer
     from backend.apps.service.service import spool_count
     spool = str(tmp_path / "spool.db")
-    with patch.object(svc, "_spool_path", lambda: spool):
+    with patch.object(svc, "spool_path", lambda: spool):
         buffer.enqueue(spool, "s:/x", {}, now=time.time())
         result = await spool_count()
         assert result == {"pending": 1}

@@ -2,38 +2,38 @@
 
 import asyncio
 
-from backend.apps.agents.browser.browser_validator import adjudicate_stuck, _extract_text
+from backend.apps.agents.browser.browser_validator import adjudicate_stuck, p_extract_text  # p-private-ignore: p_extract_text
 
 
-class _Block:
+class Block:
     def __init__(self, type_, text=""):
         self.type = type_
         self.text = text
 
 
-class _Resp:
+class Resp:
     def __init__(self, blocks):
         self.content = blocks
 
 
-class _FakeClient:
+class FakeClient:
     """Minimal Anthropic-shaped client: client.messages.create(...)."""
 
     def __init__(self, resp=None, raise_exc=None):
-        self._resp = resp
-        self._raise = raise_exc
+        self.resp = resp
+        self.raise_exc = raise_exc
         self.calls = []
         self.messages = self
 
     async def create(self, **kwargs):
         self.calls.append(kwargs)
-        if self._raise:
-            raise self._raise
-        return self._resp
+        if self.raise_exc:
+            raise self.raise_exc
+        return self.resp
 
 
 def test_returns_extracted_guidance_and_assembles_prompt():
-    fc = _FakeClient(resp=_Resp([_Block("text", "Press Tab then Enter to focus the field.")]))
+    fc = FakeClient(resp=Resp([Block("text", "Press Tab then Enter to focus the field.")]))
     out = asyncio.run(adjudicate_stuck(fc, "cheap-model", "share the doc", "- click -> not found", "the page"))
     assert out == "Press Tab then Enter to focus the field."
     call = fc.calls[0]
@@ -45,18 +45,18 @@ def test_returns_extracted_guidance_and_assembles_prompt():
 
 
 def test_swallows_provider_error_and_returns_empty():
-    fc = _FakeClient(raise_exc=RuntimeError("429 rate limited"))
+    fc = FakeClient(raise_exc=RuntimeError("429 rate limited"))
     out = asyncio.run(adjudicate_stuck(fc, "m", "g", "r", "p"))
     assert out == ""
 
 
-def test_extract_text_joins_text_blocks_and_ignores_others():
-    resp = _Resp([_Block("text", "First."), _Block("tool_use"), _Block("text", "Second.")])
-    assert _extract_text(resp) == "First. Second."
+def testp_extract_text_joins_text_blocks_and_ignores_others():
+    resp = Resp([Block("text", "First."), Block("tool_use"), Block("text", "Second.")])
+    assert p_extract_text(resp) == "First. Second."
 
 
 def test_handles_empty_inputs_without_crashing():
-    fc = _FakeClient(resp=_Resp([_Block("text", "ok")]))
+    fc = FakeClient(resp=Resp([Block("text", "ok")]))
     out = asyncio.run(adjudicate_stuck(fc, "m", "", "", ""))
     assert out == "ok"
     # placeholders keep the prompt well-formed

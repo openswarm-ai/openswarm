@@ -1,6 +1,6 @@
-from backend.apps.agents.browser.browser_fast_path import (
-    _normalize_for_classifier,
-    _parse_verdict_and_brief,
+from backend.apps.agents.browser.browser_fast_path import (  # p-private-ignore: p_normalize_for_classifier, p_parse_verdict_and_brief
+    p_normalize_for_classifier,
+    p_parse_verdict_and_brief,
     compose_task,
     dispatch_failed,
     fast_path_eligible,
@@ -30,15 +30,15 @@ def test_non_browsy_or_gated_messages_fall_through():
 
 
 def test_verdict_parsing_is_strict():
-    v, brief = _parse_verdict_and_brief("READ\nENTRY: https://news.ycombinator.com\n1. read top story")
+    v, brief = p_parse_verdict_and_brief("READ\nENTRY: https://news.ycombinator.com\n1. read top story")
     assert v == "read" and brief.startswith("ENTRY:") and "top story" in brief
-    assert _parse_verdict_and_brief("ACT\nENTRY: https://x.com")[0] == "act"
-    assert _parse_verdict_and_brief("yes") == ("act", "")
-    assert _parse_verdict_and_brief("NO") == ("no", "")
-    assert _parse_verdict_and_brief("Maybe\nENTRY: x") == ("no", "")
-    assert _parse_verdict_and_brief("") == ("no", "")
+    assert p_parse_verdict_and_brief("ACT\nENTRY: https://x.com")[0] == "act"
+    assert p_parse_verdict_and_brief("yes") == ("act", "")
+    assert p_parse_verdict_and_brief("NO") == ("no", "")
+    assert p_parse_verdict_and_brief("Maybe\nENTRY: x") == ("no", "")
+    assert p_parse_verdict_and_brief("") == ("no", "")
     long_brief = "ACT\n" + "x" * 2000
-    assert len(_parse_verdict_and_brief(long_brief)[1]) == 700
+    assert len(p_parse_verdict_and_brief(long_brief)[1]) == 700
 
 
 def test_fast_read_entry_extraction_and_thin_detection():
@@ -84,14 +84,14 @@ def test_recovery_task_verifies_before_repeating():
 
 def test_text_normalizes_to_message_without_phone_number():
     assert (
-        _normalize_for_classifier("go to maya's linkedin and text her thanks")
+        p_normalize_for_classifier("go to maya's linkedin and text her thanks")
         == "go to maya's linkedin and message her thanks"
     )
-    assert _normalize_for_classifier("keep texting until he replies").startswith("keep message")
+    assert p_normalize_for_classifier("keep texting until he replies").startswith("keep message")
     sms = "text 4085551234 saying im running late"
-    assert _normalize_for_classifier(sms) == sms
+    assert p_normalize_for_classifier(sms) == sms
     count = "count messages containing the exact text r10-os"
-    assert "message r10-os" in _normalize_for_classifier(count)
+    assert "message r10-os" in p_normalize_for_classifier(count)
 
 
 def test_dispatch_refused_when_no_dashboard_connected(monkeypatch):
@@ -163,7 +163,7 @@ def test_entry_url_extracted_from_brief():
 
 
 def test_results_url_shapes():
-    from backend.apps.agents.browser.browser_agent import _RESULTS_URL_RE
+    from backend.apps.agents.browser import browser_agent as bagent
     hits = [
         "https://www.linkedin.com/search/results/people/?keywords=tyler+chen",
         "https://www.google.com/search?q=anything",
@@ -176,6 +176,6 @@ def test_results_url_shapes():
         "https://www.linkedin.com/messaging/thread/abc123/",
     ]
     for u in hits:
-        assert _RESULTS_URL_RE.search(u), u
+        assert bagent._RESULTS_URL_RE.search(u), u
     for u in misses:
-        assert not _RESULTS_URL_RE.search(u), u
+        assert not bagent._RESULTS_URL_RE.search(u), u

@@ -49,7 +49,7 @@ def test_decide_stop_handles_missing_signals():
 
 
 # --- the async loop with a scripted probe -----------------------------------
-def _probe(ready, quiet, elems=1000, found=False):
+def probe(ready, quiet, elems=1000, found=False):
     return {"text": json.dumps({"ready": ready, "quiet": quiet, "elems": elems, "found": found}),
             "url": "https://x.com"}
 
@@ -68,13 +68,13 @@ class HangingExec:
     async def __call__(self, tool, params, bid, tid):
         self.calls.append((tool, params, bid, tid))
         await asyncio.sleep(self.block_s)
-        return _probe(False, 0)
+        return probe(False, 0)
 
 
 @pytest.mark.asyncio
 async def test_returns_early_once_settled():
     # first probe: still loading; second: settled -> should stop well under the cap
-    ex = AsyncMock(side_effect=[_probe(False, 0), _probe(True, 999)])
+    ex = AsyncMock(side_effect=[probe(False, 0), probe(True, 999)])
     out = await bw.smart_wait(ex, "b", "", 5000, poll_ms=20, floor_ms=20, quiet_window_ms=50)
     assert out["settled"] is True and out["found"] is False
     assert out["waited_ms"] < 5000
@@ -86,7 +86,7 @@ async def test_returns_early_once_settled():
 @pytest.mark.asyncio
 async def test_rides_to_cap_when_page_never_settles():
     # an SPA that keeps fetching (quiet always small) -> never settles -> caps out
-    ex = AsyncMock(return_value=_probe(True, 10))
+    ex = AsyncMock(return_value=probe(True, 10))
     out = await bw.smart_wait(ex, "b", "", 200, poll_ms=20, floor_ms=20, quiet_window_ms=400)
     assert out["settled"] is False
     assert out["waited_ms"] >= 180  # ~the cap
@@ -97,7 +97,7 @@ async def test_rides_to_cap_when_page_never_settles():
 async def test_settles_on_dom_stable_when_network_never_idles():
     # the LinkedIn case: network always busy (quiet tiny) but the DOM count is
     # constant -> DOM-settle fires instead of riding to the cap
-    ex = AsyncMock(return_value=_probe(True, 5, elems=500))
+    ex = AsyncMock(return_value=probe(True, 5, elems=500))
     out = await bw.smart_wait(ex, "b", "", 3000, poll_ms=20, floor_ms=20, quiet_window_ms=200)
     assert out["settled"] is True and out["waited_ms"] < 3000
     assert "page settled" in out["text"]
@@ -107,8 +107,8 @@ async def test_settles_on_dom_stable_when_network_never_idles():
 async def test_returns_the_instant_target_is_found():
     # network busy AND DOM churning, but the agent's target appears on probe 2 ->
     # stop immediately, bypassing even the floor
-    ex = AsyncMock(side_effect=[_probe(False, 5, elems=100, found=False),
-                                _probe(False, 5, elems=200, found=True)])
+    ex = AsyncMock(side_effect=[probe(False, 5, elems=100, found=False),
+                                probe(False, 5, elems=200, found=True)])
     out = await bw.smart_wait(ex, "b", "", 5000, until="Send",
                               poll_ms=20, floor_ms=800, quiet_window_ms=999)
     assert out["settled"] is True and out["found"] is True and "found target" in out["text"]
@@ -118,7 +118,7 @@ async def test_returns_the_instant_target_is_found():
 @pytest.mark.asyncio
 async def test_never_returns_before_the_floor():
     # settled from the very first probe, but the floor must still be respected
-    ex = AsyncMock(return_value=_probe(True, 9999))
+    ex = AsyncMock(return_value=probe(True, 9999))
     out = await bw.smart_wait(ex, "b", "", 5000, poll_ms=10, floor_ms=200, quiet_window_ms=50)
     assert out["waited_ms"] >= 200, "must not read a page before the settle floor"
     assert out["settled"] is True
@@ -136,14 +136,14 @@ async def test_probe_error_during_navigation_keeps_waiting_then_settles():
     # while the page is navigating, evaluate errors; we must keep polling, not bail
     ex = AsyncMock(side_effect=[{"error": "Cannot evaluate, page navigating"},
                                 {"error": "still navigating"},
-                                _probe(True, 999)])
+                                probe(True, 999)])
     out = await bw.smart_wait(ex, "b", "", 5000, poll_ms=15, floor_ms=15, quiet_window_ms=50)
     assert out["settled"] is True and ex.await_count >= 3
 
 
 @pytest.mark.asyncio
 async def test_garbage_probe_text_does_not_crash():
-    ex = AsyncMock(side_effect=[{"text": "not json", "url": "u"}, _probe(True, 999)])
+    ex = AsyncMock(side_effect=[{"text": "not json", "url": "u"}, probe(True, 999)])
     out = await bw.smart_wait(ex, "b", "", 3000, poll_ms=15, floor_ms=15, quiet_window_ms=50)
     assert out["settled"] is True
 
@@ -167,15 +167,15 @@ async def test_hung_tab_returns_fast_not_after_the_full_command_timeout():
 @pytest.mark.asyncio
 async def test_a_single_slow_probe_then_settle_is_not_flagged_hung():
     # one slow probe (under the threshold count) shouldn't trip 'hung'; it recovers
-    class _OneSlow:
+    class OneSlow:
         def __init__(self):
             self.calls = []
         async def __call__(self, tool, params, bid, tid):
             self.calls.append((tool, params, bid, tid))
             if len(self.calls) == 1:
                 await asyncio.sleep(0.5)   # one slow poll
-                return _probe(False, 0)
-            return _probe(True, 999)
-    out = await bw.smart_wait(_OneSlow(), "b", "", 5000, poll_ms=10, floor_ms=10,
+                return probe(False, 0)
+            return probe(True, 999)
+    out = await bw.smart_wait(OneSlow(), "b", "", 5000, poll_ms=10, floor_ms=10,
                               quiet_window_ms=50, probe_timeout_s=0.2)
     assert out["hung"] is False and out["settled"] is True

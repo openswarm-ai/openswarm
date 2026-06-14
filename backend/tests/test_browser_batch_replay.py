@@ -170,27 +170,27 @@ SEEN = {
 }
 
 
-def _click_idx(i):
+def p_click_idx(i):
     return {"type": "click_index", "params": {"index": i}}
 
 
 def test_guard_blocks_send_click_index_resolved_from_state():
-    why = br.live_batch_guard([_click_idx(4)], SEEN)
+    why = br.live_batch_guard([p_click_idx(4)], SEEN)
     assert "irreversible" in why and "Send" in why
 
 
 def test_guard_blocks_connect_but_allows_message_composer_opener():
-    assert br.live_batch_guard([_click_idx(12)], SEEN) != ""
-    assert br.live_batch_guard([_click_idx(7)], SEEN) == ""
+    assert br.live_batch_guard([p_click_idx(12)], SEEN) != ""
+    assert br.live_batch_guard([p_click_idx(7)], SEEN) == ""
 
 
 def test_guard_index_prefix_does_not_collide():
     # [4] is "Send" but [41] is "Next page"; clicking 41 must pass
-    assert br.live_batch_guard([_click_idx(41)], SEEN) == ""
+    assert br.live_batch_guard([p_click_idx(41)], SEEN) == ""
 
 
 def test_guard_allows_unresolvable_index_and_garbage():
-    assert br.live_batch_guard([_click_idx(99)], SEEN) == ""
+    assert br.live_batch_guard([p_click_idx(99)], SEEN) == ""
     assert br.live_batch_guard([{"type": "click_index"}, "junk", None], SEEN) == ""
     assert br.live_batch_guard(None, set()) == ""
 

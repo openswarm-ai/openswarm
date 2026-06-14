@@ -14,11 +14,11 @@ def metrics(monkeypatch):
     from backend.apps.agents.browser import browser_metrics as bm
     # The dir is memoized once for the prod hot path; drop the cache so each test
     # re-resolves to its own temp dir instead of inheriting a prior test's.
-    bm._metrics_dir_cache = None
+    bm.P_METRICS_DIR_CACHE = None
     return bm, d
 
 
-def _read(d, name):
+def read_rows(d, name):
     p = os.path.join(d, name)
     if not os.path.exists(p):
         return []
@@ -41,7 +41,7 @@ def test_record_tool_writes_event(metrics):
     bm, d = metrics
     bm.record_tool("s1", "b1", 2, "BrowserListInteractives", 18,
                    ok=True, error="", is_loop=False, stagnation_streak=0, result_len=120)
-    events = _read(d, "events.jsonl")
+    events = read_rows(d, "events.jsonl")
     assert len(events) == 1
     e = events[0]
     assert e["tool"] == "BrowserListInteractives" and e["tier"] == "t3_action_surface"
@@ -53,7 +53,7 @@ def test_record_tool_captures_error(metrics):
     bm.record_tool("s1", "b1", 3, "BrowserClickIndex", 9,
                    ok=False, error="Index 4 is no longer valid", is_loop=True,
                    stagnation_streak=2, result_len=40)
-    e = _read(d, "events.jsonl")[0]
+    e = read_rows(d, "events.jsonl")[0]
     assert e["ok"] is False and "no longer valid" in e["error"]
     assert e["is_loop"] is True and e["stagnation_streak"] == 2
 
@@ -75,7 +75,7 @@ def test_record_task_summary_and_rollups(metrics):
     assert summary["by_tier"]["t5_vision"]["calls"] == 1
     assert summary["total_ms"] >= 1000  # ~1.2s elapsed
     assert any("not found" in err[0].lower() for err in summary["recurring_errors"])
-    tasks = _read(d, "tasks.jsonl")
+    tasks = read_rows(d, "tasks.jsonl")
     assert len(tasks) == 1 and tasks[0]["status"] == "completed"
 
 
@@ -83,7 +83,7 @@ def test_metrics_never_raises_on_bad_dir(monkeypatch):
     # An unwritable dir must not throw into the agent loop.
     monkeypatch.setenv("OPENSWARM_BROWSER_METRICS_DIR", "/proc/cannot/write/here")
     from backend.apps.agents.browser import browser_metrics as bm
-    bm._metrics_dir_cache = None  # re-resolve so we actually hit the bad dir
+    bm.P_METRICS_DIR_CACHE = None  # re-resolve so we actually hit the bad dir
     bm.record_tool("s", "b", 1, "BrowserScreenshot", 5, ok=True, error="",
                    is_loop=False, stagnation_streak=0, result_len=1)  # must not raise
     bm.record_task("s", "b", "t", "error", __import__("time").time(), 1, [], {})
@@ -91,15 +91,14 @@ def test_metrics_never_raises_on_bad_dir(monkeypatch):
 
 def test_task_secrets_are_scrubbed_from_tasks_jsonl(tmp_path, monkeypatch):
     from backend.apps.agents.browser import browser_metrics as bm
-    import os as _os
-    import time as _time
+    import time
     monkeypatch.setenv("OPENSWARM_BROWSER_METRICS_DIR", str(tmp_path))
-    bm._metrics_dir_cache = None
+    bm.P_METRICS_DIR_CACHE = None
     bm.record_task("s1", "b1", "log into acme with password hunter2 then post sk-abc12345678901234567",
-                   "completed", _time.time() - 1, 2, [], {})
-    line = open(_os.path.join(str(tmp_path), "tasks.jsonl")).read()
+                   "completed", time.time() - 1, 2, [], {})
+    line = open(os.path.join(str(tmp_path), "tasks.jsonl")).read()
     assert "hunter2" not in line and "sk-abc" not in line
     assert "password [redacted]" in line
     # owner-only file perms
-    mode = _os.stat(_os.path.join(str(tmp_path), "tasks.jsonl")).st_mode & 0o777
+    mode = os.stat(os.path.join(str(tmp_path), "tasks.jsonl")).st_mode & 0o777
     assert mode == 0o600

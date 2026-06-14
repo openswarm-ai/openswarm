@@ -1,9 +1,9 @@
 """Deterministic stagnation detection for the browser sub-agent."""
 
-from backend.apps.agents.browser.browser_loop import (
-    _STAGNATION_ESCALATION_AT,
-    _STAGNATION_MAX,
-    _looks_like_failure,
+from backend.apps.agents.browser.browser_loop import (  # p-private-ignore: P_STAGNATION_ESCALATION_AT, P_STAGNATION_MAX, p_looks_like_failure
+    P_STAGNATION_ESCALATION_AT,
+    P_STAGNATION_MAX,
+    p_looks_like_failure,
     advance_stagnation,
     card_is_unavailable,
     completion_is_honest,
@@ -14,19 +14,19 @@ from backend.apps.agents.browser.browser_loop import (
 )
 
 
-def _fail(url="https://a.com"):
+def fail(url="https://a.com"):
     return {"text": "Element not found: '.x'", "url": url}
 
 
-def test_looks_like_failure_positive():
-    assert _looks_like_failure("Element not found: '.foo'")
-    assert _looks_like_failure("Index 4 is no longer valid")
-    assert _looks_like_failure("Error: something broke")
+def testp_looks_like_failure_positive():
+    assert p_looks_like_failure("Element not found: '.foo'")
+    assert p_looks_like_failure("Index 4 is no longer valid")
+    assert p_looks_like_failure("Error: something broke")
 
 
-def test_looks_like_failure_negative():
-    assert not _looks_like_failure("Clicked element: button#submit")
-    assert not _looks_like_failure("Typed into: input#email")
+def testp_looks_like_failure_negative():
+    assert not p_looks_like_failure("Clicked element: button#submit")
+    assert not p_looks_like_failure("Typed into: input#email")
 
 
 def test_error_result_is_unproductive():
@@ -63,25 +63,25 @@ def test_neutral_read_tools_never_count():
 
 def test_nudge_mentions_human_intervention_only_at_max():
     assert "RequestHumanIntervention" not in stagnation_nudge(3)
-    assert "RequestHumanIntervention" in stagnation_nudge(_STAGNATION_MAX)
+    assert "RequestHumanIntervention" in stagnation_nudge(P_STAGNATION_MAX)
     assert "ladder" in stagnation_nudge(3)
 
 
 def test_advance_increments_on_failures_and_nudges_at_threshold():
     streak, url, text, nudge = 0, "", "", None
     nudges = []
-    for _ in range(_STAGNATION_ESCALATION_AT):
-        streak, url, text, nudge = advance_stagnation(streak, url, text, "BrowserClick", _fail())
+    for _ in range(P_STAGNATION_ESCALATION_AT):
+        streak, url, text, nudge = advance_stagnation(streak, url, text, "BrowserClick", fail())
         nudges.append(nudge)
-    assert streak == _STAGNATION_ESCALATION_AT
+    assert streak == P_STAGNATION_ESCALATION_AT
     assert nudges[-1] is not None  # nudge fires exactly when the threshold is hit
     assert nudges[0] is None and nudges[1] is None
 
 
 def test_advance_resets_on_progress():
     # two failures, then a navigation (URL change) clears the streak
-    streak, url, text, _ = advance_stagnation(0, "", "", "BrowserClick", _fail("https://a.com"))
-    streak, url, text, _ = advance_stagnation(streak, url, text, "BrowserClick", _fail("https://a.com"))
+    streak, url, text, _ = advance_stagnation(0, "", "", "BrowserClick", fail("https://a.com"))
+    streak, url, text, _ = advance_stagnation(streak, url, text, "BrowserClick", fail("https://a.com"))
     assert streak == 2
     streak, url, text, _ = advance_stagnation(
         streak, url, text, "BrowserNavigate", {"text": "Navigated", "url": "https://b.com"},
@@ -97,9 +97,9 @@ def test_advance_neutral_tools_pass_through_unchanged():
 
 
 def test_advance_fires_again_at_max():
-    streak, url, text = _STAGNATION_MAX - 1, "https://a.com", "prev different"
-    streak, url, text, nudge = advance_stagnation(streak, url, text, "BrowserClick", _fail())
-    assert streak == _STAGNATION_MAX
+    streak, url, text = P_STAGNATION_MAX - 1, "https://a.com", "prev different"
+    streak, url, text, nudge = advance_stagnation(streak, url, text, "BrowserClick", fail())
+    assert streak == P_STAGNATION_MAX
     assert nudge is not None and "RequestHumanIntervention" in nudge
     assert stagnation_exhausted(streak)
 
@@ -108,23 +108,23 @@ def test_advance_fires_again_at_max():
 # Catches the worst measured ghost: multi-minute runs, every tool errored, still
 # reported 'completed'. Must NOT cry wolf on real successes (it overrides status).
 
-def _ok(tool, summary="done"):
+def ok(tool, summary="done"):
     return {"tool": tool, "ok": True, "result_summary": summary}
 
 
-def _err(tool):
+def err(tool):
     return {"tool": tool, "ok": False, "result_summary": "Element not found: '.x'"}
 
 
 def test_completion_honest_when_an_action_succeeded():
-    log = [_ok("BrowserListInteractives", "1 button"), _ok("BrowserClickIndex", "Clicked")]
+    log = [ok("BrowserListInteractives", "1 button"), ok("BrowserClickIndex", "Clicked")]
     honest, reason = completion_is_honest(log)
     assert honest and reason == ""
 
 
 def test_completion_ghost_when_every_action_errored():
     # the exact LinkedIn ghost: 8 tools, all errored, model said 'completed'
-    log = [_err("BrowserClick") for _ in range(8)]
+    log = [err("BrowserClick") for _ in range(8)]
     honest, reason = completion_is_honest(log)
     assert not honest and "every state-changing action failed" in reason
 
@@ -143,14 +143,14 @@ def test_completion_ghost_when_only_looked_around_with_no_content():
 
 def test_completion_honest_for_a_read_only_task_that_returned_content():
     # a legit "tell me what's on the page" task: no action, but a read got content
-    log = [_ok("BrowserGetText", "The page says hello world")]
+    log = [ok("BrowserGetText", "The page says hello world")]
     honest, reason = completion_is_honest(log)
     assert honest and reason == ""
 
 
 def test_completion_honest_when_some_errors_but_an_action_landed():
     # partial failure is fine as long as a real action ultimately succeeded
-    log = [_err("BrowserClick"), _err("BrowserClick"), _ok("BrowserClickIndex", "Clicked Submit")]
+    log = [err("BrowserClick"), err("BrowserClick"), ok("BrowserClickIndex", "Clicked Submit")]
     honest, reason = completion_is_honest(log)
     assert honest
 

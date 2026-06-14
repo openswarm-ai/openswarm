@@ -13,33 +13,33 @@ import pytest
 from backend.apps.agents.core import ws_manager as wsm
 
 
-class _FakeSock:
+class p_FakeSock:
     async def send_text(self, _):
         return None
 
 
-def _mgr():
+def p_mgr():
     m = wsm.ConnectionManager()
-    m.global_connections = [_FakeSock()]  # get past the 'no dashboard' guard
+    m.global_connections = [p_FakeSock()]  # get past the 'no dashboard' guard
     return m
 
 
 def test_timeout_map_reads_are_short_navigation_longer():
     # reads/clicks act on a loaded page -> short; navigation loads network -> longer
-    assert wsm._BROWSER_CMD_TIMEOUT_DEFAULT <= 15
-    assert wsm._BROWSER_CMD_TIMEOUTS["navigate"] <= 25
-    assert wsm._BROWSER_CMD_TIMEOUTS["navigate"] > wsm._BROWSER_CMD_TIMEOUT_DEFAULT
+    assert wsm.P_BROWSER_CMD_TIMEOUT_DEFAULT <= 15 # p-private-ignore: P_BROWSER_CMD_TIMEOUT_DEFAULT
+    assert wsm.P_BROWSER_CMD_TIMEOUTS["navigate"] <= 25 # p-private-ignore: P_BROWSER_CMD_TIMEOUTS
+    assert wsm.P_BROWSER_CMD_TIMEOUTS["navigate"] > wsm.P_BROWSER_CMD_TIMEOUT_DEFAULT # p-private-ignore: P_BROWSER_CMD_TIMEOUTS, P_BROWSER_CMD_TIMEOUT_DEFAULT
     # the old flat 30s is gone for the common path
-    assert wsm._BROWSER_CMD_TIMEOUT_DEFAULT < 30
+    assert wsm.P_BROWSER_CMD_TIMEOUT_DEFAULT < 30 # p-private-ignore: P_BROWSER_CMD_TIMEOUT_DEFAULT
 
 
 @pytest.mark.asyncio
 async def test_hung_command_returns_fast_at_the_bound(monkeypatch):
     # shrink the bounds so the test is quick, then never resolve the future:
     # the command must return a timeout error at ~the (default) bound, not hang.
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUT_DEFAULT", 0.3)
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUTS", {"navigate": 0.6})
-    m = _mgr()
+    monkeypatch.setattr(wsm, "P_BROWSER_CMD_TIMEOUT_DEFAULT", 0.3)
+    monkeypatch.setattr(wsm, "P_BROWSER_CMD_TIMEOUTS", {"navigate": 0.6})
+    m = p_mgr()
     t0 = time.monotonic()
     res = await m.send_browser_command("rid1", "get_text", "b1", {})  # never resolved
     elapsed = time.monotonic() - t0
@@ -49,9 +49,9 @@ async def test_hung_command_returns_fast_at_the_bound(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_navigate_gets_the_longer_leash(monkeypatch):
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUT_DEFAULT", 0.3)
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUTS", {"navigate": 0.7})
-    m = _mgr()
+    monkeypatch.setattr(wsm, "P_BROWSER_CMD_TIMEOUT_DEFAULT", 0.3)
+    monkeypatch.setattr(wsm, "P_BROWSER_CMD_TIMEOUTS", {"navigate": 0.7})
+    m = p_mgr()
     t0 = time.monotonic()
     await m.send_browser_command("rid2", "navigate", "b1", {"url": "x"})
     elapsed = time.monotonic() - t0
@@ -62,19 +62,19 @@ async def test_navigate_gets_the_longer_leash(monkeypatch):
 async def test_lost_first_delivery_heals_via_rebroadcast(monkeypatch):
     # a silently-dead socket eats the first broadcast; the re-send after the
     # rebroadcast interval must reach the (reconnected) client and succeed
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUT_DEFAULT", 5.0)
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_REBROADCAST_S", 0.1)
-    m = _mgr()
+    monkeypatch.setattr(wsm, "P_BROWSER_CMD_TIMEOUT_DEFAULT", 5.0)
+    monkeypatch.setattr(wsm, "P_BROWSER_CMD_REBROADCAST_S", 0.1)
+    m = p_mgr()
     sends = []
 
-    class _CountingSock:
+    class p_CountingSock:
         async def send_text(self, payload):
             sends.append(payload)
             if len(sends) >= 2:  # first delivery "lost", second lands
                 rid = next(iter(m.browser_futures))
                 m.resolve_browser_command(rid, {"text": "ok"})
 
-    m.global_connections = [_CountingSock()]
+    m.global_connections = [p_CountingSock()]
     res = await m.send_browser_command("rid4", "get_text", "b1", {})
     assert res == {"text": "ok"}
     assert len(sends) >= 2, "command must be re-broadcast until a client answers"
@@ -83,16 +83,16 @@ async def test_lost_first_delivery_heals_via_rebroadcast(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_resolved_command_returns_immediately(monkeypatch):
     # a healthy command returns the moment the renderer resolves it, not at the bound
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUT_DEFAULT", 5.0)
-    m = _mgr()
+    monkeypatch.setattr(wsm, "P_BROWSER_CMD_TIMEOUT_DEFAULT", 5.0)
+    m = p_mgr()
 
-    async def _resolve_soon():
+    async def p_resolve_soon():
         await asyncio.sleep(0.05)
         # find the pending future and resolve it like the renderer would
         rid = next(iter(m.browser_futures))
         m.resolve_browser_command(rid, {"text": "ok", "url": "u"})
 
-    asyncio.create_task(_resolve_soon())
+    asyncio.create_task(p_resolve_soon())
     t0 = time.monotonic()
     res = await m.send_browser_command("rid3", "get_text", "b1", {})
     elapsed = time.monotonic() - t0
