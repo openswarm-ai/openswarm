@@ -1654,11 +1654,13 @@ class AgentManager:
                     # first tool-laden request (the other anthropic branches all set this).
                     "ENABLE_TOOL_SEARCH": "auto",
                 }
-                # Free lane meters one run per agent session: tag every call to the cloud with the
-                # session id so 1 task = 1 run (without it the cloud falls back to token-coarse runs).
-                # The base goes straight to the cloud here (no 9Router), so the header rides through.
+                # Free lane meters one run per USER QUERY: this dispatch is per message, so a
+                # fresh id here tags every call of THIS query (and its subagents, which inherit
+                # the env) with the same task id, and the next query gets a new one. So one query
+                # = one run no matter how many tool calls it makes, or whether the user cancels it.
+                # The base goes straight to the cloud (no 9Router), so the header rides through.
                 if getattr(global_settings, "connection_mode", "own_key") == "free-trial":
-                    options_kwargs["env"]["ANTHROPIC_CUSTOM_HEADERS"] = f"X-Openswarm-Task-Id: {session.id}"
+                    options_kwargs["env"]["ANTHROPIC_CUSTOM_HEADERS"] = f"X-Openswarm-Task-Id: {session.id}-{uuid4().hex[:12]}"
                     # The cloud serves every free run as Haiku, so keep the subagent on Haiku too:
                     # a sonnet subagent makes the CLI attach `effort`, which Haiku 400s on.
                     options_kwargs["env"]["CLAUDE_CODE_SUBAGENT_MODEL"] = "claude-haiku-4-5-20251001"
