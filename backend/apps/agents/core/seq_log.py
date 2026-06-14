@@ -15,8 +15,6 @@ logger = logging.getLogger(__name__)
 # 500 events covers a 30s drop even at ~20Hz thinking deltas (~50KB/session).
 P_BUFFER_LIMIT = 500
 
-P_TERMINAL_STATUSES = {"completed", "stopped", "error"}
-
 
 class P_SessionSeqLog:
     """Per-session lock + monotonic seq + recent-event ring buffer."""

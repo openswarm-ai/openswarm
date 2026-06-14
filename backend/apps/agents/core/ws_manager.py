@@ -3,7 +3,9 @@ import json
 import logging
 from fastapi import WebSocket
 
-from backend.apps.agents.core.seq_log import TERMINAL_STATUSES, SEQ_LOG
+from backend.apps.agents.core.seq_log import SEQ_LOG
+
+TERMINAL_STATUSES = {"completed", "stopped", "error"}
 
 logger = logging.getLogger(__name__)
 
