@@ -178,12 +178,11 @@ async def arm_free_trial(settings_obj) -> dict:
         settings_obj.connection_mode = "free-trial"
         settings_obj.free_trial_token = data.get("trial_token")
         settings_obj.openswarm_proxy_url = base
-        # The free lane only routes Claude-family ids (dispatch needs api_type=anthropic).
-        # A leftover non-Claude pick (e.g. gemini) would skip the proxy and fail, so snap
-        # to Haiku, which is the tier the cloud serves the free run as anyway.
-        cur = getattr(settings_obj, "default_model", "") or ""
-        if not cur.startswith(("sonnet", "haiku", "opus")):
-            settings_obj.default_model = "haiku"
+        # Pin the trial to Haiku, the exact tier the cloud serves a free run as. Critical:
+        # a sonnet/opus pick makes the Claude Code CLI attach an `effort`/thinking param
+        # (reasoning models), which Haiku 400s on ("does not support the effort parameter").
+        # Using Haiku end to end means the CLI never adds it, so the run just works.
+        settings_obj.default_model = "haiku"
         await save_settings_async(settings_obj)
         await _sync_routing(settings_obj)
         return {"armed": True, "runs_remaining": remaining, "runs_limit": settings_obj.free_trial_runs_limit}
