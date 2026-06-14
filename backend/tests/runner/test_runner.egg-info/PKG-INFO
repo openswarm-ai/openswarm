@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: test-runner
+Version: 0.1.0
+Summary: Interactive subprocess test runner with a live Rich dashboard.
+Requires-Python: >=3.9
+Requires-Dist: typer
+Requires-Dist: rich
+Requires-Dist: textual

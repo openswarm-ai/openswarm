@@ -1,0 +1,27 @@
+# Dependency manifest for the test runner's OWN venv.
+#
+# These are the UI libraries the runner process needs. They are intentionally
+# separate from the test venv: the runner imports typer/rich/textual but never
+# pytest, and the worker subprocess imports pytest but never rich/textual.
+#
+# Install into a dedicated runner venv, e.g.:
+#     python -m venv .runner-venv
+#     .runner-venv/bin/pip install -e tests/runner
+#
+# The *test* venv (pointed at by config.json -> "venv_python") is a separate
+# environment that must provide: pytest, pytest-asyncio, coverage, plus the
+# project's own runtime/test dependencies.
+
+[project]
+name = "test-runner"
+version = "0.1.0"
+description = "Interactive subprocess test runner with a live Rich dashboard."
+requires-python = ">=3.9"
+dependencies = [
+    "typer",    # CLI entrypoint (__main__.py)
+    "rich",     # live dashboard (run.py)
+    "textual",  # interactive tree picker (picker.py)
+]
+
+[tool.setuptools]
+packages = ["tests.runner"]

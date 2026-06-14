@@ -22,7 +22,7 @@ message, completed). That keeps the test fast (>200 iterations in
 seconds) and self-contained.
 
 Run:
-    cd backend && .venv/bin/python -m pytest tests/test_disconnect_resilience.py -v
+    cd backend && .venv/bin/python -m pytest tests/test_cases/service/test_disconnect_resilience.py -v
 """
 
 from __future__ import annotations

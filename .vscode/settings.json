@@ -7,5 +7,6 @@
     }
   },
   "terminal.integrated.defaultProfile.osx": "bash + venv",
-  "terminal.integrated.enablePersistentSessions": false
+  "terminal.integrated.enablePersistentSessions": false,
+  "terminal.integrated.fontFamily": "Hack Nerd Font"
 }

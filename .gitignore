@@ -40,6 +40,8 @@ backend/uv-bin/
 backend/apps/outputs/webapp_template_cache/
 # Backend Python venv (created by run.ps1 / backend/run.sh)
 backend/.venv/
+# Test runner UI venv (created by backend/tests/run.sh)
+backend/tests/.runner-venv/
 .account-factory
 openswarm-cloud
 .openswarm-cloud

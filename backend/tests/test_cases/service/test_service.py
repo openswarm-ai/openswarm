@@ -10,7 +10,7 @@ opaque dicts; the cloud determines what they are. Tests verify:
   - Legacy shims (submit, record, identify) route through sync
 
 Run:
-    cd backend && python -m pytest tests/test_service.py -v
+    cd backend && python -m pytest tests/test_cases/service/test_service.py -v
 """
 
 from __future__ import annotations
