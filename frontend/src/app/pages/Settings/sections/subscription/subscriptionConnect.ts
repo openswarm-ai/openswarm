@@ -8,11 +8,12 @@ interface ConnectCtx {
   setPollTimer: (v: any) => void;
   fetchStatus: (opts?: { preserveTransient?: boolean }) => Promise<any>;
   refreshPickerModels: () => void;
+  markConnected: (provider: string) => void;
 }
 
 // Device-code OAuth flow: popup + dual poller (device-code + status) + focus-listener safety net + 5min hard timeout.
 function runDeviceCodeFlow(ctx: ConnectCtx) {
-  const { providerId, data, setConnecting, setUserCode, setPollTimer, fetchStatus, refreshPickerModels } = ctx;
+  const { providerId, data, setConnecting, setUserCode, setPollTimer, fetchStatus, refreshPickerModels, markConnected } = ctx;
   const code = data.user_code || '';
   setUserCode(code);
   // Named window + features so Electron's setWindowOpenHandler spawns a BrowserWindow popup, not a webview tab.
@@ -31,6 +32,7 @@ function runDeviceCodeFlow(ctx: ConnectCtx) {
     setPollTimer(null);
     setConnecting(null);
     setUserCode('');
+    markConnected(providerId);
     fetchStatus();
     refreshPickerModels();
     // Auto-close popup 2s after success so the "Congratulations" page is briefly visible then closes.
@@ -131,7 +133,7 @@ function runDeviceCodeFlow(ctx: ConnectCtx) {
 
 // Authorization-code flow: external-browser or popup + status poller + postMessage/IPC relay + bounded timeout.
 function runAuthCodeFlow(ctx: ConnectCtx) {
-  const { providerId, data, setConnecting, setPollTimer, fetchStatus, refreshPickerModels } = ctx;
+  const { providerId, data, setConnecting, setPollTimer, fetchStatus, refreshPickerModels, markConnected } = ctx;
   // Gemini/Google block embedded browsers; backend sets use_external_browser and exchange happens server-side via /api/subscriptions/callback. Detect via status poller (no postMessage possible).
   const useExternal = !!data.use_external_browser;
   let popup: Window | null = null;
@@ -169,8 +171,9 @@ function runAuthCodeFlow(ctx: ConnectCtx) {
     clearInterval(statusPoller);
     setPollTimer(null);
     if (popup && !popup.closed) popup.close();
+    let succeeded = false;
     try {
-      await fetch(`${API_BASE}/agents/subscriptions/exchange`, {
+      const r = await fetch(`${API_BASE}/agents/subscriptions/exchange`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider: providerId, code,
@@ -178,9 +181,18 @@ function runAuthCodeFlow(ctx: ConnectCtx) {
           state: state || data.state,
         }),
       });
-    } catch {}
+      let body: any = null;
+      try { body = await r.json(); } catch {}
+      succeeded = r.ok && !!body?.success;
+      if (!succeeded) console.warn('[oauth] exchange failed', { providerId, status: r.status, body });
+    } catch (e) {
+      console.warn('[oauth] exchange network error', { providerId, error: String(e) });
+    }
+    // 9Router's /providers list lags /exchange by several seconds; an immediate fetchStatus()
+    // returns stale "not connected" data and overwrites the UI back to Connect. Mark optimistically;
+    // the 30s background poller in SubscriptionCards reconciles once 9Router catches up.
+    if (succeeded) markConnected(providerId);
     setConnecting(null);
-    fetchStatus();
     refreshPickerModels();
   };
 

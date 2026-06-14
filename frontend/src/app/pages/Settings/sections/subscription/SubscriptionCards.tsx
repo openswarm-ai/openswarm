@@ -8,6 +8,7 @@ import { fetchModels } from '@/shared/state/modelsSlice';
 import {
   fetchSubscriptionStatus,
   setSubscriptionStatus,
+  markSubscriptionConnected,
   selectSubscriptionConnections,
 } from '@/shared/state/subscriptionsSlice';
 import { API_BASE } from '@/shared/config';
@@ -36,6 +37,10 @@ const SubscriptionCards: React.FC = () => {
 
   // Refetch model picker after sub changes so newly-connected providers surface in the dropdown immediately.
   const refreshPickerModels = () => { dispatch(fetchModels()); };
+
+  const markConnected = useCallback((provider: string) => {
+    dispatch(markSubscriptionConnected({ provider }));
+  }, [dispatch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,10 +76,19 @@ const SubscriptionCards: React.FC = () => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: providerId }),
       });
-      if (!r.ok) { setConnecting(null); return; }
+      if (!r.ok) {
+        let text = '';
+        try { text = await r.text(); } catch {}
+        console.warn('[oauth] /connect failed', { providerId, status: r.status, body: text });
+        setConnecting(null);
+        return;
+      }
       const data = await r.json();
-      runConnectFlow({ providerId, data, setConnecting, setUserCode, setPollTimer, fetchStatus, refreshPickerModels });
-    } catch { setConnecting(null); }
+      runConnectFlow({ providerId, data, setConnecting, setUserCode, setPollTimer, fetchStatus, refreshPickerModels, markConnected });
+    } catch (e) {
+      console.warn('[oauth] /connect network error', { providerId, error: String(e) });
+      setConnecting(null);
+    }
   };
 
   const handleDisconnect = async (providerId: string) => {
