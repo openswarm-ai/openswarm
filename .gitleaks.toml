@@ -15,6 +15,9 @@ description = "Project allowlist for gitleaks"
 # still trip.
 paths = [
   '''frontend/src/app/pages/Settings/Settings\.tsx''',
+  # CDP-redaction test: its fixtures are deliberately fake `token=...` URLs it
+  # then asserts get redacted, so a full-history rescan keeps "finding" them.
+  '''electron/cdp-routes\.test\.js''',
   # Vendored Python venv — never our code.
   '''backend/\.venv/.*''',
   # Vendored MCP server bundles (esbuild output of upstream npm packages).
