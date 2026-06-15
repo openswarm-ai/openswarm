@@ -53,12 +53,17 @@ class NotePosition(BaseModel):
 
 
 class DashboardLayout(BaseModel):
-    # extra="allow" so any keys the FE sends (or legacy on-disk layouts
-    # carry) round-trip without Pydantic stripping them.
+    # Accept whatever the FE serialises (workflow_cards, configure_panels,
+    # workflows_hub etc). Pydantic was silently stripping these because
+    # they weren't declared, which made the dashboard re-render WITHOUT
+    # the workflow card the user just placed.
     model_config = ConfigDict(extra="allow")
     cards: dict[str, CardPosition] = Field(default_factory=dict)
     view_cards: dict[str, ViewCardPosition] = Field(default_factory=dict)
     browser_cards: dict[str, BrowserCardPosition] = Field(default_factory=dict)
+    workflow_cards: dict = Field(default_factory=dict)
+    configure_panels: dict = Field(default_factory=dict)
+    workflows_hub: Optional[dict] = None
     notes: dict[str, NotePosition] = Field(default_factory=dict)
     expanded_session_ids: list[str] = Field(default_factory=list)
 

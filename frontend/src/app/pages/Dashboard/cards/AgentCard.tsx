@@ -38,8 +38,32 @@ import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
 import { useOverlayScrollPassthrough } from '../hooks/interaction/useOverlayScrollPassthrough';
 import { useStreamingMessage } from '@/shared/state/streamingSlice';
 import { isCanvasInteractionActive, onCanvasInteractionEnd } from '@/shared/canvasInteractionState';
+import { openWorkflowCard, type Workflow } from '@/shared/state/workflowsSlice';
+import { addWorkflowCard, setWorkflowCardPosition, setWorkflowCardSize } from '@/shared/state/dashboardLayoutSlice';
+import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import { getAgentWorkTime, fmtSeconds } from '@/shared/agentWorkTime';
 import { friendlyStatusLabel } from '@/shared/statusLabel';
+
+/** Extract up to 3 substantive user-prompt steps to seed a workflow. */
+function extractStepsFromSession(session: { messages: Array<{ role: string; content: unknown; hidden?: boolean }> }): Array<{ id: string; text: string }> {
+  const out: Array<{ id: string; text: string }> = [];
+  for (const msg of session.messages || []) {
+    if (msg.role !== 'user' || msg.hidden) continue;
+    const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.map((b: any) => (typeof b === 'string' ? b : b?.text || '')).join(' ') : '');
+    const trimmed = text.trim();
+    if (trimmed.length < 6) continue;
+    out.push({ id: `step-${out.length + 1}-${Date.now().toString(36)}`, text: trimmed.slice(0, 400) });
+    if (out.length === 3) break;
+  }
+  if (out.length === 0 && session.messages?.length) {
+    const fallback = session.messages.find((m) => m.role === 'user');
+    if (fallback) {
+      const text = typeof fallback.content === 'string' ? fallback.content : '';
+      out.push({ id: `step-1-${Date.now().toString(36)}`, text: text.slice(0, 400) || 'Run the original task' });
+    }
+  }
+  return out;
+}
 
 const GoogleServiceIcon: React.FC<{ service: string; size?: number }> = ({ service, size = 16 }) => {
   if (service === 'gmail') {
@@ -226,6 +250,25 @@ const AgentCard: React.FC<Props> = ({
   const hasApiKey = !!useAppSelector((s) => s.settings.data.anthropic_api_key);
   const modelsByProvider = useAppSelector((s) => s.models.byProvider);
   const expandedSessionIds = useAppSelector((s) => s.agents.expandedSessionIds);
+  // Hide the "Convert to workflow" button when this chat is already
+  // entangled with a workflow (Image #44 note). Two cases:
+  //  (a) The session is one of a workflow's runner sessions, OR
+  //  (b) The session is the source the workflow was originally derived
+  //      from. Either way a fresh convert would just clone the workflow,
+  //      which is confusing identity collapse.
+  const workflowRunsMap = useAppSelector((s) => s.workflows.runs);
+  const workflowItems = useAppSelector((s) => s.workflows.items);
+  const isWorkflowRunnerSession = useMemo(() => {
+    for (const arr of Object.values(workflowRunsMap || {})) {
+      for (const r of arr || []) {
+        if (r.session_id === session.id) return true;
+      }
+    }
+    for (const wf of Object.values(workflowItems || {})) {
+      if (wf.source_session_id === session.id) return true;
+    }
+    return false;
+  }, [workflowRunsMap, workflowItems, session.id]);
   // Curated picker label with a tidy fallback for unknowns.
   const friendlyModelLabel = useMemo(() => {
     const value = session.model;
@@ -799,6 +842,67 @@ const AgentCard: React.FC<Props> = ({
             onPointerDown={(e) => e.stopPropagation()}
             sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, ml: 0.5 }}
           >
+            {(session.status === 'completed' || session.status === 'stopped') && session.messages.length >= 2 && !isWorkflowRunnerSession && (
+              <Tooltip title="Turn this chat into a reusable, schedulable workflow">
+                <Box
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const steps = extractStepsFromSession(session);
+                    if (steps.length === 0) return;
+                    const draft: Partial<Workflow> = {
+                      title: session.name || 'New workflow',
+                      description: '',
+                      steps,
+                      source_session_id: session.id,
+                      dashboard_id: session.dashboard_id || null,
+                      model: session.model,
+                      mode: session.mode,
+                      provider: session.provider,
+                    };
+                    const tempId = `draft-${session.id}`;
+                    // The OG chat card BECOMES the workflow card: capture
+                    // its position + size, remove the chat card, and drop
+                    // the workflow card in the same physical slot. The
+                    // chat session itself stays accessible via History.
+                    // Per Image #61 / #62: no tether arrow, no second
+                    // card alongside.
+                    // Capture this card's current position/size, drop the
+                    // workflow card in the same slot, then remove the
+                    // source chat card.
+                    dispatch(addWorkflowCard({
+                      workflowId: tempId,
+                      sourceSessionId: null,
+                      expandedSessionIds,
+                    }));
+                    dispatch(setWorkflowCardPosition({ workflowId: tempId, x: cardX, y: cardY }));
+                    dispatch(setWorkflowCardSize({ workflowId: tempId, width: cardWidth, height: cardHeight }));
+                    dispatch(removeCard(session.id));
+                    dispatch(openWorkflowCard({
+                      workflowId: tempId,
+                      sourceSessionId: null,
+                      view: 'preview',
+                      draft,
+                    }));
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  sx={{
+                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                    color: '#fff',
+                    bgcolor: c.accent.primary,
+                    border: `1px solid ${c.accent.primary}`,
+                    fontSize: '0.78rem', fontWeight: 700,
+                    px: 1.1, py: 0.5,
+                    borderRadius: `${c.radius.md}px`,
+                    cursor: 'pointer',
+                    '&:hover': { filter: 'brightness(1.05)' },
+                  }}
+                >
+                  <AutoAwesomeOutlinedIcon sx={{ fontSize: 14 }} />
+                  Convert to workflow
+                </Box>
+              </Tooltip>
+            )}
             <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
               <IconButton
                 size="small"

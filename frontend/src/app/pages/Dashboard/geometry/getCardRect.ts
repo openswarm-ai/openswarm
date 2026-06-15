@@ -23,6 +23,10 @@ export function getCardRect(id: string, type: CardType):
     const n = layoutState.notes[id];
     if (!n) return undefined;
     return { x: n.x, y: n.y, width: n.width, height: n.height };
+  } else if (type === 'workflow') {
+    const wc = layoutState.workflowCards[id];
+    if (!wc) return undefined;
+    return { x: wc.x, y: wc.y, width: wc.width, height: wc.height };
   }
   return undefined;
 }

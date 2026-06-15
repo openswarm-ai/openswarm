@@ -1,6 +1,7 @@
 import { useMemo, type RefObject } from 'react';
-import type { CardPosition, BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
-import { EXPANDED_CARD_MIN_H } from '@/shared/state/dashboardLayoutSlice';
+import type { CardPosition, BrowserCardPosition, WorkflowCardPosition, ConfigurePanelPosition } from '@/shared/state/dashboardLayoutSlice';
+import type { Workflow, OpenCard } from '@/shared/state/workflowsSlice';
+import { EXPANDED_CARD_MIN_H, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 
 const ELBOW_RADIUS = 16;
@@ -60,6 +61,10 @@ interface UseTethersArgs {
   glowingBrowserCards: Record<string, GlowingBrowserCard>;
   cards: Record<string, CardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
+  workflowCards: Record<string, WorkflowCardPosition>;
+  workflowItems: Record<string, Workflow>;
+  workflowOpenCards: Record<string, OpenCard>;
+  configurePanels: Record<string, ConfigurePanelPosition>;
   expandedSessionIds: string[];
   liveDragInfo: LiveDragInfo | null;
   measuredHeightsRef: RefObject<Record<string, number>>;
@@ -72,6 +77,10 @@ export function useTethers({
   glowingBrowserCards,
   cards,
   browserCards,
+  workflowCards,
+  workflowItems,
+  workflowOpenCards,
+  configurePanels,
   expandedSessionIds,
   liveDragInfo,
   measuredHeightsRef,
@@ -226,9 +235,199 @@ export function useTethers({
 
     const browserTethers = Array.from(glowTethers.values()).filter(Boolean) as Tether[];
 
-    return [...agentTethers, ...browserTethers];
+    // Workflow tethers reuse the browser-tether anchor/elbow math; skip deleted workflows to avoid dangling arrows.
+    const workflowTethers: Tether[] = [];
+    for (const wc of Object.values(workflowCards)) {
+      const sourceId = wc.source_session_id;
+      if (!sourceId) continue;
+      const src = cards[sourceId];
+      if (!src) continue;
+      // Layout entry can outlive its workflow when deleted from the hub.
+      const hasReal = wc.workflow_id in workflowItems;
+      const hasDraft = wc.workflow_id in workflowOpenCards;
+      if (!hasReal && !hasDraft) continue;
+      // "Make workflow" is a draft-time affordance; once saved (openCard leaves 'preview') the link retires.
+      const openCard = workflowOpenCards[wc.workflow_id];
+      if (openCard && openCard.view !== 'preview') continue;
+
+      let srcX = src.x, srcY = src.y;
+      let dstX = wc.x, dstY = wc.y;
+      if (liveDragInfo) {
+        if (liveDragInfo.cardId === sourceId) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
+        if (liveDragInfo.cardId === wc.workflow_id) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
+      }
+
+      const srcMeasured = measuredHeightsRef.current![sourceId];
+      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
+        ? Math.max(EXPANDED_CARD_MIN_H, src.height)
+        : src.height);
+
+      const srcCx = srcX + src.width / 2;
+      const dstCx = dstX + wc.width / 2;
+      const srcAnchors: Anchor[] = [
+        { x: srcX + src.width, y: srcY + srcH * 0.54, side: 'right' },
+        { x: srcX, y: srcY + srcH * 0.54, side: 'left' },
+        { x: srcCx, y: srcY, side: 'top' },
+        { x: srcCx, y: srcY + srcH, side: 'bottom' },
+      ];
+      const dstAnchors: Anchor[] = [
+        { x: dstX, y: dstY + wc.height * 0.54, side: 'left' },
+        { x: dstX + wc.width, y: dstY + wc.height * 0.54, side: 'right' },
+        { x: dstCx, y: dstY, side: 'top' },
+        { x: dstCx, y: dstY + wc.height, side: 'bottom' },
+      ];
+      let bestSrc = srcAnchors[0], bestDst = dstAnchors[0];
+      let bestDist = Infinity;
+      for (const sa of srcAnchors) {
+        for (const da of dstAnchors) {
+          const d = Math.hypot(sa.x - da.x, sa.y - da.y);
+          if (d < bestDist) { bestDist = d; bestSrc = sa; bestDst = da; }
+        }
+      }
+      const x1 = bestSrc.x, y1 = bestSrc.y;
+      const x2 = bestDst.x, y2 = bestDst.y;
+      const isVertical = (bestSrc.side === 'top' || bestSrc.side === 'bottom')
+        && (bestDst.side === 'top' || bestDst.side === 'bottom');
+      let pathD: string;
+      if (isVertical) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const midY = y1 + dy / 2;
+        const r = (Math.abs(dx) < 1 || Math.abs(dy) < ELBOW_RADIUS * 2)
+          ? 0
+          : Math.min(ELBOW_RADIUS, Math.abs(dx) / 2, Math.abs(dy) / 4);
+        const sx = dx >= 0 ? 1 : -1;
+        const sy = dy >= 0 ? 1 : -1;
+        pathD = [
+          `M ${x1},${y1}`,
+          `V ${midY - sy * r}`,
+          `Q ${x1},${midY} ${x1 + sx * r},${midY}`,
+          `H ${x2 - sx * r}`,
+          `Q ${x2},${midY} ${x2},${midY + sy * r}`,
+          `V ${y2}`,
+        ].join(' ');
+      } else {
+        pathD = elbowPath(x1, y1, x2, y2);
+      }
+      const midX = x1 + (x2 - x1) / 2;
+      const midY = y1 + (y2 - y1) / 2;
+      const labelX = isVertical ? midX : midX + (x2 - midX) * 0.15;
+      const labelY = isVertical ? midY + (y2 - midY) * 0.15 : y2;
+      workflowTethers.push({
+        key: `workflow-${wc.workflow_id}`,
+        path: pathD,
+        labelX,
+        labelY,
+        label: 'Make workflow',
+        fading: false,
+      });
+    }
+
+    // Sidecar tethers: workflow card to its sibling agent session (View Agent / Watch Live / Test Agent).
+    for (const wc of Object.values(workflowCards)) {
+      const openCard = workflowOpenCards[wc.workflow_id];
+      if (!openCard?.sidecarSessionId || !openCard.sidecarKind) continue;
+      const sidecarId = openCard.sidecarSessionId;
+      const sidecar = cards[sidecarId];
+      if (!sidecar) continue;
+      let srcX = wc.x, srcY = wc.y;
+      let dstX = sidecar.x, dstY = sidecar.y;
+      if (liveDragInfo) {
+        if (liveDragInfo.cardId === wc.workflow_id) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
+        if (liveDragInfo.cardId === sidecarId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
+      }
+      const dstMeasured = measuredHeightsRef.current![sidecarId];
+      const dstH = dstMeasured ?? (expandedSessionIds.includes(sidecarId)
+        ? Math.max(EXPANDED_CARD_MIN_H, sidecar.height)
+        : sidecar.height);
+      const srcCx = srcX + wc.width / 2;
+      const dstCx = dstX + sidecar.width / 2;
+      const srcAnchors: Anchor[] = [
+        { x: srcX + wc.width, y: srcY + wc.height * 0.54, side: 'right' },
+        { x: srcX, y: srcY + wc.height * 0.54, side: 'left' },
+        { x: srcCx, y: srcY, side: 'top' },
+        { x: srcCx, y: srcY + wc.height, side: 'bottom' },
+      ];
+      const dstAnchors: Anchor[] = [
+        { x: dstX, y: dstY + dstH * 0.54, side: 'left' },
+        { x: dstX + sidecar.width, y: dstY + dstH * 0.54, side: 'right' },
+        { x: dstCx, y: dstY, side: 'top' },
+        { x: dstCx, y: dstY + dstH, side: 'bottom' },
+      ];
+      let bestSrc = srcAnchors[0], bestDst = dstAnchors[0];
+      let bestDist = Infinity;
+      for (const sa of srcAnchors) {
+        for (const da of dstAnchors) {
+          const d = Math.hypot(sa.x - da.x, sa.y - da.y);
+          if (d < bestDist) { bestDist = d; bestSrc = sa; bestDst = da; }
+        }
+      }
+      const x1 = bestSrc.x, y1 = bestSrc.y;
+      const x2 = bestDst.x, y2 = bestDst.y;
+      const pathD = elbowPath(x1, y1, x2, y2);
+      const midX = x1 + (x2 - x1) / 2;
+      const midY = y1 + (y2 - y1) / 2;
+      const sidecarLabel = openCard.sidecarKind === 'testing' ? 'Testing' : 'Watching';
+      workflowTethers.push({
+        key: `sidecar-${wc.workflow_id}`,
+        path: pathD,
+        labelX: midX,
+        labelY: midY,
+        label: sidecarLabel,
+        fading: false,
+      });
+    }
+
+    // Configure-panel tethers: anchor each open configure panel to its workflow card.
+    const configureTethers: Tether[] = [];
+    for (const p of Object.values(configurePanels)) {
+      const wc = workflowCards[p.workflow_id];
+      if (!wc) continue;
+      let srcX = wc.x, srcY = wc.y;
+      let dstX = p.x, dstY = p.y;
+      if (liveDragInfo) {
+        if (liveDragInfo.cardId === p.workflow_id) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
+      }
+      const srcCx = srcX + wc.width / 2;
+      const dstCx = dstX + p.width / 2;
+      const srcAnchors: Anchor[] = [
+        { x: srcX + wc.width, y: srcY + wc.height * 0.5, side: 'right' },
+        { x: srcX, y: srcY + wc.height * 0.5, side: 'left' },
+        { x: srcCx, y: srcY, side: 'top' },
+        { x: srcCx, y: srcY + wc.height, side: 'bottom' },
+      ];
+      const dstAnchors: Anchor[] = [
+        { x: dstX, y: dstY + p.height * 0.5, side: 'left' },
+        { x: dstX + p.width, y: dstY + p.height * 0.5, side: 'right' },
+        { x: dstCx, y: dstY, side: 'top' },
+        { x: dstCx, y: dstY + p.height, side: 'bottom' },
+      ];
+      let bestSrc = srcAnchors[0], bestDst = dstAnchors[0];
+      let bestDist = Infinity;
+      for (const sa of srcAnchors) {
+        for (const da of dstAnchors) {
+          const d = Math.hypot(sa.x - da.x, sa.y - da.y);
+          if (d < bestDist) { bestDist = d; bestSrc = sa; bestDst = da; }
+        }
+      }
+      const x1 = bestSrc.x, y1 = bestSrc.y;
+      const x2 = bestDst.x, y2 = bestDst.y;
+      const pathD = elbowPath(x1, y1, x2, y2);
+      const midX = x1 + (x2 - x1) / 2;
+      const midY = y1 + (y2 - y1) / 2;
+      configureTethers.push({
+        key: `configure-${p.workflow_id}`,
+        path: pathD,
+        labelX: midX,
+        labelY: midY,
+        label: 'Configure',
+        fading: false,
+      });
+    }
+
+    return [...agentTethers, ...browserTethers, ...workflowTethers, ...configureTethers];
   // measuredHeightsTick re-runs the memo once ResizeObserver reports a new
   // height after a collapse (the ref read is invisible to the dep checker).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, configurePanels, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
 }

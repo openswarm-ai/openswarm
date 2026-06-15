@@ -7,7 +7,7 @@ import Tooltip, { tooltipClasses } from '@mui/material/Tooltip';
 import Icon from '@mui/material/Icon';
 import { styled } from '@mui/material/styles';
 import AddRounded from '@mui/icons-material/AddRounded';
-import HistoryRounded from '@mui/icons-material/HistoryRounded';
+import CalendarMonthRounded from '@mui/icons-material/CalendarMonthRounded';
 
 import ChatBubbleTeardrop from './ChatBubbleTeardrop';
 
@@ -27,6 +27,9 @@ import SearchIcon from '@mui/icons-material/Search';
 import { motion } from 'framer-motion';
 import ChatInput from '@/app/pages/AgentChat/ChatInput';
 import type { ContextPath } from '@/app/components/editor/DirectoryBrowser';
+import SchedulePopover from '@/app/pages/Workflows/SchedulePopover';
+import { openWorkflowCard } from '@/shared/state/workflowsSlice';
+import { addWorkflowCard, openWorkflowsHub } from '@/shared/state/dashboardLayoutSlice';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -179,6 +182,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const [viewSearch, setViewSearch] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
     const [historyQuery, setHistoryQuery] = useState('');
+    const [popoverMode, setPopoverMode] = useState<'search' | 'schedule'>('search');
     const shortcut = useAppSelector((s) => s.settings.data.new_agent_shortcut);
     const outputs = useAppSelector((s) => s.outputs.items);
     const historySearch = useAppSelector((s) => s.agents.historySearch);
@@ -255,20 +259,19 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       setViewSearch('');
     }, [viewPickerOpen, dispatch]);
 
+    // Opens the schedule CALENDAR (scheduled workflows on a calendar). Chat
+    // search/resume lives in the global search palette (the OpenSwarm center
+    // at the top), not here, so this no longer dispatches a history search.
     const handleOpenHistory = useCallback(() => {
       if (historyOpen) {
         setHistoryOpen(false);
-        setHistoryQuery('');
-        dispatch(clearHistorySearch());
         return;
       }
       setViewPickerOpen(false);
       setViewSearch('');
+      setPopoverMode('schedule');
       setHistoryOpen(true);
-      setHistoryQuery('');
-      dispatch(clearHistorySearch());
-      dispatch(searchHistory({ q: '', limit: HISTORY_PAGE_SIZE, offset: 0, dashboardId }));
-    }, [historyOpen, dispatch, dashboardId]);
+    }, [historyOpen]);
 
     const handleHistorySelect = useCallback((sessionId: string) => {
       onHistoryResume(sessionId);
@@ -411,6 +414,65 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
 
     return (
       <>
+      {(inputOpen || historyOpen) && (
+        // Image #54: paired mode pills above the composer/popover.
+        // The two states are mutually exclusive: opening one closes the
+        // other so the body underneath only renders one thing at a time.
+        <Box sx={{ display: 'flex', gap: 0.5, mb: 0.75, pl: 0.25 }}>
+          <Box
+            onClick={() => {
+              if (historyOpen) {
+                handleCloseHistory();
+                onNewAgent();
+              }
+              // If already in inputOpen, this is a no-op (we're already
+              // in new chat). The visible active styling tells the user
+              // that. Clicking again does nothing intentionally.
+            }}
+            role="button"
+            sx={{
+              display: 'inline-flex', alignItems: 'center', gap: 0.3,
+              fontSize: '0.74rem', fontWeight: 600,
+              color: c.text.primary,
+              bgcolor: c.bg.surface,
+              border: `1px solid ${inputOpen && !historyOpen ? c.border.medium : c.border.subtle}`,
+              boxShadow: inputOpen && !historyOpen ? c.shadow.sm : 'none',
+              px: 0.85, py: 0.3, borderRadius: 999,
+              cursor: historyOpen ? 'pointer' : 'default',
+              '&:hover': historyOpen ? { bgcolor: c.bg.elevated } : {},
+            }}>
+            <AddRounded sx={{ fontSize: 12 }} />
+            New Chat
+          </Box>
+          <Box
+            onClick={() => {
+              // Schedule is a destination, not a toggle: clicking it always
+              // lands on (and stays on) the calendar. It used to call
+              // handleCloseHistory when already open, which read as "Schedule
+              // does nothing" because it closed the calendar you were viewing.
+              // Close the composer first; inputOpen takes precedence in the
+              // render branch below so the popover would hide behind it.
+              if (inputOpen) onCancel();
+              setPopoverMode('schedule');
+              if (!historyOpen) setHistoryOpen(true);
+            }}
+            role="button"
+            sx={{
+              display: 'inline-flex', alignItems: 'center', gap: 0.3,
+              fontSize: '0.74rem', fontWeight: 600,
+              color: historyOpen ? c.text.primary : c.text.secondary,
+              bgcolor: c.bg.surface,
+              border: `1px solid ${historyOpen ? c.border.medium : c.border.subtle}`,
+              boxShadow: historyOpen ? c.shadow.sm : 'none',
+              px: 0.85, py: 0.3, borderRadius: 999,
+              cursor: 'pointer',
+              '&:hover': { bgcolor: c.bg.elevated },
+            }}>
+            <CalendarMonthRounded sx={{ fontSize: 12 }} />
+            Schedule
+          </Box>
+        </Box>
+      )}
       <MotionBox
         ref={containerRef}
         layout
@@ -426,11 +488,15 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           padding: isExpanded ? '6px' : '5px',
           userSelect: 'none' as const,
           overflow: inputOpen || newAgentBounce || historyOpen ? 'visible' : 'hidden',
-          // historyOpen: width owned by the inline history list; leave undefined so framer-motion measures intrinsic size.
+          // historyOpen: width owned by SchedulePopover; leave undefined so framer-motion measures intrinsic size.
           width: viewPickerOpen ? 580 : historyOpen ? undefined : isExpanded ? 540 : undefined,
         }}
       >
-        {inputOpen ? (
+        {inputOpen && !historyOpen ? (
+          // historyOpen wins over the composer: clicking Schedule closes the
+          // composer via onCancel(), but that's a parent-state update that
+          // lands a render late, so without this guard the composer kept
+          // covering the calendar (the "Schedule does nothing" bug).
           // data-onboarding-scope="dock" makes AC's per-agent resolver prefer this dock chat input over existing agent cards.
           <div
             data-onboarding-scope="dock"
@@ -451,57 +517,34 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
             />
           </div>
         ) : historyOpen ? (
-          // Past-chat search list. Fixed-size bordered surface (matches the
-          // toolbar popover footprint) with a search input + scrollable
-          // results; clicking a row resumes that chat.
-          <Box sx={{ display: 'flex', flexDirection: 'column', width: 620, maxWidth: 620, flexShrink: 0 }}>
-            <Box sx={{
-              width: '100%',
-              height: 420,
-              bgcolor: c.bg.surface,
-              border: `1px solid ${c.border.subtle}`,
-              borderRadius: `${c.radius.lg}px`,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1, flexShrink: 0 }}>
-                <SearchIcon sx={{ fontSize: 18, color: c.text.muted }} />
-                <InputBase
-                  inputRef={historyInputRef}
-                  value={historyQuery}
-                  onChange={(e) => setHistoryQuery(e.target.value)}
-                  placeholder="Search past chats..."
-                  sx={{ flex: 1, fontSize: '0.85rem', color: c.text.primary, fontFamily: c.font.sans, '& input::placeholder': { color: c.text.ghost, opacity: 1 } }}
-                />
-              </Box>
-              <Box
-                ref={historyListRef}
-                onScroll={handleHistoryScroll}
-                sx={{ flex: 1, overflowY: 'auto', borderTop: `1px solid ${c.border.subtle}` }}
-              >
-                {historySearch.results.length === 0 && !historySearch.loading && (
-                  <Typography sx={{ px: 1.5, py: 2.5, fontSize: '0.82rem', color: c.text.muted, textAlign: 'center' }}>
-                    {historyQuery ? 'No matching chats' : 'No chat history yet'}
-                  </Typography>
-                )}
-                {historySearch.results.map((entry) => (
-                  <Box
-                    key={entry.id}
-                    onClick={() => handleHistorySelect(entry.id)}
-                    sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.9, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}
-                  >
-                    <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {entry.name}
-                    </Typography>
-                    <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                      {formatRelativeTime(entry.closed_at)}
-                    </Typography>
-                  </Box>
-                ))}
-              </Box>
-            </Box>
-          </Box>
+          <div style={{ width: '100%' }}>
+            <SchedulePopover
+              mode={popoverMode}
+              onModeChange={setPopoverMode}
+              hideTopChrome
+              historyResults={historySearch.results.map((e) => ({ id: e.id, name: e.name, closed_at: e.closed_at }))}
+              historyLoading={historySearch.loading}
+              historyQuery={historyQuery}
+              onHistoryQueryChange={setHistoryQuery}
+              onHistorySelect={handleHistorySelect}
+              onNewChat={() => { handleCloseHistory(); onNewAgent(); }}
+              onWorkflowSelect={(wid) => {
+                dispatch(addWorkflowCard({ workflowId: wid }));
+                dispatch(openWorkflowCard({
+                  workflowId: wid,
+                  view: 'saved',
+                }));
+                handleCloseHistory();
+              }}
+              onExpand={() => {
+                // Singleton per dashboard, second Expand brings the existing card forward.
+                dispatch(openWorkflowsHub({ expandedSessionIds: [] }));
+                handleCloseHistory();
+              }}
+              historyScrollRef={historyListRef as React.RefObject<HTMLDivElement>}
+              onHistoryScroll={handleHistoryScroll}
+            />
+          </div>
         ) : viewPickerOpen ? (
           <div style={{ width: '100%' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1 }}>

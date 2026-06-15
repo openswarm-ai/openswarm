@@ -4,6 +4,9 @@ import AgentCard from '../cards/AgentCard';
 import DashboardViewCard from '../cards/DashboardViewCard';
 import BrowserCard from '../cards/BrowserCard';
 import NoteCard from '../cards/NoteCard';
+import WorkflowCard from '@/app/pages/Workflows/WorkflowCard';
+import WorkflowsHubCard from '@/app/pages/Workflows/WorkflowsHubCard';
+import ConfigurePanelCard from '@/app/pages/Workflows/ConfigurePanelCard';
 import {
   EXPANDED_CARD_MIN_H,
   DEFAULT_CARD_W,
@@ -12,6 +15,9 @@ import {
   type ViewCardPosition,
   type BrowserCardPosition,
   type NotePosition,
+  type WorkflowCardPosition,
+  type WorkflowsHubPosition,
+  type ConfigurePanelPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import type { Output } from '@/shared/state/outputsSlice';
 import type { CardType, useDashboardSelection } from '../hooks/state/useDashboardSelection';
@@ -26,6 +32,9 @@ interface DashboardCardLayerProps {
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
   notes: Record<string, NotePosition>;
+  workflowCards: Record<string, WorkflowCardPosition>;
+  workflowsHub: WorkflowsHubPosition | null;
+  configurePanels: Record<string, ConfigurePanelPosition>;
   outputs: Record<string, Output>;
   glowingAgentCards: Record<string, GlowingAgentCard>;
   expandedSessionIds: string[];
@@ -59,6 +68,9 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
   viewCards,
   browserCards,
   notes,
+  workflowCards,
+  workflowsHub,
+  configurePanels,
   outputs,
   glowingAgentCards,
   expandedSessionIds,
@@ -249,6 +261,48 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
           onDragMove={onDragMove}
           onDragEnd={onDragEnd}
           onBringToFront={onBringToFront}
+        />
+      ))}
+      {workflowsHub && (
+        <WorkflowsHubCard
+          cardX={workflowsHub.x}
+          cardY={workflowsHub.y}
+          cardWidth={workflowsHub.width}
+          cardHeight={workflowsHub.height}
+          cardZOrder={workflowsHub.zOrder ?? 0}
+          zoom={zoom}
+          panX={panX}
+          panY={panY}
+        />
+      )}
+      {Object.values(workflowCards).map((wc) => (
+        <WorkflowCard
+          key={`workflow-${wc.workflow_id}`}
+          workflowId={wc.workflow_id}
+          cardX={wc.x}
+          cardY={wc.y}
+          cardWidth={wc.width}
+          cardHeight={wc.height}
+          cardZOrder={wc.zOrder ?? 0}
+          zoom={zoom}
+          panX={panX}
+          panY={panY}
+          isSelected={selection.isSelected(wc.workflow_id)}
+          isHighlighted={highlightedCardId === wc.workflow_id}
+          multiDragDelta={multiDragDelta}
+          onCardSelect={onCardSelect}
+          onDragStart={onDragStart}
+          onDragMove={onDragMove}
+          onDragEnd={onDragEnd}
+          onDoubleClick={onDoubleClick}
+          onBringToFront={onBringToFront}
+        />
+      ))}
+      {Object.values(configurePanels).map((p) => (
+        <ConfigurePanelCard
+          key={`configure-${p.workflow_id}`}
+          panel={p}
+          zOrder={1}
         />
       ))}
       {/* Marquee selection rectangle */}

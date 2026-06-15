@@ -15,10 +15,13 @@ import {
   resetLayout,
   removeViewCard,
   clearPendingFocusBrowserId,
+  clearPendingFocusWorkflowId,
+  clearPendingFocusWorkflowsHub,
   type ViewCardPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import { fetchOutputs, type Output } from '@/shared/state/outputsSlice';
 import { generateDashboardName } from '@/shared/state/dashboardsSlice';
+import { fetchWorkflows } from '@/shared/state/workflowsSlice';
 import { dashboardWs } from '@/shared/ws/WebSocketManager';
 import { initBrowserCommandHandler } from '@/shared/browserCommandHandler';
 import { clearPendingBrowserUrl, clearPendingFocusAgentId } from '@/shared/state/tempStateSlice';
@@ -60,6 +63,8 @@ export function useDashboardLifecycle({
   const pendingBrowserUrl = useAppSelector((state) => state.tempState.pendingBrowserUrl);
   const pendingFocusAgentId = useAppSelector((state) => state.tempState.pendingFocusAgentId);
   const pendingFocusBrowserId = useAppSelector((state) => state.dashboardLayout.pendingFocusBrowserId);
+  const pendingFocusWorkflowId = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowId);
+  const pendingFocusWorkflowsHub = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowsHub);
 
   // Track dashboard engagement time
   useEffect(() => {
@@ -100,11 +105,13 @@ export function useDashboardLifecycle({
       ? (window as any).requestIdleCallback(() => {
           dispatch(fetchHistory({ dashboardId }));
           dispatch(fetchOutputs());
+          dispatch(fetchWorkflows(dashboardId));
           dashboardWs.connect();
         }, { timeout: 2000 })
       : window.setTimeout(() => {
           dispatch(fetchHistory({ dashboardId }));
           dispatch(fetchOutputs());
+          dispatch(fetchWorkflows(dashboardId));
           dashboardWs.connect();
         }, 200);
 
@@ -221,6 +228,44 @@ export function useDashboardLifecycle({
       }
     }, 200);
   }, [isActive, pendingFocusBrowserId, layoutInitialized, dispatch, canvasActions, handleHighlightCard]);
+
+  // Same pan/highlight choreography for newly-spawned workflow cards.
+  useEffect(() => {
+    if (!isActive) return;
+    if (!pendingFocusWorkflowId || !layoutInitialized) return;
+    const workflowId = pendingFocusWorkflowId;
+    dispatch(clearPendingFocusWorkflowId());
+    setTimeout(() => {
+      const card = store.getState().dashboardLayout.workflowCards[workflowId];
+      if (card) {
+        canvasActions.fitToCards(
+          [{ x: card.x, y: card.y, width: card.width, height: card.height }],
+          1.15,
+          true,
+        );
+        handleHighlightCard(workflowId);
+      }
+    }, 200);
+  }, [isActive, pendingFocusWorkflowId, layoutInitialized, dispatch, canvasActions, handleHighlightCard]);
+
+  // Pan/zoom to Workflows Hub on Expand; chained rAFs ensure fit runs after the hub div lands at its new coords.
+  useEffect(() => {
+    if (!isActive) return;
+    if (!pendingFocusWorkflowsHub || !layoutInitialized) return;
+    dispatch(clearPendingFocusWorkflowsHub());
+    const fit = () => {
+      const hub = store.getState().dashboardLayout.workflowsHub;
+      if (!hub) return;
+      canvasActions.fitToCards(
+        [{ x: hub.x, y: hub.y, width: hub.width, height: hub.height }],
+        1.1,
+        true,
+      );
+    };
+    requestAnimationFrame(() => requestAnimationFrame(fit));
+    const fallback = setTimeout(fit, 300);
+    return () => clearTimeout(fallback);
+  }, [isActive, pendingFocusWorkflowsHub, layoutInitialized, dispatch, canvasActions]);
 
   useEffect(() => {
     if (!layoutInitialized || restoredExpandedRef.current) return;

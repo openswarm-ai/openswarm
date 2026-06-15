@@ -31,6 +31,8 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
   const isElementSelectMode = elementSelectionCtx?.selectMode ?? false;
   const {
     dashboardName, sessions, expandedSessionIds, cards, viewCards, browserCards,
+    workflowCards, workflowItems, workflowOpenCards, configurePanels, workflowsHub,
+    pendingFocusWorkflowId, pendingFocusWorkflowsHub,
     notes, pendingFocusNoteId, layoutInitialized, persistedExpandedSessionIds,
     zoomSensitivity, newAgentShortcut, browserHomepage, expandNewChats,
     autoRevealSubAgents, outputs, outputsLoaded, glowingAgentCards, glowingBrowserCards,
@@ -41,8 +43,8 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
   const sessionList = useMemo(() => Object.values(sessions), [sessions]);
 
   const contentBounds = useMemo(
-    () => computeContentBounds(cards, viewCards, browserCards),
-    [cards, viewCards, browserCards],
+    () => computeContentBounds(cards, viewCards, browserCards, workflowCards, workflowsHub),
+    [cards, viewCards, browserCards, workflowCards, workflowsHub],
   );
 
   const canvas = useCanvasControls(zoomSensitivity, contentBounds, isActive);
@@ -52,6 +54,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     viewCards,
     browserCards,
     notes,
+    workflowCards,
   );
   const {
     toolbarRef, toolbarOpen, setToolbarOpen, searchPaletteOpen, setSearchPaletteOpen,
@@ -158,6 +161,9 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     cards,
     viewCards,
     browserCards,
+    workflowCards,
+    configurePanels,
+    workflowsHub,
     notes,
     expandedSessionIds,
     captureNow,
@@ -206,6 +212,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     cards,
     viewCards,
     browserCards,
+    workflowCards,
     zoom: canvas.zoom,
     isActive,
     focusedCardId,
@@ -271,6 +278,10 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     glowingBrowserCards,
     cards,
     browserCards,
+    workflowCards,
+    workflowItems,
+    workflowOpenCards,
+    configurePanels,
     expandedSessionIds,
     liveDragInfo,
     measuredHeightsRef,
@@ -281,6 +292,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
   return {
     c, dashboardId, dashboardName, canvas, selection, sessions, sessionList,
     cards, viewCards, browserCards, notes, outputs, glowingAgentCards,
+    workflowCards, workflowsHub, configurePanels,
     expandedSessionIds, tethers, highlightedCardId, autoFocusSessionId,
     focusedCardId, pendingFocusNoteId, multiDragDelta, shakeDirection,
     neighborDirections, toolbarOpen, searchPaletteOpen, newAgentBounce,
