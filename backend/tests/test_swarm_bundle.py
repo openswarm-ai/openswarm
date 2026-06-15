@@ -280,6 +280,40 @@ def test_commit_rolls_back_created_on_failure(skill_store, tmp_path):
     assert not (skill_store / "rollme.md").exists()
 
 
+def test_manifest_duplicate_ids_rejected():
+    # Two entities sharing a bundle_id silently collapse in the topo/summary
+    # dicts, dropping one; reject up front. (The manifest is outside the checksum.)
+    from backend.apps.swarm.closure import validate_manifest
+    from backend.apps.swarm.models import BundlePreview, EntityRef, Manifest
+    ref = EntityRef(type=EntityType.skill, bundle_id="dup", name="A", path="entities/dup")
+    m = Manifest(bundle_id="b", root=ref, entities=[ref, ref],
+                 preview=BundlePreview(root_type=EntityType.skill, root_name="A"))
+    with pytest.raises(BundleError):
+        validate_manifest(m)
+
+
+def test_manifest_root_not_in_entities_rejected():
+    from backend.apps.swarm.closure import validate_manifest
+    from backend.apps.swarm.models import BundlePreview, EntityRef, Manifest
+    root = EntityRef(type=EntityType.skill, bundle_id="root", name="A", path="entities/root")
+    other = EntityRef(type=EntityType.skill, bundle_id="other", name="B", path="entities/other")
+    m = Manifest(bundle_id="b", root=root, entities=[other],
+                 preview=BundlePreview(root_type=EntityType.skill, root_name="A"))
+    with pytest.raises(BundleError):
+        validate_manifest(m)
+
+
+def test_manifest_edge_to_unknown_entity_rejected():
+    from backend.apps.swarm.closure import validate_manifest
+    from backend.apps.swarm.models import BundlePreview, DependencyEdge, EntityRef, Manifest
+    ref = EntityRef(type=EntityType.dashboard, bundle_id="d", name="D", path="entities/d")
+    m = Manifest(bundle_id="b", root=ref, entities=[ref],
+                 edges=[DependencyEdge(**{"from": "d", "to": "ghost"})],
+                 preview=BundlePreview(root_type=EntityType.dashboard, root_name="D"))
+    with pytest.raises(BundleError):
+        validate_manifest(m)
+
+
 def _zip_with(name, data=b"x"):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:

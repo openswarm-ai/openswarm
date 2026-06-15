@@ -170,6 +170,26 @@ def swarm_filename(name: str) -> str:
 
 # ---------- import: staging ----------
 
+def validate_manifest(manifest: Manifest) -> None:
+    """Structural integrity of the untrusted part of a .swarm. The checksum
+    covers entity payloads + files but NOT the manifest itself, so an attacker
+    can rewrite root/edges/paths freely; catch the breakages that would import
+    silently wrong (a root pointing nowhere, a duplicate id that drops an
+    entity, an edge or path that doesn't resolve inside the bundle)."""
+    seen: set[str] = set()
+    for e in manifest.entities:
+        if e.bundle_id in seen:
+            raise BundleError("bundle manifest has duplicate entity ids")
+        seen.add(e.bundle_id)
+        if not e.path.startswith("entities/") or ".." in e.path.split("/"):
+            raise BundleError("bundle manifest has an out-of-tree entity path")
+    if manifest.root.bundle_id not in seen:
+        raise BundleError("bundle manifest root is not one of its entities")
+    for edge in manifest.edges:
+        if edge.from_ not in seen or edge.to not in seen:
+            raise BundleError("bundle manifest has an edge to an unknown entity")
+
+
 def stage_upload(raw: bytes, filename: str) -> tuple[str, Manifest, list[str]]:
     warnings: list[str] = []
     if is_zip(raw):
@@ -179,6 +199,7 @@ def stage_upload(raw: bytes, filename: str) -> tuple[str, Manifest, list[str]]:
                 raw_manifest = read_manifest(sandbox)
                 verify_checksum(sandbox, raw_manifest)
                 manifest = Manifest(**raw_manifest)
+                validate_manifest(manifest)
             except BundleError:
                 shutil.rmtree(sandbox, ignore_errors=True)
                 raise
