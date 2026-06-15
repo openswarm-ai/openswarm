@@ -244,6 +244,13 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     if entry.get("route") == "cc":
         return entry.get("router_model_id", entry.get("model_id", short_name))
     if entry.get("route") == "api":
+        # OpenAI own-key still rides 9Router (the cp-openai node fixes max_tokens
+        # + translates Anthropic->OpenAI), so it MUST keep its cp-openai/ routing
+        # prefix or 9Router has no node to dispatch to. Anthropic own-key goes
+        # straight to api.anthropic.com and Gemini own-key via the local proxy,
+        # both on the bare id.
+        if entry.get("api") == "openai":
+            return entry.get("router_model_id", entry.get("model_id", short_name))
         return entry.get("model_id", short_name)
     if entry.get("route") == "openrouter":
         return entry.get("router_model_id", short_name)

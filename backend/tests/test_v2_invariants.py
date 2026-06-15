@@ -479,6 +479,28 @@ async def test_resolve_aux_model_openrouter_priority_after_subs():
         assert model_id == "cx/gpt-5.4-mini", f"got {model_id}"
 
 
+def test_resolve_sdk_openai_own_key_keeps_cp_openai_prefix():
+    """OpenAI own-key dispatch points the SDK at 9Router, which routes by
+    prefix to our cp-openai passthrough node; handing it the bare `gpt-5.5`
+    matched no node and silently dropped every request before it reached
+    OpenAI (0 requests on the dashboard). The resolver must keep the
+    cp-openai/ prefix for the openai route while Anthropic/Gemini own-key
+    stay on the bare id (they go direct / via the local proxy)."""
+    from backend.apps.agents.providers.registry import resolve_model_id_for_sdk
+    from backend.apps.settings.models import AppSettings
+    s = AppSettings()
+    s.openai_api_key = "sk-test"
+    for v, expected in (
+        ("gpt-5.5-api", "cp-openai/gpt-5.5"),
+        ("gpt-5.4-api", "cp-openai/gpt-5.4"),
+        ("gpt-5.4-mini-api", "cp-openai/gpt-5.4-mini"),
+    ):
+        assert resolve_model_id_for_sdk(v, s) == expected, f"{v} -> {resolve_model_id_for_sdk(v, s)}"
+    # Non-OpenAI own-key lanes must NOT gain a 9Router prefix.
+    assert resolve_model_id_for_sdk("gemini-3.5-flash-api", s) == "gemini-3.5-flash"
+    assert resolve_model_id_for_sdk("opus-4-8-api", s) == "claude-opus-4-8"
+
+
 # ===========================================================================
 # Group E, 9Router-streamed 401 detection
 # ===========================================================================
