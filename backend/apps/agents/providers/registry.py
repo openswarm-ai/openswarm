@@ -236,6 +236,26 @@ def get_api_type(short_name: str) -> str:
     return (entry or {}).get("api", "anthropic")
 
 
+def _antigravity_connected() -> bool:
+    """True if a live Antigravity OAuth lane exists in 9Router. Synchronous
+    probe (this resolver is sync) with a tight timeout; any hiccup reads as
+    'no' so a slow/absent 9Router never blocks model resolution for long."""
+    try:
+        import httpx as _httpx
+        from backend.apps.nine_router.process import cli_auth_headers
+        r = _httpx.get("http://localhost:20128/api/providers", timeout=2.0, headers=cli_auth_headers())
+        if r.status_code != 200:
+            return False
+        data = r.json()
+        conns = data.get("connections", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+        return any(
+            isinstance(c, dict) and c.get("provider") == "antigravity" and c.get("isActive")
+            for c in conns
+        )
+    except Exception:
+        return False
+
+
 def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     """Short model name → id string for ClaudeAgentOptions."""
     entry = _find_builtin_model(short_name)
@@ -263,18 +283,18 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
             return entry.get("model_id", short_name)
         if getattr(settings, "anthropic_api_key", None):
             return entry.get("model_id", short_name)
-    # Gemini lane order: AI Studio apikey, Antigravity OAuth, Gemini CLI.
-    # AG bypasses the thoughtSignature validator that breaks multi-step tool
-    # turns on gc/. Without it, every Gemini turn 400s after the first tool
-    # call with "Thought signature is not valid".
+    # Gemini lane order: Antigravity OAuth (for the models it serves), then AI
+    # Studio apikey, then Gemini CLI. AG bypasses the thoughtSignature validator
+    # that breaks multi-step Gemini turns AND supports real reasoning, so a
+    # connected AG sub is preferred over the AI Studio key, which otherwise
+    # silently shadowed it. The map is AG's allowlist; pro variants 404/400 on
+    # AG and are deliberately absent, so they fall through to the key.
     _ANTIGRAVITY_MAP = {
         # gemini-3-pro-preview disabled: AG returns 404 even with active conn.
         # gemini-3.1-pro-preview disabled: AG's `gemini-3.1-pro-high` variant
         #   400s every request with "invalid argument" (the `-high` thinking-
-        #   budget alias on AG requires a thinking_config the CLI doesn't
-        #   emit). Falls through to gc/gemini-3.1-pro-preview, which works
-        #   for non-tool turns; multi-step tool turns still hit the
-        #   thoughtSignature validator but that's a separate fight.
+        #   budget alias on AG requires a thinking_config the CLI doesn't emit).
+        #   Falls through to the AI Studio key / gc/ instead.
         "gemini-3-flash-preview": "gemini-3-flash",
         "gemini-3.1-flash-lite-preview": "gemini-3-flash",
     }
@@ -282,26 +302,11 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
         rid = entry.get("router_model_id", "")
         if isinstance(rid, str) and rid.startswith("gc/"):
             suffix = rid[len("gc/"):]
+            ag_suffix = _ANTIGRAVITY_MAP.get(suffix)
+            if ag_suffix and _antigravity_connected():
+                return "ag/" + ag_suffix
             if getattr(settings, "google_api_key", None):
                 return "gemini/" + suffix
-            ag_suffix = _ANTIGRAVITY_MAP.get(suffix)
-            if ag_suffix:
-                try:
-                    import httpx as _httpx
-                    r = _httpx.get("http://localhost:20128/api/providers", timeout=2.0)
-                    if r.status_code == 200:
-                        data = r.json()
-                        conns = data.get("connections", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
-                        has_ag = any(
-                            isinstance(c, dict)
-                            and c.get("provider") == "antigravity"
-                            and c.get("isActive")
-                            for c in conns
-                        )
-                        if has_ag:
-                            return "ag/" + ag_suffix
-                except Exception:
-                    pass
     return entry.get("router_model_id", entry.get("model_id", short_name))
 
 

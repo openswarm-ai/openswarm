@@ -501,6 +501,30 @@ def test_resolve_sdk_openai_own_key_keeps_cp_openai_prefix():
     assert resolve_model_id_for_sdk("opus-4-8-api", s) == "claude-opus-4-8"
 
 
+def test_resolve_sdk_gemini_prefers_antigravity_over_api_key():
+    """A connected Antigravity sub must win over the AI Studio key for the
+    models AG serves (flash) since AG bypasses the thoughtSignature validator;
+    pro variants aren't AG-serveable so they fall back to the key. Before this,
+    the key was checked first and silently shadowed a connected AG sub (user had
+    AG connected but 100% of Gemini traffic still went through the key)."""
+    from backend.apps.agents.providers import registry
+    from backend.apps.settings.models import AppSettings
+    s = AppSettings()
+    s.google_api_key = "ai-studio-key"
+    with patch.object(registry, "_antigravity_connected", return_value=True):
+        # flash IS AG-serveable -> AG wins over the key
+        assert registry.resolve_model_id_for_sdk("gemini-3-flash", s) == "ag/gemini-3-flash"
+        # pro is NOT AG-serveable (404/400 on AG) -> falls back to the key
+        assert registry.resolve_model_id_for_sdk("gemini-3.1-pro", s) == "gemini/gemini-3.1-pro-preview"
+    with patch.object(registry, "_antigravity_connected", return_value=False):
+        # AG not connected -> key
+        assert registry.resolve_model_id_for_sdk("gemini-3-flash", s) == "gemini/gemini-3-flash-preview"
+    # No key, no AG -> gc/ subscription lane untouched
+    s2 = AppSettings()
+    with patch.object(registry, "_antigravity_connected", return_value=False):
+        assert registry.resolve_model_id_for_sdk("gemini-3-flash", s2) == "gc/gemini-3-flash-preview"
+
+
 # ===========================================================================
 # Group E, 9Router-streamed 401 detection
 # ===========================================================================

@@ -475,9 +475,15 @@ async def proxy(rest: str, request: Request):
         except Exception:
             pass
 
+    # Gemini (especially the AI Studio key) intermittently 503s and 9Router holds
+    # the retry, which hangs the whole turn for the full read window. Bound Gemini
+    # so a stalled first response fails fast (~2 min) instead of stalling ~10 min;
+    # other providers keep the generous window for long reasoning turns.
+    _read_timeout = 120.0 if _is_gemini_model(model) else 600.0
+
     try:
         if wants_stream:
-            client = httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0))
+            client = httpx.AsyncClient(timeout=httpx.Timeout(_read_timeout, connect=30.0))
             req = client.build_request(
                 request.method, url, content=body, headers=forward_headers,
                 params=dict(request.query_params),
@@ -501,7 +507,7 @@ async def proxy(rest: str, request: Request):
                 media_type=upstream.headers.get("content-type", "text/event-stream"),
             )
         else:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(_read_timeout, connect=30.0)) as client:
                 r = await client.request(
                     request.method, url, content=body, headers=forward_headers,
                     params=dict(request.query_params),
