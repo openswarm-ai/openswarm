@@ -85,7 +85,7 @@ export default function StepList(props: Props) {
           const isExpanded = expanded.has(s.id);
           const label = (s.label || '').trim() || firstWords(s.text, 6);
           const rawBody = (s.text || '').trim();
-          const hasExpandableBody = expandable && rawBody && rawBody !== label;
+          const hasExpandableBody = Boolean(expandable && rawBody);
 
           return (
             <Box key={s.id} sx={{ display: 'flex', flexDirection: 'column' }}>

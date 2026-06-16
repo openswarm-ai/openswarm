@@ -260,6 +260,32 @@ async def _generate_workflow_metadata(wf: Workflow) -> tuple[str, str, list[str]
         return "", "", []
 
 
+async def p_relabel_changed_steps(wf: Workflow, before_steps: list[dict]) -> None:
+    before_by_id = {s.get("id"): s for s in before_steps}
+    regen_idxs: list[int] = []
+    for i, step in enumerate(wf.steps):
+        old = before_by_id.get(step.id)
+        old_text = (old or {}).get("text") or ""
+        old_label = (old or {}).get("label") or ""
+        new_label = (step.label or "").strip()
+        if old is not None and old_text == step.text:
+            if not new_label and old_label:
+                step.label = old_label
+            continue
+        if not (new_label and new_label != old_label):
+            regen_idxs.append(i)
+    if not regen_idxs:
+        return
+    try:
+        labels = (await _generate_workflow_metadata(wf))[2]
+    except Exception:
+        return
+    if labels and len(labels) == len(wf.steps):
+        for i in regen_idxs:
+            if labels[i]:
+                wf.steps[i].label = labels[i]
+
+
 def _last_run_cost(wid: str) -> float:
     for r in storage.list_runs(wid, limit=10):
         if r.status in ("success", "ran_late") and r.cost_usd:
@@ -386,6 +412,8 @@ async def update_workflow(
     data = body.model_dump(exclude_unset=True)
     for k, v in data.items():
         setattr(wf, k, v)
+    if "steps" in data:
+        await p_relabel_changed_steps(wf, before.get("steps") or [])
     wf.updated_at = datetime.now()
     if not wf.icon:
         wf.icon = _derive_icon(wf)
