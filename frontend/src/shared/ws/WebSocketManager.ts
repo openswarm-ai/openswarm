@@ -23,7 +23,7 @@ import {
   clearTurnLabel,
 } from '../state/agentsSlice';
 import { streamStart, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
-import { addBrowserCardFromBackend, markBrowserCardEnding, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
+import { addBrowserCardFromBackend, markBrowserCardEnding, keepBrowserCardOpen, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP } from '../state/dashboardLayoutSlice';
 import { upsertOutput } from '../state/outputsSlice';
 import { displaySessionName } from '../state/sessionDisplay';
 import { getAuthToken } from '../config';
@@ -510,7 +510,7 @@ class WebSocketManager {
         ) {
           const browserCards = store.getState().dashboardLayout.browserCards;
           for (const card of Object.values(browserCards)) {
-            if (card.spawned_by === session_id) {
+            if (card.spawned_by === session_id && !card.keep_open) {
               store.dispatch(markBrowserCardEnding({
                 browserId: card.browser_id, status: data.status,
               }));
@@ -733,13 +733,19 @@ class WebSocketManager {
           if (closedStatus === 'completed' || closedStatus === 'error') {
             const browserCards = store.getState().dashboardLayout.browserCards;
             for (const card of Object.values(browserCards)) {
-              if (card.spawned_by === session_id) {
+              if (card.spawned_by === session_id && !card.keep_open) {
                 store.dispatch(markBrowserCardEnding({
                   browserId: card.browser_id, status: closedStatus,
                 }));
               }
             }
           }
+        }
+        break;
+
+      case 'dashboard:browser_card_keep':
+        if (data.browser_id) {
+          store.dispatch(keepBrowserCardOpen(data.browser_id));
         }
         break;
 

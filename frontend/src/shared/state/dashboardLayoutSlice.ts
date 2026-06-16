@@ -59,6 +59,7 @@ export interface BrowserCardPosition {
   zOrder: number;
   /** Agent session that spawned this browser; auto-removed when its owner reaches terminal state. */
   spawned_by?: string | null;
+  keep_open?: boolean;
   /** Dashboard this card belongs to; cards render and persist only on their owning dashboard. */
   dashboard_id?: string;
 }
@@ -663,6 +664,14 @@ const dashboardLayoutSlice = createSlice({
       delete state.endingBrowserCards[action.payload];
     },
 
+    keepBrowserCardOpen(state, action: PayloadAction<string>) {
+      const card = state.browserCards[action.payload];
+      if (!card) return;
+      card.keep_open = true;
+      // Undo any in-flight ending mark in case a close path raced ahead.
+      delete state.endingBrowserCards[action.payload];
+    },
+
     suspendBrowserCard(state, action: PayloadAction<{ browserId: string; dataUrl: string }>) {
       if (!state.browserCards[action.payload.browserId]) return;
       state.suspendedBrowserCards[action.payload.browserId] = {
@@ -1098,6 +1107,7 @@ export const {
   resumeBrowserCard,
   markBrowserCardEnding,
   cancelBrowserCardEnding,
+  keepBrowserCardOpen,
   pasteBrowserCard,
   updateBrowserCardUrl,
   addBrowserTab,

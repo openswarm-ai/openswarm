@@ -941,6 +941,7 @@ async def run_browser_agent(
     done_called = False
     done_message = ""
     done_success = True
+    done_keep_open = False
     # Completion detection: once an irreversible SEND has confirmed, the goal is
     # met. The model otherwise stalls re-verifying what the confirm already proved
     # (measured: send done at turn ~11, then ~12 wasted perception turns). We drive
@@ -1427,6 +1428,7 @@ async def run_browser_agent(
                     done_called = True
                     done_message = (tu.input.get("message") or "").strip()
                     done_success = tu.input.get("success", True) is not False
+                    done_keep_open = tu.input.get("keep_open", False) is True
                     tool_results.append({
                         "type": "tool_result", "tool_use_id": tu.id,
                         "content": [{"type": "text", "text": "ok"}],
@@ -2122,6 +2124,28 @@ async def run_browser_agent(
                         })
             except Exception as e:
                 logger.debug(f"[browser-playbook] distill skipped: {e}")
+        # The model asked to leave the browser open because the deliverable lives
+        # on the page (a video playing, a page to read). Pin the card so the
+        # auto-close on parent finish skips it. Only on honest success: never pin
+        # a broken or ghost run open. The keep broadcast lands before the parent
+        # reaches terminal state (it awaits this run), so the frontend has the
+        # flag set before any close path runs.
+        if honest and done_keep_open and dashboard_id:
+            try:
+                from backend.apps.dashboards.dashboards import _load, _save
+                dashboard = _load(dashboard_id)
+                card = dashboard.layout.browser_cards.get(browser_id)
+                if card is not None:
+                    card.keep_open = True
+                    dashboard.updated_at = datetime.now()
+                    _save(dashboard)
+                    await ws_manager.broadcast_global("dashboard:browser_card_keep", {
+                        "dashboard_id": dashboard_id,
+                        "browser_id": browser_id,
+                    })
+            except Exception as e:
+                logger.warning(f"[browser-agent {session_id}] keep_open persist failed: {e}")
+
         agent_manager._sync_session_close(session)
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,

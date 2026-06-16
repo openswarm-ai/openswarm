@@ -40,6 +40,10 @@ class BrowserCardPosition(BaseModel):
     # Used by the frontend to auto-remove the browser when its owner agent
     # reaches a terminal completed/error state.
     spawned_by: Optional[str] = None
+    # When the agent leaves the deliverable on the page (a video playing, a page
+    # to read), it sets this so the frontend's auto-close on parent finish skips
+    # the card and the browser stays put.
+    keep_open: bool = False
 
 
 class NotePosition(BaseModel):

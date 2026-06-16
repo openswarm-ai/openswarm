@@ -117,6 +117,17 @@ BROWSER_TOOLS_SCHEMA = [
                         "(login wall, missing info, something blocked you). Default true."
                     ),
                 },
+                "keep_open": {
+                    "type": "boolean",
+                    "description": (
+                        "Set true ONLY when the result IS the open page and the user will keep "
+                        "using it right now: a video or audio playing, a page you opened for them "
+                        "to read or watch, a download you started, or a place left ready for them "
+                        "to take over. The browser then stays put instead of closing. Leave false "
+                        "(default) for info tasks where you just look something up and report the "
+                        "answer back, since there's nothing left to keep on screen."
+                    ),
+                },
             },
             "required": ["message"],
         },
@@ -885,9 +896,11 @@ SYSTEM_PROMPT = (
     "tool, never by typing a sentence. Put your reply to the user in Done's `message`, "
     "written like a normal chat reply: what got done plus the human proof (the name, the "
     "time, what's now on screen), in one or two plain sentences with zero interface words. "
-    "Set `success` false if you couldn't finish. For irreversible actions, only report "
-    "success with real proof you actually observed (the name and where/when you saw it), "
-    "just phrased for a person, not for a machine."
+    "Set `success` false if you couldn't finish. Set `keep_open` true when the result is the "
+    "open page itself and the user keeps using it now (a video playing, a page opened to "
+    "read, a download started), so the browser stays instead of closing. For irreversible "
+    "actions, only report success with real proof you actually observed (the name and "
+    "where/when you saw it), just phrased for a person, not for a machine."
 )
 
 MAX_TURNS = 40
