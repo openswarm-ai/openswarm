@@ -81,6 +81,11 @@ logger = logging.getLogger(__name__)
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 
 
+p_VIEW_BUILDER_RENDER_MAX_RETRIES = 2
+p_view_builder_render_retry_counts: dict[str, int] = {}
+p_view_builder_dirty_sessions: set[str] = set()
+
+
 def _apply_context_window(session, settings=None) -> None:
     """Set session.context_window from the registry for its (provider, model).
 
@@ -966,26 +971,38 @@ class AgentManager:
                 except Exception:
                     content = str(raw_response)
 
-            # When the agent writes/edits a file inside a live App
-            # Builder workspace, surface any build-server errors
-            # (vite/babel/tsc/uvicorn) that landed in the runtime's
-            # stderr in the moments after the write. Without this the
-            # agent walks away from broken JSX, the iframe shows a red
-            # overlay, and the user has to copy-paste the error back.
-            # ~400ms gives vite's file watcher + babel parse enough
-            # time to react; the post_tool_hook runs once per tool so
-            # the added latency is acceptable for the win.
             hook_tool_name_for_errors = input_data.get("tool_name", "")
-            if hook_tool_name_for_errors in ("Write", "Edit", "MultiEdit"):
-                tool_in = input_data.get("tool_input") or {}
-                file_path = tool_in.get("file_path") or tool_in.get("path") or ""
+            wrote_files = hook_tool_name_for_errors in ("Write", "Edit", "MultiEdit")
+            tool_in = input_data.get("tool_input") or {}
+            file_path = tool_in.get("file_path") or tool_in.get("path") or ""
+            wrote_frontend_file = wrote_files and "/frontend/" in file_path
+            installed_pkg = False
+            if hook_tool_name_for_errors == "Bash":
+                bash_in = input_data.get("tool_input") or {}
+                cmd = (bash_in.get("command") or "").lower()
+                installed_pkg = any(s in cmd for s in (
+                    "npm install", "npm i ", "npm uninstall", "npm ci",
+                    "pnpm add", "pnpm install", "pnpm remove",
+                    "yarn add", "yarn install", "yarn remove",
+                ))
+
+            if session.mode == "view-builder" and (wrote_frontend_file or installed_pkg):
+                p_view_builder_dirty_sessions.add(session.id)
+                try:
+                    from backend.apps.outputs.runtime import (
+                        manager as outputs_runtime_manager,
+                    )
+                    outputs_runtime_manager.reset_render_state_for_workspace(session.id)
+                except Exception:
+                    pass
+            elif wrote_files:
                 if file_path:
                     try:
                         await asyncio.sleep(0.4)
                         from backend.apps.outputs.runtime import (
-                            manager as _outputs_runtime_manager,
+                            manager as outputs_runtime_manager,
                         )
-                        errs = _outputs_runtime_manager.drain_errors_for_path(file_path)
+                        errs = outputs_runtime_manager.drain_errors_for_path(file_path)
                     except Exception:
                         errs = []
                     if errs:
@@ -1532,6 +1549,59 @@ class AgentManager:
                 if len(_stderr_buffer) > 500:
                     del _stderr_buffer[:250]
 
+            async def stop_hook(input_data, tool_use_id, context):
+                """End-of-turn render gate for App Builder sessions. Reads the
+                browser-reported render-state of the preview; if the app fails
+                to render, blocks with the error so the agent fixes it, up to
+                MAX_RETRIES then lets the stop through."""
+                if session.mode != "view-builder":
+                    return {}
+                if session.id not in p_view_builder_dirty_sessions:
+                    return {}
+                from backend.apps.outputs.runtime import (
+                    manager as outputs_runtime_manager,
+                )
+                if outputs_runtime_manager.get(session.id) is None:
+                    return {}
+                state, error_text = outputs_runtime_manager.get_render_state_for_workspace(session.id)
+                waited = 0.0
+                while state is None and waited < 5.0:
+                    await asyncio.sleep(0.25)
+                    waited += 0.25
+                    state, error_text = outputs_runtime_manager.get_render_state_for_workspace(session.id)
+
+                if state != "error":
+                    p_view_builder_render_retry_counts.pop(session.id, None)
+                    p_view_builder_dirty_sessions.discard(session.id)
+                    return {}
+
+                attempts = p_view_builder_render_retry_counts.get(session.id, 0)
+                if attempts >= p_VIEW_BUILDER_RENDER_MAX_RETRIES:
+                    logger.warning(
+                        "view-builder preview still failing after %s attempts for session %s; allowing stop",
+                        attempts, session.id,
+                    )
+                    p_view_builder_render_retry_counts.pop(session.id, None)
+                    p_view_builder_dirty_sessions.discard(session.id)
+                    return {}
+
+                p_view_builder_render_retry_counts[session.id] = attempts + 1
+                logger.info(
+                    "view-builder render block (attempt %s/%s) for session %s",
+                    attempts + 1, p_VIEW_BUILDER_RENDER_MAX_RETRIES, session.id,
+                )
+                trimmed = error_text[-3000:] if len(error_text) > 3000 else error_text
+                return {
+                    "decision": "block",
+                    "reason": (
+                        f"The preview failed to render (attempt {attempts + 1}/"
+                        f"{p_VIEW_BUILDER_RENDER_MAX_RETRIES}):\n\n"
+                        f"{trimmed}\n\n"
+                        "Fix this so the app renders before finishing; the user "
+                        "currently sees an error instead of the app."
+                    ),
+                }
+
             options_kwargs = {
                 "model": resolved_model,
                 # 64 MB ceiling on the SDK <-> CLI JSON-RPC channel. The
@@ -1547,6 +1617,7 @@ class AgentManager:
                 "hooks": {
                     "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_hook])],
                     "PostToolUse": [HookMatcher(matcher=None, hooks=[post_tool_hook])],
+                    "Stop": [HookMatcher(matcher=None, hooks=[stop_hook])],
                 },
                 "allowed_tools": effective_allowed,
                 "disallowed_tools": effective_disallowed,

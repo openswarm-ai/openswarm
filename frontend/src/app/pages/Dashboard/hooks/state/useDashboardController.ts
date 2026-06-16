@@ -271,6 +271,8 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     glowingBrowserCards,
     cards,
     browserCards,
+    viewCards,
+    outputs,
     expandedSessionIds,
     liveDragInfo,
     measuredHeightsRef,

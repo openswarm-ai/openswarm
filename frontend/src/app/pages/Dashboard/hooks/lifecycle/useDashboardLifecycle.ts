@@ -12,6 +12,7 @@ import {
   fetchLayout,
   reconcileSessions,
   addBrowserCard,
+  addViewCard,
   resetLayout,
   removeViewCard,
   clearPendingFocusBrowserId,
@@ -252,6 +253,48 @@ export function useDashboardLifecycle({
       if (!outputs[outputId]) dispatch(removeViewCard(outputId));
     }
   }, [layoutInitialized, outputsLoaded, viewCards, outputs, dispatch]);
+
+  // On first load after outputs settle, snapshot every existing Output id as
+  // "already accounted for." Any output that ARRIVES later (typically the
+  // agent:output_upserted WS broadcast the backend fires the instant a
+  // view-builder session is seeded, at session start) whose session_id points
+  // at a view-builder chat on this dashboard gets a view card dropped on the
+  // canvas right away. Per-mount tracked so a manual close after auto-open
+  // stays closed. Prior approach keyed off a pending-set populated inside
+  // launchAndSendFirstMessage.then(): the WS upsert won the race and the
+  // effect saw an empty set, so the card didn't pop until the session-end
+  // meta-sync re-broadcast.
+  const autoOpenedOutputsRef = useRef<Set<string>>(new Set());
+  const outputsSnapshottedRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (!layoutInitialized || !outputsLoaded) return;
+    if (!outputsSnapshottedRef.current) {
+      for (const oid of Object.keys(outputs)) autoOpenedOutputsRef.current.add(oid);
+      outputsSnapshottedRef.current = true;
+      return;
+    }
+    for (const output of Object.values(outputs)) {
+      if (autoOpenedOutputsRef.current.has(output.id)) continue;
+      const sid = output.session_id;
+      if (!sid) continue;
+      const sess = sessions[sid];
+      if (!sess || sess.mode !== 'view-builder') continue;
+      if (sess.dashboard_id !== dashboardId) continue;
+      autoOpenedOutputsRef.current.add(output.id);
+      if (viewCards[output.id]) continue;
+      dispatch(addViewCard({ outputId: output.id, expandedSessionIds, parentSessionId: sid }));
+      const outputId = output.id;
+      setTimeout(() => {
+        const vc = store.getState().dashboardLayout.viewCards[outputId];
+        if (!vc) return;
+        const rects = [{ x: vc.x, y: vc.y, width: vc.width, height: vc.height }];
+        const ac = store.getState().dashboardLayout.cards[sid];
+        if (ac) rects.push({ x: ac.x, y: ac.y, width: ac.width, height: ac.height });
+        canvasActions.fitToCards(rects, 1.15, true);
+        handleHighlightCard(outputId);
+      }, 200);
+    }
+  }, [layoutInitialized, outputsLoaded, outputs, sessions, viewCards, dashboardId, expandedSessionIds, dispatch, canvasActions, handleHighlightCard]);
 
   const namedOnFirstMessageRef = useRef<string | null>(null);
   useEffect(() => {

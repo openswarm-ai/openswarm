@@ -35,8 +35,34 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
     return { error };
   }
 
+  componentDidMount(): void {
+    // Clean first mount: nothing caught, so the app is in a good render
+    // state and the ready beacon is allowed.
+    if (!this.state.error) {
+      window.__openswarm_render_failed = false;
+      window.__openswarm_last_error = '';
+    }
+  }
+
+  componentDidUpdate(_prevProps: ErrorBoundaryProps, prevState: ErrorBoundaryState): void {
+    // Fast Refresh retried the previously-broken subtree and it rendered:
+    // re-allow the ready beacon so index.tsx's vite:afterUpdate can report ok.
+    if (prevState.error && !this.state.error) {
+      window.__openswarm_render_failed = false;
+      window.__openswarm_last_error = '';
+    }
+  }
+
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     this.setState({ errorInfo });
+    // Suppress the post-mount "ready" beacon in index.tsx and re-arm the
+    // window-error gate: the app is not in a rendered state right now.
+    // Stash the message so the HMR handler can re-assert this error after
+    // an unrelated edit (which resets the host's render-state to None).
+    window.__openswarm_render_failed = true;
+    window.__openswarm_rendered = false;
+    window.__openswarm_last_error =
+      `${error?.message ?? String(error)}\n${errorInfo?.componentStack ?? ''}`.trim();
     // Two channels so the OpenSwarm host's webview-preload bridge can
     // pick this up regardless of which one it taps:
     //   1. console.error — forwarded as a `[FRONTEND]` line into the

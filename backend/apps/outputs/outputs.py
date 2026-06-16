@@ -454,6 +454,33 @@ async def runtime_get_status(workspace_id: str):
     return _runtime_status_payload(workspace_id)
 
 
+@outputs.router.post("/workspace/{workspace_id}/runtime/report-error")
+async def runtime_report_error(workspace_id: str, body: dict):
+    from backend.apps.outputs.runtime import manager as runtime_manager
+    rt = runtime_manager.get(workspace_id)
+    if rt is None:
+        return {"ok": False, "recorded": 0}
+    message = (body.get("message") or "").strip()
+    component_stack = (body.get("componentStack") or "").strip()
+    if not message:
+        return {"ok": False, "recorded": 0}
+    composed = message
+    if component_stack:
+        composed = f"{composed}\n{component_stack}"
+    rt.set_render_error(composed)
+    return {"ok": True, "recorded": 1}
+
+
+@outputs.router.post("/workspace/{workspace_id}/runtime/report-ready")
+async def runtime_report_ready(workspace_id: str):
+    from backend.apps.outputs.runtime import manager as runtime_manager
+    rt = runtime_manager.get(workspace_id)
+    if rt is None:
+        return {"ok": False}
+    rt.set_render_ok()
+    return {"ok": True}
+
+
 @outputs.router.post("/shutdown-all")
 async def runtime_shutdown_all():
     """Reap every workspace subprocess. Electron POSTs this during

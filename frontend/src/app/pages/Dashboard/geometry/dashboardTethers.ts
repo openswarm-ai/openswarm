@@ -1,7 +1,8 @@
 import { useMemo, type RefObject } from 'react';
-import type { CardPosition, BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
+import type { CardPosition, BrowserCardPosition, ViewCardPosition } from '@/shared/state/dashboardLayoutSlice';
 import { EXPANDED_CARD_MIN_H } from '@/shared/state/dashboardLayoutSlice';
 import type { AgentSession } from '@/shared/state/agentsSlice';
+import type { Output } from '@/shared/state/outputsSlice';
 
 const ELBOW_RADIUS = 16;
 
@@ -60,6 +61,8 @@ interface UseTethersArgs {
   glowingBrowserCards: Record<string, GlowingBrowserCard>;
   cards: Record<string, CardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
+  viewCards: Record<string, ViewCardPosition>;
+  outputs: Record<string, Output>;
   expandedSessionIds: string[];
   liveDragInfo: LiveDragInfo | null;
   measuredHeightsRef: RefObject<Record<string, number>>;
@@ -72,6 +75,8 @@ export function useTethers({
   glowingBrowserCards,
   cards,
   browserCards,
+  viewCards,
+  outputs,
   expandedSessionIds,
   liveDragInfo,
   measuredHeightsRef,
@@ -118,21 +123,25 @@ export function useTethers({
       };
     }).filter(Boolean) as Tether[];
 
-    function browserTether(
-      browserId: string,
+    // One tether builder for both browser and view cards: the anchor-pairing
+    // and elbow/vertical path are identical; only the destination card map and
+    // the key prefix differ, so the resolved dst card is passed in.
+    function cardTether(
+      dst: { x: number; y: number; width: number; height: number } | undefined,
+      dstId: string,
       sourceId: string,
-      fading: boolean,
+      key: string,
       label: string,
+      fading: boolean,
     ): Tether | null {
       const src = cards[sourceId];
-      const dst = browserCards[browserId];
       if (!src || !dst) return null;
 
       let srcX = src.x, srcY = src.y;
       let dstX = dst.x, dstY = dst.y;
       if (liveDragInfo) {
         if (liveDragInfo.cardId === sourceId) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
-        if (liveDragInfo.cardId === browserId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
+        if (liveDragInfo.cardId === dstId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
       }
 
       const srcMeasured = measuredHeightsRef.current![sourceId];
@@ -200,7 +209,7 @@ export function useTethers({
       const labelY = isVertical ? midY + (y2 - midY) * 0.15 : y2;
 
       return {
-        key: `browser-${browserId}`,
+        key,
         path: pathD,
         labelX,
         labelY,
@@ -209,9 +218,16 @@ export function useTethers({
       };
     }
 
-    const glowTethers = new Map<string, ReturnType<typeof browserTether>>();
+    const glowTethers = new Map<string, ReturnType<typeof cardTether>>();
     for (const [browserId, { sourceId, fading, label }] of Object.entries(glowingBrowserCards)) {
-      const t = browserTether(browserId, sourceId, fading, label || '');
+      const t = cardTether(
+        browserCards[browserId],
+        browserId,
+        sourceId,
+        `browser-${browserId}`,
+        label || '',
+        fading,
+      );
       if (t) glowTethers.set(browserId, t);
     }
 
@@ -220,15 +236,51 @@ export function useTethers({
       if (s.status !== 'running' && s.status !== 'waiting_approval') continue;
       if (!s.browser_id || !s.parent_session_id) continue;
       if (glowTethers.has(s.browser_id)) continue;
-      const t = browserTether(s.browser_id, s.parent_session_id, false, '');
+      const t = cardTether(
+        browserCards[s.browser_id],
+        s.browser_id,
+        s.parent_session_id,
+        `browser-${s.browser_id}`,
+        '',
+        false,
+      );
       if (t) glowTethers.set(s.browser_id, t);
     }
 
     const browserTethers = Array.from(glowTethers.values()).filter(Boolean) as Tether[];
 
-    return [...agentTethers, ...browserTethers];
+    // Index outputs by their owning session so the per-session lookup below
+    // doesn't scan the whole outputs map for every view-builder chat.
+    const outputsBySession = new Map<string, string[]>();
+    for (const o of Object.values(outputs)) {
+      if (!o.session_id) continue;
+      const arr = outputsBySession.get(o.session_id);
+      if (arr) arr.push(o.id); else outputsBySession.set(o.session_id, [o.id]);
+    }
+
+    const viewTethers: Tether[] = [];
+    for (const s of sessionList) {
+      if (s.mode !== 'view-builder') continue;
+      if (s.status !== 'running' && s.status !== 'waiting_approval') continue;
+      const outIds = outputsBySession.get(s.id);
+      if (!outIds) continue;
+      for (const outputId of outIds) {
+        if (!viewCards[outputId]) continue;
+        const t = cardTether(
+          viewCards[outputId],
+          outputId,
+          s.id,
+          `view-${outputId}`,
+          'Editing',
+          false,
+        );
+        if (t) viewTethers.push(t);
+      }
+    }
+
+    return [...agentTethers, ...browserTethers, ...viewTethers];
   // measuredHeightsTick re-runs the memo once ResizeObserver reports a new
   // height after a collapse (the ref read is invisible to the dep checker).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, viewCards, outputs, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
 }

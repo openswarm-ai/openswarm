@@ -52,7 +52,13 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       Pages({ dirs: 'src/pages', extensions: ['tsx'] }),
-      terminal({ console: 'terminal', output: ['terminal', 'console'] }),
+      // vite-plugin-terminal provides a `virtual:terminal/console` module
+      // that only exists in dev; loading it during `vite build` errors
+      // out, so the End-of-turn build-verify gate would fail on every
+      // brand-new workspace.
+      ...(mode === 'development'
+        ? [terminal({ console: 'terminal', output: ['terminal', 'console'] })]
+        : []),
     ],
     resolve: {
       alias: {
