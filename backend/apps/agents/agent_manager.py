@@ -35,6 +35,7 @@ from backend.apps.agents.core.error_classify import (
     _is_long_context_error,
     _is_transient_capacity_error,
     _is_unknown_model_error,
+    redact_for_telemetry,
 )
 from backend.apps.agents.manager.session.session_store import (
     _delete_session_file,
@@ -3151,7 +3152,7 @@ class AgentManager:
                         "framework_overhead_tokens": session.framework_overhead_tokens,
                         "active_mcps_count": len(session.active_mcps),
                         "messages_count": len(session.messages),
-                        "error_preview": (str(e) or "")[:500],
+                        "error_preview": redact_for_telemetry(str(e), limit=500),
                     })
                 except Exception:
                     logger.debug("submit_diagnostic for context_overflow failed", exc_info=True)
@@ -3256,7 +3257,8 @@ class AgentManager:
                         "model": session.model,
                         "provider": session.provider,
                         "connection_mode": getattr(load_settings(), "connection_mode", "own_key"),
-                        "error_preview": (str(e) or "")[:400],
+                        "error_preview": redact_for_telemetry(str(e), limit=400),
+                        "stderr_tail": redact_for_telemetry(_stderr_tail),
                     })
                 except Exception:
                     logger.debug("submit_diagnostic model_error failed", exc_info=True)
@@ -3276,7 +3278,8 @@ class AgentManager:
                         "model": session.model,
                         "provider": session.provider,
                         "connection_mode": getattr(load_settings(), "connection_mode", "own_key"),
-                        "error_preview": (str(e) or "")[:400],
+                        "error_preview": redact_for_telemetry(str(e), limit=400),
+                        "stderr_tail": redact_for_telemetry(_stderr_tail),
                     })
                 except Exception:
                     logger.debug("submit_diagnostic model_error failed", exc_info=True)
