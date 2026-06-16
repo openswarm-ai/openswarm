@@ -104,3 +104,6 @@ temp/
 # webpack generated files
 *.hot-update.js
 *.hot-update.json
+
+# Typedoc generated files
+.typedoc/
