@@ -196,6 +196,11 @@ interface Rect {
   h: number;
 }
 
+interface CardPlacementExclusion {
+  type: CardType;
+  id: string;
+}
+
 function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
@@ -203,20 +208,25 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
 function collectOccupiedRects(
   state: DashboardLayoutState,
   expandedSessionIds?: string[],
+  exclude?: CardPlacementExclusion,
 ): Rect[] {
   const expanded = new Set(expandedSessionIds);
   const rects: Rect[] = [];
   for (const c of Object.values(state.cards)) {
+    if (exclude?.type === 'agent' && exclude.id === c.session_id) continue;
     const h = expanded.has(c.session_id) ? Math.max(EXPANDED_CARD_MIN_H, c.height) : c.height;
     rects.push({ x: c.x, y: c.y, w: c.width, h });
   }
   for (const c of Object.values(state.viewCards)) {
+    if (exclude?.type === 'view' && exclude.id === c.output_id) continue;
     rects.push({ x: c.x, y: c.y, w: c.width, h: c.height });
   }
   for (const c of Object.values(state.browserCards)) {
+    if (exclude?.type === 'browser' && exclude.id === c.browser_id) continue;
     rects.push({ x: c.x, y: c.y, w: c.width, h: c.height });
   }
   for (const n of Object.values(state.notes)) {
+    if (exclude?.type === 'note' && exclude.id === n.note_id) continue;
     rects.push({ x: n.x, y: n.y, w: n.width, h: n.height });
   }
   return rects;
@@ -307,6 +317,36 @@ export function findOpenSpotNear(
   // Pathological , full canvas occupied near anchor. Fall back to the
   // global first-empty scan so we never return an overlap.
   return findOpenGridCell(occupiedRects, newW, newH);
+}
+
+export function placeInParentColumn(
+  state: DashboardLayoutState,
+  parentSessionId: string | null | undefined,
+  newW: number,
+  newH: number,
+  expandedSessionIds?: string[],
+  exclude?: CardPlacementExclusion,
+): { x: number; y: number } {
+  const rects = collectOccupiedRects(state, expandedSessionIds, exclude);
+  const parentCard = parentSessionId ? state.cards[parentSessionId] : null;
+  if (!parentCard) {
+    return findOpenGridCell(rects, newW, newH);
+  }
+
+  const targetX = parentCard.x + parentCard.width + GRID_GAP * 12;
+  const columnCards = [
+    ...Object.values(state.browserCards).filter(
+      (c) => !(exclude?.type === 'browser' && exclude.id === c.browser_id),
+    ),
+    ...Object.values(state.viewCards).filter(
+      (c) => !(exclude?.type === 'view' && exclude.id === c.output_id),
+    ),
+  ].filter((c) => Math.abs(c.x - targetX) < 50);
+  const targetY = columnCards.length > 0
+    ? Math.max(...columnCards.map((c) => c.y + c.height)) + GRID_GAP
+    : parentCard.y;
+
+  return findOpenSpotNear(targetX, targetY, rects, newW, newH);
 }
 
 // Reconnect-refetch merge: ADD only the cards the snapshot carries that the
@@ -533,17 +573,7 @@ const dashboardLayoutSlice = createSlice({
       } else {
         const parentCard = parentSessionId ? state.cards[parentSessionId] : null;
         if (parentCard) {
-          const targetX = parentCard.x + parentCard.width + GRID_GAP * 12;
-          let targetY = parentCard.y;
-          const siblings = [
-            ...Object.values(state.browserCards),
-            ...Object.values(state.viewCards),
-          ].filter((c) => Math.abs(c.x - targetX) < 50);
-          if (siblings.length > 0) {
-            targetY = Math.max(...siblings.map((c) => c.y + c.height)) + GRID_GAP;
-          }
-          const rects = collectOccupiedRects(state, expandedSessionIds);
-          const pos = findOpenSpotNear(targetX, targetY, rects, w, h);
+          const pos = placeInParentColumn(state, parentSessionId, w, h, expandedSessionIds);
           posX = pos.x;
           posY = pos.y;
         } else {

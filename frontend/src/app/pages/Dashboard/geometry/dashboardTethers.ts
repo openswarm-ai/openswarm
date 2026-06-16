@@ -123,21 +123,25 @@ export function useTethers({
       };
     }).filter(Boolean) as Tether[];
 
-    function browserTether(
-      browserId: string,
+    // One tether builder for both browser and view cards: the anchor-pairing
+    // and elbow/vertical path are identical; only the destination card map and
+    // the key prefix differ, so the resolved dst card is passed in.
+    function cardTether(
+      dst: { x: number; y: number; width: number; height: number } | undefined,
+      dstId: string,
       sourceId: string,
-      fading: boolean,
+      key: string,
       label: string,
+      fading: boolean,
     ): Tether | null {
       const src = cards[sourceId];
-      const dst = browserCards[browserId];
       if (!src || !dst) return null;
 
       let srcX = src.x, srcY = src.y;
       let dstX = dst.x, dstY = dst.y;
       if (liveDragInfo) {
         if (liveDragInfo.cardId === sourceId) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
-        if (liveDragInfo.cardId === browserId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
+        if (liveDragInfo.cardId === dstId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
       }
 
       const srcMeasured = measuredHeightsRef.current![sourceId];
@@ -205,7 +209,7 @@ export function useTethers({
       const labelY = isVertical ? midY + (y2 - midY) * 0.15 : y2;
 
       return {
-        key: `browser-${browserId}`,
+        key,
         path: pathD,
         labelX,
         labelY,
@@ -214,9 +218,16 @@ export function useTethers({
       };
     }
 
-    const glowTethers = new Map<string, ReturnType<typeof browserTether>>();
+    const glowTethers = new Map<string, ReturnType<typeof cardTether>>();
     for (const [browserId, { sourceId, fading, label }] of Object.entries(glowingBrowserCards)) {
-      const t = browserTether(browserId, sourceId, fading, label || '');
+      const t = cardTether(
+        browserCards[browserId],
+        browserId,
+        sourceId,
+        `browser-${browserId}`,
+        label || '',
+        fading,
+      );
       if (t) glowTethers.set(browserId, t);
     }
 
@@ -225,104 +236,18 @@ export function useTethers({
       if (s.status !== 'running' && s.status !== 'waiting_approval') continue;
       if (!s.browser_id || !s.parent_session_id) continue;
       if (glowTethers.has(s.browser_id)) continue;
-      const t = browserTether(s.browser_id, s.parent_session_id, false, '');
+      const t = cardTether(
+        browserCards[s.browser_id],
+        s.browser_id,
+        s.parent_session_id,
+        `browser-${s.browser_id}`,
+        '',
+        false,
+      );
       if (t) glowTethers.set(s.browser_id, t);
     }
 
     const browserTethers = Array.from(glowTethers.values()).filter(Boolean) as Tether[];
-
-    // Edit tether: same anchor-pairing as browserTether (chat <-> view card).
-    // Used to visually link an App Builder chat to the running app while the
-    // session is actively editing.
-    function viewTether(
-      outputId: string,
-      sourceId: string,
-      label: string,
-    ): Tether | null {
-      const src = cards[sourceId];
-      const dst = viewCards[outputId];
-      if (!src || !dst) return null;
-
-      let srcX = src.x, srcY = src.y;
-      let dstX = dst.x, dstY = dst.y;
-      if (liveDragInfo) {
-        if (liveDragInfo.cardId === sourceId) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
-        if (liveDragInfo.cardId === outputId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
-      }
-
-      const srcMeasured = measuredHeightsRef.current![sourceId];
-      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
-        ? Math.max(EXPANDED_CARD_MIN_H, src.height)
-        : src.height);
-      const dstH = dst.height;
-
-      const srcCx = srcX + src.width / 2;
-      const dstCx = dstX + dst.width / 2;
-
-      const srcAnchors: Anchor[] = [
-        { x: srcX + src.width, y: srcY + srcH * 0.54, side: 'right' },
-        { x: srcX, y: srcY + srcH * 0.54, side: 'left' },
-        { x: srcCx, y: srcY, side: 'top' },
-        { x: srcCx, y: srcY + srcH, side: 'bottom' },
-      ];
-      const dstAnchors: Anchor[] = [
-        { x: dstX, y: dstY + dstH * 0.54, side: 'left' },
-        { x: dstX + dst.width, y: dstY + dstH * 0.54, side: 'right' },
-        { x: dstCx, y: dstY, side: 'top' },
-        { x: dstCx, y: dstY + dstH, side: 'bottom' },
-      ];
-
-      let bestSrc = srcAnchors[0], bestDst = dstAnchors[0];
-      let bestDist = Infinity;
-      for (const sa of srcAnchors) {
-        for (const da of dstAnchors) {
-          const d = Math.hypot(sa.x - da.x, sa.y - da.y);
-          if (d < bestDist) { bestDist = d; bestSrc = sa; bestDst = da; }
-        }
-      }
-
-      const x1 = bestSrc.x, y1 = bestSrc.y;
-      const x2 = bestDst.x, y2 = bestDst.y;
-
-      const isVertical = (bestSrc.side === 'top' || bestSrc.side === 'bottom')
-        && (bestDst.side === 'top' || bestDst.side === 'bottom');
-
-      let pathD: string;
-      if (isVertical) {
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        const midY = y1 + dy / 2;
-        const r = (Math.abs(dx) < 1 || Math.abs(dy) < ELBOW_RADIUS * 2)
-          ? 0
-          : Math.min(ELBOW_RADIUS, Math.abs(dx) / 2, Math.abs(dy) / 4);
-        const sx = dx >= 0 ? 1 : -1;
-        const sy = dy >= 0 ? 1 : -1;
-        pathD = [
-          `M ${x1},${y1}`,
-          `V ${midY - sy * r}`,
-          `Q ${x1},${midY} ${x1 + sx * r},${midY}`,
-          `H ${x2 - sx * r}`,
-          `Q ${x2},${midY} ${x2},${midY + sy * r}`,
-          `V ${y2}`,
-        ].join(' ');
-      } else {
-        pathD = elbowPath(x1, y1, x2, y2);
-      }
-
-      const midX = x1 + (x2 - x1) / 2;
-      const midY = y1 + (y2 - y1) / 2;
-      const labelX = isVertical ? midX : midX + (x2 - midX) * 0.15;
-      const labelY = isVertical ? midY + (y2 - midY) * 0.15 : y2;
-
-      return {
-        key: `view-${outputId}`,
-        path: pathD,
-        labelX,
-        labelY,
-        label,
-        fading: false,
-      };
-    }
 
     // Index outputs by their owning session so the per-session lookup below
     // doesn't scan the whole outputs map for every view-builder chat.
@@ -341,7 +266,14 @@ export function useTethers({
       if (!outIds) continue;
       for (const outputId of outIds) {
         if (!viewCards[outputId]) continue;
-        const t = viewTether(outputId, s.id, 'Editing');
+        const t = cardTether(
+          viewCards[outputId],
+          outputId,
+          s.id,
+          `view-${outputId}`,
+          'Editing',
+          false,
+        );
         if (t) viewTethers.push(t);
       }
     }
