@@ -51,11 +51,16 @@ async def tools_lib_lifespan():
 tools_lib = SubApp("tools", tools_lib_lifespan)
 
 
-# Bash defaults to "ask" because it can execute untrusted text from MCP tool
-# outputs (Gmail, WebFetch); every other built-in is sandboxed by domain.
-# Must match agent_manager._DEFAULTS so the Settings UI and the agent agree
-# on what "no policy set" means.
-_DEFAULT_BUILTIN_POLICIES = {"Bash": "ask"}
+# Every built-in seeds to always_allow for a frictionless run. The agent's
+# runtime guards in agent_manager (catastrophic-command match, OS-scheduling,
+# sensitive-path gate) STILL force a prompt for the dangerous shapes even on
+# always_allow, so the poisoned-MCP-output -> destructive-command case is
+# still caught. Must match agent_manager._DEFAULTS (empty -> always_allow) so
+# the Settings UI and the agent agree on what "no policy set" means.
+_DEFAULT_BUILTIN_POLICIES: dict[str, str] = {}
+
+# One-time marker: older installs seeded Bash="ask"; we lift them once.
+_BASH_AUTOALLOW_MARKER = os.path.join(DATA_DIR, ".bash_autoallow_migrated")
 
 
 def _ensure_default_permissions() -> None:
@@ -72,6 +77,17 @@ def _ensure_default_permissions() -> None:
         for t in BUILTIN_TOOLS
     }
     merged = {**desired, **existing}
+    # One-time lift: installs seeded under the old default carry Bash="ask";
+    # raise them to always_allow once so shell commands stop prompting. The
+    # marker means a deliberate "ask" set afterward sticks (never re-flipped).
+    if not os.path.exists(_BASH_AUTOALLOW_MARKER):
+        if merged.get("Bash") == "ask":
+            merged["Bash"] = "always_allow"
+        try:
+            with open(_BASH_AUTOALLOW_MARKER, "w") as f:
+                f.write("1")
+        except OSError:
+            pass
     if merged != existing:
         save_builtin_permissions(merged)
 
