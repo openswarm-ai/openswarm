@@ -16,3 +16,6 @@ apps/db/snips/*
 
 # ignore everything in data/
 data/**
+
+# ignore egg info
+*.egg-info/
