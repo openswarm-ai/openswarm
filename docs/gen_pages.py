@@ -16,7 +16,8 @@ sidebar section**, populated by whatever docs live under it. Root-level Markdown
 Sources are declared once in ``RULES`` (see below); the same engine discovers,
 filters, and writes each of them:
 
-  1. ``**/*.py`` in real packages  -> ``content/<pkg-path>/...``  (``::: module`` for mkdocstrings)
+  1. ``**/*.py`` in real packages  -> ``content/<pkg-path>/...``  (leaf modules use
+     ``::: module`` for mkdocstrings; packages get a generated card-grid overview)
   2. repo Markdown                 -> ``content/<top-dir>/...``   (root-level .md -> ``content/general/``)
   3. ``frontend/.typedoc``         -> ``content/frontend/...``    (TypeDoc output, if present)
 
@@ -30,6 +31,7 @@ precise. Hand-written content (``content/index.md`` and the ``assets`` /
 
 from __future__ import annotations
 
+import ast
 import logging
 import shutil
 import subprocess
@@ -219,9 +221,108 @@ def _dest_reference(py: Path) -> Path:
     return CONTENT.joinpath(*parts).with_suffix(".md")
 
 
+# Card icons for the generated package-overview grids (Material icon set, shipped
+# with Zensical and enabled via the pymdownx.emoji config in zensical.toml).
+_SUBPKG_ICON = ":material-folder:"
+_MODULE_ICON = ":material-file-code:"
+
+
+def _module_docstring(py: Path) -> str:
+    """Return ``py``'s module-level docstring (stripped), or '' when absent.
+
+    Parsed via ``ast`` so we never import project code (no side effects, no
+    dependency on an importable environment). Unparseable files degrade to ''.
+    """
+    try:
+        tree = ast.parse(py.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return ""
+    return (ast.get_docstring(tree) or "").strip()
+
+
+def _doc_summary(py: Path) -> str:
+    """First line of ``py``'s docstring — the one-line card summary."""
+    doc = _module_docstring(py)
+    return doc.splitlines()[0].strip() if doc else ""
+
+
+def _overview_children(pkg_dir: Path) -> tuple[list, list]:
+    """Documentable children of ``pkg_dir`` as ``(subpackages, modules)``.
+
+    Applies the same filters as discovery (``is_reference_module`` /
+    ``is_importable``) so the overview only ever links to pages that actually
+    get generated — no dead links to skipped tests, private modules, or
+    ``__init__``-less namespace dirs.
+    """
+    subpackages: list[tuple[str, str, str]] = []
+    modules: list[tuple[str, str, str]] = []
+    for child in sorted(pkg_dir.iterdir()):
+        if child.name == "__init__.py":
+            continue
+        if child.is_dir():
+            init = child / "__init__.py"
+            if not init.is_file():
+                continue
+            rel = init.relative_to(REPO_ROOT)
+            if not is_reference_module(rel) or not is_importable(init):
+                continue
+            subpackages.append((child.name, f"{child.name}/index.md", _doc_summary(init)))
+        elif child.suffix == ".py":
+            rel = child.relative_to(REPO_ROOT)
+            if not is_reference_module(rel) or not is_importable(child):
+                continue
+            modules.append((child.stem, f"{child.stem}.md", _doc_summary(child)))
+    return subpackages, modules
+
+
+def _card(icon: str, label: str, link: str, summary: str, kind: str) -> str:
+    """One Material ``grid cards`` list item (icon + linked title + body)."""
+    body = summary or kind
+    return (
+        f"-   {icon}{{ .lg .middle }} __[{label}]({link})__\n\n"
+        f"    ---\n\n"
+        f"    {body}"
+    )
+
+
+def _render_package_overview(py: Path) -> str:
+    """Landing page for a package: a card grid of its subpackages and modules.
+
+    Replaces the old bare ``::: package`` (which renders as an empty heading when
+    the ``__init__.py`` has no docstring or members — the common case here). Any
+    real package docstring is rendered as a lead paragraph above the grid.
+    """
+    parts = _module_parts(py)
+    dotted = ".".join(parts)
+    subpackages, modules = _overview_children(py.parent)
+
+    out = [f"# {parts[-1]}", ""]
+    if len(parts) > 1:
+        out += [f"`{dotted}`", ""]
+
+    pkg_doc = _module_docstring(py)
+    if pkg_doc:
+        out += [pkg_doc, ""]
+
+    cards = [_card(_SUBPKG_ICON, n, link, s, "Subpackage") for n, link, s in subpackages]
+    cards += [_card(_MODULE_ICON, n, link, s, "Module") for n, link, s in modules]
+
+    if cards:
+        out += ['<div class="grid cards" markdown>', ""]
+        out.append("\n\n".join(cards))
+        out += ["", "</div>"]
+    else:
+        out.append("_No documented submodules._")
+
+    return "\n".join(out) + "\n"
+
+
 def _render_reference(py: Path) -> str:
-    # No hand-written H1: mkdocstrings renders the heading, and the nav label is
-    # derived from the file/dir name (clean, short labels).
+    # Packages become a card-grid overview of their contents; leaf modules defer
+    # to mkdocstrings, which renders the heading from the docstring (the nav
+    # label is derived from the file/dir name for clean, short labels).
+    if py.name == "__init__.py":
+        return _render_package_overview(py)
     return f"::: {'.'.join(_module_parts(py))}\n"
 
 

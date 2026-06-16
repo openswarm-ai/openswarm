@@ -92,6 +92,13 @@ anchor_linenums = true
 [project.markdown_extensions.pymdownx.inlinehilite]
 [project.markdown_extensions.pymdownx.details]
 
+# Inline icons (``:material-folder:`` etc.) used by the generated package
+# overview pages' card grids. Zensical bundles the Material/Octicons/Lucide icon
+# sets but only wires them up when the emoji generator/index are set explicitly.
+[project.markdown_extensions.pymdownx.emoji]
+emoji_index = "zensical.extensions.emoji.twemoji"
+emoji_generator = "zensical.extensions.emoji.to_svg"
+
 # --- API reference from docstrings (mkdocstrings, preliminary in Zensical) ----
 # The Python handler ships separately (mkdocstrings-python, see requirements.txt).
 [project.plugins.mkdocstrings.handlers.python]
