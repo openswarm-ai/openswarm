@@ -66,6 +66,8 @@ from backend.apps.agents.manager.prompt.prompt_context import (
     _resolve_attached_skills,
     _resolve_forced_tools,
     _resolve_mode,
+    TOOLSEARCH_LOOP_THRESHOLD,
+    toolsearch_loop_redirect,
 )
 from backend.apps.agents.manager.prompt.attachments import (
     _build_dir_tree,
@@ -208,6 +210,29 @@ class AgentManager:
 
         logger.info(f"[MCP-DEBUG] Final mcp_servers: {list(mcp_servers.keys())}")
         return mcp_servers
+
+    def _gated_mcp_server_names(self, allowed_tools: list[str], active_mcps: list[str] | None) -> list[str]:
+        """Names of installed MCP servers withheld from the SDK because they're
+        not activated yet, exactly the servers the model sees in the
+        <mcp_servers> block but can't reach via ToolSearch. The only way in is
+        MCPActivate; used to steer a model looping on ToolSearch to the gate."""
+        active_set = set(active_mcps or [])
+        names: list[str] = []
+        try:
+            for tool in load_all_tools():
+                if not (tool.mcp_config and tool.enabled and tool.auth_status in ("configured", "connected")):
+                    continue
+                tool_ref = f"mcp:{tool.name}"
+                if tool_ref not in allowed_tools and allowed_tools != get_all_tool_names():
+                    continue
+                if _is_fully_denied(tool):
+                    continue
+                server_name = _sanitize_server_name(tool.name)
+                if server_name not in active_set:
+                    names.append(server_name)
+        except Exception:
+            logger.exception("gated MCP server enumeration failed")
+        return names
 
     def _build_connected_tools_context(self, allowed_tools: list[str]) -> str | None:
         return _build_connected_tools_context(allowed_tools, get_all_tool_names)
@@ -801,10 +826,39 @@ class AgentManager:
             )
 
         tool_start_times: dict[str, float] = {}
+        # Counts ToolSearch calls in a row (no other tool between them). A run
+        # of these with empty results is the "looping on ToolSearch" wedge.
+        _ts_loop = {"n": 0}
 
         async def pre_tool_hook(input_data, tool_use_id, context):
             tool_name = input_data.get("tool_name", "")
             hook_event = input_data.get("hook_event_name", "PreToolUse")
+
+            # ToolSearch loop-breaker. Gated MCP servers are withheld from the
+            # SDK until MCPActivate, so the CLI's native ToolSearch can never
+            # find them; small models thrash (empty ToolSearch, retry) for
+            # minutes until the user pauses. Let the first couple through, then
+            # redirect to the gate. Any non-ToolSearch call is real progress, so
+            # the counter resets. Gated-server lookup is deferred behind the
+            # threshold so the common (non-looping) path stays free.
+            if tool_name == "ToolSearch":
+                _ts_loop["n"] += 1
+                if _ts_loop["n"] >= TOOLSEARCH_LOOP_THRESHOLD:
+                    _reason = toolsearch_loop_redirect(
+                        _ts_loop["n"],
+                        self._gated_mcp_server_names(session.allowed_tools, session.active_mcps),
+                    )
+                    if _reason:
+                        logger.info(f"[MCP-DEBUG] ToolSearch loop-breaker fired for {session_id} (n={_ts_loop['n']})")
+                        return {
+                            "hookSpecificOutput": {
+                                "hookEventName": hook_event,
+                                "permissionDecision": "deny",
+                                "permissionDecisionReason": _reason,
+                            }
+                        }
+            else:
+                _ts_loop["n"] = 0
 
             if tool_name and tool_name != "AskUserQuestion":
                 tool_input = input_data.get("tool_input", {})

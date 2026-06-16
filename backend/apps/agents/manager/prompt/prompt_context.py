@@ -98,6 +98,35 @@ def _build_connected_tools_context(allowed_tools: list[str], get_all_tool_names:
     )
 
 
+# A run of this many ToolSearch calls with no other tool between them is the
+# "looping on ToolSearch" wedge: the model hunts for a gated MCP server's tools,
+# which ToolSearch can never see, gets empty results, and retries. Two free
+# calls (a power user with many activated MCPs may legitimately ToolSearch to
+# load a deferred tool); redirect on the third.
+TOOLSEARCH_LOOP_THRESHOLD = 3
+
+
+def toolsearch_loop_redirect(consecutive_toolsearch: int, gated_servers: list[str]) -> str | None:
+    """The feedback to hand a model that's stuck calling ToolSearch in a row.
+    None until it crosses the threshold; then a steer toward MCPActivate (the
+    only path to a gated server) plus a reminder its other tools are already
+    loaded. Pure so the loop-break boundary is unit-testable."""
+    if consecutive_toolsearch < TOOLSEARCH_LOOP_THRESHOLD:
+        return None
+    reason = (
+        "ToolSearch can't load anything here, every tool you can use is already "
+        "active and callable by name, so there's nothing to search for. "
+    )
+    if gated_servers:
+        reason += (
+            "If you need an app you don't see yet (email, calendar, drive, etc.), "
+            "it's gated: call MCPActivate(server_name) with one of these and its "
+            f"tools become callable next turn: {', '.join(gated_servers)}. "
+        )
+    reason += "Stop calling ToolSearch."
+    return reason
+
+
 def _build_browser_context(dashboard_id: str | None, selected_browser_ids: list[str] | None = None) -> str | None:
     """Build a context block listing browser cards and delegation instructions.
 
@@ -303,6 +332,12 @@ def _build_mcp_registry_summary(allowed_tools: list[str], active_mcps: list[str]
         "gate and don't share auth with this app. If the user wants Gmail/"
         "Calendar/Drive, the equivalent OpenSwarm server is listed below; "
         "activate that one via MCPActivate instead."
+    )
+    sections.append(
+        "1b. The native `ToolSearch` tool CANNOT see these servers, they're "
+        "hidden from it until activated, so searching for them returns nothing "
+        "and just burns turns. Never ToolSearch for an app/integration; go "
+        "straight to MCPActivate."
     )
     sections.append(
         "2. After MCPActivate returns, end the turn, a follow-up turn fires "

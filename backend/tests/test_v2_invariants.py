@@ -211,6 +211,75 @@ async def test_gate_stress_random_activations():
 
 
 # ===========================================================================
+# Group A2, ToolSearch loop-breaker
+# ===========================================================================
+# Gated MCP servers are withheld from the SDK, so the CLI's native ToolSearch
+# can never see them; small models loop (empty ToolSearch -> retry) until the
+# user pauses. The break must (a) not fire on the first call or two (a power
+# user may legitimately ToolSearch a deferred tool), (b) fire once it's clearly
+# stuck, steering to MCPActivate, and (c) reset when any real tool runs.
+
+
+def test_toolsearch_redirect_holds_below_threshold():
+    from backend.apps.agents.manager.prompt.prompt_context import (
+        toolsearch_loop_redirect,
+        TOOLSEARCH_LOOP_THRESHOLD,
+    )
+    for n in range(1, TOOLSEARCH_LOOP_THRESHOLD):
+        assert toolsearch_loop_redirect(n, ["gmail"]) is None, f"must not redirect at n={n}"
+
+
+def test_toolsearch_redirect_fires_at_threshold_and_names_gated_servers():
+    from backend.apps.agents.manager.prompt.prompt_context import (
+        toolsearch_loop_redirect,
+        TOOLSEARCH_LOOP_THRESHOLD,
+    )
+    reason = toolsearch_loop_redirect(TOOLSEARCH_LOOP_THRESHOLD, ["google-workspace", "slack"])
+    assert reason is not None
+    assert "MCPActivate" in reason
+    assert "google-workspace" in reason and "slack" in reason
+    assert "Stop calling ToolSearch" in reason
+
+
+def test_toolsearch_redirect_works_with_no_gated_servers():
+    # Even with nothing to activate, the steer must still tell the model its
+    # tools are already loaded so it stops searching (no crash on empty list).
+    from backend.apps.agents.manager.prompt.prompt_context import (
+        toolsearch_loop_redirect,
+        TOOLSEARCH_LOOP_THRESHOLD,
+    )
+    reason = toolsearch_loop_redirect(TOOLSEARCH_LOOP_THRESHOLD, [])
+    assert reason is not None
+    assert "MCPActivate" not in reason  # nothing to point at
+    assert "Stop calling ToolSearch" in reason
+
+
+@pytest.mark.asyncio
+async def test_gated_server_names_surface_only_inactive_servers():
+    """The steer list must mirror the gate: connected-but-not-active servers
+    only, never one that's already activated (callable) or denied."""
+    from backend.apps.agents.agent_manager import AgentManager
+    fake_tools = [_fake_tool("Gmail"), _fake_tool("Slack"), _fake_tool("Notion")]
+    with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools):
+        mgr = AgentManager()
+        names = mgr._gated_mcp_server_names(
+            allowed_tools=["mcp:Gmail", "mcp:Slack", "mcp:Notion"],
+            active_mcps=["gmail"],  # already activated -> not "gated"
+        )
+        assert "gmail" not in names, "activated server must not appear as gated"
+        assert "slack" in names and "notion" in names
+
+
+@pytest.mark.asyncio
+async def test_gated_server_names_empty_when_all_active():
+    from backend.apps.agents.agent_manager import AgentManager
+    fake_tools = [_fake_tool("Gmail")]
+    with patch("backend.apps.agents.agent_manager.load_all_tools", return_value=fake_tools):
+        mgr = AgentManager()
+        assert mgr._gated_mcp_server_names(["mcp:Gmail"], ["gmail"]) == []
+
+
+# ===========================================================================
 # Group B, needs_fresh_session soft-restart
 # ===========================================================================
 # When MCPActivate fires mid-session, the bundled CLI doesn't re-read
