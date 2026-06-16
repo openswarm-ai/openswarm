@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { report } from '@/shared/serviceClient';
 import { store } from '@/shared/state/store';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -58,6 +58,11 @@ export function useDashboardLifecycle({
   restoredExpandedRef,
 }: UseDashboardLifecycleArgs) {
   const dispatch = useAppDispatch();
+  // True once THIS dashboard open has refetched outputs. The orphan-prune below
+  // keys off this, not the sticky global outputsLoaded, so it never wipes a
+  // just-imported app card by judging it against a stale (previous-dashboard)
+  // apps list before the fresh fetch lands.
+  const [outputsRefetched, setOutputsRefetched] = useState(false);
   const pendingBrowserUrl = useAppSelector((state) => state.tempState.pendingBrowserUrl);
   const pendingFocusAgentId = useAppSelector((state) => state.tempState.pendingFocusAgentId);
   const pendingFocusBrowserId = useAppSelector((state) => state.dashboardLayout.pendingFocusBrowserId);
@@ -79,6 +84,7 @@ export function useDashboardLifecycle({
     if (!dashboardId) return;
     hasFittedRef.current = false;
     restoredExpandedRef.current = false;
+    setOutputsRefetched(false);
     dispatch(resetLayout());
     // CRITICAL path: these populate the cards the user expects to see
     // on first paint. Don't defer.
@@ -97,17 +103,18 @@ export function useDashboardLifecycle({
     // ~100ms later costs nothing). Pushing these into the post-paint
     // window measurably improves LCP because the initial render
     // pipeline isn't competing with their thunks/network setup.
+    const loadDeferred = () => {
+      dispatch(fetchHistory({ dashboardId }));
+      // Mark outputs fresh only after a SUCCESSFUL fetch, so the prune below
+      // judges view cards against this dashboard's real apps, not a stale list.
+      dispatch(fetchOutputs()).then((res) => {
+        if (fetchOutputs.fulfilled.match(res)) setOutputsRefetched(true);
+      });
+      dashboardWs.connect();
+    };
     const idleHandle = (typeof window !== 'undefined' && (window as any).requestIdleCallback)
-      ? (window as any).requestIdleCallback(() => {
-          dispatch(fetchHistory({ dashboardId }));
-          dispatch(fetchOutputs());
-          dashboardWs.connect();
-        }, { timeout: 2000 })
-      : window.setTimeout(() => {
-          dispatch(fetchHistory({ dashboardId }));
-          dispatch(fetchOutputs());
-          dashboardWs.connect();
-        }, 200);
+      ? (window as any).requestIdleCallback(loadDeferred, { timeout: 2000 })
+      : window.setTimeout(loadDeferred, 200);
 
     // Pre-warm Anthropic's prompt cache for sessions on this dashboard
     // ~250ms after mount (debounced; AbortController cancels on
@@ -243,16 +250,18 @@ export function useDashboardLifecycle({
   }, [sessions, layoutInitialized, dispatch, dashboardId, expandedSessionIds]);
 
   // Prune orphan view cards whose underlying output was deleted (e.g. via
-  // the Views page). Without this, the layout entry persists in the
-  // minimap and contentBounds even though DashboardViewCard renders
-  // nothing. Gated on outputsLoaded so we don't wipe valid cards during
-  // the brief window between fetchLayout returning and outputs finishing.
+  // the Views page). Without this, the layout entry persists in the minimap
+  // and contentBounds even though DashboardViewCard renders nothing. Gated on
+  // outputsRefetched (THIS open's fresh fetch), NOT the sticky global
+  // outputsLoaded: on a freshly-imported dashboard the global flag is already
+  // true from a prior dashboard, so the old gate pruned the just-imported app
+  // card against a stale apps list and the debounced save persisted the wipe.
   useEffect(() => {
-    if (!layoutInitialized || !outputsLoaded) return;
+    if (!layoutInitialized || !outputsRefetched) return;
     for (const outputId of Object.keys(viewCards)) {
       if (!outputs[outputId]) dispatch(removeViewCard(outputId));
     }
-  }, [layoutInitialized, outputsLoaded, viewCards, outputs, dispatch]);
+  }, [layoutInitialized, outputsRefetched, viewCards, outputs, dispatch]);
 
   // On first load after outputs settle, snapshot every existing Output id as
   // "already accounted for." Any output that ARRIVES later (typically the
