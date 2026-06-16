@@ -10,6 +10,7 @@ import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import CircularProgress from '@mui/material/CircularProgress';
 import CloseIcon from '@mui/icons-material/Close';
+import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
@@ -55,12 +56,26 @@ const ImportModal: React.FC<Props> = ({ preflight, open, committing, onConfirm, 
           <Box sx={{ px: 3, pb: 3 }}>
             <IncludesList summary={preflight.summary} />
             {preflight.review && preflight.review.findings.length > 0 && (
-              <Box sx={{ mt: 1.5, p: 1.5, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.status.warning}55`, bgcolor: c.status.warningBg }}>
-                {preflight.review.findings.map((f, i) => (
-                  <Typography key={`rv-${i}`} sx={{ fontSize: '0.78rem', color: c.text.secondary, lineHeight: 1.5 }}>
-                    {f}
-                  </Typography>
-                ))}
+              <Box
+                sx={{
+                  mt: 1.5,
+                  p: 1.25,
+                  display: 'flex',
+                  gap: 1,
+                  alignItems: 'flex-start',
+                  borderRadius: `${c.radius.md}px`,
+                  border: `1px solid ${c.status.warning}33`,
+                  bgcolor: `${c.status.warning}12`,
+                }}
+              >
+                <ShieldOutlinedIcon sx={{ fontSize: 16, color: c.status.warning, mt: '2px', flexShrink: 0 }} />
+                <Box>
+                  {preflight.review.findings.map((f, i) => (
+                    <Typography key={`rv-${i}`} sx={{ fontSize: '0.78rem', color: c.text.secondary, lineHeight: 1.5 }}>
+                      {f}
+                    </Typography>
+                  ))}
+                </Box>
               </Box>
             )}
             {preflight.conflicts.length > 0 && (

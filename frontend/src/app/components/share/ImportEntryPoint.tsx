@@ -161,25 +161,30 @@ const ImportEntryPoint: React.FC = () => {
       />
       <ImportDigest ref={digestRef} color={c.accent.primary} />
       <Fade in={dragging} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
-        <Box
-          sx={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 2000,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 1.5,
-            bgcolor: `${c.bg.page}e6`,
-            border: `2px dashed ${c.accent.primary}`,
-            pointerEvents: 'none',
-          }}
-        >
-          <FileDownloadIcon sx={{ fontSize: 40, color: c.accent.primary }} />
-          <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: c.text.primary }}>
-            Drop to add to OpenSwarm
-          </Typography>
+        <Box sx={{ position: 'fixed', inset: 0, zIndex: 2000, pointerEvents: 'none' }}>
+          {/* Full-bleed dim, rounded to match the window so its corners don't
+              spill past the OS's rounded corners. */}
+          <Box sx={{ position: 'absolute', inset: 0, bgcolor: `${c.bg.page}e6`, borderRadius: '12px' }} />
+          {/* The dashed drop-zone sits a hair inside so every corner stays in
+              view inside the rounded window, instead of getting clipped. */}
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 14,
+              borderRadius: '18px',
+              border: `2px dashed ${c.accent.primary}`,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1.5,
+            }}
+          >
+            <FileDownloadIcon sx={{ fontSize: 40, color: c.accent.primary }} />
+            <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: c.text.primary }}>
+              Drop to add to OpenSwarm
+            </Typography>
+          </Box>
         </Box>
       </Fade>
       <ImportModal

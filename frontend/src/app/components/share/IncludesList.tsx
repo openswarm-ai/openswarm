@@ -27,15 +27,15 @@ const IncludesList: React.FC<{ summary: BundleSummary }> = ({ summary }) => {
     detail,
     faded,
   }) => (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, py: 0.65 }}>
       <Typography
         sx={{
-          fontSize: '0.6rem',
+          fontSize: '0.62rem',
           fontWeight: 700,
-          letterSpacing: '0.04em',
+          letterSpacing: '0.06em',
           textTransform: 'uppercase',
           color: c.text.tertiary,
-          minWidth: 60,
+          minWidth: 64,
           flexShrink: 0,
         }}
       >
@@ -63,10 +63,10 @@ const IncludesList: React.FC<{ summary: BundleSummary }> = ({ summary }) => {
     <Box
       sx={{
         border: `1px solid ${c.border.subtle}`,
-        borderRadius: `${c.radius.md}px`,
+        borderRadius: `${c.radius.lg}px`,
         bgcolor: c.bg.surface,
-        px: 1.5,
-        py: 0.5,
+        px: 2,
+        py: 1,
       }}
     >
       <Row tag={KIND_LABEL[summary.root.type] || summary.root.type} name={summary.root.name} />
@@ -74,7 +74,7 @@ const IncludesList: React.FC<{ summary: BundleSummary }> = ({ summary }) => {
         <Row key={`inc-${i}`} tag={KIND_LABEL[it.type] || it.type} name={it.name} detail={it.detail} />
       ))}
       {summary.requirements.length > 0 && (
-        <Box sx={{ mt: 0.5, pt: 0.5, borderTop: `1px solid ${c.border.subtle}` }}>
+        <Box sx={{ mt: 0.75, pt: 0.75, borderTop: `1px solid ${c.border.subtle}` }}>
           {summary.requirements.map((r, i) => (
             <Row key={`req-${i}`} tag="Needs" name={r.label} detail={r.detail} faded />
           ))}
