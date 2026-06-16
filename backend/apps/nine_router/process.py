@@ -17,6 +17,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import tempfile
 import time
 from typing import Any
 
@@ -297,6 +298,41 @@ def _ensure_router_cached() -> str | None:
     return server_js if os.path.exists(server_js) else None
 
 
+def _read_capture_tail(path: str, limit: int = 6000) -> str:
+    """Tail of the 9Router start-capture file, where the real spawn error lands.
+    Best-effort; empty string on any hiccup so telemetry never breaks boot."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - limit))
+            return f.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def _report_start_failure(reason: str, *, detail: str = "", **fields: Any) -> None:
+    """9Router didn't come up. Log it and ship a scrubbed diagnostic so a user's
+    'every model exits 1' is finally explained from our side instead of a silent
+    warning. The stderr tail can echo an own_key, so it rides the same scrub as
+    every other telemetry string. Never raises."""
+    logger.warning("9Router start failed (%s)", reason)
+    try:
+        from backend.apps.agents.core.error_classify import redact_for_telemetry
+        from backend.apps.service.client import submit_diagnostic
+        payload: dict[str, Any] = {
+            "kind": "9router_start_failed",
+            "reason": reason,
+            "packaged": os.environ.get("OPENSWARM_PACKAGED") == "1",
+            **fields,
+        }
+        if detail:
+            payload["stderr_tail"] = redact_for_telemetry(detail)
+        submit_diagnostic(payload)
+    except Exception:
+        logger.debug("9router start-failure diagnostic submit failed", exc_info=True)
+
+
 async def ensure_running():
     """Start 9Router if not already running."""
     global _process
@@ -326,99 +362,103 @@ async def ensure_running():
             logger.info("9Router already running on port %d", NINE_ROUTER_PORT)
             return
     _9router_dir = _find_9router_dir()
+    _patch = _gpt5_patch_path()
 
-    if _is_packaged and _9router_dir:
-        # Packaged mode; run the pre-built standalone server staged at
-        # <resources>/router/server.js by scripts/fetch-router.sh at build time.
+    if _is_packaged:
+        # Packaged: run the pre-built standalone server staged at
+        # <resources>/router/server.js by fetch-router at build time. We do NOT
+        # fall back to the dev npm path here, a user machine has no npm, so that
+        # only ever fails silently; every miss is reported instead.
+        if not _9router_dir:
+            _report_start_failure("router_not_bundled")
+            return
         standalone_server = os.path.join(_9router_dir, "server.js")
         if not os.path.exists(standalone_server):
             standalone_server = os.path.join(_9router_dir, ".next", "standalone", "server.js")
         if not os.path.exists(standalone_server):
-            logger.warning("9Router standalone build not found in %s", _9router_dir)
+            _report_start_failure("server_missing", router_dir_found=True)
             return
-
         node = _find_node()
         if not node:
-            logger.warning("Node.js not found; cannot start 9Router in packaged mode.")
+            _report_start_failure("node_not_found", router_dir_found=True, server_found=True)
             return
-
         logger.info("Starting 9Router (production) on port %d...", NINE_ROUTER_PORT)
-        cmd = [node]
-        _patch = _gpt5_patch_path()
-        if _patch:
-            cmd += ["--require", _patch]
-        cmd.append(standalone_server)
+        cmd = [node] + (["--require", _patch] if _patch else []) + [standalone_server]
         cwd = os.path.dirname(standalone_server)
         env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production"}
         if node == os.environ.get("OPENSWARM_ELECTRON_PATH"):
             env["ELECTRON_RUN_AS_NODE"] = "1"
-
     else:
-        # Dev mode; install the pinned 9router npm package into a local
-        # cache the first time run.sh boots, then spawn `node app/server.js`
-        # directly on subsequent launches. Bypassing the package's cli.js
-        # avoids its menu-bar tray icon (which users confusingly quit,
-        # silently killing their subscription routing), its update-check
-        # spinner, and the interactive TUI.
+        # Dev: install the pinned npm package into a local cache once, then spawn
+        # `node app/server.js` directly (bypasses the package cli.js tray icon
+        # users confusingly quit, its update-check spinner, and the TUI).
         cached_server = _ensure_router_cached()
         if not cached_server:
             return
-
         node = _find_node()
         if not node:
             logger.warning("Node.js not found; cannot start 9Router in dev mode.")
             return
-
         logger.info(
             "Starting 9Router (dev cache, 9router@%s) on port %d...",
             NINE_ROUTER_NPM_VERSION, NINE_ROUTER_PORT,
         )
-        cmd = [node]
-        _patch = _gpt5_patch_path()
-        if _patch:
-            cmd += ["--require", _patch]
-        cmd.append(cached_server)
+        cmd = [node] + (["--require", _patch] if _patch else []) + [cached_server]
         cwd = os.path.dirname(cached_server)
         env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production"}
 
-    # By default, 9Router's stdout/stderr go to /dev/null (Next.js dev mode
-    # is extremely chatty and floods the openswarm console otherwise). When
-    # debugging is needed, set OPENSWARM_DEBUG_9ROUTER=1 in the environment
-    # before launching the backend; output will then be appended to
-    # backend/data/9router.log line-buffered, which can be `tail -f`'d.
-    if os.environ.get("OPENSWARM_DEBUG_9ROUTER"):
+    # Capture stdout+stderr so a failed start can tell us WHY (the old DEVNULL
+    # default made every "router never came up" a silent mystery, which is the
+    # whole reason #90 was un-diagnosable). Packaged prod (NODE_ENV=production
+    # standalone) is quiet, so one fixed temp file, truncated each start attempt,
+    # won't grow; dev keeps its chatty-Next.js DEVNULL unless debug is set.
+    _cap_path = os.path.join(tempfile.gettempdir(), "openswarm-9router-start.log")
+    _cap_file = None
+    if _is_packaged:
+        try:
+            _cap_file = open(_cap_path, "wb")
+            _stdout, _stderr = _cap_file, subprocess.STDOUT
+        except OSError:
+            _stdout, _stderr = subprocess.DEVNULL, subprocess.DEVNULL
+    elif os.environ.get("OPENSWARM_DEBUG_9ROUTER"):
         _log_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "data",
-            "9router.log",
+            "data", "9router.log",
         )
         os.makedirs(os.path.dirname(_log_path), exist_ok=True)
-        _stdout = open(_log_path, "a", buffering=1)  # line-buffered
-        _stderr = subprocess.STDOUT
+        _stdout, _stderr = open(_log_path, "a", buffering=1), subprocess.STDOUT
         logger.info(f"9Router debug logging enabled → {_log_path}")
     else:
-        _stdout = subprocess.DEVNULL
-        _stderr = subprocess.DEVNULL
+        _stdout, _stderr = subprocess.DEVNULL, subprocess.DEVNULL
 
     try:
-        _process = subprocess.Popen(
-            cmd,
-            cwd=cwd,
-            stdout=_stdout,
-            stderr=_stderr,
-            env=env,
-        )
-
+        _process = subprocess.Popen(cmd, cwd=cwd, stdout=_stdout, stderr=_stderr, env=env)
+        if _cap_file is not None:
+            _cap_file.close()  # the child holds its own fd; the parent copy isn't needed
         timeout = 20 if _is_packaged else 30
         for _ in range(timeout * 2):
             await asyncio.sleep(0.5)
             if is_running():
                 logger.info("9Router started successfully")
                 return
-
-        logger.warning("9Router did not start within %ds", timeout)
+        # Verify-at-boot: it never answered. Report with the captured tail + the
+        # exit code (non-None = it crashed; None = wedged or just slow).
+        _report_start_failure(
+            "not_ready_in_time",
+            detail=_read_capture_tail(_cap_path) if _is_packaged else "",
+            returncode=_process.poll(),
+            timeout_s=timeout,
+        )
     except Exception as e:
-        logger.warning(f"Failed to start 9Router: {e}")
+        if _cap_file is not None and not _cap_file.closed:
+            try:
+                _cap_file.close()
+            except OSError:
+                pass
+        _report_start_failure(
+            "spawn_exception",
+            detail=f"{e}\n{_read_capture_tail(_cap_path) if _is_packaged else ''}",
+        )
 
 
 def stop():
