@@ -67,6 +67,44 @@ interface Props {
   onBringToFront?: (id: string, type: 'agent' | 'view' | 'browser') => void;
 }
 
+// The app card's loading state while its runtime spins up. One soft pulse, calm
+// copy, and an honest hint only after 9s, a freshly-imported app installs its
+// deps on first open, which is the slow case worth explaining instead of leaving
+// the user staring at a dead screen.
+const BootingBody: React.FC = () => {
+  const c = useClaudeTokens();
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 9000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <Box
+      sx={{
+        width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 1.25, px: 3, textAlign: 'center',
+      }}
+    >
+      <Box
+        sx={{
+          width: 7, height: 7, borderRadius: '50%', bgcolor: c.accent.primary,
+          animation: 'osBootPulse 1.4s ease-in-out infinite',
+          '@keyframes osBootPulse': {
+            '0%, 100%': { opacity: 0.35, transform: 'scale(0.8)' },
+            '50%': { opacity: 1, transform: 'scale(1)' },
+          },
+        }}
+      />
+      <Typography sx={{ fontSize: '0.85rem', color: c.text.muted }}>Starting preview</Typography>
+      <Fade in={slow} timeout={400} unmountOnExit>
+        <Typography sx={{ fontSize: '0.72rem', color: c.text.ghost, maxWidth: 240 }}>
+          First run sets the app up, this can take a moment.
+        </Typography>
+      </Fade>
+    </Box>
+  );
+};
+
 const DashboardViewCard: React.FC<Props> = ({
   output, cardX, cardY, cardWidth, cardHeight, zoom = 1, panX = 0, panY = 0, cmdHeld = false,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
@@ -681,24 +719,7 @@ const DashboardOutputPreview: React.FC<{
   }
 
   if (isBooting) {
-    return (
-      <Box
-        sx={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: tokens.text.muted,
-          fontSize: '0.85rem',
-          fontStyle: 'italic',
-          textAlign: 'center',
-          px: 2,
-        }}
-      >
-        Starting preview…
-      </Box>
-    );
+    return <BootingBody />;
   }
 
   return (
