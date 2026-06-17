@@ -164,6 +164,37 @@ direct-vite + junction code, unit tests, local repro) + the warm-cache extract p
 the end-to-end GUI "create app -> live preview" is the one manual checklist step
 (can't drive the Electron+agent UI headlessly).
 
+## #9 items 1+3 measured on the signed build: NO cold-start benefit (negative result)
+
+Built v1.3.86 with items 1+3 ON (python-env 13,554 -> 9,285 files, ~31% fewer) and
+measured the signed install:
+
+| metric | items OFF (1.3.86) | items ON (1.3.86) |
+| --- | --- | --- |
+| cold backend-http-ready | 22.5 s | **22.4 s (no change)** |
+| warm backend-http-ready | 5.0 s | 5.2 s (noise) |
+| installer | 372 MB | 365 MB (~7 MB smaller) |
+
+**The hypothesis was wrong.** Cutting the file COUNT 31% did nothing for cold,
+because cold is dominated by Defender scanning the large NATIVE binaries imported
+/ present at boot, not the many small .py files. The biggest are
+`claude.exe` (242 MB!), `_rust.pyd` (9.4), `_avif...pyd` (7.5), `python313.dll`
+(5.8), `libcrypto-3-x64.dll` (5.7), `mfc140u.dll` (5.4) -- none of which items 1+3
+touch (zip/pyc only affect pure-python). So items 1+3 are a wash for cold (a tiny
+installer-size win + import-clean, but not the goal).
+
+The real remaining cold levers are byte/native-bound, not file-count:
+- **#9 item 5 (Defender exclusion, opt-in)** -- the only thing that removes the
+  native-binary scan entirely; would bring cold toward the ~5 s warm number.
+- Trim/lazy the heavy native deps (e.g., the 242 MB bundled claude.exe, PIL/lxml)
+  -- larger, riskier code/packaging work.
+- Or accept cold 22.5 s: already 75-84% below the 54-138 s baseline, and warm 5 s
+  is already under the 10 s goal.
+
+Recommendation: items 1+3 don't earn their build-time/complexity for cold; keep
+them only for the marginal installer-size win, or revert step 2b to keep the build
+lean. The meaningful cold work is item 5.
+
 ## Net time decreased per step (measured)
 
 | step | before | after | saved |
