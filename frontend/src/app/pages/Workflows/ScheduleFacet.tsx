@@ -58,6 +58,18 @@ function previewNextRun(sched: ScheduleConfig): Date | null {
     if (!Number.isNaN(ends.getTime()) && ends.getTime() <= now.getTime()) return null;
   }
   if (sched.max_runs != null && sched.runs_count >= sched.max_runs) return null;
+  if (sched.repeat_unit === 'minute') {
+    const step = Math.max(15, sched.repeat_every);
+    let c = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0);
+    while (c <= now) c = new Date(c.getTime() + step * 60000);
+    return c;
+  }
+  if (sched.repeat_unit === 'hour') {
+    const step = Math.max(1, sched.repeat_every);
+    let c = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), sched.minute, 0, 0);
+    while (c <= now) c = new Date(c.getTime() + step * 3600000);
+    return c;
+  }
   let candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), sched.hour, sched.minute, 0, 0);
   if (candidate <= now) candidate = new Date(candidate.getTime() + 86400000);
   if (sched.repeat_unit === 'day') {
@@ -192,7 +204,7 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
       </Box>
 
       {s.enabled && (
-        <AppOpenStatusBadge info={appOpen} hour={s.hour} minute={s.minute} onFix={fixAppOpen} />
+        <AppOpenStatusBadge info={appOpen} hour={s.hour} minute={s.minute} frequent={s.repeat_unit === 'minute' || s.repeat_unit === 'hour'} onFix={fixAppOpen} />
       )}
 
       {/* Section: When should this workflow run? */}
@@ -205,14 +217,29 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
           <InputBase
             type="number"
             value={s.repeat_every}
-            onChange={(e) => setSched({ repeat_every: Math.max(1, Number(e.target.value) || 1) })}
+            onChange={(e) => {
+              // Per-unit bounds mirror the backend: minute 15..1440 (24h),
+              // every other unit 1..365.
+              const min = s.repeat_unit === 'minute' ? 15 : 1;
+              const max = s.repeat_unit === 'minute' ? 1440 : 365;
+              setSched({ repeat_every: Math.min(max, Math.max(min, Number(e.target.value) || min)) });
+            }}
             sx={{ width: 56, fontSize: INPUT_FS, border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.md}px`, px: 0.75, py: 0.4 }}
           />
           <Select
             size="small"
             value={s.repeat_unit}
-            onChange={(e) => setSched({ repeat_unit: e.target.value as ScheduleConfig['repeat_unit'] })}
+            onChange={(e) => {
+              const unit = e.target.value as ScheduleConfig['repeat_unit'];
+              // 15 is the floor for the minute unit; bump repeat_every up
+              // when switching in so the input never shows an invalid value.
+              const patch: Partial<ScheduleConfig> = { repeat_unit: unit };
+              if (unit === 'minute' && s.repeat_every < 15) patch.repeat_every = 15;
+              setSched(patch);
+            }}
             sx={{ fontSize: LABEL_FS, '& .MuiSelect-select': { py: 0.5 } }}>
+            <MenuItem value="minute">minute</MenuItem>
+            <MenuItem value="hour">hour</MenuItem>
             <MenuItem value="day">day</MenuItem>
             <MenuItem value="week">week</MenuItem>
             <MenuItem value="month">month</MenuItem>
@@ -233,6 +260,25 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
             })}
           </Box>
         )}
+        {/* minute-unit schedules have no anchor time; hour-unit schedules
+            only need the minute offset; the rest pick a full clock time. */}
+        {s.repeat_unit === 'hour' && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+            <Typography sx={{ fontSize: LABEL_FS, color: c.text.secondary, minWidth: 96 }}>At</Typography>
+            <Typography sx={{ fontSize: INPUT_FS, color: c.text.muted }}>:</Typography>
+            <Select
+              size="small"
+              value={s.minute}
+              onChange={(e) => setSched({ minute: Number(e.target.value) })}
+              sx={{ fontSize: LABEL_FS, '& .MuiSelect-select': { py: 0.4 } }}>
+              {[0, 15, 30, 45].map((m) => (
+                <MenuItem key={m} value={m}>{String(m).padStart(2, '0')}</MenuItem>
+              ))}
+            </Select>
+            <Typography sx={{ fontSize: HINT_FS, color: c.text.muted }}>past the hour</Typography>
+          </Box>
+        )}
+        {(s.repeat_unit === 'day' || s.repeat_unit === 'week' || s.repeat_unit === 'month') && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
           <Typography sx={{ fontSize: LABEL_FS, color: c.text.secondary, minWidth: 96 }}>At</Typography>
           <Select
@@ -274,6 +320,7 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
           </Select>
           <Typography sx={{ fontSize: HINT_FS, color: c.text.ghost, ml: 0.5 }}>{friendlyTzLabel(s.timezone)}</Typography>
         </Box>
+        )}
         {nextPreview && s.enabled && (
           <Typography sx={{ fontSize: HINT_FS, color: c.accent.primary, pl: 12, fontWeight: 500 }}>
             Next run: {formatNextRun(nextPreview)}
@@ -391,7 +438,7 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
   );
 }
 
-function AppOpenStatusBadge({ info, hour, minute, onFix }: { info: AppOpenInfo; hour: number; minute: number; onFix: () => void }) {
+function AppOpenStatusBadge({ info, hour, minute, frequent, onFix }: { info: AppOpenInfo; hour: number; minute: number; frequent: boolean; onFix: () => void }) {
   const c = useClaudeTokens();
   const good = info.alwaysOn;
   const fmt = formatTime(hour, minute);
@@ -404,7 +451,7 @@ function AppOpenStatusBadge({ info, hour, minute, onFix }: { info: AppOpenInfo; 
     }}>
       <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: good ? c.status.success : (c.status.warning || c.text.muted) }} />
       <Typography sx={{ flex: 1, fontSize: HINT_FS, color: c.text.primary }}>
-        {good ? 'Will run even if you close OpenSwarm.' : `OpenSwarm must be open at ${fmt} for this to run.`}
+        {good ? 'Will run even if you close OpenSwarm.' : (frequent ? 'OpenSwarm must be open for this to run.' : `OpenSwarm must be open at ${fmt} for this to run.`)}
       </Typography>
       {!good && (
         <Tooltip title="One click: start OpenSwarm automatically when you log in, and keep a small icon in your menubar so it stays running when you close the window. You can undo both later in Settings.">

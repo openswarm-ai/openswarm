@@ -43,6 +43,13 @@ export function formatHourLabel(hour: number): string {
 export function describeSchedule(sched: ScheduleConfig): string {
   if (!sched.enabled) return 'Not scheduled';
   const time = formatTime(sched.hour, sched.minute);
+  if (sched.repeat_unit === 'minute') {
+    return `Every ${sched.repeat_every} minutes`;
+  }
+  if (sched.repeat_unit === 'hour') {
+    const at = sched.minute === 0 ? '' : ` at :${String(sched.minute).padStart(2, '0')}`;
+    return sched.repeat_every === 1 ? `Every hour${at}` : `Every ${sched.repeat_every} hours${at}`;
+  }
   if (sched.repeat_unit === 'day') {
     return sched.repeat_every === 1 ? `Every day at ${time}` : `Every ${sched.repeat_every} days at ${time}`;
   }
@@ -127,6 +134,26 @@ export function fireTimesWithin(workflow: Workflow, from: Date, to: Date, cap = 
   const out: Date[] = [];
   const cursor = new Date(from);
   cursor.setHours(0, 0, 0, 0);
+
+  if (sched.repeat_unit === 'minute') {
+    const step = Math.max(15, sched.repeat_every);
+    const d = new Date(from);
+    d.setSeconds(0, 0);
+    for (; d <= to && out.length < effectiveCap; d.setTime(d.getTime() + step * 60000)) {
+      if (d >= from) out.push(new Date(d));
+    }
+    return out;
+  }
+
+  if (sched.repeat_unit === 'hour') {
+    const step = Math.max(1, sched.repeat_every);
+    const d = new Date(from);
+    d.setMinutes(sched.minute, 0, 0);
+    for (; d <= to && out.length < effectiveCap; d.setTime(d.getTime() + step * 3600000)) {
+      if (d >= from) out.push(new Date(d));
+    }
+    return out;
+  }
 
   if (sched.repeat_unit === 'day') {
     const step = Math.max(1, sched.repeat_every);

@@ -7,9 +7,11 @@ startup we walk persisted workflows once, decide what to do about missed
 fires via on_missed, and queue each.
 
 Schedule semantics:
-  unit=day:   fires every repeat_every days at hour:minute
-  unit=week:  fires on the listed weekday(s) every repeat_every weeks
-  unit=month: fires on the original day-of-month every repeat_every months
+  unit=minute: fires every repeat_every minutes (15 is the enforced floor)
+  unit=hour:   fires every repeat_every hours at :minute past the hour
+  unit=day:    fires every repeat_every days at hour:minute
+  unit=week:   fires on the listed weekday(s) every repeat_every weeks
+  unit=month:  fires on the original day-of-month every repeat_every months
 
 Wall-clock math runs in the workflow's IANA timezone, then we convert to
 UTC at the boundary. This is the only safe way to honor DST (a "9am
@@ -105,6 +107,21 @@ def _next_fire_after(sched: ScheduleConfig, ref_utc: datetime) -> Optional[datet
     tz = _resolve_tz(sched.timezone)
     ref_local = ref_utc.astimezone(tz)
     base = ref_local.replace(second=0, microsecond=0)
+
+    if sched.repeat_unit == "minute":
+        step = max(15, sched.repeat_every)
+        c = base
+        while c <= ref_local:
+            c = c + timedelta(minutes=step)
+        return c.astimezone(timezone.utc)
+
+    if sched.repeat_unit == "hour":
+        step = max(1, sched.repeat_every)
+        c = base.replace(minute=sched.minute)
+        while c <= ref_local:
+            c = c + timedelta(hours=step)
+        return c.astimezone(timezone.utc)
+
     candidate = base.replace(hour=sched.hour, minute=sched.minute)
     if candidate <= ref_local:
         candidate = candidate + timedelta(days=1)
@@ -144,8 +161,9 @@ def compute_next_fire(wf: Workflow, ref: Optional[datetime] = None) -> Optional[
 def fires_in_window(wf: Workflow, days: int = 30) -> int:
     """Count fires from now through `days` days from now. Used by the
     cost-estimate response. Honors end conditions so the projection doesn't
-    over-count after ends_at or max_runs. Caps the walk at 1000 fires to
-    guard pathological sub-day schedules (none today, but cheap insurance).
+    over-count after ends_at or max_runs. Caps the walk at 5000 fires: a
+    15-minute schedule fires ~2880x in 30 days, so the cap has to clear that
+    to keep the estimate honest while still bounding the loop.
     """
     sched = wf.schedule
     if not sched.enabled:
@@ -158,10 +176,10 @@ def fires_in_window(wf: Workflow, days: int = 30) -> int:
     if ends_at_utc is not None and ends_at_utc < end_utc:
         end_utc = ends_at_utc
     remaining_budget = (
-        sched.max_runs - sched.runs_count if sched.max_runs is not None else 1000
+        sched.max_runs - sched.runs_count if sched.max_runs is not None else 5000
     )
     count = 0
-    while count < min(1000, remaining_budget):
+    while count < min(5000, remaining_budget):
         nxt = _next_fire_after(sched, cursor_utc)
         if nxt is None or nxt > end_utc:
             break

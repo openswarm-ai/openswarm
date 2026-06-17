@@ -14,7 +14,7 @@ export interface PermissionTier {
 export interface ScheduleConfig {
   enabled: boolean;
   repeat_every: number;
-  repeat_unit: 'day' | 'week' | 'month';
+  repeat_unit: 'minute' | 'hour' | 'day' | 'week' | 'month';
   on_days: number[];
   hour: number;
   minute: number;
