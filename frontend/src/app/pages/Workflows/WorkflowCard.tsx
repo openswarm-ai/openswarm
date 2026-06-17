@@ -9,11 +9,13 @@ import CloseIcon from '@mui/icons-material/Close';
 import HistoryIcon from '@mui/icons-material/HistoryRounded';
 import PlayArrowIcon from '@mui/icons-material/PlayArrowRounded';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import InputBase from '@mui/material/InputBase';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   closeWorkflowCard,
+  deleteWorkflow,
   fetchRuns,
   openWorkflowCard as openWorkflowCardAction,
   rekeyOpenCard,
@@ -38,11 +40,12 @@ import { HistoryDetail, HistoryList, PreviewView, SavedView } from './WorkflowCa
 import { CompletedView, FailedView, RunningView } from './WorkflowCardLiveViews';
 import SchedulingView from './SchedulingView';
 import EditAgentView from './EditAgentView';
+import InlineEditableTitle from '@/app/components/InlineEditableTitle';
 import StopRounded from '@mui/icons-material/StopRounded';
 import PauseRounded from '@mui/icons-material/PauseRounded';
 import { StatusDot, RunSparkline, LastFiredHint, isStaleSinceLastRun } from './workflowVisuals';
 import { store } from '@/shared/state/store';
-import { getAgentWorkTime } from '@/shared/agentWorkTime';
+import { getAgentWorkTime, fmtSeconds } from '@/shared/agentWorkTime';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -192,6 +195,25 @@ const WorkflowCard: React.FC<Props> = ({
   const title = workflow?.title || card?.draft?.title || 'Workflow';
   const isDraft = card?.view === 'preview' && !workflow;
   const steps = (workflow?.steps || card?.draft?.steps || []) as Workflow['steps'];
+
+  // Edit-agent chrome lives in the card header: the model/time subtitle and
+  // the Save Workflow button. EditAgentView owns the live session and reports
+  // its id up here. The Save button pulses once when a turn finishes adding a
+  // step, nudging the user that there's something worth saving.
+  const isEditAgentView = card?.view === 'edit_agent' || card?.view === 'fix_agent';
+  const [editSessionId, setEditSessionId] = useState<string | null>(null);
+  const editSession = useAppSelector((s) => editSessionId ? s.agents.sessions[editSessionId] : undefined);
+  const [savePulseNonce, setSavePulseNonce] = useState(0);
+  const prevEditStatusRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const status = editSession?.status;
+    const prev = prevEditStatusRef.current;
+    const wasRunning = prev === 'running' || prev === 'waiting_approval';
+    if (wasRunning && status === 'completed' && steps.length > 0) {
+      setSavePulseNonce((n) => n + 1);
+    }
+    prevEditStatusRef.current = status;
+  }, [editSession?.status, steps.length]);
 
   // ---- Card drag via title bar ----
   const DRAG_THRESHOLD = 3;
@@ -348,9 +370,15 @@ const WorkflowCard: React.FC<Props> = ({
   // user can re-open from the Workflows hub. A confirm dialog here was
   // more friction than value (users clicked through it without reading).
   const onClose = useCallback(() => {
+    // A 0-step workflow can't run or be scheduled, so a "+ New" card the user
+    // opened and abandoned (without the build agent adding any steps) would
+    // just litter the hub. Delete it on close rather than orphan it.
+    if (workflow && (workflow.steps?.length ?? 0) === 0) {
+      dispatch(deleteWorkflow(workflow.id));
+    }
     dispatch(closeWorkflowCard(workflowId));
     dispatch(removeWorkflowCard(workflowId));
-  }, [dispatch, workflowId]);
+  }, [dispatch, workflowId, workflow]);
 
   // ---- Display calculations ----
   const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
@@ -472,14 +500,63 @@ const WorkflowCard: React.FC<Props> = ({
           />
         ) : (
           <>
-            <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.005em' }}>
-              {title}
-            </Typography>
+            {workflow ? (
+              <InlineEditableTitle
+                value={title}
+                onCommit={(name) => dispatch(updateWorkflow({ id: workflow.id, patch: { title: name }, ifMatch: workflow.updated_at || null }))}
+                sx={{ flex: '0 1 auto', fontWeight: 600, fontSize: '0.95rem', color: c.text.primary, letterSpacing: '-0.005em' }}
+              />
+            ) : (
+              <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.005em' }}>
+                {title}
+              </Typography>
+            )}
             <StatusPill view={card.view} workflow={workflow} runs={runs} />
             <Box sx={{ flex: 1 }} />
           </>
         )}
         {runs && runs.length > 0 && <RunSparkline runs={runs} />}
+        {!isDraft && workflow && isEditAgentView && (
+          <Tooltip title={steps.length > 0 ? 'Save the workflow and close the editor' : 'Add at least one step before saving'}>
+            <Box
+              role="button"
+              data-no-drag
+              onClick={(e) => {
+                e.stopPropagation();
+                if (steps.length === 0) { setRunToast('Add at least one step to your workflow first.'); return; }
+                dispatch(updateWorkflowCard({ workflowId, patch: { view: 'saved' } }));
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              sx={{
+                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                fontSize: '0.78rem', fontWeight: 700,
+                px: 1.1, py: 0.5,
+                borderRadius: `${c.radius.md}px`,
+                cursor: 'pointer',
+                ...(steps.length > 0 ? {
+                  color: '#fff',
+                  bgcolor: c.accent.primary,
+                  border: `1px solid ${c.accent.primary}`,
+                  boxShadow: `0 0 0 0 ${c.accent.primary}00`,
+                  animation: savePulseNonce > 0 ? `workflow-save-pulse-${savePulseNonce} 0.95s ease-out 1` : 'none',
+                  [`@keyframes workflow-save-pulse-${savePulseNonce}`]: {
+                    '0%': { boxShadow: `0 0 0 0 ${c.accent.primary}55`, transform: 'scale(1)' },
+                    '55%': { boxShadow: `0 0 0 8px ${c.accent.primary}00`, transform: 'scale(1.035)' },
+                    '100%': { boxShadow: `0 0 0 0 ${c.accent.primary}00`, transform: 'scale(1)' },
+                  },
+                  '&:hover': { filter: 'brightness(1.05)' },
+                } : {
+                  color: c.text.muted,
+                  bgcolor: c.bg.elevated,
+                  border: `1px solid ${c.border.subtle}`,
+                }),
+              }}
+            >
+              <AutoAwesomeOutlinedIcon sx={{ fontSize: 14 }} />
+              Save Workflow
+            </Box>
+          </Tooltip>
+        )}
         <IconButton
           size="small"
           data-no-drag
@@ -490,6 +567,14 @@ const WorkflowCard: React.FC<Props> = ({
           <CloseIcon sx={{ fontSize: 17 }} />
         </IconButton>
       </Box>
+
+      {/* Edit-agent view borrows the chat card's subtitle: model + live work
+          time, so the workflow editor reads the same as a normal chat. */}
+      {!isDraft && workflow && isEditAgentView && (
+        <Box sx={{ display: 'flex', alignItems: 'center', px: 2, pb: 1.25, pt: 0, flexShrink: 0 }}>
+          <EditAgentSubtitle session={editSession} />
+        </Box>
+      )}
 
       {/* Action bar matches new design: History + Run flush-right (Edit moved to footer).
           The flex spacer is the empty left side; History is a quiet text link, Run is the
@@ -645,7 +730,7 @@ const WorkflowCard: React.FC<Props> = ({
           <SchedulingView workflow={workflow} steps={steps} />
         )}
         {(card.view === 'edit_agent' || card.view === 'fix_agent') && workflow && (
-          <EditAgentView workflow={workflow} steps={steps} isFixMode={card.view === 'fix_agent'} />
+          <EditAgentView workflow={workflow} steps={steps} isFixMode={card.view === 'fix_agent'} onEditSessionIdChange={setEditSessionId} />
         )}
         </Box>
       </Box>
@@ -740,6 +825,39 @@ function StatusPill({ view, workflow, runs }: { view: string; workflow: Workflow
       color, bgcolor: bg,
       ml: 0.25,
     }}>{label}</Box>
+  );
+}
+
+// Mirrors the dashboard chat card's "Claude Sonnet 4.6  4s" subtitle, but for
+// the live edit-agent session driving the workflow editor. Self-ticks at 1Hz
+// while the agent is working so the time counts up like a normal chat.
+function EditAgentSubtitle({ session }: { session: import('@/shared/state/agentsSlice').AgentSession | undefined }) {
+  const c = useClaudeTokens();
+  const modelsByProvider = useAppSelector((s) => s.models.byProvider);
+  const [, setTick] = useState(0);
+  const status = session?.status;
+  useEffect(() => {
+    if (status !== 'running' && status !== 'waiting_approval') return;
+    const id = setInterval(() => setTick((t) => (t + 1) & 0xffff), 1000);
+    return () => clearInterval(id);
+  }, [status]);
+  const modelLabel = React.useMemo(() => {
+    const value = session?.model;
+    if (!value) return '';
+    for (const list of Object.values(modelsByProvider || {})) {
+      for (const m of (list as any[]) || []) {
+        if (m.value === value) return m.label || value;
+      }
+    }
+    return value;
+  }, [session?.model, modelsByProvider]);
+  if (!session) return null;
+  const lastSec = getAgentWorkTime(session.messages || [], session.status || '').last;
+  return (
+    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.5, fontSize: '0.82rem', color: c.text.muted, minWidth: 0, overflow: 'hidden' }}>
+      {modelLabel && <Box component="span" sx={{ whiteSpace: 'nowrap' }}>{modelLabel}</Box>}
+      {lastSec > 0 && <Box component="span" sx={{ whiteSpace: 'nowrap' }}>{fmtSeconds(lastSec)}</Box>}
+    </Box>
   );
 }
 

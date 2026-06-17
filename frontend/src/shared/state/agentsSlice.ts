@@ -386,6 +386,21 @@ export const updateSystemPrompt = createAsyncThunk(
   }
 );
 
+export const renameSession = createAsyncThunk(
+  'agents/rename',
+  async ({ sessionId, name }: { sessionId: string; name: string }, { dispatch }) => {
+    // Optimistic local update; the backend echoes the new name back over
+    // the agent:status broadcast, which keeps every open card in sync.
+    dispatch(updateSessionName({ sessionId, name }));
+    await fetch(`${AGENTS_API}/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    return { sessionId, name };
+  }
+);
+
 export const updateThinkingLevel = createAsyncThunk(
   'agents/updateThinkingLevel',
   async ({ sessionId, level }: { sessionId: string; level: 'off' | 'low' | 'medium' | 'high' | 'auto' }) => {

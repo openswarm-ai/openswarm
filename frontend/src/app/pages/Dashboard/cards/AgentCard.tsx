@@ -19,9 +19,11 @@ import {
   handleApproval,
   collapseSession,
   closeSession,
+  renameSession,
 } from '@/shared/state/agentsSlice';
 import { displayChatTitle, isLegacyAutoName } from '@/shared/state/sessionDisplay';
 import { Typewriter } from '@/app/components/feedback/Animated';
+import InlineEditableTitle from '@/app/components/InlineEditableTitle';
 import {
   setCardPosition,
   setCardSize,
@@ -789,16 +791,22 @@ const AgentCard: React.FC<Props> = ({
               borderRadius: 1,
             }}
           >
-            <Typewriter
+            <InlineEditableTitle
               value={displayChatTitle(session)}
-              enabled={!!session.name && !isLegacyAutoName(session.name)}
+              onCommit={(name) => dispatch(renameSession({ sessionId: session.id, name }))}
+              sx={{ flex: 1, color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}
             >
-              {(t) => (
-                <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {t}
-                </Typography>
-              )}
-            </Typewriter>
+              <Typewriter
+                value={displayChatTitle(session)}
+                enabled={!!session.name && !isLegacyAutoName(session.name)}
+              >
+                {(t) => (
+                  <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {t}
+                  </Typography>
+                )}
+              </Typewriter>
+            </InlineEditableTitle>
             {/* Status speaks only when it needs the user; finished work sits quiet. The welcome
                 chat hides its 'draft' label so the title reads clean. */}
             {session.status !== 'completed' && session.status !== 'stopped' && !session.is_welcome_draft && (
