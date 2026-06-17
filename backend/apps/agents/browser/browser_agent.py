@@ -697,8 +697,13 @@ async def run_browser_agent(
     # until controls change. This is also the runtime bridge gate: if the bridge
     # never comes up, fail loudly into the logs + the agent's first message (and,
     # under OPENSWARM_REQUIRE_BRIDGE=1, end the run rather than UI-fumble).
+    # NOTE: app mode runs this on EVERY task, even a resumed conversation. The
+    # bridge can appear between runs (e.g. the app was just made agent-operable),
+    # and a resumed history may carry a stale "no bridge, screenshot it" strategy;
+    # re-reading + re-attaching the controls each task re-points the agent at the
+    # bridge instead of letting it inherit the old fumbling.
     app_front_load = ""
-    if app_mode and not prior_messages:
+    if app_mode:
         try:
             _dv = _parse_bridge_result(await execute_browser_tool("AppDescribe", {}, browser_id, tab_id))
         except Exception:
@@ -746,11 +751,12 @@ async def run_browser_agent(
                 "cannot operate it, say so in Done with success=false.]"
             )
 
-    # Front-load the prefetched perception into the first user turn so the model
-    # can act immediately (only when this is a fresh conversation; a resumed one
-    # already knows the page). The visible task text stays clean.
+    # Front-load perception (browser) or the app's controls (app mode) into the
+    # new task's user turn so the model can act immediately. Browser-mode
+    # perception is only set on a fresh conversation; app-mode controls attach on
+    # every task (see note above). The visible task text stays clean.
     _front = preloaded_perception or app_front_load
-    first_user_content = task + _front if (_front and not prior_messages) else task
+    first_user_content = task + _front if _front else task
     messages: list[dict] = list(prior_messages) + [{"role": "user", "content": first_user_content}]
     # Seed with the front-loaded reads: they really ran and returned content, so a
     # read task the agent answers straight from them is NOT a "did nothing" ghost.
