@@ -214,6 +214,19 @@ def _bundled_archive_path_for(digest: str) -> str:
     return os.path.join(_BUNDLED_ARCHIVE_DIR, f"node_modules.{digest}.tar.gz")
 
 
+def _bundled_extracted_modules() -> str | None:
+    """A node_modules tree shipped ALREADY EXTRACTED in resources (digest-tagged),
+    so a workspace can junction straight at it with ZERO extract. This skips the
+    ~14s first-app tar-extract on Windows (the extract is dominated by Defender
+    scanning ~tens of thousands of small files as they're written; shipping it
+    extracted moves that scan to install time, once). Returns the read-only path
+    or None when no extracted tree is shipped (e.g. the Mac build, which ships
+    the .tar.gz and uses the extract path instead). vite only reads node_modules
+    (its optimize cache lives elsewhere), so a read-only shared tree is safe."""
+    cand = os.path.join(_BUNDLED_ARCHIVE_DIR, _warm_cache_digest(), "node_modules")
+    return cand if os.path.isdir(cand) else None
+
+
 def _try_extract_bundled_archive(cache_dir: str, digest: str) -> bool:
     """Unpack the sha-tagged bundled archive into `cache_dir` if one
     exists for the current template digest. Returns True on success,
@@ -284,6 +297,13 @@ def _ensure_warm_cache() -> str | None:
     if os.path.isdir(cache_modules):
         return cache_modules
 
+    # Prefer a pre-extracted bundled tree: junction the workspace straight at it,
+    # no tar-extract and no npm. This is the #9 first-app speed win on Windows.
+    bundled = _bundled_extracted_modules()
+    if bundled:
+        logger.info("webapp-template: using bundled pre-extracted node_modules (zero extract)")
+        return bundled
+
     with _warm_cache_lock:
         if os.path.isdir(cache_modules):
             return cache_modules
@@ -344,6 +364,38 @@ def _ensure_warm_cache() -> str | None:
             return None
 
 
+def _try_link_dir(src: str, target: str) -> bool:
+    """Point `target` at `src` as cheaply as possible. Prefer a symlink (instant,
+    shared, zero disk). On Windows os.symlink needs admin / Developer Mode, which
+    a normal user account lacks, so fall back to a directory junction (mklink /J,
+    no privilege required), then to a full copy as a last resort so even a
+    locked-down Windows box ends up with a usable node_modules. Returns True if
+    `target` now resolves to the dependency tree."""
+    try:
+        os.symlink(src, target)
+        return True
+    except OSError:
+        pass
+    if os.name == "nt":
+        try:
+            r = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", target, src],
+                capture_output=True, text=True, timeout=15,
+            )
+            if r.returncode == 0 and os.path.isdir(target):
+                return True
+        except Exception:
+            pass
+    try:
+        # Slow + uses disk, but guarantees the workspace can boot vite even when
+        # neither symlink nor junction is available.
+        shutil.copytree(src, target, dirs_exist_ok=True)
+        return True
+    except OSError as exc:
+        logger.warning("webapp-template link/copy failed (%s) for %s", exc, target)
+        return False
+
+
 def _link_node_modules(workspace_dir: str) -> None:
     """After copytree, point the workspace's frontend/node_modules at
     the warm-cache directory. Safe fallback; if the cache isn't ready,
@@ -379,10 +431,11 @@ def _link_node_modules(workspace_dir: str) -> None:
             return
     try:
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        os.symlink(cache_modules, target)
-        logger.info("webapp-template: linked %s -> %s", target, cache_modules)
     except OSError as exc:
-        logger.warning("webapp-template symlink failed (%s) for %s", exc, workspace_dir)
+        logger.warning("webapp-template mkdir failed (%s) for %s", exc, workspace_dir)
+        return
+    if _try_link_dir(cache_modules, target):
+        logger.info("webapp-template: linked %s -> %s", target, cache_modules)
 
 
 # ---------------------------------------------------------------------------
