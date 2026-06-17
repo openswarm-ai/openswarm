@@ -174,7 +174,9 @@ const AppShell: React.FC = () => {
   const [ftNudgeDismissed, setFtNudgeDismissed] = useState<boolean>(() => {
     try { return localStorage.getItem('os_ft_nudge_dismissed') === '1'; } catch { return false; }
   });
-  const showFreeTrialNudge = isOnline && (freeTrialSpent || (freeTrialUsed && !ftNudgeDismissed));
+  // Spent nudge hides the moment they connect a real model; the post-wow nudge only shows on the
+  // trial lane (so it already implies no own model) and is dismissible.
+  const showFreeTrialNudge = isOnline && ((freeTrialSpent && !hasModelConnected) || (freeTrialUsed && !ftNudgeDismissed));
 
   const bannerDismissedForVersion = availableVersion != null && dismissedVersion === availableVersion;
   const isUpdateActionable = updateStatus === 'available' || updateStatus === 'downloaded' || updateStatus === 'downloading';
