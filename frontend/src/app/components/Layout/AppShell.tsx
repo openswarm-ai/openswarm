@@ -23,7 +23,7 @@ import { LayoutGrid } from 'lucide-react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Settings as LucideSettings } from 'lucide-react';
 import { Palette } from 'lucide-react';
-import { ArrowLeft, ArrowRight, Plus, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus } from 'lucide-react';
 import { AnimatedPanelLeft } from './animatedIcons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
@@ -151,16 +151,30 @@ const AppShell: React.FC = () => {
     const d = s.settings.data as any;
     return !!(d && d.connection_mode === 'free-trial' && d.free_trial_token);
   });
-  // Trial just ran dry (had an allotment, now 0, off the free lane): nudge a connect, but warmly,
-  // an upsell after the win, never the red error wall. Runs refill, so frame it as "for now".
+  // Trial just ran dry (had an allotment, now 0, off the free lane): a quiet connect nudge, not the
+  // red error wall. Runs refill, so it's "for now".
   const freeTrialSpent = useAppSelector((s) => {
     const d = s.settings.data as any;
     return !!(d && (d.free_trial_runs_limit ?? 0) > 0 && d.free_trial_remaining === 0 && d.connection_mode !== 'free-trial');
   });
+  // Post-wow: on the free lane and already got value (spent >= 1 run); offer the unlimited path they
+  // likely already own while they're happy, not when they're blocked.
+  const freeTrialUsed = useAppSelector((s) => {
+    const d = s.settings.data as any;
+    if (!d || d.connection_mode !== 'free-trial' || !d.free_trial_token) return false;
+    const limit = d.free_trial_runs_limit ?? 0;
+    const remaining = d.free_trial_remaining ?? limit;
+    return limit > 0 && (limit - remaining) >= 1;
+  });
   // Hold the banner until the boot free-trial mint settles, else a brand-new user sees it
   // flash red for the ~1-3s the trial takes to arm. (Offline shows immediately, it's its own signal.)
   const freeTrialArmSettled = useAppSelector((s) => s.settings.freeTrialArmSettled);
-  const showWarningBanner = !isOnline || (modelsLoaded && freeTrialArmSettled && !hasModelConnected && !freeTrialActive);
+  // The red wall is for genuine "no way to run" only; the free-trial states get the quiet nudge below.
+  const showWarningBanner = !isOnline || (modelsLoaded && freeTrialArmSettled && !hasModelConnected && !freeTrialActive && !freeTrialSpent);
+  const [ftNudgeDismissed, setFtNudgeDismissed] = useState<boolean>(() => {
+    try { return localStorage.getItem('os_ft_nudge_dismissed') === '1'; } catch { return false; }
+  });
+  const showFreeTrialNudge = isOnline && (freeTrialSpent || (freeTrialUsed && !ftNudgeDismissed));
 
   const bannerDismissedForVersion = availableVersion != null && dismissedVersion === availableVersion;
   const isUpdateActionable = updateStatus === 'available' || updateStatus === 'downloaded' || updateStatus === 'downloading';
@@ -518,8 +532,8 @@ const AppShell: React.FC = () => {
             gap: 1.5,
             px: 2,
             py: 0.6,
-            bgcolor: isOnline && freeTrialSpent ? `${c.accent.primary}14` : 'rgba(239, 68, 68, 0.08)',
-            borderBottom: isOnline && freeTrialSpent ? `1px solid ${c.accent.primary}30` : '1px solid rgba(239, 68, 68, 0.18)',
+            bgcolor: 'rgba(239, 68, 68, 0.08)',
+            borderBottom: '1px solid rgba(239, 68, 68, 0.18)',
             flexShrink: 0,
             animation: showWarningBanner ? 'warning-fade-in 0.4s ease-out' : undefined,
             '@keyframes warning-fade-in': {
@@ -528,32 +542,10 @@ const AppShell: React.FC = () => {
             },
           }}
         >
-          {isOnline && freeTrialSpent
-            ? <Sparkles size={18} color={c.accent.primary} style={{ flexShrink: 0 }} />
-            : <ErrorSlime size={22} />}
-          <Typography sx={{ fontSize: '0.86rem', color: isOnline && freeTrialSpent ? c.accent.primary : '#ef4444', flex: 1, fontWeight: 500, letterSpacing: '0.01em' }}>
+          <ErrorSlime size={22} />
+          <Typography sx={{ fontSize: '0.86rem', color: '#ef4444', flex: 1, fontWeight: 500, letterSpacing: '0.01em' }}>
             {!isOnline
               ? 'No internet connection; agents cannot reach AI models or external services'
-              : freeTrialSpent
-              ? (
-                <>
-                  Your free runs are used up for now.{' '}
-                  <Box
-                    component="span"
-                    onClick={() => dispatch(openSettingsModal('models'))}
-                    sx={{
-                      textDecoration: 'underline',
-                      cursor: 'pointer',
-                      fontWeight: 600,
-                      '&:hover': { opacity: 0.8 },
-                      transition: 'opacity 0.15s',
-                    }}
-                  >
-                    Connect your own Claude, ChatGPT, or Gemini
-                  </Box>
-                  {' '}to keep going.
-                </>
-              )
               : (
                 <>
                   No AI model connected.{' '}
@@ -574,6 +566,32 @@ const AppShell: React.FC = () => {
                 </>
               )}
           </Typography>
+        </Box>
+      </Collapse>
+
+      <Collapse in={showFreeTrialNudge} timeout={300} unmountOnExit>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 0.5, flexShrink: 0 }}>
+          <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, flex: 1, letterSpacing: '0.01em' }}>
+            {freeTrialSpent ? "You're out of free runs for now. " : "Nice, you're rolling. "}
+            <Box
+              component="span"
+              onClick={() => dispatch(openSettingsModal('models'))}
+              sx={{ color: c.accent.primary, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+            >
+              Connect the Claude or ChatGPT you already have
+            </Box>
+            {freeTrialSpent ? '.' : ' to keep going unlimited.'}
+          </Typography>
+          {!freeTrialSpent && (
+            <Box
+              role="button"
+              aria-label="Dismiss"
+              onClick={() => { try { localStorage.setItem('os_ft_nudge_dismissed', '1'); } catch {} setFtNudgeDismissed(true); }}
+              sx={{ color: c.text.muted, cursor: 'pointer', fontSize: '0.95rem', lineHeight: 1, px: 0.5, '&:hover': { color: c.text.secondary } }}
+            >
+              ×
+            </Box>
+          )}
         </Box>
       </Collapse>
 
