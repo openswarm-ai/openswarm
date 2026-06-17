@@ -343,11 +343,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) return;
 
         const el = target instanceof Element ? target : (target as Node).parentElement;
-        // The New Chat / Schedule pill row renders OUTSIDE containerRef, so a
-        // pill click counts as "outside" and used to fire handleDismiss on
-        // mouseup. That closed the composer (inputOpen=false), which unmounted
-        // the pill row before its click landed, so Schedule's onClick never ran
-        // ("Schedule does nothing"). Exempt the pills; they own their own onClick.
+
         if (el?.closest('[role="dialog"], [role="presentation"], .MuiModal-root, .MuiPopover-root, [data-toolbar-pills]')) {
           return;
         }
@@ -420,9 +416,6 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     return (
       <>
       {(inputOpen || historyOpen) && (
-        // Image #54: paired mode pills above the composer/popover.
-        // The two states are mutually exclusive: opening one closes the
-        // other so the body underneath only renders one thing at a time.
         <Box data-toolbar-pills sx={{ display: 'flex', gap: 0.5, mb: 0.75, pl: 0.25 }}>
           <Box
             onClick={() => {

@@ -27,7 +27,7 @@ export const GRID_GAP = 24;
 const GRID_ORIGIN = { x: 40, y: 100 };
 const GRID_COLS_FALLBACK = 4;
 
-export type CardType = 'agent' | 'view' | 'browser' | 'note' | 'workflow';
+export type CardType = 'agent' | 'view' | 'browser' | 'note' | 'workflow' | 'workflows-hub';
 
 export interface CardPosition {
   session_id: string;
@@ -1080,7 +1080,7 @@ const dashboardLayoutSlice = createSlice({
     moveCards(
       state,
       action: PayloadAction<{
-        items: Array<{ id: string; type: 'agent' | 'view' | 'browser' | 'note' | 'workflow' }>;
+        items: Array<{ id: string; type: CardType }>;
         dx: number;
         dy: number;
       }>,
@@ -1110,6 +1110,11 @@ const dashboardLayoutSlice = createSlice({
           if (card) {
             card.x += dx;
             card.y += dy;
+          }
+        } else if (item.type === 'workflows-hub') {
+          if (state.workflowsHub) {
+            state.workflowsHub.x += dx;
+            state.workflowsHub.y += dy;
           }
         } else {
           const card = state.browserCards[item.id];

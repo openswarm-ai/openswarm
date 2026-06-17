@@ -597,11 +597,21 @@ async def edit_agent_session(workflow_id: str):
     from backend.apps.agents.core.models import AgentConfig
     from backend.apps.agents.agent_manager import agent_manager
     steps_lines = "\n".join(f"{i+1}. {(s.label or '').strip() or (s.text or '')[:60]}\n   Prompt: {s.text}" for i, s in enumerate(wf.steps))
+    # A brand-new workflow ("+ New" in the hub) opens here with zero steps, so
+    # frame the agent as a builder rather than a fix-what-exists editor.
+    intro = (
+        "Help the user iterate on it."
+        if wf.steps
+        else "This workflow is brand new and has no steps yet. Help the user "
+        "build it from scratch: ask what it should do, then add steps with "
+        "AddWorkflowStep."
+    )
+    steps_block = f"Current steps:\n{steps_lines}\n\n" if wf.steps else "It has no steps yet.\n\n"
     system_prompt = (
         f"You are the Edit Agent for the user's saved workflow \"{wf.title}\" "
-        f"(id: {wf.id}). Help the user iterate on it. The workflow's purpose: "
+        f"(id: {wf.id}). {intro} The workflow's purpose: "
         f"{wf.description or '(unspecified)'}.\n\n"
-        f"Current steps:\n{steps_lines}\n\n"
+        f"{steps_block}"
         "How to work:\n"
         "1. When the user describes a change, briefly confirm what you'll do.\n"
         "2. If you need to look at files / search / activate an MCP / etc. to "
