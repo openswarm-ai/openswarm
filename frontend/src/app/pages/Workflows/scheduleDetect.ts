@@ -36,9 +36,12 @@ export function detectSchedule(text: string): DetectedSchedule | null {
   const isWeekdays = /\b(weekdays?|each weekday|every weekday|mon(?:day)?\s*(?:to|-|through|–)\s*fri(?:day)?)\b/.test(t);
   const isWeekly = /\b(every week|weekly|each week|once a week)\b/.test(t);
   const isMonthly = /\b(every month|monthly|each month|once a month)\b/.test(t);
+  const hourlyMatch = t.match(/\bevery\s+(\d{1,2})\s+hours?\b/);
+  const isHourly = /\b(every hour|hourly|each hour|once an hour)\b/.test(t) || !!hourlyMatch;
+  const minutesMatch = t.match(/\bevery\s+(\d{1,3})\s+min(?:ute)?s?\b/);
   const dayMatches = Array.from(t.matchAll(DAY_RE)).map((m) => DAY_MAP[m[1].toLowerCase().slice(0, 3)]);
   const hasExplicitDays = dayMatches.length > 0;
-  if (!isDaily && !isWeekdays && !isWeekly && !isMonthly && !hasExplicitDays) return null;
+  if (!isDaily && !isWeekdays && !isWeekly && !isMonthly && !hasExplicitDays && !isHourly && !minutesMatch) return null;
 
   // Extract hour:minute.
   let hour = 9;
@@ -65,6 +68,21 @@ export function detectSchedule(text: string): DetectedSchedule | null {
   }
 
   const base = defaultSchedule();
+  // Sub-day cadences are the most specific; match them before daily/weekly.
+  if (minutesMatch) {
+    const every = Math.max(15, parseInt(minutesMatch[1], 10) || 15);
+    return {
+      schedule: { ...base, enabled: true, repeat_unit: 'minute', repeat_every: every },
+      presetLabel: `Every ${every} minutes`,
+    };
+  }
+  if (isHourly) {
+    const every = Math.max(1, hourlyMatch ? parseInt(hourlyMatch[1], 10) || 1 : 1);
+    return {
+      schedule: { ...base, enabled: true, repeat_unit: 'hour', repeat_every: every, minute },
+      presetLabel: every === 1 ? 'Every hour' : `Every ${every} hours`,
+    };
+  }
   if (isMonthly) {
     return {
       schedule: { ...base, enabled: true, repeat_unit: 'month', repeat_every: 1, hour, minute },

@@ -84,6 +84,8 @@ export function StatusDot({ status }: { status: LastRunStatus | null | undefined
 function scheduleShort(sched: ScheduleConfig): string {
   if (!sched.enabled) return 'Not scheduled';
   const time = formatTime(sched.hour, sched.minute);
+  if (sched.repeat_unit === 'minute') return `Every ${sched.repeat_every}m`;
+  if (sched.repeat_unit === 'hour') return sched.repeat_every === 1 ? 'Hourly' : `Every ${sched.repeat_every}h`;
   if (sched.repeat_unit === 'day') {
     return sched.repeat_every === 1 ? `Daily ${time}` : `Every ${sched.repeat_every}d ${time}`;
   }

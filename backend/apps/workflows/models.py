@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Optional, Literal, Any
 from datetime import datetime
 from uuid import uuid4
@@ -18,9 +18,11 @@ class ScheduleConfig(BaseModel):
     # Bounds keep the scheduler from blowing up on malformed input. The
     # FE clamps these too, but defense-in-depth: a misbehaving agent
     # tool, an old JSON file, or a curl-wielding power user shouldn't
-    # be able to crash _next_fire_after by passing hour=99.
-    repeat_every: int = Field(default=1, ge=1, le=365)
-    repeat_unit: Literal["day", "week", "month"] = "week"
+    # be able to crash _next_fire_after by passing hour=99. The per-unit
+    # upper bound on repeat_every is clamped (not rejected) in
+    # _enforce_interval_bounds below, so only the floor lives on the Field.
+    repeat_every: int = Field(default=1, ge=1)
+    repeat_unit: Literal["minute", "hour", "day", "week", "month"] = "week"
     on_days: list[int] = Field(default_factory=list)
     hour: int = Field(default=9, ge=0, le=23)
     minute: int = Field(default=0, ge=0, le=59)
@@ -50,6 +52,18 @@ class ScheduleConfig(BaseModel):
                 seen.add(d)
                 out.append(d)
         return out
+
+    @model_validator(mode="after")
+    def _enforce_interval_bounds(self) -> "ScheduleConfig":
+        # Per-unit bounds, clamped rather than rejected so a stray value from
+        # an agent tool or old record can't crash the scheduler. The minute
+        # unit floors at 15 (no once-a-minute token-burning loop) and ceilings
+        # at 1440 (24h); every other unit keeps the original 365 ceiling.
+        if self.repeat_unit == "minute":
+            self.repeat_every = max(15, min(self.repeat_every, 1440))
+        else:
+            self.repeat_every = min(self.repeat_every, 365)
+        return self
 
 
 class ActionsConfig(BaseModel):
