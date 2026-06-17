@@ -6,7 +6,7 @@ const SELECT_ATTR = 'data-select-type';
 const SELECT_ID_ATTR = 'data-select-id';
 const SELECT_META_ATTR = 'data-select-meta';
 
-const DRAG_SELECT_TYPES = ['agent-card', 'view-card', 'browser-card'] as const;
+const DRAG_SELECT_TYPES = ['agent-card', 'view-card', 'browser-card', 'workflow-card', 'workflows-hub-card'] as const;
 const DRAG_SELECTOR = DRAG_SELECT_TYPES.map((t) => `[${SELECT_ATTR}="${t}"]`).join(',');
 
 export interface OverlayState {
@@ -38,6 +38,8 @@ const SEMANTIC_LABELS: Record<string, string> = {
   'tool-group': 'Tool Group',
   'view-card': 'View',
   'browser-card': 'Browser',
+  'workflow-card': 'Workflow',
+  'workflows-hub-card': 'Workflows',
 };
 
 function findSelectableAncestor(target: Element, excludeId?: string | null): Element | null {

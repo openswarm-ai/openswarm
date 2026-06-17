@@ -10,7 +10,7 @@ export interface SelectedElement {
   computedStyles: Record<string, string>;
   screenshot?: string;
   boundingRect: { x: number; y: number; width: number; height: number };
-  semanticType?: 'agent-card' | 'message' | 'tool-call' | 'tool-group' | 'view-card' | 'browser-card' | 'dom-element';
+  semanticType?: 'agent-card' | 'message' | 'tool-call' | 'tool-group' | 'view-card' | 'browser-card' | 'workflow-card' | 'workflows-hub-card' | 'dom-element';
   semanticLabel?: string;
   semanticData?: Record<string, any>;
 }

@@ -55,6 +55,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     browserCards,
     notes,
     workflowCards,
+    workflowsHub,
   );
   const {
     toolbarRef, toolbarOpen, setToolbarOpen, searchPaletteOpen, setSearchPaletteOpen,

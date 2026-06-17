@@ -273,6 +273,14 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
           zoom={zoom}
           panX={panX}
           panY={panY}
+          isSelected={selection.isSelected('workflows-hub')}
+          isHighlighted={highlightedCardId === 'workflows-hub'}
+          multiDragDelta={selection.isSelected('workflows-hub') ? multiDragDelta : null}
+          onCardSelect={onCardSelect}
+          onDragStart={onDragStart}
+          onDragMove={onDragMove}
+          onDragEnd={onDragEnd}
+          onBringToFront={onBringToFront}
         />
       )}
       {Object.values(workflowCards).map((wc) => (

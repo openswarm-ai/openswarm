@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useMemo } from 'react';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import type { CardPosition, ViewCardPosition, BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
+import type { CardPosition, ViewCardPosition, BrowserCardPosition, WorkflowCardPosition, WorkflowsHubPosition } from '@/shared/state/dashboardLayoutSlice';
 
 const MINIMAP_W = 200;
 const MINIMAP_H = 140;
@@ -14,6 +14,8 @@ export interface MinimapProps {
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
+  workflowCards: Record<string, WorkflowCardPosition>;
+  workflowsHub: WorkflowsHubPosition | null;
   onPan: (panX: number, panY: number) => void;
 }
 
@@ -22,12 +24,12 @@ interface CardRect {
   y: number;
   width: number;
   height: number;
-  type: 'agent' | 'view' | 'browser';
+  type: 'agent' | 'view' | 'browser' | 'workflow' | 'workflows-hub';
 }
 
 const Minimap: React.FC<MinimapProps> = ({
   panX, panY, zoom, viewportRef,
-  cards, viewCards, browserCards,
+  cards, viewCards, browserCards, workflowCards, workflowsHub,
   onPan,
 }) => {
   const c = useClaudeTokens();
@@ -45,8 +47,20 @@ const Minimap: React.FC<MinimapProps> = ({
     for (const bc of Object.values(browserCards)) {
       result.push({ x: bc.x, y: bc.y, width: bc.width, height: bc.height, type: 'browser' });
     }
+    for (const wc of Object.values(workflowCards)) {
+      result.push({ x: wc.x, y: wc.y, width: wc.width, height: wc.height, type: 'workflow' });
+    }
+    if (workflowsHub) {
+      result.push({
+        x: workflowsHub.x,
+        y: workflowsHub.y,
+        width: workflowsHub.width,
+        height: workflowsHub.height,
+        type: 'workflows-hub',
+      });
+    }
     return result;
-  }, [cards, viewCards, browserCards]);
+  }, [cards, viewCards, browserCards, workflowCards, workflowsHub]);
 
   const layout = useMemo(() => {
     const vp = viewportRef.current;
@@ -128,11 +142,13 @@ const Minimap: React.FC<MinimapProps> = ({
     window.addEventListener('mouseup', onUp);
   }, [minimapToCanvas]);
 
-  const typeColor = (type: 'agent' | 'view' | 'browser') => {
+  const typeColor = (type: CardRect['type']) => {
     switch (type) {
       case 'agent': return c.accent.primary;
       case 'view': return c.status.info;
       case 'browser': return c.status.success;
+      case 'workflow': return c.status.warning;
+      case 'workflows-hub': return c.status.warning;
     }
   };
 

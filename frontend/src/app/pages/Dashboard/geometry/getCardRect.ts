@@ -27,6 +27,10 @@ export function getCardRect(id: string, type: CardType):
     const wc = layoutState.workflowCards[id];
     if (!wc) return undefined;
     return { x: wc.x, y: wc.y, width: wc.width, height: wc.height };
+  } else if (type === 'workflows-hub') {
+    const hub = layoutState.workflowsHub;
+    if (!hub) return undefined;
+    return { x: hub.x, y: hub.y, width: hub.width, height: hub.height };
   }
   return undefined;
 }
