@@ -363,6 +363,56 @@ if (Test-Path $EnvExampleSrc) {
     Copy-Item -Force $EnvExampleSrc $EnvExampleDst
     Write-Host "Restored webapp_template/.env.example (stripped by the .env.* exclude)"
 }
+
+# --- Step 4b: Pre-EXTRACT the webapp-template node_modules into resources (Windows).
+# The Windows build never shipped any node_modules, and the bundled node has no
+# npm, so the App Builder frontend had no way to get its deps; the preview died
+# with the misleading "backend exited with code 1". We ship the tree ALREADY
+# EXTRACTED (digest-tagged) so the runtime junctions a workspace straight at it:
+# zero first-app extract (the .tar.gz path cost ~14s of Defender-scanned writes
+# on first app; #9). _ensure_warm_cache() / _bundled_extracted_modules() pick
+# this up; the Mac build still ships the .tar.gz and uses the extract path.
+# Built natively so the esbuild/rollup win32 binaries are correct (a Mac-built
+# tree would ship darwin binaries and still fail). Non-fatal: a failure warns
+# but doesn't break the build. Digest == _warm_cache_digest() (sha256 of
+# frontend/package.json, first 12 hex chars).
+Write-Host "[4b] Pre-extracting webapp-template node_modules into resources..."
+try {
+    $TmplFrontend = Join-Path $Staging 'backend\apps\outputs\webapp_template\frontend'
+    $PkgJson = Join-Path $TmplFrontend 'package.json'
+    if (-not (Test-Path $PkgJson)) { throw "template package.json not found at $PkgJson" }
+    $Digest = (Get-FileHash -Algorithm SHA256 $PkgJson).Hash.ToLower().Substring(0, 12)
+    $DestNm = Join-Path $Staging "backend\apps\outputs\webapp_template_cache\$Digest\node_modules"
+    $WorkDir = Join-Path $env:TEMP "os-tmpl-nm-$([guid]::NewGuid())"
+    New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
+    try {
+        Copy-Item -Force $PkgJson (Join-Path $WorkDir 'package.json')
+        $Lock = Join-Path $TmplFrontend 'package-lock.json'
+        Push-Location $WorkDir
+        if (Test-Path $Lock) {
+            Copy-Item -Force $Lock (Join-Path $WorkDir 'package-lock.json')
+            & npm ci --prefer-offline --no-audit --no-fund --loglevel=error
+        } else {
+            & npm install --prefer-offline --no-audit --no-fund --loglevel=error
+        }
+        if ($LASTEXITCODE -ne 0) { throw "npm install/ci failed ($LASTEXITCODE)" }
+        Pop-Location
+        $SrcNm = Join-Path $WorkDir 'node_modules'
+        if (-not (Test-Path $SrcNm)) { throw "no node_modules produced" }
+        New-Item -ItemType Directory -Force -Path $DestNm | Out-Null
+        # robocopy: fast, multi-threaded, handles the deep node_modules tree + long paths.
+        & robocopy $SrcNm $DestNm /E /NJH /NJS /NDL /NFL /NP /MT:8 | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "robocopy node_modules failed ($LASTEXITCODE)" }
+        $global:LASTEXITCODE = 0
+        $Count = (Get-ChildItem -Recurse -File $DestNm -ErrorAction SilentlyContinue | Measure-Object).Count
+        Write-Host "[4b] pre-extracted node_modules staged at webapp_template_cache\$Digest ($Count files)"
+    } finally {
+        if ((Get-Location).Path -eq $WorkDir) { Pop-Location }
+        if (Test-Path $WorkDir) { Remove-Item -Recurse -Force $WorkDir }
+    }
+} catch {
+    Write-Warning "[4b] pre-extract node_modules FAILED: $_  (App Builder first-app falls back to live npm; non-fatal)"
+}
 # data: backend/config/paths.py points DATA_ROOT at %APPDATA%/OpenSwarm/data in
 # packaged mode and no code seeds from the bundle, so the entire shipped
 # backend/data/ tree was dead weight (and was leaking the dev machine's
