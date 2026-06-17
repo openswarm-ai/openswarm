@@ -19,7 +19,7 @@ import {
   setWorkflowsHubPosition,
   setWorkflowsHubSize,
 } from '@/shared/state/dashboardLayoutSlice';
-import { openWorkflowCard, fetchPausedState, setPausedAll, updateWorkflow, deleteWorkflow, runWorkflowNow } from '@/shared/state/workflowsSlice';
+import { openWorkflowCard, createWorkflow, fetchPausedState, setPausedAll, updateWorkflow, deleteWorkflow, runWorkflowNow } from '@/shared/state/workflowsSlice';
 import type { Workflow } from '@/shared/state/workflowsSlice';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
@@ -27,6 +27,7 @@ import Switch from '@mui/material/Switch';
 import Tooltip from '@mui/material/Tooltip';
 import { useEffect } from 'react';
 import ScheduleCalendar from './ScheduleCalendar';
+import AddToSchedulePopover from './AddToSchedulePopover';
 import { WEEKDAY_LABEL, addDays, sameDay, startOfMonthGrid } from './scheduleUtils';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -61,6 +62,14 @@ interface Props {
   zoom?: number;
   panX?: number;
   panY?: number;
+  isSelected?: boolean;
+  isHighlighted?: boolean;
+  multiDragDelta?: { dx: number; dy: number } | null;
+  onCardSelect?: (id: string, type: 'workflows-hub', shiftKey: boolean) => void;
+  onDragStart?: (id: string, type: 'workflows-hub') => void;
+  onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
+  onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
+  onBringToFront?: (id: string, type: 'workflows-hub') => void;
 }
 
 type CalendarView = 'Week' | 'Month' | 'List';
@@ -116,6 +125,8 @@ function TimeSavedBadge() {
 const WorkflowsHubCard: React.FC<Props> = ({
   cardX, cardY, cardWidth, cardHeight, cardZOrder = 0,
   zoom = 1, panX = 0, panY = 0,
+  isSelected = false, isHighlighted = false, multiDragDelta = null,
+  onCardSelect, onDragStart, onDragMove, onDragEnd, onBringToFront,
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -138,6 +149,10 @@ const WorkflowsHubCard: React.FC<Props> = ({
   // consistent. closeMenu wipes both state + DOM-focus.
   const [sidebarCtxMenu, setSidebarCtxMenu] = useState<{ x: number; y: number; workflow: Workflow } | null>(null);
   const closeSidebarCtxMenu = useCallback(() => setSidebarCtxMenu(null), []);
+  // Anchored off an Un-scheduled row's "+" icon: offers keep-this-cadence vs
+  // open-the-scheduler, then enabling moves the row into Scheduled.
+  const [schedulePopover, setSchedulePopover] = useState<{ anchorEl: HTMLElement; workflow: Workflow } | null>(null);
+  const closeSchedulePopover = useCallback(() => setSchedulePopover(null), []);
 
   // "Scheduled" = the workflow has a real cadence configured at any
   // point (even if currently paused via the checkbox). Filtering by
@@ -155,14 +170,18 @@ const WorkflowsHubCard: React.FC<Props> = ({
     dispatch(openWorkflowCard({ workflowId: wid, view: 'saved' }));
   }, [dispatch]);
 
-  const onNew = useCallback(() => {
-    const tempId = `draft-${Date.now()}`;
-    dispatch(addWorkflowCard({ workflowId: tempId }));
-    dispatch(openWorkflowCard({
-      workflowId: tempId,
-      view: 'preview',
-      draft: { title: 'New workflow', description: 'Describe what this workflow should do.', steps: [{ id: 'step-1', text: '' }] },
-    }));
+  // A from-scratch workflow has no steps to convert, so skip the chat->workflow
+  // PreviewView (Schedule prompt / blank bullet) and drop straight into the
+  // Edit Agent build chat: the user describes it, the agent writes the steps.
+  // The workflow is created server-side first so the embedded edit-agent
+  // session has a real id to attach to; an abandoned (still 0-step) one is
+  // cleaned up on card close (WorkflowCard.onClose).
+  const onNew = useCallback(async () => {
+    const result = await dispatch(createWorkflow({ title: 'New workflow', steps: [] }));
+    if (!createWorkflow.fulfilled.match(result)) return;
+    const wf = result.payload;
+    dispatch(addWorkflowCard({ workflowId: wf.id }));
+    dispatch(openWorkflowCard({ workflowId: wf.id, view: 'edit_agent' }));
   }, [dispatch]);
 
   // ---- Card drag via header ----
@@ -171,6 +190,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [localDragPos, setLocalDragPos] = useState<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
+  const justDraggedRef = useRef(false);
 
   const panRef = useRef({ panX, panY });
   panRef.current = { panX, panY };
@@ -190,8 +210,9 @@ const WorkflowsHubCard: React.FC<Props> = ({
     };
     didDrag.current = false;
     setIsDragging(true);
+    onDragStart?.('workflows-hub', 'workflows-hub');
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, [cardX, cardY]);
+  }, [cardX, cardY, onDragStart]);
 
   const onHeaderPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
@@ -202,11 +223,14 @@ const WorkflowsHubCard: React.FC<Props> = ({
     const z = zoomRef.current;
     const panDx = (panRef.current.panX - dragState.current.startPanX) / z;
     const panDy = (panRef.current.panY - dragState.current.startPanY) / z;
+    const dx = rawDx / z - panDx;
+    const dy = rawDy / z - panDy;
     setLocalDragPos({
-      x: dragState.current.origX + rawDx / z - panDx,
-      y: dragState.current.origY + rawDy / z - panDy,
+      x: dragState.current.origX + dx,
+      y: dragState.current.origY + dy,
     });
-  }, []);
+    onDragMove?.(dx, dy, e.clientX, e.clientY);
+  }, [onDragMove]);
 
   const onHeaderPointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
@@ -216,6 +240,8 @@ const WorkflowsHubCard: React.FC<Props> = ({
     const dx = (e.clientX - dragState.current.startX) / z - panDx;
     const dy = (e.clientY - dragState.current.startY) / z - panDy;
     if (didDrag.current) {
+      justDraggedRef.current = true;
+      setTimeout(() => { justDraggedRef.current = false; }, 0);
       let finalX = dragState.current.origX + dx;
       let finalY = dragState.current.origY + dy;
       if (!e.shiftKey) {
@@ -224,12 +250,13 @@ const WorkflowsHubCard: React.FC<Props> = ({
       }
       dispatch(setWorkflowsHubPosition({ x: finalX, y: finalY }));
     }
+    onDragEnd?.(dx, dy, didDrag.current);
     dragState.current = null;
     didDrag.current = false;
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [dispatch]);
+  }, [dispatch, onDragEnd]);
 
   // ---- Resize ----
   const resizeRef = useRef<{ dir: ResizeDir; sx0: number; sy0: number; ox: number; oy: number; ow: number; oh: number } | null>(null);
@@ -278,14 +305,42 @@ const WorkflowsHubCard: React.FC<Props> = ({
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   }, [compute, dispatch]);
 
-  const dx = localResize?.x ?? localDragPos?.x ?? cardX;
-  const dy = localResize?.y ?? localDragPos?.y ?? cardY;
+  const mdDx = (!isDragging && !isResizing && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
+  const mdDy = (!isDragging && !isResizing && isSelected && multiDragDelta) ? multiDragDelta.dy : 0;
+  const dx = (localResize?.x ?? localDragPos?.x ?? cardX) + mdDx;
+  const dy = (localResize?.y ?? localDragPos?.y ?? cardY) + mdDy;
   const dw = localResize?.w ?? cardWidth;
   const dh = localResize?.h ?? cardHeight;
+  const border = isHighlighted
+    ? `2px solid ${c.accent.primary}`
+    : isSelected
+      ? '2px solid #3b82f6'
+      : `1px solid ${c.border.medium}`;
+  const shadow = isHighlighted
+    ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
+    : (isDragging || isResizing)
+      ? c.shadow.lg
+      : isSelected
+        ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
+        : c.shadow.md;
+  const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
 
   return (
     <Box
       data-select-type="workflows-hub-card"
+      data-select-id="workflows-hub"
+      data-select-meta={JSON.stringify({ name: 'Workflows calendar' })}
+      onPointerDownCapture={(e: React.PointerEvent) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-no-drag]')) return;
+        onBringToFront?.('workflows-hub', 'workflows-hub');
+      }}
+      onClick={(e: React.MouseEvent) => {
+        if (justDraggedRef.current) return;
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-no-drag]')) return;
+        onCardSelect?.('workflows-hub', 'workflows-hub', e.shiftKey);
+      }}
       sx={{
         position: 'absolute',
         contain: 'layout style',
@@ -295,13 +350,13 @@ const WorkflowsHubCard: React.FC<Props> = ({
         width: dw,
         height: dh,
         bgcolor: c.bg.surface,
-        border: `1px solid ${c.border.medium}`,
+        border,
         borderRadius: `${c.radius.lg}px`,
-        boxShadow: (isDragging || isResizing) ? c.shadow.lg : c.shadow.md,
+        boxShadow: shadow,
         display: 'flex',
         flexDirection: 'column',
         zIndex: (isDragging || isResizing) ? 999999 : cardZOrder,
-        transition: (isDragging || isResizing) ? 'none' : 'box-shadow 0.3s ease',
+        transition: noTransition ? 'none' : 'box-shadow 0.3s ease, border-color 0.2s ease',
         '&:hover .resize-handle': { opacity: 1 },
       }}
     >
@@ -355,7 +410,6 @@ const WorkflowsHubCard: React.FC<Props> = ({
             '&:hover': { borderColor: c.accent.primary, color: c.accent.primary },
           }}
         >
-          <AddIcon sx={{ fontSize: 14 }} />
           New
         </Box>
         <Tooltip title={paused ? 'Scheduled runs are paused. In-flight runs will finish; new fires are blocked until you resume.' : 'Stop all future scheduled runs without disabling them one-by-one. Any run already in flight will finish.'}>
@@ -445,7 +499,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
           <MiniMonth refDate={refDate} onPick={setRefDate} />
           <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, pb: 1.5 }}>
             <SidebarSection title="Scheduled workflows" items={scheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} />
-            <SidebarSection title="Un-scheduled workflows" items={unscheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled={false} onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} />
+            <SidebarSection title="Un-scheduled workflows" items={unscheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled={false} onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} onSchedule={(wf, el) => setSchedulePopover({ anchorEl: el, workflow: wf })} />
           </Box>
         </Box>
         )}
@@ -495,6 +549,13 @@ const WorkflowsHubCard: React.FC<Props> = ({
         </MenuItem>
       </Menu>
 
+      {/* "+" on an Un-scheduled row -> keep cadence or open the scheduler */}
+      <AddToSchedulePopover
+        anchorEl={schedulePopover?.anchorEl ?? null}
+        workflow={schedulePopover?.workflow ?? null}
+        onClose={closeSchedulePopover}
+      />
+
       {/* Resize handles */}
       {HANDLE_DEFS.map(({ dir, sx }) => (
         <Box
@@ -542,12 +603,15 @@ function MiniMonth({ refDate, onPick }: { refDate: Date; onPick: (d: Date) => vo
   );
 }
 
-function SidebarSection({ title, items, onPick, scheduled, onContext }: {
+function SidebarSection({ title, items, onPick, scheduled, onContext, onSchedule }: {
   title: string;
   items: Workflow[];
   onPick: (id: string) => void;
   scheduled: boolean;
   onContext: (workflow: Workflow, e: React.MouseEvent) => void;
+  // Only the Un-scheduled section wires this: clicking the "+" opens the
+  // add-to-schedule popover anchored to the icon.
+  onSchedule?: (workflow: Workflow, anchorEl: HTMLElement) => void;
 }) {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -599,7 +663,18 @@ function SidebarSection({ title, items, onPick, scheduled, onContext }: {
               </Box>
             </Tooltip>
           ) : (
-            <AddIcon sx={{ fontSize: 13, color: c.text.muted, flexShrink: 0 }} />
+            <Tooltip title="Add to schedule">
+              <Box
+                onClick={(e) => { e.stopPropagation(); onSchedule?.(w, e.currentTarget); }}
+                sx={{
+                  width: 16, height: 16, borderRadius: '4px', flexShrink: 0,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  color: c.text.muted, cursor: 'pointer',
+                  '&:hover': { color: c.accent.primary, bgcolor: c.bg.elevated },
+                }}>
+                <AddIcon sx={{ fontSize: 13 }} />
+              </Box>
+            </Tooltip>
           )}
           <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: scheduled && !w.schedule.enabled ? 'line-through' : 'none', opacity: scheduled && !w.schedule.enabled ? 0.6 : 1 }}>{w.title}</Typography>
         </Box>
