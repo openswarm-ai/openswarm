@@ -110,6 +110,16 @@ class Workflow(BaseModel):
     # Sticky session id for the embedded scheduling agent (the chat that
     # turns "every Wednesday at 1pm" into a permission-gated tool call).
     schedule_agent_session_id: Optional[str] = None
+    # Tool permissions the user answered once and we reuse on later runs so an
+    # unattended scheduled fire doesn't stall waiting for someone to click.
+    # tool_name -> decision. Only ordinary "ask" tools land here; sensitive
+    # paths keep their own per-pattern trust and never auto-remember.
+    remembered_approvals: dict[str, Literal["allow", "deny"]] = Field(default_factory=dict)
+    # Behind-the-scenes record of which tools each step touched and whether each
+    # was permitted, keyed by stable step id (not index, so reorders don't
+    # scramble it). Auto-maintained on runs; enforcement stays workflow-level
+    # via remembered_approvals, this is the finer per-step picture.
+    step_tool_usage: dict[str, dict[str, bool]] = Field(default_factory=dict)
 
 
 class WorkflowRun(BaseModel):
@@ -165,3 +175,5 @@ class WorkflowUpdate(BaseModel):
     mode: Optional[str] = None
     provider: Optional[str] = None
     cost_cap_usd_monthly: Optional[float] = None
+    remembered_approvals: Optional[dict[str, Literal["allow", "deny"]]] = None
+    step_tool_usage: Optional[dict[str, dict[str, bool]]] = None

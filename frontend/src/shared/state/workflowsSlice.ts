@@ -81,6 +81,10 @@ export interface Workflow {
   edit_agent_session_id?: string | null;
   /** Sticky session id for the embedded scheduling agent (cadence -> gated tool call). */
   schedule_agent_session_id?: string | null;
+  /** Tool permissions the user answered once and we reuse on later runs so an
+   *  unattended scheduled fire doesn't stall on a prompt. tool name -> answer. */
+  remembered_approvals?: Record<string, 'allow' | 'deny'>;
+  step_tool_usage?: Record<string, Record<string, boolean>>;
 }
 
 export interface WorkflowRun {

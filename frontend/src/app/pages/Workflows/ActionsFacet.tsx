@@ -75,6 +75,64 @@ export default function ActionsFacet({ draft, setDraft }: { draft: Workflow; set
           </Box>
         </Box>
       )}
+
+      <RememberedApprovals draft={draft} setDraft={setDraft} />
+    </Box>
+  );
+}
+
+// Permissions this workflow learned on an earlier run and now reuses without
+// asking. A reused "allow" runs unattended, so the user has to be able to see
+// and take it back here.
+function RememberedApprovals({ draft, setDraft }: { draft: Workflow; setDraft: (w: Workflow) => void }) {
+  const c = useClaudeTokens();
+  const entries = Object.entries(draft.remembered_approvals || {});
+  if (entries.length === 0) return null;
+
+  const prettyName = (tool: string) => (tool.includes('__') ? tool.split('__').pop() || tool : tool);
+  const forget = (tool: string) => {
+    const next = { ...(draft.remembered_approvals || {}) };
+    const nextStepUsage = Object.fromEntries(
+      Object.entries(draft.step_tool_usage || {}).map(([stepId, tools]) => {
+        const copy = { ...(tools || {}) };
+        delete copy[tool];
+        return [stepId, copy];
+      }),
+    );
+    delete next[tool];
+    setDraft({ ...draft, remembered_approvals: next, step_tool_usage: nextStepUsage });
+  };
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, mt: 1, pt: 1.25, borderTop: `1px solid ${c.border.subtle}` }}>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <Typography sx={{ fontSize: BODY_FS, color: c.text.secondary, lineHeight: 1.5 }}>
+          Saved permissions this workflow reuses on later runs.
+        </Typography>
+        <Box
+          onClick={() => setDraft({ ...draft, remembered_approvals: {}, step_tool_usage: {} })}
+          role="button"
+          sx={{ fontSize: LABEL_FS, color: c.text.muted, cursor: 'pointer', whiteSpace: 'nowrap', ml: 1, '&:hover': { color: c.text.primary } }}>
+          Clear all
+        </Box>
+      </Box>
+      {entries.map(([tool, answer]) => (
+        <Box key={tool} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.4, px: 0.75, borderRadius: `${c.radius.md}px`, bgcolor: c.bg.elevated }}>
+          <Typography sx={{ fontSize: LABEL_FS, color: c.text.primary, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {prettyName(tool)}
+          </Typography>
+          <Typography sx={{ fontSize: LABEL_FS, fontWeight: 600, color: answer === 'allow' ? c.status.success : c.status.error }}>
+            {answer === 'allow' ? 'Allowed' : 'Blocked'}
+          </Typography>
+          <Box
+            onClick={() => forget(tool)}
+            role="button"
+            aria-label={`Forget ${prettyName(tool)}`}
+            sx={{ display: 'inline-flex', fontSize: LABEL_FS, color: c.text.muted, cursor: 'pointer', px: 0.4, '&:hover': { color: c.status.error } }}>
+            ✕
+          </Box>
+        </Box>
+      ))}
     </Box>
   );
 }

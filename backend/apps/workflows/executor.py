@@ -37,6 +37,48 @@ def _resolve_allowed_tools(wf: Workflow) -> list[str]:
     return list(wf.actions.configured_sets)
 
 
+def p_make_remember_approval(workflow_id: str):
+    def p_remember_approval(tool_name: str, behavior: str) -> None:
+        fresh = storage.get_workflow(workflow_id)
+        if fresh is None:
+            return
+        fresh.remembered_approvals = {**fresh.remembered_approvals, tool_name: behavior}
+        storage.save_workflow(fresh)
+        try:
+            from backend.apps.agents.core.ws_manager import ws_manager
+            asyncio.get_running_loop().create_task(ws_manager.broadcast_global("workflow:updated", {
+                "workflow_id": fresh.id,
+                "workflow": fresh.model_dump(mode="json"),
+            }))
+        except Exception:
+            pass
+    return p_remember_approval
+
+
+def p_persist_step_tool_usage(workflow_id: str, step_usage: dict[str, dict[str, bool]]) -> None:
+    fresh = storage.get_workflow(workflow_id)
+    if fresh is None:
+        return
+    live_ids = {s.id for s in fresh.steps}
+    draft = getattr(fresh, "draft_steps", None)
+    if draft is not None:
+        live_ids.update(s.id for s in draft)
+    fresh.step_tool_usage = {
+        sid: dict(tools)
+        for sid, tools in (step_usage or {}).items()
+        if sid in live_ids and isinstance(tools, dict)
+    }
+    storage.save_workflow(fresh)
+    try:
+        from backend.apps.agents.core.ws_manager import ws_manager
+        asyncio.get_running_loop().create_task(ws_manager.broadcast_global("workflow:updated", {
+            "workflow_id": fresh.id,
+            "workflow": fresh.model_dump(mode="json"),
+        }))
+    except Exception:
+        pass
+
+
 def _persist_run_fields(wf: Workflow, run_fields: dict, schedule_runs_count_delta: int = 0) -> None:
     """Merge run-side fields into the current on-disk workflow.
 
@@ -85,7 +127,13 @@ def _monthly_spend_so_far(wf: Workflow) -> float:
 
 
 async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: Optional[datetime] = None) -> WorkflowRun:
-    from backend.apps.agents.agent_manager import agent_manager
+    from backend.apps.agents.agent_manager import (
+        agent_manager,
+        clear_workflow_approval_memory,
+        get_workflow_step_usage,
+        set_workflow_approval_memory,
+        set_workflow_approval_step,
+    )
 
     run = WorkflowRun(
         workflow_id=wf.id,
@@ -134,7 +182,7 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
 
     session = None
     try:
-        steps = [s.text for s in wf.steps if s.text and s.text.strip()]
+        steps = [s for s in wf.steps if s.text and s.text.strip()]
         if not steps:
             raise ValueError("Workflow has no steps")
 
@@ -153,6 +201,19 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
         session = await agent_manager.launch_agent(config)
         run.session_id = session.id
         storage.record_run(run)
+
+        # Reuse the user's earlier allow/deny answers so an unattended fire
+        # doesn't park on a permission prompt. Scheduled runs prompt for an
+        # unseen tool only briefly (30s) before failing; manual/test runs are
+        # attended, so keep the roomy window. Sensitive-path prompts are never
+        # remembered (handled by the gate); they keep prompting every run.
+        set_workflow_approval_memory(
+            session.id,
+            decisions=dict(wf.remembered_approvals),
+            step_usage={sid: dict(tools) for sid, tools in wf.step_tool_usage.items()},
+            remember=p_make_remember_approval(wf.id),
+            ask_timeout=30.0 if triggered_by == "schedule" else 600.0,
+        )
 
         # Background poller: surface the latest tool-call name as a
         # live "what's the agent doing" subtitle on the workflow:run
@@ -214,6 +275,7 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
             # the disc immediately, not after the agent finishes the step.
             run.active_step_idx = idx
             run.last_tool_label = None
+            set_workflow_approval_step(session.id, step.id)
             try:
                 from backend.apps.agents.core.ws_manager import ws_manager as _wsm
                 await _wsm.broadcast_global("workflow:run", {
@@ -222,7 +284,7 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
                 })
             except Exception:
                 pass
-            await agent_manager.send_message(session.id, step)
+            await agent_manager.send_message(session.id, step.text)
             await _await_session_idle(session.id)
             sess_state = agent_manager.sessions.get(session.id)
             if sess_state is not None and getattr(sess_state, "status", None) == "error":
@@ -284,6 +346,12 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
         # the first page). close_session also drops in-memory state and
         # persists the final snapshot to disk.
         if session is not None:
+            try:
+                p_persist_step_tool_usage(wf.id, get_workflow_step_usage(session.id))
+            except Exception:
+                logger.exception("persist step tool usage failed for workflow %s", wf.id)
+            set_workflow_approval_step(session.id, None)
+            clear_workflow_approval_memory(session.id)
             try:
                 await agent_manager.close_session(session.id)
             except Exception:

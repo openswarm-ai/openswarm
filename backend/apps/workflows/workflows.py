@@ -95,6 +95,41 @@ def _derive_icon(wf: Workflow) -> str:
     return "W"
 
 
+def p_source_session_approvals(session_id: Optional[str]) -> dict[str, str]:
+    if not session_id:
+        return {}
+    try:
+        from backend.apps.agents.agent_manager import agent_manager
+        sess = agent_manager.sessions.get(session_id)
+        decisions = getattr(sess, "approval_decisions", None) if sess is not None else None
+        if decisions is None:
+            from backend.apps.agents.manager.session.session_store import _load_session_data
+            data = _load_session_data(session_id) or {}
+            decisions = data.get("approval_decisions") or []
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    for entry in decisions or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("sensitive_pattern"):
+            continue
+        tool = str(entry.get("tool") or "")
+        behavior = entry.get("behavior")
+        if tool and behavior in ("allow", "deny"):
+            out[tool] = behavior
+    return out
+
+
+def p_prune_step_tool_usage(wf: Workflow) -> None:
+    live_ids = {s.id for s in wf.steps}
+    wf.step_tool_usage = {
+        sid: dict(tools)
+        for sid, tools in (wf.step_tool_usage or {}).items()
+        if sid in live_ids and isinstance(tools, dict)
+    }
+
+
 @workflows.router.get("/list")
 async def list_workflows(dashboard_id: Optional[str] = None):
     items = storage.list_workflows()
@@ -134,6 +169,7 @@ async def create_workflow(body: WorkflowCreate):
         provider=body.provider or "anthropic",
         cost_cap_usd_monthly=body.cost_cap_usd_monthly,
     )
+    wf.remembered_approvals = p_source_session_approvals(body.source_session_id)
     if not wf.icon:
         wf.icon = _derive_icon(wf)
     if wf.schedule.enabled:

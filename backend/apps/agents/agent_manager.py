@@ -7,7 +7,7 @@ import sys
 import time
 from datetime import datetime
 from uuid import uuid4
-from typing import Optional
+from typing import Callable, Optional
 
 from backend.apps.agents.core.models import (
     AgentConfig, AgentSession, Message, MessageBranch, ApprovalRequest, ToolGroupMeta,
@@ -77,6 +77,59 @@ from backend.apps.agents.manager.prompt.attachments import (
 logger = logging.getLogger(__name__)
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
+
+
+# Per-session approval memory for workflow runs. The workflow executor pushes
+# context in (keyed by session id) so the permission gates can reuse a prior
+# allow/deny instead of prompting, and so an unattended fire fails fast instead
+# of parking for ten minutes. Lives here (not in the workflows app) because
+# agent_manager must not import workflows; that would be an upward import cycle.
+class WorkflowApprovalMemory:
+    def __init__(
+        self,
+        decisions: dict[str, str],
+        step_usage: dict[str, dict[str, bool]],
+        remember: Optional[Callable[[str, str], None]],
+        ask_timeout: float,
+    ):
+        self.decisions = decisions          # workflow-level: tool -> "allow"/"deny"
+        self.step_usage = step_usage        # per-step record: step_id -> {tool: approved}
+        self.remember = remember            # persist a workflow-level decision to disk
+        self.ask_timeout = ask_timeout
+        # The executor bumps this as it advances steps so the gate can record
+        # which tools each step touched. None on test runs that don't thread it.
+        self.current_step_id: Optional[str] = None
+
+
+p_approval_memory: dict[str, WorkflowApprovalMemory] = {}
+
+
+def set_workflow_approval_memory(
+    session_id: str,
+    *,
+    decisions: dict[str, str],
+    step_usage: dict[str, dict[str, bool]],
+    remember: Optional[Callable[[str, str], None]],
+    ask_timeout: float,
+) -> None:
+    p_approval_memory[session_id] = WorkflowApprovalMemory(
+        decisions, step_usage, remember, ask_timeout
+    )
+
+
+def clear_workflow_approval_memory(session_id: str) -> None:
+    p_approval_memory.pop(session_id, None)
+
+
+def set_workflow_approval_step(session_id: str, step_id: Optional[str]) -> None:
+    mem = p_approval_memory.get(session_id)
+    if mem is not None:
+        mem.current_step_id = step_id
+
+
+def get_workflow_step_usage(session_id: str) -> dict[str, dict[str, bool]]:
+    mem = p_approval_memory.get(session_id)
+    return mem.step_usage if mem is not None else {}
 
 
 def _apply_context_window(session, settings=None) -> None:
@@ -723,6 +776,7 @@ class AgentManager:
             tool_name: str,
             tool_input,
             sensitive_pattern: str | None = None,
+            timeout: float = 600.0,
         ) -> dict:
             """Send an approval request via WebSocket and wait for the user's decision."""
             safe_input = tool_input if isinstance(tool_input, dict) else {}
@@ -753,6 +807,7 @@ class AgentManager:
 
             decision = await ws_manager.send_approval_request(
                 session_id, request_id, tool_name, safe_input,
+                timeout=timeout,
                 sensitive_pattern=sensitive_pattern,
                 sensitive_label=label,
                 sensitive_why=why,
@@ -782,6 +837,7 @@ class AgentManager:
                     "tool": tool_name,
                     "behavior": decision.get("behavior"),
                     "decision_ms": approval_latency_ms,
+                    "sensitive_pattern": sensitive_pattern,
                 })
             except Exception:
                 pass
@@ -796,6 +852,58 @@ class AgentManager:
             })
             return decision
 
+        def p_note_tool_used(tool_name: str, approved: bool) -> None:
+            # Record which tools each step touched (in-memory; the executor/test
+            # path persists step_usage once at run end). Captures every tool the
+            # gate sees so a step's tool set is complete, not only the ones that
+            # prompted. No-op outside a workflow run or before a step is set.
+            mem = p_approval_memory.get(session_id)
+            if mem is None or mem.current_step_id is None:
+                return
+            mem.step_usage.setdefault(mem.current_step_id, {})[tool_name] = approved
+
+        async def p_resolve_ask(tool_name, tool_input, sensitive_pattern) -> dict:
+            """Resolve an 'ask' policy. On a workflow run, reuse a remembered
+            decision (this step first, then the workflow-level fallback that
+            covers chat-seeded and cross-step approvals) instead of prompting,
+            and persist any fresh non-sensitive answer so later fires don't
+            re-ask. Shared by both gates so they can't disagree (and so the
+            first one's answer is reused by the second within the same call)."""
+            mem = p_approval_memory.get(session_id)
+            rememberable = (
+                mem is not None
+                and sensitive_pattern is None
+                and tool_name != "AskUserQuestion"
+            )
+            if rememberable:
+                sid = mem.current_step_id
+                prior_step = mem.step_usage.get(sid, {}).get(tool_name) if sid is not None else None
+                if prior_step is True:
+                    return {"behavior": "allow"}
+                if prior_step is False:
+                    return {"behavior": "deny", "message": "Denied by a remembered workflow permission"}
+                prior = mem.decisions.get(tool_name)
+                if prior == "allow":
+                    p_note_tool_used(tool_name, True)
+                    return {"behavior": "allow"}
+                if prior == "deny":
+                    p_note_tool_used(tool_name, False)
+                    return {"behavior": "deny", "message": "Denied by a remembered workflow permission"}
+            timeout = mem.ask_timeout if mem is not None else 600.0
+            decision = await _request_user_approval(
+                tool_name, tool_input, sensitive_pattern=sensitive_pattern, timeout=timeout,
+            )
+            if rememberable and decision.get("behavior") in ("allow", "deny"):
+                behavior = decision["behavior"]
+                mem.decisions[tool_name] = behavior
+                p_note_tool_used(tool_name, behavior == "allow")
+                if mem.remember:
+                    try:
+                        mem.remember(tool_name, behavior)
+                    except Exception:
+                        logger.exception("Failed to persist remembered workflow approval")
+            return decision
+
         async def can_use_tool(tool_name, input_data, context):
             sensitive_pattern: str | None = None
             if tool_name != "AskUserQuestion":
@@ -803,11 +911,13 @@ class AgentManager:
                     _get_effective_policy(tool_name), tool_name, input_data
                 )
                 if policy == "always_allow":
+                    p_note_tool_used(tool_name, True)
                     return PermissionResultAllow(updated_input=input_data)
                 if policy == "deny":
+                    p_note_tool_used(tool_name, False)
                     return PermissionResultDeny(message="Tool denied by permission policy")
 
-            decision = await _request_user_approval(tool_name, input_data, sensitive_pattern=sensitive_pattern)
+            decision = await p_resolve_ask(tool_name, input_data, sensitive_pattern)
             if decision.get("behavior") == "allow":
                 return PermissionResultAllow(
                     updated_input=decision.get("updated_input", input_data)
@@ -828,7 +938,11 @@ class AgentManager:
                     _get_effective_policy(tool_name), tool_name, tool_input
                 )
 
+                if policy == "always_allow":
+                    p_note_tool_used(tool_name, True)
+
                 if policy == "deny":
+                    p_note_tool_used(tool_name, False)
                     return {
                         "hookSpecificOutput": {
                             "hookEventName": hook_event,
@@ -838,7 +952,7 @@ class AgentManager:
                     }
 
                 if policy == "ask":
-                    decision = await _request_user_approval(tool_name, tool_input, sensitive_pattern=sensitive_pattern)
+                    decision = await p_resolve_ask(tool_name, tool_input, sensitive_pattern)
 
                     if decision.get("behavior") == "allow":
                         if tool_use_id:
