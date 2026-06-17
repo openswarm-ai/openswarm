@@ -246,7 +246,7 @@ interface AgentChatProps {
   onBranch?: (newSessionId: string) => void;
 }
 
-const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, isGlowing, onDismissGlow, initialContextPaths, onBranch }) => {
+const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, initialContextPaths, onBranch }) => {
   const c = useClaudeTokens();
   const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
     running: { color: c.status.success, bg: c.status.successBg },
@@ -1930,35 +1930,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
           ))
         )}
 
-        {isGlowing ? (
-          <Box
-            onClick={(e) => { e.stopPropagation(); onDismissGlow?.(); }}
-            sx={{
-              mx: 1.5,
-              mb: 1.5,
-              py: 1.25,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 2.5,
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              color: c.accent.primary,
-              border: `1.5px solid ${c.accent.primary}`,
-              background: `${c.accent.primary}08`,
-              boxShadow: `0 0 12px ${c.accent.primary}25, inset 0 0 12px ${c.accent.primary}08`,
-              transition: 'background 0.15s, box-shadow 0.15s',
-              '&:hover': {
-                background: `${c.accent.primary}14`,
-                boxShadow: `0 0 24px ${c.accent.primary}50, inset 0 0 20px ${c.accent.primary}18`,
-              },
-            }}
-          >
-            Continue chat
-          </Box>
-        ) : (
-          <ClickAwayListener onClickAway={() => { if (queueExpanded) { setQueueExpanded(false); setEditingQueueIdx(null); } }}>
+        <ClickAwayListener onClickAway={() => { if (queueExpanded) { setQueueExpanded(false); setEditingQueueIdx(null); } }}>
             <Box>
               {queueLength > 0 && (
                 <Box sx={{ ml: 3, mr: 1.5 }}>
@@ -2226,8 +2198,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 />
               )}
             </Box>
-          </ClickAwayListener>
-        )}
+        </ClickAwayListener>
       </Box>
     </Box>
   );
