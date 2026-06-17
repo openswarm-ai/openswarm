@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="260" font-family="Segoe UI, sans-serif">
+<text x="20" y="28" font-size="17" font-weight="600" fill="#1a1d27">where startup time goes (backend dwarfs the shell)</text>
+<text x="20" y="77" font-size="13" fill="#1a1d27">typical warm launch</text>
+<rect x="170" y="50" width="77.8" height="46" fill="#2e9e5b" rx="3"/>
+<rect x="170" y="50" width="5.5" height="46" fill="#1a1d27" rx="3"/>
+<text x="256" y="77" font-size="12" fill="#1a1d27">backend 9.6s  (shell 0.68s)</text>
+<text x="20" y="149" font-size="13" fill="#1a1d27">typical cold launch</text>
+<rect x="170" y="122" width="700.0" height="46" fill="#d64545" rx="3"/>
+<rect x="170" y="122" width="12.0" height="46" fill="#1a1d27" rx="3"/>
+<text x="878" y="149" font-size="12" fill="#1a1d27">backend 86.3s  (shell 1.48s)</text>
+<text x="20" y="248" font-size="11" fill="#8892a4">dark = electron shell (app-launch + first-paint); colored = python backend</text>
+</svg>

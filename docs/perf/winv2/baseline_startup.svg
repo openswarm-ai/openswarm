@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" font-family="Segoe UI, sans-serif">
+<text x="60" y="28" font-size="17" font-weight="600" fill="#1a1d27">backend-http-ready per launch (ms) - lower is better</text>
+<line x1="60" y1="330" x2="880" y2="330" stroke="#e2e6ef"/>
+<text x="52" y="334" font-size="11" fill="#8892a4" text-anchor="end">0s</text>
+<line x1="60" y1="260" x2="880" y2="260" stroke="#e2e6ef"/>
+<text x="52" y="264" font-size="11" fill="#8892a4" text-anchor="end">35s</text>
+<line x1="60" y1="190" x2="880" y2="190" stroke="#e2e6ef"/>
+<text x="52" y="194" font-size="11" fill="#8892a4" text-anchor="end">69s</text>
+<line x1="60" y1="120" x2="880" y2="120" stroke="#e2e6ef"/>
+<text x="52" y="124" font-size="11" fill="#8892a4" text-anchor="end">104s</text>
+<line x1="60" y1="50" x2="880" y2="50" stroke="#e2e6ef"/>
+<text x="52" y="54" font-size="11" fill="#8892a4" text-anchor="end">138s</text>
+<rect x="68.8" y="219.5" width="41.0" height="110.5" fill="#d64545" rx="2"/>
+<text x="89.3" y="214.5" font-size="10" fill="#1a1d27" text-anchor="middle">55s</text>
+<text x="89.3" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 89.3 346)">1.1.72</text>
+<rect x="127.4" y="308.8" width="41.0" height="21.2" fill="#2e9e5b" rx="2"/>
+<text x="147.9" y="303.8" font-size="10" fill="#1a1d27" text-anchor="middle">10s</text>
+<text x="147.9" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 147.9 346)">1.2.73</text>
+<rect x="185.9" y="309.6" width="41.0" height="20.4" fill="#2e9e5b" rx="2"/>
+<text x="206.4" y="304.6" font-size="10" fill="#1a1d27" text-anchor="middle">10s</text>
+<text x="206.4" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 206.4 346)">1.2.73</text>
+<rect x="244.5" y="166.0" width="41.0" height="164.0" fill="#d64545" rx="2"/>
+<text x="265.0" y="161.0" font-size="10" fill="#1a1d27" text-anchor="middle">81s</text>
+<text x="265.0" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 265.0 346)">1.2.73</text>
+<rect x="303.1" y="308.9" width="41.0" height="21.1" fill="#2e9e5b" rx="2"/>
+<text x="323.6" y="303.9" font-size="10" fill="#1a1d27" text-anchor="middle">10s</text>
+<text x="323.6" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 323.6 346)">1.2.73</text>
+<rect x="361.6" y="309.7" width="41.0" height="20.3" fill="#2e9e5b" rx="2"/>
+<text x="382.1" y="304.7" font-size="10" fill="#1a1d27" text-anchor="middle">10s</text>
+<text x="382.1" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 382.1 346)">1.2.75</text>
+<rect x="420.2" y="312.3" width="41.0" height="17.7" fill="#2e9e5b" rx="2"/>
+<text x="440.7" y="307.3" font-size="10" fill="#1a1d27" text-anchor="middle">9s</text>
+<text x="440.7" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 440.7 346)">1.2.75</text>
+<rect x="478.8" y="155.3" width="41.0" height="174.7" fill="#d64545" rx="2"/>
+<text x="499.3" y="150.3" font-size="10" fill="#1a1d27" text-anchor="middle">86s</text>
+<text x="499.3" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 499.3 346)">1.2.75</text>
+<rect x="537.4" y="311.1" width="41.0" height="18.9" fill="#2e9e5b" rx="2"/>
+<text x="557.9" y="306.1" font-size="10" fill="#1a1d27" text-anchor="middle">9s</text>
+<text x="557.9" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 557.9 346)">1.2.76</text>
+<rect x="595.9" y="60.7" width="41.0" height="269.3" fill="#d64545" rx="2"/>
+<text x="616.4" y="55.7" font-size="10" fill="#1a1d27" text-anchor="middle">133s</text>
+<text x="616.4" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 616.4 346)">1.2.76</text>
+<rect x="654.5" y="311.1" width="41.0" height="18.9" fill="#2e9e5b" rx="2"/>
+<text x="675.0" y="306.1" font-size="10" fill="#1a1d27" text-anchor="middle">9s</text>
+<text x="675.0" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 675.0 346)">1.2.77</text>
+<rect x="713.1" y="311.2" width="41.0" height="18.8" fill="#2e9e5b" rx="2"/>
+<text x="733.6" y="306.2" font-size="10" fill="#1a1d27" text-anchor="middle">9s</text>
+<text x="733.6" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 733.6 346)">1.2.77</text>
+<rect x="771.6" y="50.0" width="41.0" height="280.0" fill="#d64545" rx="2"/>
+<text x="792.1" y="45.0" font-size="10" fill="#1a1d27" text-anchor="middle">138s</text>
+<text x="792.1" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 792.1 346)">1.2.77</text>
+<rect x="830.2" y="310.6" width="41.0" height="19.4" fill="#2e9e5b" rx="2"/>
+<text x="850.7" y="305.6" font-size="10" fill="#1a1d27" text-anchor="middle">10s</text>
+<text x="850.7" y="346" font-size="9" fill="#8892a4" text-anchor="end" transform="rotate(-40 850.7 346)">1.2.82</text>
+<rect x="700" y="50" width="12" height="12" fill="#2e9e5b"/><text x="716" y="61" font-size="12" fill="#1a1d27">warm</text>
+<rect x="770" y="50" width="12" height="12" fill="#d64545"/><text x="786" y="61" font-size="12" fill="#1a1d27">cold (post-update)</text>
+</svg>

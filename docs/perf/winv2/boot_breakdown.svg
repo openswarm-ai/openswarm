@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" font-family="Segoe UI, sans-serif">
+<text x="60" y="28" font-size="17" font-weight="600" fill="#1a1d27">warm boot breakdown: before vs after (ms) - the service lifespan was the bottleneck</text>
+<line x1="60" y1="240" x2="870" y2="240" stroke="#e2e6ef"/>
+<text x="52" y="244" font-size="11" fill="#8892a4" text-anchor="end">0.0s</text>
+<line x1="60" y1="145" x2="870" y2="145" stroke="#e2e6ef"/>
+<text x="52" y="149" font-size="11" fill="#8892a4" text-anchor="end">4.1s</text>
+<line x1="60" y1="50" x2="870" y2="50" stroke="#e2e6ef"/>
+<text x="52" y="54" font-size="11" fill="#8892a4" text-anchor="end">8.3s</text>
+<rect x="89.0" y="221.6" width="68.9" height="18.4" fill="#d64545" rx="2"/>
+<text x="123.4" y="217.6" font-size="10" fill="#1a1d27" text-anchor="middle">0.8s</text>
+<rect x="157.8" y="222.4" width="68.9" height="17.6" fill="#2e9e5b" rx="2"/>
+<text x="192.2" y="218.4" font-size="10" fill="#1a1d27" text-anchor="middle">0.8s</text>
+<text x="161.2" y="258" font-size="10" fill="#8892a4" text-anchor="end" transform="rotate(-25 161.2 258)">import backend.main</text>
+<rect x="291.5" y="69.4" width="68.9" height="170.6" fill="#d64545" rx="2"/>
+<text x="325.9" y="65.4" font-size="10" fill="#1a1d27" text-anchor="middle">7.4s</text>
+<rect x="360.3" y="238.1" width="68.9" height="1.9" fill="#2e9e5b" rx="2"/>
+<text x="394.7" y="234.1" font-size="10" fill="#1a1d27" text-anchor="middle">0.1s</text>
+<text x="363.8" y="258" font-size="10" fill="#8892a4" text-anchor="end" transform="rotate(-25 363.8 258)">service lifespan (9router start)</text>
+<rect x="494.0" y="239.0" width="68.9" height="1.0" fill="#d64545" rx="2"/>
+<text x="528.4" y="235.0" font-size="10" fill="#1a1d27" text-anchor="middle">0.0s</text>
+<rect x="562.8" y="239.8" width="68.9" height="0.2" fill="#2e9e5b" rx="2"/>
+<text x="597.2" y="235.8" font-size="10" fill="#1a1d27" text-anchor="middle">0.0s</text>
+<text x="566.2" y="258" font-size="10" fill="#8892a4" text-anchor="end" transform="rotate(-25 566.2 258)">other 15 lifespans</text>
+<rect x="696.5" y="50.0" width="68.9" height="190.0" fill="#d64545" rx="2"/>
+<text x="730.9" y="46.0" font-size="10" fill="#1a1d27" text-anchor="middle">8.3s</text>
+<rect x="765.3" y="220.3" width="68.9" height="19.7" fill="#2e9e5b" rx="2"/>
+<text x="799.7" y="216.3" font-size="10" fill="#1a1d27" text-anchor="middle">0.9s</text>
+<text x="768.8" y="258" font-size="10" fill="#8892a4" text-anchor="end" transform="rotate(-25 768.8 258)">import + lifespans floor</text>
+<rect x="700" y="50" width="12" height="12" fill="#d64545"/><text x="716" y="61" font-size="12" fill="#1a1d27">before</text>
+<rect x="780" y="50" width="12" height="12" fill="#2e9e5b"/><text x="796" y="61" font-size="12" fill="#1a1d27">after</text>
+</svg>

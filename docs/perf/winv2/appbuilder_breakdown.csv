@@ -1,0 +1,7 @@
+phase,ms,note
+"seed workspace + link node_modules (per app)",67,"nm linked, instant"
+"download: archive extract (new build path, one-time)",14204,"215MB nm, defender-bound"
+"download: npm install (cold fallback, one-time)",42684,"ok"
+"vite bind: cold vite cache (first app)",6714,"bound"
+"vite bind: warm shared cache (subsequent)",672,"bound"
+"build-time: tar node_modules to archive (CI, not user)",6809,"26MB archive"

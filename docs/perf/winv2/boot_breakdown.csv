@@ -1,0 +1,5 @@
+phase,before_ms,after_ms
+import backend.main,798,764
+service lifespan (9router start),7412,84
+other 15 lifespans,45,9
+import + lifespans floor,8256,857
