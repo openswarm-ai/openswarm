@@ -169,6 +169,10 @@ class WorkflowRun(BaseModel):
     # time it dispatches a step prompt and broadcasts the run. RunningView
     # uses this for the disc statuses; estimate fallback only when null.
     active_step_idx: Optional[int] = None
+    # True while the user has paused the in-flight agent turn (same mechanic
+    # as the chat's stop/resume). Rides the workflow:run broadcast so the
+    # card shows the paused state even when the live chat isn't open.
+    paused: bool = False
 
 
 class WorkflowCreate(BaseModel):

@@ -891,9 +891,8 @@ async def test_run_workflow(workflow_id: str, body: dict):
             for step in step_entries:
                 set_workflow_approval_step(session.id, step.id)
                 await agent_manager.send_message(session.id, step.text)
-                await executor._await_session_idle(session.id)
-                sess_state = agent_manager.sessions.get(session.id)
-                if sess_state is not None and getattr(sess_state, "status", None) == "error":
+                disp = await executor._await_session_idle(session.id)
+                if disp == "error":
                     final = "error"
                     return
         except Exception:
@@ -1024,52 +1023,115 @@ async def run_workflow_now(workflow_id: str):
     return {"run_id": "", "status": None, "error": None}
 
 
-@workflows.router.post("/runs/{run_id}/stop")
-async def stop_run(run_id: str):
-    """Force-terminate a running workflow's underlying agent session.
-
-    Fired by RunningView's Stop button (Image #40). The run record gets
-    marked failure with a "stopped by user" error so it surfaces correctly
-    in History instead of looking like it succeeded.
-    """
-    target_wf_id = None
-    target_run = None
+def _find_active_run(run_id: str):
+    """Locate a currently-running run by id, returning (workflow_id, run)."""
     for wf in storage.list_workflows():
         for r in storage.list_runs(wf.id, limit=50):
             if r.id == run_id and r.status == "running":
-                target_wf_id = wf.id
-                target_run = r
-                break
-        if target_run:
-            break
-    if not target_run or not target_wf_id:
-        raise HTTPException(status_code=404, detail="Run not found or not active")
-    if target_run.session_id:
-        try:
-            from backend.apps.agents.agent_manager import agent_manager
-            await agent_manager.close_session(target_run.session_id)
-        except Exception:
-            logger.exception("stop_run: close_session failed for %s", target_run.session_id)
-    target_run.status = "failure"
-    target_run.error = "Stopped by user"
-    target_run.finished_at = datetime.now()
-    storage.record_run(target_run)
-    wf = storage.get_workflow(target_wf_id)
-    if wf:
-        _persist_run_fields(wf, {
-            "last_run_status": "failure",
-            "last_run_at": target_run.finished_at,
-            "last_run_id": target_run.id,
-        })
+                return wf.id, r
+    return None, None
+
+
+async def _broadcast_run(workflow_id: str, run) -> None:
     try:
         from backend.apps.agents.core.ws_manager import ws_manager
         await ws_manager.broadcast_global("workflow:run", {
-            "workflow_id": target_wf_id,
-            "run": target_run.model_dump(mode="json"),
+            "workflow_id": workflow_id,
+            "run": run.model_dump(mode="json"),
         })
     except Exception:
         pass
+
+
+@workflows.router.post("/runs/{run_id}/stop")
+async def stop_run(run_id: str):
+    """Fully stop a running workflow, failing it with a manual-stop reason.
+
+    Fired by the running card's Stop button. We signal the executor (which
+    owns the run's terminal write) and halt the in-flight agent turn now; the
+    executor marks the run failure "Stopped by user" and closes the session in
+    its finally block. Signalling instead of writing the row here avoids the
+    old race where the still-looping executor overwrote the failure.
+    """
+    target_wf_id, target_run = _find_active_run(run_id)
+    if not target_run or not target_wf_id:
+        raise HTTPException(status_code=404, detail="Run not found or not active")
+    executor.request_stop(run_id)
+    if target_run.session_id:
+        try:
+            from backend.apps.agents.agent_manager import agent_manager
+            await agent_manager.stop_agent(target_run.session_id)
+        except Exception:
+            logger.exception("stop_run: stop_agent failed for %s", target_run.session_id)
     return {"ok": True}
+
+
+@workflows.router.post("/runs/{run_id}/pause")
+async def pause_run(run_id: str):
+    """Pause the in-flight agent turn, same mechanic as the chat's Stop.
+
+    The executor holds on the current step (see _await_session_idle) until the
+    matching resume. We flag the run paused so the card reflects it even when
+    the live chat isn't open.
+    """
+    target_wf_id, target_run = _find_active_run(run_id)
+    if not target_run or not target_wf_id:
+        raise HTTPException(status_code=404, detail="Run not found or not active")
+    target_run.paused = True
+    executor.set_pause_override(run_id, True)
+    storage.record_run(target_run)
+    await _broadcast_run(target_wf_id, target_run)
+
+    async def _stop_agent_for_pause() -> None:
+        if not target_run.session_id:
+            return
+        try:
+            from backend.apps.agents.agent_manager import agent_manager
+            await agent_manager.stop_agent(target_run.session_id)
+        except Exception:
+            logger.exception("pause_run: stop_agent failed for %s", target_run.session_id)
+            target_run.paused = False
+            executor.set_pause_override(run_id, False, ttl_s=0.1)
+            storage.record_run(target_run)
+            await _broadcast_run(target_wf_id, target_run)
+
+    asyncio.create_task(_stop_agent_for_pause())
+    return {"ok": True, "run": target_run.model_dump(mode="json")}
+
+
+@workflows.router.post("/runs/{run_id}/resume")
+async def resume_run(run_id: str):
+    """Resume a paused run, same mechanic as the chat's Resume Agent Response:
+    a hidden "continue where you left off" message restarts the current step's
+    turn. The executor advances once that turn completes.
+    """
+    target_wf_id, target_run = _find_active_run(run_id)
+    if not target_run or not target_wf_id:
+        raise HTTPException(status_code=404, detail="Run not found or not active")
+    target_run.paused = False
+    executor.set_pause_override(run_id, False)
+    storage.record_run(target_run)
+    await _broadcast_run(target_wf_id, target_run)
+
+    async def _send_resume_message() -> None:
+        if not target_run.session_id:
+            return
+        try:
+            from backend.apps.agents.agent_manager import agent_manager
+            await agent_manager.send_message(
+                target_run.session_id,
+                "Continue where you left off. Start your response EXACTLY with 'Sorry, let me pick up where I left off'",
+                hidden=True,
+            )
+        except Exception:
+            logger.exception("resume_run: send_message failed for %s", target_run.session_id)
+            target_run.paused = True
+            executor.set_pause_override(run_id, True, ttl_s=0.1)
+            storage.record_run(target_run)
+            await _broadcast_run(target_wf_id, target_run)
+
+    asyncio.create_task(_send_resume_message())
+    return {"ok": True, "run": target_run.model_dump(mode="json")}
 
 
 @workflows.router.get("/{workflow_id}/runs")

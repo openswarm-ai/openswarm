@@ -23,6 +23,7 @@ import asyncio
 import json
 import os
 import shutil
+import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -37,6 +38,7 @@ def isolated_data_dir(monkeypatch, tmp_path):
     starts with empty caches."""
     from backend.apps.workflows import storage as _storage
     from backend.apps.workflows import escalation as _escalation
+    from backend.apps.workflows import executor as _executor
     monkeypatch.setattr(_storage, "DATA_DIR", str(tmp_path / "workflows"))
     monkeypatch.setattr(_storage, "RUNS_DIR", str(tmp_path / "workflows" / "runs"))
     monkeypatch.setattr(_storage, "PAUSED_FILE", str(tmp_path / "workflows" / "paused.json"))
@@ -47,6 +49,8 @@ def isolated_data_dir(monkeypatch, tmp_path):
     # Reset escalation registry between tests.
     _escalation._tasks.clear()
     _escalation._state.clear()
+    _executor._run_control.clear()
+    _executor._run_pause_override.clear()
     # Also clear audit dir reference; audit.py reads DATA_DIR at import via
     # module-level expression, so reach in and override the AUDIT_DIR too.
     from backend.apps.workflows import audit as _audit
@@ -63,6 +67,11 @@ def _make_wf(**overrides):
     )
     base.update(overrides)
     return Workflow(**base)
+
+
+class _NoopDebug:
+    def __call__(self, *args, **kwargs):
+        return None
 
 
 # --- DST tests ---------------------------------------------------------------
@@ -317,6 +326,83 @@ def test_paused_flag_persists_and_blocks_tick():
     asyncio.new_event_loop().run_until_complete(scheduler._tick())
     after = storage.get_workflow(wf.id).next_run_at
     assert before == after
+
+
+def test_pause_run_returns_confirmed_state_before_agent_stop_finishes(monkeypatch):
+    async def scenario():
+        from backend.apps.workflows import storage
+        from backend.apps.workflows.models import WorkflowRun
+        monkeypatch.setitem(sys.modules, "debug", _NoopDebug())
+        from backend.apps.workflows import workflows as routes
+        from backend.apps.agents import agent_manager as agent_manager_module
+
+        wf = _make_wf()
+        storage.save_workflow(wf)
+        run = WorkflowRun(workflow_id=wf.id, status="running", session_id="s1", triggered_by="manual")
+        storage.record_run(run)
+        broadcasts: list[bool] = []
+
+        async def fake_broadcast(_workflow_id, updated_run):
+            broadcasts.append(updated_run.paused)
+
+        stop_started = asyncio.Event()
+        stop_release = asyncio.Event()
+
+        async def fake_stop_agent(_session_id):
+            stop_started.set()
+            await stop_release.wait()
+
+        monkeypatch.setattr(routes, "_broadcast_run", fake_broadcast)
+        monkeypatch.setattr(agent_manager_module.agent_manager, "stop_agent", fake_stop_agent)
+
+        result = await asyncio.wait_for(routes.pause_run(run.id), timeout=0.05)
+        assert result["run"]["paused"] is True
+        assert storage.list_runs(wf.id)[0].paused is True
+        assert broadcasts[-1] is True
+        await asyncio.wait_for(stop_started.wait(), timeout=0.05)
+        stop_release.set()
+        await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+
+
+def test_resume_run_returns_confirmed_state_before_resume_message_finishes(monkeypatch):
+    async def scenario():
+        from backend.apps.workflows import storage
+        from backend.apps.workflows.models import WorkflowRun
+        monkeypatch.setitem(sys.modules, "debug", _NoopDebug())
+        from backend.apps.workflows import workflows as routes
+        from backend.apps.agents import agent_manager as agent_manager_module
+
+        wf = _make_wf()
+        storage.save_workflow(wf)
+        run = WorkflowRun(workflow_id=wf.id, status="running", session_id="s1", triggered_by="manual", paused=True)
+        storage.record_run(run)
+        broadcasts: list[bool] = []
+
+        async def fake_broadcast(_workflow_id, updated_run):
+            broadcasts.append(updated_run.paused)
+
+        send_started = asyncio.Event()
+        send_release = asyncio.Event()
+
+        async def fake_send_message(_session_id, _prompt, hidden=False):
+            assert hidden is True
+            send_started.set()
+            await send_release.wait()
+
+        monkeypatch.setattr(routes, "_broadcast_run", fake_broadcast)
+        monkeypatch.setattr(agent_manager_module.agent_manager, "send_message", fake_send_message)
+
+        result = await asyncio.wait_for(routes.resume_run(run.id), timeout=0.05)
+        assert result["run"]["paused"] is False
+        assert storage.list_runs(wf.id)[0].paused is False
+        assert broadcasts[-1] is False
+        await asyncio.wait_for(send_started.wait(), timeout=0.05)
+        send_release.set()
+        await asyncio.sleep(0)
+
+    asyncio.run(scenario())
 
 
 # --- Escalation --------------------------------------------------------------

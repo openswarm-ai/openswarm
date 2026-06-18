@@ -172,22 +172,6 @@ export function RunningView({ workflow, steps, runs, mode = 'card' }: {
 
   const isLinked = mode === 'sidecar-linked' && (card?.sidecarKind === 'watching' || card?.sidecarKind === 'testing');
 
-  const onStop = useCallback(async () => {
-    if (!runId) return;
-    try {
-      const { API_BASE, getAuthToken } = await import('@/shared/config');
-      const tok = (() => { try { return getAuthToken(); } catch { return ''; } })();
-      await fetch(`${API_BASE}/workflows/runs/${encodeURIComponent(runId)}/stop`, {
-        method: 'POST',
-        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-      });
-    } catch { /* best-effort */ }
-  }, [runId]);
-  const onPause = useCallback(() => {
-    // Pause flips the global paused state; the in-flight run continues but
-    // future fires queue up behind it. Maps to the existing /pause-all path.
-    void undefined;
-  }, []);
   const openSidecar = useOpenSidecar(workflow.id);
   const onWatchLive = useCallback(() => {
     if (run?.session_id) void openSidecar(run.session_id, 'watching');
@@ -231,11 +215,7 @@ export function RunningView({ workflow, steps, runs, mode = 'card' }: {
           />
         )}
       </Box>
-      {/* Stop / Pause live in the header row, rendered by WorkflowCard.
-          See header-button overrides in WorkflowCard.tsx for the
-          per-view replacement of History/Run. */}
-      <Box sx={{ display: 'none' }} aria-hidden onClick={onStop} />
-      <Box sx={{ display: 'none' }} aria-hidden onClick={onPause} />
+      {/* Stop / Pause live in the header row, rendered by WorkflowCard. */}
     </Box>
   );
 }

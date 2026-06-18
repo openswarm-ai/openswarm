@@ -269,6 +269,25 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     return found?.workflowId ?? null;
   });
   const isStoppableSidecar = !!linkedWorkflowId;
+  // A live workflow run being watched owns pause/resume from its workflow
+  // card, so the chat's own "Resume Agent Response" bubble is redundant and
+  // would go stale against the card's Resume. Suppress it for any workflow-run
+  // sidecar, not just the fragile exact "watching" value. Test-run sidecars
+  // keep their chat-level resume behavior.
+  const isWorkflowRunSidecar = useAppSelector((s) => {
+    if (!id) return false;
+    for (const cd of Object.values(s.workflows.openCards)) {
+      if (cd.sidecarSessionId !== id || cd.sidecarKind === 'testing') continue;
+      if (cd.runId) {
+        const run = (s.workflows.runs[cd.workflowId] || []).find((r) => r.id === cd.runId);
+        if (!run || run.session_id === id) return true;
+      }
+      if (cd.sidecarKind === 'watching' || cd.sidecarKind === 'viewing-completed' || cd.sidecarKind === 'viewing-error') return true;
+    }
+    return Object.values(s.workflows.runs).some((runs) =>
+      runs.some((r) => r.session_id === id && r.status === 'running'),
+    );
+  });
   const testState = useAppSelector((s) => (id ? s.agents.sessions[id]?.workflow_test_state : null) ?? null);
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -316,6 +335,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const [heightVersion, setHeightVersion] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [showResumeBubble, setShowResumeBubble] = useState(false);
+  useEffect(() => {
+    if (isWorkflowRunSidecar) setShowResumeBubble(false);
+  }, [isWorkflowRunSidecar]);
   const [awaitingResponse, setAwaitingResponse] = useState(false);
   const [preSendActivityLabel, setPreSendActivityLabel] = useState<string | null>(null);
   const [activatingMcp, setActivatingMcp] = useState<string | null>(null);
@@ -471,7 +493,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
         didDispatchQueued = true;
       } else {
         if (curr === 'stopped') {
-          setShowResumeBubble(true);
+          setShowResumeBubble(!isWorkflowRunSidecar);
         }
       }
 
@@ -489,7 +511,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     if (curr !== 'draft' && !didDispatchQueued) {
       setAwaitingResponse(false);
     }
-  }, [session?.status, mode, modesMap, id, isDraft, dispatch, dispatchMessage]);
+  }, [session?.status, mode, modesMap, id, isDraft, dispatch, dispatchMessage, isWorkflowRunSidecar]);
 
   // Idle reconcile: if the session has been 'running' for 5s with no
   // WebSocket activity (no new messages, no streaming updates), do a
@@ -1872,7 +1894,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 />
               </Box>
             )}
-            {showResumeBubble && session.status === 'stopped' && (
+            {showResumeBubble && session.status === 'stopped' && !isWorkflowRunSidecar && (
               <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75 }}>
                 <Box
                   onClick={handleResume}

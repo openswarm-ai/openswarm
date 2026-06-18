@@ -25,6 +25,30 @@ _running: dict[str, str] = {}
 _running_lock = asyncio.Lock()
 
 
+# run_id -> "stop". Set by the stop endpoint so the executor loop, not the
+# HTTP handler, owns the run's terminal write. Without this the still-running
+# executor task could overwrite a "Stopped by user" failure with success.
+# Pause is NOT in here: it rides the agent session's own "stopped" status,
+# which the step loop waits out (see _await_session_idle).
+_run_control: dict[str, str] = {}
+_run_pause_override: dict[str, tuple[bool, float]] = {}
+
+
+def request_stop(run_id: str) -> None:
+    _run_control[run_id] = "stop"
+
+
+def set_pause_override(run_id: str, paused: bool, ttl_s: float = 5.0) -> None:
+    """Keep an explicit pause/resume control state authoritative briefly.
+
+    The tool watcher normally derives paused from the agent session status,
+    but pause/resume endpoints now return before the slower agent_manager call
+    finishes. This prevents the watcher from broadcasting the pre-control
+    status during that handoff window.
+    """
+    _run_pause_override[run_id] = (paused, asyncio.get_event_loop().time() + ttl_s)
+
+
 def _resolve_system_prompt(wf: Workflow) -> Optional[str]:
     if wf.use_synced_prompt:
         return None
@@ -222,12 +246,21 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
         # finally block alongside _running cleanup.
         async def _watch_tool_calls() -> None:
             last_seen = ""
+            last_paused = False
             while True:
                 try:
                     await asyncio.sleep(1.5)
                     sess = agent_manager.sessions.get(session.id)
                     if not sess:
                         return
+                    now = asyncio.get_event_loop().time()
+                    override = _run_pause_override.get(run.id)
+                    if override and override[1] >= now:
+                        paused_now = override[0]
+                    else:
+                        if override:
+                            _run_pause_override.pop(run.id, None)
+                        paused_now = getattr(sess, "status", None) == "stopped"
                     msgs = getattr(sess, "messages", []) or []
                     label = ""
                     for m in reversed(msgs):
@@ -247,9 +280,13 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
                             label = content[:60]
                         if label:
                             break
-                    if label and label != last_seen:
-                        last_seen = label
-                        run.last_tool_label = label
+                    label_changed = bool(label) and label != last_seen
+                    if label_changed or paused_now != last_paused:
+                        if label_changed:
+                            last_seen = label
+                            run.last_tool_label = label
+                        last_paused = paused_now
+                        run.paused = paused_now
                         try:
                             from backend.apps.agents.core.ws_manager import ws_manager
                             await ws_manager.broadcast_global("workflow:run", {
@@ -271,10 +308,16 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
         # safe regardless of how long each turn takes.
         step_error: Optional[str] = None
         for idx, step in enumerate(steps):
+            if _run_control.get(run.id) == "stop":
+                step_error = "Stopped by user"
+                break
             # Broadcast the step bump before sending so RunningView flips
             # the disc immediately, not after the agent finishes the step.
+            # Advancing means we're not paused; keep the broadcast authoritative
+            # so it never races a stale paused=True from the watcher.
             run.active_step_idx = idx
             run.last_tool_label = None
+            run.paused = False
             set_workflow_approval_step(session.id, step.id)
             try:
                 from backend.apps.agents.core.ws_manager import ws_manager as _wsm
@@ -285,15 +328,17 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
             except Exception:
                 pass
             await agent_manager.send_message(session.id, step.text)
-            await _await_session_idle(session.id)
-            sess_state = agent_manager.sessions.get(session.id)
-            if sess_state is not None and getattr(sess_state, "status", None) == "error":
+            disp = await _await_session_idle(session.id, run.id)
+            if disp == "stopped":
+                step_error = "Stopped by user"
+                # Pin active step so FailedView renders the X on the right row.
+                break
+            if disp == "error":
                 step_error = "Agent session entered error state"
-                # Pin active step so FailedView can render the X on the
-                # right row. error_step_idx == active_step_idx at fail time.
                 break
 
         run.finished_at = datetime.now()
+        run.paused = False
         sess_state = agent_manager.sessions.get(session.id)
         if sess_state is not None:
             run.cost_usd = float(getattr(sess_state, "cost_usd", 0.0) or 0.0)
@@ -327,6 +372,7 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
         run.status = "failure"
         run.error = str(e)[:500]
         run.finished_at = datetime.now()
+        run.paused = False
         storage.record_run(run)
         wf.last_run_status = "failure"
         _persist_run_fields(wf, {
@@ -334,6 +380,8 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
             "last_run_at": run.finished_at,
         })
     finally:
+        _run_control.pop(run.id, None)
+        _run_pause_override.pop(run.id, None)
         # Cancel the tool-call watcher before we tear the session down so
         # the next poll doesn't race close_session.
         try:
@@ -377,26 +425,47 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
     return run
 
 
-async def _await_session_idle(session_id: str, timeout_s: float = 600.0) -> None:
-    """Block until the agent session reaches a non-running terminal state.
+async def _await_session_idle(session_id: str, run_id: Optional[str] = None, timeout_s: float = 600.0) -> str:
+    """Wait out the current step's agent turn. Returns a disposition:
+      'idle'    turn finished, advance to the next step
+      'error'   the agent session errored
+      'stopped' the run was manually stopped (full stop)
 
-    Polls cheaply (50ms) since the agent_manager doesn't expose a per-session
-    completion future. Bounded by timeout_s so a stuck step doesn't hang the
-    runner forever.
+    For a real run (run_id given) a user PAUSE shows up as the session going
+    'stopped' WITHOUT a stop signal; that is not terminal, so we hold here
+    until Resume or Stop, keeping the step deadline fresh so a long pause
+    doesn't fail the step. The attended test-run driver passes no run_id and
+    treats 'stopped' as terminal (no pause/resume there).
+
+    Polls cheaply since agent_manager doesn't expose a per-session completion
+    future. Bounded by timeout_s so a stuck step can't hang the runner forever.
     """
     from backend.apps.agents.agent_manager import agent_manager
 
+    hold_on_pause = run_id is not None
     deadline = asyncio.get_event_loop().time() + timeout_s
     while True:
+        if run_id is not None and _run_control.get(run_id) == "stop":
+            return "stopped"
         sess = agent_manager.sessions.get(session_id)
         if not sess:
-            return
-        task = agent_manager.tasks.get(session_id)
-        if task is not None and task.done():
-            return
+            return "idle"
         status = getattr(sess, "status", None)
-        if status in ("completed", "error", "stopped"):
-            return
+        if status == "stopped":
+            if not hold_on_pause:
+                return "stopped"
+            # Paused. Hold, and reset the deadline so paused wall-time
+            # doesn't count against the step timeout.
+            deadline = asyncio.get_event_loop().time() + timeout_s
+            await asyncio.sleep(0.1)
+            continue
+        if status == "error":
+            return "error"
+        if status == "completed":
+            return "idle"
+        task = agent_manager.tasks.get(session_id)
+        if task is not None and task.done() and status not in ("running", "waiting_approval"):
+            return "idle"
         if asyncio.get_event_loop().time() > deadline:
             raise TimeoutError(f"Step exceeded {timeout_s}s on session {session_id}")
         await asyncio.sleep(0.05)

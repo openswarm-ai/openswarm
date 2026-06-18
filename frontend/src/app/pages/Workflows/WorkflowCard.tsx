@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Snackbar from '@mui/material/Snackbar';
+import CircularProgress from '@mui/material/CircularProgress';
 import CloseIcon from '@mui/icons-material/Close';
 import HistoryIcon from '@mui/icons-material/HistoryRounded';
 import PlayArrowIcon from '@mui/icons-material/PlayArrowRounded';
@@ -14,6 +15,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   closeWorkflowCard,
+  controlWorkflowRun,
   createWorkflow,
   deleteWorkflow,
   fetchRuns,
@@ -984,56 +986,51 @@ function RunningHeader({ workflowId }: { workflowId: string }) {
   const runs = useAppSelector((s) => s.workflows.runs[workflowId]);
   const runId = card?.runId || null;
   const run = (runs || []).find((r) => r.id === runId);
+  const pendingAction = useAppSelector((s) => runId ? s.workflows.runControlPending[runId] : undefined);
+  // Hit a run-control endpoint by run id. Keyed off runId (not the run object,
+  // which can lag right after Run starts) so Stop/Pause never silently no-op.
+  const postRunAction = React.useCallback(async (action: 'stop' | 'pause' | 'resume') => {
+    if (!runId || pendingAction) return;
+    await dispatch(controlWorkflowRun({ runId, action }));
+  }, [dispatch, runId, pendingAction]);
   const onStop = React.useCallback(async () => {
-    if (!run) return;
-    try {
-      const { API_BASE, getAuthToken } = await import('@/shared/config');
-      const tok = (() => { try { return getAuthToken(); } catch { return ''; } })();
-      await fetch(`${API_BASE}/workflows/runs/${encodeURIComponent(run.id)}/stop`, {
-        method: 'POST',
-        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-      });
-    } catch { /* best-effort */ }
-    dispatch(updateWorkflowCard({ workflowId, patch: { view: 'saved', runId: null } }));
-  }, [dispatch, workflowId, run]);
-  // Pause = "let this run finish, but stop firing future schedules."
-  // Can't actually pause a streaming agent turn mid-call, so we flip
-  // schedule.enabled so the scheduler stops queuing the next fire. The
-  // button label flips to "Resume" while paused; user can re-enable
-  // without leaving the running view.
-  const isPaused = !!workflow && !workflow.schedule.enabled && workflow.schedule.runs_count > 0;
-  const onPauseToggle = React.useCallback(async () => {
-    if (!workflow) return;
-    const next = { ...workflow.schedule, enabled: isPaused };
-    await dispatch(updateWorkflow({
-      id: workflow.id,
-      patch: { schedule: next as Workflow['schedule'] },
-      ifMatch: workflow.updated_at || null,
-    }));
-  }, [dispatch, workflow, isPaused]);
+    await postRunAction('stop');
+  }, [postRunAction]);
+  // Pause/Resume mirror the chat's stop-agent / resume-agent-response on the
+  // run's own session, so the paused state shows in both the chat and here.
+  const isPaused = !!run?.paused;
+  const onPauseToggle = React.useCallback(() => {
+    void postRunAction(isPaused ? 'resume' : 'pause');
+  }, [postRunAction, isPaused]);
+  const stopPending = pendingAction === 'stop';
+  const pausePending = pendingAction === 'pause' || pendingAction === 'resume';
+  const controlsDisabled = !!pendingAction;
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 2, pb: 1.25, pt: 0, flexShrink: 0 }}>
       <SubtitleRow workflow={workflow || null} runs={runs || null} />
       <Box sx={{ flex: 1 }} />
       <Box
-        onClick={onStop}
+        onClick={controlsDisabled ? undefined : onStop}
         role="button"
-        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.35, fontSize: '0.82rem', fontWeight: 600, px: 1, py: 0.4, color: c.text.secondary, cursor: 'pointer', borderRadius: 999, '&:hover': { color: c.text.primary, bgcolor: c.bg.elevated } }}>
-        <StopRounded sx={{ fontSize: 15 }} />
+        aria-disabled={controlsDisabled}
+        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.35, fontSize: '0.82rem', fontWeight: 600, px: 1, py: 0.4, color: c.text.secondary, cursor: controlsDisabled ? 'default' : 'pointer', borderRadius: 999, opacity: controlsDisabled && !stopPending ? 0.55 : 1, '&:hover': controlsDisabled ? {} : { color: c.text.primary, bgcolor: c.bg.elevated } }}>
+        {stopPending ? <CircularProgress size={14} thickness={5} sx={{ color: c.text.secondary }} /> : <StopRounded sx={{ fontSize: 15 }} />}
         Stop
       </Box>
-      <Tooltip title={isPaused ? 'Schedule is paused. Click to resume future fires.' : 'Pause future scheduled fires. This run finishes normally.'}>
+      <Tooltip title={isPaused ? 'Resume the agent and continue this run.' : 'Pause the agent. This run holds until you resume.'}>
         <Box
-          onClick={onPauseToggle}
+          onClick={controlsDisabled ? undefined : onPauseToggle}
           role="button"
+          aria-disabled={controlsDisabled}
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.35,
             fontSize: '0.82rem', fontWeight: 700,
             px: 1.1, py: 0.4, borderRadius: 999,
-            bgcolor: c.accent.primary, color: '#fff', cursor: 'pointer',
-            '&:hover': { filter: 'brightness(1.05)' },
+            bgcolor: c.accent.primary, color: '#fff', cursor: controlsDisabled ? 'default' : 'pointer',
+            opacity: controlsDisabled && !pausePending ? 0.55 : 1,
+            '&:hover': controlsDisabled ? {} : { filter: 'brightness(1.05)' },
           }}>
-          <PauseRounded sx={{ fontSize: 15 }} />
+          {pausePending ? <CircularProgress size={14} thickness={5} sx={{ color: '#fff' }} /> : isPaused ? <PlayArrowIcon sx={{ fontSize: 15 }} /> : <PauseRounded sx={{ fontSize: 15 }} />}
           {isPaused ? 'Resume' : 'Pause'}
         </Box>
       </Tooltip>
