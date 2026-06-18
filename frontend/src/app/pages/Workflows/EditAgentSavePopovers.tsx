@@ -83,7 +83,7 @@ export default function EditAgentSavePopovers({
             Throw away every edit from this session? This can&apos;t be undone.
           </Typography>
           <OptionRow label="Discard changes" hint="Revert to the saved workflow" onClick={onConfirmDiscard} danger />
-          <OptionRow label="Keep editing" hint="Go back and keep your changes" onClick={onClose} />
+          <OptionRow label="Keep editing" hint="Stay on the editing window" onClick={onClose} />
         </>
       )}
     </Popover>
