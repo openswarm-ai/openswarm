@@ -101,8 +101,14 @@ def _js_weekday(d: datetime) -> int:
     return (d.weekday() + 1) % 7
 
 
+def is_schedule_configured(sched: ScheduleConfig) -> bool:
+    if sched.repeat_unit == "week":
+        return bool(sched.on_days)
+    return True
+
+
 def _next_fire_after(sched: ScheduleConfig, ref_utc: datetime) -> Optional[datetime]:
-    if not sched.enabled:
+    if not sched.enabled or not is_schedule_configured(sched):
         return None
     tz = _resolve_tz(sched.timezone)
     ref_local = ref_utc.astimezone(tz)
@@ -135,7 +141,7 @@ def _next_fire_after(sched: ScheduleConfig, ref_utc: datetime) -> Optional[datet
         return candidate.astimezone(timezone.utc)
 
     if sched.repeat_unit == "week":
-        allowed = sched.on_days or [_js_weekday(ref_local)]
+        allowed = sched.on_days
         for _ in range(0, 14):
             if _js_weekday(candidate) in allowed and candidate > ref_local:
                 return candidate.astimezone(timezone.utc)
@@ -215,6 +221,9 @@ async def _tick() -> None:
     due: list[Workflow] = []
     for wf in storage.list_workflows():
         if not wf.schedule.enabled:
+            continue
+        if not is_schedule_configured(wf.schedule):
+            _disable_schedule(wf)
             continue
         if _end_condition_hit(wf, now_utc):
             _disable_schedule(wf)
@@ -302,6 +311,10 @@ def reconcile_on_startup() -> None:
         if not wf.schedule.enabled:
             wf.next_run_at = None
             storage.save_workflow(wf)
+            continue
+
+        if not is_schedule_configured(wf.schedule):
+            _disable_schedule(wf)
             continue
 
         if _end_condition_hit(wf, now_utc):

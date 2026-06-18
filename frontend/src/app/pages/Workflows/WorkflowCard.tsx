@@ -195,6 +195,7 @@ const WorkflowCard: React.FC<Props> = ({
   const title = workflow?.title || card?.draft?.title || 'Workflow';
   const isDraft = card?.view === 'preview' && !workflow;
   const steps = (workflow?.steps || card?.draft?.steps || []) as Workflow['steps'];
+  const [draftCloseNonce, setDraftCloseNonce] = useState(0);
 
   // Edit-agent chrome lives in the card header: the model/time subtitle and
   // the Save Workflow button. EditAgentView owns the live session and reports
@@ -367,10 +368,30 @@ const WorkflowCard: React.FC<Props> = ({
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   }, [computeResize, dispatch, workflowId]);
 
-  // X just hides the card. Schedule keeps firing in the background; the
-  // user can re-open from the Workflows hub. A confirm dialog here was
-  // more friction than value (users clicked through it without reading).
+  const discardDraft = useCallback(() => {
+    const sourceId = card?.sourceSessionId || (card?.draft?.source_session_id as string | undefined) || null;
+    dispatch(closeWorkflowCard(workflowId));
+    dispatch(removeWorkflowCard(workflowId));
+    if (sourceId) {
+      dispatch(placeCard({
+        sessionId: sourceId,
+        x: cardX,
+        y: cardY,
+        width: cardWidth,
+        height: cardHeight,
+        expandedSessionIds,
+      }));
+      dispatch(setPendingFocusAgentId(sourceId));
+    }
+  }, [card?.sourceSessionId, card?.draft, dispatch, workflowId, cardX, cardY, cardWidth, cardHeight, expandedSessionIds]);
+
+  // X hides saved cards, but temporary converted workflow drafts need an
+  // explicit save/discard choice because they do not exist server-side yet.
   const onClose = useCallback(() => {
+    if (isDraft) {
+      setDraftCloseNonce((n) => n + 1);
+      return;
+    }
     // A 0-step workflow can't run or be scheduled, so a "+ New" card the user
     // opened and abandoned (without the build agent adding any steps) would
     // just litter the hub. Delete it on close rather than orphan it.
@@ -379,7 +400,7 @@ const WorkflowCard: React.FC<Props> = ({
     }
     dispatch(closeWorkflowCard(workflowId));
     dispatch(removeWorkflowCard(workflowId));
-  }, [dispatch, workflowId, workflow]);
+  }, [dispatch, workflowId, workflow, isDraft]);
 
   // ---- Display calculations ----
   const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
@@ -652,15 +673,22 @@ const WorkflowCard: React.FC<Props> = ({
             steps={steps}
             sourceSessionId={card.sourceSessionId || null}
             initialDraft={card.draft || null}
-            onSaved={(wf) => {
+            closeRequestNonce={draftCloseNonce}
+            onDiscardDraft={discardDraft}
+            onSaved={(wf, options) => {
               // Migrate transient view state AND layout entry to the
               // real workflow id so the card stays put visually.
               dispatch(rekeyOpenCard({ oldId: workflowId, newId: wf.id }));
               dispatch(rekeyWorkflowCard({ oldId: workflowId, newId: wf.id }));
+              if (options?.close) {
+                dispatch(closeWorkflowCard(wf.id));
+                dispatch(removeWorkflowCard(wf.id));
+                return;
+              }
               dispatch(openWorkflowCardAction({
                 workflowId: wf.id,
                 sourceSessionId: card.sourceSessionId,
-                view: 'saved',
+                view: options?.view || 'saved',
                 draft: null,
               }));
             }}

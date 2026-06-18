@@ -41,7 +41,7 @@ import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
 import { useOverlayScrollPassthrough } from '../hooks/interaction/useOverlayScrollPassthrough';
 import { useStreamingMessage } from '@/shared/state/streamingSlice';
 import { isCanvasInteractionActive, onCanvasInteractionEnd } from '@/shared/canvasInteractionState';
-import { createWorkflow, openWorkflowCard, setCardSidecar, type Workflow } from '@/shared/state/workflowsSlice';
+import { openWorkflowCard, setCardSidecar, type Workflow } from '@/shared/state/workflowsSlice';
 import { addWorkflowCard, setWorkflowCardPosition, setWorkflowCardSize } from '@/shared/state/dashboardLayoutSlice';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import { getAgentWorkTime, fmtSeconds } from '@/shared/agentWorkTime';
@@ -911,42 +911,34 @@ const AgentCard: React.FC<Props> = ({
               <Tooltip title="Turn this chat into a reusable, schedulable workflow">
                 <Box
                   role="button"
-                  onClick={async (e) => {
+                  onClick={(e) => {
                     e.stopPropagation();
                     if (converting) return;
                     const steps = extractStepsFromSession(session);
                     if (steps.length === 0) return;
                     setConverting(true);
-                    // Persist up front while the chat card stays put, then
-                    // swap this card's slot to the saved workflow. No preview
-                    // interstitial: the steps already exist, so the saved card
-                    // (with its one-time schedule nudge) is all we need. On a
-                    // failed create the chat card stays so the user can retry.
-                    const result = await dispatch(createWorkflow({
-                      title: session.name || 'New workflow',
-                      description: '',
-                      steps,
-                      source_session_id: session.id,
-                      use_synced_prompt: true,
-                      model: defaultModel || session.model,
-                      mode: defaultMode || session.mode,
-                    } as Partial<Workflow>));
-                    if (!createWorkflow.fulfilled.match(result)) {
-                      setConverting(false);
-                      return;
-                    }
-                    const wf = result.payload;
-                    // The OG chat card BECOMES the workflow card: same slot,
-                    // same size, no tether arrow (Image #61 / #62). The chat
-                    // session stays accessible via History.
-                    dispatch(addWorkflowCard({ workflowId: wf.id, sourceSessionId: null, expandedSessionIds }));
-                    dispatch(setWorkflowCardPosition({ workflowId: wf.id, x: cardX, y: cardY }));
-                    dispatch(setWorkflowCardSize({ workflowId: wf.id, width: cardWidth, height: cardHeight }));
+                    const draftId = `draft-${session.id}-${Date.now()}`;
+                    // The chat card becomes a temporary workflow draft in the
+                    // same slot. Nothing is persisted until the user chooses
+                    // Save Draft or Schedule Workflow from the draft card.
+                    dispatch(addWorkflowCard({ workflowId: draftId, sourceSessionId: session.id, expandedSessionIds }));
+                    dispatch(setWorkflowCardPosition({ workflowId: draftId, x: cardX, y: cardY }));
+                    dispatch(setWorkflowCardSize({ workflowId: draftId, width: cardWidth, height: cardHeight }));
                     dispatch(removeCard(session.id));
-                    // showScheduleNudge: the one-shot "Schedule this workflow?"
-                    // prompt. "Not now" on it reopens this very chat (the
-                    // session lives on via workflow.source_session_id).
-                    dispatch(openWorkflowCard({ workflowId: wf.id, sourceSessionId: null, view: 'saved', draft: null, showScheduleNudge: true }));
+                    dispatch(openWorkflowCard({
+                      workflowId: draftId,
+                      sourceSessionId: session.id,
+                      view: 'preview',
+                      draft: {
+                        title: session.name || 'New workflow',
+                        description: '',
+                        steps,
+                        source_session_id: session.id,
+                        use_synced_prompt: true,
+                        model: defaultModel || session.model,
+                        mode: defaultMode || session.mode,
+                      } as Partial<Workflow>,
+                    }));
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
                   sx={{

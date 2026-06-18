@@ -1,9 +1,13 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Popover from '@mui/material/Popover';
 import Tooltip from '@mui/material/Tooltip';
 import InputBase from '@mui/material/InputBase';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import HistoryIcon from '@mui/icons-material/HistoryToggleOffRounded';
 import CalendarMonthRounded from '@mui/icons-material/CalendarMonthRounded';
 import EditOutlined from '@mui/icons-material/EditOutlined';
@@ -22,6 +26,7 @@ import { placeCard, removeWorkflowCard } from '@/shared/state/dashboardLayoutSli
 import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import { CostChip, humanDuration, routingFor, StreakBadge } from './workflowVisuals';
 import StepList from './StepList';
+import { isScheduleConfigured } from './scheduleUtils';
 
 export function statusColor(s: string, c: ReturnType<typeof useClaudeTokens>): string {
   if (s === 'success') return c.status.success;
@@ -96,16 +101,19 @@ export function ActionBtn({ label, tone, disabled, onClick, icon }: { label: str
   );
 }
 
-export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, onSaved }: {
+export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, onSaved, onDiscardDraft, closeRequestNonce }: {
   workflowId: string;
   steps: Workflow['steps'];
   sourceSessionId: string | null;
   initialDraft: Partial<Workflow> | null;
-  onSaved: (w: Workflow) => void;
+  onSaved: (w: Workflow, options?: { view?: 'saved' | 'scheduling'; close?: boolean }) => void;
+  onDiscardDraft?: () => void;
+  closeRequestNonce?: number;
 }) {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const [busy, setBusy] = useState(false);
+  const [savePromptOpen, setSavePromptOpen] = useState(false);
   // Title + description live in the openCard draft so the parent header
   // (which renders the inline-editable title) and PreviewView body (which
   // renders the inline-editable description + steps) stay in sync. On
@@ -148,10 +156,10 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
     dispatch(updateWorkflowCard({ workflowId, patch: { draft: { ...liveDraft, description: value } } }));
   }, [dispatch, workflowId, liveDraft]);
 
-  // Both buttons persist the workflow; the only difference is where they land.
-  // "Not now" = save and show the saved card. Schedule = save then open the
-  // natural-language scheduling composer. (The schedule prompt is optional,
-  // the workflow isn't, so neither button discards anything.)
+  useEffect(() => {
+    if (closeRequestNonce) setSavePromptOpen(true);
+  }, [closeRequestNonce]);
+
   const saveWorkflow = useCallback(async (): Promise<Workflow | null> => {
     const result = await dispatch(createWorkflow({
       title,
@@ -165,26 +173,42 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
       mode: defaultMode || (liveDraft.mode as string),
     } as Partial<Workflow>));
     const wf = (result as unknown as { payload: Workflow }).payload;
-    if (wf?.id) { onSaved(wf); return wf; }
+    if (wf?.id) return wf;
     return null;
-  }, [dispatch, title, description, steps, sourceSessionId, onSaved, liveDraft, defaultModel, defaultMode]);
+  }, [dispatch, title, description, steps, sourceSessionId, liveDraft, defaultModel, defaultMode]);
 
   const onIgnore = useCallback(async () => {
     if (busy) return;
-    setBusy(true);
-    try { await saveWorkflow(); } finally { setBusy(false); }
-  }, [busy, saveWorkflow]);
+    setSavePromptOpen(true);
+  }, [busy]);
 
   const onSaveThenSchedule = useCallback(async () => {
     if (busy) return;
     setBusy(true);
     try {
       const wf = await saveWorkflow();
-      if (wf?.id) dispatch(updateWorkflowCard({ workflowId: wf.id, patch: { view: 'scheduling' } }));
+      if (wf?.id) onSaved(wf, { view: 'scheduling' });
     } finally {
       setBusy(false);
     }
-  }, [busy, saveWorkflow, dispatch]);
+  }, [busy, saveWorkflow, onSaved]);
+
+  const onSaveDraft = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const wf = await saveWorkflow();
+      if (wf?.id) onSaved(wf, { view: 'saved', close: true });
+    } finally {
+      setBusy(false);
+      setSavePromptOpen(false);
+    }
+  }, [busy, saveWorkflow, onSaved]);
+
+  const onDontSave = useCallback(() => {
+    setSavePromptOpen(false);
+    onDiscardDraft?.();
+  }, [onDiscardDraft]);
 
   void onChangeDescription;
   return (
@@ -242,6 +266,34 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
           Schedule Workflow
         </Box>
       </Box>
+      <Dialog open={savePromptOpen} onClose={() => setSavePromptOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 700 }}>Save workflow?</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: '0.86rem', color: c.text.secondary }}>
+            Save this workflow under Needs Schedule. It will not run until you choose a schedule.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Box
+            role="button"
+            onClick={onDontSave}
+            sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.status.error, cursor: busy ? 'wait' : 'pointer', px: 1, py: 0.5, opacity: busy ? 0.6 : 1 }}>
+            Don't Save
+          </Box>
+          <Box
+            role="button"
+            onClick={() => setSavePromptOpen(false)}
+            sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.secondary, cursor: busy ? 'wait' : 'pointer', px: 1, py: 0.5, opacity: busy ? 0.6 : 1 }}>
+            Cancel
+          </Box>
+          <Box
+            role="button"
+            onClick={onSaveDraft}
+            sx={{ fontSize: '0.84rem', fontWeight: 700, color: '#fff', bgcolor: c.accent.primary, borderRadius: 999, cursor: busy ? 'wait' : 'pointer', px: 1.5, py: 0.6, opacity: busy ? 0.6 : 1, '&:hover': { filter: 'brightness(1.06)' } }}>
+            Save
+          </Box>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
@@ -331,11 +383,12 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
     }
   }, [dispatch, sourceId, sourceExists, wfCardPos, expandedSessionIds, workflow.id]);
 
-  const scheduleLine = workflow.schedule.enabled ? describeSchedule(workflow) : 'Schedule this workflow';
-  const scheduleClickable = !workflow.schedule.enabled;
+  const scheduleConfigured = isScheduleConfigured(workflow.schedule);
+  const scheduleLine = workflow.schedule.enabled && scheduleConfigured ? describeSchedule(workflow) : 'Schedule this workflow';
+  const scheduleClickable = !scheduleConfigured;
   // One-shot prompt right after a convert; hub-opened cards never set the flag,
   // so they fall straight to the quiet schedule line below.
-  const showNudge = !!card?.showScheduleNudge && !workflow.schedule.enabled;
+  const showNudge = !!card?.showScheduleNudge && !scheduleConfigured;
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, minHeight: '100%' }}>

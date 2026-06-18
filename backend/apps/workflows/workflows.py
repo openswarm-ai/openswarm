@@ -143,6 +143,12 @@ async def list_workflows(dashboard_id: Optional[str] = None):
     return {"workflows": [_enriched(w) for w in items]}
 
 
+def _normalize_schedule_state(wf: Workflow) -> None:
+    if wf.schedule.enabled and not scheduler.is_schedule_configured(wf.schedule):
+        wf.schedule.enabled = False
+    wf.next_run_at = scheduler.compute_next_fire(wf) if wf.schedule.enabled else None
+
+
 @workflows.router.post("/create")
 async def create_workflow(body: WorkflowCreate):
     actions = body.actions
@@ -151,7 +157,7 @@ async def create_workflow(body: WorkflowCreate):
     # Source-session creates inherit the chat's tool choices so we leave
     # them alone there (the source session itself already vetted the
     # blast radius).
-    if body.schedule.enabled and not actions.freeze and not body.source_session_id:
+    if body.schedule.enabled and scheduler.is_schedule_configured(body.schedule) and not actions.freeze and not body.source_session_id:
         actions = actions.model_copy(update={"freeze": True})
     wf = Workflow(
         title=body.title,
@@ -173,8 +179,7 @@ async def create_workflow(body: WorkflowCreate):
     wf.remembered_approvals = p_source_session_approvals(body.source_session_id)
     if not wf.icon:
         wf.icon = _derive_icon(wf)
-    if wf.schedule.enabled:
-        wf.next_run_at = scheduler.compute_next_fire(wf)
+    _normalize_schedule_state(wf)
     # Force-generate title + description + per-step labels from the steps
     # in a single aux call. Previously we only filled missing description,
     # leaving stale session names ("Inbox check") as titles. Step labels
@@ -505,6 +510,7 @@ async def update_workflow(
             if k != "steps":
                 setattr(wf, k, v)
         wf.updated_at = datetime.now()
+        _normalize_schedule_state(wf)
         storage.save_workflow(wf)
         enriched = _enriched(wf)
         try:
@@ -524,7 +530,7 @@ async def update_workflow(
     wf.updated_at = datetime.now()
     if not wf.icon:
         wf.icon = _derive_icon(wf)
-    wf.next_run_at = scheduler.compute_next_fire(wf) if wf.schedule.enabled else None
+    _normalize_schedule_state(wf)
     storage.save_workflow(wf)
     audit.log_change(wf.id, "user", before, wf.model_dump(mode="json"))
     scheduler.kick()
@@ -689,7 +695,7 @@ async def commit_draft(workflow_id: str):
     wf.updated_at = datetime.now()
     if not wf.icon:
         wf.icon = _derive_icon(wf)
-    wf.next_run_at = scheduler.compute_next_fire(wf) if wf.schedule.enabled else None
+    _normalize_schedule_state(wf)
     await p_end_edit_session(wf)
     storage.save_workflow(wf)
     audit.log_change(wf.id, "user", before, wf.model_dump(mode="json"))

@@ -10,7 +10,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import type { Workflow } from '@/shared/state/workflowsSlice';
 import { runWorkflowNow, deleteWorkflow, updateWorkflow, openWorkflowCard } from '@/shared/state/workflowsSlice';
 import { addWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
-import { WEEKDAY_FULL, WEEKDAY_LABEL_SHORT, addDays, sameDay, startOfMonthGrid, startOfWeek, fireTimesWithin, formatTime, formatHourLabel } from './scheduleUtils';
+import { WEEKDAY_FULL, WEEKDAY_LABEL_SHORT, addDays, sameDay, startOfMonthGrid, startOfWeek, fireTimesWithin, formatTime, formatHourLabel, isScheduleActive } from './scheduleUtils';
 
 interface Props {
   view: 'Week' | 'Month' | 'List';
@@ -88,7 +88,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     const end = addDays(start, range - 1);
     const map = new Map<string, { workflow: Workflow; date: Date }[]>();
     for (const wf of workflows) {
-      if (!wf.schedule.enabled) continue;
+      if (!isScheduleActive(wf.schedule)) continue;
       const fires = fireTimesWithin(wf, start, end, 60);
       for (const d of fires) {
         const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;

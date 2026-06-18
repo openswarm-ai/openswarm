@@ -25,6 +25,20 @@ export function defaultSchedule(): ScheduleConfig {
   };
 }
 
+export function isScheduleConfigured(sched: ScheduleConfig | null | undefined): boolean {
+  if (!sched) return false;
+  if (sched.repeat_unit === 'week') return sched.on_days.length > 0;
+  return true;
+}
+
+export function isScheduleActive(sched: ScheduleConfig | null | undefined): boolean {
+  return !!sched?.enabled && isScheduleConfigured(sched);
+}
+
+export function isWorkflowSchedulable(workflow: Workflow): boolean {
+  return isScheduleConfigured(workflow.schedule);
+}
+
 export function formatTime(hour: number, minute: number): string {
   const h12 = ((hour + 11) % 12) + 1;
   const suffix = hour < 12 ? 'am' : 'pm';
@@ -41,7 +55,7 @@ export function formatHourLabel(hour: number): string {
 }
 
 export function describeSchedule(sched: ScheduleConfig): string {
-  if (!sched.enabled) return 'Not scheduled';
+  if (!sched.enabled || !isScheduleConfigured(sched)) return 'Not scheduled';
   const time = formatTime(sched.hour, sched.minute);
   if (sched.repeat_unit === 'minute') {
     return `Every ${sched.repeat_every} minutes`;
@@ -109,7 +123,7 @@ function lastDayOfMonth(year: number, monthZeroBased: number): number {
 
 export function fireTimesWithin(workflow: Workflow, from: Date, to: Date, cap = 40): Date[] {
   const sched = workflow.schedule;
-  if (!sched.enabled) return [];
+  if (!isScheduleActive(sched)) return [];
   // Honor end conditions on the FE preview too, so the calendar doesn't
   // paint pills for fires the backend will refuse to run. ends_at is an
   // ISO string in workflow state; max_runs/runs_count are numbers.
@@ -185,7 +199,8 @@ export function fireTimesWithin(workflow: Workflow, from: Date, to: Date, cap = 
     return out;
   }
 
-  const allowed = sched.on_days.length ? sched.on_days : [from.getDay()];
+  const allowed = sched.on_days;
+  if (allowed.length === 0) return [];
   for (let i = 0; i < 60 && out.length < effectiveCap; i += 1) {
     const day = new Date(cursor);
     day.setDate(day.getDate() + i);

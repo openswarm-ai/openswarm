@@ -29,7 +29,7 @@ import CodeIcon from '@mui/icons-material/CodeRounded';
 import SearchIcon from '@mui/icons-material/SearchRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import type { Workflow, WorkflowRun, ScheduleConfig, PermissionTier } from '@/shared/state/workflowsSlice';
-import { formatTime, WEEKDAY_LABEL } from './scheduleUtils';
+import { formatTime, WEEKDAY_LABEL, isScheduleConfigured } from './scheduleUtils';
 
 // ---------- Status colors ----------
 
@@ -82,7 +82,7 @@ export function StatusDot({ status }: { status: LastRunStatus | null | undefined
 // ---------- Pill chips ----------
 
 function scheduleShort(sched: ScheduleConfig): string {
-  if (!sched.enabled) return 'Not scheduled';
+  if (!sched.enabled || !isScheduleConfigured(sched)) return 'Not scheduled';
   const time = formatTime(sched.hour, sched.minute);
   if (sched.repeat_unit === 'minute') return `Every ${sched.repeat_every}m`;
   if (sched.repeat_unit === 'hour') return sched.repeat_every === 1 ? 'Hourly' : `Every ${sched.repeat_every}h`;
@@ -98,7 +98,6 @@ function scheduleShort(sched: ScheduleConfig): string {
     const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return `${labels[sched.on_days[0]]} ${time}`;
   }
-  if (sched.on_days.length === 0) return `Weekly ${time}`;
   return `${sched.on_days.length}×/wk ${time}`;
 }
 
@@ -170,7 +169,7 @@ export function PermissionChip({ workflow }: { workflow: Workflow }) {
 export function ScheduleChip({ workflow }: { workflow: Workflow }) {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
-  const enabled = workflow.schedule.enabled;
+  const enabled = workflow.schedule.enabled && isScheduleConfigured(workflow.schedule);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   // Inline edit: time + AM/PM only. Anything richer should open the
   // full editor. Saves on change with optimistic updated_at If-Match.

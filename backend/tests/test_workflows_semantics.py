@@ -102,6 +102,44 @@ def test_dst_fall_back_no_double_fire():
     assert after.astimezone(tz).date() == datetime(2025, 11, 3).date()
 
 
+def test_unconfigured_weekly_schedule_has_no_next_fire():
+    from backend.apps.workflows.models import ScheduleConfig
+    from backend.apps.workflows.scheduler import _next_fire_after
+    sched = ScheduleConfig(
+        enabled=True,
+        repeat_unit="week",
+        repeat_every=1,
+        on_days=[],
+        hour=9,
+        minute=0,
+        timezone="America/Los_Angeles",
+    )
+    ref = datetime(2026, 6, 17, 8, 0, tzinfo=timezone.utc)
+    assert _next_fire_after(sched, ref) is None
+
+
+def test_reconcile_disables_enabled_weekly_without_days():
+    from backend.apps.workflows import storage, scheduler
+    from backend.apps.workflows.models import ScheduleConfig
+    wf = _make_wf(
+        schedule=ScheduleConfig(
+            enabled=True,
+            repeat_unit="week",
+            repeat_every=1,
+            on_days=[],
+            hour=9,
+            minute=0,
+            timezone="America/Los_Angeles",
+        )
+    )
+    wf.next_run_at = datetime.now(timezone.utc) + timedelta(days=1)
+    storage.save_workflow(wf)
+    scheduler.reconcile_on_startup()
+    after = storage.get_workflow(wf.id)
+    assert after.schedule.enabled is False
+    assert after.next_run_at is None
+
+
 # --- End condition tests -----------------------------------------------------
 
 def test_max_runs_disables_schedule():

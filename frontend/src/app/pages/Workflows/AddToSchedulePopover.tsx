@@ -3,12 +3,10 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Popover from '@mui/material/Popover';
 import CalendarMonthRounded from '@mui/icons-material/CalendarMonthRounded';
-import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch } from '@/shared/hooks';
 import { addWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
-import { openWorkflowCard, updateWorkflow, type Workflow } from '@/shared/state/workflowsSlice';
-import { describeSchedule } from './scheduleUtils';
+import { openWorkflowCard, type Workflow } from '@/shared/state/workflowsSlice';
 
 interface Props {
   anchorEl: HTMLElement | null;
@@ -16,29 +14,13 @@ interface Props {
   onClose: () => void;
 }
 
-// Opens off an Un-scheduled workflow's "+" icon. Two paths: keep the cadence
-// the workflow already carries (just flip enabled on) or open the scheduler
-// to change it. Enabling moves the row into "Scheduled workflows" since
-// isSchedulable keys off schedule.enabled.
+// Opens off a Needs Schedule workflow's "+" icon. These workflows have no
+// real cadence yet, so the only safe action is to create one.
 export default function AddToSchedulePopover({ anchorEl, workflow, onClose }: Props) {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
 
-  // describeSchedule returns "Not scheduled" while disabled; preview the
-  // cadence as if it were on so "Keep" shows what it would commit to.
-  const summary = workflow ? describeSchedule({ ...workflow.schedule, enabled: true }) : '';
-
-  const keep = useCallback(() => {
-    if (!workflow) return;
-    dispatch(updateWorkflow({
-      id: workflow.id,
-      patch: { schedule: { ...workflow.schedule, enabled: true } as any },
-      ifMatch: workflow.updated_at || null,
-    }));
-    onClose();
-  }, [dispatch, workflow, onClose]);
-
-  const change = useCallback(() => {
+  const makeSchedule = useCallback(() => {
     if (!workflow) return;
     dispatch(addWorkflowCard({ workflowId: workflow.id }));
     dispatch(openWorkflowCard({ workflowId: workflow.id, view: 'scheduling' }));
@@ -66,20 +48,13 @@ export default function AddToSchedulePopover({ anchorEl, workflow, onClose }: Pr
       slotProps={{ paper: { sx: { width: 272, p: 1, ml: 0.75 } } }}
     >
       <Typography sx={{ fontSize: '0.72rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', px: 0.75, mb: 0.5 }}>
-        ADD TO SCHEDULE
+        NEEDS SCHEDULE
       </Typography>
-      <Box role="button" onClick={keep} sx={rowSx}>
+      <Box role="button" onClick={makeSchedule} sx={rowSx}>
         <Box sx={iconSx}><CalendarMonthRounded sx={{ fontSize: 16 }} /></Box>
         <Box sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.primary }}>Keep this schedule</Typography>
-          <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</Typography>
-        </Box>
-      </Box>
-      <Box role="button" onClick={change} sx={rowSx}>
-        <Box sx={iconSx}><TuneRoundedIcon sx={{ fontSize: 16 }} /></Box>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.primary }}>Change schedule…</Typography>
-          <Typography sx={{ fontSize: '0.72rem', color: c.text.muted }}>Pick a different time</Typography>
+          <Typography sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.primary }}>Make a schedule</Typography>
+          <Typography sx={{ fontSize: '0.72rem', color: c.text.muted }}>This workflow does not have a schedule yet. Choose when it should run.</Typography>
         </Box>
       </Box>
     </Popover>

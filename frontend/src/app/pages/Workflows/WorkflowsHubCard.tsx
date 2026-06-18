@@ -28,7 +28,7 @@ import Tooltip from '@mui/material/Tooltip';
 import { useEffect } from 'react';
 import ScheduleCalendar from './ScheduleCalendar';
 import AddToSchedulePopover from './AddToSchedulePopover';
-import { WEEKDAY_LABEL, addDays, sameDay, startOfMonthGrid } from './scheduleUtils';
+import { WEEKDAY_LABEL, addDays, sameDay, startOfMonthGrid, isWorkflowSchedulable } from './scheduleUtils';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -149,8 +149,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
   // consistent. closeMenu wipes both state + DOM-focus.
   const [sidebarCtxMenu, setSidebarCtxMenu] = useState<{ x: number; y: number; workflow: Workflow } | null>(null);
   const closeSidebarCtxMenu = useCallback(() => setSidebarCtxMenu(null), []);
-  // Anchored off an Un-scheduled row's "+" icon: offers keep-this-cadence vs
-  // open-the-scheduler, then enabling moves the row into Scheduled.
+  // Anchored off a Needs Schedule row's "+" icon: opens the scheduler.
   const [schedulePopover, setSchedulePopover] = useState<{ anchorEl: HTMLElement; workflow: Workflow } | null>(null);
   const closeSchedulePopover = useCallback(() => setSchedulePopover(null), []);
 
@@ -160,8 +159,8 @@ const WorkflowsHubCard: React.FC<Props> = ({
   // unticked the box, which feels wrong. on_days/hour/minute being set
   // is a good proxy for "user already configured this." Falls back to
   // enabled flag for legacy records.
-  const scheduled = useMemo(() => Object.values(workflows).filter((w) => isSchedulable(w)), [workflows]);
-  const unscheduled = useMemo(() => Object.values(workflows).filter((w) => !isSchedulable(w)), [workflows]);
+  const scheduled = useMemo(() => Object.values(workflows).filter((w) => isWorkflowSchedulable(w)), [workflows]);
+  const unscheduled = useMemo(() => Object.values(workflows).filter((w) => !isWorkflowSchedulable(w)), [workflows]);
 
   const monthLabel = refDate.toLocaleString('en', { month: 'long', year: 'numeric' });
 
@@ -498,8 +497,8 @@ const WorkflowsHubCard: React.FC<Props> = ({
           </Box>
           <MiniMonth refDate={refDate} onPick={setRefDate} />
           <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, pb: 1.5 }}>
-            <SidebarSection title="Scheduled workflows" items={scheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} />
-            <SidebarSection title="Un-scheduled workflows" items={unscheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled={false} onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} onSchedule={(wf, el) => setSchedulePopover({ anchorEl: el, workflow: wf })} />
+            <SidebarSection title="Scheduled" items={scheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} />
+            <SidebarSection title="Needs Schedule" items={unscheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled={false} onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} onSchedule={(wf, el) => setSchedulePopover({ anchorEl: el, workflow: wf })} />
           </Box>
         </Box>
         )}
@@ -521,6 +520,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
           dispatch(runWorkflowNow(sidebarCtxMenu.workflow.id));
           closeSidebarCtxMenu();
         }}>Run now</MenuItem>
+        {sidebarCtxMenu && isWorkflowSchedulable(sidebarCtxMenu.workflow) && (
         <MenuItem onClick={() => {
           if (!sidebarCtxMenu) return;
           const wf = sidebarCtxMenu.workflow;
@@ -530,7 +530,8 @@ const WorkflowsHubCard: React.FC<Props> = ({
             ifMatch: wf.updated_at || null,
           }));
           closeSidebarCtxMenu();
-        }}>{sidebarCtxMenu?.workflow.schedule.enabled ? 'Pause schedule' : 'Resume schedule'}</MenuItem>
+        }}>{sidebarCtxMenu.workflow.schedule.enabled ? 'Pause schedule' : 'Resume schedule'}</MenuItem>
+        )}
         <MenuItem onClick={() => {
           if (!sidebarCtxMenu) return;
           dispatch(addWorkflowCard({ workflowId: sidebarCtxMenu.workflow.id }));
@@ -549,7 +550,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
         </MenuItem>
       </Menu>
 
-      {/* "+" on an Un-scheduled row -> keep cadence or open the scheduler */}
+      {/* "+" on a Needs Schedule row -> open the scheduler */}
       <AddToSchedulePopover
         anchorEl={schedulePopover?.anchorEl ?? null}
         workflow={schedulePopover?.workflow ?? null}
@@ -609,8 +610,8 @@ function SidebarSection({ title, items, onPick, scheduled, onContext, onSchedule
   onPick: (id: string) => void;
   scheduled: boolean;
   onContext: (workflow: Workflow, e: React.MouseEvent) => void;
-  // Only the Un-scheduled section wires this: clicking the "+" opens the
-  // add-to-schedule popover anchored to the icon.
+  // Only the Needs Schedule section wires this: clicking the "+" opens the
+  // schedule creation popover anchored to the icon.
   onSchedule?: (workflow: Workflow, anchorEl: HTMLElement) => void;
 }) {
   const c = useClaudeTokens();
@@ -681,15 +682,6 @@ function SidebarSection({ title, items, onPick, scheduled, onContext, onSchedule
       ))}
     </Box>
   );
-}
-
-function isSchedulable(w: Workflow): boolean {
-  if (w.schedule.enabled) return true;
-  // Heuristic: any prior config means the user already opened the
-  // Schedule facet and committed something. Pure defaults stay in
-  // "Un-scheduled" so brand-new workflows don't pollute the list.
-  const s = w.schedule;
-  return Boolean(s.on_days?.length || s.ends_at || s.max_runs || s.runs_count);
 }
 
 function match(title: string, query: string): boolean {

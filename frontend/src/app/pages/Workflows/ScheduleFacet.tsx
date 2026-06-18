@@ -14,7 +14,7 @@ import NotificationsIcon from '@mui/icons-material/NotificationsNoneRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchCloudSmsStatus, type Workflow, type ScheduleConfig, type PermissionTier } from '@/shared/state/workflowsSlice';
-import { WEEKDAY_LABEL, formatTime } from './scheduleUtils';
+import { WEEKDAY_LABEL, formatTime, isScheduleActive } from './scheduleUtils';
 import { nextTierAfter } from './permissionsUtils';
 import { BODY_FS, LABEL_FS, HINT_FS, INPUT_FS } from './workflowEditCommon';
 
@@ -51,7 +51,7 @@ function lastDayOfMonthFE(year: number, monthZeroBased: number): number {
 // clock. Honors ends_at + max_runs so the "Next run" line doesn't lie
 // after the schedule has expired.
 function previewNextRun(sched: ScheduleConfig): Date | null {
-  if (!sched.enabled) return null;
+  if (!isScheduleActive(sched)) return null;
   const now = new Date();
   if (sched.ends_at) {
     const ends = new Date(sched.ends_at);
