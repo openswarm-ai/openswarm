@@ -499,6 +499,14 @@ async def get_run_escalation(run_id: str):
     return {"state": state}
 
 
+@workflows.router.get("/runs/all")
+async def list_all_runs(limit: int = 200):
+    """Flat, newest-first log of every workflow run across all workflows.
+    Backs the dashboard History popover's Scheduled tasks tab."""
+    runs = storage.list_all_runs(limit=limit)
+    return {"runs": [r.model_dump(mode="json") for r in runs]}
+
+
 @workflows.router.get("/{workflow_id}")
 async def get_workflow(workflow_id: str):
     wf = storage.get_workflow(workflow_id)

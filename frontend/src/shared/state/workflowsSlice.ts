@@ -160,9 +160,11 @@ interface State {
   paused: boolean;
   active: ActiveRun[];
   cloudSmsEnabled: boolean;
+  allRuns: WorkflowRun[];
+  allRunsLoading: boolean;
 }
 
-const initialState: State = { items: {}, runs: {}, openCards: {}, loaded: false, loading: false, paused: false, active: [], cloudSmsEnabled: false };
+const initialState: State = { items: {}, runs: {}, openCards: {}, loaded: false, loading: false, paused: false, active: [], cloudSmsEnabled: false, allRuns: [], allRunsLoading: false };
 
 export const fetchWorkflows = createAsyncThunk(
   'workflows/fetch',
@@ -261,6 +263,15 @@ export const fetchRuns = createAsyncThunk(
   },
 );
 
+export const fetchAllRuns = createAsyncThunk(
+  'workflows/allRuns',
+  async (limit: number = 200) => {
+    const res = await fetch(`${API}/runs/all?limit=${limit}`);
+    const data = await res.json();
+    return data.runs as WorkflowRun[];
+  },
+);
+
 export const fetchPausedState = createAsyncThunk('workflows/paused', async () => {
   const res = await fetch(`${API}/paused`);
   const data = await res.json();
@@ -323,6 +334,11 @@ const slice = createSlice({
       const prev = idx >= 0 ? arr[idx] : null;
       if (idx >= 0) arr[idx] = r; else arr.unshift(r);
       state.runs[r.workflow_id] = arr.slice(0, 100);
+      // Keep the cross-workflow log (Scheduled tasks history tab) live without a refetch.
+      const aIdx = state.allRuns.findIndex((x) => x.id === r.id);
+      if (aIdx >= 0) state.allRuns[aIdx] = r; else state.allRuns.unshift(r);
+      state.allRuns.sort((a, b) => (a.started_at < b.started_at ? 1 : -1));
+      state.allRuns = state.allRuns.slice(0, 200);
       const wf = state.items[r.workflow_id];
       if (wf) {
         wf.last_run_at = r.finished_at || r.started_at;
@@ -382,6 +398,7 @@ const slice = createSlice({
     removeWorkflow(state, action: { payload: string }) {
       delete state.items[action.payload];
       delete state.runs[action.payload];
+      state.allRuns = state.allRuns.filter((r) => r.workflow_id !== action.payload);
     },
   },
   extraReducers: (builder) => {
@@ -401,10 +418,17 @@ const slice = createSlice({
       .addCase(deleteWorkflow.fulfilled, (state, action) => {
         delete state.items[action.payload];
         delete state.runs[action.payload];
+        state.allRuns = state.allRuns.filter((r) => r.workflow_id !== action.payload);
       })
       .addCase(fetchRuns.fulfilled, (state, action) => {
         state.runs[action.payload.id] = action.payload.runs;
       })
+      .addCase(fetchAllRuns.pending, (state) => { state.allRunsLoading = true; })
+      .addCase(fetchAllRuns.fulfilled, (state, action) => {
+        state.allRunsLoading = false;
+        state.allRuns = action.payload;
+      })
+      .addCase(fetchAllRuns.rejected, (state) => { state.allRunsLoading = false; })
       .addCase(fetchPausedState.fulfilled, (state, action) => { state.paused = action.payload; })
       .addCase(setPausedAll.fulfilled, (state, action) => { state.paused = action.payload; })
       .addCase(fetchActiveRuns.fulfilled, (state, action) => { state.active = action.payload; })

@@ -28,7 +28,7 @@ import { motion } from 'framer-motion';
 import ChatInput from '@/app/pages/AgentChat/ChatInput';
 import type { ContextPath } from '@/app/components/editor/DirectoryBrowser';
 import SchedulePopover from '@/app/pages/Workflows/SchedulePopover';
-import { openWorkflowCard } from '@/shared/state/workflowsSlice';
+import { openWorkflowCard, fetchAllRuns, upsertRun } from '@/shared/state/workflowsSlice';
 import { addWorkflowCard, openWorkflowsHub } from '@/shared/state/dashboardLayoutSlice';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -182,10 +182,13 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const [viewSearch, setViewSearch] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
     const [historyQuery, setHistoryQuery] = useState('');
-    const [popoverMode, setPopoverMode] = useState<'search' | 'schedule'>('search');
+    const [popoverMode, setPopoverMode] = useState<'search' | 'runs' | 'schedule'>('search');
     const shortcut = useAppSelector((s) => s.settings.data.new_agent_shortcut);
     const outputs = useAppSelector((s) => s.outputs.items);
     const historySearch = useAppSelector((s) => s.agents.historySearch);
+    const allRuns = useAppSelector((s) => s.workflows.allRuns);
+    const allRunsLoading = useAppSelector((s) => s.workflows.allRunsLoading);
+    const workflowItems = useAppSelector((s) => s.workflows.items);
 
     const outputList = useMemo(() => Object.values(outputs), [outputs]);
     const filteredOutputs = useMemo(() => {
@@ -259,9 +262,9 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       setViewSearch('');
     }, [viewPickerOpen, dispatch]);
 
-    // Opens the schedule CALENDAR (scheduled workflows on a calendar). Chat
-    // search/resume lives in the global search palette (the OpenSwarm center
-    // at the top), not here, so this no longer dispatches a history search.
+    // Opens the History popover on Chat history, with a tab to the Scheduled
+    // tasks run log. The calendar is a separate destination reached via the
+    // Schedule pill, never from here.
     const handleOpenHistory = useCallback(() => {
       if (historyOpen) {
         setHistoryOpen(false);
@@ -269,7 +272,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       }
       setViewPickerOpen(false);
       setViewSearch('');
-      setPopoverMode('schedule');
+      setPopoverMode('search');
       setHistoryOpen(true);
     }, [historyOpen]);
 
@@ -402,6 +405,12 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       }, 300);
       return () => clearTimeout(timer);
     }, [historyQuery, historyOpen, dispatch, dashboardId]);
+
+    useEffect(() => {
+      if (historyOpen && popoverMode === 'runs') {
+        dispatch(fetchAllRuns(200));
+      }
+    }, [historyOpen, popoverMode, dispatch]);
 
     const handleHistoryScroll = useCallback(() => {
       const el = historyListRef.current;
@@ -537,6 +546,21 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               onExpand={() => {
                 // Singleton per dashboard, second Expand brings the existing card forward.
                 dispatch(openWorkflowsHub({ expandedSessionIds: [] }));
+                handleCloseHistory();
+              }}
+              allRuns={allRuns}
+              allRunsLoading={allRunsLoading}
+              workflowTitleFor={(wid) => workflowItems[wid]?.title || 'Workflow'}
+              onRunOpen={(run) => {
+                // Splice the clicked run in first so HistoryDetail finds it
+                // before fetchRuns resolves; avoids a "Run not found" flash.
+                dispatch(upsertRun(run));
+                dispatch(addWorkflowCard({ workflowId: run.workflow_id }));
+                dispatch(openWorkflowCard({
+                  workflowId: run.workflow_id,
+                  view: 'history_detail',
+                  historyRunId: run.id,
+                }));
                 handleCloseHistory();
               }}
               historyScrollRef={historyListRef as React.RefObject<HTMLDivElement>}

@@ -641,7 +641,7 @@ function groupKey(iso: string): string {
   } catch { return 'Earlier'; }
 }
 
-export function HistoryList({ runs, onOpen }: { runs: WorkflowRun[]; onOpen: (r: WorkflowRun) => void }) {
+export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleFor }: { runs: WorkflowRun[]; onOpen: (r: WorkflowRun) => void; showWorkflow?: boolean; workflowTitleFor?: (workflowId: string) => string }) {
   const c = useClaudeTokens();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   // Filter chips: all / failures / late. Power-users debugging a flaky
@@ -705,7 +705,14 @@ export function HistoryList({ runs, onOpen }: { runs: WorkflowRun[]; onOpen: (r:
                   <Box sx={{ fontSize: '0.72rem', fontWeight: 700, color: statusColor(r.status, c), bgcolor: statusBg(r.status, c), px: 0.8, py: 0.3, borderRadius: 0.75, minWidth: 64, textAlign: 'center' }}>
                     {labelForStatus(r.status)}
                   </Box>
-                  <Typography sx={{ fontSize: '0.88rem', color: c.text.primary, flex: 1 }}>{formatRunDate(r.started_at)}</Typography>
+                  {showWorkflow && workflowTitleFor ? (
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{workflowTitleFor(r.workflow_id)}</Typography>
+                      <Typography sx={{ fontSize: '0.72rem', color: c.text.ghost }}>{formatRunDate(r.started_at)}</Typography>
+                    </Box>
+                  ) : (
+                    <Typography sx={{ fontSize: '0.88rem', color: c.text.primary, flex: 1 }}>{formatRunDate(r.started_at)}</Typography>
+                  )}
                   {dur && <Typography sx={{ fontSize: '0.74rem', color: c.text.ghost }}>{dur}</Typography>}
                   {r.cost_usd > 0 && <Typography sx={{ fontSize: '0.74rem', color: c.text.ghost }}>${r.cost_usd.toFixed(4)}</Typography>}
                   {/* Chevron makes the row read as expandable instead of
