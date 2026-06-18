@@ -55,6 +55,7 @@ export function elbowPath(x1: number, y1: number, x2: number, y2: number): strin
 }
 
 type Anchor = { x: number; y: number; side: 'left' | 'right' | 'top' | 'bottom' };
+type CanvasRect = { x: number; y: number; width: number; height: number };
 
 // Where the ray from a rect's center toward (tx,ty) crosses the rect border.
 // Pins a tether endpoint to the card edge facing the other card, so it can
@@ -67,6 +68,39 @@ function borderPoint(x: number, y: number, w: number, h: number, tx: number, ty:
   if (dx === 0 && dy === 0) return { x: cx, y: cy };
   const scale = 1 / Math.max(Math.abs(dx) / (w / 2), Math.abs(dy) / (h / 2));
   return { x: cx + dx * scale, y: cy + dy * scale };
+}
+
+function rectCenter(r: CanvasRect): { x: number; y: number } {
+  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+}
+
+function selectCardElement(content: HTMLElement, type: 'agent-card' | 'workflow-card', id: string): HTMLElement | null {
+  const candidates = content.querySelectorAll<HTMLElement>(`[data-select-type="${type}"]`);
+  for (const el of Array.from(candidates)) {
+    if (el.dataset.selectId === id) return el;
+  }
+  return null;
+}
+
+function measuredCanvasRect(
+  contentRef: RefObject<HTMLElement>,
+  zoom: number,
+  type: 'agent-card' | 'workflow-card',
+  id: string,
+): CanvasRect | null {
+  const content = contentRef.current;
+  if (!content) return null;
+  const el = selectCardElement(content, type, id);
+  if (!el) return null;
+  const contentRect = content.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  const z = zoom || 1;
+  return {
+    x: (elRect.left - contentRect.left) / z,
+    y: (elRect.top - contentRect.top) / z,
+    width: elRect.width / z,
+    height: elRect.height / z,
+  };
 }
 
 interface UseTethersArgs {
@@ -82,6 +116,8 @@ interface UseTethersArgs {
   liveDragInfo: LiveDragInfo | null;
   measuredHeightsRef: RefObject<Record<string, number>>;
   measuredHeightsTick: number;
+  contentRef: RefObject<HTMLElement>;
+  zoom: number;
   sessionList: AgentSession[];
 }
 
@@ -98,6 +134,8 @@ export function useTethers({
   liveDragInfo,
   measuredHeightsRef,
   measuredHeightsTick,
+  contentRef,
+  zoom,
   sessionList,
 }: UseTethersArgs): Tether[] {
   return useMemo(() => {
@@ -357,10 +395,14 @@ export function useTethers({
         ? Math.max(EXPANDED_CARD_MIN_H, sidecar.height)
         : sidecar.height);
       const wcH = wfHeight(wc);
-      const srcCx = srcX + wc.width / 2, srcCy = srcY + wcH / 2;
-      const dstCx = dstX + sidecar.width / 2, dstCy = dstY + dstH / 2;
-      const a = borderPoint(srcX, srcY, wc.width, wcH, dstCx, dstCy);
-      const b = borderPoint(dstX, dstY, sidecar.width, dstH, srcCx, srcCy);
+      const measuredWorkflow = measuredCanvasRect(contentRef, zoom, 'workflow-card', wc.workflow_id);
+      const measuredSidecar = measuredCanvasRect(contentRef, zoom, 'agent-card', sidecarId);
+      const workflowRect = measuredWorkflow ?? { x: srcX, y: srcY, width: wc.width, height: wcH };
+      const sidecarRect = measuredSidecar ?? { x: dstX, y: dstY, width: sidecar.width, height: dstH };
+      const srcCenter = rectCenter(workflowRect);
+      const dstCenter = rectCenter(sidecarRect);
+      const a = borderPoint(workflowRect.x, workflowRect.y, workflowRect.width, workflowRect.height, dstCenter.x, dstCenter.y);
+      const b = borderPoint(sidecarRect.x, sidecarRect.y, sidecarRect.width, sidecarRect.height, srcCenter.x, srcCenter.y);
       const x1 = a.x, y1 = a.y;
       const x2 = b.x, y2 = b.y;
       const pathD = elbowPath(x1, y1, x2, y2);
@@ -429,5 +471,5 @@ export function useTethers({
   // measuredHeightsTick re-runs the memo once ResizeObserver reports a new
   // height after a collapse (the ref read is invisible to the dep checker).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, configurePanels, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, configurePanels, expandedSessionIds, liveDragInfo, measuredHeightsTick, contentRef, zoom, sessionList]);
 }
