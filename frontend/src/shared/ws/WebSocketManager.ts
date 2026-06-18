@@ -28,6 +28,7 @@ import { addBrowserCardFromBackend, markBrowserCardEnding, setBrowserCardPositio
 import { upsertOutput } from '../state/outputsSlice';
 import { displaySessionName } from '../state/sessionDisplay';
 import { upsertRun, ackRun, runWorkflowNow, openWorkflowCard, upsertWorkflow, removeWorkflow } from '../state/workflowsSlice';
+import { stepsSignature } from '@/app/pages/Workflows/scheduleUtils';
 import { getAuthToken } from '../config';
 import { notifyAgentCompletion } from '../notifications';
 
@@ -946,7 +947,8 @@ import { WS_BASE } from '@/shared/config';
         return;
       }
       if (outcome === 'rerun') {
-        store.dispatch(runWorkflowNow(workflowId));
+        const wf = store.getState().workflows.items[workflowId];
+        store.dispatch(wf ? runWorkflowNow({ id: workflowId, signature: stepsSignature(wf.steps) }) : runWorkflowNow(workflowId));
         return;
       }
       if (outcome === 'edit' || outcome === 'open') {

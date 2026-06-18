@@ -79,7 +79,11 @@ def p_make_remember_approval(workflow_id: str):
     return p_remember_approval
 
 
-def p_persist_step_tool_usage(workflow_id: str, step_usage: dict[str, dict[str, bool]]) -> None:
+def p_persist_step_tool_usage(
+    workflow_id: str,
+    step_usage: dict[str, dict[str, bool]],
+    tested_signature: Optional[str] = None,
+) -> None:
     fresh = storage.get_workflow(workflow_id)
     if fresh is None:
         return
@@ -92,6 +96,8 @@ def p_persist_step_tool_usage(workflow_id: str, step_usage: dict[str, dict[str, 
         for sid, tools in (step_usage or {}).items()
         if sid in live_ids and isinstance(tools, dict)
     }
+    if tested_signature is not None:
+        fresh.tested_signature = tested_signature
     storage.save_workflow(fresh)
     try:
         from backend.apps.agents.core.ws_manager import ws_manager
@@ -150,7 +156,12 @@ def _monthly_spend_so_far(wf: Workflow) -> float:
     return total
 
 
-async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: Optional[datetime] = None) -> WorkflowRun:
+async def execute(
+    wf: Workflow,
+    triggered_by: str = "schedule",
+    scheduled_for: Optional[datetime] = None,
+    tested_signature: Optional[str] = None,
+) -> WorkflowRun:
     from backend.apps.agents.agent_manager import (
         agent_manager,
         clear_workflow_approval_memory,
@@ -363,10 +374,13 @@ async def execute(wf: Workflow, triggered_by: str = "schedule", scheduled_for: O
         runs_delta = 1 if (triggered_by == "schedule" and run.status in ("success", "ran_late", "failure")) else 0
         storage.record_run(run)
         wf.last_run_at = run.finished_at
-        _persist_run_fields(wf, {
+        run_fields = {
             "last_run_at": run.finished_at,
             "last_run_status": wf.last_run_status,
-        }, schedule_runs_count_delta=runs_delta)
+        }
+        if triggered_by == "manual" and run.status in ("success", "ran_late") and isinstance(tested_signature, str):
+            run_fields["tested_signature"] = tested_signature
+        _persist_run_fields(wf, run_fields, schedule_runs_count_delta=runs_delta)
     except Exception as e:
         logger.exception("Workflow run failed: %s", e)
         run.status = "failure"

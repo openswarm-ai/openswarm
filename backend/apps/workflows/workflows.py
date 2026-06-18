@@ -96,30 +96,79 @@ def _derive_icon(wf: Workflow) -> str:
     return "W"
 
 
-def p_source_session_approvals(session_id: Optional[str]) -> dict[str, str]:
+def _source_tool_name(value) -> str:
+    if not isinstance(value, str):
+        return ""
+    name = value.strip()
+    return name if name else ""
+
+
+def _collect_tool_names_from_content(content, out: set[str]) -> None:
+    if isinstance(content, list):
+        for item in content:
+            _collect_tool_names_from_content(item, out)
+        return
+    if not isinstance(content, dict):
+        return
+    block_type = content.get("type")
+    if block_type == "tool_use":
+        name = _source_tool_name(content.get("name") or content.get("tool"))
+        if name:
+            out.add(name)
+    for key in ("tool_name", "tool"):
+        name = _source_tool_name(content.get(key))
+        if name:
+            out.add(name)
+    nested = content.get("content")
+    if nested is not content:
+        _collect_tool_names_from_content(nested, out)
+
+
+def p_source_session_memory(session_id: Optional[str]) -> tuple[dict[str, str], list[str]]:
     if not session_id:
-        return {}
+        return {}, []
     try:
         from backend.apps.agents.agent_manager import agent_manager
         sess = agent_manager.sessions.get(session_id)
         decisions = getattr(sess, "approval_decisions", None) if sess is not None else None
+        messages = getattr(sess, "messages", None) if sess is not None else None
+        tool_latencies = getattr(sess, "tool_latencies", None) if sess is not None else None
         if decisions is None:
             from backend.apps.agents.manager.session.session_store import _load_session_data
             data = _load_session_data(session_id) or {}
             decisions = data.get("approval_decisions") or []
+            messages = data.get("messages") or []
+            tool_latencies = data.get("tool_latencies") or {}
     except Exception:
-        return {}
-    out: dict[str, str] = {}
+        return {}, []
+    approvals: dict[str, str] = {}
+    tools: set[str] = set()
     for entry in decisions or []:
         if not isinstance(entry, dict):
             continue
+        tool = _source_tool_name(entry.get("tool"))
+        if tool:
+            tools.add(tool)
         if entry.get("sensitive_pattern"):
             continue
-        tool = str(entry.get("tool") or "")
         behavior = entry.get("behavior")
         if tool and behavior in ("allow", "deny"):
-            out[tool] = behavior
-    return out
+            approvals[tool] = behavior
+    if isinstance(tool_latencies, dict):
+        for tool in tool_latencies.keys():
+            name = _source_tool_name(tool)
+            if name:
+                tools.add(name)
+    for msg in messages or []:
+        role = getattr(msg, "role", None) if not isinstance(msg, dict) else msg.get("role")
+        content = getattr(msg, "content", None) if not isinstance(msg, dict) else msg.get("content")
+        if role == "tool_call":
+            tool_name = getattr(msg, "tool_name", None) if not isinstance(msg, dict) else msg.get("tool_name")
+            name = _source_tool_name(tool_name)
+            if name:
+                tools.add(name)
+        _collect_tool_names_from_content(content, tools)
+    return approvals, sorted(tools)
 
 
 def p_prune_step_tool_usage(wf: Workflow) -> None:
@@ -199,7 +248,13 @@ async def create_workflow(body: WorkflowCreate):
         auto_named=body.auto_named,
         unsaved=body.unsaved,
     )
-    wf.remembered_approvals = p_source_session_approvals(body.source_session_id)
+    source_approvals, source_tools = p_source_session_memory(body.source_session_id)
+    wf.remembered_approvals = source_approvals
+    wf.source_tools = source_tools
+    # Convert-from-chat passes the steps signature so the workflow counts as
+    # already validated (the chat already prompted for permissions); a blank
+    # "New" create leaves it None so the first schedule warns to test first.
+    wf.tested_signature = body.tested_signature
     if not wf.icon:
         wf.icon = _derive_icon(wf)
     _normalize_schedule_state(wf)
@@ -869,6 +924,7 @@ async def test_run_workflow(workflow_id: str, body: dict):
     wf = storage.get_workflow(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    tested_signature = body.get("signature") if isinstance(body, dict) else None
     draft_steps = (body or {}).get("steps")
     step_entries: list[WorkflowStep]
     if isinstance(draft_steps, list) and draft_steps:
@@ -951,7 +1007,11 @@ async def test_run_workflow(workflow_id: str, body: dict):
             final = "error"
         finally:
             try:
-                executor.p_persist_step_tool_usage(wf.id, get_workflow_step_usage(session.id))
+                executor.p_persist_step_tool_usage(
+                    wf.id,
+                    get_workflow_step_usage(session.id),
+                    tested_signature=tested_signature if isinstance(tested_signature, str) else None,
+                )
             except Exception:
                 logger.exception("test-run step usage persist failed")
             set_workflow_approval_step(session.id, None)
@@ -1049,7 +1109,7 @@ async def schedule_agent_session(workflow_id: str):
 
 
 @workflows.router.post("/{workflow_id}/run")
-async def run_workflow_now(workflow_id: str):
+async def run_workflow_now(workflow_id: str, body: Optional[dict] = None):
     wf = storage.get_workflow(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -1057,7 +1117,12 @@ async def run_workflow_now(workflow_id: str):
     # or we end up with two rows per manual fire (one orphan "running"
     # row from this handler plus the real one from the executor).
     pre_ids = {r.id for r in storage.list_runs(wf.id, limit=10)}
-    asyncio.create_task(executor.execute(wf, triggered_by="manual"))
+    tested_signature = body.get("signature") if isinstance(body, dict) else None
+    asyncio.create_task(executor.execute(
+        wf,
+        triggered_by="manual",
+        tested_signature=tested_signature if isinstance(tested_signature, str) else None,
+    ))
 
     # Poll briefly for the newly created run id. We also surface the
     # run's status + error string when it lands quickly (e.g. cost-cap

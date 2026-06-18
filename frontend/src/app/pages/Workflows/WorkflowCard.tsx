@@ -47,6 +47,7 @@ import { Typewriter } from '@/app/components/feedback/Animated';
 import StopRounded from '@mui/icons-material/StopRounded';
 import PauseRounded from '@mui/icons-material/PauseRounded';
 import { StatusDot, RunSparkline, LastFiredHint, isStaleSinceLastRun, isRealTitle } from './workflowVisuals';
+import { stepsSignature } from './scheduleUtils';
 import { store } from '@/shared/state/store';
 import { getAgentWorkTime, fmtSeconds } from '@/shared/agentWorkTime';
 
@@ -393,8 +394,12 @@ const WorkflowCard: React.FC<Props> = ({
         use_synced_prompt: true,
         model: defaultModel || (d.model as string),
         mode: defaultMode || (d.mode as string),
+        tested_signature: ((d.source_session_id as string | undefined) || card?.sourceSessionId)
+          ? stepsSignature(draftSteps)
+          : undefined,
       } as Partial<Workflow>));
-      const wf = (result as unknown as { payload: Workflow }).payload;
+      if (!createWorkflow.fulfilled.match(result)) return null;
+      const wf = result.payload as Workflow;
       if (!wf?.id) return null;
       dispatch(rekeyOpenCard({ oldId: workflowId, newId: wf.id }));
       dispatch(rekeyWorkflowCard({ oldId: workflowId, newId: wf.id }));
@@ -645,7 +650,7 @@ const WorkflowCard: React.FC<Props> = ({
                 const wf = await persistDraft();
                 if (!wf) return;
                 dispatch(openWorkflowCardAction({ workflowId: wf.id, sourceSessionId: card?.sourceSessionId || null, view: 'saved', draft: null }));
-                await dispatch(runWorkflowNow(wf.id));
+                await dispatch(runWorkflowNow({ id: wf.id, signature: stepsSignature(wf.steps) }));
                 await dispatch(fetchRuns(wf.id));
               } finally {
                 setTimeout(() => setRunStarting(false), 600);
@@ -675,7 +680,7 @@ const WorkflowCard: React.FC<Props> = ({
               if (runStarting) return;
               setRunStarting(true);
               try {
-                const result = await dispatch(runWorkflowNow(workflow.id));
+                const result = await dispatch(runWorkflowNow({ id: workflow.id, signature: stepsSignature(workflow.steps) }));
                 await dispatch(fetchRuns(workflow.id));
                 if (runWorkflowNow.fulfilled.match(result)) {
                   const payload = result.payload;

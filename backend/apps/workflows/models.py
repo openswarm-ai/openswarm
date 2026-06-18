@@ -106,6 +106,11 @@ class Workflow(BaseModel):
         default_factory=lambda: [PermissionTier(kind="notify")]
     )
     source_session_id: Optional[str] = None
+    # Tool names observed in the source chat when this workflow was generated.
+    # This preserves conversion context without pretending those calls map to
+    # generated workflow step ids. Explicit approval decisions still live in
+    # remembered_approvals and are the only values reused as permissions.
+    source_tools: list[str] = Field(default_factory=list)
     dashboard_id: Optional[str] = None
     model: str = "sonnet"
     mode: str = "agent"
@@ -148,6 +153,11 @@ class Workflow(BaseModel):
     # the scheduled/unscheduled lists until the first commit clears the flag,
     # so an in-progress build doesn't litter the sidebar.
     unsaved: bool = False
+    # Stable signature of the steps last validated by a test run (or seeded at
+    # chat conversion). The FE compares it against the current steps before
+    # scheduling: a mismatch means "edited since you last approved tools" and
+    # triggers the test-first warning. Computed FE-side so there's one algorithm.
+    tested_signature: Optional[str] = None
 
 
 class WorkflowRun(BaseModel):
@@ -195,6 +205,7 @@ class WorkflowCreate(BaseModel):
     mode: Optional[str] = None
     provider: Optional[str] = None
     cost_cap_usd_monthly: Optional[float] = None
+    tested_signature: Optional[str] = None
 
 
 class WorkflowUpdate(BaseModel):

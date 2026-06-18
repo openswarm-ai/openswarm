@@ -91,10 +91,16 @@ export interface Workflow {
    *  unattended scheduled fire doesn't stall on a prompt. tool name -> answer. */
   remembered_approvals?: Record<string, 'allow' | 'deny'>;
   step_tool_usage?: Record<string, Record<string, boolean>>;
+  /** Tool names observed in the source chat when this workflow was generated. */
+  source_tools?: string[];
   /** False once the user explicitly renames the workflow; backend may auto-rename while true. */
   auto_named?: boolean;
   /** True while a brand-new "+ New" workflow is still being built and hasn't been saved; hub hides these. */
   unsaved?: boolean;
+  /** Signature of the steps last validated by a test run (or seeded at chat
+   *  conversion). Compared against the current steps to decide whether to warn
+   *  before scheduling. See scheduleUtils.needsScheduleTestWarning. */
+  tested_signature?: string | null;
 }
 
 export interface WorkflowRun {
@@ -326,8 +332,18 @@ export const deleteWorkflow = createAsyncThunk('workflows/delete', async (id: st
   return id;
 });
 
-export const runWorkflowNow = createAsyncThunk('workflows/run', async (id: string) => {
-  const res = await fetch(`${API}/${id}/run`, { method: 'POST' });
+type RunWorkflowNowArg = string | { id: string; signature?: string | null };
+
+export const runWorkflowNow = createAsyncThunk('workflows/run', async (arg: RunWorkflowNowArg) => {
+  const id = typeof arg === 'string' ? arg : arg.id;
+  const signature = typeof arg === 'string' ? null : arg.signature;
+  const res = await fetch(`${API}/${id}/run`, {
+    method: 'POST',
+    ...(signature ? {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signature }),
+    } : {}),
+  });
   if (!res.ok) throw new Error(`run failed ${res.status}`);
   const data = await res.json();
   return {

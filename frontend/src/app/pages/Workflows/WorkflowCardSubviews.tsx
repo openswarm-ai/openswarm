@@ -26,7 +26,10 @@ import { placeCard, removeWorkflowCard } from '@/shared/state/dashboardLayoutSli
 import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import { CostChip, humanDuration, routingFor, StreakBadge } from './workflowVisuals';
 import StepList from './StepList';
-import { isScheduleConfigured } from './scheduleUtils';
+import { isScheduleConfigured, needsScheduleTestWarning, stepsSignature } from './scheduleUtils';
+import ScheduleTestWarningDialog from './ScheduleTestWarningDialog';
+import { runWorkflowTest } from './runWorkflowTest';
+import { useOpenSidecar } from './WorkflowCardLiveViews';
 
 export function statusColor(s: string, c: ReturnType<typeof useClaudeTokens>): string {
   if (s === 'success') return c.status.success;
@@ -173,8 +176,12 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
       // happened to run on, so a converted workflow behaves like a fresh chat.
       model: defaultModel || (liveDraft.model as string),
       mode: defaultMode || (liveDraft.mode as string),
+      // Converting a chat carries its prior approvals, so count it as already
+      // validated for these steps: scheduling won't nag to test first.
+      tested_signature: sourceSessionId ? stepsSignature(steps) : undefined,
     } as Partial<Workflow>));
-    const wf = (result as unknown as { payload: Workflow }).payload;
+    if (!createWorkflow.fulfilled.match(result)) return null;
+    const wf = result.payload as Workflow;
     if (wf?.id) return wf;
     return null;
   }, [canSave, dispatch, title, description, steps, sourceSessionId, liveDraft, defaultModel, defaultMode]);
@@ -347,9 +354,25 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
   const openEditAgent = useCallback(() => {
     dispatch(updateWorkflowCard({ workflowId: workflow.id, patch: { view: 'edit_agent' } }));
   }, [dispatch, workflow.id]);
+  const openSidecar = useOpenSidecar(workflow.id);
+  const [warnOpen, setWarnOpen] = useState(false);
   const openScheduling = useCallback(() => {
     dispatch(updateWorkflowCard({ workflowId: workflow.id, patch: { view: 'scheduling', showScheduleNudge: false } }));
   }, [dispatch, workflow.id]);
+  // Gate the schedule action: warn first if the current steps haven't been
+  // validated by a test run (so an unattended fire won't silently deny a tool).
+  const requestSchedule = useCallback(() => {
+    if (needsScheduleTestWarning(workflow)) { setWarnOpen(true); return; }
+    openScheduling();
+  }, [workflow, openScheduling]);
+  const onTestFirst = useCallback(() => {
+    setWarnOpen(false);
+    void runWorkflowTest(workflow.id, workflow.draft_steps ?? workflow.steps, openSidecar);
+  }, [workflow.id, workflow.draft_steps, workflow.steps, openSidecar]);
+  const onScheduleAnyway = useCallback(() => {
+    setWarnOpen(false);
+    openScheduling();
+  }, [openScheduling]);
   const onToggleStep = useCallback((stepId: string) => {
     dispatch(toggleExpandedStep({ workflowId: workflow.id, stepId }));
   }, [dispatch, workflow.id]);
@@ -438,7 +461,7 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
                 Not now
               </Box>
               <Box
-                onClick={openScheduling}
+                onClick={requestSchedule}
                 role="button"
                 sx={{
                   display: 'inline-flex', alignItems: 'center', gap: 0.5,
@@ -457,7 +480,7 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
         {showNudge ? <Box /> : (
         <Box
-          onClick={scheduleClickable ? openScheduling : undefined}
+          onClick={scheduleClickable ? requestSchedule : undefined}
           role={scheduleClickable ? 'button' : undefined}
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.6,
@@ -487,6 +510,12 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
           Edit
         </Box>
       </Box>
+      <ScheduleTestWarningDialog
+        open={warnOpen}
+        onClose={() => setWarnOpen(false)}
+        onTestFirst={onTestFirst}
+        onScheduleAnyway={onScheduleAnyway}
+      />
     </Box>
   );
 }

@@ -28,7 +28,7 @@ import Tooltip from '@mui/material/Tooltip';
 import { useEffect } from 'react';
 import ScheduleCalendar from './ScheduleCalendar';
 import AddToSchedulePopover from './AddToSchedulePopover';
-import { WEEKDAY_LABEL, addDays, sameDay, startOfMonthGrid, isWorkflowSchedulable } from './scheduleUtils';
+import { WEEKDAY_LABEL, addDays, sameDay, startOfMonthGrid, isWorkflowSchedulable, stepsSignature } from './scheduleUtils';
 import { isRealTitle } from './workflowVisuals';
 import { Typewriter } from '@/app/components/feedback/Animated';
 
@@ -539,7 +539,10 @@ const WorkflowsHubCard: React.FC<Props> = ({
         anchorPosition={sidebarCtxMenu ? { top: sidebarCtxMenu.y, left: sidebarCtxMenu.x } : undefined}>
         <MenuItem onClick={() => {
           if (!sidebarCtxMenu) return;
-          dispatch(runWorkflowNow(sidebarCtxMenu.workflow.id));
+          dispatch(runWorkflowNow({
+            id: sidebarCtxMenu.workflow.id,
+            signature: stepsSignature(sidebarCtxMenu.workflow.steps),
+          }));
           closeSidebarCtxMenu();
         }}>Run now</MenuItem>
         {sidebarCtxMenu && isWorkflowSchedulable(sidebarCtxMenu.workflow) && (

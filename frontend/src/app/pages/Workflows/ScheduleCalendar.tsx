@@ -11,7 +11,7 @@ import { API_BASE } from '@/shared/config';
 import type { Workflow } from '@/shared/state/workflowsSlice';
 import { runWorkflowNow, deleteWorkflow, updateWorkflow, openWorkflowCard } from '@/shared/state/workflowsSlice';
 import { addWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
-import { WEEKDAY_FULL, WEEKDAY_LABEL_SHORT, addDays, sameDay, startOfMonthGrid, startOfWeek, formatTime, formatHourLabel } from './scheduleUtils';
+import { WEEKDAY_FULL, WEEKDAY_LABEL_SHORT, addDays, sameDay, startOfMonthGrid, startOfWeek, formatTime, formatHourLabel, stepsSignature } from './scheduleUtils';
 
 interface Props {
   view: 'Week' | 'Month' | 'List';
@@ -40,7 +40,10 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
   const closeMenu = () => setCtxMenu(null);
   const onRunNow = () => {
     if (!ctxMenu) return;
-    dispatch(runWorkflowNow(ctxMenu.workflow.id));
+    dispatch(runWorkflowNow({
+      id: ctxMenu.workflow.id,
+      signature: stepsSignature(ctxMenu.workflow.steps),
+    }));
     closeMenu();
   };
   const onPauseToggle = () => {

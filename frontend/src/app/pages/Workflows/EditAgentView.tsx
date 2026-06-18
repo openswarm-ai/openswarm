@@ -20,6 +20,8 @@ import StepList from './StepList';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import { useOpenSidecar } from './WorkflowCardLiveViews';
 import EditAgentSavePopovers, { type SavePhase } from './EditAgentSavePopovers';
+import { runWorkflowTest } from './runWorkflowTest';
+import { needsScheduleTestWarning } from './scheduleUtils';
 
 interface Props {
   workflow: Workflow;
@@ -136,11 +138,6 @@ export default function EditAgentView({ workflow, steps, isFixMode = false, onEd
     } catch { /* best-effort */ }
   }, [testSessionId]);
 
-  const onSaveClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    setSaveAnchorEl(e.currentTarget);
-    setSavePhase('ask-test');
-  }, []);
-
   const onSaveNow = useCallback(async () => {
     if (!canSave) return;
     setSavePhase('idle');
@@ -152,24 +149,20 @@ export default function EditAgentView({ workflow, steps, isFixMode = false, onEd
     toSaved();
   }, [canSave, dispatch, workflow.id, toSaved]);
 
+  const onSaveClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    if (!canSave) return;
+    // Already validated this exact version? Skip the "test first?" nudge.
+    if (!needsScheduleTestWarning(workflow)) { void onSaveNow(); return; }
+    setSaveAnchorEl(e.currentTarget);
+    setSavePhase('ask-test');
+  }, [canSave, workflow, onSaveNow]);
+
   const onRunTest = useCallback(async () => {
-    try {
-      const tok = (() => { try { return getAuthToken(); } catch { return ''; } })();
-      const res = await fetch(`${API_BASE}/workflows/${encodeURIComponent(workflow.id)}/test-run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
-        body: JSON.stringify({ steps: draftSteps }),
-      });
-      if (!res.ok) { setSavePhase('idle'); return; }
-      const data = await res.json();
-      const sid = data?.session_id as string | undefined;
-      if (!sid) { setSavePhase('idle'); return; }
-      setTestSessionId(sid);
-      // The Test Agent card now owns the post-test decision (Continue editing /
-      // Save workflow) in its own footer, so just close this popover.
-      setSavePhase('idle');
-      await openSidecar(sid, 'testing');
-    } catch { setSavePhase('idle'); }
+    setSavePhase('idle');
+    // The Test Agent card now owns the post-test decision (Continue editing /
+    // Save workflow) in its own footer, so just close this popover.
+    const sid = await runWorkflowTest(workflow.id, draftSteps, openSidecar);
+    if (sid) setTestSessionId(sid);
   }, [workflow.id, draftSteps, openSidecar]);
 
   const onDiscardClick = useCallback((e: React.MouseEvent<HTMLElement>) => {

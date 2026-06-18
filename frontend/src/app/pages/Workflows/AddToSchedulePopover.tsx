@@ -7,6 +7,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch } from '@/shared/hooks';
 import { addWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
 import { openWorkflowCard, type Workflow } from '@/shared/state/workflowsSlice';
+import { needsScheduleTestWarning } from './scheduleUtils';
 
 interface Props {
   anchorEl: HTMLElement | null;
@@ -23,7 +24,11 @@ export default function AddToSchedulePopover({ anchorEl, workflow, onClose }: Pr
   const makeSchedule = useCallback(() => {
     if (!workflow) return;
     dispatch(addWorkflowCard({ workflowId: workflow.id }));
-    dispatch(openWorkflowCard({ workflowId: workflow.id, view: 'scheduling' }));
+    // Untested steps: land on the saved card so its Schedule button can warn and
+    // offer a test run (which needs the card's sidecar context). Otherwise go
+    // straight to scheduling.
+    const view = needsScheduleTestWarning(workflow) ? 'saved' : 'scheduling';
+    dispatch(openWorkflowCard({ workflowId: workflow.id, view }));
     onClose();
   }, [dispatch, workflow, onClose]);
 

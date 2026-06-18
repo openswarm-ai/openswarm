@@ -1,4 +1,4 @@
-import type { Workflow, ScheduleConfig } from '@/shared/state/workflowsSlice';
+import type { Workflow, ScheduleConfig, WorkflowStep } from '@/shared/state/workflowsSlice';
 
 export const WEEKDAY_LABEL = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 export const WEEKDAY_LABEL_SHORT = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -37,6 +37,23 @@ export function isScheduleActive(sched: ScheduleConfig | null | undefined): bool
 
 export function isWorkflowSchedulable(workflow: Workflow): boolean {
   return isScheduleConfigured(workflow.schedule);
+}
+
+// Stable fingerprint of the steps that actually drive behavior (order + id +
+// text). label is just the at-a-glance headline, so it's left out. Computed
+// only here so the backend stores exactly what the FE compares: no cross-
+// language hashing drift.
+export function stepsSignature(steps: WorkflowStep[] | null | undefined): string {
+  return JSON.stringify((steps || []).map((s) => [s.id, s.text]));
+}
+
+// True when the current steps haven't been validated by a test run (or seeded
+// at chat conversion) since they were last edited. Drives the test-first
+// warning before scheduling.
+export function needsScheduleTestWarning(workflow: Workflow): boolean {
+  const steps = workflow.draft_steps ?? workflow.steps;
+  if (!steps || steps.length === 0) return false;
+  return stepsSignature(steps) !== (workflow.tested_signature ?? '');
 }
 
 export function formatTime(hour: number, minute: number): string {
