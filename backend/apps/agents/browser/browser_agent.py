@@ -219,6 +219,71 @@ def _persist_app_controls(browser_id: str, describe_value: object) -> None:
         logger.debug("[app-agent] failed to persist controls cache", exc_info=True)
 
 
+# Single-tool names -> the sub-action type they map to, so one summarizer covers
+# both BrowserPressKey({key}) and a batch's {"type":"press_key","params":{key}}.
+_SINGLE_ACTION_TYPE = {
+    "BrowserClick": "click", "BrowserClickIndex": "click_index",
+    "BrowserClickByName": "click_name", "BrowserType": "type",
+    "BrowserPressKey": "press_key", "BrowserScroll": "scroll",
+    "BrowserNavigate": "navigate", "BrowserClickPoint": "click_point",
+}
+
+
+def _summ_step(stype: str, params: dict) -> str:
+    """Compact human label for one action step: the actual key/selector/text, not
+    just the verb. This is what lets the [backend] pane show 'key:ArrowRight x5'
+    instead of an opaque 'BrowserBatch'."""
+    p = params or {}
+    if stype == "press_key":
+        return f"key:{p.get('key', '?')}"
+    if stype == "click":
+        return f"click({p.get('selector', '?')})"
+    if stype == "click_index":
+        return f"click#{p.get('index', '?')}"
+    if stype == "click_point":
+        return f"tap({p.get('xPercent', '?')}%,{p.get('yPercent', '?')}%)"
+    if stype == "click_name":
+        return f"clickName({p.get('name', '?')})"
+    if stype == "type":
+        return f"type({p.get('selector', '')}={str(p.get('text', ''))[:30]!r})"
+    if stype == "wait":
+        return f"wait({p.get('milliseconds') or p.get('until') or ''})"
+    if stype == "scroll":
+        return f"scroll({p.get('direction', 'down')})"
+    if stype == "navigate":
+        return f"nav({str(p.get('url', ''))[:60]})"
+    if stype == "list_interactives":
+        return "list"
+    return stype or "?"
+
+
+def _collapse_steps(items: list[str]) -> str:
+    """'ArrowRight, ArrowRight, ArrowRight' -> 'key:ArrowRight x3' so a 5-key
+    burst reads as one token instead of scrolling the pane."""
+    runs: list[list] = []
+    for it in items:
+        if runs and runs[-1][0] == it:
+            runs[-1][1] += 1
+        else:
+            runs.append([it, 1])
+    return ", ".join(s if n == 1 else f"{s} x{n}" for s, n in runs)
+
+
+def _summarize_action(tool_name: str, tool_input: dict) -> str:
+    """One-line summary of what an action tool is about to do, or "" for pure
+    reads (screenshot/list/describe/getstate) that need no action log."""
+    ti = tool_input or {}
+    if tool_name == "BrowserBatch":
+        steps = [_summ_step((a or {}).get("type", ""), (a or {}).get("params"))
+                 for a in (ti.get("actions") or [])]
+        return _collapse_steps(steps) or "(empty batch)"
+    if tool_name == "AppInvoke":
+        args = ti.get("args")
+        return f"{ti.get('name', '?')}" + (f"({json.dumps(args)[:60]})" if args else "")
+    stype = _SINGLE_ACTION_TYPE.get(tool_name)
+    return _summ_step(stype, ti) if stype else ""
+
+
 async def execute_browser_tool(
     tool_name: str, tool_input: dict, browser_id: str, tab_id: str = "",
 ) -> dict:
@@ -226,6 +291,13 @@ async def execute_browser_tool(
     # [app-agent] step trace: only for app targets / bridge tools so normal
     # browser-agent runs stay quiet. Greppable prefix; remove when done.
     _trace = browser_id.startswith("app:") or tool_name in APP_BRIDGE_TOOLS
+
+    # One greppable line naming the actual buttons/keys/selectors this call drives,
+    # so a run reads as "key:ArrowRight x5" rather than an opaque tool name. Fires
+    # for action tools only (reads stay quiet) and ungated so web runs get it too.
+    _action = _summarize_action(tool_name, tool_input)
+    if _action:
+        logger.info(f"[browser-action] {tool_name}: {_action}  -> {browser_id}")
 
     # App bridge tools translate to a single BrowserEvaluate against the app's
     # window.OPENSWARM_APP, so they need no frontend command-handler changes.
@@ -745,10 +817,12 @@ async def run_browser_agent(
                     "action_log": [], "final_screenshot": None,
                 }
             app_front_load = (
-                f"\n\n[{_msg}. AppDescribe/AppInvoke will not work. Fall back to "
-                "driving the UI directly (BrowserListInteractives, "
-                "BrowserClickIndex, BrowserBatch, BrowserScreenshot). If you "
-                "cannot operate it, say so in Done with success=false.]"
+                f"\n\n[{_msg}. Operate it like a person instead: see with "
+                "BrowserScreenshot, then play with BrowserPressKey (keys like "
+                "w/a/s/d, arrows, Space, Enter) and BrowserClickPoint (tap a screen "
+                "point). For a normal HTML app use BrowserListInteractives + "
+                "BrowserClickIndex. Only give up (Done success=false) after you have "
+                "actually tried pressing keys and nothing responds.]"
             )
 
     # Front-load perception (browser) or the app's controls (app mode) into the

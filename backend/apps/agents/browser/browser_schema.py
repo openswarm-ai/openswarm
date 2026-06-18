@@ -394,6 +394,8 @@ BROWSER_TOOLS_SCHEMA = [
             "Sub-action types and their params:\n"
             "- click_index: { index: int }\n"
             "- press_key: { key: str }\n"
+            "- click_point: { xPercent: number, yPercent: number, hold_ms?: int } "
+            "(tap a screen point; for canvas apps/games)\n"
             "- type: { selector: str, text: str }\n"
             "- click: { selector: str }\n"
             "- scroll: { direction?: 'up'|'down', amount?: int }\n"
@@ -418,7 +420,7 @@ BROWSER_TOOLS_SCHEMA = [
                         "properties": {
                             "type": {
                                 "type": "string",
-                                "enum": ["click_index", "press_key", "type", "wait", "scroll", "navigate", "click", "list_interactives"],
+                                "enum": ["click_index", "press_key", "click_point", "type", "wait", "scroll", "navigate", "click", "list_interactives"],
                             },
                             "params": {"type": "object"},
                         },
@@ -452,6 +454,43 @@ BROWSER_TOOLS_SCHEMA = [
                 },
             },
             "required": ["key"],
+        },
+    },
+    {
+        "name": "BrowserClickPoint",
+        "description": (
+            "Tap/click at a point on the screen using a real native mouse event, "
+            "WITHOUT needing a DOM element. This is the way to operate a <canvas> "
+            "app or game (the kind with no clickable HTML elements): you click a "
+            "spot the way a person does. Give the position as a PERCENT of the view "
+            "(xPercent/yPercent, 0-100, with 0,0 = top-left and 50,50 = center), "
+            "read off the screenshot. Optional hold_ms presses and holds (e.g. a "
+            "charge-up or a platformer jump). For element-based pages prefer "
+            "BrowserClickIndex; use this when there is nothing in the element list "
+            "to click."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "xPercent": {
+                    "type": "number",
+                    "description": "Horizontal position as a percent of view width (0=left, 100=right).",
+                },
+                "yPercent": {
+                    "type": "number",
+                    "description": "Vertical position as a percent of view height (0=top, 100=bottom).",
+                },
+                "hold_ms": {
+                    "type": "number",
+                    "description": "Optional. Milliseconds to hold the button down before releasing (default 0 = a tap). Max 5000.",
+                },
+                "button": {
+                    "type": "string",
+                    "enum": ["left", "right", "middle"],
+                    "description": "Mouse button; defaults to left.",
+                },
+            },
+            "required": ["xPercent", "yPercent"],
         },
     },
     {
@@ -642,7 +681,7 @@ BROWSER_TOOLS_SCHEMA = [
 # tools are not offered to it at all; acting means a BrowserBatch array, and
 # the one deliberate solo path is BrowserClickIndex (irreversible step with
 # expect, or a text-box fill). Executors and replay still support everything.
-_SOLO_MUTATORS_HIDDEN = {"BrowserNavigate", "BrowserClick", "BrowserType", "BrowserScroll", "BrowserPressKey"}
+_SOLO_MUTATORS_HIDDEN = {"BrowserNavigate", "BrowserClick", "BrowserType", "BrowserScroll", "BrowserPressKey", "BrowserClickPoint"}
 MODEL_VISIBLE_TOOLS = [t for t in BROWSER_TOOLS_SCHEMA if t["name"] not in _SOLO_MUTATORS_HIDDEN]
 
 ACTION_MAP = {
@@ -659,6 +698,7 @@ ACTION_MAP = {
     "BrowserPressKey": "press_key",
     "BrowserListInteractives": "list_interactives",
     "BrowserClickIndex": "click_index",
+    "BrowserClickPoint": "click_point",
     "BrowserBatch": "batch",
     "BrowserDetectWebMCP": "detect_webmcp",
     "BrowserListRoutes": "list_routes",
@@ -739,6 +779,9 @@ _APP_FALLBACK_TOOL_NAMES = [
     "ReportProgress", "Done",
     "BrowserScreenshot", "BrowserGetText",
     "BrowserListInteractives", "BrowserClickIndex", "BrowserBatch",
+    # Human-style native input for apps with no clickable DOM (canvas games):
+    # press real keys and tap real screen points the way a person plays.
+    "BrowserPressKey", "BrowserClickPoint",
 ]
 _app_fallback_tools = [t for t in BROWSER_TOOLS_SCHEMA if t["name"] in _APP_FALLBACK_TOOL_NAMES]
 # ReportProgress + Done lead, then the bridge tools, then UI fallback.
@@ -1004,10 +1047,23 @@ APP_SYSTEM_PROMPT = (
     "so call AppDescribe ONCE to refresh them. As long as __rev is unchanged, "
     "trust the controls you already have and do not re-describe.\n\n"
 
-    "## If there is no bridge\n"
-    "If AppDescribe (or AppGetState) returns null, this app doesn't expose the "
-    "bridge. Fall back to driving the UI directly: BrowserListInteractives to find "
-    "controls, BrowserClickIndex / BrowserBatch to act, BrowserScreenshot to see. "
+    "## If there is no bridge: operate it like a person\n"
+    "If AppDescribe (or AppGetState) returns null, this app exposes no bridge, so "
+    "drive it directly the way a human would, by looking at the screen and using "
+    "the keyboard and mouse:\n"
+    "- SEE with BrowserScreenshot (your main sense here); read on-screen text/score "
+    "from it. BrowserGetText helps for text-heavy apps.\n"
+    "- For a normal HTML app (buttons, inputs, forms): BrowserListInteractives to "
+    "find controls, then BrowserClickIndex / BrowserBatch to act.\n"
+    "- For a CANVAS app or GAME (no clickable elements in the list): play it with "
+    "native input. BrowserPressKey for keyboard (e.g. 'Space' to flap, "
+    "'ArrowLeft'/'ArrowRight' to move, 'Enter' to start) and BrowserClickPoint to "
+    "tap a spot, giving xPercent/yPercent read off the screenshot (50,50 = center). "
+    "These are REAL OS-level events, identical to you pressing a key or clicking, so "
+    "the game responds exactly as it does for a person. Take a screenshot to "
+    "confirm what changed, then act again.\n"
+    "- Need fast repeated input (rapid flaps/taps)? Put several BrowserPressKey or "
+    "BrowserClickPoint steps in one BrowserBatch so they fire in a single turn.\n"
     "If you truly cannot operate it, say so plainly in Done with success=false.\n\n"
 
     "## ReportProgress before acting\n"
@@ -1036,6 +1092,7 @@ _ACTION_TOOLS_REQUIRING_REPORT = {
     "BrowserScroll",
     "BrowserEvaluate",
     "BrowserClickIndex",  # Phase 3
+    "BrowserClickPoint",  # app mode: tap a canvas/game at a screen point
     "BrowserBatch",  # Phase 4
     "AppInvoke",  # app mode: invoking an app action mutates state
 }
