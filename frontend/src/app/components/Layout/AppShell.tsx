@@ -23,7 +23,7 @@ import { LayoutGrid } from 'lucide-react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Settings as LucideSettings } from 'lucide-react';
 import { Palette } from 'lucide-react';
-import { ArrowLeft, ArrowRight, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, Clock } from 'lucide-react';
 import { AnimatedPanelLeft } from './animatedIcons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
@@ -177,6 +177,28 @@ const AppShell: React.FC = () => {
     if (h >= 1) return `~${h}h`;
     return `~${Math.max(1, Math.round(secs / 60))}m`;
   }, [freeTrialResetsAt]);
+
+  // Paid (openswarm-pro) usage meter: same calm "you're near/at the cap, here's when it's back"
+  // pattern as the free-trial nudge, but the bar IS the message. Only fires in pro mode on real
+  // server-owned usage (requests_in_window/plan_limit), and only once near the cap, so it never
+  // clutters the normal flow. window_ends_at is unix MS (the trial's resets_at is seconds).
+  const proUsage = useAppSelector((s) => {
+    const d = s.settings.data as any;
+    if (!d || d.connection_mode !== 'openswarm-pro') return null;
+    const u = d.openswarm_usage_cached;
+    return u && u.plan_limit > 0 ? u : null;
+  }, shallowEqual);
+  const proPct = proUsage ? Math.min(1, proUsage.requests_in_window / proUsage.plan_limit) : 0;
+  const proMaxed = !!proUsage && proPct >= 1;
+  const showUsageNudge = isOnline && !!proUsage && proPct >= 0.8;
+  const usageResetLabel = React.useMemo(() => {
+    const endsAt = proUsage?.window_ends_at ?? 0;
+    if (!endsAt) return null;
+    const secs = (endsAt - Date.now()) / 1000;
+    if (secs <= 90) return null;
+    const h = Math.floor(secs / 3600);
+    return h >= 1 ? `~${h}h` : `~${Math.max(1, Math.round(secs / 60))}m`;
+  }, [proUsage]);
   // Hold the banner until the boot free-trial mint settles, else a brand-new user sees it
   // flash red for the ~1-3s the trial takes to arm. (Offline shows immediately, it's its own signal.)
   const freeTrialArmSettled = useAppSelector((s) => s.settings.freeTrialArmSettled);
@@ -605,6 +627,30 @@ const AppShell: React.FC = () => {
               sx={{ color: c.text.muted, cursor: 'pointer', fontSize: '0.95rem', lineHeight: 1, px: 0.5, '&:hover': { color: c.text.secondary } }}
             >
               ×
+            </Box>
+          )}
+        </Box>
+      </Collapse>
+
+      <Collapse in={showUsageNudge} timeout={300} unmountOnExit>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 0.5, flexShrink: 0 }}>
+          {/* the bar is the message: how full your Pro window is. calm accent, never red. */}
+          <Box sx={{ width: 132, height: 5, borderRadius: 3, bgcolor: c.border.medium, overflow: 'hidden', flexShrink: 0 }}>
+            <Box sx={{ width: `${Math.round(proPct * 100)}%`, height: '100%', bgcolor: c.accent.primary, transition: 'width 0.3s ease' }} />
+          </Box>
+          {usageResetLabel && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, color: c.text.secondary }}>
+              <Clock size={12} style={{ flexShrink: 0 }} />
+              <Typography sx={{ fontSize: '0.8rem', letterSpacing: '0.01em' }}>{usageResetLabel}</Typography>
+            </Box>
+          )}
+          {proMaxed && (
+            <Box
+              component="span"
+              onClick={() => dispatch(openSettingsModal('models'))}
+              sx={{ color: c.accent.primary, cursor: 'pointer', fontSize: '0.8rem', '&:hover': { textDecoration: 'underline' } }}
+            >
+              Upgrade
             </Box>
           )}
         </Box>
