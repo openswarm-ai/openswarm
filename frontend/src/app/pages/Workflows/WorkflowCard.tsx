@@ -40,6 +40,7 @@ import { CompletedView, FailedView, RunningView } from './WorkflowCardLiveViews'
 import SchedulingView from './SchedulingView';
 import EditAgentView from './EditAgentView';
 import InlineEditableTitle from '@/app/components/InlineEditableTitle';
+import { Typewriter } from '@/app/components/feedback/Animated';
 import StopRounded from '@mui/icons-material/StopRounded';
 import PauseRounded from '@mui/icons-material/PauseRounded';
 import { StatusDot, RunSparkline, LastFiredHint, isStaleSinceLastRun } from './workflowVisuals';
@@ -73,6 +74,14 @@ const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
   { dir: 'sw', sx: { bottom: -EDGE_THICKNESS / 2, left: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
   { dir: 'se', sx: { bottom: -EDGE_THICKNESS / 2, right: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
 ];
+
+// Placeholder titles the backend uses before auto-naming kicks in. The title
+// Typewriter only animates once the title is a real (generated/user) name, so
+// the card doesn't animate on mount or while still showing a placeholder.
+const PLACEHOLDER_TITLES = new Set(['', 'New workflow', 'Untitled workflow', 'Scheduled workflow']);
+function isRealTitle(title?: string | null): boolean {
+  return !!title && !PLACEHOLDER_TITLES.has(title.trim());
+}
 
 interface Props {
   workflowId: string;
@@ -493,7 +502,19 @@ const WorkflowCard: React.FC<Props> = ({
                 value={title}
                 onCommit={(name) => dispatch(updateWorkflow({ id: workflow.id, patch: { title: name }, ifMatch: workflow.updated_at || null }))}
                 sx={{ flex: '0 1 auto', fontWeight: 600, fontSize: '0.95rem', color: c.text.primary, letterSpacing: '-0.005em' }}
-              />
+              >
+                {/* Once the title flips from its placeholder to the generated
+                    name (after commit), retype it letter-by-letter, same as the
+                    chat card title. The new title arrives in the commit response
+                    so the animation runs after generation, not before. */}
+                <Typewriter value={title} enabled={isRealTitle(workflow.title)}>
+                  {(t) => (
+                    <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.005em' }}>
+                      {t}
+                    </Typography>
+                  )}
+                </Typewriter>
+              </InlineEditableTitle>
             ) : (
               <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.005em' }}>
                 {title}
