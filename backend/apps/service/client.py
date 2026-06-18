@@ -194,9 +194,12 @@ def _base_url() -> str:
 
 async def _post(path: str, body: dict) -> int | None:
     url = f"{_base_url()}{path}"
+    logger.info("[perf] bg svc._post client-create %s", path)
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as c:
+            logger.info("[perf] bg svc._post sending %s", path)
             r = await c.post(url, json=body)
+        logger.info("[perf] bg svc._post done %s", path)
         return r.status_code
     except Exception as e:
         logger.debug("service POST %s failed: %s", path, e)
@@ -214,6 +217,7 @@ def _retryable(status: int | None) -> bool:
 
 async def _post_or_spool(path: str, body: dict, kind: str) -> None:
     global _inflight
+    logger.info("[perf] bg svc._post_or_spool entered path=%s", path)
     if _test_sink is not None:
         try:
             _test_sink(kind, body)

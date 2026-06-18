@@ -166,6 +166,7 @@ async def _fetch_all_skills() -> dict[str, dict]:
 
 async def _refresh_loop():
     global _cache, _cache_updated_at
+    logger.info("[perf] bg skill._refresh_loop entered")
     backoff = _RETRY_BACKOFF_START_S
     while True:
         ok = False

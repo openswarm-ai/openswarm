@@ -292,6 +292,7 @@ def _apply_stars(servers: dict[str, dict]):
 async def _refresh_loop():
     """Background loop that refreshes the cache on startup and then hourly."""
     global _cache, _cache_updated_at
+    logger.info("[perf] bg mcp._refresh_loop entered")
     while True:
         try:
             community, google = await asyncio.gather(
