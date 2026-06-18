@@ -91,6 +91,8 @@ export interface Workflow {
    *  unattended scheduled fire doesn't stall on a prompt. tool name -> answer. */
   remembered_approvals?: Record<string, 'allow' | 'deny'>;
   step_tool_usage?: Record<string, Record<string, boolean>>;
+  /** False once the user explicitly renames the workflow; backend may auto-rename while true. */
+  auto_named?: boolean;
 }
 
 export interface WorkflowRun {

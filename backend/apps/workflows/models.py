@@ -140,6 +140,9 @@ class Workflow(BaseModel):
     # scramble it). Auto-maintained on runs; enforcement stays workflow-level
     # via remembered_approvals, this is the finer per-step picture.
     step_tool_usage: dict[str, dict[str, bool]] = Field(default_factory=dict)
+    # False once the user explicitly sets a title; True means the backend may
+    # overwrite the title via auto-naming when steps are added/changed.
+    auto_named: bool = False
 
 
 class WorkflowRun(BaseModel):
@@ -165,6 +168,7 @@ class WorkflowRun(BaseModel):
 
 class WorkflowCreate(BaseModel):
     title: str = "Untitled workflow"
+    auto_named: bool = True
     description: str = ""
     icon: str = ""
     system_prompt: Optional[str] = None
@@ -183,6 +187,7 @@ class WorkflowCreate(BaseModel):
 
 class WorkflowUpdate(BaseModel):
     title: Optional[str] = None
+    auto_named: Optional[bool] = None
     description: Optional[str] = None
     icon: Optional[str] = None
     system_prompt: Optional[str] = None
