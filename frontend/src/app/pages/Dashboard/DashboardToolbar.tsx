@@ -4,6 +4,7 @@ import Typography from '@mui/material/Typography';
 import InputBase from '@mui/material/InputBase';
 import CircularProgress from '@mui/material/CircularProgress';
 import Tooltip, { tooltipClasses } from '@mui/material/Tooltip';
+import Snackbar from '@mui/material/Snackbar';
 import Icon from '@mui/material/Icon';
 import { styled } from '@mui/material/styles';
 import AddRounded from '@mui/icons-material/AddRounded';
@@ -183,6 +184,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const [historyOpen, setHistoryOpen] = useState(false);
     const [historyQuery, setHistoryQuery] = useState('');
     const [popoverMode, setPopoverMode] = useState<'search' | 'runs' | 'schedule'>('search');
+    const [expandToast, setExpandToast] = useState<string | null>(null);
     const shortcut = useAppSelector((s) => s.settings.data.new_agent_shortcut);
     const outputs = useAppSelector((s) => s.outputs.items);
     const historySearch = useAppSelector((s) => s.agents.historySearch);
@@ -545,7 +547,9 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               }}
               onExpand={() => {
                 // Singleton per dashboard, second Expand brings the existing card forward.
+                const alreadyOpen = Boolean(store.getState().dashboardLayout.workflowsHub);
                 dispatch(openWorkflowsHub({ expandedSessionIds: [] }));
+                if (alreadyOpen) setExpandToast('Calendar view is already open');
                 handleCloseHistory();
               }}
               allRuns={allRuns}
@@ -908,6 +912,13 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           </div>
         )}
       </MotionBox>
+      <Snackbar
+        open={Boolean(expandToast)}
+        autoHideDuration={3000}
+        onClose={() => setExpandToast(null)}
+        message={expandToast || ''}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
       </>
     );
   },
