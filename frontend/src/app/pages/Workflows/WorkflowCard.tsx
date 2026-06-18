@@ -43,7 +43,7 @@ import InlineEditableTitle from '@/app/components/InlineEditableTitle';
 import { Typewriter } from '@/app/components/feedback/Animated';
 import StopRounded from '@mui/icons-material/StopRounded';
 import PauseRounded from '@mui/icons-material/PauseRounded';
-import { StatusDot, RunSparkline, LastFiredHint, isStaleSinceLastRun } from './workflowVisuals';
+import { StatusDot, RunSparkline, LastFiredHint, isStaleSinceLastRun, isRealTitle } from './workflowVisuals';
 import { store } from '@/shared/state/store';
 import { getAgentWorkTime, fmtSeconds } from '@/shared/agentWorkTime';
 
@@ -74,14 +74,6 @@ const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
   { dir: 'sw', sx: { bottom: -EDGE_THICKNESS / 2, left: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
   { dir: 'se', sx: { bottom: -EDGE_THICKNESS / 2, right: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
 ];
-
-// Placeholder titles the backend uses before auto-naming kicks in. The title
-// Typewriter only animates once the title is a real (generated/user) name, so
-// the card doesn't animate on mount or while still showing a placeholder.
-const PLACEHOLDER_TITLES = new Set(['', 'New workflow', 'Untitled workflow', 'Scheduled workflow']);
-function isRealTitle(title?: string | null): boolean {
-  return !!title && !PLACEHOLDER_TITLES.has(title.trim());
-}
 
 interface Props {
   workflowId: string;
