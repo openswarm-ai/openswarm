@@ -29,6 +29,8 @@ import { useEffect } from 'react';
 import ScheduleCalendar from './ScheduleCalendar';
 import AddToSchedulePopover from './AddToSchedulePopover';
 import { WEEKDAY_LABEL, addDays, sameDay, startOfMonthGrid, isWorkflowSchedulable } from './scheduleUtils';
+import { isRealTitle } from './workflowVisuals';
+import { Typewriter } from '@/app/components/feedback/Animated';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -159,8 +161,11 @@ const WorkflowsHubCard: React.FC<Props> = ({
   // unticked the box, which feels wrong. on_days/hour/minute being set
   // is a good proxy for "user already configured this." Falls back to
   // enabled flag for legacy records.
-  const scheduled = useMemo(() => Object.values(workflows).filter((w) => isWorkflowSchedulable(w)), [workflows]);
-  const unscheduled = useMemo(() => Object.values(workflows).filter((w) => !isWorkflowSchedulable(w)), [workflows]);
+  // Hide brand-new "+ New" workflows that the user is still building and
+  // hasn't saved yet; commit (Save) clears `unsaved` and they appear.
+  const saved = useMemo(() => Object.values(workflows).filter((w) => !w.unsaved), [workflows]);
+  const scheduled = useMemo(() => saved.filter((w) => isWorkflowSchedulable(w)), [saved]);
+  const unscheduled = useMemo(() => saved.filter((w) => !isWorkflowSchedulable(w)), [saved]);
 
   const monthLabel = refDate.toLocaleString('en', { month: 'long', year: 'numeric' });
 
@@ -176,7 +181,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
   // session has a real id to attach to; an abandoned (still 0-step) one is
   // cleaned up on card close (WorkflowCard.onClose).
   const onNew = useCallback(async () => {
-    const result = await dispatch(createWorkflow({ title: 'New workflow', steps: [] }));
+    const result = await dispatch(createWorkflow({ title: 'New workflow', steps: [], unsaved: true }));
     if (!createWorkflow.fulfilled.match(result)) return;
     const wf = result.payload;
     dispatch(addWorkflowCard({ workflowId: wf.id }));
@@ -677,7 +682,14 @@ function SidebarSection({ title, items, onPick, scheduled, onContext, onSchedule
               </Box>
             </Tooltip>
           )}
-          <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: scheduled && !w.schedule.enabled ? 0.7 : 1 }}>{w.title}</Typography>
+          {/* Retype the title letter-by-letter when it auto-renames, matching
+              the workflow card. Gated on a real (non-placeholder) title so it
+              never animates on first appearance or for already-named rows. */}
+          <Typewriter value={w.title} enabled={isRealTitle(w.title)}>
+            {(t) => (
+              <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: scheduled && !w.schedule.enabled ? 0.7 : 1 }}>{t}</Typography>
+            )}
+          </Typewriter>
           {scheduled && !w.schedule.enabled && (
             <Box sx={{ flexShrink: 0, px: 0.6, py: 0.1, borderRadius: '3px', bgcolor: c.bg.elevated, color: c.text.muted, fontSize: '0.62rem', fontWeight: 600, lineHeight: 1.5, letterSpacing: '0.02em' }}>Paused</Box>
           )}

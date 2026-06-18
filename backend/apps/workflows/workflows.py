@@ -175,6 +175,8 @@ async def create_workflow(body: WorkflowCreate):
         mode=body.mode or "agent",
         provider=body.provider or "anthropic",
         cost_cap_usd_monthly=body.cost_cap_usd_monthly,
+        auto_named=body.auto_named,
+        unsaved=body.unsaved,
     )
     wf.remembered_approvals = p_source_session_approvals(body.source_session_id)
     if not wf.icon:
@@ -187,10 +189,14 @@ async def create_workflow(body: WorkflowCreate):
     # them the UI falls back to truncated raw prompts.
     try:
         title, description, labels = await _generate_workflow_metadata(wf)
-        if title:
-            wf.title = title
-        if description:
-            wf.description = description
+        # Respect a user-supplied title (auto_named=False); only auto-fill the
+        # name + description while the workflow is still auto-named. Labels are
+        # always safe to fill since they don't override a user's title.
+        if wf.auto_named:
+            if title:
+                wf.title = title
+            if description:
+                wf.description = description
         if labels and len(labels) == len(wf.steps):
             for i, lab in enumerate(labels):
                 if lab:
@@ -211,14 +217,19 @@ async def _generate_workflow_metadata(wf: Workflow) -> tuple[str, str, list[str]
     if not wf.steps:
         return "", "", []
     try:
-        from backend.apps.agents.providers.registry import resolve_aux_model
+        from backend.apps.agents.providers.registry import resolve_aux_model, get_api_type
         from backend.apps.settings.credentials import get_anthropic_client_for_model
         from backend.apps.settings.settings import load_settings as _ls
     except Exception:
         return "", "", []
     settings = _ls()
     try:
-        aux_model, _ = await resolve_aux_model(settings, preferred_tier="haiku")
+        # Stay on the family the user is actually paying for (same as
+        # generate_title); without primary_api the aux call can resolve to a
+        # lane that returns nothing on subscription setups.
+        aux_model, _ = await resolve_aux_model(
+            settings, preferred_tier="haiku", primary_api=get_api_type(wf.model),
+        )
         client = get_anthropic_client_for_model(settings, aux_model)
     except Exception:
         return "", "", []
@@ -274,20 +285,20 @@ async def _generate_workflow_metadata(wf: Workflow) -> tuple[str, str, list[str]
             return None
 
     try:
-        resp = await client.messages.create(
+        # Stream, don't use messages.create: 9router's non-streaming response
+        # translator drops `content` for some provider lanes (same reason
+        # generate_title streams), which left the title empty. Streaming also
+        # means no assistant-prefill hack; _extract_json_object finds the
+        # object even if the model wraps it in prose or a code fence.
+        chunks: list[str] = []
+        async with client.messages.stream(
             model=aux_model,
             max_tokens=400 + n_steps * 30,
-            messages=[
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": "{"},
-            ],
-        )
-        text = ""
-        if isinstance(resp.content, list):
-            for block in resp.content:
-                if getattr(block, "type", None) == "text":
-                    text += getattr(block, "text", "")
-        raw = "{" + text.strip() if not text.strip().startswith("{") else text.strip()
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            async for chunk in stream.text_stream:
+                chunks.append(chunk)
+        raw = "".join(chunks)
         data = _extract_json_object(raw)
         if not data:
             logger.warning("workflow meta gen: failed to parse aux model output: %s", raw[:400])
@@ -302,26 +313,64 @@ async def _generate_workflow_metadata(wf: Workflow) -> tuple[str, str, list[str]
         return "", "", []
 
 
+_PLACEHOLDER_TITLES = {"", "New workflow", "Untitled workflow", "Scheduled workflow"}
+
+
+def _fallback_title(wf: Workflow) -> str:
+    """Deterministic title derived from the steps, used when the aux model is
+    unreachable. A step-based name beats leaving the workflow as "New workflow".
+    Takes the first meaningful step's label (or its text), keeps it to ~5 words,
+    and Title-Cases it while preserving already-capitalized tokens (Gmail)."""
+    for s in wf.steps:
+        base = ((s.label or "") or (s.text or "")).strip()
+        if base:
+            words = base.split()[:5]
+            return " ".join(w.capitalize() if w.islower() else w for w in words)[:60]
+    return ""
+
+
 async def p_relabel_changed_steps(wf: Workflow, before_steps: list[dict]) -> None:
     before_by_id = {s.get("id"): s for s in before_steps}
     regen_idxs: list[int] = []
+    # Step content changed at all? Drives auto-naming, which must fire even when
+    # every step already carries a label (regen_idxs empty) because the title
+    # describes the whole routine, not a single step.
+    content_changed = len(before_steps) != len(wf.steps)
     for i, step in enumerate(wf.steps):
         old = before_by_id.get(step.id)
         old_text = (old or {}).get("text") or ""
         old_label = (old or {}).get("label") or ""
         new_label = (step.label or "").strip()
+        if old is None or old_text != step.text:
+            content_changed = True
         if old is not None and old_text == step.text:
             if not new_label and old_label:
                 step.label = old_label
             continue
         if not (new_label and new_label != old_label):
             regen_idxs.append(i)
-    if not regen_idxs:
+    # Auto-name while the workflow is still auto-named (user hasn't renamed it)
+    # and the step content actually changed and there's text to name from.
+    need_autoname = wf.auto_named and content_changed and any(s.text for s in wf.steps)
+    if not regen_idxs and not need_autoname:
         return
     try:
-        labels = (await _generate_workflow_metadata(wf))[2]
+        title, description, labels = await _generate_workflow_metadata(wf)
     except Exception:
         return
+    # One aux call covers labels AND auto-naming. A manual rename sets
+    # auto_named=False, so the title/description below are left untouched then.
+    if need_autoname:
+        if title:
+            wf.title = title
+        elif (wf.title or "").strip() in _PLACEHOLDER_TITLES:
+            # Aux model returned nothing (flaky lane / rate limit). Fall back to
+            # a step-derived name so the workflow doesn't stay "New workflow".
+            fb = _fallback_title(wf)
+            if fb:
+                wf.title = fb
+        if description:
+            wf.description = description
     if labels and len(labels) == len(wf.steps):
         for i in regen_idxs:
             if labels[i]:
@@ -495,6 +544,12 @@ async def update_workflow(
             )
     before = wf.model_dump(mode="json")
     data = body.model_dump(exclude_unset=True)
+    # A user-initiated title rename locks the name so later step edits don't
+    # auto-rename over it. Only an actual change counts, so the full-object
+    # editor save (which echoes the current title unchanged) doesn't lock. If
+    # the FE passes auto_named explicitly, that wins (handled by setattr below).
+    if "title" in data and "auto_named" not in data and data.get("title") != before.get("title"):
+        wf.auto_named = False
     # While an Edit-Agent draft is in flight, ANY PATCH that touches steps
     # stages those steps into the draft instead of the live workflow, so the
     # commit/discard pair is the only thing that moves the live steps. The
@@ -683,6 +738,10 @@ async def commit_draft(workflow_id: str):
     wf = storage.get_workflow(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # Clicking Save is the user committing to this workflow, so reveal it in
+    # the hub (clears the "+ New" build-in-progress flag) even if there's no
+    # pending draft to flush.
+    wf.unsaved = False
     if wf.draft_steps is None:
         await p_end_edit_session(wf)
         storage.save_workflow(wf)

@@ -9,7 +9,6 @@ import CloseIcon from '@mui/icons-material/Close';
 import HistoryIcon from '@mui/icons-material/HistoryRounded';
 import PlayArrowIcon from '@mui/icons-material/PlayArrowRounded';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import InputBase from '@mui/material/InputBase';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -41,9 +40,10 @@ import { CompletedView, FailedView, RunningView } from './WorkflowCardLiveViews'
 import SchedulingView from './SchedulingView';
 import EditAgentView from './EditAgentView';
 import InlineEditableTitle from '@/app/components/InlineEditableTitle';
+import { Typewriter } from '@/app/components/feedback/Animated';
 import StopRounded from '@mui/icons-material/StopRounded';
 import PauseRounded from '@mui/icons-material/PauseRounded';
-import { StatusDot, RunSparkline, LastFiredHint, isStaleSinceLastRun } from './workflowVisuals';
+import { StatusDot, RunSparkline, LastFiredHint, isStaleSinceLastRun, isRealTitle } from './workflowVisuals';
 import { store } from '@/shared/state/store';
 import { getAgentWorkTime, fmtSeconds } from '@/shared/agentWorkTime';
 
@@ -197,25 +197,13 @@ const WorkflowCard: React.FC<Props> = ({
   const steps = (workflow?.steps || card?.draft?.steps || []) as Workflow['steps'];
   const [draftCloseNonce, setDraftCloseNonce] = useState(0);
 
-  // Edit-agent chrome lives in the card header: the model/time subtitle and
-  // the Save Workflow button. EditAgentView owns the live session and reports
-  // its id up here. The Save button pulses once when a turn finishes adding a
-  // step, nudging the user that there's something worth saving.
+  // Edit-agent chrome lives in the card header: the model/time subtitle.
+  // EditAgentView owns the live session and reports its id up here so the
+  // subtitle can render the live model + work time. Saving is handled by the
+  // Discard/Save controls inside EditAgentView itself.
   const isEditAgentView = card?.view === 'edit_agent' || card?.view === 'fix_agent';
-  const showHeaderSaveWorkflow = isEditAgentView && !(card?.view === 'edit_agent' && workflow?.source_session_id);
   const [editSessionId, setEditSessionId] = useState<string | null>(null);
   const editSession = useAppSelector((s) => editSessionId ? s.agents.sessions[editSessionId] : undefined);
-  const [savePulseNonce, setSavePulseNonce] = useState(0);
-  const prevEditStatusRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    const status = editSession?.status;
-    const prev = prevEditStatusRef.current;
-    const wasRunning = prev === 'running' || prev === 'waiting_approval';
-    if (wasRunning && status === 'completed' && steps.length > 0) {
-      setSavePulseNonce((n) => n + 1);
-    }
-    prevEditStatusRef.current = status;
-  }, [editSession?.status, steps.length]);
 
   // ---- Card drag via title bar ----
   const DRAG_THRESHOLD = 3;
@@ -527,7 +515,19 @@ const WorkflowCard: React.FC<Props> = ({
                 value={title}
                 onCommit={(name) => dispatch(updateWorkflow({ id: workflow.id, patch: { title: name }, ifMatch: workflow.updated_at || null }))}
                 sx={{ flex: '0 1 auto', fontWeight: 600, fontSize: '0.95rem', color: c.text.primary, letterSpacing: '-0.005em' }}
-              />
+              >
+                {/* Once the title flips from its placeholder to the generated
+                    name (after commit), retype it letter-by-letter, same as the
+                    chat card title. The new title arrives in the commit response
+                    so the animation runs after generation, not before. */}
+                <Typewriter value={title} enabled={isRealTitle(workflow.title)}>
+                  {(t) => (
+                    <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.005em' }}>
+                      {t}
+                    </Typography>
+                  )}
+                </Typewriter>
+              </InlineEditableTitle>
             ) : (
               <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.005em' }}>
                 {title}
@@ -538,47 +538,6 @@ const WorkflowCard: React.FC<Props> = ({
           </>
         )}
         {runs && runs.length > 0 && <RunSparkline runs={runs} />}
-        {!isDraft && workflow && showHeaderSaveWorkflow && (
-          <Tooltip title={steps.length > 0 ? 'Save the workflow and close the editor' : 'Add at least one step before saving'}>
-            <Box
-              role="button"
-              data-no-drag
-              onClick={(e) => {
-                e.stopPropagation();
-                if (steps.length === 0) { setRunToast('Add at least one step to your workflow first.'); return; }
-                dispatch(updateWorkflowCard({ workflowId, patch: { view: 'saved' } }));
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              sx={{
-                display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                fontSize: '0.78rem', fontWeight: 700,
-                px: 1.1, py: 0.5,
-                borderRadius: `${c.radius.md}px`,
-                cursor: 'pointer',
-                ...(steps.length > 0 ? {
-                  color: '#fff',
-                  bgcolor: c.accent.primary,
-                  border: `1px solid ${c.accent.primary}`,
-                  boxShadow: `0 0 0 0 ${c.accent.primary}00`,
-                  animation: savePulseNonce > 0 ? `workflow-save-pulse-${savePulseNonce} 0.95s ease-out 1` : 'none',
-                  [`@keyframes workflow-save-pulse-${savePulseNonce}`]: {
-                    '0%': { boxShadow: `0 0 0 0 ${c.accent.primary}55`, transform: 'scale(1)' },
-                    '55%': { boxShadow: `0 0 0 8px ${c.accent.primary}00`, transform: 'scale(1.035)' },
-                    '100%': { boxShadow: `0 0 0 0 ${c.accent.primary}00`, transform: 'scale(1)' },
-                  },
-                  '&:hover': { filter: 'brightness(1.05)' },
-                } : {
-                  color: c.text.muted,
-                  bgcolor: c.bg.elevated,
-                  border: `1px solid ${c.border.subtle}`,
-                }),
-              }}
-            >
-              <AutoAwesomeOutlinedIcon sx={{ fontSize: 14 }} />
-              Save Workflow
-            </Box>
-          </Tooltip>
-        )}
         <IconButton
           size="small"
           data-no-drag

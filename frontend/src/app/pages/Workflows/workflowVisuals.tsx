@@ -31,6 +31,16 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import type { Workflow, WorkflowRun, ScheduleConfig, PermissionTier } from '@/shared/state/workflowsSlice';
 import { formatTime, WEEKDAY_LABEL, isScheduleConfigured } from './scheduleUtils';
 
+// ---------- Title placeholders ----------
+
+// Placeholder titles the backend uses before auto-naming kicks in. The title
+// Typewriter only animates once the title is a real (generated/user) name, so
+// the UI doesn't animate on mount or while still showing a placeholder.
+const PLACEHOLDER_TITLES = new Set(['', 'New workflow', 'Untitled workflow', 'Scheduled workflow']);
+export function isRealTitle(title?: string | null): boolean {
+  return !!title && !PLACEHOLDER_TITLES.has(title.trim());
+}
+
 // ---------- Status colors ----------
 
 export type LastRunStatus = NonNullable<Workflow['last_run_status']>;
