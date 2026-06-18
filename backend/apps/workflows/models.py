@@ -143,6 +143,11 @@ class Workflow(BaseModel):
     # False once the user explicitly sets a title; True means the backend may
     # overwrite the title via auto-naming when steps are added/changed.
     auto_named: bool = False
+    # True for a brand-new "+ New" workflow that the user is still building in
+    # the Edit Agent and hasn't saved yet. The Workflows hub hides these from
+    # the scheduled/unscheduled lists until the first commit clears the flag,
+    # so an in-progress build doesn't litter the sidebar.
+    unsaved: bool = False
 
 
 class WorkflowRun(BaseModel):
@@ -169,6 +174,9 @@ class WorkflowRun(BaseModel):
 class WorkflowCreate(BaseModel):
     title: str = "Untitled workflow"
     auto_named: bool = True
+    # Only the "+ New" build flow sets this; every other create path is a
+    # deliberate save and stays visible immediately.
+    unsaved: bool = False
     description: str = ""
     icon: str = ""
     system_prompt: Optional[str] = None

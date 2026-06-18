@@ -160,8 +160,11 @@ const WorkflowsHubCard: React.FC<Props> = ({
   // unticked the box, which feels wrong. on_days/hour/minute being set
   // is a good proxy for "user already configured this." Falls back to
   // enabled flag for legacy records.
-  const scheduled = useMemo(() => Object.values(workflows).filter((w) => isSchedulable(w)), [workflows]);
-  const unscheduled = useMemo(() => Object.values(workflows).filter((w) => !isSchedulable(w)), [workflows]);
+  // Hide brand-new "+ New" workflows that the user is still building and
+  // hasn't saved yet; commit (Save) clears `unsaved` and they appear.
+  const saved = useMemo(() => Object.values(workflows).filter((w) => !w.unsaved), [workflows]);
+  const scheduled = useMemo(() => saved.filter((w) => isSchedulable(w)), [saved]);
+  const unscheduled = useMemo(() => saved.filter((w) => !isSchedulable(w)), [saved]);
 
   const monthLabel = refDate.toLocaleString('en', { month: 'long', year: 'numeric' });
 
@@ -177,7 +180,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
   // session has a real id to attach to; an abandoned (still 0-step) one is
   // cleaned up on card close (WorkflowCard.onClose).
   const onNew = useCallback(async () => {
-    const result = await dispatch(createWorkflow({ title: 'New workflow', steps: [] }));
+    const result = await dispatch(createWorkflow({ title: 'New workflow', steps: [], unsaved: true }));
     if (!createWorkflow.fulfilled.match(result)) return;
     const wf = result.payload;
     dispatch(addWorkflowCard({ workflowId: wf.id }));

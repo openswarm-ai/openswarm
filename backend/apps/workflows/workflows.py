@@ -170,6 +170,7 @@ async def create_workflow(body: WorkflowCreate):
         provider=body.provider or "anthropic",
         cost_cap_usd_monthly=body.cost_cap_usd_monthly,
         auto_named=body.auto_named,
+        unsaved=body.unsaved,
     )
     wf.remembered_approvals = p_source_session_approvals(body.source_session_id)
     if not wf.icon:
@@ -731,6 +732,10 @@ async def commit_draft(workflow_id: str):
     wf = storage.get_workflow(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # Clicking Save is the user committing to this workflow, so reveal it in
+    # the hub (clears the "+ New" build-in-progress flag) even if there's no
+    # pending draft to flush.
+    wf.unsaved = False
     if wf.draft_steps is None:
         await p_end_edit_session(wf)
         storage.save_workflow(wf)
