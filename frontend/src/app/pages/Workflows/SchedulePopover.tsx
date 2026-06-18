@@ -14,10 +14,12 @@ import AddIcon from '@mui/icons-material/Add';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppSelector } from '@/shared/hooks';
+import type { WorkflowRun } from '@/shared/state/workflowsSlice';
 import ScheduleCalendar from './ScheduleCalendar';
+import { HistoryList } from './WorkflowCardSubviews';
 import { addDays, startOfWeek } from './scheduleUtils';
 
-type Mode = 'search' | 'schedule';
+type Mode = 'search' | 'runs' | 'schedule';
 
 interface Props {
   mode: Mode;
@@ -30,6 +32,10 @@ interface Props {
   onNewChat: () => void;
   onWorkflowSelect: (id: string) => void;
   onExpand: () => void;
+  allRuns: WorkflowRun[];
+  allRunsLoading: boolean;
+  onRunOpen: (run: WorkflowRun) => void;
+  workflowTitleFor: (workflowId: string) => string;
   historyScrollRef?: React.RefObject<HTMLDivElement>;
   onHistoryScroll?: () => void;
   /** When true, hides the internal Search/Schedule chips + redundant "+ New"
@@ -39,7 +45,9 @@ interface Props {
 
 export default function SchedulePopover({
   mode, onModeChange, historyResults, historyLoading, historyQuery, onHistoryQueryChange,
-  onHistorySelect, onNewChat, onWorkflowSelect, onExpand, historyScrollRef, onHistoryScroll,
+  onHistorySelect, onNewChat, onWorkflowSelect, onExpand,
+  allRuns, allRunsLoading, onRunOpen, workflowTitleFor,
+  historyScrollRef, onHistoryScroll,
   hideTopChrome = false,
 }: Props) {
   const c = useClaudeTokens();
@@ -114,6 +122,17 @@ export default function SchedulePopover({
         flexDirection: 'column',
         position: 'relative',
       }}>
+        {/* History tabs. Hidden in schedule mode so the Schedule pill's
+            calendar stays untouched; toggles only Chat history <-> runs and
+            never reaches the calendar from here. */}
+        {mode !== 'schedule' && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, pt: 1, pb: 0.5, flexShrink: 0 }}>
+            {([['search', 'Chat history'], ['runs', 'Scheduled tasks']] as const).map(([m, label]) => (
+              <Box key={m} onClick={() => onModeChange(m)} role="button" sx={{ fontSize: '0.85rem', fontWeight: mode === m ? 700 : 500, px: 0.75, pt: 0.4, pb: 0.55, color: mode === m ? c.text.primary : c.text.muted, borderBottom: `2px solid ${mode === m ? c.accent.primary : 'transparent'}`, cursor: 'pointer', '&:hover': { color: c.text.primary } }}>{label}</Box>
+            ))}
+          </Box>
+        )}
+        <Box sx={{ flex: 1, position: 'relative', minHeight: 0 }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={mode}
@@ -166,6 +185,18 @@ export default function SchedulePopover({
           </Box>
         )}
 
+        {mode === 'runs' && (
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, py: 1, borderTop: `1px solid ${c.border.subtle}`, minHeight: 0 }}>
+              {allRunsLoading && allRuns.length === 0 ? (
+                <Typography sx={{ px: 0.5, py: 2.5, fontSize: '0.82rem', color: c.text.muted, textAlign: 'center' }}>Loading runs...</Typography>
+              ) : (
+                <HistoryList runs={allRuns} onOpen={onRunOpen} showWorkflow workflowTitleFor={workflowTitleFor} />
+              )}
+            </Box>
+          </Box>
+        )}
+
         {mode === 'schedule' && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, pt: 1, pb: 0.5, flexShrink: 0 }}>
@@ -202,6 +233,7 @@ export default function SchedulePopover({
         )}
           </motion.div>
         </AnimatePresence>
+        </Box>
       </Box>
     </Box>
   );

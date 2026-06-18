@@ -147,6 +147,16 @@ def list_runs(wid: str, limit: int = 50) -> list[WorkflowRun]:
     return runs[-limit:][::-1]
 
 
+def list_all_runs(limit: int = 200) -> list[WorkflowRun]:
+    if not _cache_loaded:
+        init()
+    flat: list[WorkflowRun] = []
+    for arr in _runs_cache.values():
+        flat.extend(arr)
+    flat.sort(key=lambda r: r.started_at, reverse=True)
+    return flat[:limit]
+
+
 def record_run(run: WorkflowRun) -> WorkflowRun:
     with _io_lock:
         _ensure_dirs()
