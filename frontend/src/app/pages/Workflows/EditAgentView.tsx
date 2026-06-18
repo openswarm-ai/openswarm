@@ -229,8 +229,12 @@ export default function EditAgentView({ workflow, steps, isFixMode = false, onEd
         </Box>
         {stepsOpen && (
           <Box sx={{ mt: 0.75 }}>
-            {isFixMode && fixSeed && <FixPrefixCard seed={fixSeed} expanded={fixPrefixExpanded} onToggle={() => setFixPrefixExpanded((x) => !x)} />}
             <StepList steps={draftSteps} />
+            {isFixMode && fixSeed && (
+              <Box sx={{ mt: 0.75 }}>
+                <FixPrefixCard seed={fixSeed} expanded={fixPrefixExpanded} onToggle={() => setFixPrefixExpanded((x) => !x)} />
+              </Box>
+            )}
           </Box>
         )}
       </Box>
