@@ -58,6 +58,11 @@ def _host_tz() -> ZoneInfo:
     return _host_tz_cache
 
 
+def host_timezone_name() -> str:
+    """Concrete IANA-ish zone name for schedules created on this host."""
+    return getattr(_host_tz(), "key", None) or "UTC"
+
+
 def _resolve_tz(tz: str) -> ZoneInfo:
     if not tz or tz == "local":
         return _host_tz()
@@ -192,6 +197,53 @@ def fires_in_window(wf: Workflow, days: int = 30) -> int:
         count += 1
         cursor_utc = nxt
     return count
+
+
+def occurrences_between(
+    wf: Workflow,
+    from_utc: datetime,
+    to_utc: datetime,
+    cap: int = 5000,
+) -> list[datetime]:
+    """Return scheduled fire instants in [from_utc, to_utc).
+
+    Calendar previews must use the same timezone-aware recurrence engine as
+    the scheduler. Inputs and outputs are UTC-aware datetimes; callers can
+    render those absolute instants in any local timezone.
+    """
+    sched = wf.schedule
+    if not sched.enabled or not is_schedule_configured(sched):
+        return []
+    if sched.max_runs is not None and sched.runs_count >= sched.max_runs:
+        return []
+    start_utc = _as_utc(from_utc)
+    end_utc = _as_utc(to_utc)
+    if start_utc is None or end_utc is None or end_utc <= start_utc:
+        return []
+
+    created_at = _as_utc(getattr(wf, "created_at", None))
+    cursor_utc = start_utc - timedelta(microseconds=1)
+    if created_at is not None and created_at > cursor_utc:
+        cursor_utc = created_at
+
+    ends_at = _as_utc(sched.ends_at)
+    if ends_at is not None:
+        if ends_at <= start_utc:
+            return []
+        if ends_at < end_utc:
+            end_utc = ends_at
+
+    remaining = sched.max_runs - sched.runs_count if sched.max_runs is not None else cap
+    limit = max(0, min(cap, remaining))
+    out: list[datetime] = []
+    while len(out) < limit:
+        nxt = _next_fire_after(sched, cursor_utc)
+        if nxt is None or nxt >= end_utc:
+            break
+        if nxt >= start_utc:
+            out.append(nxt.astimezone(timezone.utc))
+        cursor_utc = nxt
+    return out
 
 
 def kick() -> None:

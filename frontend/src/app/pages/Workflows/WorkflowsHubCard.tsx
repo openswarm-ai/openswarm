@@ -144,6 +144,23 @@ const WorkflowsHubCard: React.FC<Props> = ({
   const [view, setView] = useState<CalendarView>('List');
   const [viewOpen, setViewOpen] = useState(false);
   const [refDate, setRefDate] = useState(new Date());
+
+  // The hub card lives on the canvas for days at a time, so a refDate frozen
+  // at mount leaves the calendar stuck on the day it was opened (e.g. still
+  // showing "yesterday" past midnight). Roll it forward when the day flips,
+  // but only if the user was parked on today, so manual navigation is left be.
+  const refDateRef = useRef(refDate);
+  refDateRef.current = refDate;
+  useEffect(() => {
+    let lastToday = new Date();
+    const id = window.setInterval(() => {
+      const now = new Date();
+      if (sameDay(now, lastToday)) return;
+      if (sameDay(refDateRef.current, lastToday)) setRefDate(now);
+      lastToday = now;
+    }, 60000);
+    return () => window.clearInterval(id);
+  }, []);
   const [search, setSearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // Right-click on a sidebar row opens this menu pinned to the cursor.

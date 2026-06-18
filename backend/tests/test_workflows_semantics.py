@@ -189,6 +189,122 @@ def test_month_repeat_no_longer_clamps_to_28():
     assert nxt.astimezone(tz).date() == datetime(2025, 4, 30).date()
 
 
+def test_calendar_occurrences_use_schedule_timezone_not_viewer_timezone():
+    """A 9am New York schedule returns UTC instants. The frontend can then
+    render those instants in the viewer's current timezone."""
+    from backend.apps.workflows import scheduler
+    from backend.apps.workflows.models import ScheduleConfig
+    wf = _make_wf(
+        schedule=ScheduleConfig(
+            enabled=True,
+            repeat_unit="day",
+            repeat_every=1,
+            hour=9,
+            minute=0,
+            timezone="America/New_York",
+        )
+    )
+    wf.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    start = datetime(2026, 6, 18, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 6, 20, 0, 0, tzinfo=timezone.utc)
+    fires = scheduler.occurrences_between(wf, start, end)
+    assert len(fires) == 2
+    assert fires[0].astimezone(ZoneInfo("America/New_York")).hour == 9
+    assert fires[0].astimezone(ZoneInfo("America/Los_Angeles")).hour == 6
+
+
+def test_calendar_occurrences_stay_wall_clock_across_dst():
+    from backend.apps.workflows import scheduler
+    from backend.apps.workflows.models import ScheduleConfig
+    wf = _make_wf(
+        schedule=ScheduleConfig(
+            enabled=True,
+            repeat_unit="day",
+            repeat_every=1,
+            hour=9,
+            minute=0,
+            timezone="America/New_York",
+        )
+    )
+    wf.created_at = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    fires = scheduler.occurrences_between(
+        wf,
+        datetime(2025, 3, 8, 0, 0, tzinfo=timezone.utc),
+        datetime(2025, 3, 11, 0, 0, tzinfo=timezone.utc),
+    )
+    ny = ZoneInfo("America/New_York")
+    locals_ = [f.astimezone(ny) for f in fires]
+    assert [d.date() for d in locals_] == [
+        datetime(2025, 3, 8).date(),
+        datetime(2025, 3, 9).date(),
+        datetime(2025, 3, 10).date(),
+    ]
+    assert all((d.hour, d.minute) == (9, 0) for d in locals_)
+    assert [f.hour for f in fires] == [14, 13, 13]
+
+
+def test_calendar_occurrences_honor_end_conditions():
+    from backend.apps.workflows import scheduler
+    from backend.apps.workflows.models import ScheduleConfig
+    start = datetime(2026, 6, 18, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 6, 22, 0, 0, tzinfo=timezone.utc)
+    wf = _make_wf(
+        schedule=ScheduleConfig(
+            enabled=True,
+            repeat_unit="day",
+            repeat_every=1,
+            hour=9,
+            minute=0,
+            timezone="UTC",
+            max_runs=3,
+            runs_count=1,
+            ends_at=datetime(2026, 6, 21, 0, 0, tzinfo=timezone.utc),
+        )
+    )
+    wf.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    fires = scheduler.occurrences_between(wf, start, end)
+    assert [f.date() for f in fires] == [
+        datetime(2026, 6, 18).date(),
+        datetime(2026, 6, 19).date(),
+    ]
+
+    wf.schedule.enabled = False
+    assert scheduler.occurrences_between(wf, start, end) == []
+
+    wf.schedule.enabled = True
+    wf.schedule.repeat_unit = "week"
+    wf.schedule.on_days = []
+    assert scheduler.occurrences_between(wf, start, end) == []
+
+
+def test_calendar_endpoint_returns_sorted_utc_events():
+    from backend.apps.workflows import storage
+    from backend.apps.workflows.workflows import list_calendar_events
+    from backend.apps.workflows.models import ScheduleConfig
+    wf = _make_wf(
+        schedule=ScheduleConfig(
+            enabled=True,
+            repeat_unit="day",
+            repeat_every=1,
+            hour=9,
+            minute=0,
+            timezone="America/New_York",
+        )
+    )
+    wf.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    storage.save_workflow(wf)
+
+    async def runner():
+        return await list_calendar_events(
+            from_="2026-06-18T00:00:00+00:00",
+            to="2026-06-20T00:00:00+00:00",
+        )
+
+    res = asyncio.new_event_loop().run_until_complete(runner())
+    assert [e["workflow_id"] for e in res["events"]] == [wf.id, wf.id]
+    assert res["events"][0]["fire_at"].startswith("2026-06-18T13:00:00")
+
+
 # --- Cost cap ----------------------------------------------------------------
 
 def test_cost_cap_skips_with_clear_error(monkeypatch):
@@ -241,6 +357,59 @@ def test_freeze_not_forced_when_source_session_present():
     )
     result = asyncio.new_event_loop().run_until_complete(create_workflow(body))
     assert result["actions"]["freeze"] is False
+
+
+def test_create_enabled_schedule_normalizes_local_timezone(monkeypatch):
+    from backend.apps.workflows import scheduler
+    from backend.apps.workflows.workflows import create_workflow
+    from backend.apps.workflows.models import WorkflowCreate, ScheduleConfig
+    monkeypatch.setenv("OPENSWARM_TIMEZONE", "America/Chicago")
+    monkeypatch.setattr(scheduler, "_host_tz_cache", None)
+    body = WorkflowCreate(
+        title="local-tz-create",
+        schedule=ScheduleConfig(
+            enabled=True,
+            repeat_unit="day",
+            repeat_every=1,
+            hour=9,
+            minute=0,
+            timezone="local",
+        ),
+    )
+    result = asyncio.new_event_loop().run_until_complete(create_workflow(body))
+    assert result["schedule"]["timezone"] == "America/Chicago"
+
+
+def test_enable_schedule_normalizes_local_timezone_and_preserves_concrete_timezone(monkeypatch):
+    from backend.apps.workflows import storage, scheduler
+    from backend.apps.workflows.workflows import update_workflow
+    from backend.apps.workflows.models import WorkflowUpdate, ScheduleConfig
+    monkeypatch.setenv("OPENSWARM_TIMEZONE", "America/Denver")
+    monkeypatch.setattr(scheduler, "_host_tz_cache", None)
+
+    wf = _make_wf()
+    wf.schedule.enabled = False
+    wf.schedule.timezone = "local"
+    storage.save_workflow(wf)
+
+    async def enable_runner():
+        sched = ScheduleConfig(**wf.schedule.model_dump(mode="json"))
+        sched.enabled = True
+        return await update_workflow(wf.id, WorkflowUpdate(schedule=sched), if_match=None)
+
+    enabled = asyncio.new_event_loop().run_until_complete(enable_runner())
+    assert enabled["schedule"]["timezone"] == "America/Denver"
+
+    stored = storage.get_workflow(wf.id)
+    sched = ScheduleConfig(**stored.schedule.model_dump(mode="json"))
+    sched.hour = 10
+
+    async def edit_runner():
+        return await update_workflow(wf.id, WorkflowUpdate(schedule=sched), if_match=None)
+
+    edited = asyncio.new_event_loop().run_until_complete(edit_runner())
+    assert edited["schedule"]["timezone"] == "America/Denver"
+    assert edited["schedule"]["hour"] == 10
 
 
 # --- Audit log ---------------------------------------------------------------

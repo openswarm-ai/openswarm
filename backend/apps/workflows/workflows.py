@@ -1,10 +1,10 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import HTTPException, Header, Request
+from fastapi import HTTPException, Header, Query, Request
 
 from backend.config.Apps import SubApp
 from backend.apps.workflows.models import (
@@ -144,9 +144,24 @@ async def list_workflows(dashboard_id: Optional[str] = None):
 
 
 def _normalize_schedule_state(wf: Workflow) -> None:
+    if wf.schedule.timezone == "local" and wf.schedule.enabled:
+        wf.schedule.timezone = scheduler.host_timezone_name()
     if wf.schedule.enabled and not scheduler.is_schedule_configured(wf.schedule):
         wf.schedule.enabled = False
     wf.next_run_at = scheduler.compute_next_fire(wf) if wf.schedule.enabled else None
+
+
+def _parse_calendar_bound(value: str, label: str) -> datetime:
+    raw = (value or "").strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid {label} timestamp")
+    if dt.tzinfo is None:
+        raise HTTPException(status_code=400, detail=f"{label} timestamp must include a timezone")
+    return dt.astimezone(timezone.utc)
 
 
 @workflows.router.post("/create")
@@ -505,6 +520,30 @@ async def list_all_runs(limit: int = 200):
     Backs the dashboard History popover's Scheduled tasks tab."""
     runs = storage.list_all_runs(limit=limit)
     return {"runs": [r.model_dump(mode="json") for r in runs]}
+
+
+@workflows.router.get("/calendar")
+async def list_calendar_events(
+    from_: str = Query(..., alias="from"),
+    to: str = Query(...),
+    dashboard_id: Optional[str] = None,
+):
+    start_utc = _parse_calendar_bound(from_, "from")
+    end_utc = _parse_calendar_bound(to, "to")
+    if end_utc <= start_utc:
+        raise HTTPException(status_code=400, detail="to must be after from")
+    items = storage.list_workflows()
+    if dashboard_id:
+        items = [w for w in items if not w.dashboard_id or w.dashboard_id == dashboard_id]
+    events: list[dict] = []
+    for wf in items:
+        for fire_at in scheduler.occurrences_between(wf, start_utc, end_utc):
+            events.append({
+                "workflow_id": wf.id,
+                "fire_at": fire_at.astimezone(timezone.utc).isoformat(),
+            })
+    events.sort(key=lambda e: (e["fire_at"], e["workflow_id"]))
+    return {"events": events}
 
 
 @workflows.router.get("/{workflow_id}")
@@ -955,11 +994,12 @@ async def schedule_agent_session(workflow_id: str):
     from backend.apps.agents.core.models import AgentConfig
     from backend.apps.agents.agent_manager import agent_manager
     now_local = datetime.now().astimezone()
+    local_tz = scheduler.host_timezone_name()
     current_dt = now_local.strftime("%A %Y-%m-%d %H:%M %Z")
     system_prompt = (
         f"You are the Scheduling Agent for the user's saved workflow \"{wf.title}\" "
         f"(id: {wf.id}). Your only job is to set when this workflow runs.\n\n"
-        f"The current local date and time is {current_dt}. Resolve relative "
+        f"The current local date and time is {current_dt} in {local_tz}. Resolve relative "
         "phrasing (\"this month\", \"next Wednesday\", \"this time\") against it.\n\n"
         "When the user states a cadence, interpret it yourself and call "
         "UpdateScheduledWorkflow with:\n"
@@ -970,7 +1010,7 @@ async def schedule_agent_session(workflow_id: str):
         "  - repeat_every: the interval count (1 unless they say e.g. \"every other\"; "
         "for repeat_unit=\"minute\" the minimum is 15, e.g. \"every 15 minutes\")\n"
         "  - on_days: weekday indices when repeat_unit=\"week\" (Sun=0, Mon=1, ... Sat=6)\n"
-        "  - timezone: an IANA name only if the user names a specific zone\n\n"
+        f"  - timezone: \"{local_tz}\" unless the user names a different specific zone\n\n"
         "If no AM/PM is given, assume PM for 1-7 and AM for 8-12. If the cadence "
         "is genuinely ambiguous, ask ONE short clarifying question first; otherwise "
         "go straight to the tool call. The user approves or rejects the change in a "

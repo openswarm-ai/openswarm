@@ -15,12 +15,27 @@ import os
 import uuid
 import urllib.request
 import urllib.error
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 BACKEND_PORT = os.environ.get("OPENSWARM_PORT", "8324")
 BACKEND_AUTH = os.environ.get("OPENSWARM_AUTH_TOKEN", "")
 BACKEND_BASE = f"http://127.0.0.1:{BACKEND_PORT}/api/workflows"
 PARENT_SESSION_ID = os.environ.get("OPENSWARM_PARENT_SESSION_ID", "")
 DASHBOARD_ID = os.environ.get("OPENSWARM_DASHBOARD_ID", "")
+
+
+def _local_timezone_name() -> str:
+    name = os.environ.get("OPENSWARM_TIMEZONE", "").strip()
+    if not name:
+        try:
+            from tzlocal import get_localzone_name  # type: ignore
+            name = get_localzone_name() or ""
+        except Exception:
+            name = ""
+    try:
+        return (getattr(ZoneInfo(name), "key", None) or "UTC") if name else "UTC"
+    except ZoneInfoNotFoundError:
+        return "UTC"
 
 
 PRESETS = {
@@ -68,7 +83,7 @@ TOOLS = [
                     "items": {"type": "integer"},
                     "description": "Weekdays (Sun=0..Sat=6) when preset='custom' and repeat_unit='week'.",
                 },
-                "timezone": {"type": "string", "description": "IANA timezone name (e.g. 'America/Los_Angeles'). Omit to use the user's local zone."},
+                "timezone": {"type": "string", "description": "IANA timezone name (e.g. 'America/Los_Angeles'). Omit to use the user's current local zone at scheduling time."},
                 "source_session_id": {"type": "string", "description": "Optional; the chat session this workflow was created from. Inherits its tool surface."},
             },
             "required": ["title", "steps", "preset"],
@@ -253,7 +268,8 @@ def _call(method: str, path: str, body=None) -> dict:
 
 
 def _build_schedule_from_preset(preset: str, args: dict) -> dict:
-    base = {"timezone": "local", "on_missed": "skip", "ends_at": None, "max_runs": None, "runs_count": 0}
+    local_tz = _local_timezone_name()
+    base = {"timezone": args.get("timezone") or local_tz, "on_missed": "skip", "ends_at": None, "max_runs": None, "runs_count": 0}
     if preset == "custom":
         return {
             **base,
@@ -263,7 +279,6 @@ def _build_schedule_from_preset(preset: str, args: dict) -> dict:
             "hour": int(args.get("hour", 9)),
             "minute": int(args.get("minute", 0)),
             "on_days": list(args.get("on_days") or []),
-            "timezone": args.get("timezone") or "local",
         }
     preset_def = PRESETS.get(preset)
     if not preset_def:

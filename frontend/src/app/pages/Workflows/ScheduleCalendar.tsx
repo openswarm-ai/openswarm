@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Tooltip from '@mui/material/Tooltip';
@@ -7,10 +7,11 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { API_BASE } from '@/shared/config';
 import type { Workflow } from '@/shared/state/workflowsSlice';
 import { runWorkflowNow, deleteWorkflow, updateWorkflow, openWorkflowCard } from '@/shared/state/workflowsSlice';
 import { addWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
-import { WEEKDAY_FULL, WEEKDAY_LABEL_SHORT, addDays, sameDay, startOfMonthGrid, startOfWeek, fireTimesWithin, formatTime, formatHourLabel, isScheduleActive } from './scheduleUtils';
+import { WEEKDAY_FULL, WEEKDAY_LABEL_SHORT, addDays, sameDay, startOfMonthGrid, startOfWeek, formatTime, formatHourLabel } from './scheduleUtils';
 
 interface Props {
   view: 'Week' | 'Month' | 'List';
@@ -23,6 +24,11 @@ interface Props {
 // the user explicitly wants midnight visible at the top, not "9am" as the
 // starting hour. The scroll container caps the visible window.
 const HOURS_24 = Array.from({ length: 24 }, (_, i) => i);
+
+interface CalendarEvent {
+  workflow_id: string;
+  fire_at: string;
+}
 
 export default function ScheduleCalendar({ view, density, onSelectWorkflow, refDate }: Props) {
   const c = useClaudeTokens();
@@ -74,32 +80,74 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
       <MenuItem onClick={onDelete} sx={{ color: c.status.error }}>Delete</MenuItem>
     </Menu>
   );
-  // refDate is recreated on every render unless the caller memoizes it,
-  // which then trips the eventsByDay memo every paint. Pin the calendar
-  // to a day-precision key so the heavy fireTimesWithin loop only re-runs
-  // when the day or workflow set actually changed.
+  // refDate is recreated on every render unless the caller memoizes it.
+  // Pin the calendar to a day-precision key so occurrence fetches only
+  // change when the visible day, view, or schedule set changes.
   const today = refDate || new Date();
   const dayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
   const compact = density === 'compact';
+  const range = view === 'Month' ? 35 : view === 'Week' ? 7 : 14;
+  const rangeStart = useMemo(
+    () => view === 'Month' ? startOfMonthGrid(today) : view === 'Week' ? startOfWeek(today) : new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view, dayKey],
+  );
+  const rangeEndExclusive = useMemo(() => addDays(rangeStart, range), [rangeStart, range]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [calendarFetchKey, setCalendarFetchKey] = useState('');
+  const workflowScheduleKey = workflows
+    .map((w) => `${w.id}:${w.updated_at}:${w.schedule.enabled}:${w.schedule.timezone}:${w.schedule.repeat_unit}:${w.schedule.repeat_every}:${w.schedule.hour}:${w.schedule.minute}:${w.schedule.on_days.join(',')}:${w.schedule.ends_at || ''}:${w.schedule.max_runs ?? ''}:${w.schedule.runs_count}`)
+    .sort()
+    .join('|');
+  const fromIso = rangeStart.toISOString();
+  const toIso = rangeEndExclusive.toISOString();
+  const calendarRequestKey = `${view}:${fromIso}:${toIso}:${workflowScheduleKey}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    const ctrl = new AbortController();
+    fetch(`${API_BASE}/workflows/calendar?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`, { signal: ctrl.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`calendar failed ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setCalendarEvents((data.events || []) as CalendarEvent[]);
+        setCalendarFetchKey(calendarRequestKey);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCalendarEvents([]);
+        setCalendarFetchKey(calendarRequestKey);
+      });
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+    };
+  }, [fromIso, toIso, calendarRequestKey]);
 
   const eventsByDay = useMemo(() => {
-    const range = view === 'Month' ? 35 : view === 'Week' ? 7 : 14;
-    const start = view === 'Month' ? startOfMonthGrid(today) : view === 'Week' ? startOfWeek(today) : today;
-    const end = addDays(start, range - 1);
     const map = new Map<string, { workflow: Workflow; date: Date }[]>();
-    for (const wf of workflows) {
-      if (!isScheduleActive(wf.schedule)) continue;
-      const fires = fireTimesWithin(wf, start, end, 60);
-      for (const d of fires) {
-        const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-        const arr = map.get(key) || [];
-        arr.push({ workflow: wf, date: d });
-        map.set(key, arr);
-      }
+    if (calendarFetchKey !== calendarRequestKey) {
+      return { map, start: rangeStart, end: rangeEndExclusive, key: calendarFetchKey };
     }
-    return { map, start, end };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workflows, view, dayKey]);
+    const workflowById = new Map(workflows.map((wf) => [wf.id, wf]));
+    for (const event of calendarEvents) {
+      const wf = workflowById.get(event.workflow_id);
+      if (!wf) continue;
+      const d = new Date(event.fire_at);
+      if (Number.isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const arr = map.get(key) || [];
+      arr.push({ workflow: wf, date: d });
+      map.set(key, arr);
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => a.date.getTime() - b.date.getTime());
+    }
+    return { map, start: rangeStart, end: rangeEndExclusive, key: calendarFetchKey };
+  }, [calendarEvents, calendarFetchKey, calendarRequestKey, workflows, rangeStart, rangeEndExclusive]);
 
   const SLOT_H = compact ? 32 : 44;
   const ROW_LABEL = compact ? '0.7rem' : '0.74rem';
