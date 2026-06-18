@@ -39,24 +39,45 @@ const _http = require('http');
   } catch (_) {}
 })();
 
-// 9Router's /callback page is a client-side relay (postMessage/BroadcastChannel/
-// localStorage) that fails when the OAuth flow runs in the user's system browser:
-// no opener, different cookie jar. 302 to the backend so the exchange happens
-// server-side. Idempotent via _completed_oauth (backend/apps/oauth_state.py) so
-// a racing renderer-driven exchange in popup mode dedups.
-(function patchOauthCallbackRedirect() {
+// Claude OAuth completion. Anthropic only whitelists localhost:20128/callback as the
+// redirect, so Claude's callback HAS to land here on 9Router (unlike Gemini, which goes
+// straight to the backend, and Codex, which has its own :1455 listener). We previously
+// 302'd the user's browser across ports to the backend, but a cross-port plain-http
+// localhost redirect silently fails in browsers that HTTPS-upgrade or block it, which
+// hung "Connecting…" for some users (browser-dependent, Claude-only). Fix: run the code
+// exchange server-to-server (9Router -> backend, same machine, no browser in the loop)
+// and hand the browser a static close-page. The browser only ever talks to :20128.
+// Idempotent via the backend's _pending_oauth.pop + _completed_oauth.
+(function patchOauthCallbackExchange() {
   try {
     const http = require('http');
     const origEmit = http.Server.prototype.emit;
+    const closePage =
+      '<!doctype html><meta charset="utf-8"><body style="font-family:-apple-system,system-ui;' +
+      'text-align:center;color:#888;padding-top:80px;background:#1a1a1a">' +
+      'You can close this tab, and any other Claude login tab still open.</body>';
     http.Server.prototype.emit = function patchedEmit(event, req, res) {
       if (event === 'request' && req && res) {
         try {
           const url = req.url || '';
           if (url.startsWith('/callback?')) {
             const backendPort = process.env.OPENSWARM_PORT || '8324';
-            const target = 'http://localhost:' + backendPort + '/api/subscriptions/callback' + url.slice('/callback'.length);
-            res.writeHead(302, { Location: target });
-            res.end();
+            const path = '/api/subscriptions/callback' + url.slice('/callback'.length);
+            let done = false;
+            const finish = () => {
+              if (done) return;
+              done = true;
+              try { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(closePage); } catch (_) {}
+            };
+            try {
+              const proxyReq = http.request(
+                { host: '127.0.0.1', port: backendPort, path: path, method: 'GET' },
+                (proxyRes) => { proxyRes.resume(); proxyRes.on('end', finish); }
+              );
+              proxyReq.on('error', finish);
+              proxyReq.setTimeout(5000, () => { try { proxyReq.destroy(); } catch (_) {} finish(); });
+              proxyReq.end();
+            } catch (_) { finish(); }
             return true;
           }
         } catch (_) {}
