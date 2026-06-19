@@ -533,7 +533,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
         )}
 
         {/* Main calendar area */}
-        <Box sx={{ flex: 1, minWidth: 0, overflow: 'auto', p: 1.25, bgcolor: c.bg.surface }}>
+        <Box sx={{ flex: 1, minWidth: 0, overflow: 'auto', px: 1.25, pt: 0, pb: 1.25, bgcolor: c.bg.surface }}>
           <ScheduleCalendar view={view} density="roomy" onSelectWorkflow={onSelectWorkflow} refDate={refDate} />
         </Box>
       </Box>

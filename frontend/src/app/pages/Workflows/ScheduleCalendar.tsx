@@ -185,7 +185,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', color: c.text.secondary }}>
         {/* Day headers: muted weekday caps; today's date gets the filled circle */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', gap: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, pb: 0.5 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', gap: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 4, borderBottom: `1px solid ${c.border.subtle}`, pt: 1.25, pb: 0.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', pr: 1, pb: 0.5 }}>
             {!compact && (
               <Typography sx={{ fontSize: '0.62rem', color: c.text.ghost, fontWeight: 500 }}>{TZ_LABEL}</Typography>
@@ -203,7 +203,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
             );
           })}
         </Box>
-        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', borderTop: `1px solid ${c.border.subtle}`, position: 'relative' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', position: 'relative' }}>
           {HOURS.map((hour, hourIdx) => (
             <React.Fragment key={hour}>
               {/* Hour label sits inside its row (top-aligned) rather than
@@ -282,7 +282,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
         {/* Sticky weekday header so it stays visible even when the
             calendar body scrolls. Slightly bigger + tinted bg so it
             reads cleanly in both light and dark themes. */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', flexShrink: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, borderBottom: `1px solid ${c.border.subtle}`, py: 0.6 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', flexShrink: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, borderBottom: `1px solid ${c.border.subtle}`, pt: 1.25, pb: 0.6 }}>
           {WEEKDAY_LABEL_SHORT.map((l, i) => (
             <Typography key={`${l}-${i}`} sx={{ textAlign: 'center', fontSize: '0.74rem', color: c.text.muted, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</Typography>
           ))}
