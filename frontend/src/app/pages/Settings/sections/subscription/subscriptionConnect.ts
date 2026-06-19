@@ -197,9 +197,26 @@ function runAuthCodeFlow(ctx: ConnectCtx) {
       try { body = await r.json(); } catch {}
       succeeded = r.ok && !!body?.success;
     } catch {}
-    // 9Router /providers lags /exchange; an immediate fetchStatus would clobber the UI.
-    if (succeeded) markConnected(providerId);
+    // /providers lags /exchange by a few seconds, so confirm an actually-active
+    // node within a short window instead of trusting bare HTTP success. A handoff
+    // that returns success but never lands a usable node must NOT show "Connected"
+    // (that was the card-says-connected-but-every-run-fails bug); it resets so the
+    // user sees Connect/retry.
+    let confirmed = false;
+    if (succeeded) {
+      for (let i = 0; i < 6 && !confirmed; i++) {
+        try {
+          const sr = await fetch(`${API_BASE}/agents/subscriptions/status`);
+          const sd = await sr.json();
+          const connections = sd.providers?.connections || [];
+          confirmed = connections.some((p: any) => p.provider === providerId && (p.isActive || p.testStatus === 'active'));
+        } catch {}
+        if (!confirmed) await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
+    if (confirmed) markConnected(providerId);
     setConnecting(null);
+    fetchStatus();
     refreshPickerModels();
   };
 

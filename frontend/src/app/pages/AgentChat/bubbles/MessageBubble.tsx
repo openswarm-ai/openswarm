@@ -23,6 +23,7 @@ import { estimateRenderedTextHeight, oversizedCharThreshold, RECHECK_VISIBILITY_
 import { THINKING_LABELS } from '../thinkingLabels';
 import { AgentMessage, retryLastUserMessage } from '@/shared/state/agentsSlice';
 import { openSettingsModal } from '@/shared/state/settingsSlice';
+import { fetchSubscriptionStatus } from '@/shared/state/subscriptionsSlice';
 import { shallowEqual } from 'react-redux';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -209,8 +210,8 @@ function parseOpenSwarmError(text: string, ctx?: OverflowContext): OpenSwarmErro
   if (/No active subscription|Subscription canceled|Subscription past_due|Invalid.*token|Missing bearer token/i.test(text)) {
     return {
       kind: 'auth',
-      title: 'Subscription issue',
-      detail: "We can't find an active OpenSwarm subscription. Check your billing status.",
+      title: 'Connection needs a refresh',
+      detail: "This model's account isn't active right now. Reconnect it in Settings, or switch to a different model.",
       ctaLabel: 'Open Settings',
       ctaAction: 'settings',
     };
@@ -1049,6 +1050,15 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
       report('subscription', 'rate_limit_hit', { message_id: message.id });
     }
   }, [message.id, openswarmError?.kind]);
+
+  // A run that failed on a subscription/connection error means the card may be
+  // showing a stale "Connected" (the optimistic mark, or a token that went stale
+  // mid-session); re-pull the real 9Router/cloud status so it flips to Reconnect.
+  React.useEffect(() => {
+    if (openswarmError?.kind === 'auth') {
+      dispatch(fetchSubscriptionStatus());
+    }
+  }, [message.id, openswarmError?.kind, dispatch]);
 
   React.useEffect(() => {
     if (editing) setEditText(rawText);
