@@ -278,6 +278,27 @@ def _safe_slug(raw: str) -> str:
     return slug or "skill"
 
 
+def _skill_exists(slug: str) -> bool:
+    return (
+        slug in _load_index()
+        or os.path.isfile(os.path.join(SKILLS_DIR, f"{slug}.md"))
+        or os.path.isdir(os.path.join(SKILLS_DIR, slug))
+    )
+
+
+def unique_skill_slug(base: str) -> str:
+    """A free slug for `base`, suffixing -2, -3, ... on collision. Lets a
+    registry install land beside a same-named skill instead of silently
+    overwriting the user's existing one."""
+    slug = _safe_slug(base)
+    if not _skill_exists(slug):
+        return slug
+    i = 2
+    while _skill_exists(f"{slug}-{i}"):
+        i += 1
+    return f"{slug}-{i}"
+
+
 def write_folder_skill(skill_id: str, files: dict[str, str], meta: dict) -> Skill:
     """Write a multi-file skill folder (relpath -> content) under SKILLS_DIR and
     index it. `files` must include a 'SKILL.md'. Shared by registry install and

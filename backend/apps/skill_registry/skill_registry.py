@@ -385,7 +385,10 @@ async def _community_search(q: str, limit: int) -> dict:
     skills = []
     for s in (data.get("skills") or [])[:limit]:
         src = s.get("source", "")
-        installs = s.get("installs", 0)
+        try:
+            installs = int(s.get("installs") or 0)
+        except (TypeError, ValueError):
+            installs = 0
         skills.append({
             "name": s.get("name", ""),
             "description": f"{installs:,} installs",
@@ -437,9 +440,12 @@ async def registry_install(req: _InstallRequest):
     if not req.confirm:
         return {"installed": False, "disclosure": disclosure}
 
-    from backend.apps.skills.skills import write_folder_skill
+    from backend.apps.skills.skills import write_folder_skill, unique_skill_slug
+    # Never clobber an existing local skill that happens to share this slug; a
+    # wild-registry name collision lands as a copy instead of overwriting.
+    slug = unique_skill_slug(resolved["skill_id"])
     skill = write_folder_skill(
-        resolved["skill_id"],
+        slug,
         resolved["files"],
         {"name": resolved["name"], "description": resolved["description"]},
     )

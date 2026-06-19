@@ -84,6 +84,21 @@ def test_write_folder_skill_lands_files_and_indexes(skills_dir):
     assert "pdf-tk" in {s.id for s in skills_mod._sync_skills()}
 
 
+def test_install_dedups_instead_of_clobbering_existing_skill(skills_dir):
+    # A user already has a local skill named "pdf".
+    skills_mod.write_folder_skill("pdf", {"SKILL.md": "MINE"}, {"name": "My PDF"})
+    # A wild-registry install of a same-named skill must NOT overwrite it.
+    slug = skills_mod.unique_skill_slug("pdf")
+    assert slug == "pdf-2"
+    skills_mod.write_folder_skill(slug, {"SKILL.md": "THEIRS"}, {"name": "Registry PDF"})
+    with open(skills_dir / "pdf" / "SKILL.md", encoding="utf-8") as f:
+        assert f.read() == "MINE", "registry install clobbered the user's existing skill"
+    with open(skills_dir / "pdf-2" / "SKILL.md", encoding="utf-8") as f:
+        assert f.read() == "THEIRS"
+    ids = {s.id for s in skills_mod._sync_skills()}
+    assert {"pdf", "pdf-2"} <= ids
+
+
 def test_write_folder_skill_blocks_path_traversal(skills_dir):
     skills_mod.write_folder_skill(
         "evil",

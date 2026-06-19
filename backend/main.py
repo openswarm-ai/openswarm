@@ -742,6 +742,11 @@ async def mcp_meta(action: str, request: Request):
     return JSONResponse({"error": f"unknown action: {action}"}, status_code=400)
 
 
+# Serializes agent-side SettingsWrite read-modify-writes so concurrent autonomous
+# agents can't clobber each other's edits (see the lock's use below).
+_settings_meta_write_lock = asyncio.Lock()
+
+
 @app.post("/api/settings-meta/{action}")
 async def settings_meta(action: str, request: Request):
     """Back the openswarm-settings-meta stdio MCP server (agent-editable Settings).
@@ -779,46 +784,57 @@ async def settings_meta(action: str, request: Request):
         if not isinstance(changes, dict) or not changes:
             return JSONResponse({"error": "changes must be a non-empty object of field -> value"}, status_code=400)
 
-        settings = load_settings()
-        session = agent_manager.sessions.get(parent_session_id) if parent_session_id else None
-        if session is not None:
-            powering = resolve_powering_credential(session.model, settings)
-        else:
-            # No live session to anchor the guard: fail safe, protect every credential.
-            powering = PoweringCredential(kind="unknown", provider="unknown", label="this run")
-
         valid_fields = set(AppSettings.model_fields.keys())
         outcomes: dict[str, dict] = {}
-        staged: dict = {}
-        for field, value in changes.items():
-            if field not in valid_fields:
-                outcomes[field] = {"status": "unknown", "reason": "not a settings field"}
-            elif field in SERVER_OWNED_FIELDS:
-                outcomes[field] = {"status": "refused", "reason": "managed by your subscription/connection; change it in the Subscription section"}
-            elif write_would_suicide(field, value, powering):
-                outcomes[field] = {"status": "refused", "reason": f"would disconnect {powering.label}, which is powering this run"}
+        # Serialize the read-modify-write: SettingsWrite goes through update_settings,
+        # which awaits (so two autonomous agents would interleave and clobber each
+        # other's fields while BOTH got an "applied" result). The lock makes agent
+        # writes serial so the last load always sees the prior write. (Agent vs the
+        # renderer's own PUT stays the pre-existing full-object-replace race.)
+        async with _settings_meta_write_lock:
+            settings = load_settings()
+            session = agent_manager.sessions.get(parent_session_id) if parent_session_id else None
+            if session is not None:
+                powering = resolve_powering_credential(session.model, settings)
             else:
-                staged[field] = value
+                # No live session to anchor the guard: fail safe, protect every credential.
+                powering = PoweringCredential(kind="unknown", provider="unknown", label="this run")
 
-        if staged:
-            merged = settings.model_dump()
-            merged.update(staged)
-            try:
-                new_body = AppSettings(**merged)
-            except ValidationError as e:
-                bad = {str(err["loc"][0]) for err in e.errors() if err.get("loc")}
-                for f in bad & set(staged.keys()):
-                    outcomes[f] = {"status": "refused", "reason": "invalid value for this field"}
-                    staged.pop(f, None)
-                new_body = None
-                if staged:
-                    merged = settings.model_dump()
-                    merged.update(staged)
+            staged: dict = {}
+            for field, value in changes.items():
+                if field not in valid_fields:
+                    outcomes[field] = {"status": "unknown", "reason": "not a settings field"}
+                elif field in SERVER_OWNED_FIELDS:
+                    outcomes[field] = {"status": "refused", "reason": "managed by your subscription/connection; change it in the Subscription section"}
+                elif write_would_suicide(field, value, powering):
+                    outcomes[field] = {"status": "refused", "reason": f"would disconnect {powering.label}, which is powering this run"}
+                else:
+                    staged[field] = value
+
+            if staged:
+                merged = settings.model_dump()
+                merged.update(staged)
+                try:
                     new_body = AppSettings(**merged)
-            if staged and new_body is not None:
-                await update_settings(new_body)
-                for f in staged:
-                    outcomes[f] = {"status": "applied"}
+                except ValidationError as e:
+                    bad = {str(err["loc"][0]) for err in e.errors() if err.get("loc")}
+                    for f in bad & set(staged.keys()):
+                        outcomes[f] = {"status": "refused", "reason": "invalid value for this field"}
+                        staged.pop(f, None)
+                    new_body = None
+                    if staged:
+                        merged = settings.model_dump()
+                        merged.update(staged)
+                        new_body = AppSettings(**merged)
+                if staged and new_body is not None:
+                    try:
+                        await update_settings(new_body)
+                        for f in staged:
+                            outcomes[f] = {"status": "applied"}
+                    except Exception as e:
+                        # Don't hand the agent an opaque 500; tell it which writes failed.
+                        for f in staged:
+                            outcomes[f] = {"status": "error", "reason": f"write failed: {e}"}
 
         return JSONResponse({"outcomes": outcomes})
 

@@ -108,12 +108,16 @@ def _format_read(settings: dict) -> str:
 
 def _format_write(outcomes: dict) -> str:
     applied = [f for f, o in outcomes.items() if o.get("status") == "applied"]
-    refused = {f: o for f, o in outcomes.items() if o.get("status") not in ("applied", None)}
     parts = []
     if applied:
         parts.append("Applied: " + ", ".join(sorted(applied)))
-    for field, o in refused.items():
-        parts.append(f"Refused {field}: {o.get('reason', o.get('status'))}")
+    for field, o in outcomes.items():
+        status = o.get("status")
+        if status in ("applied", None):
+            continue
+        # "error" is transient (retryable); "refused"/"unknown" are not.
+        verb = "Failed" if status == "error" else "Refused"
+        parts.append(f"{verb} {field}: {o.get('reason', status)}")
     if not parts:
         return "No changes were applied."
     return "\n".join(parts)

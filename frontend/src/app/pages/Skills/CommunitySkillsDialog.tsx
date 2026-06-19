@@ -41,17 +41,25 @@ const CommunitySkillsDialog: React.FC<Props> = ({ open, onClose, onInstalled }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Monotonic request tokens: a slow response from an earlier search/preview
+  // must not overwrite the state a newer one already set (out-of-order network).
+  const searchSeq = useRef(0);
+  const previewSeq = useRef(0);
 
   const runSearch = useCallback(async (q: string) => {
+    const seq = ++searchSeq.current;
     setLoading(true);
     setError(null);
     try {
-      setResults(await searchCommunitySkills(q));
+      const res = await searchCommunitySkills(q);
+      if (seq !== searchSeq.current) return;
+      setResults(res);
     } catch (e) {
+      if (seq !== searchSeq.current) return;
       setError(e instanceof Error ? e.message : 'Search failed');
       setResults([]);
     } finally {
-      setLoading(false);
+      if (seq === searchSeq.current) setLoading(false);
     }
   }, []);
 
@@ -69,18 +77,21 @@ const CommunitySkillsDialog: React.FC<Props> = ({ open, onClose, onInstalled }) 
   }, [open]);
 
   const preview = async (skill: CommunitySkill) => {
+    const seq = ++previewSeq.current;
     setSelected(skill);
     setDisclosure(null);
     setBusy(true);
     setError(null);
     try {
       const res = await installCommunitySkill(skill.source, skill.skillId, false);
+      if (seq !== previewSeq.current) return;
       setDisclosure(res.disclosure);
     } catch (e) {
+      if (seq !== previewSeq.current) return;
       setError(e instanceof Error ? e.message : 'Could not load skill');
       setSelected(null);
     } finally {
-      setBusy(false);
+      if (seq === previewSeq.current) setBusy(false);
     }
   };
 
@@ -149,7 +160,7 @@ const CommunitySkillsDialog: React.FC<Props> = ({ open, onClose, onInstalled }) 
 
         {selected && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <Button onClick={() => { setSelected(null); setDisclosure(null); }} size="small"
+            <Button onClick={() => { previewSeq.current++; setSelected(null); setDisclosure(null); }} size="small"
               sx={{ alignSelf: 'flex-start', textTransform: 'none', color: c.text.tertiary, fontSize: '0.78rem' }}>
               ← Back to results
             </Button>
