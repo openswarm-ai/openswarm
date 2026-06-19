@@ -775,7 +775,14 @@ async def publish_output(body: PublishRequest):
         dist = await build_static(output)
         bundle = collect_bundle(output, dist)
         slug_hint = slugify(body.slug or output.name)
-        res = await upload_to_cloud(settings, name=output.name, slug_hint=slug_hint, bundle=bundle)
+        res = await upload_to_cloud(
+            settings,
+            output_id=output.id,
+            name=output.name,
+            slug_hint=slug_hint,
+            bundle=bundle,
+            override=body.force,
+        )
     except PublishError as e:
         output.publish_status = "error"
         output.publish_error = str(e)

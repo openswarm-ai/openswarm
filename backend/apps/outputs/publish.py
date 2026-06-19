@@ -280,7 +280,9 @@ def _safe_detail(resp: httpx.Response, fallback: str) -> str:
     return fallback
 
 
-async def upload_to_cloud(settings, *, name: str, slug_hint: str, bundle: bytes) -> dict:
+async def upload_to_cloud(
+    settings, *, output_id: str, name: str, slug_hint: str, bundle: bytes, override: bool
+) -> dict:
     token, base = _cloud_auth(settings)
     if not token:
         raise PublishError("Sign in to your OpenSwarm account to publish apps.")
@@ -289,7 +291,9 @@ async def upload_to_cloud(settings, *, name: str, slug_hint: str, bundle: bytes)
             r = await client.post(
                 f"{base}/api/apps/publish",
                 headers={"Authorization": f"Bearer {token}"},
-                data={"name": name, "slug": slug_hint},
+                # output_id lets the cloud reuse this app's slug on republish instead
+                # of minting a duplicate; override marks a publish past a non-clean scan.
+                data={"name": name, "slug": slug_hint, "output_id": output_id, "override": "1" if override else "0"},
                 files={"bundle": ("app.tar.gz", bundle, "application/gzip")},
             )
     except httpx.HTTPError:
