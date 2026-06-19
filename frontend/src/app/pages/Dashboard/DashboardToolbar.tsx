@@ -30,7 +30,7 @@ import ChatInput from '@/app/pages/AgentChat/ChatInput';
 import type { ContextPath } from '@/app/components/editor/DirectoryBrowser';
 import SchedulePopover from '@/app/pages/Workflows/SchedulePopover';
 import { openWorkflowCard, fetchAllRuns, upsertRun } from '@/shared/state/workflowsSlice';
-import { addWorkflowCard, openWorkflowsHub } from '@/shared/state/dashboardLayoutSlice';
+import { addWorkflowCard, openWorkflowsHub, closeWorkflowsHub } from '@/shared/state/dashboardLayoutSlice';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -191,6 +191,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const allRuns = useAppSelector((s) => s.workflows.allRuns);
     const allRunsLoading = useAppSelector((s) => s.workflows.allRunsLoading);
     const workflowItems = useAppSelector((s) => s.workflows.items);
+    const workflowsHubOpen = useAppSelector((s) => Boolean(s.dashboardLayout.workflowsHub));
 
     const outputList = useMemo(() => Object.values(outputs), [outputs]);
     const filteredOutputs = useMemo(() => {
@@ -814,15 +815,16 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               enterDelay={200}
               title={
                 <Box sx={{ textAlign: 'center' }}>
-                  <Box sx={{ fontWeight: 600 }}>History  ⌘O</Box>
+                  <Box sx={{ fontWeight: 600 }}>Workflows</Box>
+                  <Box sx={{ opacity: 0.6, fontSize: '0.7rem', mt: '1px' }}>Schedule and calendar</Box>
                 </Box>
               }
             >
               <Box
                 role="button"
-                aria-label="History"
+                aria-label="Workflows"
                 tabIndex={0}
-                onClick={handleOpenHistory}
+                onClick={() => dispatch(workflowsHubOpen ? closeWorkflowsHub() : openWorkflowsHub({ expandedSessionIds: [] }))}
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
@@ -830,14 +832,15 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                   width: BTN,
                   height: BTN,
                   borderRadius: `${c.radius.md}px`,
-                  color: c.text.tertiary,
+                  color: workflowsHubOpen ? c.accent.primary : c.text.tertiary,
+                  bgcolor: workflowsHubOpen ? c.bg.secondary : 'transparent',
                   cursor: 'pointer',
                   transition: 'opacity 0.15s, background-color 0.15s',
                   '&:hover': { opacity: 1, bgcolor: c.bg.secondary, color: c.accent.primary },
                   ...popIn(3),
                 }}
               >
-                <HistoryRoundedIcon sx={{ fontSize: 22 }} />
+                <CalendarMonthRounded sx={{ fontSize: 22 }} />
               </Box>
             </WarmTooltip>
 
@@ -873,6 +876,40 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 }}
               >
                 <StickyNote2OutlinedIcon sx={{ fontSize: 22 }} />
+              </Box>
+            </WarmTooltip>
+
+            <WarmTooltip
+              tokens={c}
+              placement="top"
+              arrow
+              enterDelay={200}
+              title={
+                <Box sx={{ textAlign: 'center' }}>
+                  <Box sx={{ fontWeight: 600 }}>History  ⌘O</Box>
+                </Box>
+              }
+            >
+              <Box
+                role="button"
+                aria-label="History"
+                tabIndex={0}
+                onClick={handleOpenHistory}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: BTN,
+                  height: BTN,
+                  borderRadius: `${c.radius.md}px`,
+                  color: c.text.tertiary,
+                  cursor: 'pointer',
+                  transition: 'opacity 0.15s, background-color 0.15s',
+                  '&:hover': { opacity: 1, bgcolor: c.bg.secondary, color: c.accent.primary },
+                  ...popIn(5),
+                }}
+              >
+                <HistoryRoundedIcon sx={{ fontSize: 22 }} />
               </Box>
             </WarmTooltip>
 

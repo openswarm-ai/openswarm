@@ -192,13 +192,13 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
             )}
           </Box>
           {days.map((d) => {
-            const isToday = sameDay(d, today);
+            const isToday = sameDay(d, now);
             return (
               <Box key={d.toISOString()} sx={{ textAlign: 'center', pb: 0.5 }}>
                 <Typography sx={{ fontSize: DAY_LABEL, color: c.text.muted, fontWeight: 600, letterSpacing: '0.08em', lineHeight: 1.3, textTransform: 'uppercase' }}>
                   {WEEKDAY_LABEL_SHORT[d.getDay()]}
                 </Typography>
-                <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: compact ? 30 : 38, height: compact ? 30 : 38, borderRadius: '50%', bgcolor: isToday ? c.accent.primary : 'transparent', color: isToday ? '#fff' : c.text.primary, fontWeight: isToday ? 700 : 500, fontSize: DAY_NUM, mt: 0.25 }}>{d.getDate()}</Box>
+                <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxSizing: 'border-box', width: compact ? 26 : 32, height: compact ? 26 : 32, borderRadius: '50%', bgcolor: isToday ? c.accent.primary : 'transparent', color: isToday ? '#fff' : c.text.primary, fontWeight: isToday ? 600 : 500, fontSize: DAY_NUM, lineHeight: 1, mt: 0.25, boxShadow: isToday ? `0 0 0 1.5px ${c.bg.surface}, 0 0 0 3px ${c.accent.primary}` : 'none' }}>{d.getDate()}</Box>
               </Box>
             );
           })}
@@ -278,29 +278,29 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     const cells = Array.from({ length: 35 }, (_, i) => addDays(start, i));
     const accent = c.accent.primary;
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
         {/* Sticky weekday header so it stays visible even when the
             calendar body scrolls. Slightly bigger + tinted bg so it
             reads cleanly in both light and dark themes. */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, borderBottom: `1px solid ${c.border.subtle}`, py: 0.6 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', flexShrink: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, borderBottom: `1px solid ${c.border.subtle}`, py: 0.6 }}>
           {WEEKDAY_LABEL_SHORT.map((l, i) => (
             <Typography key={`${l}-${i}`} sx={{ textAlign: 'center', fontSize: '0.74rem', color: c.text.muted, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</Typography>
           ))}
         </Box>
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0, borderLeft: `1px solid ${c.border.subtle}` }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridTemplateRows: `repeat(5, minmax(${compact ? 70 : 96}px, 1fr))`, flex: 1, minHeight: 0, gap: 0, borderLeft: `1px solid ${c.border.subtle}` }}>
           {cells.map((d) => {
             const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
             const evs = eventsByDay.map.get(key) || [];
-            const isToday = sameDay(d, today);
+            const isToday = sameDay(d, now);
             const inMonth = d.getMonth() === today.getMonth();
             return (
-              <Box key={d.toISOString()} sx={{ minHeight: compact ? 70 : 96, borderRight: `1px solid ${c.border.subtle}`, borderBottom: `1px solid ${c.border.subtle}`, p: 0.5, position: 'relative', overflow: 'hidden', bgcolor: inMonth ? 'transparent' : c.bg.elevated }}>
+              <Box key={d.toISOString()} sx={{ borderRight: `1px solid ${c.border.subtle}`, borderBottom: `1px solid ${c.border.subtle}`, p: 0.5, position: 'relative', overflow: 'hidden', bgcolor: inMonth ? 'transparent' : c.bg.elevated }}>
                 <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
                   {/* Out-of-month dates still need to be legible (Apple
                       Calendar shows them in a muted shade, not invisible).
                       Color tweak instead of opacity so dark themes stay
                       readable. */}
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 22, height: 22, borderRadius: '50%', bgcolor: isToday ? accent : 'transparent', color: isToday ? '#fff' : inMonth ? c.text.primary : c.text.ghost, fontWeight: isToday ? 700 : 500, fontSize: '0.82rem', px: 0.5 }}>{d.getDate()}</Box>
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxSizing: 'border-box', width: 22, height: 22, borderRadius: '50%', bgcolor: isToday ? accent : 'transparent', color: isToday ? '#fff' : inMonth ? c.text.primary : c.text.ghost, fontWeight: isToday ? 600 : 500, fontSize: '0.82rem', lineHeight: 1, boxShadow: isToday ? `0 0 0 1.5px ${c.bg.surface}, 0 0 0 3px ${accent}` : 'none' }}>{d.getDate()}</Box>
                 </Box>
                 {evs.slice(0, compact ? 3 : 4).map((e, idx) => (
                   <Box
@@ -334,7 +334,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     const day = addDays(today, i);
     const key = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
     const arr = eventsByDay.map.get(key) || [];
-    const isToday = sameDay(day, today);
+    const isToday = sameDay(day, now);
     if (arr.length || isToday) upcoming.push({ date: day, events: arr, isToday });
   }
   const accent = c.accent.primary;
