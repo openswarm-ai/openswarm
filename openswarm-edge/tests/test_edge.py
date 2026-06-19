@@ -20,14 +20,14 @@ from app.sandbox import validate_code_safety, run_backend, UnsafeCodeError
 
 
 def test_slug_from_host():
-    assert slug_from_host("notes.openswarm.dev") == "notes"
-    assert slug_from_host("notes.openswarm.dev:443") == "notes"
-    assert slug_from_host("UPPER.openswarm.dev") == "upper"
-    assert slug_from_host("openswarm.dev") is None        # apex
-    assert slug_from_host("www.openswarm.dev") is None     # www
-    assert slug_from_host("a.b.openswarm.dev") is None     # multi-label
+    assert slug_from_host("notes.openswarm.host") == "notes"
+    assert slug_from_host("notes.openswarm.host:443") == "notes"
+    assert slug_from_host("UPPER.openswarm.host") == "upper"
+    assert slug_from_host("openswarm.host") is None        # apex
+    assert slug_from_host("www.openswarm.host") is None     # www
+    assert slug_from_host("a.b.openswarm.host") is None     # multi-label
     assert slug_from_host("notes.evil.com") is None        # wrong domain
-    assert slug_from_host("bad_slug.openswarm.dev") is None  # underscore
+    assert slug_from_host("bad_slug.openswarm.host") is None  # underscore
 
 
 def _mk_tar(files: dict[str, bytes]) -> bytes:

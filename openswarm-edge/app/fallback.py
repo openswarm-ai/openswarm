@@ -1,6 +1,6 @@
 """Plain branded HTML for the states a visitor can hit that aren't the app itself:
 the slug isn't published (or was taken down), or the page is loaded on the apex
-instead of a {slug}.openswarm.dev subdomain. Kept inline + dependency-free so the
+instead of a {slug}.openswarm.host subdomain. Kept inline + dependency-free so the
 edge can answer even when it can't reach storage."""
 from __future__ import annotations
 

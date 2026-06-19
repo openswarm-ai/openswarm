@@ -38,7 +38,7 @@ _SCAN_EXTS = (".py", ".html", ".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte", "
 
 _SCAN_SYSTEM_PROMPT = (
     "You are a security reviewer for a no-code app host. The app below will be "
-    "served publicly at a *.openswarm.dev subdomain. Read the source and report "
+    "served publicly at a *.openswarm.host subdomain. Read the source and report "
     "only concrete, real risks a reviewer would act on: hardcoded secrets or API "
     "keys, phishing or credential-harvesting forms, sending user data to a "
     "third-party endpoint, obvious XSS or injection, or anything malicious. Do "

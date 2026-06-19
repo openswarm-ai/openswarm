@@ -1,4 +1,4 @@
-// Publish an app to {slug}.openswarm.dev. Flow: scan the code (AST + an aux-LLM
+// Publish an app to {slug}.openswarm.host. Flow: scan the code (AST + an aux-LLM
 // pass, on the user's own creds) -> if findings, show them with Cancel/Fix/Publish
 // Anyway -> build + upload -> show the live link. Already-published apps open
 // straight to the manage view (visit / copy / unpublish).

@@ -163,7 +163,7 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
                 false,
                 <PublicIcon sx={{ fontSize: 20 }} />,
                 'Publish to web',
-                'A public link anyone can open, hosted at openswarm.dev.',
+                'A public link anyone can open, hosted at openswarm.host.',
                 false,
                 undefined,
                 () => setPublishOpen(true),

@@ -25,7 +25,7 @@ class Output(BaseModel):
     workspace_id: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
-    # App publishing to {slug}.openswarm.dev. Server-managed: set by the publish
+    # App publishing to {slug}.openswarm.host. Server-managed: set by the publish
     # endpoint, never accepted from OutputUpdate (so a client can't spoof a live URL).
     published_slug: Optional[str] = None
     published_url: Optional[str] = None

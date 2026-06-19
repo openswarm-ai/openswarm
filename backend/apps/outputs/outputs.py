@@ -741,7 +741,7 @@ async def execute_output(body: OutputExecute):
 
 
 # ---------------------------------------------------------------------------
-# Publishing to {slug}.openswarm.dev
+# Publishing to {slug}.openswarm.host
 # ---------------------------------------------------------------------------
 
 @outputs.router.post("/publish/preflight")

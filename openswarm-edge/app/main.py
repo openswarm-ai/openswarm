@@ -1,4 +1,4 @@
-"""openswarm-edge: the public face of {slug}.openswarm.dev.
+"""openswarm-edge: the public face of {slug}.openswarm.host.
 
 This service is intentionally the LEAST-privileged of the three: it holds only a
 read-only Tigris key + EDGE_SHARED_SECRET. It serves static app bundles, runs the
@@ -22,7 +22,7 @@ from .inject import inject_runtime
 from .ratelimit import RateLimiter
 from .sandbox import UnsafeCodeError, run_backend
 
-APPS_BASE_DOMAIN = os.environ.get("APPS_BASE_DOMAIN", "openswarm.dev")
+APPS_BASE_DOMAIN = os.environ.get("APPS_BASE_DOMAIN", "openswarm.host")
 CLOUD_URL = os.environ.get("OPENSWARM_CLOUD_URL", "https://api.openswarm.com").rstrip("/")
 EDGE_SECRET = os.environ.get("EDGE_SHARED_SECRET", "")
 
@@ -34,7 +34,7 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
 def slug_from_host(host: str) -> str | None:
-    """Extract the app slug from a {slug}.openswarm.dev Host header. Rejects the
+    """Extract the app slug from a {slug}.openswarm.host Host header. Rejects the
     apex, www, multi-label subdomains, and anything not slug-shaped."""
     host = (host or "").split(":")[0].lower()
     suffix = "." + APPS_BASE_DOMAIN

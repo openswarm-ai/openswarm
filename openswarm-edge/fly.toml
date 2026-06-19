@@ -1,6 +1,6 @@
-# openswarm-edge: serves *.openswarm.dev. Public-facing, least-privileged (only a
+# openswarm-edge: serves *.openswarm.host. Public-facing, least-privileged (only a
 # READ-ONLY Tigris key + EDGE_SHARED_SECRET, set via `fly secrets`, never here).
-# Wildcard cert: `fly certs create "*.openswarm.dev" -a openswarm-edge`.
+# Wildcard cert: `fly certs create "*.openswarm.host" -a openswarm-edge`.
 app = 'openswarm-edge'
 primary_region = 'iad'
 kill_signal = 'SIGINT'
@@ -11,7 +11,7 @@ kill_timeout = '30s'
 
 [env]
   PORT = '8080'
-  APPS_BASE_DOMAIN = 'openswarm.dev'
+  APPS_BASE_DOMAIN = 'openswarm.host'
   OPENSWARM_CLOUD_URL = 'https://api.openswarm.com'
   TIGRIS_ENDPOINT = 'https://fly.storage.tigris.dev'
   TIGRIS_BUCKET = 'openswarm-apps'
