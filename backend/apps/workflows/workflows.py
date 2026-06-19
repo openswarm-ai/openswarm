@@ -282,7 +282,16 @@ async def create_workflow(body: WorkflowCreate):
         pass
     storage.save_workflow(wf)
     scheduler.kick()
-    return _enriched(wf)
+    enriched = _enriched(wf)
+    try:
+        from backend.apps.agents.core.ws_manager import ws_manager
+        await ws_manager.broadcast_global("workflow:updated", {
+            "workflow_id": wf.id,
+            "workflow": enriched,
+        })
+    except Exception:
+        pass
+    return enriched
 
 
 async def _generate_workflow_metadata(wf: Workflow) -> tuple[str, str, list[str]]:

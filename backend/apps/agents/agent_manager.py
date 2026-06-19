@@ -612,6 +612,12 @@ class AgentManager:
             "mcp__openswarm-schedule__DeleteScheduledWorkflow",
             "mcp__openswarm-schedule__PauseAllWorkflows",
         }
+        _CLAUDE_INTERNAL_SCHEDULER_TOOLS = ("CronCreate", "CronList", "CronDelete")
+
+        def _is_claude_schedule_skill(tool_name: str, tool_input) -> bool:
+            if tool_name != "Skill" or not isinstance(tool_input, dict):
+                return False
+            return str(tool_input.get("skill") or "").strip().lower() == "schedule"
 
         # OS-level scheduling across macOS/Linux/Windows. Agent must
         # not install cron entries, launchd plists, Windows scheduled
@@ -732,6 +738,8 @@ class AgentManager:
             """
             if tool_name == "Bash" and _looks_like_os_scheduling(tool_input):
                 return "ask", None
+            if tool_name in _CLAUDE_INTERNAL_SCHEDULER_TOOLS:
+                return "deny", None
             # Committing or mutating a native recurring schedule is the in-app
             # twin of the crontab gate above: real, user-visible, hard-to-undo,
             # so it goes through ApprovalBar every time regardless of the
@@ -907,6 +915,14 @@ class AgentManager:
             return decision
 
         async def can_use_tool(tool_name, input_data, context):
+            if _is_claude_schedule_skill(tool_name, input_data):
+                p_note_tool_used(tool_name, False)
+                return PermissionResultDeny(
+                    message=(
+                        "Use the openswarm-schedule MCP tools instead of "
+                        "Claude's internal schedule skill."
+                    )
+                )
             sensitive_pattern: str | None = None
             if tool_name != "AskUserQuestion":
                 policy, sensitive_pattern = _maybe_override_policy(
@@ -936,6 +952,18 @@ class AgentManager:
 
             if tool_name and tool_name != "AskUserQuestion":
                 tool_input = input_data.get("tool_input", {})
+                if _is_claude_schedule_skill(tool_name, tool_input):
+                    p_note_tool_used(tool_name, False)
+                    return {
+                        "hookSpecificOutput": {
+                            "hookEventName": hook_event,
+                            "permissionDecision": "deny",
+                            "permissionDecisionReason": (
+                                "Use the openswarm-schedule MCP tools instead "
+                                "of Claude's internal schedule skill."
+                            ),
+                        }
+                    }
                 policy, sensitive_pattern = _maybe_override_policy(
                     _get_effective_policy(tool_name), tool_name, tool_input
                 )
@@ -1225,17 +1253,35 @@ class AgentManager:
 
             mcp_registry_ctx = self._build_mcp_registry_summary(session.allowed_tools, session.active_mcps)
             global_settings = load_settings()
+            # Nudge the agent to surface workflow conversion proactively when
+            # the user's ask looks recurring. The actual conversion is owned
+            # by the UI prompt; chat should not turn this into a cadence Q&A.
             schedule_ctx = (
                 "<scheduling_guidance>\n"
-                "After completing a substantive task, if the work looks "
-                "repeatable (the user said 'every', 'each', 'daily', "
-                "'weekly', 'morning', 'before standup', or you just did "
-                "the same sequence twice in this session), offer to "
-                "schedule it. Use AskUserQuestion to confirm cadence, "
-                "then ScheduleWorkflow to create it. Never reach for "
-                "crontab, launchctl, or schtasks; always use the native "
-                "scheduler so the user can see, pause, and edit it. "
-                "Don't ask after trivial one-off requests.\n"
+                "When a normal chat produces work that would naturally be "
+                "useful again later, prefer the openswarm-schedule MCP "
+                "workflow path over Claude's internal scheduler. If the user "
+                "explicitly says 'daily', 'weekly', 'every', 'each', "
+                "'morning', 'before standup', 'monitor', 'alert me', or "
+                "'keep this updated', treat that as a strong recurring-work "
+                "signal. After completing that work, call "
+                "SuggestConvertToWorkflow with a short reason and cadence "
+                "hint so the UI can open its workflow-conversion prompt. You "
+                "may say one short sentence before the tool call, such as "
+                "'This is a good fit for built-in Workflows.' Do not repeat "
+                "that advice after the tool call, do not send a follow-up "
+                "assistant message like 'Done', do not say you are 'nudging' "
+                "the UI, and do not mention the tool. If the user "
+                "then says 'ok', 'yes', or 'do it', do not ask what time and "
+                "do not schedule from chat; the UI prompt/Convert button owns "
+                "the conversion flow. Only call ScheduleWorkflow when the user "
+                "explicitly asks you to create a live schedule and has already "
+                "given an exact cadence and time (for example, 'every weekday "
+                "at 8am'). If cadence or time is missing, use "
+                "SuggestConvertToWorkflow instead of asking a follow-up. Never "
+                "use Skill('schedule'), CronCreate, CronList, CronDelete, "
+                "crontab, launchctl, or schtasks for user-facing recurring "
+                "work.\n"
                 "</scheduling_guidance>"
             )
             composed_prompt = self._compose_system_prompt(
@@ -1550,6 +1596,15 @@ class AgentManager:
                             effective_disallowed.append(f"mcp__{name}__{tn}")
                     else:
                         effective_allowed.append(f"mcp__{name}__*")
+
+            if "openswarm-schedule" in mcp_servers:
+                effective_allowed = [
+                    t for t in effective_allowed
+                    if t not in _CLAUDE_INTERNAL_SCHEDULER_TOOLS
+                ]
+                for _bt in _CLAUDE_INTERNAL_SCHEDULER_TOOLS:
+                    if _bt not in effective_disallowed:
+                        effective_disallowed.append(_bt)
 
             # If the openswarm-web MCP was registered, the CLI's built-in
             # WebSearch/WebFetch are guaranteed to fail (no Anthropic

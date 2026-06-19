@@ -66,11 +66,13 @@ export default function SchedulingView({ workflow, steps }: Props) {
     (async () => {
       try {
         const tok = (() => { try { return getAuthToken(); } catch { return ''; } })();
+        const cadenceHint = workflow.suggested_cadence ? ` I think it should run ${workflow.suggested_cadence}.` : '';
+        const prompt = `Greet me in one short sentence, then ask exactly: "When should this workflow run (e.g. every Wednesday at 1pm)?"${cadenceHint}`;
         await fetch(`${API_BASE}/agents/sessions/${encodeURIComponent(scheduleSessionId)}/message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
           body: JSON.stringify({
-            prompt: 'Greet me in one short sentence, then ask exactly: "When should this workflow run (e.g. every Wednesday at 1pm)?"',
+            prompt,
             hidden: true,
           }),
         });

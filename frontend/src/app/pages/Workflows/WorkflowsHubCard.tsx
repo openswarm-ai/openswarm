@@ -19,7 +19,7 @@ import {
   setWorkflowsHubPosition,
   setWorkflowsHubSize,
 } from '@/shared/state/dashboardLayoutSlice';
-import { openWorkflowCard, createWorkflow, fetchPausedState, setPausedAll, updateWorkflow, deleteWorkflow, runWorkflowNow } from '@/shared/state/workflowsSlice';
+import { openWorkflowCard, createWorkflow, fetchPausedState, fetchWorkflows, setPausedAll, updateWorkflow, deleteWorkflow, runWorkflowNow } from '@/shared/state/workflowsSlice';
 import type { Workflow } from '@/shared/state/workflowsSlice';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
@@ -56,6 +56,7 @@ const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
 ];
 
 interface Props {
+  dashboardId?: string;
   cardX: number;
   cardY: number;
   cardWidth: number;
@@ -125,6 +126,7 @@ function TimeSavedBadge() {
 }
 
 const WorkflowsHubCard: React.FC<Props> = ({
+  dashboardId,
   cardX, cardY, cardWidth, cardHeight, cardZOrder = 0,
   zoom = 1, panX = 0, panY = 0,
   isSelected = false, isHighlighted = false, multiDragDelta = null,
@@ -136,7 +138,10 @@ const WorkflowsHubCard: React.FC<Props> = ({
   const paused = useAppSelector((s) => s.workflows.paused);
   const defaultModel = useAppSelector((s) => s.settings.data.default_model);
 
-  useEffect(() => { dispatch(fetchPausedState()); }, [dispatch]);
+  useEffect(() => {
+    dispatch(fetchPausedState());
+    dispatch(fetchWorkflows(dashboardId));
+  }, [dispatch, dashboardId]);
 
   const togglePaused = useCallback(() => {
     dispatch(setPausedAll(!paused));

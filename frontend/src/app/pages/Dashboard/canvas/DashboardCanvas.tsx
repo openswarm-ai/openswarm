@@ -244,6 +244,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
             {/* Tether lines between branched cards */}
             <TetherLayer tethers={tethers} c={c} />
             <DashboardCardLayer
+              dashboardId={dashboardId}
               cards={cards}
               viewCards={viewCards}
               browserCards={browserCards}

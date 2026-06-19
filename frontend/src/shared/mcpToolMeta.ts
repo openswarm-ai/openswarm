@@ -121,6 +121,7 @@ export function getWorkflowToolLabel(action: string): string | null {
   if (lower === 'testworkflow') return 'Test workflow';
   if (lower === 'readtesttranscript') return 'Read test results';
   if (lower === 'listworkflows') return 'List workflows';
+  if (lower === 'suggestconverttoworkflow') return 'Suggest workflow';
   return null;
 }
 

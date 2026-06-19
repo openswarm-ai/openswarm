@@ -101,6 +101,9 @@ export interface Workflow {
    *  conversion). Compared against the current steps to decide whether to warn
    *  before scheduling. See scheduleUtils.needsScheduleTestWarning. */
   tested_signature?: string | null;
+  /** Suggested cadence from a SuggestConvertToWorkflow tool call (e.g. "every weekday at 9am").
+   *  Used to seed the scheduling agent's prompt. Transient draft field only. */
+  suggested_cadence?: string;
 }
 
 export interface WorkflowRun {

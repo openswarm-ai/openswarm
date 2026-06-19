@@ -28,6 +28,7 @@ type GlowingAgentCard = { sourceId: string; fading: boolean; sourceYRatio?: numb
 type Direction = 'left' | 'right' | 'up' | 'down';
 
 interface DashboardCardLayerProps {
+  dashboardId: string;
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
@@ -64,6 +65,7 @@ interface DashboardCardLayerProps {
 }
 
 const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
+  dashboardId,
   cards,
   viewCards,
   browserCards,
@@ -265,6 +267,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
       ))}
       {workflowsHub && (
         <WorkflowsHubCard
+          dashboardId={dashboardId}
           cardX={workflowsHub.x}
           cardY={workflowsHub.y}
           cardWidth={workflowsHub.width}
