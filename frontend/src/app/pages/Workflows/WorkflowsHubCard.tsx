@@ -134,6 +134,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
   const dispatch = useAppDispatch();
   const workflows = useAppSelector((s) => s.workflows.items);
   const paused = useAppSelector((s) => s.workflows.paused);
+  const defaultModel = useAppSelector((s) => s.settings.data.default_model);
 
   useEffect(() => { dispatch(fetchPausedState()); }, [dispatch]);
 
@@ -198,12 +199,19 @@ const WorkflowsHubCard: React.FC<Props> = ({
   // session has a real id to attach to; an abandoned (still 0-step) one is
   // cleaned up on card close (WorkflowCard.onClose).
   const onNew = useCallback(async () => {
-    const result = await dispatch(createWorkflow({ title: 'New workflow', steps: [], unsaved: true }));
+    // Clean up any abandoned empty drafts first so "New" always starts fresh
+    // instead of leaving a half-built 0-step workflow lingering on the canvas.
+    Object.values(workflows)
+      .filter((w) => w.unsaved && (w.steps?.length ?? 0) === 0)
+      .forEach((w) => dispatch(deleteWorkflow(w.id)));
+    // Build on the user's chosen default model (not a hardcoded one) so the
+    // Edit Agent, and the scheduled runs, use the model they actually intend.
+    const result = await dispatch(createWorkflow({ title: 'New workflow', steps: [], unsaved: true, model: defaultModel }));
     if (!createWorkflow.fulfilled.match(result)) return;
     const wf = result.payload;
     dispatch(addWorkflowCard({ workflowId: wf.id }));
     dispatch(openWorkflowCard({ workflowId: wf.id, view: 'edit_agent' }));
-  }, [dispatch]);
+  }, [dispatch, workflows, defaultModel]);
 
   // ---- Card drag via header ----
   const DRAG_THRESHOLD = 3;

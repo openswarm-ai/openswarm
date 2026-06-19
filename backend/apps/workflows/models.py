@@ -225,3 +225,9 @@ class WorkflowUpdate(BaseModel):
     cost_cap_usd_monthly: Optional[float] = None
     remembered_approvals: Optional[dict[str, Literal["allow", "deny"]]] = None
     step_tool_usage: Optional[dict[str, dict[str, bool]]] = None
+
+
+class DraftCommitBody(BaseModel):
+    # The model the user settled on in the Edit Agent picker, applied to the
+    # workflow's run model only on Save (save-gated; Discard drops it).
+    model: Optional[str] = None

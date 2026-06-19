@@ -307,8 +307,18 @@ export const updateWorkflow = createAsyncThunk<
   },
 );
 
-export const commitDraft = createAsyncThunk('workflows/commitDraft', async (id: string) => {
-  const res = await fetch(`${API}/${id}/draft/commit`, { method: 'POST' });
+type CommitDraftArg = string | { id: string; model?: string };
+
+export const commitDraft = createAsyncThunk('workflows/commitDraft', async (arg: CommitDraftArg) => {
+  const id = typeof arg === 'string' ? arg : arg.id;
+  // Save-gated: the model the user settled on in the Edit Agent picker is applied
+  // to the workflow's run model here (Discard never reaches this path).
+  const model = typeof arg === 'string' ? undefined : arg.model;
+  const res = await fetch(`${API}/${id}/draft/commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(model ? { model } : {}),
+  });
   if (!res.ok) throw new Error(`commit failed ${res.status}`);
   return (await res.json()) as Workflow;
 });

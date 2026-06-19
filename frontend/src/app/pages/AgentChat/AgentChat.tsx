@@ -7,6 +7,7 @@ import Tooltip from '@mui/material/Tooltip';
 import TextField from '@mui/material/TextField';
 import ClickAwayListener from '@mui/material/ClickAwayListener';
 import Fade from '@mui/material/Fade';
+import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
@@ -352,6 +353,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const mcpSnapshotRef = useRef<Array<{ id: string; title: string; description: string; reason?: string }>>([]);
   const [mode, setMode] = useState('agent');
   const [model, setModel] = useState('sonnet');
+  // Workflow build chat only: brief "this model now runs the workflow" notice
+  // when the user switches models, so the run-model change isn't silent.
+  const [workflowModelNotice, setWorkflowModelNotice] = useState<string | null>(null);
+  const workflowModelNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const wsRef = useRef<ReturnType<typeof createSessionWs> | null>(null);
   // Current status for the WS-cleanup closure (effect deps can't include it).
@@ -914,9 +919,16 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   }, [id, isDraft, dispatch]);
 
   const handleModelChange = useCallback((newModel: string) => {
+    if (workflowEditId && newModel !== model) {
+      setWorkflowModelNotice(resolveModelLabel(newModel));
+      if (workflowModelNoticeTimer.current) clearTimeout(workflowModelNoticeTimer.current);
+      workflowModelNoticeTimer.current = setTimeout(() => setWorkflowModelNotice(null), 5000);
+    }
     setModel(newModel);
     if (id && !isDraft) dispatch(updateSessionModel({ sessionId: id, model: newModel }));
-  }, [id, isDraft, dispatch]);
+  }, [id, isDraft, dispatch, workflowEditId, model, resolveModelLabel]);
+
+  useEffect(() => () => { if (workflowModelNoticeTimer.current) clearTimeout(workflowModelNoticeTimer.current); }, []);
 
   const handleThinkingLevelChange = useCallback((level: 'off' | 'low' | 'medium' | 'high' | 'auto') => {
     if (!id) return;
@@ -2236,7 +2248,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               {isStoppableSidecar ? (
                 <ForceStopAgentBar onStop={handleStop} onSaveWorkflow={onTestSaveWorkflow} onContinueEditing={onTestContinueEditing} testState={testState} />
               ) : (
-                <ChatInput
+                <Box sx={{ position: 'relative' }}>
+                  <WorkflowModelNotice c={c} label={workflowModelNotice} />
+                  <ChatInput
                   ref={chatInputRef}
                   onSend={handleSend}
                   disabled={false}
@@ -2253,7 +2267,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   thinkingLevel={session?.thinking_level ?? 'auto'}
                   onThinkingLevelChange={handleThinkingLevelChange}
                   onActivityLabelChange={setPreSendActivityLabel}
-                />
+                  />
+                </Box>
               )}
             </Box>
         </ClickAwayListener>
@@ -2261,5 +2276,31 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     </Box>
   );
 };
+
+// Brief toast above the build chat's composer confirming a model switch also
+// changes the model the scheduled workflow will run on. Holds the last label in
+// a ref so the exit fade renders content instead of blanking mid-animation.
+function WorkflowModelNotice({ c, label }: { c: ReturnType<typeof useClaudeTokens>; label: string | null }) {
+  const last = React.useRef<string | null>(null);
+  if (label) last.current = label;
+  const display = last.current;
+  if (!display) return null;
+  return (
+    <Fade in={!!label} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
+      <Box sx={{
+        position: 'absolute', left: 8, right: 8, bottom: 'calc(100% + 8px)',
+        display: 'flex', alignItems: 'center', gap: 1,
+        bgcolor: c.bg.surface, border: `1px solid ${c.border.medium}`,
+        boxShadow: c.shadow.md, borderRadius: '12px',
+        px: 1.75, py: 1, zIndex: 6,
+      }}>
+        <SwapHorizRoundedIcon sx={{ fontSize: 17, color: c.accent.primary, flexShrink: 0 }} />
+        <Box sx={{ fontSize: '0.83rem', color: c.text.primary, lineHeight: 1.4 }}>
+          This workflow will run on <b>{display}</b> after you save.
+        </Box>
+      </Box>
+    </Fade>
+  );
+}
 
 export default AgentChat;

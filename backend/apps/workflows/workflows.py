@@ -13,6 +13,7 @@ from backend.apps.workflows.models import (
     WorkflowUpdate,
     WorkflowRun,
     WorkflowStep,
+    DraftCommitBody,
 )
 from backend.apps.workflows import storage, scheduler, executor, audit, escalation
 
@@ -840,8 +841,31 @@ async def p_end_edit_session(wf) -> None:
         logger.debug("could not close edit session %s", sid, exc_info=True)
 
 
+def p_sync_model_on_save(wf, model: Optional[str]) -> None:
+    """On Save, adopt whatever model the user settled on in the Edit Agent picker as
+    the workflow's run model, so a mid-build model switch sticks to scheduled runs.
+    Save-only: Discard must not persist a switch the user is throwing away.
+
+    The frontend passes the model it tracks live; we fall back to the backend edit
+    session's model for callers that send none (e.g. the Test Agent save button),
+    which can be stale until a message is sent but is no worse than before."""
+    if model:
+        wf.model = model
+        return
+    sid = getattr(wf, "edit_agent_session_id", None)
+    if not sid:
+        return
+    try:
+        from backend.apps.agents.agent_manager import agent_manager
+        session = agent_manager.sessions.get(sid)
+        if session and session.model:
+            wf.model = session.model
+    except Exception:
+        logger.debug("could not sync model from edit session %s", sid, exc_info=True)
+
+
 @workflows.router.post("/{workflow_id}/draft/commit")
-async def commit_draft(workflow_id: str):
+async def commit_draft(workflow_id: str, body: Optional[DraftCommitBody] = None):
     """Commit the Edit-Agent draft: draft_steps become the live steps."""
     wf = storage.get_workflow(workflow_id)
     if not wf:
@@ -852,6 +876,7 @@ async def commit_draft(workflow_id: str):
         # Clicking Save is the user committing to this workflow, so reveal it
         # in the hub (clears the "+ New" build-in-progress flag).
         wf.unsaved = False
+        p_sync_model_on_save(wf, body.model if body else None)
         await p_end_edit_session(wf)
         storage.save_workflow(wf)
         return _enriched(wf)
@@ -869,6 +894,7 @@ async def commit_draft(workflow_id: str):
     if not wf.icon:
         wf.icon = _derive_icon(wf)
     _normalize_schedule_state(wf)
+    p_sync_model_on_save(wf, body.model if body else None)
     await p_end_edit_session(wf)
     storage.save_workflow(wf)
     audit.log_change(wf.id, "user", before, wf.model_dump(mode="json"))

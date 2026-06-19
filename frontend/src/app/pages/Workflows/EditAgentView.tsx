@@ -142,12 +142,12 @@ export default function EditAgentView({ workflow, steps, isFixMode = false, onEd
     if (!canSave) return;
     setSavePhase('idle');
     try {
-      await dispatch(commitDraft(workflow.id)).unwrap();
+      await dispatch(commitDraft({ id: workflow.id, model: editSession?.model })).unwrap();
     } catch {
       return;
     }
     toSaved();
-  }, [canSave, dispatch, workflow.id, toSaved]);
+  }, [canSave, dispatch, workflow.id, editSession?.model, toSaved]);
 
   const onSaveClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
     if (!canSave) return;
@@ -244,7 +244,7 @@ export default function EditAgentView({ workflow, steps, isFixMode = false, onEd
           thread runs edge-to-edge like a normal chat (it supplies its own px). */}
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', mx: -2, mb: -2 }}>
         {editSessionId ? (
-          <AgentChat sessionId={editSessionId} embedded autoFocus />
+          <AgentChat sessionId={editSessionId} embedded autoFocus workflowEditId={workflow.id} />
         ) : (
           <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: c.text.muted, fontSize: '0.85rem' }}>
             Starting the Edit Agent...
