@@ -901,6 +901,12 @@ export const BatchApprovalBar: React.FC<BatchApprovalBarProps> = ({ requests, on
     for (const req of nonQuestions) onApprove(req.id);
   };
 
+  // Persist the choice (4th arg alwaysAllow=true) so these tools stop prompting,
+  // the per-action "Always approve" was buried inside the collapsed group rows.
+  const handleAlwaysApproveAll = () => {
+    for (const req of nonQuestions) onApprove(req.id, undefined, false, true);
+  };
+
   const handleDenyAll = () => {
     for (const req of nonQuestions) onDeny(req.id);
   };
@@ -946,8 +952,8 @@ export const BatchApprovalBar: React.FC<BatchApprovalBarProps> = ({ requests, on
             <Button
               variant="contained"
               size="small"
-              startIcon={<CheckIcon />}
-              onClick={handleApproveAll}
+              startIcon={<DoneAllIcon />}
+              onClick={handleAlwaysApproveAll}
               sx={{
                 bgcolor: c.status.success,
                 '&:hover': { bgcolor: '#1e4d15' },
@@ -959,7 +965,26 @@ export const BatchApprovalBar: React.FC<BatchApprovalBarProps> = ({ requests, on
                 minHeight: 30,
               }}
             >
-              Approve All
+              Always Allow All
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<CheckIcon />}
+              onClick={handleApproveAll}
+              sx={{
+                borderColor: c.status.success,
+                color: c.status.success,
+                '&:hover': { borderColor: '#1e4d15', bgcolor: 'rgba(45,122,31,0.06)' },
+                fontWeight: 600,
+                fontSize: '0.78rem',
+                textTransform: 'none',
+                borderRadius: 1.5,
+                px: 1.5,
+                minHeight: 30,
+              }}
+            >
+              Just Once
             </Button>
             <Button
               variant="outlined"
