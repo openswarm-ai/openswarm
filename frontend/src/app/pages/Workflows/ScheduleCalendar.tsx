@@ -319,7 +319,14 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
                   );
                 })}
                 {evs.length > (compact ? 3 : 4) && (
-                  <Typography sx={{ fontSize: EVENT_FS, color: c.text.muted, mt: 0.3, pl: 1.4 }}>+{evs.length - (compact ? 3 : 4)} more</Typography>
+                  <MonthDayOverflow
+                    date={d}
+                    count={evs.length - (compact ? 3 : 4)}
+                    events={evs}
+                    now={now}
+                    fontSize={EVENT_FS}
+                    onSelectWorkflow={onSelectWorkflow}
+                  />
                 )}
               </Box>
             );
@@ -488,6 +495,57 @@ function EventStack({ events, paused, onSelectWorkflow, eventFontSize, onContext
               <Typography sx={{ fontSize: '0.74rem', color: c.text.muted }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
             </Box>
           ))}
+        </Box>
+      </Popover>
+    </>
+  );
+}
+
+// "+N more" on a packed month cell opens a scrollable popover listing every
+// run that day, so a heavy day isn't a dead end. Past fires keep the hollow
+// ring the cell rows use, for a consistent at-a-glance "already ran" read.
+function MonthDayOverflow({ date, count, events, now, fontSize, onSelectWorkflow }: {
+  date: Date;
+  count: number;
+  events: { workflow: Workflow; date: Date }[];
+  now: Date;
+  fontSize: string;
+  onSelectWorkflow?: (id: string) => void;
+}) {
+  const c = useClaudeTokens();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const accent = c.accent.primary;
+  return (
+    <>
+      <Typography
+        onClick={(e) => { e.stopPropagation(); setAnchor(e.currentTarget); }}
+        role="button"
+        sx={{ fontSize, color: c.text.muted, mt: 0.3, pl: 1.4, cursor: 'pointer', '&:hover': { color: accent } }}>
+        +{count} more
+      </Typography>
+      <Popover
+        open={Boolean(anchor)}
+        anchorEl={anchor}
+        onClose={() => setAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}>
+        <Box sx={{ minWidth: 240, maxHeight: 360, overflowY: 'auto', p: 1 }}>
+          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mb: 0.5 }}>
+            {`${events.length} scheduled · ${date.toLocaleString('en', { weekday: 'short', month: 'short', day: 'numeric' })}`}
+          </Typography>
+          {events.map((e, idx) => {
+            const passed = e.date.getTime() < now.getTime();
+            return (
+              <Box
+                key={`${e.workflow.id}-${idx}`}
+                onClick={() => { setAnchor(null); onSelectWorkflow?.(e.workflow.id); }}
+                sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 0.5, py: 0.5, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}>
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', boxSizing: 'border-box', bgcolor: passed ? 'transparent' : accent, border: passed ? `1.5px solid ${accent}` : 'none', flexShrink: 0 }} />
+                <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.workflow.title}</Typography>
+                <Typography sx={{ fontSize: '0.74rem', color: c.text.muted, flexShrink: 0 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
+              </Box>
+            );
+          })}
         </Box>
       </Popover>
     </>
