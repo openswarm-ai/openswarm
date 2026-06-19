@@ -4,6 +4,7 @@ import DashboardToolbar from '../DashboardToolbar';
 import CanvasControls from '../controls/CanvasControls';
 import CardSearchPalette from '../controls/CardSearchPalette';
 import DirectionHints from '../controls/DirectionHints';
+import WorkflowRunningToast from '@/app/pages/Workflows/WorkflowRunningToast';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 import type {
   CardPosition,
@@ -144,6 +145,9 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
         browserCards={browserCards}
         sessions={sessions}
       />
+
+      {/* Scheduled-run nudge: "your {workflow} is running now" + jump-to-canvas */}
+      <WorkflowRunningToast />
     </>
   );
 };

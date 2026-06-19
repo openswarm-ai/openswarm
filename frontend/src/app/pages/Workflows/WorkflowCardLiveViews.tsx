@@ -46,8 +46,6 @@ function stopViewingSidecar(dispatch: AppDispatch, workflowId: string, sessionId
 // dashboard draws an arrow chip between the two cards.
 export function useOpenSidecar(workflowId: string) {
   const dispatch = useAppDispatch();
-  const wfCardPos = useAppSelector((s) => s.dashboardLayout.workflowCards[workflowId]);
-  const expandedSessionIds = useAppSelector((s) => s.agents.expandedSessionIds);
   return React.useCallback(async (sessionId: string, kind: 'watching' | 'viewing-completed' | 'viewing-error' | 'testing') => {
     if (!sessionId) return;
     try {
@@ -55,6 +53,7 @@ export function useOpenSidecar(workflowId: string) {
       if (!store.getState().agents.sessions[sessionId]) {
         try { await dispatch(fetchSession(sessionId)).unwrap(); } catch { /* not fatal */ }
       }
+      const wfCardPos = store.getState().dashboardLayout.workflowCards[workflowId];
       if (!store.getState().dashboardLayout.cards[sessionId] && wfCardPos) {
         dispatch(placeCard({
           sessionId,
@@ -62,13 +61,13 @@ export function useOpenSidecar(workflowId: string) {
           y: wfCardPos.y,
           width: DEFAULT_CARD_W,
           height: DEFAULT_CARD_H,
-          expandedSessionIds,
+          expandedSessionIds: store.getState().agents.expandedSessionIds,
         }));
       }
       dispatch(setPendingFocusAgentId(sessionId));
     } catch { /* best-effort */ }
     dispatch(setCardSidecar({ workflowId, sessionId, kind }));
-  }, [dispatch, workflowId, wfCardPos, expandedSessionIds]);
+  }, [dispatch, workflowId]);
 }
 
 type ViewMode = 'card' | 'sidecar-linked';
