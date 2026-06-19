@@ -226,8 +226,8 @@ export default function SchedulePopover({
               <IconButton size="small" onClick={onNext} sx={{ p: 0.3, color: c.text.muted, '&:hover': { color: c.text.primary } }}><ChevronRightIcon sx={{ fontSize: 17 }} /></IconButton>
               <Typography sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.primary, ml: 0.25 }}>{periodLabel}</Typography>
             </Box>
-            <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, py: 1, borderTop: `1px solid ${c.border.subtle}`, minHeight: 0 }}>
-              <ScheduleCalendar view={calendarView} density="roomy" onSelectWorkflow={onWorkflowSelect} refDate={refDate} />
+            <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, pt: 0, pb: 1, borderTop: `1px solid ${c.border.subtle}`, minHeight: 0 }}>
+              <ScheduleCalendar view={calendarView} density="compact" onSelectWorkflow={onWorkflowSelect} refDate={refDate} />
             </Box>
           </Box>
         )}

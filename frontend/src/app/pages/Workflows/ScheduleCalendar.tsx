@@ -185,25 +185,25 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', color: c.text.secondary }}>
         {/* Day headers: muted weekday caps; today's date gets the filled circle */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', gap: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, pb: 0.5 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', gap: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 4, borderBottom: `1px solid ${c.border.subtle}`, pt: 1.25, pb: 0.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', pr: 1, pb: 0.5 }}>
             {!compact && (
               <Typography sx={{ fontSize: '0.62rem', color: c.text.ghost, fontWeight: 500 }}>{TZ_LABEL}</Typography>
             )}
           </Box>
           {days.map((d) => {
-            const isToday = sameDay(d, today);
+            const isToday = sameDay(d, now);
             return (
               <Box key={d.toISOString()} sx={{ textAlign: 'center', pb: 0.5 }}>
                 <Typography sx={{ fontSize: DAY_LABEL, color: c.text.muted, fontWeight: 600, letterSpacing: '0.08em', lineHeight: 1.3, textTransform: 'uppercase' }}>
                   {WEEKDAY_LABEL_SHORT[d.getDay()]}
                 </Typography>
-                <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: compact ? 30 : 38, height: compact ? 30 : 38, borderRadius: '50%', bgcolor: isToday ? c.accent.primary : 'transparent', color: isToday ? '#fff' : c.text.primary, fontWeight: isToday ? 700 : 500, fontSize: DAY_NUM, mt: 0.25 }}>{d.getDate()}</Box>
+                <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxSizing: 'border-box', width: compact ? 26 : 32, height: compact ? 26 : 32, borderRadius: '50%', bgcolor: isToday ? c.accent.primary : 'transparent', color: isToday ? '#fff' : c.text.primary, fontWeight: isToday ? 600 : 500, fontSize: DAY_NUM, lineHeight: 1, mt: 0.25, boxShadow: isToday ? `0 0 0 1.5px ${c.bg.surface}, 0 0 0 3px ${c.accent.primary}` : 'none' }}>{d.getDate()}</Box>
               </Box>
             );
           })}
         </Box>
-        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', borderTop: `1px solid ${c.border.subtle}`, position: 'relative' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', position: 'relative' }}>
           {HOURS.map((hour, hourIdx) => (
             <React.Fragment key={hour}>
               {/* Hour label sits inside its row (top-aligned) rather than
@@ -278,43 +278,55 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     const cells = Array.from({ length: 35 }, (_, i) => addDays(start, i));
     const accent = c.accent.primary;
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
         {/* Sticky weekday header so it stays visible even when the
             calendar body scrolls. Slightly bigger + tinted bg so it
             reads cleanly in both light and dark themes. */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, borderBottom: `1px solid ${c.border.subtle}`, py: 0.6 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', flexShrink: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, borderBottom: `1px solid ${c.border.subtle}`, pt: 1.25, pb: 0.6 }}>
           {WEEKDAY_LABEL_SHORT.map((l, i) => (
             <Typography key={`${l}-${i}`} sx={{ textAlign: 'center', fontSize: '0.74rem', color: c.text.muted, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</Typography>
           ))}
         </Box>
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0, borderLeft: `1px solid ${c.border.subtle}` }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridTemplateRows: `repeat(5, minmax(${compact ? 70 : 96}px, 1fr))`, flex: 1, minHeight: 0, gap: 0, borderLeft: `1px solid ${c.border.subtle}` }}>
           {cells.map((d) => {
             const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
             const evs = eventsByDay.map.get(key) || [];
-            const isToday = sameDay(d, today);
+            const isToday = sameDay(d, now);
             const inMonth = d.getMonth() === today.getMonth();
             return (
-              <Box key={d.toISOString()} sx={{ minHeight: compact ? 70 : 96, borderRight: `1px solid ${c.border.subtle}`, borderBottom: `1px solid ${c.border.subtle}`, p: 0.5, position: 'relative', overflow: 'hidden', bgcolor: inMonth ? 'transparent' : c.bg.elevated }}>
+              <Box key={d.toISOString()} sx={{ borderRight: `1px solid ${c.border.subtle}`, borderBottom: `1px solid ${c.border.subtle}`, p: 0.5, position: 'relative', overflow: 'hidden', bgcolor: inMonth ? 'transparent' : c.bg.elevated }}>
                 <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
                   {/* Out-of-month dates still need to be legible (Apple
                       Calendar shows them in a muted shade, not invisible).
                       Color tweak instead of opacity so dark themes stay
                       readable. */}
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 22, height: 22, borderRadius: '50%', bgcolor: isToday ? accent : 'transparent', color: isToday ? '#fff' : inMonth ? c.text.primary : c.text.ghost, fontWeight: isToday ? 700 : 500, fontSize: '0.82rem', px: 0.5 }}>{d.getDate()}</Box>
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxSizing: 'border-box', width: 22, height: 22, borderRadius: '50%', bgcolor: isToday ? accent : 'transparent', color: isToday ? '#fff' : inMonth ? c.text.primary : c.text.ghost, fontWeight: isToday ? 600 : 500, fontSize: '0.82rem', lineHeight: 1, boxShadow: isToday ? `0 0 0 1.5px ${c.bg.surface}, 0 0 0 3px ${accent}` : 'none' }}>{d.getDate()}</Box>
                 </Box>
-                {evs.slice(0, compact ? 3 : 4).map((e, idx) => (
+                {evs.slice(0, compact ? 3 : 4).map((e, idx) => {
+                  // Past fires read as a hollow ring, upcoming ones stay filled,
+                  // so a glance down a day tells you what already ran.
+                  const passed = e.date.getTime() < now.getTime();
+                  return (
                   <Box
                     key={`${e.workflow.id}-${idx}`}
                     onClick={() => onSelectWorkflow?.(e.workflow.id)}
                     onContextMenu={(ev) => { ev.preventDefault(); setCtxMenu({ x: ev.clientX, y: ev.clientY, workflow: e.workflow }); }}
                     sx={{ mt: 0.3, display: 'flex', alignItems: 'center', gap: 0.5, fontSize: EVENT_FS, color: c.text.primary, cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', '&:hover': { color: accent } }}>
-                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
+                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', boxSizing: 'border-box', bgcolor: passed ? 'transparent' : accent, border: passed ? `1.5px solid ${accent}` : 'none', flexShrink: 0 }} />
                     <span style={{ color: c.text.muted, flexShrink: 0 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</span>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: 500 }}>{e.workflow.title}</span>
                   </Box>
-                ))}
+                  );
+                })}
                 {evs.length > (compact ? 3 : 4) && (
-                  <Typography sx={{ fontSize: EVENT_FS, color: c.text.muted, mt: 0.3, pl: 1.4 }}>+{evs.length - (compact ? 3 : 4)} more</Typography>
+                  <MonthDayOverflow
+                    date={d}
+                    count={evs.length - (compact ? 3 : 4)}
+                    events={evs}
+                    now={now}
+                    fontSize={EVENT_FS}
+                    onSelectWorkflow={onSelectWorkflow}
+                  />
                 )}
               </Box>
             );
@@ -334,7 +346,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     const day = addDays(today, i);
     const key = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
     const arr = eventsByDay.map.get(key) || [];
-    const isToday = sameDay(day, today);
+    const isToday = sameDay(day, now);
     if (arr.length || isToday) upcoming.push({ date: day, events: arr, isToday });
   }
   const accent = c.accent.primary;
@@ -483,6 +495,57 @@ function EventStack({ events, paused, onSelectWorkflow, eventFontSize, onContext
               <Typography sx={{ fontSize: '0.74rem', color: c.text.muted }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
             </Box>
           ))}
+        </Box>
+      </Popover>
+    </>
+  );
+}
+
+// "+N more" on a packed month cell opens a scrollable popover listing every
+// run that day, so a heavy day isn't a dead end. Past fires keep the hollow
+// ring the cell rows use, for a consistent at-a-glance "already ran" read.
+function MonthDayOverflow({ date, count, events, now, fontSize, onSelectWorkflow }: {
+  date: Date;
+  count: number;
+  events: { workflow: Workflow; date: Date }[];
+  now: Date;
+  fontSize: string;
+  onSelectWorkflow?: (id: string) => void;
+}) {
+  const c = useClaudeTokens();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const accent = c.accent.primary;
+  return (
+    <>
+      <Typography
+        onClick={(e) => { e.stopPropagation(); setAnchor(e.currentTarget); }}
+        role="button"
+        sx={{ fontSize, color: c.text.muted, mt: 0.3, pl: 1.4, cursor: 'pointer', '&:hover': { color: accent } }}>
+        +{count} more
+      </Typography>
+      <Popover
+        open={Boolean(anchor)}
+        anchorEl={anchor}
+        onClose={() => setAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}>
+        <Box sx={{ minWidth: 240, maxHeight: 360, overflowY: 'auto', p: 1 }}>
+          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mb: 0.5 }}>
+            {`${events.length} scheduled · ${date.toLocaleString('en', { weekday: 'short', month: 'short', day: 'numeric' })}`}
+          </Typography>
+          {events.map((e, idx) => {
+            const passed = e.date.getTime() < now.getTime();
+            return (
+              <Box
+                key={`${e.workflow.id}-${idx}`}
+                onClick={() => { setAnchor(null); onSelectWorkflow?.(e.workflow.id); }}
+                sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 0.5, py: 0.5, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}>
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', boxSizing: 'border-box', bgcolor: passed ? 'transparent' : accent, border: passed ? `1.5px solid ${accent}` : 'none', flexShrink: 0 }} />
+                <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.workflow.title}</Typography>
+                <Typography sx={{ fontSize: '0.74rem', color: c.text.muted, flexShrink: 0 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
+              </Box>
+            );
+          })}
         </Box>
       </Popover>
     </>

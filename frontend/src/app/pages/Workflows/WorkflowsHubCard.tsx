@@ -387,6 +387,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
         border,
         borderRadius: `${c.radius.lg}px`,
         boxShadow: shadow,
+        overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         zIndex: (isDragging || isResizing) ? 999999 : cardZOrder,
@@ -401,7 +402,8 @@ const WorkflowsHubCard: React.FC<Props> = ({
         onPointerUp={onHeaderPointerUp}
         sx={{
           display: 'flex', alignItems: 'center', gap: 0.6,
-          px: 1.5, py: 0.6,
+          px: 1.5, py: 0.5,
+          bgcolor: c.bg.elevated,
           borderBottom: `1px solid ${c.border.subtle}`,
           cursor: isDragging ? 'grabbing' : 'grab',
           touchAction: 'none', userSelect: 'none',
@@ -426,7 +428,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
       </Box>
 
       {/* ===== Toolbar row (matches Figma image #8 header) ===== */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.65, px: 1.5, py: 0.7, borderBottom: `1px solid ${c.border.subtle}`, flexShrink: 0 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.65, px: 1.5, py: 0.55, bgcolor: c.bg.elevated, borderBottom: `1px solid ${c.border.subtle}`, flexShrink: 0 }}>
         <Tooltip title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
           <IconButton size="small" data-no-drag onClick={() => setSidebarOpen((v) => !v)} sx={{ p: 0.5, color: sidebarOpen ? c.text.secondary : c.text.muted, '&:hover': { color: c.text.primary } }}>
             <MenuIcon sx={{ fontSize: 18 }} />
@@ -439,7 +441,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.4,
             fontSize: '0.85rem', fontWeight: 600, color: c.text.primary,
-            bgcolor: c.bg.elevated, border: `1px solid ${c.border.subtle}`,
+            bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`,
             px: 1, py: 0.4, borderRadius: `${c.radius.md}px`, cursor: 'pointer',
             '&:hover': { borderColor: c.accent.primary, color: c.accent.primary },
           }}
@@ -482,9 +484,6 @@ const WorkflowsHubCard: React.FC<Props> = ({
           <TimeSavedBadge />
         </Box>
 
-        <IconButton size="small" data-no-drag sx={{ p: 0.5, color: c.text.muted }}>
-          <SearchIcon sx={{ fontSize: 18 }} />
-        </IconButton>
         <Box sx={{ position: 'relative' }}>
           <Box
             onClick={() => setViewOpen((v) => !v)}
@@ -520,8 +519,8 @@ const WorkflowsHubCard: React.FC<Props> = ({
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {/* Sidebar */}
         {sidebarOpen && (
-        <Box sx={{ width: 240, flexShrink: 0, borderRight: `1px solid ${c.border.subtle}`, display: 'flex', flexDirection: 'column' }}>
-          <Box sx={{ px: 1.5, pt: 1.25, pb: 0.75 }}>
+        <Box sx={{ width: 210, flexShrink: 0, bgcolor: c.bg.elevated, borderRight: `1px solid ${c.border.subtle}`, display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ px: 1.25, pt: 1, pb: 0.6 }}>
             <InputBase
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -531,7 +530,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
             />
           </Box>
           <MiniMonth refDate={refDate} onPick={setRefDate} />
-          <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, pb: 1.5 }}>
+          <Box sx={{ flex: 1, overflowY: 'auto', px: 1.25, pb: 1.25 }}>
             <SidebarSection title="Scheduled" items={scheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} />
             <SidebarSection title="Unscheduled" items={unscheduled.filter((w) => match(w.title, search))} onPick={onSelectWorkflow} scheduled={false} onContext={(wf, e) => setSidebarCtxMenu({ x: e.clientX, y: e.clientY, workflow: wf })} onSchedule={(wf, el) => setSchedulePopover({ anchorEl: el, workflow: wf })} />
           </Box>
@@ -539,7 +538,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
         )}
 
         {/* Main calendar area */}
-        <Box sx={{ flex: 1, minWidth: 0, overflow: 'auto', p: 1.5 }}>
+        <Box sx={{ flex: 1, minWidth: 0, overflow: 'auto', px: 1.25, pt: 0, pb: 1.25, bgcolor: c.bg.surface }}>
           <ScheduleCalendar view={view} density="roomy" onSelectWorkflow={onSelectWorkflow} refDate={refDate} />
         </Box>
       </Box>
@@ -617,7 +616,7 @@ function MiniMonth({ refDate, onPick }: { refDate: Date; onPick: (d: Date) => vo
   const today = new Date();
   const label = refDate.toLocaleString('en', { month: 'long', year: 'numeric' });
   return (
-    <Box sx={{ px: 1.5, pb: 1, borderBottom: `1px solid ${c.border.subtle}` }}>
+    <Box sx={{ px: 1.25, pb: 0.75, borderBottom: `1px solid ${c.border.subtle}` }}>
       <Box sx={{ display: 'flex', alignItems: 'center', py: 0.5 }}>
         <Typography sx={{ flex: 1, fontSize: '0.82rem', fontWeight: 700, color: c.text.primary }}>{label}</Typography>
         <IconButton size="small" data-no-drag onClick={() => onPick(addMonths(refDate, -1))} sx={{ p: 0.15 }}><ChevronLeftIcon sx={{ fontSize: 14 }} /></IconButton>
