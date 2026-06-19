@@ -34,6 +34,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const workflows = useAppSelector((s) => Object.values(s.workflows.items));
+  const allPaused = useAppSelector((s) => s.workflows.paused);
   // Right-click menu: pinned position + the workflow whose pill was
   // clicked. Same anchor pattern as MUI's menu examples.
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; workflow: Workflow } | null>(null);
@@ -236,6 +237,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
                     sx={{ height: SLOT_H, borderLeft: `1px solid ${c.border.subtle}`, borderTop: hourIdx === 0 ? 'none' : `1px solid ${c.border.subtle}`, position: 'relative' }}>
                     <EventStack
                       events={evs}
+                      paused={allPaused}
                       onSelectWorkflow={onSelectWorkflow}
                       eventFontSize={EVENT_FS}
                       onContextWorkflow={(wf, ev) => { ev.preventDefault(); setCtxMenu({ x: ev.clientX, y: ev.clientY, workflow: wf }); }}
@@ -374,8 +376,9 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
 // Apple Calendar style event chip: 3px colored left-bar + faintly-tinted
 // background + readable text. One chip per cell with a "+N" badge for
 // overflow; clicking it opens a popover listing all events that hour.
-function EventStack({ events, onSelectWorkflow, eventFontSize, onContextWorkflow }: {
+function EventStack({ events, paused, onSelectWorkflow, eventFontSize, onContextWorkflow }: {
   events: { workflow: Workflow; date: Date }[];
+  paused?: boolean;
   onSelectWorkflow?: (id: string) => void;
   eventFontSize: string;
   onContextWorkflow?: (workflow: Workflow, e: React.MouseEvent) => void;
@@ -414,6 +417,7 @@ function EventStack({ events, onSelectWorkflow, eventFontSize, onContextWorkflow
             fontSize: eventFontSize, fontWeight: 500,
             overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
             cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 0.5,
+            opacity: paused ? 0.45 : 1,
             '&:hover': { bgcolor: accent + '22' },
           }}>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{first.workflow.title}</span>

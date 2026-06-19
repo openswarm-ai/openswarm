@@ -47,7 +47,7 @@ import { Typewriter } from '@/app/components/feedback/Animated';
 import StopRounded from '@mui/icons-material/StopRounded';
 import PauseRounded from '@mui/icons-material/PauseRounded';
 import { StatusDot, RunSparkline, LastFiredHint, isStaleSinceLastRun, isRealTitle } from './workflowVisuals';
-import { stepsSignature } from './scheduleUtils';
+import { stepsSignature, isWorkflowSchedulable } from './scheduleUtils';
 import { store } from '@/shared/state/store';
 import { getAgentWorkTime, fmtSeconds } from '@/shared/agentWorkTime';
 
@@ -118,6 +118,7 @@ const WorkflowCard: React.FC<Props> = ({
   const expandedSessionIds = useAppSelector((s) => s.agents.expandedSessionIds);
   const defaultModel = useAppSelector((s) => s.settings.data.default_model);
   const defaultMode = useAppSelector((s) => s.settings.data.default_mode);
+  const allPaused = useAppSelector((s) => s.workflows.paused);
 
   const cardBoxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -591,6 +592,15 @@ const WorkflowCard: React.FC<Props> = ({
               </Typography>
             )}
             <StatusPill view={card.view} workflow={workflow} runs={runs} />
+            {workflow && isWorkflowSchedulable(workflow) && (!workflow.schedule.enabled || allPaused) && (
+              <Box sx={{
+                display: 'inline-flex', alignItems: 'center',
+                fontSize: '0.74rem', fontWeight: 600,
+                px: 0.8, py: 0.18, borderRadius: `${c.radius.md}px`,
+                color: c.text.muted, bgcolor: c.bg.elevated,
+                ml: 0.25,
+              }}>Paused</Box>
+            )}
             <Box sx={{ flex: 1 }} />
           </>
         )}

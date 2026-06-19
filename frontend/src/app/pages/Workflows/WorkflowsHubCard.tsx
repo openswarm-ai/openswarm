@@ -641,6 +641,7 @@ function SidebarSection({ title, items, onPick, scheduled, onContext, onSchedule
 }) {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const allPaused = useAppSelector((s) => s.workflows.paused);
   const [open, setOpen] = useState(true);
 
   const toggleEnabled = useCallback((wf: Workflow, e: React.MouseEvent) => {
@@ -707,10 +708,10 @@ function SidebarSection({ title, items, onPick, scheduled, onContext, onSchedule
               never animates on first appearance or for already-named rows. */}
           <Typewriter value={w.title} enabled={isRealTitle(w.title)}>
             {(t) => (
-              <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: scheduled && !w.schedule.enabled ? 0.7 : 1 }}>{t}</Typography>
+              <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: scheduled && (!w.schedule.enabled || allPaused) ? 0.7 : 1 }}>{t}</Typography>
             )}
           </Typewriter>
-          {scheduled && !w.schedule.enabled && (
+          {scheduled && (!w.schedule.enabled || allPaused) && (
             <Box sx={{ flexShrink: 0, px: 0.6, py: 0.1, borderRadius: '3px', bgcolor: c.bg.elevated, color: c.text.muted, fontSize: '0.62rem', fontWeight: 600, lineHeight: 1.5, letterSpacing: '0.02em' }}>Paused</Box>
           )}
         </Box>

@@ -694,20 +694,17 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
     }
     return out;
   }, [filtered]);
-  // Header sparkline summarising recent successes/failures so users can
-  // see "lately broken" before scrolling.
-  const recent = (runs || []).slice(0, 30);
   if (!runs || runs.length === 0) {
     return <Typography sx={{ fontSize: '0.88rem', color: c.text.muted, py: 1.5, textAlign: 'center' }}>No runs yet</Typography>;
   }
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.75 }}>
-        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25 }}>
-          {recent.map((r) => (
-            <Box key={r.id} sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: statusColor(r.status, c) }} />
-          ))}
-        </Box>
+        {groups.length > 0 && (
+          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em' }}>
+            {groups[0].key.toUpperCase()}
+          </Typography>
+        )}
         <Box sx={{ flex: 1 }} />
         {(['all', 'failure', 'ran_late'] as const).map((k) => (
           <Box key={k} onClick={() => setFilter(k)} role="button" sx={{
@@ -722,11 +719,13 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
           </Box>
         ))}
       </Box>
-      {groups.map(({ key, runs: gRuns }) => (
+      {groups.map(({ key, runs: gRuns }, gi) => (
         <Box key={key} sx={{ display: 'flex', flexDirection: 'column' }}>
-          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mt: 0.5, mb: 0.25 }}>
-            {key.toUpperCase()}
-          </Typography>
+          {gi > 0 && (
+            <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mt: 0.5, mb: 0.25 }}>
+              {key.toUpperCase()}
+            </Typography>
+          )}
           {gRuns.map((r) => {
             const expanded = expandedId === r.id;
             const dur = runDuration(r);
@@ -759,7 +758,7 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
                       <Typography sx={{ fontSize: '0.78rem', color: c.status.error, lineHeight: 1.4 }}>{r.error}</Typography>
                     ) : (
                       <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, lineHeight: 1.4 }}>
-                        {r.session_id ? `Saved as session ${r.session_id.slice(0, 8)}.` : 'No session was recorded for this run.'} Click below to see the full conversation.
+                        {r.session_id ? 'Click below to see the full conversation.' : 'No session was recorded for this run. Click below to see the full conversation.'}
                       </Typography>
                     )}
                     <Box sx={{ mt: 0.5, display: 'flex', justifyContent: 'flex-end' }}>
