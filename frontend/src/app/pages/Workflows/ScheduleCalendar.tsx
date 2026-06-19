@@ -302,17 +302,22 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
                       readable. */}
                   <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxSizing: 'border-box', width: 22, height: 22, borderRadius: '50%', bgcolor: isToday ? accent : 'transparent', color: isToday ? '#fff' : inMonth ? c.text.primary : c.text.ghost, fontWeight: isToday ? 600 : 500, fontSize: '0.82rem', lineHeight: 1, boxShadow: isToday ? `0 0 0 1.5px ${c.bg.surface}, 0 0 0 3px ${accent}` : 'none' }}>{d.getDate()}</Box>
                 </Box>
-                {evs.slice(0, compact ? 3 : 4).map((e, idx) => (
+                {evs.slice(0, compact ? 3 : 4).map((e, idx) => {
+                  // Past fires read as a hollow ring, upcoming ones stay filled,
+                  // so a glance down a day tells you what already ran.
+                  const passed = e.date.getTime() < now.getTime();
+                  return (
                   <Box
                     key={`${e.workflow.id}-${idx}`}
                     onClick={() => onSelectWorkflow?.(e.workflow.id)}
                     onContextMenu={(ev) => { ev.preventDefault(); setCtxMenu({ x: ev.clientX, y: ev.clientY, workflow: e.workflow }); }}
                     sx={{ mt: 0.3, display: 'flex', alignItems: 'center', gap: 0.5, fontSize: EVENT_FS, color: c.text.primary, cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', '&:hover': { color: accent } }}>
-                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
+                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', boxSizing: 'border-box', bgcolor: passed ? 'transparent' : accent, border: passed ? `1.5px solid ${accent}` : 'none', flexShrink: 0 }} />
                     <span style={{ color: c.text.muted, flexShrink: 0 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</span>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: 500 }}>{e.workflow.title}</span>
                   </Box>
-                ))}
+                  );
+                })}
                 {evs.length > (compact ? 3 : 4) && (
                   <Typography sx={{ fontSize: EVENT_FS, color: c.text.muted, mt: 0.3, pl: 1.4 }}>+{evs.length - (compact ? 3 : 4)} more</Typography>
                 )}
