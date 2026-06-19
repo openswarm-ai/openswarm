@@ -37,7 +37,7 @@ _NON_TRANSIENT_PATTERNS = re.compile(
 )
 
 
-def _is_long_context_error(exc: BaseException, extra_text: str = "") -> bool:
+def p_is_long_context_error(exc: BaseException, extra_text: str = "") -> bool:
     """True when the upstream error is the 'long context tier required' 429.
 
     Used by the catch-all error path to emit a friendly context-overflow
@@ -54,7 +54,7 @@ def _is_long_context_error(exc: BaseException, extra_text: str = "") -> bool:
     ))
 
 
-def _is_free_trial_exhausted(exc: BaseException, extra_text: str = "") -> bool:
+def p_is_free_trial_exhausted(exc: BaseException, extra_text: str = "") -> bool:
     """True when the cloud says the machine's free runs are spent (a 402 with
     type free_trial_exhausted). The catch-all path uses this to flip back to
     own_key and show a friendly connect-a-model upsell instead of a raw error.
@@ -69,13 +69,7 @@ def _is_free_trial_exhausted(exc: BaseException, extra_text: str = "") -> bool:
     ))
 
 
-def _is_out_of_tokens(exc: BaseException, extra_text: str = "") -> bool:
-    """True when the turn was rejected because the user's usage/quota is spent: a
-    plan cap, API credit balance, or provider quota. This is a 'wait for the reset
-    window or switch models' situation, NOT a transient rate-limit blip (handled by
-    _is_transient_capacity_error) and NOT an auth/connection failure. Drives the
-    friendly 'just a token issue' card.
-    """
+def p_is_out_of_tokens(exc: BaseException, extra_text: str = "") -> bool:
     combined = f"{exc!s}\n{extra_text}".strip()
     if not combined:
         return False
@@ -93,11 +87,9 @@ def _is_out_of_tokens(exc: BaseException, extra_text: str = "") -> bool:
     ))
 
 
-def _extract_reset_hint(text: str) -> str:
+def p_extract_reset_hint(text: str) -> str:
     """Pull a human reset phrase ('at 7:42 AM', 'in 2h 30m', 'after 1m 59s') out of
     a provider usage error so we can tell the user when their limit comes back.
-    Keeps the leading preposition so it slots into 'It resets <hint>.'. Empty when
-    the provider didn't say.
     """
     if not text:
         return ""
@@ -109,13 +101,10 @@ def _extract_reset_hint(text: str) -> str:
     return m.group(1).strip() if m else ""
 
 
-def _is_auth_error(exc: BaseException, extra_text: str = "") -> bool:
+def p_is_auth_error(exc: BaseException, extra_text: str = "") -> bool:
     """True when the upstream error is a 401/403 auth failure.
-
     Used by the catch-all error path to surface a friendly "subscription
-    expired / reconnect" card instead of dumping the raw 401 JSON. The most
-    common cause: the OpenSwarm Pro bearer or 9Router OAuth token has expired
-    while the UI still shows the connection as 'connected'.
+    expired / reconnect" card instead of dumping the raw 401 JSON.
     """
     combined = f"{exc!s}\n{extra_text}".strip()
     if not combined:
@@ -133,7 +122,7 @@ def _is_auth_error(exc: BaseException, extra_text: str = "") -> bool:
     ))
 
 
-def _is_unknown_model_error(exc: BaseException, extra_text: str = "") -> bool:
+def p_is_unknown_model_error(exc: BaseException, extra_text: str = "") -> bool:
     """True when the upstream rejects the model code itself (e.g. a ChatGPT/Codex
     subscription whose plan doesn't expose the GPT model id we send: code 1211
     'Unknown Model, please check the model code'). The fix isn't retry, it's a
@@ -153,7 +142,7 @@ def _is_unknown_model_error(exc: BaseException, extra_text: str = "") -> bool:
     ))
 
 
-def _is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> bool:
+def p_is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> bool:
     # The Claude CLI's underlying ProcessError stringifies to a generic
     # "Command failed with exit code 1 / Check stderr output for details";
     # the real cause (rate_limit_error / No pool capacity available / 429

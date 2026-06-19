@@ -24,7 +24,7 @@ PARENT_SESSION_ID = os.environ.get("OPENSWARM_PARENT_SESSION_ID", "")
 DASHBOARD_ID = os.environ.get("OPENSWARM_DASHBOARD_ID", "")
 
 
-def _local_timezone_name() -> str:
+def p_local_timezone_name() -> str:
     name = os.environ.get("OPENSWARM_TIMEZONE", "").strip()
     if not name:
         try:
@@ -268,8 +268,8 @@ def _call(method: str, path: str, body=None) -> dict:
 
 
 def _build_schedule_from_preset(preset: str, args: dict) -> dict:
-    local_tz = _local_timezone_name()
-    base = {"timezone": args.get("timezone") or local_tz, "on_missed": "skip", "ends_at": None, "max_runs": None, "runs_count": 0}
+    local_tz = p_local_timezone_name()
+    base = {"timezone": args.get("timezone") or local_tz, "ends_at": None, "max_runs": None, "runs_count": 0}
     if preset == "custom":
         return {
             **base,

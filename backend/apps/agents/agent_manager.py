@@ -29,13 +29,13 @@ from backend.config.paths import SESSIONS_DIR
 from backend.apps.agents.core.error_classify import (
     _NON_TRANSIENT_PATTERNS,
     _TRANSIENT_CAPACITY_PATTERNS,
-    _is_auth_error,
-    _is_free_trial_exhausted,
-    _is_long_context_error,
-    _is_out_of_tokens,
-    _is_transient_capacity_error,
-    _is_unknown_model_error,
-    _extract_reset_hint,
+    p_is_auth_error,
+    p_is_free_trial_exhausted,
+    p_is_long_context_error,
+    p_is_out_of_tokens,
+    p_is_transient_capacity_error,
+    p_is_unknown_model_error,
+    p_extract_reset_hint,
 )
 from backend.apps.agents.manager.session.session_store import (
     _delete_session_file,
@@ -606,7 +606,7 @@ class AgentManager:
         # Native-scheduler tools that commit or mutate a recurring schedule.
         # Always-on MCP servers fall through to the always_allow default, so
         # these would otherwise fire silently; force them through ApprovalBar.
-        _SCHEDULE_GATED = {
+        p_SCHEDULE_GATED = {
             "mcp__openswarm-schedule__ScheduleWorkflow",
             "mcp__openswarm-schedule__UpdateScheduledWorkflow",
             "mcp__openswarm-schedule__DeleteScheduledWorkflow",
@@ -736,7 +736,7 @@ class AgentManager:
             # twin of the crontab gate above: real, user-visible, hard-to-undo,
             # so it goes through ApprovalBar every time regardless of the
             # always_allow default that always-on MCP servers fall through to.
-            if tool_name in _SCHEDULE_GATED:
+            if tool_name in p_SCHEDULE_GATED:
                 return "ask", None
             if tool_name == "Bash" and isinstance(tool_input, dict):
                 bash_match = _match_bash_catastrophic_pattern(str(tool_input.get("command") or ""))
@@ -858,7 +858,7 @@ class AgentManager:
             # Record which tools each step touched (in-memory; the executor/test
             # path persists step_usage once at run end). Captures every tool the
             # gate sees so a step's tool set is complete, not only the ones that
-            # prompted. No-op outside a workflow run or before a step is set.
+            # prompted.
             mem = p_approval_memory.get(session_id)
             if mem is None or mem.current_step_id is None:
                 return
@@ -1225,10 +1225,6 @@ class AgentManager:
 
             mcp_registry_ctx = self._build_mcp_registry_summary(session.allowed_tools, session.active_mcps)
             global_settings = load_settings()
-            # Nudge the agent to surface ScheduleWorkflow proactively when
-            # the user's ask looks recurring. The per-tool description
-            # carries the full protocol; this is just the "when to think
-            # about it" signal so the agent doesn't ignore the surface.
             schedule_ctx = (
                 "<scheduling_guidance>\n"
                 "After completing a substantive task, if the work looks "
@@ -3036,7 +3032,7 @@ class AgentManager:
                     _ticker_task = None
                     stderr_snapshot = "\n".join(_stderr_buffer[-50:])
                     if (
-                        _is_transient_capacity_error(e, extra_text=stderr_snapshot)
+                        p_is_transient_capacity_error(e, extra_text=stderr_snapshot)
                         and capacity_retry_attempt < len(_CAPACITY_BACKOFFS)
                     ):
                         wait = _CAPACITY_BACKOFFS[capacity_retry_attempt]
@@ -3126,7 +3122,7 @@ class AgentManager:
             # subsequent step (title gen, follow-up tool turn, etc.).
             # Don't blast a "context exceeded" card over a completed reply.
             _streamed_substantive = bool(stream_text_msg_id) and _current_turn_emitted
-            if _streamed_substantive and _is_long_context_error(e, extra_text=_stderr_tail):
+            if _streamed_substantive and p_is_long_context_error(e, extra_text=_stderr_tail):
                 # Mark the session completed (not error), keep the assistant
                 # reply visible, and skip the overflow card. The next user
                 # turn will properly hit the pre-send guard if the chat is
@@ -3141,7 +3137,7 @@ class AgentManager:
                     except Exception:
                         pass
                 return
-            if _is_long_context_error(e, extra_text=_stderr_tail):
+            if p_is_long_context_error(e, extra_text=_stderr_tail):
                 friendly_msg = (
                     "This conversation has grown too large for your account's "
                     "standard context window. Long-context requests require an "
@@ -3185,7 +3181,7 @@ class AgentManager:
                     })
                 except Exception:
                     logger.debug("submit_diagnostic for context_overflow failed", exc_info=True)
-            elif _is_free_trial_exhausted(e, extra_text=_stderr_tail):
+            elif p_is_free_trial_exhausted(e, extra_text=_stderr_tail):
                 # Free runs spent. Flip back to own_key and show a friendly
                 # "connect a model" upsell instead of a raw 402.
                 try:
@@ -3208,12 +3204,12 @@ class AgentManager:
                     "session_id": session_id,
                     "message": error_msg.model_dump(mode="json"),
                 })
-            elif _is_out_of_tokens(e, extra_text=_stderr_tail):
+            elif p_is_out_of_tokens(e, extra_text=_stderr_tail):
                 # Usage/quota spent (plan cap, API credit balance, provider quota).
                 # Not a bug and not transient: tell the user plainly it's a token
                 # limit and let them wait for the reset or switch models. Drives the
                 # blocking out_of_tokens card (same slot as auth/context_overflow).
-                _reset = _extract_reset_hint(f"{e!s}\n{_stderr_tail}")
+                _reset = p_extract_reset_hint(f"{e!s}\n{_stderr_tail}")
                 friendly_msg = (
                     f"You're out of tokens on {session.model or 'this model'}. "
                     "This isn't a bug, and nothing's wrong on your end. Your usage "
@@ -3233,7 +3229,7 @@ class AgentManager:
                     "session_id": session_id,
                     "message": error_msg.model_dump(mode="json"),
                 })
-            elif _is_auth_error(e, extra_text=_stderr_tail):
+            elif p_is_auth_error(e, extra_text=_stderr_tail):
                 # Three sub-cases the user can hit, with distinct fixes:
                 #   1. "No credentials for provider: claude", user picked a
                 #      -cc route but doesn't have Claude Pro/Max connected
@@ -3299,7 +3295,7 @@ class AgentManager:
                     "session_id": session_id,
                     "message": error_msg.model_dump(mode="json"),
                 })
-            elif _is_unknown_model_error(e, extra_text=_stderr_tail):
+            elif p_is_unknown_model_error(e, extra_text=_stderr_tail):
                 # Upstream rejected the model code itself (e.g. Codex 1211 on a
                 # ChatGPT plan that lacks our GPT ids). Track it; the friendly
                 # "add an API key / pick another model" card is rendered frontend-side.
@@ -3321,7 +3317,7 @@ class AgentManager:
                     "session_id": session_id,
                     "message": error_msg.model_dump(mode="json"),
                 })
-            elif _is_transient_capacity_error(e, extra_text=_stderr_tail):
+            elif p_is_transient_capacity_error(e, extra_text=_stderr_tail):
                 friendly_msg = (
                     "provider_rate_limit: This model hit your account or "
                     "session rate limit. Wait until the reset time shown by "

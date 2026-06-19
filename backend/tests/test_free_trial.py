@@ -5,8 +5,8 @@ import backend  # noqa: F401  (path sanity asserted below)
 from backend.apps.settings.models import AppSettings
 from backend.apps.settings.credentials import proxy_auth
 from backend.apps.agents.core.error_classify import (
-    _is_free_trial_exhausted,
-    _is_transient_capacity_error,
+    p_is_free_trial_exhausted,
+    p_is_transient_capacity_error,
 )
 from backend.apps.agents.providers.registry import resolve_model_id_for_sdk
 from backend.apps.subscription.free_trial import _has_own_model
@@ -41,11 +41,11 @@ def test_free_trial_resolves_to_a_bare_anthropic_id():
 
 
 def test_exhaustion_is_classified_and_not_retried():
-    assert _is_free_trial_exhausted(Exception("error type free_trial_exhausted"))
-    assert _is_free_trial_exhausted(Exception("You've used your free OpenSwarm runs"))
-    assert not _is_free_trial_exhausted(Exception("overloaded, try again"))
+    assert p_is_free_trial_exhausted(Exception("error type free_trial_exhausted"))
+    assert p_is_free_trial_exhausted(Exception("You've used your free OpenSwarm runs"))
+    assert not p_is_free_trial_exhausted(Exception("overloaded, try again"))
     # Must NOT look transient, or the agent loop would retry a spent trial forever.
-    assert not _is_transient_capacity_error(Exception("free_trial_exhausted"))
+    assert not p_is_transient_capacity_error(Exception("free_trial_exhausted"))
 
 
 def test_generic_cli_failure_uses_sdk_system_events_for_rate_limits():
@@ -53,7 +53,7 @@ def test_generic_cli_failure_uses_sdk_system_events_for_rate_limits():
         '{"subtype":"api_retry","data":{"error_status":429,'
         '"error":"rate_limit","max_retries":10}}'
     )
-    assert _is_transient_capacity_error(
+    assert p_is_transient_capacity_error(
         Exception("Command failed with exit code 1"),
         extra_text=system_event_tail,
     )

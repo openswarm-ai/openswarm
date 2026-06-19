@@ -592,8 +592,8 @@ def test_router_auth_pattern_does_not_falsely_match_normal_text():
 
 
 def test_is_auth_error_classifier():
-    """The classifier at agent_manager.py:_is_auth_error covers many shapes."""
-    from backend.apps.agents.agent_manager import _is_auth_error
+    """The classifier at agent_manager.py:p_is_auth_error covers many shapes."""
+    from backend.apps.agents.agent_manager import p_is_auth_error
 
     # Real shapes that must be caught
     matches = [
@@ -606,7 +606,7 @@ def test_is_auth_error_classifier():
         Exception("Provider not configured: gemini"),
     ]
     for e in matches:
-        assert _is_auth_error(e), f"should match: {e}"
+        assert p_is_auth_error(e), f"should match: {e}"
 
     # Non-auth errors must not match
     non_matches = [
@@ -616,15 +616,15 @@ def test_is_auth_error_classifier():
         Exception("File not found"),
     ]
     for e in non_matches:
-        assert not _is_auth_error(e), f"should NOT match: {e}"
+        assert not p_is_auth_error(e), f"should NOT match: {e}"
 
 
 def test_is_auth_error_with_stderr_tail():
     """The classifier also reads stderr buffer text."""
-    from backend.apps.agents.agent_manager import _is_auth_error
+    from backend.apps.agents.agent_manager import p_is_auth_error
     e = Exception("Command failed with exit code 1")
     stderr = "...\n[codex/gpt-5.5] [401]: Provided authentication token is expired"
-    assert _is_auth_error(e, extra_text=stderr)
+    assert p_is_auth_error(e, extra_text=stderr)
 
 
 # ===========================================================================
