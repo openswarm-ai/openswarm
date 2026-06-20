@@ -186,7 +186,7 @@ async def service_lifespan():
 
         # swarm-analytics: bootstrap the client (registers + persists a token on
         # first run) and prove the pipe with a single diagnostic log write.
-        from backend.apps.service.analytics import get_analytics_client
+        from backend.apps.service.analytics import get_analytics_client, track_link_email
         client = get_analytics_client()
         if client is not None:
             client.logs.write(
@@ -194,6 +194,10 @@ async def service_lifespan():
                 subtag="backend_started",
                 data={"app_version": APP_VERSION},
             )
+        # Re-assert the email link every boot so users already signed in before
+        # this version shipped get linked without re-authing. Idempotent server-
+        # side; no-ops if no email or the client failed to bootstrap.
+        track_link_email(getattr(settings, "user_email", None))
     except Exception as e:
         logger.debug(f"Service startup event failed (non-critical): {e}")
 
