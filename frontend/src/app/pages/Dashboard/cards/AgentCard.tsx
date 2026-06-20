@@ -1156,6 +1156,7 @@ const AgentCard: React.FC<Props> = ({
                 role="button"
                 aria-disabled={!canConvertToWorkflow}
                 onClick={handleConvertToWorkflow}
+                onPointerDown={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 animate={suggestGlowCycle > 0 ? {
                   scale: [1, 1.06, 1, 1.045, 1],
