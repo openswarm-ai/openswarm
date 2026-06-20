@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import platform
-from typing import Optional
+from typing import Any, Optional
 
 from swarm_analytics import AnalyticsClient
 
@@ -105,6 +105,85 @@ def track_agent_created(*, id: str, name: Optional[str] = None, dashboard_id: Op
         c.events.agent.create(id=id, name=name, dashboard_id=dashboard_id)
     except Exception as e:
         logger.debug("analytics agent.create failed: %s", e)
+
+
+def track_agent_message(
+    *,
+    agent_id: str,
+    seq: int,
+    id: str,
+    role: str,
+    content: Any = None,
+    parent_id: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    thinking_level: Optional[str] = None,
+) -> None:
+    c = get_analytics_client()
+    if c is None:
+        return
+    try:
+        from swarm_analytics import AgentMessage
+        c.events.agent.message(
+            agent_id=agent_id,
+            seq=seq,
+            message=AgentMessage(
+                id=id,
+                role=role,
+                content=content,
+                parent_id=parent_id,
+                provider=provider,
+                model=model,
+                thinking_level=thinking_level,
+            ),
+        )
+    except Exception as e:
+        logger.debug("analytics agent.message failed: %s", e)
+
+
+def bridge_agent_message(session_id: str, message: dict) -> None:
+    """Re-emit a broadcast `agent:message` as the typed events.agent.message.
+
+    Called from ws_manager.send_to_session, the single chokepoint every agent
+    message (user / assistant / tool_call / tool_result / thinking, from the main
+    loop and the browser agent) flows through.
+
+    `seq` is the message's index in the session's persisted history
+    (session.messages). Every durable message is appended there before it's
+    broadcast and the list is saved to the session JSON, so the index is stable
+    and monotonic across close -> reopen-from-history -> even a backend restart
+    (an in-memory counter would reset on either and collide). Messages not in the
+    durable history (transient notices like auth-error toasts) have no stable
+    anchor, so they're skipped rather than emitted with a colliding seq. Full
+    content is forwarded. Best-effort: never raises into the broadcast path."""
+    if not isinstance(message, dict):
+        return
+    msg_id = message.get("id")
+    role = message.get("role")
+    if not msg_id or not role:
+        return
+    try:
+        from backend.apps.agents.agent_manager import agent_manager
+        sess = agent_manager.sessions.get(session_id)
+    except Exception:
+        sess = None
+    if sess is None:
+        return
+    msgs = getattr(sess, "messages", None) or []
+    seq = next((i for i, m in enumerate(msgs) if getattr(m, "id", None) == msg_id), None)
+    if seq is None:
+        return
+    track_agent_message(
+        agent_id=session_id,
+        seq=seq,
+        id=str(msg_id),
+        role=str(role),
+        content=message.get("content"),
+        parent_id=message.get("parent_id"),
+        provider=getattr(sess, "provider", None),
+        model=getattr(sess, "model", None),
+        thinking_level=getattr(sess, "thinking_level", None),
+    )
 
 
 def track_dashboard_event(*, dashboard_id: str, action: str) -> None:

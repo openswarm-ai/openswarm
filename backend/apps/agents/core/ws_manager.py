@@ -91,6 +91,15 @@ class ConnectionManager:
             # Persist under the lock so a concurrent running status can't race past and overwrite with stale state.
             if event == "agent:status" and data.get("status") in TERMINAL_STATUSES:
                 SEQ_LOG.persist_terminal(session_id, payload_str)
+        # Mirror every discrete agent message into swarm-analytics. Outside the
+        # stamp lock (fire-and-forget; must not gate the broadcast). Replays use
+        # ws.send_text directly, not this path, so reconnects don't double-count.
+        if event == "agent:message":
+            try:
+                from backend.apps.service.analytics import bridge_agent_message
+                bridge_agent_message(session_id, data.get("message") or {})
+            except Exception:
+                logger.debug("agent:message analytics bridge failed", exc_info=True)
 
     async def replay_to(
         self, session_id: str, websocket: WebSocket, last_seq: int
