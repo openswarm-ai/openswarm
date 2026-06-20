@@ -54,32 +54,20 @@ def _validate_against_schema(data: dict, schema: dict) -> str | None:
         return f"Schema validation failed at {path}: {exc.message}"
 
 
-def _runtime_helpers_js(token: str, output_id: str | None) -> str:
-    """OUTPUT_COMPUTE / OUTPUT_LLM: the same runtime API the published edge injects,
-    pointed at this install's backend so an app works in preview AND when published.
-    The install token rides in the header (the iframe already exposes it via the
-    relative-URL rewrite; this is the same local-only credential, not a cloud secret)."""
-    auth = json.dumps(f"Bearer {token}")
-    js = ""
-    if output_id:
-        oid = json.dumps(output_id)
-        js += (
-            "  window.OUTPUT_COMPUTE = async function (input) {\n"
-            "    var r = await fetch('/api/outputs/execute', {method:'POST', headers:{'Content-Type':'application/json','Authorization': " + auth + "}, body: JSON.stringify({output_id: " + oid + ", input_data: input || {}, force: true})});\n"
-            "    var d = await r.json();\n"
-            "    if (d.error) throw new Error(d.error);\n"
-            "    return d.backend_result;\n"
-            "  };\n"
-        )
-    js += (
-        "  window.OUTPUT_LLM = async function (body) {\n"
-        "    return fetch('/api/outputs/llm', {method:'POST', headers:{'Content-Type':'application/json','Authorization': " + auth + "}, body: JSON.stringify(body || {})});\n"
-        "  };\n"
+def _runtime_helpers_js() -> str:
+    """OUTPUT_COMPUTE / OUTPUT_LLM only run for real on the published edge, where they
+    are same-origin and carry NO credentials. In the App Builder preview we
+    deliberately do NOT wire them to the authenticated backend: doing so would embed
+    this install's token into the app's own JS (the exact exposure SECURITY.md item A
+    is about). Preview defines readable stubs instead, the app degrades with a clear
+    message rather than crashing or leaking a credential."""
+    return (
+        "  window.OUTPUT_COMPUTE = async function () { throw new Error('OUTPUT_COMPUTE runs once this app is published.'); };\n"
+        "  window.OUTPUT_LLM = async function () { throw new Error('OUTPUT_LLM runs once this app is published.'); };\n"
     )
-    return js
 
 
-def _build_data_injection(input_json: str, result_json: str, backend_url_json: str = "null", runtime: dict | None = None) -> str:
+def _build_data_injection(input_json: str, result_json: str, backend_url_json: str = "null", with_runtime: bool = False) -> str:
     """Build a <script> tag that sets OUTPUT_INPUT / OUTPUT_BACKEND_RESULT /
     OUTPUT_BACKEND_URL, optionally wires OUTPUT_COMPUTE / OUTPUT_LLM, and listens
     for postMessage updates.
@@ -88,9 +76,7 @@ def _build_data_injection(input_json: str, result_json: str, backend_url_json: s
     process; otherwise it's `http://localhost:<port>` and app code can
     `fetch(window.OUTPUT_BACKEND_URL + '/route')` to hit the persistent
     backend's endpoints."""
-    helpers = ""
-    if runtime and runtime.get("token"):
-        helpers = _runtime_helpers_js(runtime["token"], runtime.get("output_id"))
+    helpers = _runtime_helpers_js() if with_runtime else ""
     return (
         "<script>\n"
         "(function() {\n"
@@ -111,8 +97,8 @@ def _build_data_injection(input_json: str, result_json: str, backend_url_json: s
     )
 
 
-def _inject_data_into_html(html: str, input_json: str = "{}", result_json: str = "null", backend_url_json: str = "null", runtime: dict | None = None) -> str:
-    injection = _build_data_injection(input_json, result_json, backend_url_json, runtime)
+def _inject_data_into_html(html: str, input_json: str = "{}", result_json: str = "null", backend_url_json: str = "null", with_runtime: bool = False) -> str:
+    injection = _build_data_injection(input_json, result_json, backend_url_json, with_runtime)
     if "</head>" in html:
         return html.replace("</head>", f"{injection}\n</head>", 1)
     if "<body" in html:

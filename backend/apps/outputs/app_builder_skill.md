@@ -330,7 +330,9 @@ export const JOBS_LIST = '/api/jobs/list';
 The FastAPI backend above runs in preview but is **not hosted when an app is
 published** to the web. For features that should keep working on a published
 `{slug}.openswarm.host` link, use these two runtime calls instead of a backend.
-They behave the same in preview and when published.
+They run on the published site (same-origin, no credentials). In the App Builder
+**preview** they throw a clear "available once published" error, preview can't run
+them without embedding a credential into your app, so test these by publishing.
 
 **AI (Claude):** call `window.OUTPUT_LLM` with an Anthropic-style messages body.
 The model is chosen for you (a cheap default), so don't pass one.

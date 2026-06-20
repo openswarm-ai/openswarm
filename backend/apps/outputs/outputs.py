@@ -13,7 +13,7 @@ from backend.apps.outputs.models import (
     Output, OutputCreate, OutputUpdate, OutputExecute, OutputExecuteResult,
     VibeCodeRequest, WorkspaceSeedRequest,
     PublishPreflightRequest, PublishRequest, PublishPreflightResponse,
-    PublishResult, PublishReview, AppLLMRequest,
+    PublishResult, PublishReview,
 )
 from backend.apps.outputs.executor import execute_backend_code, get_code_warnings
 from backend.apps.outputs.publish import (
@@ -93,7 +93,7 @@ async def serve_workspace_file(workspace_id: str, filepath: str, _d: str = ""):
     if filepath == "index.html":
         input_json, result_json = _decode_data_param(_d) if _d else ("{}", "null")
         backend_url_json = _backend_url_for_workspace(workspace_id)
-        content = _inject_data_into_html(content, input_json, result_json, backend_url_json, runtime={"token": get_auth_token()})
+        content = _inject_data_into_html(content, input_json, result_json, backend_url_json, with_runtime=True)
         # Iframe sub-resource fetches (<link>, <script src>, <img>) drop the
         # parent's ?token= query string, so rewrite the HTML to put the token
         # back on every relative URL; otherwise sub-resources 401.
@@ -114,7 +114,7 @@ async def serve_output_file(output_id: str, filepath: str, _d: str = ""):
     if filepath == "index.html":
         input_json, result_json = _decode_data_param(_d) if _d else ("{}", "null")
         backend_url_json = _backend_url_for_workspace(output.workspace_id) if output.workspace_id else "null"
-        content = _inject_data_into_html(content, input_json, result_json, backend_url_json, runtime={"token": get_auth_token(), "output_id": output.id})
+        content = _inject_data_into_html(content, input_json, result_json, backend_url_json, with_runtime=True)
         content = _inject_token_into_relative_urls(content, get_auth_token())
 
     mime, _ = mimetypes.guess_type(filepath)
@@ -805,33 +805,6 @@ async def publish_output(body: PublishRequest):
         published_slug=output.published_slug,
         published_url=output.published_url,
     ).model_dump()
-
-
-@outputs.router.post("/llm")
-async def app_llm(body: AppLLMRequest):
-    """Runtime LLM for an app's window.OUTPUT_LLM call. Uses the user's configured
-    cheap tier (provider-agnostic), so an app's AI features work in the App Builder
-    preview the same way the published edge serves them via /__llm. Non-streaming:
-    the app reads `(await res.json()).content[0].text`."""
-    if not body.messages:
-        raise HTTPException(status_code=400, detail="messages is required")
-    settings = load_settings()
-    from backend.apps.agents.providers.registry import resolve_aux_model
-    from backend.apps.agents.core.aux_llm import _safe_resp_text
-    try:
-        model, _base = await resolve_aux_model(settings, preferred_tier="haiku")
-    except Exception:
-        raise HTTPException(status_code=503, detail="No model is configured. Add a key or connect a plan in Settings.")
-    client = _get_anthropic_client(model)
-    kwargs: dict = {"model": model, "max_tokens": max(1, min(body.max_tokens, 4096)), "messages": body.messages}
-    if body.system:
-        kwargs["system"] = body.system
-    try:
-        resp = await client.messages.create(**kwargs)
-    except Exception:
-        logger.exception("app llm call failed")
-        raise HTTPException(status_code=502, detail="The model call failed.")
-    return {"content": [{"type": "text", "text": _safe_resp_text(resp)}], "model": model}
 
 
 @outputs.router.post("/unpublish")

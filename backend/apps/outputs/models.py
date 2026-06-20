@@ -235,11 +235,3 @@ class PublishResult(BaseModel):
     blocked: bool = False
     review: Optional[PublishReview] = None
     error: Optional[str] = None
-
-
-class AppLLMRequest(BaseModel):
-    # The runtime LLM call an app makes via window.OUTPUT_LLM. Anthropic-ish shape;
-    # the model is chosen server-side (the user's cheap tier), not by the app.
-    messages: list[dict[str, Any]] = Field(default_factory=list)
-    system: Optional[str] = None
-    max_tokens: int = 1024
