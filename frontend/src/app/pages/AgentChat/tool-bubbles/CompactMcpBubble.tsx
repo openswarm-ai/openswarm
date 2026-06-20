@@ -58,6 +58,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
   const inputSummary = mcpInfo.isMcp ? getMcpInputSummary(input, mcpInfo.action, mcpInfo.serverSlug) : '';
   const visibleSummary = resultSummary || inputSummary;
   const canToggleDetails = !!visibleSummary;
+  const hideVerbLabel = !!workflowLabel && !!visibleSummary;
   const ServiceIcon = mcpInfo.isMcp && mcpInfo.service
     ? <GoogleServiceIcon service={mcpInfo.service} size={14} />
     : null;
@@ -78,20 +79,22 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
         }}
       >
         {ServiceIcon}
-        <Typography
-          sx={{
-            color: c.accent.primary,
-            fontSize: '0.78rem',
-            fontWeight: 600,
-            flexShrink: 0,
-          }}
-        >
-          {serviceLabel}
-        </Typography>
+        {!hideVerbLabel && (
+          <Typography
+            sx={{
+              color: c.accent.primary,
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              flexShrink: 0,
+            }}
+          >
+            {serviceLabel}
+          </Typography>
+        )}
         {visibleSummary && !isError && (
           <Typography
             sx={{
-              color: c.text.secondary,
+              color: hideVerbLabel ? c.text.primary : c.text.secondary,
               fontSize: '0.74rem',
               flex: 1,
               minWidth: 0,
