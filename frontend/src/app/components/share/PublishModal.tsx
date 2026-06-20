@@ -34,6 +34,28 @@ interface Props {
 
 type Phase = 'scanning' | 'review' | 'publishing' | 'done' | 'error';
 
+// A build can take up to ~3 minutes on a cold node_modules. Stay silent for the
+// fast common case, then fade in an honest hint after 10s so a slow build doesn't
+// read as a hang (matches the SlowHint pattern in ChatInputOverlays).
+const SlowHint: React.FC<{ active: boolean; color: string }> = ({ active, color }) => {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setShow(false);
+      return;
+    }
+    const t = setTimeout(() => setShow(true), 10000);
+    return () => clearTimeout(t);
+  }, [active]);
+  return (
+    <Fade in={show} timeout={250}>
+      <Typography sx={{ fontSize: '0.75rem', color, opacity: 0.75, mt: 0.5 }}>
+        This can take up to a minute. Hang tight.
+      </Typography>
+    </Fade>
+  );
+};
+
 const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -46,6 +68,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
   const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState('');
+  const [confirmUnpublish, setConfirmUnpublish] = useState(false);
 
   const runScan = useCallback(() => {
     setPhase('scanning');
@@ -63,6 +86,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
   useEffect(() => {
     if (!open) return;
     setShowDetails(false);
+    setConfirmUnpublish(false);
     if (publishedUrl) {
       setLiveUrl(publishedUrl);
       setPhase('done');
@@ -107,6 +131,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
       setToast('App unpublished');
       onClose();
     } catch (e: any) {
+      setConfirmUnpublish(false);
       setToast(e?.message || "We couldn't unpublish.");
     } finally {
       setBusy(false);
@@ -134,6 +159,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
         <>
           <CircularProgress size={22} sx={{ color: c.accent.primary }} />
           <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary }}>Checking your app before it goes live...</Typography>
+          <SlowHint active color={c.text.tertiary} />
         </>,
       );
     }
@@ -142,6 +168,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
         <>
           <CircularProgress size={22} sx={{ color: c.accent.primary }} />
           <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary }}>Building and publishing your app...</Typography>
+          <SlowHint active color={c.text.tertiary} />
         </>,
       );
     }
@@ -154,6 +181,16 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
       );
     }
     if (phase === 'done') {
+      if (confirmUnpublish) {
+        return center(
+          <>
+            <Typography sx={{ fontSize: '0.9rem', fontWeight: 600, color: c.text.primary }}>Take this app offline?</Typography>
+            <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, textAlign: 'center' }}>
+              The public link will stop working for anyone you've shared it with.
+            </Typography>
+          </>,
+        );
+      }
       return (
         <Box sx={{ px: 2.5, py: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -220,9 +257,19 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
       );
     }
     if (phase === 'done') {
+      if (confirmUnpublish) {
+        return (
+          <>
+            <Button onClick={() => setConfirmUnpublish(false)} disabled={busy} sx={{ color: c.text.muted, textTransform: 'none' }}>Keep it online</Button>
+            <Button variant="contained" onClick={doUnpublish} disabled={busy} sx={{ bgcolor: c.status.error, textTransform: 'none', '&:hover': { bgcolor: c.status.error } }}>
+              Unpublish
+            </Button>
+          </>
+        );
+      }
       return (
         <>
-          <Button onClick={doUnpublish} disabled={busy} sx={{ color: c.status.error, textTransform: 'none' }}>Unpublish</Button>
+          <Button onClick={() => setConfirmUnpublish(true)} sx={{ color: c.status.error, textTransform: 'none' }}>Unpublish</Button>
           <Button variant="contained" onClick={onClose} sx={{ bgcolor: c.accent.primary, textTransform: 'none' }}>Done</Button>
         </>
       );
