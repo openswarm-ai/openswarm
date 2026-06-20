@@ -97,14 +97,28 @@ def track_link_email(email: Optional[str]) -> None:
         logger.debug("analytics link_email failed: %s", e)
 
 
-def track_agent_created(*, id: str, name: Optional[str] = None, dashboard_id: Optional[str] = None) -> None:
+def track_agent_created(*, id: str, dashboard_id: Optional[str] = None) -> None:
+    """Name-free existence/dashboard event, fired at launch. The human-readable
+    title arrives later via track_agent_title once it's generated."""
     c = get_analytics_client()
     if c is None:
         return
     try:
-        c.events.agent.create(id=id, name=name, dashboard_id=dashboard_id)
+        c.events.agent.create(id=id, dashboard_id=dashboard_id)
     except Exception as e:
         logger.debug("analytics agent.create failed: %s", e)
+
+
+def track_agent_title(*, id: str, title: str) -> None:
+    if not title:
+        return
+    c = get_analytics_client()
+    if c is None:
+        return
+    try:
+        c.events.agent.title(id=id, title=title)
+    except Exception as e:
+        logger.debug("analytics agent.title failed: %s", e)
 
 
 def track_agent_message(

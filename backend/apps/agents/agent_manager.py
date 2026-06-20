@@ -321,7 +321,7 @@ class AgentManager:
 
         try:
             from backend.apps.service.analytics import track_agent_created
-            track_agent_created(id=session.id, name=session.name, dashboard_id=session.dashboard_id)
+            track_agent_created(id=session.id, dashboard_id=session.dashboard_id)
         except Exception:
             pass
 
@@ -3727,6 +3727,11 @@ class AgentManager:
             "session_id": session_id,
             "name": title,
         })
+        try:
+            from backend.apps.service.analytics import track_agent_title
+            track_agent_title(id=session_id, title=title)
+        except Exception:
+            pass
         return title
 
     async def generate_turn_label(
