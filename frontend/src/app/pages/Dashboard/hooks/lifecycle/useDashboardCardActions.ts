@@ -123,7 +123,10 @@ export function useDashboardCardActions({
     dispatch(tidyLayout({ expandedSessionIds: currentExpanded }));
 
     const expandedSet = new Set(currentExpanded);
-    const { cards: tidied, viewCards: tidiedViews, browserCards: tidiedBrowsers } = store.getState().dashboardLayout;
+    const {
+      cards: tidied, viewCards: tidiedViews, browserCards: tidiedBrowsers,
+      workflowCards: tidiedWorkflows, workflowsHub: tidiedHub,
+    } = store.getState().dashboardLayout;
     const allRects = [
       ...Object.values(tidied).map((c) => ({
         x: c.x, y: c.y, width: c.width,
@@ -131,6 +134,8 @@ export function useDashboardCardActions({
       })),
       ...Object.values(tidiedViews).map((c) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
       ...Object.values(tidiedBrowsers).map((c) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
+      ...Object.values(tidiedWorkflows).map((c) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
+      ...(tidiedHub ? [{ x: tidiedHub.x, y: tidiedHub.y, width: tidiedHub.width, height: tidiedHub.height }] : []),
     ];
     canvasActions.fitToCards(allRects);
   }, [dispatch, canvasActions]);

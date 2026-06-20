@@ -577,7 +577,8 @@ const dashboardLayoutSlice = createSlice({
       const viewCards = Object.values(state.viewCards);
       const bCards = Object.values(state.browserCards);
       const wCards = Object.values(state.workflowCards);
-      const total = agentCards.length + viewCards.length + bCards.length + wCards.length;
+      const hub = state.workflowsHub;
+      const total = agentCards.length + viewCards.length + bCards.length + wCards.length + (hub ? 1 : 0);
       if (total === 0) return;
 
       const allItems = [
@@ -585,6 +586,7 @@ const dashboardLayoutSlice = createSlice({
         ...viewCards.map((c) => ({ kind: 'view' as const, id: c.output_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
         ...bCards.map((c) => ({ kind: 'browser' as const, id: c.browser_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
         ...wCards.map((c) => ({ kind: 'workflow' as const, id: c.workflow_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
+        ...(hub ? [{ kind: 'workflows-hub' as const, id: 'workflows-hub', x: hub.x, y: hub.y, storedW: hub.width, storedH: hub.height }] : []),
       ];
       allItems.sort((a, b) => a.y - b.y || a.x - b.x);
 
@@ -612,6 +614,8 @@ const dashboardLayoutSlice = createSlice({
         } else if (item.kind === 'workflow') {
           const card = state.workflowCards[item.id];
           if (card) { card.x = pos.x; card.y = pos.y; }
+        } else if (item.kind === 'workflows-hub') {
+          if (state.workflowsHub) { state.workflowsHub.x = pos.x; state.workflowsHub.y = pos.y; }
         } else {
           const card = state.browserCards[item.id];
           if (card) { card.x = pos.x; card.y = pos.y; }
