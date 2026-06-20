@@ -121,6 +121,58 @@ def p_is_enabled(kind: str) -> bool:
         return True
 
 
+def resolve_timezone() -> Optional[str]:
+    """Canonical IANA zone name for the envelope + app_lifecycle events.
+
+    Identical in every build (dev, packaged, open-source). Precedence:
+      1. Renderer-reported value persisted in settings — the browser Intl zone
+         the frontend sends every launch.
+      2. Python local-zone fallbacks (tzlocal, then datetime tzinfo), which can
+         return abbreviations ("PDT") or localized names that don't round-trip
+         through tzdata — last resort so very-early-startup submissions (before
+         the renderer has reported) still carry something.
+    """
+    try:
+        from backend.apps.settings.store import load_settings
+        tz = (getattr(load_settings(), "timezone", None) or "").strip()
+        if tz:
+            return tz
+    except Exception:
+        pass
+    try:
+        from tzlocal import get_localzone_name  # type: ignore
+        tz = get_localzone_name() or ""
+        if tz:
+            return tz
+    except Exception:
+        pass
+    try:
+        import datetime as dt
+        local_tz = dt.datetime.now().astimezone().tzinfo
+        if local_tz:
+            return str(local_tz)
+    except Exception:
+        pass
+    return None
+
+
+def resolve_locale() -> Optional[str]:
+    """BCP 47 locale ("en-US", "es-ES", ...) for the envelope + app_lifecycle
+    events. Identical in every build: renderer-reported value persisted in
+    settings -> None. No Python fallback: locale.getdefaultlocale() is
+    deprecated, often empty, and inconsistent across OSes, so an absent value is
+    better than a wrong one.
+    """
+    try:
+        from backend.apps.settings.store import load_settings
+        loc = (getattr(load_settings(), "locale", None) or "").strip()
+        if loc:
+            return loc
+    except Exception:
+        pass
+    return None
+
+
 def p_envelope() -> dict:
     """Identity + environment metadata stamped on every submission."""
     env: dict[str, Any] = {"install_id": p_get_install_id()}
@@ -133,38 +185,12 @@ def p_envelope() -> dict:
         env["device_type"] = "desktop"
     except Exception:
         pass
-    # Timezone: prefer the IANA zone name passed in by Electron (always
-    # canonical, e.g. "America/Los_Angeles") so cloud-side localTimeFields()
-    # can format hour-of-day correctly. Fall back to Python's local zone
-    # which sometimes returns abbreviations (PDT, CDT) or localized names
-    # ("Romance (zomertijd)") that don't round-trip through tzdata.
-    try:
-        ianatz = os.environ.get("OPENSWARM_TIMEZONE", "").strip()
-        if not ianatz:
-            try:
-                from tzlocal import get_localzone_name  # type: ignore
-                ianatz = get_localzone_name() or ""
-            except Exception:
-                pass
-        if not ianatz:
-            import datetime as dt
-            local_tz = dt.datetime.now().astimezone().tzinfo
-            if local_tz:
-                ianatz = str(local_tz)
-        if ianatz:
-            env["timezone"] = ianatz
-    except Exception:
-        pass
-    # Locale: BCP 47 string ("en-US", "es-ES", etc.) injected by Electron via
-    # app.getLocale(); see electron/main.js. We don't fall back to Python's
-    # locale.getdefaultlocale() because that's deprecated, often empty, and
-    # returns inconsistent OS-specific values across macOS/Windows/Linux.
-    try:
-        loc = os.environ.get("OPENSWARM_LOCALE", "").strip()
-        if loc:
-            env["locale"] = loc
-    except Exception:
-        pass
+    tz = resolve_timezone()
+    if tz:
+        env["timezone"] = tz
+    loc = resolve_locale()
+    if loc:
+        env["locale"] = loc
     env["app_version"] = APP_VERSION
     # How this build was packaged. Set by the platform-specific build script
     # (electron-builder afterPack hooks for dmg / exe / appimage / deb / rpm).

@@ -69,6 +69,13 @@ class AppSettings(BaseModel):
     # never re-bootstrap. Server-owned (see P_SERVER_OWNED_FIELDS) + treated as
     # a secret so a stale renderer PUT can't forge or wipe it.
     analytics_token: Optional[str] = None
+    # Canonical IANA timezone + BCP 47 locale reported by the renderer (browser
+    # Intl API) on every launch. The only source that works across packaged, dev,
+    # and open-source runs (Electron env injection is packaged-only). Overwritten
+    # each launch so a user who changes timezone reports the new one. Server-owned
+    # so a stale renderer settings PUT can't blank them.
+    timezone: Optional[str] = None
+    locale: Optional[str] = None
     first_opened_at: Optional[str] = None
     connection_mode: str = "own_key"
     openswarm_bearer_token: Optional[str] = None

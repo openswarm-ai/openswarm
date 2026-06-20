@@ -926,14 +926,12 @@ async function startBackend() {
     // app_version="unknown". The path-based fallback stays in place so this
     // change is purely additive.
     OPENSWARM_APP_VERSION: app.getVersion(),
-    // Inject the user's BCP 47 locale + IANA timezone. The Python backend
-    // doesn't have reliable APIs for either: locale.getdefaultlocale() is
-    // deprecated and inconsistent across OSes, and Python's local-tz string
-    // sometimes returns "PDT" or "Romance (zomertijd)" rather than
-    // "America/Los_Angeles". Electron has both in canonical form via
-    // app.getLocale() and Intl.DateTimeFormat().resolvedOptions().timeZone.
-    OPENSWARM_LOCALE: app.getLocale(),
-    OPENSWARM_TIMEZONE: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+    // NOTE: locale + timezone are intentionally NOT injected here. The renderer
+    // reports the browser's canonical Intl values to the backend on launch (see
+    // frontend/src/shared/serviceClient.ts reportAppOpened), which the backend
+    // persists and resolves identically across packaged, dev, and open-source
+    // runs. That single source replaced the old OPENSWARM_LOCALE/_TIMEZONE env
+    // injection, so adding them back here would just be dead vars.
     PYTHONDONTWRITEBYTECODE: '1',
     // PEP 540 UTF-8 mode: makes open() default to UTF-8 on Windows where
     // the locale is otherwise cp1252. Many backend modules read UTF-8

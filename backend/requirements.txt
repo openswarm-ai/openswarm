@@ -16,9 +16,9 @@ python-dotenv==1.1.1
 Pillow==12.2.0
 httpx==0.28.1
 trafilatura==2.0.0
-# tzlocal: dev-mode fallback for resolving the user's IANA timezone when
-# Electron's OPENSWARM_TIMEZONE env var isn't set (i.e. `bash run.sh`).
-# Packaged builds get the env var directly so this is a safety net.
+# tzlocal: fallback for resolving the user's IANA timezone before the renderer
+# has reported its browser Intl zone (the primary source in every build). Used
+# by service/client.py resolve_timezone() and the agent wall-clock context.
 tzlocal==5.3.1
 # swarm-analytics: typed client for the OpenSwarm product-analytics ingest
 # service. Pinned for reproducible desktop builds (see ANALYTICS_OVERVIEW.md).

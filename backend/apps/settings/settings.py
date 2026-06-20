@@ -123,6 +123,8 @@ P_SERVER_OWNED_FIELDS = (
     "signin_method",
     "installation_id",
     "analytics_token",
+    "timezone",
+    "locale",
     "claude_subscription_token",
     "openai_subscription_token",
     "gemini_subscription_token",

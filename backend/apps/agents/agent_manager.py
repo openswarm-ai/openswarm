@@ -1075,15 +1075,13 @@ class AgentManager:
             # so it can answer day-of-week questions without hallucinating.
             try:
                 from zoneinfo import ZoneInfo
-                # Best-effort IANA name for the host. Mirrors apps/service/client.py.
-                tz_name = os.environ.get("OPENSWARM_TIMEZONE", "").strip()
-                if not tz_name:
-                    try:
-                        from tzlocal import get_localzone_name  # type: ignore
-                        tz_name = get_localzone_name() or ""
-                    except Exception:
-                        tz_name = ""
-                tz_name = tz_name or "UTC"
+                # IANA zone via the shared resolver (renderer-reported value
+                # persisted in settings, then tzlocal / datetime fallbacks). Same
+                # source the analytics envelope uses, so the agent's clock and
+                # telemetry never disagree, and it resolves identically in
+                # packaged, dev, and open-source runs (no env-var dependency).
+                from backend.apps.service.client import resolve_timezone
+                tz_name = resolve_timezone() or "UTC"
                 now_local = datetime.now(ZoneInfo(tz_name))
                 tz_abbr = now_local.strftime("%Z") or tz_name
                 time_ctx = (

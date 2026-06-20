@@ -76,7 +76,7 @@ if (typeof window !== 'undefined') {
   if (ric) ric(prefetchAll, { timeout: 1500 });
   else window.setTimeout(prefetchAll, 500);
 }
-import { report, getSessionTraceState, getRecentActions } from '@/shared/serviceClient';
+import { report, reportAppOpened, getSessionTraceState, getRecentActions } from '@/shared/serviceClient';
 import { useRouteTracker } from '@/shared/hooks/useRouteTracker';
 import { useDeepLink } from '@/shared/hooks/useDeepLink';
 import { useWindowFocus } from '@/shared/hooks/useWindowFocus';
@@ -221,6 +221,11 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   useEffect(() => {
     dispatch(fetchSettings());
     dispatch(fetchModels());
+    // Report the app launch with the browser's canonical tz/locale so the
+    // backend can emit analytics app_lifecycle.opened with values that work in
+    // packaged, dev, and open-source builds. Guarded once per page load; the
+    // backend dedupes per process.
+    reportAppOpened();
     fetch(`${API_BASE}/subscription/sync`, { method: 'POST' })
       .then((r) => {
         if (r.ok) dispatch(fetchSettings());

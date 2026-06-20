@@ -184,19 +184,16 @@ async def service_lifespan():
 
         sync({"identity": id_props})
 
-        # swarm-analytics: bootstrap the client (registers + persists a token on
-        # first run) and prove the pipe with a single diagnostic log write.
-        from backend.apps.service.analytics import get_analytics_client, track_link_email
-        client = get_analytics_client()
-        if client is not None:
-            client.logs.write(
-                tag="app",
-                subtag="backend_started",
-                data={"app_version": APP_VERSION},
-            )
-        # Re-assert the email link every boot so users already signed in before
-        # this version shipped get linked without re-authing. Idempotent server-
-        # side; no-ops if no email or the client failed to bootstrap.
+        # swarm-analytics: re-assert the email link every boot so users already
+        # signed in before this version shipped get linked without re-authing.
+        # Idempotent server-side; no-ops if no email or the client failed to
+        # bootstrap. NOTE: app_lifecycle.opened is intentionally NOT fired here —
+        # it's renderer-triggered (see p_bridge_to_analytics) so it carries the
+        # browser's canonical tz/locale, which works for packaged, dev, and
+        # open-source runs alike. app_lifecycle.closed stays backend-side in the
+        # shutdown path below, where delivery is deterministic (renderer pagehide
+        # is not).
+        from backend.apps.service.analytics import track_link_email
         track_link_email(getattr(settings, "user_email", None))
     except Exception as e:
         logger.debug(f"Service startup event failed (non-critical): {e}")
@@ -234,7 +231,9 @@ async def service_lifespan():
     except Exception:
         pass
 
-    from backend.apps.service.analytics import shutdown_analytics
+    from backend.apps.service.analytics import track_app_closed, shutdown_analytics
+    # Enqueue the close event BEFORE flush/close so the worker actually drains it.
+    track_app_closed()
     shutdown_analytics()
 
     logger.info("Service shut down")
@@ -454,6 +453,16 @@ def p_bridge_to_analytics(item: dict) -> None:
         if dashboard_id:
             from backend.apps.service.analytics import track_dashboard_event
             track_dashboard_event(dashboard_id=str(dashboard_id), action=a)
+    elif s == "app" and a == "opened":
+        # The renderer reports the browser's canonical IANA timezone + BCP 47
+        # locale on launch. Persist them (overwriting last launch, so a timezone
+        # switch is picked up) for the cloud envelope, then emit the once-per-
+        # process app_lifecycle.opened carrying those exact values.
+        tz = p.get("timezone") if isinstance(p.get("timezone"), str) else None
+        loc = p.get("locale") if isinstance(p.get("locale"), str) else None
+        from backend.apps.service.analytics import persist_client_env, track_app_opened
+        persist_client_env(timezone=tz, locale=loc)
+        track_app_opened(timezone=tz, locale=loc)
 
 
 @service.router.post("/submit")

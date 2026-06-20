@@ -8,7 +8,7 @@ never break the app. See ANALYTICS_OVERVIEW.md for the SDK contract.
 from __future__ import annotations
 
 import logging
-import os
+import platform
 from typing import Optional
 
 from swarm_analytics import AnalyticsClient
@@ -19,9 +19,10 @@ P_CLIENT: Optional[AnalyticsClient] = None
 
 
 def p_base_url() -> str:
-    # The analytics service must NOT share the desktop backend's port (8324).
-    # Default points at the local analytics service; override per environment.
-    return os.environ.get("OPENSWARM_ANALYTICS_URL", "http://127.0.0.1:6792").rstrip("/")
+    # One fixed analytics endpoint for every build (dev, packaged, OSS) so the
+    # analytics handling is identical everywhere. Must NOT share the desktop
+    # backend's port (8324); the analytics service listens on 6792.
+    return "http://127.0.0.1:6792"
 
 
 def p_mode() -> str:
@@ -126,3 +127,73 @@ def track_onboarding_step(*, step_id: str, status: str) -> None:
         c.events.onboarding.step(step_id=step_id, status=status)
     except Exception as e:
         logger.debug("analytics onboarding.step failed: %s", e)
+
+
+# app_lifecycle.opened is fired at most once per backend process. The renderer
+# triggers it (so it carries the browser's canonical tz/locale, the only source
+# that works for packaged, dev, AND open-source runs), but a renderer can remount
+# or hard-reload many times against one long-lived backend — especially in dev —
+# so this process-scoped guard is what actually enforces one event per app launch.
+P_OPENED_FIRED = False
+
+
+def persist_client_env(*, timezone: Optional[str] = None, locale: Optional[str] = None) -> None:
+    """Store the renderer-reported tz/locale so the cloud envelope (stamped on
+    every submission via client.resolve_*) can use them on dev / open-source runs
+    where Electron's env injection never happens. Overwrites every launch, so a
+    user who changed timezone since last open reports the new one. Writes to disk
+    only when a value actually changed, to avoid settings churn each launch."""
+    tz = (timezone or "").strip() or None
+    loc = (locale or "").strip() or None
+    if tz is None and loc is None:
+        return
+    try:
+        from backend.apps.settings.store import load_settings, save_settings
+        s = load_settings()
+        changed = False
+        if tz and getattr(s, "timezone", None) != tz:
+            s.timezone = tz
+            changed = True
+        if loc and getattr(s, "locale", None) != loc:
+            s.locale = loc
+            changed = True
+        if changed:
+            save_settings(s)
+    except Exception as e:
+        logger.debug("analytics persist_client_env failed: %s", e)
+
+
+def track_app_opened(*, timezone: Optional[str] = None, locale: Optional[str] = None) -> None:
+    """Fire app_lifecycle.opened once per backend process. tz/locale come from the
+    renderer (browser Intl); os/version are filled in here. Falls back to the
+    shared resolver only if the caller passed nothing (defensive; the renderer
+    path always supplies both)."""
+    global P_OPENED_FIRED
+    if P_OPENED_FIRED:
+        return
+    c = get_analytics_client()
+    if c is None:
+        return
+    try:
+        from backend.apps.service.version import APP_VERSION
+        from backend.apps.service.client import resolve_timezone, resolve_locale
+        c.events.app_lifecycle.opened(
+            os=platform.system(),
+            os_version=platform.release(),
+            app_version=APP_VERSION,
+            timezone=timezone if timezone is not None else resolve_timezone(),
+            locale=locale if locale is not None else resolve_locale(),
+        )
+        P_OPENED_FIRED = True
+    except Exception as e:
+        logger.debug("analytics app_lifecycle.opened failed: %s", e)
+
+
+def track_app_closed() -> None:
+    c = get_analytics_client()
+    if c is None:
+        return
+    try:
+        c.events.app_lifecycle.closed()
+    except Exception as e:
+        logger.debug("analytics app_lifecycle.closed failed: %s", e)
