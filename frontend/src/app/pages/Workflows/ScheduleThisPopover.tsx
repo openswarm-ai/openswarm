@@ -179,8 +179,8 @@ export default function ScheduleThisPopover({ anchorEl, onClose, sessionId, sess
           display: 'flex', flexDirection: 'column', gap: 0.4,
           px: 1, py: 0.75, mb: 0.75,
           borderRadius: `${c.radius.md}px`,
-          bgcolor: c.status.warningBg || c.bg.elevated,
-          border: `1px solid ${(c.status.warning || c.text.muted) + '60'}`,
+          bgcolor: c.status.warningBg,
+          border: `1px solid ${c.status.warning + '60'}`,
         }}>
           <Typography sx={{ fontSize: '0.78rem', fontWeight: 700, color: c.text.primary }}>
             This chat is already scheduled.

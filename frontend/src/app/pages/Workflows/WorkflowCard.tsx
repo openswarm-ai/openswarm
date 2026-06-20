@@ -472,7 +472,7 @@ const WorkflowCard: React.FC<Props> = ({
       ? '2px solid #3b82f6'
       : isRunning
         ? `1px solid ${c.accent.primary}80`
-        : `1px solid ${c.border.subtle}`;
+        : `1px solid ${c.border.strong}`;
 
   const shadow = isHighlighted
     ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
@@ -480,7 +480,7 @@ const WorkflowCard: React.FC<Props> = ({
       ? c.shadow.lg
       : isSelected
         ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
-        : c.shadow.md;
+        : c.shadow.sm;
 
   return (
     <Box
@@ -514,7 +514,7 @@ const WorkflowCard: React.FC<Props> = ({
         width: displayW,
         height: autoHeight ? 'auto' : displayH,
         maxHeight: autoHeight ? 'min(82vh, 760px)' : undefined,
-        borderRadius: '14px',
+        borderRadius: 3,
         border,
         bgcolor: c.bg.surface,
         boxShadow: shadow,
@@ -541,7 +541,7 @@ const WorkflowCard: React.FC<Props> = ({
         onPointerUp={handleDragPointerUp}
         sx={{
           display: 'flex', alignItems: 'center', gap: 1,
-          px: 2, py: 1.4,
+          px: 2, pt: 2, pb: 1.4,
           cursor: isDragging ? 'grabbing' : 'grab',
           touchAction: 'none', userSelect: 'none',
           flexShrink: 0,
@@ -549,7 +549,7 @@ const WorkflowCard: React.FC<Props> = ({
           position: 'relative',
         }}
       >
-        <DragIndicatorIcon sx={{ fontSize: 18, color: c.text.muted }} />
+        <DragIndicatorIcon sx={{ fontSize: 16, color: c.text.ghost, mr: -0.5 }} />
         {isDraft ? (
           // Draft state: title is inline-editable. Patches the openCard's
           // draft.title so PreviewView picks it up on Save. Saved cards
@@ -610,9 +610,9 @@ const WorkflowCard: React.FC<Props> = ({
           data-no-drag
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           onPointerDown={(e) => e.stopPropagation()}
-          sx={{ p: 0.5, color: c.text.secondary, '&:hover': { color: c.status.error, bgcolor: c.status.errorBg } }}
+          sx={{ p: 0.5, color: c.text.ghost, '&:hover': { color: c.status.error, bgcolor: c.status.errorBg } }}
         >
-          <CloseIcon sx={{ fontSize: 17 }} />
+          <CloseIcon sx={{ fontSize: 16 }} />
         </IconButton>
       </Box>
 
@@ -633,7 +633,6 @@ const WorkflowCard: React.FC<Props> = ({
             workflow={null}
             runs={null}
             fallbackModel={card?.draft?.model}
-            fallbackMode={card?.draft?.mode}
             fallbackSourceSessionId={card?.draft?.source_session_id}
           />
           <Box sx={{ flex: 1 }} />
@@ -842,7 +841,7 @@ const WorkflowCard: React.FC<Props> = ({
           <Box sx={{
             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
             fontSize: '1.4rem', fontWeight: 700, color: c.accent.primary,
-            bgcolor: c.bg.surface, px: 1.2, py: 0.5, borderRadius: 999,
+            bgcolor: c.bg.surface, px: 1.2, py: 0.5, borderRadius: c.radius.full,
             boxShadow: c.shadow.md,
             animation: 'first-success-pop 1.4s ease-out forwards',
             '@keyframes first-success-pop': {
@@ -944,11 +943,10 @@ function EditAgentSubtitle({ session }: { session: import('@/shared/state/agents
   );
 }
 
-function SubtitleRow({ workflow, runs, fallbackModel, fallbackMode, fallbackSourceSessionId }: {
+function SubtitleRow({ workflow, runs, fallbackModel, fallbackSourceSessionId }: {
   workflow: Workflow | null;
   runs: import('@/shared/state/workflowsSlice').WorkflowRun[] | null;
   fallbackModel?: string;
-  fallbackMode?: string;
   fallbackSourceSessionId?: string | null;
 }) {
   const c = useClaudeTokens();
@@ -957,8 +955,8 @@ function SubtitleRow({ workflow, runs, fallbackModel, fallbackMode, fallbackSour
   // model/mode and use its work time for the "28s" so the subtitle reads the
   // same as the source chat card did.
   const sourceSession = useAppSelector((s) => fallbackSourceSessionId ? s.agents.sessions[fallbackSourceSessionId] : undefined);
-  // Match Image #34/#35/#36/#38/#40: "Claude Opus 4.6  agent  28s".
-  // Spaces between fields, all in muted text.
+  // Reads "Claude Opus 4.6  28s": model then work time, spaces between,
+  // all muted. Mode is omitted to match the chat card's subtitle.
   const effModel = workflow?.model || fallbackModel || '';
   const modelLabel = React.useMemo(() => {
     if (!effModel) return '';
@@ -969,7 +967,6 @@ function SubtitleRow({ workflow, runs, fallbackModel, fallbackMode, fallbackSour
     }
     return effModel;
   }, [effModel, modelsByProvider]);
-  const modeLabel = workflow?.mode || fallbackMode || '';
   const duration = React.useMemo(() => {
     const finished = (runs || []).find((r) => r.finished_at);
     if (finished && finished.finished_at) {
@@ -989,7 +986,6 @@ function SubtitleRow({ workflow, runs, fallbackModel, fallbackMode, fallbackSour
   return (
     <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25, fontSize: '0.82rem', color: c.text.muted, minWidth: 0, overflow: 'hidden' }}>
       {modelLabel && <Box component="span" sx={{ whiteSpace: 'nowrap' }}>{modelLabel}</Box>}
-      {modeLabel && <Box component="span" sx={{ whiteSpace: 'nowrap' }}>{modeLabel}</Box>}
       {duration && <Box component="span" sx={{ whiteSpace: 'nowrap' }}>{duration}</Box>}
     </Box>
   );
@@ -1030,7 +1026,7 @@ function RunningHeader({ workflowId }: { workflowId: string }) {
         onClick={controlsDisabled ? undefined : onStop}
         role="button"
         aria-disabled={controlsDisabled}
-        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.35, fontSize: '0.82rem', fontWeight: 600, px: 1, py: 0.4, color: c.text.secondary, cursor: controlsDisabled ? 'default' : 'pointer', borderRadius: 999, opacity: controlsDisabled && !stopPending ? 0.55 : 1, '&:hover': controlsDisabled ? {} : { color: c.text.primary, bgcolor: c.bg.elevated } }}>
+        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.35, fontSize: '0.82rem', fontWeight: 600, px: 1, py: 0.4, color: c.text.secondary, cursor: controlsDisabled ? 'default' : 'pointer', borderRadius: c.radius.full, opacity: controlsDisabled && !stopPending ? 0.55 : 1, '&:hover': controlsDisabled ? {} : { color: c.text.primary, bgcolor: c.bg.elevated } }}>
         {stopPending ? <CircularProgress size={14} thickness={5} sx={{ color: c.text.secondary }} /> : <StopRounded sx={{ fontSize: 15 }} />}
         Stop
       </Box>
@@ -1042,7 +1038,7 @@ function RunningHeader({ workflowId }: { workflowId: string }) {
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.35,
             fontSize: '0.82rem', fontWeight: 700,
-            px: 1.1, py: 0.4, borderRadius: 999,
+            px: 1.1, py: 0.4, borderRadius: c.radius.full,
             bgcolor: c.accent.primary, color: '#fff', cursor: controlsDisabled ? 'default' : 'pointer',
             opacity: controlsDisabled && !pausePending ? 0.55 : 1,
             '&:hover': controlsDisabled ? {} : { filter: 'brightness(1.05)' },

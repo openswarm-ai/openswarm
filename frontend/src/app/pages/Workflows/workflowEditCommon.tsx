@@ -36,7 +36,7 @@ export function ActionBtn({ label, tone, disabled, onClick, icon }: { label: str
       sx={{
         display: 'inline-flex', alignItems: 'center', gap: 0.45,
         fontSize: LABEL_FS, fontWeight: 600, px: 1.25, py: 0.5,
-        borderRadius: 999,
+        borderRadius: c.radius.full,
         cursor: disabled ? 'not-allowed' : 'pointer',
         color: palette.color,
         bgcolor: palette.bg,

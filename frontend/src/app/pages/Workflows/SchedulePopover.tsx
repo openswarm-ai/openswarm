@@ -139,7 +139,7 @@ export default function SchedulePopover({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.12, ease: 'easeOut' }}
+            transition={{ duration: 0.14, ease: 'easeOut' }}
             style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
         {mode === 'search' && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>

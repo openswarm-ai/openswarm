@@ -3,6 +3,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
+import Fade from '@mui/material/Fade';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -108,14 +109,14 @@ function TimeSavedBadge() {
     <Tooltip title={`${count} workflow runs completed for you. Rough estimate of ~3 min saved per run vs. doing it by hand.`}>
       <Box sx={{
         display: 'inline-flex', alignItems: 'center', gap: 0.5,
-        ml: 1, px: 0.85, py: 0.2,
+        ml: 1, px: 0.75, py: 0.3,
         fontSize: '0.74rem', fontWeight: 600,
         color: c.text.secondary,
         bgcolor: 'transparent',
         border: `1px solid ${c.border.subtle}`,
-        borderRadius: 999,
+        borderRadius: c.radius.full,
       }}>
-        <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', bgcolor: (c.status.success || c.accent.primary) + '22', color: c.status.success || c.accent.primary, fontSize: 9, fontWeight: 800 }}>✓</Box>
+        <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', bgcolor: c.status.success + '22', color: c.status.success, fontSize: 9, fontWeight: 800 }}>✓</Box>
         <span style={{ color: c.text.primary }}>{count}</span>
         <span style={{ color: c.text.muted }}>·</span>
         <span style={{ color: c.text.secondary }}>{timeLabel} back</span>
@@ -344,14 +345,14 @@ const WorkflowsHubCard: React.FC<Props> = ({
     ? `2px solid ${c.accent.primary}`
     : isSelected
       ? '2px solid #3b82f6'
-      : `1px solid ${c.border.medium}`;
+      : `1px solid ${c.border.strong}`;
   const shadow = isHighlighted
     ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
     : (isDragging || isResizing)
       ? c.shadow.lg
       : isSelected
         ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
-        : c.shadow.md;
+        : c.shadow.sm;
   const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
 
   return (
@@ -380,7 +381,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
         height: dh,
         bgcolor: c.bg.surface,
         border,
-        borderRadius: `${c.radius.lg}px`,
+        borderRadius: 3,
         boxShadow: shadow,
         display: 'flex',
         flexDirection: 'column',
@@ -408,15 +409,15 @@ const WorkflowsHubCard: React.FC<Props> = ({
               points right, matching the Workflows brand mark. */}
           <CallSplitRoundedIcon sx={{ fontSize: 16, transform: 'rotate(90deg)' }} />
         </Box>
-        <Typography sx={{ flex: 1, fontWeight: 700, fontSize: '0.88rem', color: c.text.primary }}>Workflows</Typography>
+        <Typography sx={{ flex: 1, fontWeight: 600, fontSize: '0.95rem', color: c.text.primary }}>Workflows</Typography>
         <IconButton
           size="small"
           data-no-drag
           onClick={(e) => { e.stopPropagation(); dispatch(closeWorkflowsHub()); }}
           onPointerDown={(e) => e.stopPropagation()}
-          sx={{ p: 0.35, color: c.text.ghost, '&:hover': { color: c.status.error, bgcolor: c.status.errorBg } }}
+          sx={{ p: 0.5, color: c.text.ghost, '&:hover': { color: c.status.error, bgcolor: c.status.errorBg } }}
         >
-          <CloseIcon sx={{ fontSize: 15 }} />
+          <CloseIcon sx={{ fontSize: 16 }} />
         </IconButton>
       </Box>
 
@@ -433,9 +434,9 @@ const WorkflowsHubCard: React.FC<Props> = ({
           data-no-drag
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.4,
-            fontSize: '0.85rem', fontWeight: 600, color: c.text.primary,
+            fontSize: '0.82rem', fontWeight: 600, color: c.text.primary,
             bgcolor: c.bg.elevated, border: `1px solid ${c.border.subtle}`,
-            px: 1, py: 0.4, borderRadius: `${c.radius.md}px`, cursor: 'pointer',
+            px: 1, py: 0.35, borderRadius: `${c.radius.md}px`, cursor: 'pointer',
             '&:hover': { borderColor: c.accent.primary, color: c.accent.primary },
           }}
         >
@@ -448,11 +449,11 @@ const WorkflowsHubCard: React.FC<Props> = ({
             data-no-drag
             sx={{
               display: 'inline-flex', alignItems: 'center', gap: 0.4, ml: 0.5,
-              fontSize: '0.8rem', fontWeight: 600,
-              color: paused ? c.status.warning || c.accent.primary : c.text.secondary,
-              bgcolor: paused ? (c.status.warningBg || c.bg.elevated) : 'transparent',
-              border: `1px solid ${paused ? (c.status.warning || c.accent.primary) + '60' : c.border.subtle}`,
-              px: 0.85, py: 0.3, borderRadius: `${c.radius.md}px`, cursor: 'pointer',
+              fontSize: '0.82rem', fontWeight: 600,
+              color: c.text.secondary,
+              bgcolor: paused ? c.bg.elevated : 'transparent',
+              border: `1px solid ${paused ? c.border.medium : c.border.subtle}`,
+              px: 1, py: 0.35, borderRadius: `${c.radius.md}px`, cursor: 'pointer',
               '&:hover': { color: c.text.primary, borderColor: c.border.medium },
             }}>
             <Switch size="small" checked={paused} sx={{ pointerEvents: 'none', mr: -0.5, ml: -0.5 }} />
@@ -468,7 +469,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
             sx={{
               fontSize: '0.82rem', fontWeight: 500, color: c.text.secondary,
               border: `1px solid ${c.border.subtle}`,
-              px: 1.1, py: 0.35, borderRadius: `${c.radius.md}px`, cursor: 'pointer',
+              px: 1, py: 0.35, borderRadius: `${c.radius.md}px`, cursor: 'pointer',
               '&:hover': { color: c.text.primary, borderColor: c.border.medium },
             }}>Today</Box>
           <IconButton size="small" data-no-drag onClick={() => setRefDate(addDays(refDate, view === 'Month' ? -28 : -7))} sx={{ p: 0.3 }}><ChevronLeftIcon sx={{ fontSize: 18 }} /></IconButton>
@@ -495,7 +496,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
             {view}
             <KeyboardArrowDownIcon sx={{ fontSize: 16 }} />
           </Box>
-          {viewOpen && (
+          <Fade in={viewOpen} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
             <Box sx={{ position: 'absolute', top: '100%', right: 0, mt: 0.5, bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.md}px`, boxShadow: c.shadow.md, zIndex: 5, minWidth: 110 }}>
               {(['List', 'Week', 'Month'] as const).map((v) => (
                 <Box
@@ -507,7 +508,7 @@ const WorkflowsHubCard: React.FC<Props> = ({
                 </Box>
               ))}
             </Box>
-          )}
+          </Fade>
         </Box>
       </Box>
 
@@ -686,7 +687,7 @@ function SidebarSection({ title, items, onPick, scheduled, onContext, onSchedule
               <Box
                 onClick={(e) => toggleEnabled(w, e)}
                 sx={{
-                  width: 14, height: 14, borderRadius: '3px', flexShrink: 0,
+                  width: 14, height: 14, borderRadius: c.radius.sm, flexShrink: 0,
                   border: `1.5px solid ${w.schedule.enabled ? c.accent.primary : c.border.medium}`,
                   bgcolor: w.schedule.enabled ? c.accent.primary : 'transparent',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -702,7 +703,7 @@ function SidebarSection({ title, items, onPick, scheduled, onContext, onSchedule
               <Box
                 onClick={(e) => { e.stopPropagation(); onSchedule?.(w, e.currentTarget); }}
                 sx={{
-                  width: 16, height: 16, borderRadius: '4px', flexShrink: 0,
+                  width: 16, height: 16, borderRadius: c.radius.sm, flexShrink: 0,
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                   color: c.text.muted, cursor: 'pointer',
                   '&:hover': { color: c.accent.primary, bgcolor: c.bg.elevated },
@@ -720,7 +721,7 @@ function SidebarSection({ title, items, onPick, scheduled, onContext, onSchedule
             )}
           </Typewriter>
           {scheduled && (!w.schedule.enabled || allPaused) && (
-            <Box sx={{ flexShrink: 0, px: 0.6, py: 0.1, borderRadius: '3px', bgcolor: c.bg.elevated, color: c.text.muted, fontSize: '0.62rem', fontWeight: 600, lineHeight: 1.5, letterSpacing: '0.02em' }}>Paused</Box>
+            <Box sx={{ flexShrink: 0, px: 0.6, py: 0.1, borderRadius: c.radius.sm, bgcolor: c.bg.elevated, color: c.text.muted, fontSize: '0.62rem', fontWeight: 600, lineHeight: 1.5, letterSpacing: '0.02em' }}>Paused</Box>
           )}
         </Box>
       ))}

@@ -213,7 +213,7 @@ export default function EditAgentView({ workflow, steps, isFixMode = false, onEd
             title={canSave ? undefined : 'Add at least one step before saving'}
             sx={{
               fontSize: '0.8rem', fontWeight: 700, color: '#fff', bgcolor: c.accent.primary,
-              px: 1.2, py: 0.35, borderRadius: 999, cursor: canSave ? 'pointer' : 'not-allowed',
+              px: 1.2, py: 0.35, borderRadius: c.radius.full, cursor: canSave ? 'pointer' : 'not-allowed',
               opacity: canSave ? 1 : 0.45,
               '&:hover': { filter: 'brightness(1.05)' },
             }}>

@@ -85,7 +85,7 @@ export function ActionBtn({ label, tone, disabled, onClick, icon }: { label: str
         display: 'inline-flex', alignItems: 'center', gap: 0.4,
         fontSize: '0.78rem', fontWeight: 600,
         px: 1, py: 0.35,
-        borderRadius: 999,
+        borderRadius: c.radius.full,
         cursor: disabled ? 'not-allowed' : 'pointer',
         color: palette.color,
         bgcolor: palette.bg,
@@ -267,7 +267,7 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.5,
             fontSize: '0.88rem', fontWeight: 700,
-            px: 1.75, py: 0.6, borderRadius: 999,
+            px: 1.75, py: 0.6, borderRadius: c.radius.full,
             color: '#fff', bgcolor: c.accent.primary,
             cursor: busy ? 'wait' : canSave ? 'pointer' : 'not-allowed',
             opacity: busy || !canSave ? 0.6 : 1,
@@ -300,7 +300,7 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
             role="button"
             onClick={canSave ? onSaveDraft : undefined}
             title={canSave ? undefined : 'Add at least one step before saving'}
-            sx={{ fontSize: '0.84rem', fontWeight: 700, color: '#fff', bgcolor: c.accent.primary, borderRadius: 999, cursor: busy ? 'wait' : canSave ? 'pointer' : 'not-allowed', px: 1.5, py: 0.6, opacity: busy || !canSave ? 0.6 : 1, '&:hover': { filter: 'brightness(1.06)' } }}>
+            sx={{ fontSize: '0.84rem', fontWeight: 700, color: '#fff', bgcolor: c.accent.primary, borderRadius: c.radius.full, cursor: busy ? 'wait' : canSave ? 'pointer' : 'not-allowed', px: 1.5, py: 0.6, opacity: busy || !canSave ? 0.6 : 1, '&:hover': { filter: 'brightness(1.06)' } }}>
             Save
           </Box>
         </DialogActions>
@@ -466,7 +466,7 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
                 sx={{
                   display: 'inline-flex', alignItems: 'center', gap: 0.5,
                   fontSize: '0.88rem', fontWeight: 700,
-                  px: 1.75, py: 0.6, borderRadius: 999,
+                  px: 1.75, py: 0.6, borderRadius: c.radius.full,
                   color: '#fff', bgcolor: c.accent.primary,
                   cursor: 'pointer',
                   '&:hover': { bgcolor: c.accent.primary, filter: 'brightness(1.06)' },
@@ -499,12 +499,12 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
             display: 'inline-flex', alignItems: 'center', gap: 0.45,
             fontSize: '0.82rem', fontWeight: 600,
             px: 1.25, py: 0.5,
-            borderRadius: 999,
+            borderRadius: c.radius.full,
             cursor: 'pointer',
             color: c.text.secondary,
             bgcolor: 'transparent',
             border: `1px solid ${c.border.medium}`,
-            '&:hover': { bgcolor: c.bg.elevated, borderColor: c.border.strong || c.border.medium, color: c.text.primary },
+            '&:hover': { bgcolor: c.bg.elevated, borderColor: c.border.strong, color: c.text.primary },
           }}>
           <EditOutlined sx={{ fontSize: 15 }} />
           Edit
@@ -596,7 +596,7 @@ function AuditTraceLink({ workflowId }: { workflowId: string }) {
         <Box onClick={open} role="button" sx={{
           display: 'inline-flex', alignItems: 'center', gap: 0.3,
           fontSize: '0.7rem', color: c.text.muted, cursor: 'pointer',
-          px: 0.5, py: 0.25, borderRadius: 0.75,
+          px: 0.5, py: 0.25, borderRadius: c.radius.sm,
           '&:hover': { color: c.accent.primary, bgcolor: c.bg.elevated },
         }}>
           <HistoryIcon sx={{ fontSize: 12 }} />
@@ -712,7 +712,7 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
             color: filter === k ? c.accent.primary : c.text.muted,
             bgcolor: filter === k ? c.accent.primary + '14' : 'transparent',
             border: `1px solid ${filter === k ? c.accent.primary + '40' : c.border.subtle}`,
-            px: 0.7, py: 0.2, borderRadius: 999, cursor: 'pointer',
+            px: 0.75, py: 0.3, borderRadius: c.radius.full, cursor: 'pointer',
             '&:hover': { color: c.accent.primary },
           }}>
             {k === 'all' ? 'All' : k === 'failure' ? 'Failures only' : 'Ran late only'}
@@ -733,8 +733,8 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
               <Box key={r.id}>
                 <Box
                   onClick={() => setExpandedId(expanded ? null : r.id)}
-                  sx={{ display: 'flex', alignItems: 'center', gap: 1.25, py: 0.6, px: 0.5, cursor: 'pointer', borderRadius: 0.75, '&:hover': { bgcolor: c.bg.elevated } }}>
-                  <Box sx={{ fontSize: '0.72rem', fontWeight: 700, color: statusColor(r.status, c), bgcolor: statusBg(r.status, c), px: 0.8, py: 0.3, borderRadius: 0.75, minWidth: 64, textAlign: 'center' }}>
+                  sx={{ display: 'flex', alignItems: 'center', gap: 1.25, py: 0.6, px: 0.5, cursor: 'pointer', borderRadius: c.radius.sm, '&:hover': { bgcolor: c.bg.elevated } }}>
+                  <Box sx={{ fontSize: '0.72rem', fontWeight: 700, color: statusColor(r.status, c), bgcolor: statusBg(r.status, c), px: 0.8, py: 0.3, borderRadius: c.radius.sm, minWidth: 64, textAlign: 'center' }}>
                     {labelForStatus(r.status)}
                   </Box>
                   {showWorkflow && workflowTitleFor ? (
@@ -753,7 +753,7 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
                   <Box sx={{ fontSize: '0.7rem', color: c.text.ghost, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}>▾</Box>
                 </Box>
                 {expanded && (
-                  <Box sx={{ ml: 8, mt: 0.25, mb: 0.75, p: 1, bgcolor: c.bg.elevated, borderRadius: 0.75, border: `1px solid ${c.border.subtle}` }}>
+                  <Box sx={{ ml: 8, mt: 0.25, mb: 0.75, p: 1, bgcolor: c.bg.elevated, borderRadius: c.radius.sm, border: `1px solid ${c.border.subtle}` }}>
                     {r.error ? (
                       <Typography sx={{ fontSize: '0.78rem', color: c.status.error, lineHeight: 1.4 }}>{r.error}</Typography>
                     ) : (
@@ -784,11 +784,11 @@ export function HistoryDetail({ run, onBack }: { run: WorkflowRun | null; onBack
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Box onClick={onBack} role="button" sx={{ fontSize: '0.82rem', color: c.text.muted, cursor: 'pointer', '&:hover': { color: c.accent.primary } }}>← back</Box>
-        <Box sx={{ fontSize: '0.72rem', fontWeight: 700, color: statusColor(run.status, c), bgcolor: statusBg(run.status, c), px: 0.8, py: 0.3, borderRadius: 0.75 }}>{labelForStatus(run.status)}</Box>
+        <Box sx={{ fontSize: '0.72rem', fontWeight: 700, color: statusColor(run.status, c), bgcolor: statusBg(run.status, c), px: 0.8, py: 0.3, borderRadius: c.radius.sm }}>{labelForStatus(run.status)}</Box>
         <Typography sx={{ fontSize: '0.88rem', color: c.text.primary, fontWeight: 600 }}>{formatRunDate(run.started_at)}</Typography>
       </Box>
       {run.error && (
-        <Typography sx={{ fontSize: '0.85rem', color: c.status.error, bgcolor: c.status.errorBg, p: 1, borderRadius: 0.75 }}>{run.error}</Typography>
+        <Typography sx={{ fontSize: '0.85rem', color: c.status.error, bgcolor: c.status.errorBg, p: 1, borderRadius: c.radius.sm }}>{run.error}</Typography>
       )}
       <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary, lineHeight: 1.5 }}>Started {formatRunDate(run.started_at)}, finished {run.finished_at ? formatRunDate(run.finished_at) : 'in progress'}.</Typography>
       {run.session_id && (

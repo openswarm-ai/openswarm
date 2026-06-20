@@ -48,7 +48,7 @@ export type LastRunStatus = NonNullable<Workflow['last_run_status']>;
 export function statusDotColor(status: LastRunStatus | null | undefined, c: ReturnType<typeof useClaudeTokens>) {
   switch (status) {
     case 'success': return c.status.success;
-    case 'ran_late': return c.status.warning || '#f59e0b';
+    case 'ran_late': return c.status.warning;
     case 'failure': return c.status.error;
     case 'running': return c.accent.primary;
     case 'skipped': return c.text.muted;
@@ -75,7 +75,7 @@ export function StatusDot({ status }: { status: LastRunStatus | null | undefined
     <Tooltip title={status ? `Last run: ${word.toLowerCase()}` : 'This workflow has never run.'}>
       <Box sx={{
         display: 'inline-flex', alignItems: 'center', gap: 0.4,
-        height: 18, px: 0.6, borderRadius: 999,
+        height: 18, px: 0.75, borderRadius: c.radius.full,
         bgcolor: status === 'failure' ? c.status.errorBg : status === 'ran_late' ? c.status.warningBg : status === 'success' ? c.status.successBg : c.bg.elevated,
         border: `1px solid ${dotColor}55`,
         flexShrink: 0,
@@ -163,7 +163,7 @@ export function PermissionChip({ workflow }: { workflow: Workflow }) {
         color: c.text.secondary,
         bgcolor: c.bg.elevated,
         border: `1px solid ${c.border.subtle}`,
-        px: 0.85, py: 0.3, borderRadius: 999,
+        px: 0.75, py: 0.3, borderRadius: c.radius.full,
       }}>
         {tiers.map((t, i) => (
           <React.Fragment key={i}>
@@ -204,7 +204,7 @@ export function ScheduleChip({ workflow }: { workflow: Workflow }) {
             color: enabled ? c.accent.primary : c.text.muted,
             bgcolor: enabled ? c.accent.primary + '14' : c.bg.elevated,
             border: `1px solid ${enabled ? c.accent.primary + '40' : c.border.subtle}`,
-            px: 0.85, py: 0.3, borderRadius: 999,
+            px: 0.75, py: 0.3, borderRadius: c.radius.full,
             cursor: enabled ? 'pointer' : 'default',
             '&:hover': enabled ? { bgcolor: c.accent.primary + '22' } : undefined,
           }}>
@@ -354,7 +354,7 @@ function chipSx(c: ReturnType<typeof useClaudeTokens>) {
     color: c.text.secondary,
     bgcolor: c.bg.elevated,
     border: `1px solid ${c.border.subtle}`,
-    px: 0.75, py: 0.3, borderRadius: 999,
+    px: 0.75, py: 0.3, borderRadius: c.radius.full,
   } as const;
 }
 
@@ -433,10 +433,10 @@ export function StreakBadge({ runs }: { runs: WorkflowRun[] | undefined }) {
       <Box sx={{
         display: 'inline-flex', alignItems: 'center', gap: 0.3,
         fontSize: '0.72rem', fontWeight: 700,
-        color: c.status.warning || '#f59e0b',
-        bgcolor: (c.status.warningBg || c.bg.elevated),
-        border: `1px solid ${(c.status.warning || '#f59e0b') + '60'}`,
-        px: 0.7, py: 0.2, borderRadius: 999,
+        color: c.status.success,
+        bgcolor: c.status.successBg,
+        border: `1px solid ${c.status.success + '60'}`,
+        px: 0.75, py: 0.3, borderRadius: c.radius.full,
       }}>
         🔥 {n}
       </Box>
