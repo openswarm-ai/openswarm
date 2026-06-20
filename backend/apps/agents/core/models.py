@@ -116,11 +116,6 @@ class AgentSession(BaseModel):
     dashboard_id: Optional[str] = None
     browser_id: Optional[str] = None
     parent_session_id: Optional[str] = None
-    # For workflow Test Agent sessions: "running" while the test drives the
-    # steps, then "complete"/"error" when it finishes. Drives the test card's
-    # footer (red Force Stop -> green "workflow complete, close"). None for
-    # ordinary sessions. A dedicated signal because per-turn status oscillates
-    # completed/running between steps, so it can't mark "the whole test done".
     workflow_test_state: Optional[Literal["running", "complete", "error"]] = None
     # Browser memory signals, drive the subtle "remembered/learned" card chip so
     # the user feels the agent getting smarter without lifting a finger.

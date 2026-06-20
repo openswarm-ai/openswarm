@@ -299,7 +299,6 @@ class DismissMcpSuggestionPayload(BaseModel):
 
 @settings.router.put("/dismiss-mcp-suggestion")
 async def put_dismiss_mcp_suggestion(body: DismissMcpSuggestionPayload):
-    """MERGE dismissed integration suggestions; the general PUT replaces the whole object and would blank secrets."""
     current = load_settings()
     now = datetime.now(timezone.utc).isoformat()
     for tool_id in body.ids:

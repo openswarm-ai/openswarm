@@ -13,8 +13,6 @@ import time
 
 logger = logging.getLogger(__name__)
 
-# Soft per-session throttle so the integration suggestion can fire on any turn
-# without nagging every message; only stamped when a suggestion actually emits.
 MCP_SUGGEST_COOLDOWN_S = 300.0
 p_mcp_suggest_cooldown: dict[str, float] = {}
 
@@ -80,7 +78,6 @@ async def send_message(session_id: str, body: dict):
         raise HTTPException(status_code=400, detail="prompt is required")
 
     # Run MCP-suggestion classifier in parallel with the agent launch; fails open.
-    # Fires on any turn, but a per-session cooldown keeps it from nagging every message.
     try:
         last_suggested = p_mcp_suggest_cooldown.get(session_id, 0.0)
         if time.monotonic() - last_suggested >= MCP_SUGGEST_COOLDOWN_S:

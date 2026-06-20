@@ -53,10 +53,6 @@ class NotePosition(BaseModel):
 
 
 class DashboardLayout(BaseModel):
-    # Accept whatever the FE serialises (workflow_cards, configure_panels,
-    # workflows_hub etc). Pydantic was silently stripping these because
-    # they weren't declared, which made the dashboard re-render WITHOUT
-    # the workflow card the user just placed.
     model_config = ConfigDict(extra="allow")
     cards: dict[str, CardPosition] = Field(default_factory=dict)
     view_cards: dict[str, ViewCardPosition] = Field(default_factory=dict)
