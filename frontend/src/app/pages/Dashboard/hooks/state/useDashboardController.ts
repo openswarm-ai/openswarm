@@ -288,8 +288,6 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     liveDragInfo,
     measuredHeightsRef,
     measuredHeightsTick,
-    contentRef: canvas.contentRef,
-    zoom: canvas.zoom,
     sessionList,
   });
 

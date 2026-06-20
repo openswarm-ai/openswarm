@@ -74,35 +74,6 @@ function rectCenter(r: CanvasRect): { x: number; y: number } {
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 }
 
-function selectCardElement(content: HTMLElement, type: 'agent-card' | 'workflow-card', id: string): HTMLElement | null {
-  const candidates = content.querySelectorAll<HTMLElement>(`[data-select-type="${type}"]`);
-  for (const el of Array.from(candidates)) {
-    if (el.dataset.selectId === id) return el;
-  }
-  return null;
-}
-
-function measuredCanvasRect(
-  contentRef: RefObject<HTMLElement>,
-  zoom: number,
-  type: 'agent-card' | 'workflow-card',
-  id: string,
-): CanvasRect | null {
-  const content = contentRef.current;
-  if (!content) return null;
-  const el = selectCardElement(content, type, id);
-  if (!el) return null;
-  const contentRect = content.getBoundingClientRect();
-  const elRect = el.getBoundingClientRect();
-  const z = zoom || 1;
-  return {
-    x: (elRect.left - contentRect.left) / z,
-    y: (elRect.top - contentRect.top) / z,
-    width: elRect.width / z,
-    height: elRect.height / z,
-  };
-}
-
 interface UseTethersArgs {
   glowingAgentCards: Record<string, GlowingAgentCard>;
   glowingBrowserCards: Record<string, GlowingBrowserCard>;
@@ -116,8 +87,6 @@ interface UseTethersArgs {
   liveDragInfo: LiveDragInfo | null;
   measuredHeightsRef: RefObject<Record<string, number>>;
   measuredHeightsTick: number;
-  contentRef: RefObject<HTMLElement>;
-  zoom: number;
   sessionList: AgentSession[];
 }
 
@@ -134,8 +103,6 @@ export function useTethers({
   liveDragInfo,
   measuredHeightsRef,
   measuredHeightsTick,
-  contentRef,
-  zoom,
   sessionList,
 }: UseTethersArgs): Tether[] {
   return useMemo(() => {
@@ -395,10 +362,8 @@ export function useTethers({
         ? Math.max(EXPANDED_CARD_MIN_H, sidecar.height)
         : sidecar.height);
       const wcH = wfHeight(wc);
-      const measuredWorkflow = measuredCanvasRect(contentRef, zoom, 'workflow-card', wc.workflow_id);
-      const measuredSidecar = measuredCanvasRect(contentRef, zoom, 'agent-card', sidecarId);
-      const workflowRect = measuredWorkflow ?? { x: srcX, y: srcY, width: wc.width, height: wcH };
-      const sidecarRect = measuredSidecar ?? { x: dstX, y: dstY, width: sidecar.width, height: dstH };
+      const workflowRect = { x: srcX, y: srcY, width: wc.width, height: wcH };
+      const sidecarRect = { x: dstX, y: dstY, width: sidecar.width, height: dstH };
       const srcCenter = rectCenter(workflowRect);
       const dstCenter = rectCenter(sidecarRect);
       const a = borderPoint(workflowRect.x, workflowRect.y, workflowRect.width, workflowRect.height, dstCenter.x, dstCenter.y);
@@ -471,5 +436,5 @@ export function useTethers({
   // measuredHeightsTick re-runs the memo once ResizeObserver reports a new
   // height after a collapse (the ref read is invisible to the dep checker).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, configurePanels, expandedSessionIds, liveDragInfo, measuredHeightsTick, contentRef, zoom, sessionList]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, configurePanels, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
 }
