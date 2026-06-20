@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import mimetypes
 import os
 import posixpath
@@ -17,6 +18,8 @@ from typing import Optional
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
 
 _ENDPOINT = os.environ.get("TIGRIS_ENDPOINT", "https://fly.storage.tigris.dev")
 _BUCKET = os.environ.get("TIGRIS_BUCKET", "openswarm-apps")
@@ -98,11 +101,22 @@ async def get_bundle(slug: str) -> Optional[Bundle]:
         raw = await asyncio.to_thread(obj["Body"].read)
     except ClientError as e:
         code = str(e.response.get("Error", {}).get("Code", ""))
-        if code in ("NoSuchKey", "404", "NoSuchBucket", "AccessDenied"):
-            _cache.pop(slug, None)
-            return None
-        raise
-    bundle = unpack(raw)
+        if code not in ("NoSuchKey", "404", "NoSuchBucket"):
+            # creds/permission/other storage error: log it but still degrade to a
+            # clean not-found rather than 500-ing every app on a storage hiccup.
+            logger.warning("tigris get failed for %s: %s", slug, code or e)
+        _cache.pop(slug, None)
+        return None
+    except Exception as e:
+        # missing creds, network, malformed bundle: never 500 the whole edge.
+        logger.warning("tigris get error for %s: %s", slug, e)
+        _cache.pop(slug, None)
+        return None
+    try:
+        bundle = unpack(raw)
+    except Exception as e:
+        logger.warning("bundle unpack failed for %s: %s", slug, e)
+        return None
     if len(_cache) >= _MAX_CACHED_BUNDLES:
         oldest = min(_cache, key=lambda k: _cache[k].fetched_at)
         _cache.pop(oldest, None)
