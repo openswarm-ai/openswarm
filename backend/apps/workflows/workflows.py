@@ -14,6 +14,7 @@ from backend.apps.workflows.models import (
     WorkflowRun,
     WorkflowStep,
     DraftCommitBody,
+    MissedRunAction,
 )
 from backend.apps.workflows import storage, scheduler, executor, audit, escalation
 
@@ -582,6 +583,66 @@ async def list_all_runs(limit: int = 200):
     Backs the dashboard History popover's Scheduled tasks tab."""
     runs = storage.list_all_runs(limit=limit)
     return {"runs": [r.model_dump(mode="json") for r in runs]}
+
+
+@workflows.router.get("/missed")
+async def list_missed_runs(limit: int = 50):
+    """Pending fires that elapsed while the app was closed, newest-first.
+    Backs the launch-time review card."""
+    missed = sorted(storage.list_missed(), key=lambda m: m.scheduled_for, reverse=True)
+    out: list[dict] = []
+    for m in missed[:limit]:
+        wf = storage.get_workflow(m.workflow_id)
+        if not wf:
+            continue
+        out.append({
+            "id": m.id,
+            "workflow_id": m.workflow_id,
+            "workflow_title": wf.title,
+            "workflow_icon": wf.icon,
+            "scheduled_for": m.scheduled_for.isoformat() if isinstance(m.scheduled_for, datetime) else m.scheduled_for,
+        })
+    return {"missed": out}
+
+
+@workflows.router.post("/missed/run")
+async def run_missed_runs(body: MissedRunAction):
+    """Run the selected missed fires now. Each lands in History as ran_late.
+    Fires of the same workflow run sequentially (the executor blocks
+    concurrent runs of one workflow)."""
+    wanted = set(body.ids)
+    selected = [m for m in storage.list_missed() if m.id in wanted]
+    if not selected:
+        return {"started": 0}
+    storage.remove_missed([m.id for m in selected])
+    by_wf: dict[str, list[datetime]] = {}
+    for m in sorted(selected, key=lambda m: m.scheduled_for):
+        by_wf.setdefault(m.workflow_id, []).append(m.scheduled_for)
+    started = 0
+    for wid, fors in by_wf.items():
+        wf = storage.get_workflow(wid)
+        if not wf:
+            continue
+        started += len(fors)
+        asyncio.create_task(scheduler.run_missed_sequence(wf, fors))
+    return {"started": started}
+
+
+@workflows.router.post("/missed/dismiss")
+async def dismiss_missed_runs(body: MissedRunAction):
+    """Drop the selected missed fires, logging each as a skipped run so the
+    workflow's history still shows it happened."""
+    wanted = set(body.ids)
+    selected = [m for m in storage.list_missed() if m.id in wanted]
+    storage.remove_missed([m.id for m in selected])
+    dismissed = 0
+    for m in selected:
+        wf = storage.get_workflow(m.workflow_id)
+        if not wf:
+            continue
+        scheduler.record_skipped(wf, m.scheduled_for, "You dismissed this missed run")
+        dismissed += 1
+    return {"dismissed": dismissed}
 
 
 @workflows.router.get("/calendar")

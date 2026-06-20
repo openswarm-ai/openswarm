@@ -15,15 +15,22 @@ from threading import Lock
 from typing import Optional
 
 from backend.config.paths import DATA_ROOT
-from backend.apps.workflows.models import Workflow, WorkflowRun
+from backend.apps.workflows.models import Workflow, WorkflowRun, MissedRun
 
 DATA_DIR = os.path.join(DATA_ROOT, "workflows")
 RUNS_DIR = os.path.join(DATA_DIR, "runs")
 PAUSED_FILE = os.path.join(DATA_DIR, "paused.json")
+MISSED_FILE = os.path.join(DATA_DIR, "missed.json")
+
+# Hard ceiling on pending missed fires kept on disk. The review card only
+# shows 50; this just stops the file growing without bound if the user keeps
+# quitting without acting on the card.
+MAX_MISSED = 200
 
 _io_lock = Lock()
 _workflow_cache: dict[str, Workflow] = {}
 _runs_cache: dict[str, list[WorkflowRun]] = {}
+_missed_cache: list[MissedRun] = []
 _cache_loaded = False
 _paused = False
 
@@ -97,6 +104,13 @@ def _load_all_from_disk() -> None:
                 _paused = bool(json.load(f).get("paused", False))
         except Exception:
             _paused = False
+    _missed_cache.clear()
+    if os.path.exists(MISSED_FILE):
+        try:
+            with open(MISSED_FILE) as f:
+                _missed_cache.extend(MissedRun(**m) for m in json.load(f))
+        except Exception:
+            _missed_cache.clear()
     _cache_loaded = True
 
 
@@ -137,6 +151,9 @@ def delete_workflow(wid: str) -> bool:
         rf = _runs_path(wid)
         if os.path.exists(rf):
             os.remove(rf)
+        if any(m.workflow_id == wid for m in _missed_cache):
+            _missed_cache[:] = [m for m in _missed_cache if m.workflow_id != wid]
+            _write_missed()
     return existed
 
 
@@ -190,6 +207,51 @@ def set_paused(value: bool) -> bool:
         with open(PAUSED_FILE, "w") as f:
             json.dump({"paused": _paused}, f)
     return _paused
+
+
+def _write_missed() -> None:
+    with open(MISSED_FILE, "w") as f:
+        json.dump([m.model_dump(mode="json") for m in _missed_cache], f, indent=2)
+
+
+def list_missed() -> list[MissedRun]:
+    if not _cache_loaded:
+        init()
+    return list(_missed_cache)
+
+
+def add_missed(run: MissedRun) -> MissedRun:
+    if not _cache_loaded:
+        init()
+    with _io_lock:
+        _ensure_dirs()
+        _missed_cache.append(run)
+        # Keep the newest MAX_MISSED by scheduled_for so a never-acked card
+        # can't grow the file forever across repeated launches.
+        if len(_missed_cache) > MAX_MISSED:
+            _missed_cache.sort(key=lambda m: m.scheduled_for)
+            del _missed_cache[: len(_missed_cache) - MAX_MISSED]
+        _write_missed()
+    return run
+
+
+def remove_missed(ids: list[str]) -> None:
+    if not _cache_loaded:
+        init()
+    drop = set(ids)
+    with _io_lock:
+        _ensure_dirs()
+        _missed_cache[:] = [m for m in _missed_cache if m.id not in drop]
+        _write_missed()
+
+
+def clear_missed() -> None:
+    if not _cache_loaded:
+        init()
+    with _io_lock:
+        _ensure_dirs()
+        _missed_cache.clear()
+        _write_missed()
 
 
 def update_run(run_id: str, **fields) -> Optional[WorkflowRun]:

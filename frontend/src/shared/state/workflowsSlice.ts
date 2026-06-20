@@ -19,7 +19,6 @@ export interface ScheduleConfig {
   hour: number;
   minute: number;
   timezone: string;
-  on_missed: 'skip' | 'run_once' | 'run_all';
   /** End conditions; null on both = forever. Scheduler auto-disables on threshold. */
   ends_at: string | null;
   max_runs: number | null;

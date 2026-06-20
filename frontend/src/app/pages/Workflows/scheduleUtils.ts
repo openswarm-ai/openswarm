@@ -18,7 +18,6 @@ export function defaultSchedule(): ScheduleConfig {
     hour: 9,
     minute: 0,
     timezone: tz,
-    on_missed: 'skip',
     ends_at: null,
     max_runs: null,
     runs_count: 0,

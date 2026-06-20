@@ -31,8 +31,10 @@ def isolated_data_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(_storage, "DATA_DIR", str(tmp_path / "workflows"))
     monkeypatch.setattr(_storage, "RUNS_DIR", str(tmp_path / "workflows" / "runs"))
     monkeypatch.setattr(_storage, "PAUSED_FILE", str(tmp_path / "workflows" / "paused.json"))
+    monkeypatch.setattr(_storage, "MISSED_FILE", str(tmp_path / "workflows" / "missed.json"))
     monkeypatch.setattr(_storage, "_workflow_cache", {})
     monkeypatch.setattr(_storage, "_runs_cache", {})
+    monkeypatch.setattr(_storage, "_missed_cache", [])
     monkeypatch.setattr(_storage, "_cache_loaded", False)
     monkeypatch.setattr(_storage, "_paused", False)
     monkeypatch.setattr(_audit, "AUDIT_DIR", str(tmp_path / "workflows" / "audit"))
@@ -154,33 +156,101 @@ async def test_paused_state_blocks_all_fires(monkeypatch):
     storage.set_paused(False)
 
 
-async def test_reconcile_skip_rolls_past_missed(monkeypatch):
-    """on_missed='skip' + a missed next_run_at => startup rolls forward
-    to the next future fire without queuing a catch-up."""
+async def test_reconcile_captures_missed_fires(monkeypatch):
+    """A daily workflow whose next_run_at elapsed while the app was closed =>
+    startup captures the missed fires as pending MissedRuns and rolls
+    next_run_at forward (no auto-firing)."""
     from backend.apps.workflows import storage, scheduler
-    wf = _make_wf()
-    wf.schedule.on_missed = "skip"
-    # Stash a missed fire 6 hours ago.
-    wf.next_run_at = datetime.now(timezone.utc) - timedelta(hours=6)
+    # created_at must predate the missed window; occurrences_between never
+    # enumerates fires from before the workflow existed.
+    wf = _make_wf(created_at=datetime.now(timezone.utc) - timedelta(days=10))
+    wf.next_run_at = datetime.now(timezone.utc) - timedelta(days=3)
     storage.save_workflow(wf)
     scheduler.reconcile_on_startup()
+    missed = [m for m in storage.list_missed() if m.workflow_id == wf.id]
+    assert len(missed) >= 1
+    assert all(m.scheduled_for < datetime.now(timezone.utc) for m in missed)
     after = storage.get_workflow(wf.id)
     assert after.next_run_at is not None
     assert after.next_run_at > datetime.now(timezone.utc)
 
 
-async def test_reconcile_run_once_keeps_missed(monkeypatch):
-    """on_missed='run_once' => startup leaves next_run_at in the past so
-    the first tick fires a catch-up."""
+async def test_reconcile_no_missed_when_future(monkeypatch):
+    """next_run_at in the future => nothing missed, nothing captured."""
     from backend.apps.workflows import storage, scheduler
-    wf = _make_wf()
-    wf.schedule.on_missed = "run_once"
-    missed = datetime.now(timezone.utc) - timedelta(hours=6)
-    wf.next_run_at = missed
+    wf = _make_wf(created_at=datetime.now(timezone.utc) - timedelta(days=10))
+    wf.next_run_at = datetime.now(timezone.utc) + timedelta(hours=6)
     storage.save_workflow(wf)
     scheduler.reconcile_on_startup()
-    after = storage.get_workflow(wf.id)
-    assert after.next_run_at <= datetime.now(timezone.utc)
+    assert [m for m in storage.list_missed() if m.workflow_id == wf.id] == []
+
+
+async def test_reconcile_over_cap_collapses_to_skipped(monkeypatch):
+    """A 15-minute schedule off for days => only the cap is kept reviewable;
+    the rest collapse into a single skipped run in history."""
+    from backend.apps.workflows import storage, scheduler
+    from backend.apps.workflows.models import ScheduleConfig
+    wf = _make_wf(
+        created_at=datetime.now(timezone.utc) - timedelta(days=30),
+        schedule=ScheduleConfig(
+            enabled=True, repeat_unit="minute", repeat_every=15,
+            timezone="America/Los_Angeles",
+        ),
+    )
+    wf.next_run_at = datetime.now(timezone.utc) - timedelta(days=2)
+    storage.save_workflow(wf)
+    scheduler.reconcile_on_startup()
+    missed = [m for m in storage.list_missed() if m.workflow_id == wf.id]
+    assert len(missed) == scheduler.PER_WORKFLOW_MISSED_CAP
+    skipped = [r for r in storage.list_runs(wf.id, limit=50) if r.status == "skipped"]
+    assert len(skipped) == 1
+
+
+async def test_dismiss_missed_records_skipped(monkeypatch):
+    """Dismissing a missed run drops it from pending and leaves a skipped
+    run in history."""
+    from backend.apps.workflows import storage
+    from backend.apps.workflows.models import MissedRun, MissedRunAction
+    from backend.apps.workflows.workflows import dismiss_missed_runs
+    wf = _make_wf()
+    storage.save_workflow(wf)
+    m = MissedRun(workflow_id=wf.id, scheduled_for=datetime.now(timezone.utc) - timedelta(hours=2))
+    storage.add_missed(m)
+    res = await dismiss_missed_runs(MissedRunAction(ids=[m.id]))
+    assert res["dismissed"] == 1
+    assert storage.list_missed() == []
+    skipped = [r for r in storage.list_runs(wf.id, limit=10) if r.status == "skipped"]
+    assert len(skipped) == 1
+
+
+async def test_run_missed_runs_clears_pending_and_fires(monkeypatch):
+    """Running selected missed fires removes them from pending and invokes
+    the executor once per fire, sequentially."""
+    from backend.apps.workflows import storage, executor, scheduler
+    from backend.apps.workflows.models import MissedRun, MissedRunAction
+    from backend.apps.workflows.workflows import run_missed_runs
+
+    calls: list = []
+
+    async def fake_execute(wf, triggered_by="schedule", scheduled_for=None):
+        calls.append(scheduled_for)
+        from backend.apps.workflows.models import WorkflowRun
+        return WorkflowRun(workflow_id=wf.id, status="ran_late", scheduled_for=scheduled_for)
+
+    monkeypatch.setattr(executor, "execute", fake_execute)
+
+    wf = _make_wf()
+    storage.save_workflow(wf)
+    m1 = MissedRun(workflow_id=wf.id, scheduled_for=datetime.now(timezone.utc) - timedelta(hours=3))
+    m2 = MissedRun(workflow_id=wf.id, scheduled_for=datetime.now(timezone.utc) - timedelta(hours=2))
+    storage.add_missed(m1)
+    storage.add_missed(m2)
+    res = await run_missed_runs(MissedRunAction(ids=[m1.id, m2.id]))
+    assert res["started"] == 2
+    assert storage.list_missed() == []
+    # The endpoint spawns the sequence as a background task; give it a beat.
+    await asyncio.sleep(0.05)
+    assert len(calls) == 2
 
 
 async def test_create_workflow_schedules_next_fire():

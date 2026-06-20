@@ -3,8 +3,9 @@
 One long-lived asyncio task wakes on the next-due workflow boundary, fires
 matching workflows, then re-computes. We deliberately avoid one-task-per-
 workflow (turns rescheduling into a thundering re-spawn problem). On
-startup we walk persisted workflows once, decide what to do about missed
-fires via on_missed, and queue each.
+startup we walk persisted workflows once and capture every fire that
+elapsed while the app was closed as a pending MissedRun, so the launch-time
+review card can let the user run or dismiss each one.
 
 Schedule semantics:
   unit=minute: fires every repeat_every minutes (15 is the enforced floor)
@@ -29,10 +30,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from backend.apps.workflows.models import Workflow, ScheduleConfig
+from backend.apps.workflows.models import Workflow, ScheduleConfig, WorkflowRun, MissedRun
 from backend.apps.workflows import storage, executor
 
 logger = logging.getLogger(__name__)
+
+# How many recent missed fires we keep reviewable per workflow. Older ones
+# collapse into a single summarizing "skipped" run so a 15-minute schedule
+# that was off for days doesn't flood the card or the run history.
+PER_WORKFLOW_MISSED_CAP = 20
+# Bound on the per-workflow enumeration walk at startup. 480 covers ~5 days of
+# a 15-minute schedule; past that the exact count stops mattering.
+MISSED_ENUM_CAP = 480
 
 
 _loop_task: Optional[asyncio.Task] = None
@@ -349,14 +358,66 @@ def _mark_stuck_runs_failed() -> None:
                 )
 
 
-def reconcile_on_startup() -> None:
-    """Walk persisted workflows once and resolve missed fires per policy.
+def record_skipped(wf: Workflow, scheduled_for: datetime, error: str) -> WorkflowRun:
+    """Log a missed fire as a 'skipped' run so it leaves a trace in history.
 
-    Missed-run policies:
-      skip      -> roll forward to next future fire, ignore missed
-      run_once  -> if any fires were missed, schedule a single catch-up at now
-      run_all   -> not actually run_all in v1 (would burn tokens); same as run_once
-                   but we mark the run.status as ran_late so the UI surfaces it
+    Used both for over-cap fires at startup and for fires the user dismisses
+    from the review card. Updates the workflow's last_run_* summary so the
+    card's status dot reflects reality.
+    """
+    now = datetime.now()
+    run = WorkflowRun(
+        workflow_id=wf.id,
+        status="skipped",
+        scheduled_for=scheduled_for,
+        started_at=now,
+        finished_at=now,
+        triggered_by="schedule",
+        error=error,
+    )
+    storage.record_run(run)
+    wf.last_run_at = now
+    wf.last_run_status = "skipped"
+    wf.last_run_id = run.id
+    storage.save_workflow(wf)
+    return run
+
+
+def _capture_missed(wf: Workflow, missed: list[datetime]) -> None:
+    if not missed:
+        return
+    recent = missed[-PER_WORKFLOW_MISSED_CAP:]
+    older = missed[: len(missed) - len(recent)]
+    if older:
+        suffix = "+" if len(missed) >= MISSED_ENUM_CAP else ""
+        record_skipped(
+            wf,
+            older[0],
+            f"Skipped {len(older)}{suffix} earlier missed runs while OpenSwarm was closed",
+        )
+    for sf in recent:
+        storage.add_missed(MissedRun(workflow_id=wf.id, scheduled_for=sf))
+
+
+async def run_missed_sequence(wf: Workflow, scheduled_fors: list[datetime]) -> None:
+    """Run a workflow once per missed fire, sequentially.
+
+    Sequential because the executor refuses concurrent runs of the same
+    workflow; firing them all at once would skip all but the first.
+    """
+    for sf in scheduled_fors:
+        try:
+            await executor.execute(wf, triggered_by="schedule", scheduled_for=sf)
+        except Exception:
+            logger.exception("missed-run fire failed for workflow=%s", wf.id)
+
+
+def reconcile_on_startup() -> None:
+    """Walk persisted workflows once and capture fires missed while closed.
+
+    No auto-firing here anymore: each missed fire becomes a pending MissedRun
+    the user reviews on launch. We roll next_run_at forward to a future slot so
+    a dev hot-reload re-running this won't re-enumerate the same misses.
     """
     now_utc = datetime.now(timezone.utc)
     for wf in storage.list_workflows():
@@ -373,17 +434,12 @@ def reconcile_on_startup() -> None:
             _disable_schedule(wf)
             continue
 
-        nra = _as_utc(wf.next_run_at)
-        missed = bool(nra and nra <= now_utc)
-        if missed and wf.schedule.on_missed in ("run_once", "run_all"):
-            # Keep next_run_at <= now_utc so the very next tick fires it.
-            # Normalize to a UTC-aware value so future comparisons don't
-            # trip on naive legacy datetimes.
-            wf.next_run_at = nra
-            storage.save_workflow(wf)
-        else:
-            wf.next_run_at = _next_fire_after(wf.schedule, now_utc)
-            storage.save_workflow(wf)
+        anchor = _as_utc(wf.next_run_at)
+        if anchor is not None and anchor <= now_utc:
+            _capture_missed(wf, occurrences_between(wf, anchor, now_utc, cap=MISSED_ENUM_CAP))
+
+        wf.next_run_at = _next_fire_after(wf.schedule, now_utc)
+        storage.save_workflow(wf)
 
 
 async def start() -> None:

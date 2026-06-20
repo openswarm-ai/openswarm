@@ -365,7 +365,7 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
             const ends = new Date(s.ends_at).getTime();
             if (!Number.isNaN(ends) && ends <= Date.now()) {
               return (
-                <Typography sx={{ fontSize: HINT_FS, color: c.status.warning || c.text.muted, pl: 12 }}>
+                <Typography sx={{ fontSize: HINT_FS, color: c.status.warning, pl: 12 }}>
                   This date is in the past. The schedule will turn itself off.
                 </Typography>
               );
@@ -373,24 +373,13 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
           }
           if (endKind === 'after_n' && s.max_runs != null && s.runs_count >= s.max_runs) {
             return (
-              <Typography sx={{ fontSize: HINT_FS, color: c.status.warning || c.text.muted, pl: 12 }}>
+              <Typography sx={{ fontSize: HINT_FS, color: c.status.warning, pl: 12 }}>
                 This workflow has already run {s.runs_count}× (limit {s.max_runs}). Raise the number or reset the counter to re-arm.
               </Typography>
             );
           }
           return null;
         })()}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-          <Typography sx={{ fontSize: LABEL_FS, color: c.text.secondary, minWidth: 96 }}>If missed</Typography>
-          <Select
-            size="small"
-            value={s.on_missed === 'run_all' ? 'run_once' : s.on_missed}
-            onChange={(e) => setSched({ on_missed: e.target.value as ScheduleConfig['on_missed'] })}
-            sx={{ fontSize: LABEL_FS, '& .MuiSelect-select': { py: 0.4 } }}>
-            <MenuItem value="skip">Skip the missed run</MenuItem>
-            <MenuItem value="run_once">Run once after I wake the app</MenuItem>
-          </Select>
-        </Box>
       </Box>
 
       {/* Section: What can the agent do? */}
@@ -445,11 +434,11 @@ function AppOpenStatusBadge({ info, hour, minute, frequent, onFix }: { info: App
   return (
     <Box sx={{
       display: 'flex', alignItems: 'center', gap: 1, pl: 0.25,
-      bgcolor: good ? c.status.successBg : (c.status.warningBg || c.bg.elevated),
-      border: `1px solid ${good ? c.status.success + '60' : (c.status.warning || c.text.muted) + '60'}`,
+      bgcolor: good ? c.status.successBg : c.status.warningBg,
+      border: `1px solid ${good ? c.status.success + '60' : c.status.warning + '60'}`,
       borderRadius: `${c.radius.md}px`, px: 1, py: 0.5,
     }}>
-      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: good ? c.status.success : (c.status.warning || c.text.muted) }} />
+      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: good ? c.status.success : c.status.warning }} />
       <Typography sx={{ flex: 1, fontSize: HINT_FS, color: c.text.primary }}>
         {good ? 'Will run even if you close OpenSwarm.' : (frequent ? 'OpenSwarm must be open for this to run.' : `OpenSwarm must be open at ${fmt} for this to run.`)}
       </Typography>
@@ -514,7 +503,7 @@ function PermissionRow({ idx, tier, cloudSmsEnabled, onChange, onRemove }: {
         )}
       </Box>
       {!cloudSmsEnabled && (
-        <Typography sx={{ fontSize: HINT_FS, color: c.status.warning || c.text.muted, fontStyle: 'italic' }}>
+        <Typography sx={{ fontSize: HINT_FS, color: c.status.warning, fontStyle: 'italic' }}>
           Coming soon. Until cloud SMS ships, this tier falls back to an in-app notify with a "fallback" badge.
         </Typography>
       )}

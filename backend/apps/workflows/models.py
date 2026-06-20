@@ -31,7 +31,6 @@ class ScheduleConfig(BaseModel):
     # "local" to the host zone in memory; we leave it on disk until the
     # user's next save so backup/sync tools don't see spurious churn.
     timezone: str = "local"
-    on_missed: Literal["skip", "run_once", "run_all"] = "skip"
     # Optional end conditions. None = forever / unbounded. Schedule auto-
     # disables once either is satisfied; scheduler._tick zeroes out
     # next_run_at and flips enabled=False so the UI reflects reality.
@@ -185,6 +184,17 @@ class WorkflowRun(BaseModel):
     paused: bool = False
 
 
+class MissedRun(BaseModel):
+    # A single scheduled fire that elapsed while OpenSwarm was closed. Captured
+    # at startup and surfaced in the launch-time review card; leaves this store
+    # only when the user runs it (becomes a ran_late run) or dismisses it
+    # (becomes a skipped run). scheduled_for is the instant it should have fired.
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    workflow_id: str
+    scheduled_for: datetime
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
 class WorkflowCreate(BaseModel):
     title: str = "Untitled workflow"
     auto_named: bool = True
@@ -225,6 +235,10 @@ class WorkflowUpdate(BaseModel):
     cost_cap_usd_monthly: Optional[float] = None
     remembered_approvals: Optional[dict[str, Literal["allow", "deny"]]] = None
     step_tool_usage: Optional[dict[str, dict[str, bool]]] = None
+
+
+class MissedRunAction(BaseModel):
+    ids: list[str] = Field(default_factory=list)
 
 
 class DraftCommitBody(BaseModel):
