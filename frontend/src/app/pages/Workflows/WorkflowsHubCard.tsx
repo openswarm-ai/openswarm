@@ -78,54 +78,6 @@ interface Props {
 
 type CalendarView = 'Week' | 'Month' | 'List';
 
-// Small badge in the hub header that adds up successful scheduled runs
-// across all workflows and renders an approximate "time saved" figure.
-// Heuristic: 3 minutes saved per scheduled run that the user would have
-// otherwise done by hand. Not precise — meant as a quiet "you got back
-// X hours" affirmation, not an audit number.
-function TimeSavedBadge() {
-  const c = useClaudeTokens();
-  const runsByWorkflow = useAppSelector((s) => s.workflows.runs);
-  const items = useAppSelector((s) => s.workflows.items);
-  let count = 0;
-  for (const arr of Object.values(runsByWorkflow)) {
-    for (const r of arr) {
-      if (r.triggered_by === 'schedule' && (r.status === 'success' || r.status === 'ran_late')) count += 1;
-    }
-  }
-  // Fallback: if no runs are loaded yet (cards never opened), use
-  // last_run_status as a coarse proxy so brand-new users don't see 0.
-  if (count === 0) {
-    for (const w of Object.values(items)) {
-      if (w.last_run_status === 'success' || w.last_run_status === 'ran_late') count += 1;
-    }
-  }
-  if (count === 0) return null;
-  const totalMin = count * 3;
-  const hours = totalMin / 60;
-  // Show "X done · ~Y hrs" so the user gets both the run count and a
-  // sense of time. Dot-separator reads quieter than the old green pill.
-  const timeLabel = hours >= 1 ? `~${hours.toFixed(1)} hrs` : `~${totalMin} min`;
-  return (
-    <Tooltip title={`${count} workflow runs completed for you. Rough estimate of ~3 min saved per run vs. doing it by hand.`}>
-      <Box sx={{
-        display: 'inline-flex', alignItems: 'center', gap: 0.5,
-        ml: 1, px: 0.75, py: 0.3,
-        fontSize: '0.74rem', fontWeight: 600,
-        color: c.text.secondary,
-        bgcolor: 'transparent',
-        border: `1px solid ${c.border.subtle}`,
-        borderRadius: c.radius.full,
-      }}>
-        <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', bgcolor: c.status.success + '22', color: c.status.success, fontSize: 9, fontWeight: 800 }}>✓</Box>
-        <span style={{ color: c.text.primary }}>{count}</span>
-        <span style={{ color: c.text.muted }}>·</span>
-        <span style={{ color: c.text.secondary }}>{timeLabel} back</span>
-      </Box>
-    </Tooltip>
-  );
-}
-
 const WorkflowsHubCard: React.FC<Props> = ({
   dashboardId,
   cardX, cardY, cardWidth, cardHeight, cardZOrder = 0,
@@ -482,7 +434,6 @@ const WorkflowsHubCard: React.FC<Props> = ({
           <IconButton size="small" data-no-drag onClick={() => setRefDate(addDays(refDate, view === 'Month' ? -28 : -7))} sx={{ p: 0.3 }}><ChevronLeftIcon sx={{ fontSize: 18 }} /></IconButton>
           <IconButton size="small" data-no-drag onClick={() => setRefDate(addDays(refDate, view === 'Month' ? 28 : 7))} sx={{ p: 0.3 }}><ChevronRightIcon sx={{ fontSize: 18 }} /></IconButton>
           <Typography sx={{ fontSize: '0.92rem', fontWeight: 600, color: c.text.primary }}>{monthLabel}</Typography>
-          <TimeSavedBadge />
         </Box>
 
         <IconButton size="small" data-no-drag sx={{ p: 0.5, color: c.text.muted }}>
