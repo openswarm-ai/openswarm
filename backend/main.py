@@ -742,11 +742,6 @@ async def mcp_meta(action: str, request: Request):
     return JSONResponse({"error": f"unknown action: {action}"}, status_code=400)
 
 
-# Serializes agent-side SettingsWrite read-modify-writes so concurrent autonomous
-# agents can't clobber each other's edits (see the lock's use below).
-_settings_meta_write_lock = asyncio.Lock()
-
-
 @app.post("/api/settings-meta/{action}")
 async def settings_meta(action: str, request: Request):
     """Back the openswarm-settings-meta stdio MCP server (agent-editable Settings).
@@ -766,9 +761,9 @@ async def settings_meta(action: str, request: Request):
     from backend.apps.settings.store import load_settings
     from backend.apps.settings.models import AppSettings
     from backend.apps.settings.redaction import redact_settings
-    from backend.apps.settings.settings import SERVER_OWNED_FIELDS, apply_settings_update
+    from backend.apps.settings.settings import SERVER_OWNED_FIELDS, apply_settings_update, settings_write_lock
     from backend.apps.agents.session_credential import (
-        PoweringCredential, resolve_powering_credential, write_would_suicide,
+        ALL_API_KEY_FIELDS, PoweringCredential, resolve_powering_credential, write_would_suicide,
     )
     from backend.apps.agents.agent_manager import agent_manager
     from pydantic import ValidationError
@@ -791,7 +786,7 @@ async def settings_meta(action: str, request: Request):
         # other's fields while BOTH got an "applied" result). The lock makes agent
         # writes serial so the last load always sees the prior write. (Agent vs the
         # renderer's own PUT stays the pre-existing full-object-replace race.)
-        async with _settings_meta_write_lock:
+        async with settings_write_lock:
             settings = load_settings()
             session = agent_manager.sessions.get(parent_session_id) if parent_session_id else None
             if session is not None:
@@ -799,6 +794,15 @@ async def settings_meta(action: str, request: Request):
             else:
                 # No live session to anchor the guard: fail safe, protect every credential.
                 powering = PoweringCredential(kind="unknown", provider="unknown", label="this run")
+
+            # The credential field(s) the second-wall restore in apply_settings_update
+            # must never let a write blank (independent of the per-field guard below).
+            if powering.kind == "unknown":
+                protect_fields = set(ALL_API_KEY_FIELDS)
+            elif powering.kind == "api_key" and powering.protected_field:
+                protect_fields = {powering.protected_field}
+            else:
+                protect_fields = set()
 
             staged: dict = {}
             for field, value in changes.items():
@@ -828,7 +832,7 @@ async def settings_meta(action: str, request: Request):
                         new_body = AppSettings(**merged)
                 if staged and new_body is not None:
                     try:
-                        await apply_settings_update(new_body)
+                        await apply_settings_update(new_body, protect_fields=protect_fields)
                         for f in staged:
                             outcomes[f] = {"status": "applied"}
                     except Exception as e:

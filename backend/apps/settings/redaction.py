@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.common.secret_scan import looks_secret
+
 _SECRET_NAME_SUFFIXES = ("_key", "_token", "_secret")
 # Not a credential and doesn't match the suffix rule, but a stable hardware-ish
 # fingerprint used for cohorting/abuse; keep it out of the agent's eyes too.
@@ -25,6 +27,14 @@ _SECRET_EXTRA_FIELDS = frozenset({"installation_id"})
 
 def is_secret_field(name: str) -> bool:
     return name.endswith(_SECRET_NAME_SUFFIXES) or name in _SECRET_EXTRA_FIELDS
+
+
+def _value_is_secret_shaped(value: Any) -> bool:
+    """Fail-safe behind the name rule: a field the name rule misses (a future
+    secret with an off-convention name) is still caught if its VALUE looks like
+    a credential (sk-..., ghp_..., Bearer ...). So a leak needs BOTH a bad name
+    AND a non-credential-shaped value, not just one."""
+    return isinstance(value, str) and looks_secret(value)
 
 
 def _redact_value(value: Any) -> dict[str, Any]:
@@ -40,7 +50,7 @@ def redact_settings(raw: dict[str, Any]) -> dict[str, Any]:
     {configured, last4}. Nested custom-provider api_keys are redacted too."""
     out: dict[str, Any] = {}
     for key, value in raw.items():
-        if is_secret_field(key):
+        if is_secret_field(key) or _value_is_secret_shaped(value):
             out[key] = _redact_value(value)
         elif key == "custom_providers" and isinstance(value, list):
             out[key] = [_redact_custom_provider(cp) for cp in value]

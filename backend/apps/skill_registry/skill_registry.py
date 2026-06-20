@@ -404,7 +404,7 @@ async def resolve_community_skill(source: str, skill_id: str) -> dict:
     # Reuse the .swarm importer's content scan: flag files holding secret-shaped
     # literals (the author's leaked key, or a sketchy skill) so the user sees it
     # before installing from an unvetted repo.
-    from backend.apps.swarm.redact import find_secrets_in_files
+    from backend.common.secret_scan import find_secrets_in_files
     secret_findings = find_secrets_in_files({rel: data.encode("utf-8", "ignore") for rel, data in files.items()})
     return {
         "name": meta.get("name") or skill_id,

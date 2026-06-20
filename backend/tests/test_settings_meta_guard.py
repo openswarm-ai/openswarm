@@ -173,6 +173,18 @@ def test_redactor_catches_every_known_secret():
             assert is_secret_field(name)
 
 
+def test_redaction_fail_safe_catches_misnamed_secret_by_value():
+    # The name rule (_key/_token/_secret) would MISS a field named off-convention.
+    # The value-shape backstop must still redact it, so a leak needs BOTH a bad
+    # name AND a non-credential-shaped value, not just one.
+    import json
+    raw = {"theme": "dark", "weird_field": "sk-ant-api03-AAAABBBBCCCCDDDDEEEEFFFF"}
+    red = redact_settings(raw)
+    assert red["theme"] == "dark"
+    assert isinstance(red["weird_field"], dict) and red["weird_field"]["configured"] is True
+    assert "sk-ant-api03" not in json.dumps(red)
+
+
 def test_redact_settings_never_emits_a_raw_secret():
     s = _settings_with("openswarm-pro", {"anthropic", "openai", "google", "openrouter"}, custom=True)
     s.claude_subscription_token = "should-never-appear"

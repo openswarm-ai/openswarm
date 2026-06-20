@@ -14,6 +14,36 @@ from fastapi.testclient import TestClient
 from backend.main import app
 
 
+@pytest.mark.asyncio
+async def test_second_wall_restores_protected_credential_even_if_body_blanks_it():
+    """Defense in depth: even if a write reaches apply_settings_update with the
+    live credential blanked (a guard slip upstream), the second-wall restore puts
+    it back. Proves the api-key guard isn't a single point of failure."""
+    from backend.apps.settings.settings import (
+        apply_settings_update, settings_write_lock, load_settings, _save_settings,
+    )
+    original = load_settings().model_copy(deep=True)
+    try:
+        s = load_settings()
+        s.anthropic_api_key = "sk-live-KEEP-ME"
+        _save_settings(s)
+        # A body that (as if a guard bug let it through) clears the live key.
+        body = load_settings()
+        body.anthropic_api_key = ""
+        async with settings_write_lock:
+            saved = await apply_settings_update(body, protect_fields={"anthropic_api_key"})
+        assert saved.anthropic_api_key == "sk-live-KEEP-ME", "second wall failed to restore"
+        assert load_settings().anthropic_api_key == "sk-live-KEEP-ME"
+        # And a NON-protected blank still goes through (only the protected one is restored).
+        body2 = load_settings()
+        body2.openai_api_key = ""
+        async with settings_write_lock:
+            await apply_settings_update(body2, protect_fields={"anthropic_api_key"})
+        assert not load_settings().openai_api_key
+    finally:
+        _save_settings(original)
+
+
 @pytest.fixture
 def client():
     import backend.auth as auth_mod
