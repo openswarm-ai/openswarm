@@ -42,7 +42,7 @@ import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
 import { useOverlayScrollPassthrough } from '../hooks/interaction/useOverlayScrollPassthrough';
 import { useStreamingMessage } from '@/shared/state/streamingSlice';
 import { isCanvasInteractionActive, onCanvasInteractionEnd } from '@/shared/canvasInteractionState';
-import { openWorkflowCard, setCardSidecar, type Workflow } from '@/shared/state/workflowsSlice';
+import { openWorkflowCard, updateWorkflowCard, generateWorkflowMetadata, applyGeneratedMetadata, setCardSidecar, type Workflow } from '@/shared/state/workflowsSlice';
 import { addWorkflowCard, setWorkflowCardPosition, setWorkflowCardSize } from '@/shared/state/dashboardLayoutSlice';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import { getAgentWorkTime, fmtSeconds } from '@/shared/agentWorkTime';
@@ -330,8 +330,11 @@ const AgentCard: React.FC<Props> = ({
       workflowId: draftId,
       sourceSessionId: session.id,
       view: 'preview',
+      metaLoading: true,
       draft: {
-        title: session.name || 'New workflow',
+        // Empty so the header shows its calm "New workflow" placeholder while
+        // naming runs, instead of flashing the stale chat name.
+        title: '',
         description: '',
         steps,
         source_session_id: session.id,
@@ -340,6 +343,15 @@ const AgentCard: React.FC<Props> = ({
         mode: defaultMode || session.mode,
       } as Partial<Workflow>,
     }));
+    const genModel = defaultModel || session.model;
+    dispatch(generateWorkflowMetadata({ steps: steps.map((s) => ({ id: s.id, text: s.text })), model: genModel }))
+      .then((r) => {
+        if (generateWorkflowMetadata.fulfilled.match(r)) {
+          dispatch(applyGeneratedMetadata({ workflowId: draftId, meta: r.payload }));
+        } else {
+          dispatch(updateWorkflowCard({ workflowId: draftId, patch: { metaLoading: false } }));
+        }
+      });
   }, [converting, session, dispatch, expandedSessionIds, cardX, cardY, cardWidth, cardHeight, defaultModel, defaultMode]);
   // Curated picker label with a tidy fallback for unknowns.
   const friendlyModelLabel = useMemo(() => {

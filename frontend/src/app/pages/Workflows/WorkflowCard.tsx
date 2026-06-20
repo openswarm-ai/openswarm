@@ -390,7 +390,8 @@ const WorkflowCard: React.FC<Props> = ({
       const result = await dispatch(createWorkflow({
         title: (d.title as string) || 'New workflow',
         description: (d.description as string) || '',
-        steps: draftSteps.map((s) => ({ id: s.id, text: s.text })),
+        steps: draftSteps.map((s) => ({ id: s.id, text: s.text, label: s.label })),
+        metadata_generated: card?.metaGenerated === true,
         source_session_id: (d.source_session_id as string | undefined) || card?.sourceSessionId || null,
         use_synced_prompt: true,
         model: defaultModel || (d.model as string),
@@ -558,12 +559,14 @@ const WorkflowCard: React.FC<Props> = ({
             data-no-drag
             onPointerDown={(e) => e.stopPropagation()}
             value={(card?.draft?.title as string) || ''}
-            placeholder="New workflow"
+            placeholder={card?.metaLoading ? 'Naming workflow' : 'New workflow'}
             onChange={(e) => dispatch(updateWorkflowCard({ workflowId, patch: { draft: { ...(card?.draft || {}), title: e.target.value } } }))}
             sx={{
               flex: 1, fontWeight: 600, fontSize: '0.95rem', color: c.text.primary,
               letterSpacing: '-0.005em',
               '& input::placeholder': { color: c.text.muted, opacity: 1 },
+              animation: card?.metaLoading ? 'wfTitlePulse 1.2s ease-in-out infinite' : 'none',
+              '@keyframes wfTitlePulse': { '0%, 100%': { opacity: 0.55 }, '50%': { opacity: 1 } },
             }}
           />
         ) : (

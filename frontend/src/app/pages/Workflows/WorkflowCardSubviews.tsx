@@ -169,7 +169,8 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
     const result = await dispatch(createWorkflow({
       title,
       description,
-      steps: steps.map((s) => ({ id: s.id, text: s.text })),
+      steps: steps.map((s) => ({ id: s.id, text: s.text, label: s.label })),
+      metadata_generated: card?.metaGenerated === true,
       source_session_id: sourceSessionId,
       use_synced_prompt: true,
       // The user's configured default wins over whatever model the source chat
@@ -184,7 +185,7 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
     const wf = result.payload as Workflow;
     if (wf?.id) return wf;
     return null;
-  }, [canSave, dispatch, title, description, steps, sourceSessionId, liveDraft, defaultModel, defaultMode]);
+  }, [canSave, dispatch, title, description, steps, sourceSessionId, liveDraft, defaultModel, defaultMode, card]);
 
   const onIgnore = useCallback(async () => {
     if (busy) return;

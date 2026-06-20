@@ -216,6 +216,20 @@ class WorkflowCreate(BaseModel):
     provider: Optional[str] = None
     cost_cap_usd_monthly: Optional[float] = None
     tested_signature: Optional[str] = None
+    # The FE already named + described + labeled this at preview time; skip the
+    # backend aux call so we don't double-spend or change the title under the user.
+    metadata_generated: bool = False
+
+
+class GenerateMetadataRequest(BaseModel):
+    steps: list[WorkflowStep] = Field(default_factory=list)
+    model: Optional[str] = None
+
+
+class GenerateMetadataResponse(BaseModel):
+    title: str = ""
+    description: str = ""
+    step_labels: list[str] = Field(default_factory=list)
 
 
 class WorkflowUpdate(BaseModel):

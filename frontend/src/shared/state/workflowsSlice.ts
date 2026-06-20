@@ -159,6 +159,12 @@ export interface OpenCard {
   /** Pre-seed message for the Fix-with-Agent flow so the EditAgent composer
    *  knows which failure context to lead with. Cleared once consumed. */
   fixSeed?: { runId: string; stepIdx: number; stepLabel: string; error: string } | null;
+  /** True while the preview-time aux naming call is in flight; drives the
+   *  header's subtle pulse on a just-converted draft. */
+  metaLoading?: boolean;
+  /** True once preview-time naming filled a real title, so save trusts the
+   *  draft's metadata instead of regenerating it server-side. */
+  metaGenerated?: boolean;
 }
 
 export interface RunningToast {
@@ -260,7 +266,7 @@ export const fetchWorkflows = createAsyncThunk(
 
 export const createWorkflow = createAsyncThunk(
   'workflows/create',
-  async (body: Partial<Workflow>) => {
+  async (body: Partial<Workflow> & { metadata_generated?: boolean }) => {
     const res = await fetch(`${API}/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -268,6 +274,54 @@ export const createWorkflow = createAsyncThunk(
     });
     if (!res.ok) throw new Error(`create failed ${res.status}`);
     return (await res.json()) as Workflow;
+  },
+);
+
+export interface GeneratedMetadata {
+  title: string;
+  description: string;
+  step_labels: string[];
+}
+
+export const generateWorkflowMetadata = createAsyncThunk(
+  'workflows/generateMetadata',
+  async (arg: { steps: Array<{ id: string; text: string }>; model?: string }) => {
+    const res = await fetch(`${API}/generate-metadata`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(arg),
+    });
+    if (!res.ok) throw new Error(`metadata failed ${res.status}`);
+    return (await res.json()) as GeneratedMetadata;
+  },
+);
+
+// Merge preview-time generated metadata into a draft card, filling only the
+// fields the user hasn't typed into so a rename mid-flight survives.
+export const applyGeneratedMetadata = createAsyncThunk(
+  'workflows/applyGeneratedMetadata',
+  async (arg: { workflowId: string; meta: GeneratedMetadata }, { getState, dispatch }) => {
+    const state = getState() as { workflows: State };
+    const card = state.workflows.openCards[arg.workflowId];
+    if (!card) return;
+    const draft = (card.draft || {}) as Partial<Workflow>;
+    const { meta } = arg;
+    const steps = draft.steps || [];
+    const nextDraft: Partial<Workflow> = { ...draft };
+    let changed = false;
+    if (meta.step_labels && meta.step_labels.length === steps.length) {
+      nextDraft.steps = steps.map((s, i) => (meta.step_labels[i] ? { ...s, label: meta.step_labels[i] } : s));
+      changed = true;
+    }
+    const hasTitle = Boolean(meta.title && meta.title.trim());
+    if (hasTitle && !(draft.title || '').trim()) { nextDraft.title = meta.title; changed = true; }
+    if (meta.description && meta.description.trim() && !(draft.description || '').trim()) {
+      nextDraft.description = meta.description;
+      changed = true;
+    }
+    const patch: Partial<OpenCard> = { metaLoading: false, metaGenerated: hasTitle };
+    if (changed) patch.draft = nextDraft;
+    dispatch(updateWorkflowCard({ workflowId: arg.workflowId, patch }));
   },
 );
 

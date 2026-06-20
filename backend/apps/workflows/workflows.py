@@ -15,6 +15,8 @@ from backend.apps.workflows.models import (
     WorkflowStep,
     DraftCommitBody,
     MissedRunAction,
+    GenerateMetadataRequest,
+    GenerateMetadataResponse,
 )
 from backend.apps.workflows import storage, scheduler, executor, audit, escalation
 
@@ -265,25 +267,37 @@ async def create_workflow(body: WorkflowCreate):
     # leaving stale session names ("Inbox check") as titles. Step labels
     # are the 3-6 word at-a-glance headlines surfaced in StepList; without
     # them the UI falls back to truncated raw prompts.
-    try:
-        title, description, labels = await _generate_workflow_metadata(wf)
-        # Respect a user-supplied title (auto_named=False); only auto-fill the
-        # name + description while the workflow is still auto-named. Labels are
-        # always safe to fill since they don't override a user's title.
-        if wf.auto_named:
-            if title:
-                wf.title = title
-            if description:
-                wf.description = description
-        if labels and len(labels) == len(wf.steps):
-            for i, lab in enumerate(labels):
-                if lab:
-                    wf.steps[i].label = lab
-    except Exception:
-        pass
+    # When the FE already generated metadata at preview time it ships the title,
+    # description, and per-step labels on the body, so we skip the aux call here.
+    if not body.metadata_generated:
+        try:
+            title, description, labels = await _generate_workflow_metadata(wf)
+            # Respect a user-supplied title (auto_named=False); only auto-fill the
+            # name + description while the workflow is still auto-named. Labels are
+            # always safe to fill since they don't override a user's title.
+            if wf.auto_named:
+                if title:
+                    wf.title = title
+                if description:
+                    wf.description = description
+            if labels and len(labels) == len(wf.steps):
+                for i, lab in enumerate(labels):
+                    if lab:
+                        wf.steps[i].label = lab
+        except Exception:
+            pass
     storage.save_workflow(wf)
     scheduler.kick()
     return _enriched(wf)
+
+
+@workflows.router.post("/generate-metadata")
+async def generate_workflow_metadata(body: GenerateMetadataRequest) -> GenerateMetadataResponse:
+    # Preview-time naming for the convert-to-workflow draft. Generates without
+    # persisting so the card can show a real title before the user saves.
+    wf = Workflow(steps=body.steps, model=body.model or "sonnet")
+    title, description, labels = await _generate_workflow_metadata(wf)
+    return GenerateMetadataResponse(title=title, description=description, step_labels=labels)
 
 
 async def _generate_workflow_metadata(wf: Workflow) -> tuple[str, str, list[str]]:
