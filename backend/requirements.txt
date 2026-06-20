@@ -20,6 +20,9 @@ trafilatura==2.0.0
 # Electron's OPENSWARM_TIMEZONE env var isn't set (i.e. `bash run.sh`).
 # Packaged builds get the env var directly so this is a safety net.
 tzlocal==5.3.1
+# swarm-analytics: typed client for the OpenSwarm product-analytics ingest
+# service. Pinned for reproducible desktop builds (see ANALYTICS_OVERVIEW.md).
+swarm-analytics==0.1.0
 # Test deps (pytest, pytest-asyncio) live in requirements-dev.txt — they
 # never ship to production users and shaved ~3 MB / ~200 files off the
 # Mac DMG when removed from the prod env.

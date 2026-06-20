@@ -65,6 +65,10 @@ class AppSettings(BaseModel):
     dismissed_mcp_suggestions: dict[str, str] = Field(default_factory=dict)
     analytics_opt_in: bool = True
     installation_id: Optional[str] = None
+    # Install token minted once by swarm-analytics register(); persisted so we
+    # never re-bootstrap. Server-owned (see P_SERVER_OWNED_FIELDS) + treated as
+    # a secret so a stale renderer PUT can't forge or wipe it.
+    analytics_token: Optional[str] = None
     first_opened_at: Optional[str] = None
     connection_mode: str = "own_key"
     openswarm_bearer_token: Optional[str] = None

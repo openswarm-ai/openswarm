@@ -183,6 +183,17 @@ async def service_lifespan():
             id_props["subscription_expires"] = settings.openswarm_subscription_expires
 
         sync({"identity": id_props})
+
+        # swarm-analytics: bootstrap the client (registers + persists a token on
+        # first run) and prove the pipe with a single diagnostic log write.
+        from backend.apps.service.analytics import get_analytics_client
+        client = get_analytics_client()
+        if client is not None:
+            client.logs.write(
+                tag="app",
+                subtag="backend_started",
+                data={"app_version": APP_VERSION},
+            )
     except Exception as e:
         logger.debug(f"Service startup event failed (non-critical): {e}")
 
@@ -218,6 +229,9 @@ async def service_lifespan():
         stop()
     except Exception:
         pass
+
+    from backend.apps.service.analytics import shutdown_analytics
+    shutdown_analytics()
 
     logger.info("Service shut down")
 
