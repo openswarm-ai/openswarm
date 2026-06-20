@@ -6,6 +6,7 @@ import IconButton from '@mui/material/IconButton';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import Fade from '@mui/material/Fade';
+import Snackbar from '@mui/material/Snackbar';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import CheckIcon from '@mui/icons-material/Check';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -259,6 +260,7 @@ const AgentCard: React.FC<Props> = ({
   const defaultModel = useAppSelector((s) => s.settings.data.default_model);
   const defaultMode = useAppSelector((s) => s.settings.data.default_mode);
   const [converting, setConverting] = useState(false);
+  const [convertToast, setConvertToast] = useState<string | null>(null);
   // Hide the "Convert to workflow" button when this chat is already
   // entangled with a workflow (Image #44 note). Two cases:
   //  (a) The session is one of a workflow's runner sessions, OR
@@ -302,6 +304,43 @@ const AgentCard: React.FC<Props> = ({
     !sourceWorkflow.schedule?.enabled &&
     (session.status === 'completed' || session.status === 'stopped') &&
     session.messages.length >= 2;
+  // The convert button stays visible whenever this is a real, convertible
+  // chat; it's only greyed out (not hidden) while a turn is still running so
+  // the affordance doesn't flicker in and out mid-response.
+  const turnSettled = session.status === 'completed' || session.status === 'stopped';
+  const showConvert = session.messages.length >= 2 && !isWorkflowRunnerSession;
+  const handleConvert = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (converting) return;
+    if (session.status !== 'completed' && session.status !== 'stopped') {
+      setConvertToast("Can't convert to workflow mid-turn. Wait for the agent to finish.");
+      return;
+    }
+    const steps = extractStepsFromSession(session);
+    if (steps.length === 0) return;
+    setConverting(true);
+    const draftId = `draft-${session.id}-${Date.now()}`;
+    // The chat card becomes a temporary workflow draft in the same slot.
+    // Nothing is persisted until the user chooses Save Draft or Schedule.
+    dispatch(addWorkflowCard({ workflowId: draftId, sourceSessionId: session.id, expandedSessionIds }));
+    dispatch(setWorkflowCardPosition({ workflowId: draftId, x: cardX, y: cardY }));
+    dispatch(setWorkflowCardSize({ workflowId: draftId, width: cardWidth, height: cardHeight }));
+    dispatch(removeCard(session.id));
+    dispatch(openWorkflowCard({
+      workflowId: draftId,
+      sourceSessionId: session.id,
+      view: 'preview',
+      draft: {
+        title: session.name || 'New workflow',
+        description: '',
+        steps,
+        source_session_id: session.id,
+        use_synced_prompt: true,
+        model: defaultModel || session.model,
+        mode: defaultMode || session.mode,
+      } as Partial<Workflow>,
+    }));
+  }, [converting, session, dispatch, expandedSessionIds, cardX, cardY, cardWidth, cardHeight, defaultModel, defaultMode]);
   // Curated picker label with a tidy fallback for unknowns.
   const friendlyModelLabel = useMemo(() => {
     const value = session.model;
@@ -907,58 +946,6 @@ const AgentCard: React.FC<Props> = ({
                 </Box>
               </Tooltip>
             )}
-            {(session.status === 'completed' || session.status === 'stopped') && session.messages.length >= 2 && !isWorkflowRunnerSession && (
-              <Tooltip title="Turn this chat into a reusable, schedulable workflow">
-                <Box
-                  role="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (converting) return;
-                    const steps = extractStepsFromSession(session);
-                    if (steps.length === 0) return;
-                    setConverting(true);
-                    const draftId = `draft-${session.id}-${Date.now()}`;
-                    // The chat card becomes a temporary workflow draft in the
-                    // same slot. Nothing is persisted until the user chooses
-                    // Save Draft or Schedule Workflow from the draft card.
-                    dispatch(addWorkflowCard({ workflowId: draftId, sourceSessionId: session.id, expandedSessionIds }));
-                    dispatch(setWorkflowCardPosition({ workflowId: draftId, x: cardX, y: cardY }));
-                    dispatch(setWorkflowCardSize({ workflowId: draftId, width: cardWidth, height: cardHeight }));
-                    dispatch(removeCard(session.id));
-                    dispatch(openWorkflowCard({
-                      workflowId: draftId,
-                      sourceSessionId: session.id,
-                      view: 'preview',
-                      draft: {
-                        title: session.name || 'New workflow',
-                        description: '',
-                        steps,
-                        source_session_id: session.id,
-                        use_synced_prompt: true,
-                        model: defaultModel || session.model,
-                        mode: defaultMode || session.mode,
-                      } as Partial<Workflow>,
-                    }));
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  sx={{
-                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                    color: '#fff',
-                    bgcolor: c.accent.primary,
-                    border: `1px solid ${c.accent.primary}`,
-                    fontSize: '0.78rem', fontWeight: 700,
-                    px: 1.1, py: 0.5,
-                    borderRadius: `${c.radius.md}px`,
-                    cursor: converting ? 'wait' : 'pointer',
-                    opacity: converting ? 0.7 : 1,
-                    '&:hover': { filter: 'brightness(1.05)' },
-                  }}
-                >
-                  <AutoAwesomeOutlinedIcon sx={{ fontSize: 14 }} />
-                  {converting ? 'Converting…' : 'Convert to workflow'}
-                </Box>
-              </Tooltip>
-            )}
             <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
               <IconButton
                 size="small"
@@ -978,6 +965,7 @@ const AgentCard: React.FC<Props> = ({
 
         <Box sx={{
           display: isDraft && !expanded ? 'none' : 'flex',
+          alignItems: 'center',
           gap: 1.5,
           flexShrink: 0,
           ...(isDraft && { visibility: 'hidden' }),
@@ -993,8 +981,43 @@ const AgentCard: React.FC<Props> = ({
               ${session.cost_usd.toFixed(4)}
             </Typography>
           )}
+          {showConvert && (
+            <>
+              <Box sx={{ flex: 1 }} />
+              <Tooltip title={turnSettled ? 'Turn this chat into a reusable, schedulable workflow' : 'Wait for the agent to finish before converting'}>
+                <Box
+                  role="button"
+                  onClick={handleConvert}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  sx={{
+                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                    color: '#fff',
+                    bgcolor: c.accent.primary,
+                    border: `1px solid ${c.accent.primary}`,
+                    fontSize: '0.78rem', fontWeight: 700,
+                    px: 1.1, py: 0.5,
+                    borderRadius: `${c.radius.md}px`,
+                    cursor: converting ? 'wait' : turnSettled ? 'pointer' : 'not-allowed',
+                    opacity: converting ? 0.7 : turnSettled ? 1 : 0.45,
+                    '&:hover': turnSettled && !converting ? { filter: 'brightness(1.05)' } : {},
+                  }}
+                >
+                  <AutoAwesomeOutlinedIcon sx={{ fontSize: 14 }} />
+                  {converting ? 'Converting…' : 'Convert to workflow'}
+                </Box>
+              </Tooltip>
+            </>
+          )}
         </Box>
       </Box>
+
+      <Snackbar
+        open={Boolean(convertToast)}
+        autoHideDuration={4000}
+        onClose={() => setConvertToast(null)}
+        message={convertToast || ''}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
 
       {expanded && (
         <Box
