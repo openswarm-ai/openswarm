@@ -8,7 +8,6 @@ import Snackbar from '@mui/material/Snackbar';
 import Icon from '@mui/material/Icon';
 import { styled } from '@mui/material/styles';
 import AddRounded from '@mui/icons-material/AddRounded';
-import CalendarMonthRounded from '@mui/icons-material/CalendarMonthRounded';
 
 import ChatBubbleTeardrop from './ChatBubbleTeardrop';
 
@@ -770,7 +769,10 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                   ...popIn(3),
                 }}
               >
-                <CalendarMonthRounded sx={{ fontSize: 22 }} />
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                  <circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="12" r="2.5" />
+                  <path d="M8.2 7.1l7.6 3.8M8.2 16.9l7.6-3.8" />
+                </svg>
               </Box>
             </WarmTooltip>
 

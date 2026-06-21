@@ -7,10 +7,10 @@ import {
   freqOf, patchForFreq, intervalMinutes, timeInputValue, parseTimeInput, ordinal, nextRunText, type Freq,
 } from './model';
 import { useWorkflowPatch } from './useWorkflowPatch';
+import RepeatField from './RepeatField';
 
 const FREQS: Array<[Freq, string]> = [['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['interval', 'Interval']];
 const DAY_LABELS: Array<[string, number]> = [['S', 0], ['M', 1], ['T', 2], ['W', 3], ['T', 4], ['F', 5], ['S', 6]];
-const REPEAT_PRESETS = [1, 3, 10];
 
 const ScheduleCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
   const patch = useWorkflowPatch();
@@ -42,13 +42,8 @@ const ScheduleCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
   const dom = sched.day_of_month ?? 1;
 
   const maxRuns = sched.max_runs;
-  const repeatSel = maxRuns == null ? 'forever' : REPEAT_PRESETS.includes(maxRuns) ? String(maxRuns) : 'custom';
   // Picking a finite limit resets the lifetime counter so "run 3 times" always means 3 from now.
-  const onRepeat = (val: string) => {
-    if (val === 'forever') return patchSched({ max_runs: null });
-    if (val === 'custom') return patchSched({ max_runs: maxRuns && !REPEAT_PRESETS.includes(maxRuns) ? maxRuns : 2, runs_count: 0 });
-    patchSched({ max_runs: parseInt(val, 10), runs_count: 0 });
-  };
+  const setMaxRuns = (n: number | null) => patchSched(n == null ? { max_runs: null } : { max_runs: n, runs_count: 0 });
 
   return (
     <div style={{ background: WC.paper, border: '1px solid rgba(33,30,27,0.08)', borderRadius: 13, padding: 16 }}>
@@ -92,7 +87,7 @@ const ScheduleCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
             type="time"
             value={timeInputValue(sched)}
             onChange={(e) => { const t = parseTimeInput(e.target.value); if (t) patchSched(t); }}
-            style={{ background: '#FFFFFF', border: '1px solid rgba(33,30,27,0.12)', borderRadius: 8, padding: '6px 9px', fontSize: 13, fontFamily: "'JetBrains Mono',monospace", color: WC.ink }}
+            style={{ width: 134, boxSizing: 'border-box', height: 32, background: '#FFFFFF', border: '1px solid rgba(33,30,27,0.12)', borderRadius: 8, padding: '0 9px', fontSize: 13, fontFamily: "'JetBrains Mono',monospace", color: WC.ink }}
           />
         </div>
       ) : (
@@ -124,26 +119,7 @@ const ScheduleCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
 
       <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <span style={{ fontSize: 13, color: WC.ink3 }}>Repeat</span>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <select
-            value={repeatSel}
-            onChange={(e) => onRepeat(e.target.value)}
-            style={{ background: '#FFFFFF', border: '1px solid rgba(33,30,27,0.12)', borderRadius: 8, padding: '6px 8px', fontSize: 13, color: WC.ink, cursor: 'pointer' }}
-          >
-            <option value="forever">Forever</option>
-            <option value="1">Once</option>
-            <option value="3">3 times</option>
-            <option value="10">10 times</option>
-            <option value="custom">Custom</option>
-          </select>
-          {repeatSel === 'custom' && (
-            <input
-              type="number" min={1} value={maxRuns ?? 1}
-              onChange={(e) => patchSched({ max_runs: Math.max(1, parseInt(e.target.value, 10) || 1), runs_count: 0 })}
-              style={{ width: 56, background: '#FFFFFF', border: '1px solid rgba(33,30,27,0.12)', borderRadius: 8, padding: '6px 9px', fontSize: 13, fontFamily: "'JetBrains Mono',monospace", color: WC.ink, textAlign: 'right' }}
-            />
-          )}
-        </div>
+        <RepeatField value={maxRuns} onChange={setMaxRuns} />
       </div>
 
       <div style={{ marginTop: 13, paddingTop: 13, borderTop: `1px solid ${WC.line}`, display: 'flex', alignItems: 'center', gap: 8 }}>
