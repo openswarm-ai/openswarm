@@ -100,7 +100,8 @@ function scheduleShort(sched: ScheduleConfig): string {
     return sched.repeat_every === 1 ? `Daily ${time}` : `Every ${sched.repeat_every}d ${time}`;
   }
   if (sched.repeat_unit === 'month') {
-    return sched.repeat_every === 1 ? `Monthly ${time}` : `Every ${sched.repeat_every}mo ${time}`;
+    const day = sched.day_of_month ? ` day ${sched.day_of_month}` : '';
+    return sched.repeat_every === 1 ? `Monthly${day} ${time}` : `Every ${sched.repeat_every}mo${day} ${time}`;
   }
   if (sched.on_days.length === 5 && [1, 2, 3, 4, 5].every((d) => sched.on_days.includes(d))) return `Weekdays ${time}`;
   if (sched.on_days.length === 2 && [0, 6].every((d) => sched.on_days.includes(d))) return `Weekends ${time}`;

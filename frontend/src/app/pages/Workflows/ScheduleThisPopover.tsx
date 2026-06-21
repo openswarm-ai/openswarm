@@ -27,7 +27,7 @@ const PRESETS: Preset[] = [
   { label: 'Every day at 9am', hint: 'Daily standup, morning report', build: () => ({ enabled: true, repeat_unit: 'day', repeat_every: 1, hour: 9, minute: 0 }) },
   { label: 'Weekdays at 9am', hint: 'Mon to Fri', build: () => ({ enabled: true, repeat_unit: 'week', repeat_every: 1, on_days: [1, 2, 3, 4, 5], hour: 9, minute: 0 }) },
   { label: 'Every Monday at 9am', hint: 'Weekly check-in', build: () => ({ enabled: true, repeat_unit: 'week', repeat_every: 1, on_days: [1], hour: 9, minute: 0 }) },
-  { label: 'Every month on the 1st', hint: 'Monthly summary, billing report', build: () => ({ enabled: true, repeat_unit: 'month', repeat_every: 1, hour: 9, minute: 0 }) },
+  { label: 'Every month on the 1st', hint: 'Monthly summary, billing report', build: () => ({ enabled: true, repeat_unit: 'month', repeat_every: 1, day_of_month: 1, hour: 9, minute: 0 }) },
 ];
 
 function extractStepsFromSession(session: { messages?: Array<{ role: string; content: unknown; hidden?: boolean }> } | null | undefined): Array<{ id: string; text: string }> {

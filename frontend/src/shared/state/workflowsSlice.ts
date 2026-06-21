@@ -18,6 +18,7 @@ export interface ScheduleConfig {
   on_days: number[];
   hour: number;
   minute: number;
+  day_of_month?: number | null;
   timezone: string;
   /** End conditions; null on both = forever. Scheduler auto-disables on threshold. */
   ends_at: string | null;

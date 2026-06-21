@@ -17,6 +17,7 @@ export function defaultSchedule(): ScheduleConfig {
     on_days: [],
     hour: 9,
     minute: 0,
+    day_of_month: null,
     timezone: tz,
     ends_at: null,
     max_runs: null,
@@ -84,7 +85,8 @@ export function describeSchedule(sched: ScheduleConfig): string {
     return sched.repeat_every === 1 ? `Every day at ${time}` : `Every ${sched.repeat_every} days at ${time}`;
   }
   if (sched.repeat_unit === 'month') {
-    return sched.repeat_every === 1 ? `Every month at ${time}` : `Every ${sched.repeat_every} months at ${time}`;
+    const day = sched.day_of_month ? ` on day ${sched.day_of_month}` : '';
+    return sched.repeat_every === 1 ? `Every month${day} at ${time}` : `Every ${sched.repeat_every} months${day} at ${time}`;
   }
   const days = sched.on_days.length === 0 ? 'week' : sched.on_days
     .slice()
@@ -198,7 +200,7 @@ export function fireTimesWithin(workflow: Workflow, from: Date, to: Date, cap = 
   }
 
   if (sched.repeat_unit === 'month') {
-    const startDay = from.getDate();
+    const startDay = sched.day_of_month || from.getDate();
     let year = from.getFullYear();
     let month = from.getMonth();
     let guard = 0;
@@ -217,10 +219,17 @@ export function fireTimesWithin(workflow: Workflow, from: Date, to: Date, cap = 
 
   const allowed = sched.on_days;
   if (allowed.length === 0) return [];
+  const stepWeeks = Math.max(1, sched.repeat_every);
+  const anchorWeek = new Date(cursor);
+  anchorWeek.setDate(anchorWeek.getDate() - anchorWeek.getDay());
   for (let i = 0; i < 60 && out.length < effectiveCap; i += 1) {
     const day = new Date(cursor);
     day.setDate(day.getDate() + i);
+    const candidateWeek = new Date(day);
+    candidateWeek.setDate(candidateWeek.getDate() - candidateWeek.getDay());
+    const weekDelta = Math.floor((candidateWeek.getTime() - anchorWeek.getTime()) / (7 * 86400000));
     if (!allowed.includes(day.getDay())) continue;
+    if (weekDelta !== 0 && weekDelta % stepWeeks !== 0) continue;
     day.setHours(sched.hour, sched.minute, 0, 0);
     if (day >= from && day <= to) out.push(day);
     if (day > to) break;

@@ -43,7 +43,7 @@ PRESETS = {
     "weekdays_morning": {"enabled": True, "repeat_unit": "week", "repeat_every": 1, "hour": 9, "minute": 0, "on_days": [1, 2, 3, 4, 5]},
     "weekly_monday": {"enabled": True, "repeat_unit": "week", "repeat_every": 1, "hour": 9, "minute": 0, "on_days": [1]},
     "weekly_friday": {"enabled": True, "repeat_unit": "week", "repeat_every": 1, "hour": 17, "minute": 0, "on_days": [5]},
-    "monthly_first": {"enabled": True, "repeat_unit": "month", "repeat_every": 1, "hour": 9, "minute": 0, "on_days": []},
+    "monthly_first": {"enabled": True, "repeat_unit": "month", "repeat_every": 1, "hour": 9, "minute": 0, "day_of_month": 1, "on_days": []},
 }
 
 
@@ -88,6 +88,7 @@ TOOLS = [
                     "items": {"type": "integer"},
                     "description": "Weekdays (Sun=0..Sat=6) when preset='custom' and repeat_unit='week'.",
                 },
+                "day_of_month": {"type": "integer", "description": "Day 1-31 when preset='custom' and repeat_unit='month'. Use 1 for 'first of the month'; values past a shorter month's length clamp to that month's last day."},
                 "timezone": {"type": "string", "description": "IANA timezone name (e.g. 'America/Los_Angeles'). Omit to use the user's current local zone at scheduling time."},
                 "source_session_id": {"type": "string", "description": "Optional; the chat session this workflow was created from. Inherits its tool surface."},
             },
@@ -114,6 +115,7 @@ TOOLS = [
                 "repeat_unit": {"type": "string", "enum": ["minute", "hour", "day", "week", "month"]},
                 "repeat_every": {"type": "integer", "description": "Interval count for repeat_unit (e.g. 2 with repeat_unit='week' means every other week; 15 with repeat_unit='minute' means every 15 minutes, the minimum)."},
                 "on_days": {"type": "array", "items": {"type": "integer"}, "description": "Weekdays (Sun=0..Sat=6) when repeat_unit='week'."},
+                "day_of_month": {"type": "integer", "description": "Day 1-31 when repeat_unit='month'. Use 1 for 'first of the month'; values past a shorter month's length clamp to that month's last day."},
                 "timezone": {"type": "string", "description": "IANA timezone name (e.g. 'America/Los_Angeles')."},
             },
             "required": ["workflow_id"],
@@ -322,6 +324,7 @@ def _build_schedule_from_preset(preset: str, args: dict) -> dict:
             "hour": int(args.get("hour", 9)),
             "minute": int(args.get("minute", 0)),
             "on_days": list(args.get("on_days") or []),
+            "day_of_month": args.get("day_of_month"),
         }
     preset_def = PRESETS.get(preset)
     if not preset_def:
@@ -388,7 +391,7 @@ def handle_update(args: dict) -> dict:
     if "schedule_enabled" in args:
         sched_patch["enabled"] = bool(args["schedule_enabled"])
         sched_dirty = True
-    for k in ("hour", "minute", "repeat_unit", "on_days", "repeat_every", "timezone"):
+    for k in ("hour", "minute", "repeat_unit", "on_days", "repeat_every", "day_of_month", "timezone"):
         if k in args:
             sched_patch[k] = args[k]
             sched_dirty = True

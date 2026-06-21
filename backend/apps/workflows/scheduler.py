@@ -95,16 +95,8 @@ def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
     return dt.astimezone(timezone.utc)
 
 
-def _add_months(dt: datetime, months: int) -> datetime:
-    """Add months preserving day-of-month, clamping only if the target month
-    is shorter (e.g. Jan 31 + 1mo → Feb 28/29). Wall-clock arithmetic; the
-    caller is responsible for tz attachment.
-    """
-    total = dt.month - 1 + months
-    year = dt.year + total // 12
-    month = total % 12 + 1
-    day = min(dt.day, calendar.monthrange(year, month)[1])
-    return dt.replace(year=year, month=month, day=day)
+def _week_start(d: datetime) -> datetime:
+    return (d - timedelta(days=_js_weekday(d))).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def _js_weekday(d: datetime) -> int:
@@ -143,32 +135,42 @@ def _next_fire_after(sched: ScheduleConfig, ref_utc: datetime) -> Optional[datet
         return c.astimezone(timezone.utc)
 
     candidate = base.replace(hour=sched.hour, minute=sched.minute)
-    if candidate <= ref_local:
-        candidate = candidate + timedelta(days=1)
 
     if sched.repeat_unit == "day":
         step = max(1, sched.repeat_every)
-        # Walk forward in step-day increments until we find a slot strictly
-        # after `ref_local`. Cheap because step is small.
         while candidate <= ref_local:
             candidate = candidate + timedelta(days=step)
         return candidate.astimezone(timezone.utc)
 
-    if sched.repeat_unit == "week":
-        allowed = sched.on_days
-        for _ in range(0, 14):
-            if _js_weekday(candidate) in allowed and candidate > ref_local:
-                return candidate.astimezone(timezone.utc)
-            candidate = candidate + timedelta(days=1)
-        return candidate.astimezone(timezone.utc)
-
     if sched.repeat_unit == "month":
-        target_day = ref_local.day
+        target_day = sched.day_of_month or ref_local.day
         step = max(1, sched.repeat_every)
         c = candidate.replace(day=min(target_day, calendar.monthrange(candidate.year, candidate.month)[1]))
         while c <= ref_local:
-            c = _add_months(c, step)
+            total = c.month - 1 + step
+            year = c.year + total // 12
+            month = total % 12 + 1
+            day = min(target_day, calendar.monthrange(year, month)[1])
+            c = c.replace(year=year, month=month, day=day)
         return c.astimezone(timezone.utc)
+
+    if candidate <= ref_local:
+        candidate = candidate + timedelta(days=1)
+
+    if sched.repeat_unit == "week":
+        allowed = sched.on_days
+        step = max(1, sched.repeat_every)
+        anchor_week = _week_start(ref_local)
+        for _ in range(0, 7 * step + 7):
+            week_delta = (_week_start(candidate).date() - anchor_week.date()).days // 7
+            if (
+                _js_weekday(candidate) in allowed
+                and candidate > ref_local
+                and (week_delta == 0 or week_delta % step == 0)
+            ):
+                return candidate.astimezone(timezone.utc)
+            candidate = candidate + timedelta(days=1)
+        return candidate.astimezone(timezone.utc)
 
     return None
 

@@ -71,23 +71,31 @@ function previewNextRun(sched: ScheduleConfig): Date | null {
     return c;
   }
   let candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), sched.hour, sched.minute, 0, 0);
-  if (candidate <= now) candidate = new Date(candidate.getTime() + 86400000);
   if (sched.repeat_unit === 'day') {
     const step = Math.max(1, sched.repeat_every);
     while (candidate <= now) candidate = new Date(candidate.getTime() + step * 86400000);
     return candidate;
   }
+  if (candidate <= now) candidate = new Date(candidate.getTime() + 86400000);
   if (sched.repeat_unit === 'week') {
     const allowed = sched.on_days.length ? sched.on_days : [jsWeekday(now)];
-    for (let i = 0; i < 14; i += 1) {
-      if (allowed.includes(jsWeekday(candidate)) && candidate > now) return candidate;
+    const step = Math.max(1, sched.repeat_every);
+    const anchorWeek = new Date(now);
+    anchorWeek.setHours(0, 0, 0, 0);
+    anchorWeek.setDate(anchorWeek.getDate() - anchorWeek.getDay());
+    for (let i = 0; i < 7 * step + 7; i += 1) {
+      const candidateWeek = new Date(candidate);
+      candidateWeek.setHours(0, 0, 0, 0);
+      candidateWeek.setDate(candidateWeek.getDate() - candidateWeek.getDay());
+      const weekDelta = Math.floor((candidateWeek.getTime() - anchorWeek.getTime()) / (7 * 86400000));
+      if (allowed.includes(jsWeekday(candidate)) && candidate > now && (weekDelta === 0 || weekDelta % step === 0)) return candidate;
       candidate = new Date(candidate.getTime() + 86400000);
     }
     return candidate;
   }
   if (sched.repeat_unit === 'month') {
     const step = Math.max(1, sched.repeat_every);
-    const startDay = now.getDate();
+    const startDay = sched.day_of_month || now.getDate();
     let year = now.getFullYear();
     let month = now.getMonth();
     let guard = 0;
@@ -235,6 +243,7 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
               // when switching in so the input never shows an invalid value.
               const patch: Partial<ScheduleConfig> = { repeat_unit: unit };
               if (unit === 'minute' && s.repeat_every < 15) patch.repeat_every = 15;
+              if (unit === 'month' && !s.day_of_month) patch.day_of_month = new Date().getDate();
               setSched(patch);
             }}
             sx={{ fontSize: LABEL_FS, '& .MuiSelect-select': { py: 0.5 } }}>
@@ -258,6 +267,17 @@ export default function ScheduleFacet({ draft, setDraft }: { draft: Workflow; se
                   sx={{ width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: LABEL_FS, fontWeight: 700, cursor: 'pointer', color: active ? '#fff' : c.text.muted, bgcolor: active ? c.accent.primary : 'transparent', border: `1px solid ${active ? c.accent.primary : c.border.subtle}` }}>{label}</Box>
               );
             })}
+          </Box>
+        )}
+        {s.repeat_unit === 'month' && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pl: 12, flexWrap: 'wrap' }}>
+            <Typography sx={{ fontSize: LABEL_FS, color: c.text.muted }}>↳ on day</Typography>
+            <InputBase
+              type="number"
+              value={s.day_of_month || new Date().getDate()}
+              onChange={(e) => setSched({ day_of_month: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
+              sx={{ width: 56, fontSize: INPUT_FS, border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.md}px`, px: 0.75, py: 0.4 }}
+            />
           </Box>
         )}
         {/* minute-unit schedules have no anchor time; hour-unit schedules

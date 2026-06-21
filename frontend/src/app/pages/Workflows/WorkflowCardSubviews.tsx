@@ -333,7 +333,10 @@ function describeSchedule(workflow: Workflow): string {
   if (s.repeat_unit === 'minute') return `Every ${s.repeat_every} minutes`;
   if (s.repeat_unit === 'hour') return s.repeat_every === 1 ? `Hourly at :${String(s.minute).padStart(2, '0')}` : `Every ${s.repeat_every} hours`;
   if (s.repeat_unit === 'day') return s.repeat_every === 1 ? `Daily at ${time}` : `Every ${s.repeat_every} days at ${time}`;
-  if (s.repeat_unit === 'month') return s.repeat_every === 1 ? `Monthly at ${time}` : `Every ${s.repeat_every} months at ${time}`;
+  if (s.repeat_unit === 'month') {
+    const day = s.day_of_month ? ` on day ${s.day_of_month}` : '';
+    return s.repeat_every === 1 ? `Monthly${day} at ${time}` : `Every ${s.repeat_every} months${day} at ${time}`;
+  }
   if (s.on_days.length === 5 && [1,2,3,4,5].every((d) => s.on_days.includes(d))) return `Weekdays at ${time}`;
   if (s.on_days.length === 2 && [0,6].every((d) => s.on_days.includes(d))) return `Weekends at ${time}`;
   if (s.on_days.length === 1) {
