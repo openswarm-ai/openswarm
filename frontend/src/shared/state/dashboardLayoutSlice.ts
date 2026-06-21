@@ -156,9 +156,7 @@ export interface DashboardLayoutState {
   pendingFocusMissedRuns: boolean;
   /** Transient: signals Dashboard to pan/zoom to the singleton Workflows Hub on open. */
   pendingFocusWorkflowsHub: boolean;
-  /** Whether the shell-level Workflows app window is open (screen-space singleton, not a canvas card). */
-  workflowsAppOpen: boolean;
-  /** Transient deep-link target: the app jumps to this workflow's detail on open, then clears it. */
+  /** Transient deep-link target: the Workflows card jumps to this workflow's detail on open, then clears it. */
   workflowsAppTarget: string | null;
 }
 
@@ -186,7 +184,6 @@ const initialState: DashboardLayoutState = {
   pendingFocusWorkflowId: null,
   pendingFocusMissedRuns: false,
   pendingFocusWorkflowsHub: false,
-  workflowsAppOpen: false,
   workflowsAppTarget: null,
 };
 
@@ -985,13 +982,31 @@ const dashboardLayoutSlice = createSlice({
       state.workflowsHub = null;
     },
 
-    openWorkflowsApp(state, action: PayloadAction<{ workflowId?: string } | undefined>) {
-      state.workflowsAppOpen = true;
+    // The Workflows app is an on-canvas card (like chat/browser/view cards),
+    // backed by the singleton workflowsHub geometry. Opening it creates or
+    // raises that card and pans to it; an optional workflowId deep-links to
+    // that workflow's detail once the card mounts.
+    openWorkflowsApp(state, action: PayloadAction<{ workflowId?: string; expandedSessionIds?: string[] } | undefined>) {
       state.workflowsAppTarget = action.payload?.workflowId ?? null;
+      if (state.workflowsHub) {
+        state.workflowsHub.zOrder = state.nextZOrder++;
+        state.pendingFocusWorkflowsHub = true;
+        return;
+      }
+      const rects = collectOccupiedRects(state, action.payload?.expandedSessionIds);
+      const pos = findOpenGridCell(rects, DEFAULT_WORKFLOWS_HUB_W, DEFAULT_WORKFLOWS_HUB_H);
+      state.workflowsHub = {
+        x: pos.x,
+        y: pos.y,
+        width: DEFAULT_WORKFLOWS_HUB_W,
+        height: DEFAULT_WORKFLOWS_HUB_H,
+        zOrder: state.nextZOrder++,
+      };
+      state.pendingFocusWorkflowsHub = true;
     },
 
     closeWorkflowsApp(state) {
-      state.workflowsAppOpen = false;
+      state.workflowsHub = null;
       state.workflowsAppTarget = null;
     },
 

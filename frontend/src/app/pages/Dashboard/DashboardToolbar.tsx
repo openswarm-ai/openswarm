@@ -191,7 +191,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const allRuns = useAppSelector((s) => s.workflows.allRuns);
     const allRunsLoading = useAppSelector((s) => s.workflows.allRunsLoading);
     const workflowItems = useAppSelector((s) => s.workflows.items);
-    const workflowsHubOpen = useAppSelector((s) => s.dashboardLayout.workflowsAppOpen);
+    const workflowsHubOpen = useAppSelector((s) => Boolean(s.dashboardLayout.workflowsHub));
 
     const outputList = useMemo(() => Object.values(outputs), [outputs]);
     const filteredOutputs = useMemo(() => {
@@ -427,35 +427,6 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
 
     return (
       <>
-      {(inputOpen || historyOpen) && (
-        <Box data-toolbar-pills sx={{ display: 'flex', gap: 0.5, mb: 0.75, pl: 0.25 }}>
-          <Box
-            onClick={() => {
-              if (historyOpen) {
-                handleCloseHistory();
-                onNewAgent();
-              }
-              // If already in inputOpen, this is a no-op (we're already
-              // in new chat). The visible active styling tells the user
-              // that. Clicking again does nothing intentionally.
-            }}
-            role="button"
-            sx={{
-              display: 'inline-flex', alignItems: 'center', gap: 0.3,
-              fontSize: '0.74rem', fontWeight: 600,
-              color: inputOpen && !historyOpen ? c.text.primary : c.text.secondary,
-              bgcolor: c.bg.surface,
-              border: `1px solid ${inputOpen && !historyOpen ? c.border.medium : c.border.subtle}`,
-              boxShadow: inputOpen && !historyOpen ? c.shadow.sm : 'none',
-              px: 0.85, py: 0.3, borderRadius: 999,
-              cursor: historyOpen ? 'pointer' : 'default',
-              '&:hover': historyOpen ? { bgcolor: c.bg.elevated } : {},
-            }}>
-            <AddRounded sx={{ fontSize: 12 }} />
-            New Chat
-          </Box>
-        </Box>
-      )}
       <MotionBox
         ref={containerRef}
         layout
@@ -505,6 +476,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               mode={popoverMode}
               onModeChange={setPopoverMode}
               hideTopChrome
+              chatHistoryOnly
               historyResults={historySearch.results.map((e) => ({ id: e.id, name: e.name, closed_at: e.closed_at }))}
               historyLoading={historySearch.loading}
               historyQuery={historyQuery}

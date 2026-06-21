@@ -18,7 +18,7 @@ const LeftRail: React.FC<{ nav: AppNav }> = ({ nav }) => {
 
   const workflows = useMemo(() => Object.values(items)
     .filter((w) => !w.unsaved)
-    .sort((a, b) => a.title.localeCompare(b.title)), [items]);
+    .sort((a, b) => (b.updated_at || b.created_at).localeCompare(a.updated_at || a.created_at)), [items]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

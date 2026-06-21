@@ -32,7 +32,6 @@ import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
 // Settings modal lazy-loaded so its 2.3K LOC + Stripe/OAuth helpers don't ship on first paint.
 const Settings = React.lazy(() => import('@/app/pages/Settings/Settings'));
-const WorkflowsApp = React.lazy(() => import('@/app/pages/Workflows/app/WorkflowsApp'));
 import DynamicIsland from '@/app/components/overlays/DynamicIsland';
 import Dashboard from '@/app/pages/Dashboard/Dashboard';
 import DashboardHost from '@/app/components/Layout/DashboardHost';
@@ -1174,10 +1173,6 @@ const AppShell: React.FC = () => {
 
       <React.Suspense fallback={null}>
         <Settings />
-      </React.Suspense>
-
-      <React.Suspense fallback={null}>
-        <WorkflowsApp />
       </React.Suspense>
 
       <Snackbar

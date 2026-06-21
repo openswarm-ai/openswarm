@@ -41,6 +41,9 @@ interface Props {
   /** When true, hides the internal Search/Schedule chips + redundant "+ New"
    *  pill. The new DashboardToolbar pills above the popover replace them. */
   hideTopChrome?: boolean;
+  /** When true, the dock History is purely chat history: the Scheduled-tasks /
+   *  Schedule tabs and views are dropped (workflows live in the Workflows app). */
+  chatHistoryOnly?: boolean;
 }
 
 export default function SchedulePopover({
@@ -49,7 +52,9 @@ export default function SchedulePopover({
   allRuns, allRunsLoading, onRunOpen, workflowTitleFor,
   historyScrollRef, onHistoryScroll,
   hideTopChrome = false,
+  chatHistoryOnly = false,
 }: Props) {
+  const showSearch = chatHistoryOnly || mode === 'search';
   const c = useClaudeTokens();
   // List leads: it's the at-a-glance "what's coming up" the user wants first,
   // with Week/Month as the calendar grids behind it.
@@ -125,7 +130,7 @@ export default function SchedulePopover({
         {/* History tabs. Hidden in schedule mode so the Schedule pill's
             calendar stays untouched; toggles only Chat history <-> runs and
             never reaches the calendar from here. */}
-        {mode !== 'schedule' && (
+        {!chatHistoryOnly && mode !== 'schedule' && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, pt: 1, pb: 0.5, flexShrink: 0 }}>
             {([['search', 'Chat history'], ['runs', 'Scheduled tasks']] as const).map(([m, label]) => (
               <Box key={m} onClick={() => onModeChange(m)} role="button" sx={{ fontSize: '0.85rem', fontWeight: mode === m ? 700 : 500, px: 0.75, pt: 0.4, pb: 0.55, color: mode === m ? c.text.primary : c.text.muted, borderBottom: `2px solid ${mode === m ? c.accent.primary : 'transparent'}`, cursor: 'pointer', '&:hover': { color: c.text.primary } }}>{label}</Box>
@@ -141,7 +146,7 @@ export default function SchedulePopover({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.14, ease: 'easeOut' }}
             style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
-        {mode === 'search' && (
+        {showSearch && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1, flexShrink: 0 }}>
               <SearchIcon sx={{ fontSize: 18, color: c.text.muted }} />
@@ -185,7 +190,7 @@ export default function SchedulePopover({
           </Box>
         )}
 
-        {mode === 'runs' && (
+        {!chatHistoryOnly && mode === 'runs' && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, py: 1, borderTop: `1px solid ${c.border.subtle}`, minHeight: 0 }}>
               {allRunsLoading && allRuns.length === 0 ? (
@@ -197,7 +202,7 @@ export default function SchedulePopover({
           </Box>
         )}
 
-        {mode === 'schedule' && (
+        {!chatHistoryOnly && mode === 'schedule' && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, pt: 1, pb: 0.5, flexShrink: 0 }}>
               {(['List', 'Week', 'Month'] as const).map((v) => (

@@ -4,6 +4,7 @@ import AgentCard from '../cards/AgentCard';
 import DashboardViewCard from '../cards/DashboardViewCard';
 import BrowserCard from '../cards/BrowserCard';
 import NoteCard from '../cards/NoteCard';
+import WorkflowsAppCard from '@/app/pages/Workflows/app/WorkflowsAppCard';
 import {
   EXPANDED_CARD_MIN_H,
   DEFAULT_CARD_W,
@@ -266,7 +267,26 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
           onBringToFront={onBringToFront}
         />
       ))}
-      {/* Workflows now live in the shell-level Workflows app, not on the canvas. */}
+      {workflowsHub && (
+        <WorkflowsAppCard
+          cardX={workflowsHub.x}
+          cardY={workflowsHub.y}
+          cardWidth={workflowsHub.width}
+          cardHeight={workflowsHub.height}
+          cardZOrder={workflowsHub.zOrder ?? 0}
+          zoom={zoom}
+          panX={panX}
+          panY={panY}
+          isSelected={selection.isSelected('workflows-hub')}
+          isHighlighted={highlightedCardId === 'workflows-hub'}
+          multiDragDelta={selection.isSelected('workflows-hub') ? multiDragDelta : null}
+          onCardSelect={onCardSelect}
+          onDragStart={onDragStart}
+          onDragMove={onDragMove}
+          onDragEnd={onDragEnd}
+          onBringToFront={onBringToFront}
+        />
+      )}
       {/* Marquee selection rectangle */}
       {selection.marquee && (
         <div
