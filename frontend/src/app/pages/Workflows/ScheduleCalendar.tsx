@@ -17,7 +17,7 @@ import { useWindowedList } from '@/shared/hooks/useWindowedList';
 interface Props {
   view: 'Week' | 'Month' | 'List';
   density: 'compact' | 'roomy';
-  onSelectWorkflow?: (id: string) => void;
+  onSelectWorkflow?: (id: string, fireAt?: Date) => void;
   refDate?: Date;
 }
 
@@ -125,7 +125,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
   // and pushes a workflow:updated over the socket, which would churn this key
   // and blank the calendar (the eventsByDay gate) until the next fetch lands.
   const workflowScheduleKey = workflows
-    .map((w) => `${w.id}:${w.schedule.enabled}:${w.schedule.timezone}:${w.schedule.repeat_unit}:${w.schedule.repeat_every}:${w.schedule.hour}:${w.schedule.minute}:${w.schedule.on_days.join(',')}:${w.schedule.ends_at || ''}:${w.schedule.max_runs ?? ''}:${w.schedule.runs_count}`)
+    .map((w) => `${w.id}:${w.schedule.enabled}:${w.schedule.timezone}:${w.schedule.repeat_unit}:${w.schedule.repeat_every}:${w.schedule.hour}:${w.schedule.minute}:${w.schedule.day_of_month ?? ''}:${w.schedule.on_days.join(',')}:${w.schedule.ends_at || ''}:${w.schedule.max_runs ?? ''}:${w.schedule.runs_count}`)
     .sort()
     .join('|');
   const fromIso = rangeStart.toISOString();
@@ -230,11 +230,11 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     enabled: view === 'List' && rows.length >= LIST_WINDOW_MIN_ROWS,
   });
 
-  const SLOT_H = compact ? 32 : 44;
+  const SLOT_H = compact ? 40 : 60;
   const ROW_LABEL = compact ? '0.7rem' : '0.74rem';
   const DAY_NUM = compact ? '0.95rem' : '1.15rem';
   const DAY_LABEL = compact ? '0.66rem' : '0.72rem';
-  const EVENT_FS = compact ? '0.7rem' : '0.78rem';
+  const EVENT_FS = compact ? '0.56rem' : '0.58rem';
 
   if (view === 'Week') {
     const start = startOfWeek(today);
@@ -255,7 +255,28 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', color: c.text.secondary }}>
         {/* Day headers: muted weekday caps; today's date gets the filled circle */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', gap: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 4, borderBottom: `1px solid ${c.border.subtle}`, pt: 1.25, pb: 0.5 }}>
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: '64px repeat(7, 1fr)',
+          gap: 0,
+          position: 'sticky',
+          top: 0,
+          bgcolor: c.bg.surface,
+          zIndex: 20,
+          borderBottom: `1px solid ${c.border.subtle}`,
+          pt: 1.25,
+          pb: 0.5,
+          overflow: 'hidden',
+          isolation: 'isolate',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: '-1px',
+            bgcolor: c.bg.surface,
+            zIndex: 0,
+          },
+          '& > *': { position: 'relative', zIndex: 1 },
+        }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', pr: 1, pb: 0.5 }}>
             {!compact && (
               <Typography sx={{ fontSize: '0.62rem', color: c.text.ghost, fontWeight: 500 }}>{TZ_LABEL}</Typography>
@@ -273,7 +294,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
             );
           })}
         </Box>
-        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', position: 'relative' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', position: 'relative', zIndex: 0 }}>
           {HOURS.map((hour, hourIdx) => (
             <React.Fragment key={hour}>
               {/* Hour label sits inside its row (top-aligned) rather than
@@ -313,10 +334,12 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
                         ifMatch: wf.updated_at || null,
                       }));
                     }}
-                    sx={{ height: SLOT_H, borderLeft: `1px solid ${c.border.subtle}`, borderTop: hourIdx === 0 ? 'none' : `1px solid ${c.border.subtle}`, position: 'relative' }}>
+                    sx={{ height: SLOT_H, borderLeft: `1px solid ${c.border.subtle}`, borderTop: hourIdx === 0 ? 'none' : `1px solid ${c.border.subtle}`, position: 'relative', overflow: 'hidden' }}>
                     <EventStack
                       events={evs}
                       paused={allPaused}
+                      now={now}
+                      maxVisible={compact ? 1 : 3}
                       onSelectWorkflow={onSelectWorkflow}
                       eventFontSize={EVENT_FS}
                       onContextWorkflow={(wf, ev) => { ev.preventDefault(); setCtxMenu({ x: ev.clientX, y: ev.clientY, workflow: wf }); }}
@@ -372,22 +395,17 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
                       readable. */}
                   <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxSizing: 'border-box', width: 22, height: 22, borderRadius: '50%', bgcolor: isToday ? accent : 'transparent', color: isToday ? '#fff' : inMonth ? c.text.primary : c.text.ghost, fontWeight: isToday ? 600 : 500, fontSize: '0.82rem', lineHeight: 1, boxShadow: isToday ? `0 0 0 1.5px ${c.bg.surface}, 0 0 0 3px ${accent}` : 'none' }}>{d.getDate()}</Box>
                 </Box>
-                {evs.slice(0, compact ? 3 : 4).map((e, idx) => {
-                  // Past fires read as a hollow ring, upcoming ones stay filled,
-                  // so a glance down a day tells you what already ran.
-                  const passed = e.date.getTime() < now.getTime();
-                  return (
+                {evs.slice(0, compact ? 3 : 4).map((e, idx) => (
                   <Box
                     key={`${e.workflow.id}-${idx}`}
-                    onClick={() => onSelectWorkflow?.(e.workflow.id)}
+                    onClick={() => onSelectWorkflow?.(e.workflow.id, e.date)}
                     onContextMenu={(ev) => { ev.preventDefault(); setCtxMenu({ x: ev.clientX, y: ev.clientY, workflow: e.workflow }); }}
                     sx={{ mt: 0.3, display: 'flex', alignItems: 'center', gap: 0.5, fontSize: EVENT_FS, color: c.text.primary, cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', '&:hover': { color: accent } }}>
-                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', boxSizing: 'border-box', bgcolor: passed ? 'transparent' : accent, border: passed ? `1.5px solid ${accent}` : 'none', flexShrink: 0 }} />
+                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', boxSizing: 'border-box', bgcolor: accent, flexShrink: 0 }} />
                     <span style={{ color: c.text.muted, flexShrink: 0 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</span>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: 500 }}>{e.workflow.title}</span>
                   </Box>
-                  );
-                })}
+                ))}
                 {evs.length > (compact ? 3 : 4) && (
                   <MonthDayOverflow
                     date={d}
@@ -463,7 +481,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
           <Box
             key={row.id}
             data-wl-id={row.id}
-            onClick={() => onSelectWorkflow?.(e.workflow.id)}
+            onClick={() => onSelectWorkflow?.(e.workflow.id, e.date)}
             onContextMenu={(ev) => { ev.preventDefault(); setCtxMenu({ x: ev.clientX, y: ev.clientY, workflow: e.workflow }); }}
             sx={{
               display: 'flex', alignItems: 'center', gap: 1.25,
@@ -487,74 +505,73 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
   );
 }
 
-// Apple Calendar style event chip: 3px colored left-bar + faintly-tinted
-// background + readable text. One chip per cell with a "+N" badge for
-// overflow; clicking it opens a popover listing all events that hour.
-function EventStack({ events, paused, onSelectWorkflow, eventFontSize, onContextWorkflow }: {
+// Apple Calendar style event stack: tiny bars in the hour cell, followed by a
+// text overflow affordance when the hour has more runs than fit.
+function EventStack({ events, paused, now, maxVisible, onSelectWorkflow, eventFontSize, onContextWorkflow }: {
   events: { workflow: Workflow; date: Date }[];
   paused?: boolean;
-  onSelectWorkflow?: (id: string) => void;
+  now: Date;
+  maxVisible: number;
+  onSelectWorkflow?: (id: string, fireAt?: Date) => void;
   eventFontSize: string;
   onContextWorkflow?: (workflow: Workflow, e: React.MouseEvent) => void;
 }) {
   const c = useClaudeTokens();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   if (events.length === 0) return null;
-  const first = events[0];
-  const rest = events.slice(1);
+  const visible = events.slice(0, maxVisible);
+  const rest = events.slice(maxVisible);
   const accent = c.accent.primary;
 
-  // Time string is part of the chip so a glance tells you both what and
-  // when, matching Apple's "Title, 1pm" pattern. Chip is slim (height ~22)
-  // not slot-stretching, since OpenSwarm events fire at a single instant.
-  const timeLabel = formatTime(first.date.getHours(), first.date.getMinutes());
   return (
-    <>
-      <Tooltip title={<EventTooltipBody event={first} />} placement="top" arrow>
-        <Box
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData('application/x-workflow-id', first.workflow.id);
-            e.dataTransfer.effectAllowed = 'move';
-          }}
-          onClick={() => onSelectWorkflow?.(first.workflow.id)}
-          onContextMenu={(e) => onContextWorkflow?.(first.workflow, e)}
-          sx={{
-            position: 'absolute',
-            left: 2, right: rest.length > 0 ? 24 : 2, top: 2,
-            height: 22,
-            bgcolor: accent + '14',
-            color: c.text.primary,
-            borderLeft: `3px solid ${accent}`,
-            borderRadius: c.radius.sm,
-            px: 0.65, py: 0,
-            fontSize: eventFontSize, fontWeight: 500,
-            overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 0.5,
-            opacity: paused ? 0.45 : 1,
-            '&:hover': { bgcolor: accent + '22' },
-          }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{first.workflow.title}</span>
-          <span style={{ color: 'inherit', opacity: 0.7, flexShrink: 0 }}>{timeLabel}</span>
-        </Box>
-      </Tooltip>
+    <Box sx={{ position: 'absolute', left: 4, right: 4, top: 3, bottom: 2, zIndex: 1, display: 'flex', flexDirection: 'column', gap: 0.25, overflow: 'hidden' }}>
+      {visible.map((event, idx) => {
+        const timeLabel = formatTime(event.date.getHours(), event.date.getMinutes());
+        return (
+          <Tooltip key={`${event.workflow.id}-${event.date.getTime()}-${idx}`} title={<EventTooltipBody event={event} />} placement="top" arrow>
+            <Box
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('application/x-workflow-id', event.workflow.id);
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              onClick={() => onSelectWorkflow?.(event.workflow.id, event.date)}
+              onContextMenu={(e) => onContextWorkflow?.(event.workflow, e)}
+              sx={{
+                height: 15,
+                bgcolor: accent,
+                color: '#fff',
+                border: `1px solid ${accent}`,
+                borderRadius: c.radius.sm,
+                px: 0.55, py: 0,
+                fontSize: eventFontSize, fontWeight: 600, lineHeight: '13px',
+                overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 0.35,
+                opacity: paused ? 0.45 : 1,
+                boxSizing: 'border-box',
+                '&:hover': { bgcolor: accent },
+              }}>
+              <span style={{ display: 'block', lineHeight: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{event.workflow.title}</span>
+              <span style={{ display: 'block', lineHeight: '13px', color: 'inherit', opacity: 0.85, flexShrink: 0 }}>{timeLabel}</span>
+            </Box>
+          </Tooltip>
+        );
+      })}
       {rest.length > 0 && (
         <Box
           onClick={(e) => setAnchor(e.currentTarget)}
           role="button"
           sx={{
-            position: 'absolute',
-            right: 2, top: 2,
-            height: 22,
-            minWidth: 20, px: 0.4,
-            bgcolor: accent + '22',
-            color: accent,
-            borderRadius: c.radius.sm,
-            fontSize: eventFontSize, fontWeight: 700,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            '&:hover': { bgcolor: accent + '33' },
+            alignSelf: 'flex-start',
+            color: c.text.muted,
+            fontSize: eventFontSize,
+            fontWeight: 600,
+            lineHeight: 1,
+            cursor: 'pointer',
+            px: 0.35,
+            '&:hover': { color: accent },
           }}>
-          +{rest.length}
+          {rest.length} more
         </Box>
       )}
       <Popover
@@ -565,21 +582,21 @@ function EventStack({ events, paused, onSelectWorkflow, eventFontSize, onContext
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
         <Box sx={{ minWidth: 220, p: 1 }}>
           <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mb: 0.5 }}>
-            {events.length} runs at this hour
+            {rest.length} more at this hour
           </Typography>
-          {events.map((e, idx) => (
+          {rest.map((e, idx) => (
             <Box
               key={`${e.workflow.id}-${idx}`}
-              onClick={() => { setAnchor(null); onSelectWorkflow?.(e.workflow.id); }}
+              onClick={() => { setAnchor(null); onSelectWorkflow?.(e.workflow.id, e.date); }}
               sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 0.5, py: 0.5, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}>
-              <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: c.accent.primary }} />
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', boxSizing: 'border-box', bgcolor: accent, flexShrink: 0 }} />
               <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, fontWeight: 600 }}>{e.workflow.title}</Typography>
               <Typography sx={{ fontSize: '0.74rem', color: c.text.muted }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
             </Box>
           ))}
         </Box>
       </Popover>
-    </>
+    </Box>
   );
 }
 
@@ -592,7 +609,7 @@ function MonthDayOverflow({ date, count, events, now, fontSize, onSelectWorkflow
   events: { workflow: Workflow; date: Date }[];
   now: Date;
   fontSize: string;
-  onSelectWorkflow?: (id: string) => void;
+  onSelectWorkflow?: (id: string, fireAt?: Date) => void;
 }) {
   const c = useClaudeTokens();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -615,19 +632,16 @@ function MonthDayOverflow({ date, count, events, now, fontSize, onSelectWorkflow
           <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mb: 0.5 }}>
             {`${events.length} scheduled · ${date.toLocaleString('en', { weekday: 'short', month: 'short', day: 'numeric' })}`}
           </Typography>
-          {events.map((e, idx) => {
-            const passed = e.date.getTime() < now.getTime();
-            return (
-              <Box
-                key={`${e.workflow.id}-${idx}`}
-                onClick={() => { setAnchor(null); onSelectWorkflow?.(e.workflow.id); }}
-                sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 0.5, py: 0.5, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}>
-                <Box sx={{ width: 6, height: 6, borderRadius: '50%', boxSizing: 'border-box', bgcolor: passed ? 'transparent' : accent, border: passed ? `1.5px solid ${accent}` : 'none', flexShrink: 0 }} />
-                <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.workflow.title}</Typography>
-                <Typography sx={{ fontSize: '0.74rem', color: c.text.muted, flexShrink: 0 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
-              </Box>
-            );
-          })}
+          {events.map((e, idx) => (
+            <Box
+              key={`${e.workflow.id}-${idx}`}
+              onClick={() => { setAnchor(null); onSelectWorkflow?.(e.workflow.id, e.date); }}
+              sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 0.5, py: 0.5, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}>
+              <Box sx={{ width: 6, height: 6, borderRadius: '50%', boxSizing: 'border-box', bgcolor: accent, flexShrink: 0 }} />
+              <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.workflow.title}</Typography>
+              <Typography sx={{ fontSize: '0.74rem', color: c.text.muted, flexShrink: 0 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
+            </Box>
+          ))}
         </Box>
       </Popover>
     </>
