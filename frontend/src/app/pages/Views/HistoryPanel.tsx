@@ -91,8 +91,9 @@ const HistoryPanel: React.FC<Props> = ({ outputId, isAgentActive, saveLabel, onB
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
+      // No reloadKey bump: captureOutputVersion.fulfilled bumps captureSignal,
+      // which already drives the refetch. Bumping both = a double fetch.
       await dispatch(captureOutputVersion({ id: outputId, source: 'manual', label: saveLabel || '' })).unwrap();
-      setReloadKey((k) => k + 1);
       flash('ok', 'Saved this version.');
     } catch {
       flash('err', "Couldn't save this version. Try again.");
