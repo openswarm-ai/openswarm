@@ -21,6 +21,7 @@ import remarkGfm from 'remark-gfm';
 import WindowedMarkdown from './WindowedMarkdown';
 import { estimateRenderedTextHeight, oversizedCharThreshold, RECHECK_VISIBILITY_EVENT } from './markdownMeasure';
 import { THINKING_LABELS } from '../thinkingLabels';
+import { extractPlatformNote } from '../parsing/toolResultParsing';
 import { AgentMessage, retryLastUserMessage } from '@/shared/state/agentsSlice';
 import { openSettingsModal } from '@/shared/state/settingsSlice';
 import { fetchSubscriptionStatus } from '@/shared/state/subscriptionsSlice';
@@ -891,7 +892,9 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
   const { role, content } = message;
 
   if (role === 'system') {
-    const sysText = typeof content === 'string' ? content : JSON.stringify(content);
+    const rawSysText = typeof content === 'string' ? content : JSON.stringify(content);
+    const { body: sysBody, note: sysNote } = extractPlatformNote(rawSysText);
+    const sysText = sysNote || sysBody;
     // A raw subprocess/API failure ("Command failed with exit code 1", API Error JSON) is dev
     // jargon, and the same failure is already shown as a friendly card on the assistant side.
     // Swallow just that stderr dump so the user sees one calm card, not jargon beneath it.

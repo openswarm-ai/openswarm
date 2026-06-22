@@ -59,6 +59,7 @@ from backend.apps.agents.manager.session.history_compaction import (
     _estimate_post_compact_input,
     _get_branch_messages,
     _truncate_large_tool_result,
+    wrap_platform_note,
 )
 from backend.apps.agents.manager.prompt.prompt_context import (
     _build_browser_context,
@@ -1072,7 +1073,7 @@ class AgentManager:
                         joined = "\n".join(errs[-20:])
                         content = (
                             f"{content}\n\n"
-                            f"---\nBuild server reported (after this write):\n{joined}"
+                            + wrap_platform_note(f"Build server reported (after this write):\n{joined}")
                         )
 
             result_payload = {"text": content}
@@ -2116,7 +2117,7 @@ class AgentManager:
                             _names = ", ".join(t.replace("mcp:", "") for t in trimmed)
                             _trim_msg = Message(
                                 role="system",
-                                content=(
+                                content=wrap_platform_note(
                                     f"Trimmed {len(trimmed)} app{'s' if len(trimmed) != 1 else ''} from this session to fit "
                                     f"the model's context: {_names}. Re-activate via MCPSearch + MCPActivate "
                                     "if you still need them."

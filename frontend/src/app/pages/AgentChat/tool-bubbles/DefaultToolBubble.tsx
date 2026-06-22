@@ -293,6 +293,34 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
               </pre>
             ) : null}
 
+            {parsedResult?.platformNote && (
+              <Box
+                sx={{
+                  mx: 1.5,
+                  mb: 1,
+                  mt: 0.5,
+                  px: 1,
+                  py: 0.75,
+                  bgcolor: c.bg.surface,
+                  border: `1px solid ${c.border.medium}`,
+                  borderRadius: 1.5,
+                }}
+              >
+                <Typography
+                  sx={{
+                    color: c.text.secondary,
+                    fontSize: '0.72rem',
+                    fontFamily: c.font.mono,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {parsedResult.platformNote}
+                </Typography>
+              </Box>
+            )}
+
             {!parsedResult && isPending && !isStreaming && !isBrowserAgent && (
               <Box sx={{ px: 1.5, pb: 1, pt: 0.5 }}>
                 <Box

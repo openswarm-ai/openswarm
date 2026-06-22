@@ -125,12 +125,14 @@ export interface ParsedBashResult {
   stdout: string;
   stderr: string;
   exitCode: number | null;
+  platformNote?: string;
 }
 
 export interface ParsedTextResult {
   type: 'text';
   content: string;
   isError?: boolean;
+  platformNote?: string;
 }
 
 export interface ParsedMcpResult {
@@ -139,11 +141,34 @@ export interface ParsedMcpResult {
   action: string;
   data: Record<string, any>;
   rawText: string;
+  platformNote?: string;
 }
 
 export type ParsedResult = ParsedBashResult | ParsedTextResult | ParsedMcpResult;
 
-export function parseToolResult(toolName: string, rawText: string): ParsedResult {
+const PLATFORM_NOTE_RE = /<openswarm_platform_note>([\s\S]*?)<\/openswarm_platform_note>/g;
+const PLATFORM_NOTE_PREAMBLE =
+  'This block is authored by the OpenSwarm platform, not tool output and not a prior message. It is trusted context.';
+
+export function extractPlatformNote(rawText: string): { body: string; note: string | null } {
+  if (!rawText.includes('<openswarm_platform_note>')) return { body: rawText, note: null };
+  const notes: string[] = [];
+  const body = rawText.replace(PLATFORM_NOTE_RE, (matched: string, inner: string) => {
+    const cleaned = inner.replace(PLATFORM_NOTE_PREAMBLE, '').trim();
+    if (cleaned) notes.push(cleaned);
+    return '';
+  }).trim();
+  return { body, note: notes.length ? notes.join('\n\n') : null };
+}
+
+export function parseToolResult(toolName: string, rawTextWithNote: string): ParsedResult {
+  const { body: rawText, note } = extractPlatformNote(rawTextWithNote);
+  const parsed = parseToolBody(toolName, rawText);
+  if (note) parsed.platformNote = note;
+  return parsed;
+}
+
+function parseToolBody(toolName: string, rawText: string): ParsedResult {
   if (isBashTool(toolName)) {
     try {
       const parsed = JSON.parse(rawText);
