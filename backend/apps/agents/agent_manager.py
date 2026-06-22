@@ -4489,9 +4489,19 @@ class AgentManager:
             "dashboard_id": session.dashboard_id,
         })
 
+        self._purge_session_memory(session_id)
+        logger.info(f"Session {session_id} closed and persisted")
+
+    def _purge_session_memory(self, session_id: str) -> None:
+        """Drop a session from EVERY in-memory structure keyed by its id, so a
+        close or delete can't strand stale per-session state that lives until
+        the process dies. One chokepoint on purpose: a new per-session cache
+        wires its eviction in HERE and both removal paths get it for free."""
         self.sessions.pop(session_id, None)
         self.tasks.pop(session_id, None)
-        logger.info(f"Session {session_id} closed and persisted")
+        self._live_partial.pop(session_id, None)
+        p_view_builder_render_retry_counts.pop(session_id, None)
+        p_view_builder_dirty_sessions.discard(session_id)
 
     async def delete_session(self, session_id: str) -> None:
         """Permanently delete a session: remove from memory and JSON file.
@@ -4511,8 +4521,7 @@ class AgentManager:
             except asyncio.CancelledError:
                 pass
 
-        self.sessions.pop(session_id, None)
-        self.tasks.pop(session_id, None)
+        self._purge_session_memory(session_id)
 
         _delete_session_file(session_id)
         logger.info(f"Session {session_id} permanently deleted")
