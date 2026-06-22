@@ -1014,6 +1014,9 @@ async def run_browser_agent(
                 _in = response.usage.input_tokens or 0
                 out_tokens_total += _out
                 session.tokens["input"] = session.tokens.get("input", 0) + _in
+                # Already-uncached here (cache tracked separately below), so the
+                # fresh lane that feeds the parent's pill mirrors it 1:1.
+                session.tokens["input_fresh"] = session.tokens.get("input_fresh", 0) + _in
                 session.tokens["output"] = session.tokens.get("output", 0) + _out
                 _cr = getattr(response.usage, "cache_read_input_tokens", 0) or 0
                 _cw = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
