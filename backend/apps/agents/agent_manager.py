@@ -61,6 +61,7 @@ from backend.apps.agents.manager.streaming.hook_context import HookContext
 from backend.apps.agents.manager.streaming import thinking as thinking_mod
 from backend.apps.agents.manager.streaming import tool_result_hook
 from backend.apps.agents.manager.streaming import stop_hook as stop_hook_mod
+from backend.apps.agents.manager.prompt.system_prompt import compose_turn_system_prompt
 from backend.apps.agents.manager.permissions import gate_hooks
 from backend.apps.agents.manager.view_builder_state import (
     view_builder_render_retry_counts,
@@ -82,12 +83,6 @@ from backend.apps.agents.manager.session.history_compaction import (
     _get_branch_messages,
 )
 from backend.apps.agents.manager.prompt.prompt_context import (
-    _build_browser_context,
-    _build_selected_app_context,
-    _build_selected_settings_context,
-    _build_connected_tools_context,
-    _build_mcp_registry_summary,
-    _compose_system_prompt,
     _resolve_attached_skills,
     _resolve_forced_tools,
     _resolve_mode,
@@ -189,21 +184,6 @@ class AgentManager:
 
         logger.info(f"[MCP-DEBUG] Final mcp_servers: {list(mcp_servers.keys())}")
         return mcp_servers
-
-    def _build_connected_tools_context(self, allowed_tools: list[str]) -> str | None:
-        return _build_connected_tools_context(allowed_tools, get_all_tool_names)
-
-    def _build_browser_context(self, dashboard_id: str | None, selected_browser_ids: list[str] | None = None) -> str | None:
-        return _build_browser_context(dashboard_id, selected_browser_ids)
-
-    def _build_selected_app_context(self, selected_app_output_ids: list[str] | None) -> str | None:
-        return _build_selected_app_context(selected_app_output_ids)
-
-    def _build_mcp_registry_summary(self, allowed_tools: list[str], active_mcps: list[str]) -> str | None:
-        return _build_mcp_registry_summary(allowed_tools, active_mcps, get_all_tool_names)
-
-    def _compose_system_prompt(self, default_prompt: str | None, mode_prompt: str | None, session_prompt: str | None, connected_tools_ctx: str | None = None, browser_ctx: str | None = None, mcp_registry_ctx: str | None = None) -> str | None:
-        return _compose_system_prompt(default_prompt, mode_prompt, session_prompt, connected_tools_ctx, browser_ctx, mcp_registry_ctx)
 
     async def launch_agent(self, config: AgentConfig) -> AgentSession:
         session_id = uuid4().hex
@@ -431,23 +411,6 @@ class AgentManager:
 
         try:
             _, mode_sys_prompt, _ = self._resolve_mode(session.mode)
-            # MCP servers and their tool inventories are intentionally NOT
-            # injected into the system prompt. The CLI's deferred-tool pool
-            # already exposes them by name via ToolSearch, eagerly listing
-            # connected MCPs (with account emails, full tool enumerations,
-            # etc.) here would defeat the deferral and leak knowledge of
-            # every connected integration into every turn. The model
-            # discovers MCPs only when it actively calls ToolSearch.
-            #
-            # Trade-offs of this removal:
-            # - Email auto-fill for Gmail/Calendar is gone. The model may
-            #   need to ask which account to use, or pass it explicitly.
-            # - Discord guild-id "hard restriction" is gone as a prompt
-            #   instruction. Enforce that at the Discord MCP server's
-            #   tool-call layer instead, prompt rules are not a security
-            #   boundary.
-            connected_tools_ctx = None
-            browser_ctx = self._build_browser_context(session.dashboard_id, selected_browser_ids=selected_browser_ids)
 
             # Reconcile active_mcps against currently-enabled tools (Phase 3).
             # If the user toggled a server off in the Tools page mid-session,
@@ -473,67 +436,15 @@ class AgentManager:
             except Exception:
                 logger.exception("active_mcps reconciliation failed; proceeding")
 
-            mcp_registry_ctx = self._build_mcp_registry_summary(session.allowed_tools, session.active_mcps)
             global_settings = load_settings()
-            composed_prompt = self._compose_system_prompt(
-                global_settings.default_system_prompt,
+            composed_prompt = compose_turn_system_prompt(
+                session,
                 mode_sys_prompt,
-                session.system_prompt,
-                connected_tools_ctx,
-                browser_ctx,
-                mcp_registry_ctx,
+                global_settings.default_system_prompt,
+                selected_browser_ids,
+                selected_app_output_ids,
+                selected_setting_ids,
             )
-
-            # Pin the agent's notion of "now" to the host wall clock + zone
-            # so it can answer day-of-week questions without hallucinating.
-            try:
-                from zoneinfo import ZoneInfo
-                # Best-effort IANA name for the host. Mirrors apps/service/client.py.
-                tz_name = os.environ.get("OPENSWARM_TIMEZONE", "").strip()
-                if not tz_name:
-                    try:
-                        from tzlocal import get_localzone_name  # type: ignore
-                        tz_name = get_localzone_name() or ""
-                    except Exception:
-                        tz_name = ""
-                tz_name = tz_name or "UTC"
-                now_local = datetime.now(ZoneInfo(tz_name))
-                tz_abbr = now_local.strftime("%Z") or tz_name
-                time_ctx = (
-                    "<current_time>\n"
-                    f"Today is {now_local.strftime('%A, %B %-d, %Y')}.\n"
-                    f"Local time: {now_local.strftime('%-I:%M %p')} {tz_abbr} ({tz_name}).\n"
-                    "Use this as ground truth for any date/time/day-of-week question.\n"
-                    "</current_time>"
-                )
-                composed_prompt = (composed_prompt + "\n\n" + time_ctx) if composed_prompt else time_ctx
-            except Exception:
-                pass
-
-            if session.mode == "view-builder":
-                # Read the LIVE skill content rather than a frozen-at-import
-                # constant. The skill is registered as a built-in skill at
-                # ~/.claude/skills/app_builder_skill.md (see
-                # backend/apps/skills/skills.py); user edits in the Skills
-                # page land there and propagate to the agent's prompt on
-                # the next turn without a restart.
-                from backend.apps.outputs.view_builder_templates import load_app_builder_skill
-                skill_block = f"<app_builder_reference>\n{load_app_builder_skill()}\n</app_builder_reference>"
-                composed_prompt = f"{composed_prompt}\n\n{skill_block}" if composed_prompt else skill_block
-
-            # App cards the user picked via the dashboard element picker: give
-            # the agent each app's on-disk path + meta + SKILL.md pointer so it
-            # can edit them in place (the dashboard card's runtime live-reloads).
-            # Additive and independent of view-builder mode above.
-            app_ctx = self._build_selected_app_context(selected_app_output_ids)
-            if app_ctx:
-                composed_prompt = f"{composed_prompt}\n\n{app_ctx}" if composed_prompt else app_ctx
-
-            # The user can point the agent at specific Settings rows. Targeting
-            # aid only; the settings tools are always on regardless.
-            settings_ctx = _build_selected_settings_context(selected_setting_ids)
-            if settings_ctx:
-                composed_prompt = f"{composed_prompt}\n\n{settings_ctx}" if composed_prompt else settings_ctx
 
             # Per-turn estimate of framework overhead (subtracted from displayed
             # input). Conservative on purpose so honest over-shows beat lies.
