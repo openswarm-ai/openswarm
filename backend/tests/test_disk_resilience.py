@@ -77,10 +77,11 @@ def test_read_empty_file_returns_none(tmp_path):
 
 def test_sessions_skip_corrupt_and_roundtrip(tmp_path, monkeypatch):
     from backend.apps.agents import agent_manager as am
+    from backend.apps.agents.manager.session.session_store import _load_all_session_data
     monkeypatch.setattr(am, "SESSIONS_DIR", str(tmp_path))
     am._save_session("good", {"id": "good", "v": 1})
     (tmp_path / "bad.json").write_text("{ truncated session ,,,")
-    loaded = dict(am._load_all_session_data())
+    loaded = dict(_load_all_session_data())
     assert loaded == {"good": {"id": "good", "v": 1}}
     assert (tmp_path / "bad.json").exists()  # corrupt file preserved, not deleted
     assert am._load_session_data("good") == {"id": "good", "v": 1}

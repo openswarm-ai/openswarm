@@ -11,6 +11,7 @@ runs the id is gone from EVERY structure, while a sibling session is untouched.
 Run with:  backend/.venv/bin/python -m pytest backend/tests/test_session_cleanup.py
 """
 from backend.apps.agents import agent_manager as am
+from backend.apps.agents.manager import view_builder_state as vbs
 
 
 def test_purge_session_memory_clears_every_structure():
@@ -18,16 +19,16 @@ def test_purge_session_memory_clears_every_structure():
     mgr.sessions = {"dead": object(), "alive": object()}
     mgr.tasks = {"dead": object()}
     mgr._live_partial = {"dead": {"text": "half a reply"}}
-    am.view_builder_render_retry_counts["dead"] = 4
-    am.view_builder_dirty_sessions.add("dead")
+    vbs.view_builder_render_retry_counts["dead"] = 4
+    vbs.view_builder_dirty_sessions.add("dead")
 
     mgr._purge_session_memory("dead")
 
     assert "dead" not in mgr.sessions
     assert "dead" not in mgr.tasks
     assert "dead" not in mgr._live_partial
-    assert "dead" not in am.view_builder_render_retry_counts
-    assert "dead" not in am.view_builder_dirty_sessions
+    assert "dead" not in vbs.view_builder_render_retry_counts
+    assert "dead" not in vbs.view_builder_dirty_sessions
     # Only the target id is purged; an unrelated live session survives.
     assert "alive" in mgr.sessions
 
