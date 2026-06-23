@@ -14,16 +14,16 @@ import StepsCard from './StepsCard';
 import SaveGuard from './SaveGuard';
 import type { AppNav } from './types';
 
-// Starter prompts sent verbatim, so each reads as a real ask the agent can turn
-// into steps + a schedule. Spread across personas so most people see one that
-// fits: work, money, research, learning, lifestyle, monitoring.
-const NEW_CHIPS = [
-  'Summarize my inbox each morning and draft the key replies',
-  'Every Sunday, recap my spending, subscriptions, upcoming bills, and any weird charges',
-  'Weekly digest of new research and trends in my field',
-  'Each morning, teach me something new in five minutes',
-  'Friday afternoon, plan my weekend from the weather and what\'s nearby',
-  'Watch a webpage and alert me when it changes',
+// Short pill label for the clean cluster, plus the richer prompt actually sent
+// so the agent gets real detail. Spread across personas (work, money, research,
+// lifestyle, monitoring) so most people see one that fits. Keep labels similar
+// length so they cluster two-per-row.
+const NEW_CHIPS: Array<{ label: string; prompt: string }> = [
+  { label: 'Summarize my inbox daily', prompt: 'Each morning, summarize my inbox and draft replies to the important emails.' },
+  { label: 'Recap my weekly spending', prompt: 'Every Sunday, recap my spending, subscriptions, upcoming bills, and any weird charges.' },
+  { label: 'Digest of news in my field', prompt: 'Each week, give me a digest of the latest news and research in my field.' },
+  { label: 'Plan my weekend for me', prompt: 'Friday afternoon, plan my weekend from the weather and what\'s nearby.' },
+  { label: 'Watch a webpage for changes', prompt: 'Watch a webpage and alert me when it changes.' },
 ];
 
 // Short provisional name from the first message so the workflow isn't "Untitled"
@@ -189,9 +189,17 @@ const ComposeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
                 <h2 style={{ margin: 0, fontFamily: FONT_SERIF, fontSize: 25, fontWeight: 500, fontStyle: 'italic', color: WC.ink }}>Describe the workflow to automate</h2>
               </div>
               <div style={{ fontSize: 13.5, color: WC.muted, maxWidth: 430, lineHeight: 1.55 }}>Tell me what you want this workflow to do. I'll turn it into steps you can run on a schedule, and you can tweak anything as we go.</div>
-              <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 520, marginTop: 4, pointerEvents: 'auto' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, justifyContent: 'center', width: '100%', maxWidth: 440, marginTop: 6, pointerEvents: 'auto' }}>
                 {NEW_CHIPS.map((c) => (
-                  <button key={c} onClick={() => sendChip(c)} style={{ background: WC.inset, border: `1px solid rgba(${WC.inkRGB},0.08)`, borderRadius: 999, padding: '7px 14px', fontSize: 12.5, color: WC.ink3, cursor: 'pointer' }}>{c}</button>
+                  <button
+                    key={c.label}
+                    onClick={() => sendChip(c.prompt)}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = `rgba(${WC.inkRGB},0.1)`; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = `rgba(${WC.inkRGB},0.06)`; }}
+                    style={{ background: `rgba(${WC.inkRGB},0.06)`, border: `1px solid rgba(${WC.inkRGB},0.08)`, borderRadius: 999, padding: '8px 16px', fontSize: 12.5, color: WC.ink3, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .15s' }}
+                  >
+                    {c.label}
+                  </button>
                 ))}
               </div>
             </div>
