@@ -5,6 +5,7 @@ writes the manager's live-partial mirror, exactly as it did inline."""
 
 import time
 from datetime import datetime
+from typing import Dict
 from uuid import uuid4
 
 from typeguard import typechecked
@@ -12,6 +13,7 @@ from typeguard import typechecked
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
+from backend.apps.agents.manager.streaming.LivePartial import LivePartial
 
 try:
     from claude_agent_sdk.types import StreamEvent
@@ -26,7 +28,7 @@ async def handle_stream_event(
     session_id: str,
     turn: TurnState,
     thinking: ThinkingState,
-    live_partial: dict,
+    live_partial: Dict[str, LivePartial],
 ) -> None:
     event = message.event
     event_type = event.get("type")
@@ -111,11 +113,11 @@ async def handle_stream_event(
             text_chunk = delta.get("text", "")
             turn.assistant_text_chars += len(text_chunk)
             turn.stream_text_accum += text_chunk
-            live_partial[session_id] = {
-                "msg_id": turn.stream_text_msg_id,
-                "text": turn.stream_text_accum,
-                "branch_id": session.active_branch_id,
-            }
+            live_partial[session_id] = LivePartial(
+                msg_id=turn.stream_text_msg_id,
+                text=turn.stream_text_accum,
+                branch_id=session.active_branch_id,
+            )
             await ws_manager.send_to_session(session_id, "agent:stream_delta", {
                 "session_id": session_id,
                 "message_id": msg_id,

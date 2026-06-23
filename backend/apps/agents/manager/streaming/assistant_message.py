@@ -5,7 +5,7 @@ Lifted out of the agent loop; mutates the passed TurnState / ThinkingState by re
 through the manager's live-partial mirror + session registry, exactly as it did inline."""
 
 import asyncio
-from typing import Optional
+from typing import Dict, Optional
 from uuid import uuid4
 
 from typeguard import typechecked
@@ -14,6 +14,7 @@ from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming.upsert_message import upsert_message
+from backend.apps.agents.manager.streaming.LivePartial import LivePartial
 from backend.apps.agents.manager.streaming import thinking as thinking_mod
 
 try:
@@ -30,8 +31,8 @@ async def handle_assistant_message(
     session_id: str,
     turn: TurnState,
     thinking: ThinkingState,
-    live_partial: dict,
-    sessions: dict,
+    live_partial: Dict[str, LivePartial],
+    sessions: Dict[str, AgentSession],
 ) -> None:
     content_parts = []
     new_thinking_parts = []

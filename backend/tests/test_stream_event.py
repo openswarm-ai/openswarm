@@ -44,7 +44,7 @@ async def test_text_delta_accumulates_and_mirrors_live_partial():
             session, session.id, turn, thinking, lp)
     assert turn.stream_text_accum == "Hello"
     assert turn.assistant_text_chars == 5
-    assert lp[session.id]["text"] == "Hello"  # the live-partial mirror the manager reads on resume
+    assert lp[session.id].text == "Hello"  # the live-partial mirror the manager reads on resume
 
 
 @pytest.mark.asyncio

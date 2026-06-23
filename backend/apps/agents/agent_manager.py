@@ -58,6 +58,7 @@ from backend.apps.agents.manager.streaming import stop_hook as stop_hook_mod
 from backend.apps.agents.manager.streaming import stream_event
 from backend.apps.agents.manager.streaming import assistant_message
 from backend.apps.agents.manager.streaming import result_message
+from backend.apps.agents.manager.streaming.LivePartial import LivePartial
 from backend.apps.agents.manager.streaming.upsert_message import upsert_message
 from backend.apps.agents.manager.prompt.system_prompt import compose_turn_system_prompt
 from backend.apps.agents.tools.web import should_register_web_mcp
@@ -99,7 +100,7 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin):
         # Live mirror of the in-flight streamed assistant text per session, so a
         # stop can persist the partial reply instantly instead of waiting out the
         # multi-second SDK teardown the cancel handler sits behind.
-        self._live_partial: dict[str, dict] = {}
+        self._live_partial: Dict[str, LivePartial] = {}
 
     async def _build_mcp_servers(
         self,
@@ -1909,8 +1910,8 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin):
         live = self._live_partial.pop(session.id, None)
         if not live:
             return False
-        text = live.get("text") or ""
-        msg_id = live.get("msg_id")
+        text = live.text or ""
+        msg_id = live.msg_id
         if not msg_id or not text.strip():
             return False
         if any(getattr(m, "id", None) == msg_id for m in session.messages):
@@ -1919,7 +1920,7 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin):
             id=msg_id,
             role="assistant",
             content=text,
-            branch_id=live.get("branch_id") or session.active_branch_id,
+            branch_id=live.branch_id or session.active_branch_id,
         )
         upsert_message(session, partial)
         try:

@@ -6,7 +6,7 @@ inline. resolved_model / api_type / global_settings are the loop's per-run confi
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Dict, Optional
 
 from typeguard import typechecked
 
@@ -30,7 +30,7 @@ async def handle_result_message(
     session_id: str,
     turn: TurnState,
     thinking: ThinkingState,
-    sessions: dict,
+    sessions: Dict[str, AgentSession],
     resolved_model: object,
     api_type: Optional[str],
     global_settings: object,
