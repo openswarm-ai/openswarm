@@ -32,6 +32,8 @@ from backend.config.paths import SESSIONS_DIR
 from backend.apps.agents.core.error_classify import (
     _NON_TRANSIENT_PATTERNS,
     _TRANSIENT_CAPACITY_PATTERNS,
+    CAPACITY_BACKOFFS,
+    capacity_retry_wait,
     _is_auth_error,
     _is_free_trial_exhausted,
     _is_long_context_error,
@@ -2008,7 +2010,6 @@ class AgentManager:
             # user just sees a pause, not a red error card. Hard errors
             # (auth, plan limit, invalid args) fall through to the existing
             # error handler unchanged.
-            _CAPACITY_BACKOFFS = [5, 15, 45, 90, 180]
 
             async def _emit_consolidated_thinking(force_provider_unavailable: bool = False) -> None:
                 """Build the running aggregate Message and broadcast it.
@@ -2854,16 +2855,13 @@ class AgentManager:
                             pass
                     _ticker_task = None
                     stderr_snapshot = "\n".join(_stderr_buffer[-50:])
-                    if (
-                        _is_transient_capacity_error(e, extra_text=stderr_snapshot)
-                        and capacity_retry_attempt < len(_CAPACITY_BACKOFFS)
-                    ):
-                        wait = _CAPACITY_BACKOFFS[capacity_retry_attempt]
+                    wait = capacity_retry_wait(e, capacity_retry_attempt, extra_text=stderr_snapshot)
+                    if wait is not None:
                         capacity_retry_attempt += 1
                         mid_stream = _current_turn_emitted
                         logger.warning(
                             f"Transient upstream error on session {session_id} "
-                            f"(attempt {capacity_retry_attempt}/{len(_CAPACITY_BACKOFFS)}, "
+                            f"(attempt {capacity_retry_attempt}/{len(CAPACITY_BACKOFFS)}, "
                             f"mid_stream={mid_stream}); sleeping {wait}s before retry. "
                             f"exc={e!r} stderr_tail={stderr_snapshot[-400:]!r}"
                         )

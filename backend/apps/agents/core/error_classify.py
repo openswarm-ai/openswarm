@@ -1,4 +1,7 @@
 import re
+from typing import Optional
+
+from typeguard import typechecked
 
 # Secret shapes that must never ride along when we ship a stderr tail or an
 # error string to telemetry. own_key mode means the subprocess stderr can echo
@@ -211,3 +214,18 @@ def _is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> bo
     if re.search(r"no\s+pool\s+capacity", combined, re.IGNORECASE):
         return True
     return False
+
+
+# Exponential-ish backoff schedule (seconds) for silently retrying a transient upstream
+# capacity error before giving up and surfacing the rate-limit pill.
+CAPACITY_BACKOFFS = [5, 15, 45, 90, 180]
+
+
+@typechecked
+def capacity_retry_wait(exc: BaseException, attempt: int, extra_text: str = "") -> Optional[int]:
+    """Seconds to wait before retrying a transient upstream capacity error (429 / overload /
+    5xx / network blip), or None when the error isn't transient or the backoff budget for
+    this turn is already spent. Keeps the retry DECISION testable; the loop owns the wait."""
+    if _is_transient_capacity_error(exc, extra_text=extra_text) and 0 <= attempt < len(CAPACITY_BACKOFFS):
+        return CAPACITY_BACKOFFS[attempt]
+    return None
