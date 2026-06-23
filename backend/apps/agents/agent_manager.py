@@ -64,6 +64,7 @@ from backend.apps.agents.manager.streaming.upsert_message import upsert_message
 from backend.apps.agents.manager.prompt.system_prompt import compose_turn_system_prompt
 from backend.apps.agents.tools.web import should_register_web_mcp
 from backend.apps.agents.manager.permissions.effective_tools import build_effective_tool_lists
+from backend.apps.agents.manager.builtin_mcp_servers import register_builtin_mcp_servers
 from backend.apps.agents.manager.session.SessionLifecycleMixin import SessionLifecycleMixin
 from backend.apps.agents.manager.MessagingMixin import MessagingMixin
 from backend.apps.agents.manager.AgentLaunchMixin import AgentLaunchMixin
@@ -252,102 +253,9 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin, AgentLaunchMixin, RunS
             # dispatch layer (see p_build_mcp_servers docstring).
             mcp_servers = await self.p_build_mcp_servers(session.allowed_tools, session.active_mcps)
 
-            p_browser_delegation_tools = ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents"]
-            p_browser_all_denied = all(
-                builtin_perms.get(t, "always_allow") == "deny"
-                for t in p_browser_delegation_tools
+            browser_delegation_tools, invoke_agent_tools = register_builtin_mcp_servers(
+                mcp_servers, session, builtin_perms, selected_browser_ids, os.path.dirname(__file__)
             )
-
-            if not p_browser_all_denied:
-                browser_agent_server_path = os.path.join(
-                    os.path.dirname(__file__), "browser_agent_mcp_server.py"
-                )
-                backend_port = os.environ.get("OPENSWARM_PORT", "8324")
-                # Only the card the user actually picked in select-mode gets claimed for the
-                # task, so the sub drives that one instead of opening its own duplicate. Passing
-                # EVERY dashboard card here (the old behavior) made the sub force-grab a random,
-                # usually-parked card and never navigate it, which broke the bulk of browser tasks.
-                pre_selected_bids = [b for b in (selected_browser_ids or []) if b]
-                from backend.auth import get_auth_token as p_get_auth_token
-                p_auth_tok = p_get_auth_token()
-                mcp_servers["openswarm-browser-agent"] = {
-                    "command": sys.executable,
-                    "args": [browser_agent_server_path],
-                    "env": {
-                        "OPENSWARM_PORT": backend_port,
-                        "OPENSWARM_AUTH_TOKEN": p_auth_tok,
-                        "OPENSWARM_AGENT_MODEL": session.model,
-                        "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
-                        "OPENSWARM_PRE_SELECTED_BROWSER_IDS": ",".join(pre_selected_bids),
-                        "OPENSWARM_PARENT_SESSION_ID": session.id,
-                    },
-                    "type": "stdio",
-                }
-
-            p_invoke_agent_tools = ["InvokeAgent"]
-            p_invoke_all_denied = all(
-                builtin_perms.get(t, "always_allow") == "deny"
-                for t in p_invoke_agent_tools
-            )
-
-            if not p_invoke_all_denied:
-                invoke_agent_server_path = os.path.join(
-                    os.path.dirname(__file__), "invoke_agent_mcp_server.py"
-                )
-                backend_port = os.environ.get("OPENSWARM_PORT", "8324")
-                from backend.auth import get_auth_token as p_get_auth_token2
-                mcp_servers["openswarm-invoke-agent"] = {
-                    "command": sys.executable,
-                    "args": [invoke_agent_server_path],
-                    "env": {
-                        "OPENSWARM_PORT": backend_port,
-                        "OPENSWARM_AUTH_TOKEN": p_get_auth_token2(),
-                        "OPENSWARM_PARENT_SESSION_ID": session.id,
-                        "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
-                    },
-                    "type": "stdio",
-                }
-
-            # Always-on meta-MCP server. Exposes MCPList / MCPSearch /
-            # MCPActivate so the model can discover and activate user MCPs at
-            # runtime. The activation gate (active_mcps filter in
-            # p_build_mcp_servers above) ensures the model cannot reach any
-            # other MCP server's tools without going through this layer first.
-            mcp_meta_server_path = os.path.join(
-                os.path.dirname(__file__), "mcp_meta_server.py"
-            )
-            from backend.auth import get_auth_token as p_get_auth_token3
-            mcp_servers["openswarm-mcp-meta"] = {
-                "command": sys.executable,
-                "args": [mcp_meta_server_path],
-                "env": {
-                    "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
-                    "OPENSWARM_AUTH_TOKEN": p_get_auth_token3(),
-                    "OPENSWARM_PARENT_SESSION_ID": session.id,
-                },
-                "type": "stdio",
-            }
-
-            # Always-on settings-meta server: SettingsRead / SettingsWrite let the
-            # agent read and edit its own OpenSwarm Settings autonomously. The
-            # backend (/api/settings-meta) enforces the only two guardrails: it
-            # can't disconnect the credential powering this run, and reads come
-            # back with secrets redacted. No activation gate, Settings is the
-            # agent's own house, not a third-party MCP.
-            settings_meta_server_path = os.path.join(
-                os.path.dirname(__file__), "settings_meta_server.py"
-            )
-            from backend.auth import get_auth_token as p_get_auth_token4
-            mcp_servers["openswarm-settings-meta"] = {
-                "command": sys.executable,
-                "args": [settings_meta_server_path],
-                "env": {
-                    "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
-                    "OPENSWARM_AUTH_TOKEN": p_get_auth_token4(),
-                    "OPENSWARM_PARENT_SESSION_ID": session.id,
-                },
-                "type": "stdio",
-            }
 
 
             # Register the DDG-backed openswarm-web MCP only when the primary has no reliable
@@ -378,7 +286,7 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin, AgentLaunchMixin, RunS
                     "command": sys.executable,
                     "args": [web_mcp_server_path],
                     "env": {
-                        "OPENSWARM_PORT": backend_port,
+                        "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
                         "OPENSWARM_AUTH_TOKEN": p_get_auth_token3(),
                         "OPENSWARM_PRIMARY_API": p_primary_hint,
                     },
@@ -391,7 +299,7 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin, AgentLaunchMixin, RunS
 
             effective_allowed, effective_disallowed = build_effective_tool_lists(
                 session, mcp_servers, builtin_perms, need_web_mcp,
-                p_browser_delegation_tools, p_invoke_agent_tools,
+                browser_delegation_tools, invoke_agent_tools,
             )
 
             # Tell the model directly which web tools work for this session.
