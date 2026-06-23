@@ -345,3 +345,27 @@ async def test_kick_wakes_loop_before_timeout(monkeypatch):
         await asyncio.wait_for(fired.wait(), timeout=3.0)
     finally:
         await scheduler.stop()
+
+
+async def test_last_day_of_month_fires_on_month_end():
+    """last_day_of_month ignores day_of_month and lands on the calendar's
+    final day, so it survives short months (Feb) instead of clamping."""
+    from backend.apps.workflows.models import ScheduleConfig
+    from backend.apps.workflows import scheduler
+    sched = ScheduleConfig(
+        enabled=True, repeat_unit="month", repeat_every=1,
+        day_of_month=15, last_day_of_month=True, hour=9, minute=0,
+        timezone="America/Los_Angeles",
+    )
+    wf = _make_wf(schedule=sched)
+    tz = ZoneInfo("America/Los_Angeles")
+    # From mid-February, the next fire is Feb 28 (or 29 on a leap year), NOT the 15th.
+    ref = datetime(2026, 2, 10, 12, 0, tzinfo=tz).astimezone(timezone.utc)
+    nxt = scheduler.compute_next_fire(wf, ref=ref)
+    local = nxt.astimezone(tz)
+    assert local.month == 2 and local.day == 28
+    assert local.hour == 9
+    # From end of Feb, the following fire rolls to Mar 31 (last day again).
+    nxt2 = scheduler.compute_next_fire(wf, ref=nxt)
+    local2 = nxt2.astimezone(tz)
+    assert local2.month == 3 and local2.day == 31

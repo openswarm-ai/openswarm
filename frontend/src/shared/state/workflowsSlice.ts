@@ -19,6 +19,8 @@ export interface ScheduleConfig {
   hour: number;
   minute: number;
   day_of_month?: number | null;
+  /** Monthly schedules fire on the calendar's last day (28-31) when true. */
+  last_day_of_month?: boolean;
   timezone: string;
   /** End conditions; null on both = forever. Scheduler auto-disables on threshold. */
   ends_at: string | null;

@@ -145,13 +145,17 @@ def _next_fire_after(sched: ScheduleConfig, ref_utc: datetime) -> Optional[datet
     if sched.repeat_unit == "month":
         target_day = sched.day_of_month or ref_local.day
         step = max(1, sched.repeat_every)
-        c = candidate.replace(day=min(target_day, calendar.monthrange(candidate.year, candidate.month)[1]))
+
+        def month_day(year: int, month: int) -> int:
+            last = calendar.monthrange(year, month)[1]
+            return last if sched.last_day_of_month else min(target_day, last)
+
+        c = candidate.replace(day=month_day(candidate.year, candidate.month))
         while c <= ref_local:
             total = c.month - 1 + step
             year = c.year + total // 12
             month = total % 12 + 1
-            day = min(target_day, calendar.monthrange(year, month)[1])
-            c = c.replace(year=year, month=month, day=day)
+            c = c.replace(year=year, month=month, day=month_day(year, month))
         return c.astimezone(timezone.utc)
 
     if candidate <= ref_local:

@@ -29,6 +29,9 @@ class ScheduleConfig(BaseModel):
     # Monthly schedules can pin a day-of-month explicitly. None preserves the
     # legacy "same day as the current reference" behavior for older records.
     day_of_month: Optional[int] = Field(default=None, ge=1, le=31)
+    # When true, monthly schedules fire on the calendar's last day (28-31)
+    # regardless of day_of_month, so "end of month" survives short months.
+    last_day_of_month: bool = False
     # IANA zone name (e.g. "America/Los_Angeles") or "local" for legacy
     # records that predate explicit tz. storage._load_all_from_disk coerces
     # "local" to the host zone in memory; we leave it on disk until the
