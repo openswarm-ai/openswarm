@@ -63,6 +63,7 @@ from backend.apps.agents.manager.streaming.LivePartial import LivePartial
 from backend.apps.agents.manager.streaming.upsert_message import upsert_message
 from backend.apps.agents.manager.prompt.system_prompt import compose_turn_system_prompt
 from backend.apps.agents.tools.web import should_register_web_mcp
+from backend.apps.agents.manager.permissions.effective_tools import build_effective_tool_lists
 from backend.apps.agents.manager.session.SessionLifecycleMixin import SessionLifecycleMixin
 from backend.apps.agents.manager.MessagingMixin import MessagingMixin
 from backend.apps.agents.manager.AgentLaunchMixin import AgentLaunchMixin
@@ -388,76 +389,10 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin, AgentLaunchMixin, RunS
                     f"registering openswarm-web (DDG search + trafilatura fetch, free)"
                 )
 
-            effective_allowed = [
-                t for t in session.allowed_tools
-                if t in FULL_TOOLS and builtin_perms.get(t, "always_allow") == "always_allow"
-            ]
-
-            effective_disallowed = [
-                t for t in FULL_TOOLS
-                if builtin_perms.get(t, "always_allow") == "deny"
-            ]
-
-            if mcp_servers:
-                all_tools_list = load_all_tools()
-                for name in mcp_servers:
-                    if name == "openswarm-browser-agent":
-                        for bt in p_browser_delegation_tools:
-                            policy = builtin_perms.get(bt, "always_allow")
-                            if policy == "always_allow":
-                                effective_allowed.append(f"mcp__openswarm-browser-agent__{bt}")
-                            elif policy == "deny":
-                                effective_disallowed.append(f"mcp__openswarm-browser-agent__{bt}")
-                        continue
-
-                    if name == "openswarm-invoke-agent":
-                        for it in p_invoke_agent_tools:
-                            policy = builtin_perms.get(it, "always_allow")
-                            if policy == "always_allow":
-                                effective_allowed.append(f"mcp__openswarm-invoke-agent__{it}")
-                            elif policy == "deny":
-                                effective_disallowed.append(f"mcp__openswarm-invoke-agent__{it}")
-                        continue
-
-                    if name == "openswarm-web":
-                        # Expose our DDG-backed web tools under an MCP prefix.
-                        # Honor existing WebSearch/WebFetch permission policy
-                        #, if the user disabled them in Settings, don't offer
-                        # the MCP variants either.
-                        for wt in ("WebSearch", "WebFetch"):
-                            policy = builtin_perms.get(wt, "always_allow")
-                            if policy == "always_allow":
-                                effective_allowed.append(f"mcp__openswarm-web__{wt}")
-                            elif policy == "deny":
-                                effective_disallowed.append(f"mcp__openswarm-web__{wt}")
-                        continue
-
-                    tool_def = next(
-                        (t for t in all_tools_list
-                         if t.mcp_config and t.enabled and sanitize_server_name(t.name) == name),
-                        None,
-                    )
-                    if tool_def:
-                        denied = get_denied_tool_names(tool_def)
-                        known = get_all_known_tool_names(tool_def)
-                        for tn in known - denied:
-                            policy = tool_def.tool_permissions.get(tn, "ask")
-                            if policy == "always_allow":
-                                effective_allowed.append(f"mcp__{name}__{tn}")
-                        for tn in denied:
-                            effective_disallowed.append(f"mcp__{name}__{tn}")
-                    else:
-                        effective_allowed.append(f"mcp__{name}__*")
-
-            # If the openswarm-web MCP was registered, the CLI's built-in
-            # WebSearch/WebFetch are guaranteed to fail (no Anthropic
-            # backend). Suppress them so the model picks our MCP variants
-            # and doesn't waste a turn on a broken tool.
-            if need_web_mcp:
-                effective_allowed = [t for t in effective_allowed if t not in ("WebSearch", "WebFetch")]
-                for p_bt in ("WebSearch", "WebFetch"):
-                    if p_bt not in effective_disallowed:
-                        effective_disallowed.append(p_bt)
+            effective_allowed, effective_disallowed = build_effective_tool_lists(
+                session, mcp_servers, builtin_perms, need_web_mcp,
+                p_browser_delegation_tools, p_invoke_agent_tools,
+            )
 
             # Tell the model directly which web tools work for this session.
             # The Claude Code CLI's deferred-tool registry still advertises bare
