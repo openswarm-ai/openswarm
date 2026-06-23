@@ -16,7 +16,6 @@ import {
   type NotePosition,
   type WorkflowCardPosition,
   type WorkflowsHubPosition,
-  type ConfigurePanelPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { closeWorkflowMonitor } from '@/shared/state/dashboardLayoutSlice';
@@ -36,7 +35,6 @@ interface DashboardCardLayerProps {
   notes: Record<string, NotePosition>;
   workflowCards: Record<string, WorkflowCardPosition>;
   workflowsHub: WorkflowsHubPosition | null;
-  configurePanels: Record<string, ConfigurePanelPosition>;
   outputs: Record<string, Output>;
   glowingAgentCards: Record<string, GlowingAgentCard>;
   expandedSessionIds: string[];
@@ -73,7 +71,6 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
   notes,
   workflowCards,
   workflowsHub,
-  configurePanels,
   outputs,
   glowingAgentCards,
   expandedSessionIds,
@@ -101,9 +98,6 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
   onBranch,
   onMeasuredHeight,
 }) => {
-  // Ephemeral singleton, not part of the saved layout, so read it straight
-  // from the store rather than threading it through the selector chain.
-  const missedRunsCard = useAppSelector((s) => s.dashboardLayout.missedRunsCard);
   const dispatch = useAppDispatch();
   const monitorCard = useAppSelector((s) => s.dashboardLayout.workflowsMonitorCard);
   const monitorWorkflowId = useAppSelector((s) => s.dashboardLayout.workflowsMonitorId);

@@ -14,7 +14,6 @@ import type {
   NotePosition,
   WorkflowCardPosition,
   WorkflowsHubPosition,
-  ConfigurePanelPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import type { Output } from '@/shared/state/outputsSlice';
 import type { CardType, useDashboardSelection } from '../hooks/state/useDashboardSelection';
@@ -43,7 +42,6 @@ interface DashboardCanvasProps {
   notes: Record<string, NotePosition>;
   workflowCards: Record<string, WorkflowCardPosition>;
   workflowsHub: WorkflowsHubPosition | null;
-  configurePanels: Record<string, ConfigurePanelPosition>;
   outputs: Record<string, Output>;
   glowingAgentCards: Record<string, GlowingAgentCard>;
   expandedSessionIds: string[];
@@ -106,7 +104,6 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   notes,
   workflowCards,
   workflowsHub,
-  configurePanels,
   outputs,
   glowingAgentCards,
   expandedSessionIds,
@@ -251,7 +248,6 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
               notes={notes}
               workflowCards={workflowCards}
               workflowsHub={workflowsHub}
-              configurePanels={configurePanels}
               outputs={outputs}
               glowingAgentCards={glowingAgentCards}
               expandedSessionIds={expandedSessionIds}

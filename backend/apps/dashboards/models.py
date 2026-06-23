@@ -58,7 +58,6 @@ class DashboardLayout(BaseModel):
     view_cards: dict[str, ViewCardPosition] = Field(default_factory=dict)
     browser_cards: dict[str, BrowserCardPosition] = Field(default_factory=dict)
     workflow_cards: dict = Field(default_factory=dict)
-    configure_panels: dict = Field(default_factory=dict)
     workflows_hub: Optional[dict] = None
     notes: dict[str, NotePosition] = Field(default_factory=dict)
     expanded_session_ids: list[str] = Field(default_factory=list)

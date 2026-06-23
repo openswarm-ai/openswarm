@@ -25,7 +25,6 @@ export function useDashboardSelectors(dashboardId: string) {
     return out;
   }, [allBrowserCards, dashboardId]);
   const workflowCards = useAppSelector((state) => state.dashboardLayout.workflowCards);
-  const configurePanels = useAppSelector((state) => state.dashboardLayout.configurePanels);
   const workflowsHub = useAppSelector((state) => state.dashboardLayout.workflowsHub);
   const pendingFocusWorkflowId = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowId);
   const pendingFocusWorkflowsHub = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowsHub);
@@ -55,7 +54,6 @@ export function useDashboardSelectors(dashboardId: string) {
     workflowCards,
     workflowItems,
     workflowOpenCards,
-    configurePanels,
     workflowsHub,
     pendingFocusWorkflowId,
     pendingFocusWorkflowsHub,

@@ -24,14 +24,12 @@ export const DEFAULT_WORKFLOW_CARD_H = 520;
 // comfortable size automatically.
 export const DEFAULT_WORKFLOWS_HUB_W = DEFAULT_BROWSER_CARD_W;
 export const DEFAULT_WORKFLOWS_HUB_H = DEFAULT_BROWSER_CARD_H;
-export const DEFAULT_MISSED_RUNS_W = 460;
-export const DEFAULT_MISSED_RUNS_H = 420;
 export const EXPANDED_CARD_MIN_H = 620;
 export const GRID_GAP = 24;
 const GRID_ORIGIN = { x: 40, y: 100 };
 const GRID_COLS_FALLBACK = 4;
 
-export type CardType = 'agent' | 'view' | 'browser' | 'note' | 'workflow' | 'workflows-hub' | 'workflows-monitor' | 'missed_runs';
+export type CardType = 'agent' | 'view' | 'browser' | 'note' | 'workflow' | 'workflows-hub' | 'workflows-monitor';
 
 export interface CardPosition {
   session_id: string;
@@ -93,16 +91,6 @@ export interface WorkflowsHubPosition {
   zOrder: number;
 }
 
-// Ephemeral launch-time card listing scheduled fires missed while the app was
-// closed. Singleton like workflowsHub, but deliberately NOT persisted to the
-// saved layout: the launch hook decides each session whether to show it.
-export interface MissedRunsCardPosition {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  zOrder: number;
-}
 
 export type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'gray';
 
@@ -120,22 +108,12 @@ export interface NotePosition {
 export const DEFAULT_NOTE_W = 240;
 export const DEFAULT_NOTE_H = 200;
 
-export interface ConfigurePanelPosition {
-  workflow_id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
 export interface DashboardLayoutState {
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
   workflowCards: Record<string, WorkflowCardPosition>;
-  configurePanels: Record<string, ConfigurePanelPosition>;
   workflowsHub: WorkflowsHubPosition | null;
-  missedRunsCard: MissedRunsCardPosition | null;
   notes: Record<string, NotePosition>;
   closedCardPositions: Record<string, CardPosition>;
   glowingBrowserCards: Record<string, { sourceId: string; fading: boolean; label?: string }>;
@@ -154,8 +132,6 @@ export interface DashboardLayoutState {
   /** Transient: id of the view card the user has clicked into; preload stops forwarding canvas gestures while set. */
   activeViewCardId: string | null;
   pendingFocusWorkflowId: string | null;
-  /** Transient: signals Dashboard to pan/zoom to the missed-runs card on open. */
-  pendingFocusMissedRuns: boolean;
   /** Transient: signals Dashboard to pan/zoom to the singleton Workflows Hub on open. */
   pendingFocusWorkflowsHub: boolean;
   /** Transient deep-link target: the Workflows card jumps to this workflow's detail on open, then clears it. */
@@ -183,9 +159,7 @@ const initialState: DashboardLayoutState = {
   viewCards: {},
   browserCards: {},
   workflowCards: {},
-  configurePanels: {},
   workflowsHub: null,
-  missedRunsCard: null,
   notes: {},
   closedCardPositions: {},
   glowingBrowserCards: {},
@@ -200,7 +174,6 @@ const initialState: DashboardLayoutState = {
   endingBrowserCards: {},
   activeViewCardId: null,
   pendingFocusWorkflowId: null,
-  pendingFocusMissedRuns: false,
   pendingFocusWorkflowsHub: false,
   workflowsAppTarget: null,
   workflowsMonitorId: null,
@@ -214,7 +187,6 @@ interface LayoutPayload {
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
   workflowCards: Record<string, WorkflowCardPosition>;
-  configurePanels: Record<string, ConfigurePanelPosition>;
   workflowsHub: WorkflowsHubPosition | null;
   notes: Record<string, NotePosition>;
   expandedSessionIds: string[];
@@ -253,7 +225,6 @@ export const fetchLayout = createAsyncThunk(
       viewCards: (layout.view_cards ?? {}) as Record<string, ViewCardPosition>,
       browserCards: browserCards as Record<string, BrowserCardPosition>,
       workflowCards: (layout.workflow_cards ?? {}) as Record<string, WorkflowCardPosition>,
-      configurePanels: (layout.configure_panels ?? {}) as Record<string, ConfigurePanelPosition>,
       workflowsHub: (layout.workflows_hub ?? null) as WorkflowsHubPosition | null,
       notes: (layout.notes ?? {}) as Record<string, NotePosition>,
       expandedSessionIds: (layout.expanded_session_ids ?? []) as string[],
@@ -277,7 +248,6 @@ export const saveLayout = createAsyncThunk(
           view_cards: payload.viewCards,
           browser_cards: payload.browserCards,
           workflow_cards: payload.workflowCards,
-          configure_panels: payload.configurePanels,
           workflows_hub: payload.workflowsHub,
           notes: payload.notes,
           expanded_session_ids: payload.expandedSessionIds,
@@ -320,9 +290,6 @@ function collectOccupiedRects(
   }
   if (state.workflowsHub) {
     rects.push({ x: state.workflowsHub.x, y: state.workflowsHub.y, w: state.workflowsHub.width, h: state.workflowsHub.height });
-  }
-  if (state.missedRunsCard) {
-    rects.push({ x: state.missedRunsCard.x, y: state.missedRunsCard.y, w: state.missedRunsCard.width, h: state.missedRunsCard.height });
   }
   for (const n of Object.values(state.notes)) {
     rects.push({ x: n.x, y: n.y, w: n.width, h: n.height });
@@ -520,14 +487,12 @@ const dashboardLayoutSlice = createSlice({
       for (const n of Object.values(state.notes)) tally(n.zOrder);
       if (state.workflowsHub) tally(state.workflowsHub.zOrder);
       if (state.workflowsMonitorCard) tally(state.workflowsMonitorCard.zOrder);
-      if (state.missedRunsCard) tally(state.missedRunsCard.zOrder);
       if (type === 'agent') currentZ = state.cards[id]?.zOrder ?? 0;
       else if (type === 'view') currentZ = state.viewCards[id]?.zOrder ?? 0;
       else if (type === 'note') currentZ = state.notes[id]?.zOrder ?? 0;
       else if (type === 'workflow') currentZ = state.workflowCards[id]?.zOrder ?? 0;
       else if (type === 'workflows-hub') currentZ = state.workflowsHub?.zOrder ?? 0;
       else if (type === 'workflows-monitor') currentZ = state.workflowsMonitorCard?.zOrder ?? 0;
-      else if (type === 'missed_runs') currentZ = state.missedRunsCard?.zOrder ?? 0;
       else currentZ = state.browserCards[id]?.zOrder ?? 0;
       if (currentZ >= maxZ) return;  // Already on top: no-op.
 
@@ -548,8 +513,6 @@ const dashboardLayoutSlice = createSlice({
         if (state.workflowsHub) state.workflowsHub.zOrder = z;
       } else if (type === 'workflows-monitor') {
         if (state.workflowsMonitorCard) state.workflowsMonitorCard.zOrder = z;
-      } else if (type === 'missed_runs') {
-        if (state.missedRunsCard) state.missedRunsCard.zOrder = z;
       } else {
         const card = state.browserCards[id];
         if (card) card.zOrder = z;
@@ -607,7 +570,8 @@ const dashboardLayoutSlice = createSlice({
       const bCards = Object.values(state.browserCards);
       const wCards = Object.values(state.workflowCards);
       const hub = state.workflowsHub;
-      const total = agentCards.length + viewCards.length + bCards.length + wCards.length + (hub ? 1 : 0);
+      const mon = state.workflowsMonitorCard;
+      const total = agentCards.length + viewCards.length + bCards.length + wCards.length + (hub ? 1 : 0) + (mon ? 1 : 0);
       if (total === 0) return;
 
       const allItems = [
@@ -616,6 +580,7 @@ const dashboardLayoutSlice = createSlice({
         ...bCards.map((c) => ({ kind: 'browser' as const, id: c.browser_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
         ...wCards.map((c) => ({ kind: 'workflow' as const, id: c.workflow_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
         ...(hub ? [{ kind: 'workflows-hub' as const, id: 'workflows-hub', x: hub.x, y: hub.y, storedW: hub.width, storedH: hub.height }] : []),
+        ...(mon ? [{ kind: 'workflows-monitor' as const, id: 'workflows-monitor', x: mon.x, y: mon.y, storedW: mon.width, storedH: mon.height }] : []),
       ];
       allItems.sort((a, b) => a.y - b.y || a.x - b.x);
 
@@ -645,6 +610,8 @@ const dashboardLayoutSlice = createSlice({
           if (card) { card.x = pos.x; card.y = pos.y; }
         } else if (item.kind === 'workflows-hub') {
           if (state.workflowsHub) { state.workflowsHub.x = pos.x; state.workflowsHub.y = pos.y; }
+        } else if (item.kind === 'workflows-monitor') {
+          if (state.workflowsMonitorCard) { state.workflowsMonitorCard.x = pos.x; state.workflowsMonitorCard.y = pos.y; }
         } else {
           const card = state.browserCards[item.id];
           if (card) { card.x = pos.x; card.y = pos.y; }
@@ -888,63 +855,7 @@ const dashboardLayoutSlice = createSlice({
       if (!card) return;
       delete state.workflowCards[oldId];
       state.workflowCards[newId] = { ...card, workflow_id: newId };
-      // Carry any open Action-Library panel along with the rekey so the
-      // popout doesn't disappear when a draft is saved.
-      const panel = state.configurePanels[oldId];
-      if (panel) {
-        delete state.configurePanels[oldId];
-        state.configurePanels[newId] = { ...panel, workflow_id: newId };
-      }
       if (state.pendingFocusWorkflowId === oldId) state.pendingFocusWorkflowId = newId;
-    },
-
-    openConfigurePanel(
-      state,
-      action: PayloadAction<{ workflowId: string }>,
-    ) {
-      const { workflowId } = action.payload;
-      // Anchor the panel just to the right of the workflow card.
-      const wfCard = state.workflowCards[workflowId];
-      const baseX = wfCard ? wfCard.x + wfCard.width + GRID_GAP * 6 : 600;
-      const baseY = wfCard ? wfCard.y : 200;
-      const existing = state.configurePanels[workflowId];
-      if (existing) {
-        existing.x = baseX;
-        existing.y = baseY;
-        return;
-      }
-      state.configurePanels[workflowId] = {
-        workflow_id: workflowId,
-        x: baseX,
-        y: baseY,
-        width: 580,
-        height: 600,
-      };
-    },
-
-    setConfigurePanelPosition(
-      state,
-      action: PayloadAction<{ workflowId: string; x: number; y: number }>,
-    ) {
-      const { workflowId, x, y } = action.payload;
-      const p = state.configurePanels[workflowId];
-      if (p) { p.x = x; p.y = y; }
-    },
-
-    setConfigurePanelSize(
-      state,
-      action: PayloadAction<{ workflowId: string; width: number; height: number }>,
-    ) {
-      const { workflowId, width, height } = action.payload;
-      const p = state.configurePanels[workflowId];
-      if (p) {
-        p.width = Math.max(360, width);
-        p.height = Math.max(280, height);
-      }
-    },
-
-    closeConfigurePanel(state, action: PayloadAction<string>) {
-      delete state.configurePanels[action.payload];
     },
 
     clearPendingFocusWorkflowId(state) {
@@ -971,37 +882,6 @@ const dashboardLayoutSlice = createSlice({
 
     clearPendingFocusWorkflowsHub(state) {
       state.pendingFocusWorkflowsHub = false;
-    },
-
-    openMissedRunsCard(state, action: PayloadAction<{ expandedSessionIds?: string[] } | undefined>) {
-      state.pendingFocusMissedRuns = true;
-      if (state.missedRunsCard) {
-        state.missedRunsCard.zOrder = state.nextZOrder++;
-        return;
-      }
-      const rects = collectOccupiedRects(state, action.payload?.expandedSessionIds);
-      const pos = findOpenGridCell(rects, DEFAULT_MISSED_RUNS_W, DEFAULT_MISSED_RUNS_H);
-      state.missedRunsCard = {
-        x: pos.x,
-        y: pos.y,
-        width: DEFAULT_MISSED_RUNS_W,
-        height: DEFAULT_MISSED_RUNS_H,
-        zOrder: state.nextZOrder++,
-      };
-    },
-
-    clearPendingFocusMissedRuns(state) {
-      state.pendingFocusMissedRuns = false;
-    },
-
-    closeMissedRunsCard(state) {
-      state.missedRunsCard = null;
-    },
-
-    setMissedRunsCardPosition(state, action: PayloadAction<{ x: number; y: number }>) {
-      if (!state.missedRunsCard) return;
-      state.missedRunsCard.x = action.payload.x;
-      state.missedRunsCard.y = action.payload.y;
     },
 
     closeWorkflowsHub(state) {
@@ -1281,11 +1161,6 @@ const dashboardLayoutSlice = createSlice({
             state.workflowsHub.x += dx;
             state.workflowsHub.y += dy;
           }
-        } else if (item.type === 'missed_runs') {
-          if (state.missedRunsCard) {
-            state.missedRunsCard.x += dx;
-            state.missedRunsCard.y += dy;
-          }
         } else {
           const card = state.browserCards[item.id];
           if (card) {
@@ -1414,9 +1289,7 @@ const dashboardLayoutSlice = createSlice({
       state.viewCards = {};
       state.browserCards = {};
       state.workflowCards = {};
-      state.configurePanels = {};
       state.workflowsHub = null;
-      state.missedRunsCard = null;
       state.notes = {};
       state.closedCardPositions = {};
       state.glowingBrowserCards = {};
@@ -1428,7 +1301,6 @@ const dashboardLayoutSlice = createSlice({
       state.suspendedBrowserCards = {};
       state.endingBrowserCards = {};
       state.pendingFocusWorkflowId = null;
-      state.pendingFocusMissedRuns = false;
     },
 
   },
@@ -1456,7 +1328,6 @@ const dashboardLayoutSlice = createSlice({
             card.dashboard_id = ownerDashboardId;
           }
           state.workflowCards = action.payload.workflowCards || {};
-          state.configurePanels = action.payload.configurePanels || {};
           state.workflowsHub = action.payload.workflowsHub || null;
           state.notes = action.payload.notes || {};
           // Cards boot parked (no guest process, title placeholder); the suspend
@@ -1475,7 +1346,6 @@ const dashboardLayoutSlice = createSlice({
             if (!card.dashboard_id) card.dashboard_id = ownerDashboardId;
           }
           addMissingCards(state.workflowCards, action.payload.workflowCards || {}, occupied);
-          addMissingCards(state.configurePanels, action.payload.configurePanels || {}, occupied);
           if (!state.workflowsHub && action.payload.workflowsHub) state.workflowsHub = action.payload.workflowsHub;
           addMissingCards(state.notes, action.payload.notes || {}, occupied);
         }
@@ -1520,7 +1390,6 @@ const dashboardLayoutSlice = createSlice({
       .addCase(deleteWorkflowFulfilledAction, (state, action) => {
         const id = action.payload;
         if (id && state.workflowCards[id]) delete state.workflowCards[id];
-        if (id && state.configurePanels[id]) delete state.configurePanels[id];
       })
       .addCase(launchAndSendFirstMessage.fulfilled, (state, action) => {
         const { draftId, session } = action.payload;
@@ -1579,10 +1448,6 @@ export const {
   setWorkflowCardSize,
   removeWorkflowCard,
   rekeyWorkflowCard,
-  openConfigurePanel,
-  closeConfigurePanel,
-  setConfigurePanelPosition,
-  setConfigurePanelSize,
   clearPendingFocusWorkflowId,
   openWorkflowsHub,
   closeWorkflowsHub,
@@ -1597,10 +1462,6 @@ export const {
   setWorkflowsHubPosition,
   setWorkflowsHubSize,
   clearPendingFocusWorkflowsHub,
-  openMissedRunsCard,
-  clearPendingFocusMissedRuns,
-  closeMissedRunsCard,
-  setMissedRunsCardPosition,
   addNote,
   setNotePosition,
   setNoteSize,

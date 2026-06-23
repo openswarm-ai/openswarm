@@ -1,5 +1,5 @@
 import { useMemo, type RefObject } from 'react';
-import type { CardPosition, BrowserCardPosition, WorkflowCardPosition, ConfigurePanelPosition, WorkflowsHubPosition } from '@/shared/state/dashboardLayoutSlice';
+import type { CardPosition, BrowserCardPosition, WorkflowCardPosition, WorkflowsHubPosition } from '@/shared/state/dashboardLayoutSlice';
 import type { Workflow, OpenCard } from '@/shared/state/workflowsSlice';
 import { EXPANDED_CARD_MIN_H, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
 import type { AgentSession } from '@/shared/state/agentsSlice';
@@ -82,7 +82,6 @@ interface UseTethersArgs {
   workflowCards: Record<string, WorkflowCardPosition>;
   workflowItems: Record<string, Workflow>;
   workflowOpenCards: Record<string, OpenCard>;
-  configurePanels: Record<string, ConfigurePanelPosition>;
   expandedSessionIds: string[];
   liveDragInfo: LiveDragInfo | null;
   measuredHeightsRef: RefObject<Record<string, number>>;
@@ -101,7 +100,6 @@ export function useTethers({
   workflowCards,
   workflowItems,
   workflowOpenCards,
-  configurePanels,
   expandedSessionIds,
   liveDragInfo,
   measuredHeightsRef,
@@ -390,54 +388,6 @@ export function useTethers({
       });
     }
 
-    // Configure-panel tethers: anchor each open configure panel to its workflow card.
-    const configureTethers: Tether[] = [];
-    for (const p of Object.values(configurePanels)) {
-      const wc = workflowCards[p.workflow_id];
-      if (!wc) continue;
-      let srcX = wc.x, srcY = wc.y;
-      let dstX = p.x, dstY = p.y;
-      if (liveDragInfo) {
-        if (liveDragInfo.cardId === p.workflow_id) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
-      }
-      const wcH = wfHeight(wc);
-      const srcCx = srcX + wc.width / 2;
-      const dstCx = dstX + p.width / 2;
-      const srcAnchors: Anchor[] = [
-        { x: srcX + wc.width, y: srcY + wcH * 0.5, side: 'right' },
-        { x: srcX, y: srcY + wcH * 0.5, side: 'left' },
-        { x: srcCx, y: srcY, side: 'top' },
-        { x: srcCx, y: srcY + wcH, side: 'bottom' },
-      ];
-      const dstAnchors: Anchor[] = [
-        { x: dstX, y: dstY + p.height * 0.5, side: 'left' },
-        { x: dstX + p.width, y: dstY + p.height * 0.5, side: 'right' },
-        { x: dstCx, y: dstY, side: 'top' },
-        { x: dstCx, y: dstY + p.height, side: 'bottom' },
-      ];
-      let bestSrc = srcAnchors[0], bestDst = dstAnchors[0];
-      let bestDist = Infinity;
-      for (const sa of srcAnchors) {
-        for (const da of dstAnchors) {
-          const d = Math.hypot(sa.x - da.x, sa.y - da.y);
-          if (d < bestDist) { bestDist = d; bestSrc = sa; bestDst = da; }
-        }
-      }
-      const x1 = bestSrc.x, y1 = bestSrc.y;
-      const x2 = bestDst.x, y2 = bestDst.y;
-      const pathD = elbowPath(x1, y1, x2, y2);
-      const midX = x1 + (x2 - x1) / 2;
-      const midY = y1 + (y2 - y1) / 2;
-      configureTethers.push({
-        key: `configure-${p.workflow_id}`,
-        path: pathD,
-        labelX: midX,
-        labelY: midY,
-        label: 'Configure',
-        fading: false,
-      });
-    }
-
     // Run Monitor tether: the Workflows window to its spawned live-run card.
     // Same border-anchor + elbow math as the sidecar "Watching" arrow.
     const monitorTethers: Tether[] = [];
@@ -470,9 +420,9 @@ export function useTethers({
       });
     }
 
-    return [...agentTethers, ...browserTethers, ...workflowTethers, ...configureTethers, ...monitorTethers];
+    return [...agentTethers, ...browserTethers, ...workflowTethers, ...monitorTethers];
   // measuredHeightsTick re-runs the memo once ResizeObserver reports a new
   // height after a collapse (the ref read is invisible to the dep checker).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, configurePanels, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList, workflowsHub, workflowsMonitorCard, workflowsMonitorLabel]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList, workflowsHub, workflowsMonitorCard, workflowsMonitorLabel]);
 }

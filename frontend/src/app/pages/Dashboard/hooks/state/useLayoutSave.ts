@@ -7,7 +7,6 @@ import {
   type BrowserCardPosition,
   type NotePosition,
   type WorkflowCardPosition,
-  type ConfigurePanelPosition,
   type WorkflowsHubPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 
@@ -19,7 +18,6 @@ interface UseLayoutSaveArgs {
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
   workflowCards: Record<string, WorkflowCardPosition>;
-  configurePanels: Record<string, ConfigurePanelPosition>;
   workflowsHub: WorkflowsHubPosition | null;
   notes: Record<string, NotePosition>;
   expandedSessionIds: string[];
@@ -38,7 +36,6 @@ export function useLayoutSave({
   viewCards,
   browserCards,
   workflowCards,
-  configurePanels,
   workflowsHub,
   notes,
   expandedSessionIds,
@@ -56,7 +53,7 @@ export function useLayoutSave({
       skipInitialSave.current = false;
       return;
     }
-    const payload = { dashboardId, cards, viewCards, browserCards, workflowCards, configurePanels, workflowsHub, notes, expandedSessionIds };
+    const payload = { dashboardId, cards, viewCards, browserCards, workflowCards, workflowsHub, notes, expandedSessionIds };
     pendingSaveRef.current = payload;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -65,7 +62,7 @@ export function useLayoutSave({
       saveTimerRef.current = null;
       captureNow();
     }, 500);
-  }, [isActive, cards, viewCards, browserCards, workflowCards, configurePanels, workflowsHub, notes, expandedSessionIds, layoutInitialized, dashboardId, dispatch, captureNow]);
+  }, [isActive, cards, viewCards, browserCards, workflowCards, workflowsHub, notes, expandedSessionIds, layoutInitialized, dashboardId, dispatch, captureNow]);
 
   useEffect(() => {
     return () => {

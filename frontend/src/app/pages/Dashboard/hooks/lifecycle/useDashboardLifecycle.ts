@@ -17,12 +17,11 @@ import {
   clearPendingFocusBrowserId,
   clearPendingFocusWorkflowId,
   clearPendingFocusWorkflowsHub,
-  clearPendingFocusMissedRuns,
   type ViewCardPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import { fetchOutputs, type Output } from '@/shared/state/outputsSlice';
 import { generateDashboardName } from '@/shared/state/dashboardsSlice';
-import { fetchWorkflows } from '@/shared/state/workflowsSlice';
+import { fetchWorkflows, fetchAllRuns, fetchActiveRuns } from '@/shared/state/workflowsSlice';
 import { fetchMissedRuns } from '@/shared/state/missedRunsSlice';
 import { dashboardWs } from '@/shared/ws/WebSocketManager';
 import { initBrowserCommandHandler } from '@/shared/browserCommandHandler';
@@ -70,7 +69,6 @@ export function useDashboardLifecycle({
   const pendingFocusAgentId = useAppSelector((state) => state.tempState.pendingFocusAgentId);
   const pendingFocusBrowserId = useAppSelector((state) => state.dashboardLayout.pendingFocusBrowserId);
   const pendingFocusWorkflowId = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowId);
-  const pendingFocusMissedRuns = useAppSelector((state) => state.dashboardLayout.pendingFocusMissedRuns);
   const pendingFocusWorkflowsHub = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowsHub);
 
   // Once per app launch: if scheduled fires elapsed while we were closed, fetch
@@ -110,6 +108,12 @@ export function useDashboardLifecycle({
     const unsubReconnect = dashboardWs.on('dashboard:reconnected', () => {
       dispatch(fetchSessions({ dashboardId }));
       dispatch(fetchLayout({ dashboardId, isReconnect: true }));
+      // workflow:run/updated/deleted are global broadcasts that skip the replay
+      // log, so a socket gap drops them: refetch to heal stale "running" cards,
+      // ghost workflows, and missed run history on reconnect.
+      dispatch(fetchWorkflows(dashboardId));
+      dispatch(fetchAllRuns(200));
+      dispatch(fetchActiveRuns());
     });
     // DEFERRABLE: history list (for the search palette) and outputs
     // (for the apps panel) aren't on the first-paint path. Same for the
@@ -263,24 +267,6 @@ export function useDashboardLifecycle({
       }
     }, 200);
   }, [isActive, pendingFocusWorkflowId, layoutInitialized, dispatch, canvasActions, handleHighlightCard]);
-
-  // Same pan/highlight choreography when the missed-runs card opens from its toast.
-  useEffect(() => {
-    if (!isActive) return;
-    if (!pendingFocusMissedRuns || !layoutInitialized) return;
-    dispatch(clearPendingFocusMissedRuns());
-    setTimeout(() => {
-      const card = store.getState().dashboardLayout.missedRunsCard;
-      if (card) {
-        canvasActions.fitToCards(
-          [{ x: card.x, y: card.y, width: card.width, height: card.height }],
-          1.15,
-          true,
-        );
-        handleHighlightCard('missed-runs');
-      }
-    }, 200);
-  }, [isActive, pendingFocusMissedRuns, layoutInitialized, dispatch, canvasActions, handleHighlightCard]);
 
   // Pan/zoom to Workflows Hub on Expand; chained rAFs ensure fit runs after the hub div lands at its new coords.
   useEffect(() => {
