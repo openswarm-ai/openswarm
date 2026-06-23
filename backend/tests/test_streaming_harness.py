@@ -57,6 +57,44 @@ def _assistant(blocks, **kw):
     return AssistantMessage(**base)
 
 
+def test_loop_builds_direct_anthropic_key_env(monkeypatch):
+    # Pin the provider env/route config the loop builds, the part the hook flagged as untested.
+    # Drive the REAL loop with a direct-Anthropic-key config (own_key, a non-9router model, no
+    # pinned api-route) and capture the ClaudeAgentOptions; the env must carry exactly the user's
+    # Anthropic key so the SDK authenticates against api.anthropic.com directly.
+    from backend.apps.settings.models import AppSettings
+    import backend.apps.agents.providers.registry as reg
+    import backend.apps.agents.agent_manager as am
+
+    settings = AppSettings(anthropic_api_key="sk-ant-test123", connection_mode="own_key")
+    monkeypatch.setattr(am, "load_settings", lambda: settings, raising=True)
+    monkeypatch.setattr(reg, "get_api_type", lambda model: "anthropic", raising=True)
+    monkeypatch.setattr(reg, "resolve_model_id_for_sdk", lambda model, s: "claude-sonnet-4-6", raising=True)
+    monkeypatch.setattr(reg, "_find_builtin_model", lambda model: None, raising=True)
+
+    captured = {}
+
+    async def capturing_query(*args, **kwargs):
+        captured["options"] = kwargs.get("options")
+        yield _assistant([TextBlock(text="ok")])
+        yield _result()
+
+    async def fake_send(session_id, event, data):
+        pass
+
+    monkeypatch.setattr(ws_mod.ws_manager, "send_to_session", fake_send, raising=True)
+    monkeypatch.setattr(claude_agent_sdk, "query", capturing_query, raising=True)
+
+    mgr = AgentManager()
+    from backend.apps.agents.core.models import AgentSession
+    session = AgentSession(name="t", model="sonnet", dashboard_id="d")
+    mgr.sessions[session.id] = session
+    asyncio.run(mgr.p_run_agent_loop(session.id, "hi"))
+
+    env = captured["options"].env
+    assert env == {"ANTHROPIC_API_KEY": "sk-ant-test123"}  # direct key, no 9router proxy
+
+
 def test_full_streaming_turn_drives_the_complete_ws_contract(monkeypatch):
     # The closest in-repo proxy for a live streaming run: drive the REAL loop with the exact
     # SDK sequence the live provider emits, partial StreamEvents (block start -> text deltas ->
