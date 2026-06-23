@@ -25,7 +25,7 @@ _running: dict[str, str] = {}
 _running_lock = asyncio.Lock()
 
 
-def _ran_late(started_at: datetime, scheduled_for: datetime) -> bool:
+def p_ran_late(started_at: datetime, scheduled_for: datetime) -> bool:
     """Late means the run STARTED well after its slot (app was closed, event
     loop backed up), not that it ran long. Measured from started_at so a
     punctual run that simply takes a while isn't mislabeled. Both sides
@@ -215,30 +215,32 @@ async def execute(
             return run
         _running[wf.id] = run.id
 
-    wf.last_run_at = run.started_at
-    wf.last_run_status = "running"
-    wf.last_run_id = run.id
-    _persist_run_fields(wf, {
-        "last_run_at": run.started_at,
-        "last_run_status": "running",
-        "last_run_id": run.id,
-    })
-
-    # Announce the run as running the instant it claims execution, not at the
-    # first step. Without this a run that fails fast (e.g. no runnable steps) or
-    # hasn't streamed yet never hits the Home "Ongoing runs" list, so a batch of
-    # missed re-runs only ever surfaced whichever one reached its first step.
-    try:
-        from backend.apps.agents.core.ws_manager import ws_manager as _wsm_start
-        await _wsm_start.broadcast_global("workflow:run", {
-            "workflow_id": wf.id,
-            "run": run.model_dump(mode="json"),
-        })
-    except Exception:
-        pass
-
     session = None
     try:
+        wf.last_run_at = run.started_at
+        wf.last_run_status = "running"
+        wf.last_run_id = run.id
+        _persist_run_fields(wf, {
+            "last_run_at": run.started_at,
+            "last_run_status": "running",
+            "last_run_id": run.id,
+        })
+
+        # Announce the run as running the instant it claims execution, not at
+        # the first step. Without this a run that fails fast (e.g. no runnable
+        # steps) or hasn't streamed yet never hits the Home "Ongoing runs" list.
+        # Both this and the persist above sit inside the try whose finally frees
+        # _running, so a persist/broadcast failure can't strand the workflow as
+        # permanently "running" (which would block every future fire).
+        try:
+            from backend.apps.agents.core.ws_manager import ws_manager as _wsm_start
+            await _wsm_start.broadcast_global("workflow:run", {
+                "workflow_id": wf.id,
+                "run": run.model_dump(mode="json"),
+            })
+        except Exception:
+            pass
+
         steps = [s for s in wf.steps if s.enabled and s.text and s.text.strip()]
         if not steps:
             raise ValueError("Workflow has no steps")
@@ -381,7 +383,7 @@ async def execute(
             run.status = "failure"
             run.error = step_error
             wf.last_run_status = "failure"
-        elif scheduled_for is not None and _ran_late(run.started_at, scheduled_for):
+        elif scheduled_for is not None and p_ran_late(run.started_at, scheduled_for):
             run.status = "ran_late"
             wf.last_run_status = "ran_late"
         else:

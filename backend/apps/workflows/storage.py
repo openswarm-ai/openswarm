@@ -11,6 +11,7 @@ last_run_* / next_run_at summary fields; full history lives in the runs file.
 
 import json
 import os
+import tempfile
 from threading import Lock
 from typing import Optional
 
@@ -63,6 +64,27 @@ def _wf_path(wid: str) -> str:
 
 def _runs_path(wid: str) -> str:
     return os.path.join(RUNS_DIR, f"{wid}.json")
+
+
+def p_atomic_write_json(path: str, data: object) -> None:
+    """Write JSON crash-safely: a power-off mid-write must not leave a truncated
+    file, because the loader drops a workflow whose JSON fails to parse (the
+    record would silently vanish). Write a unique sibling temp file, fsync it,
+    then os.replace (atomic on POSIX and Windows) so readers only ever see the
+    old complete file or the new complete one."""
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _load_all_from_disk() -> None:
@@ -144,8 +166,7 @@ def save_workflow(wf: Workflow) -> Workflow:
     with _io_lock:
         _ensure_dirs()
         _workflow_cache[wf.id] = wf
-        with open(_wf_path(wf.id), "w") as f:
-            json.dump(wf.model_dump(mode="json"), f, indent=2)
+        p_atomic_write_json(_wf_path(wf.id), wf.model_dump(mode="json"))
     return wf
 
 
@@ -197,8 +218,7 @@ def record_run(run: WorkflowRun) -> WorkflowRun:
         # Bound the per-workflow history to keep disk + memory cheap.
         if len(arr) > RUNS_PER_WORKFLOW:
             del arr[: len(arr) - RUNS_PER_WORKFLOW]
-        with open(_runs_path(run.workflow_id), "w") as f:
-            json.dump([r.model_dump(mode="json") for r in arr], f, indent=2)
+        p_atomic_write_json(_runs_path(run.workflow_id), [r.model_dump(mode="json") for r in arr])
     return run
 
 
@@ -213,14 +233,12 @@ def set_paused(value: bool) -> bool:
     with _io_lock:
         _ensure_dirs()
         _paused = bool(value)
-        with open(PAUSED_FILE, "w") as f:
-            json.dump({"paused": _paused}, f)
+        p_atomic_write_json(PAUSED_FILE, {"paused": _paused})
     return _paused
 
 
 def _write_missed() -> None:
-    with open(MISSED_FILE, "w") as f:
-        json.dump([m.model_dump(mode="json") for m in _missed_cache], f, indent=2)
+    p_atomic_write_json(MISSED_FILE, [m.model_dump(mode="json") for m in _missed_cache])
 
 
 def list_missed() -> list[MissedRun]:
@@ -272,7 +290,6 @@ def update_run(run_id: str, **fields) -> Optional[WorkflowRun]:
                 updated = r.model_copy(update=fields)
                 arr[i] = updated
                 with _io_lock:
-                    with open(_runs_path(updated.workflow_id), "w") as f:
-                        json.dump([x.model_dump(mode="json") for x in arr], f, indent=2)
+                    p_atomic_write_json(_runs_path(updated.workflow_id), [x.model_dump(mode="json") for x in arr])
                 return updated
     return None

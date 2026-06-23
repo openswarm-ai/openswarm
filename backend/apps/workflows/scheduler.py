@@ -113,7 +113,7 @@ def is_schedule_configured(sched: ScheduleConfig) -> bool:
     return True
 
 
-def _first_after(anchor: datetime, ref: datetime, step: timedelta) -> datetime:
+def p_first_after(anchor: datetime, ref: datetime, step: timedelta) -> datetime:
     """First instant on the grid {anchor + k*step} strictly after ref."""
     if anchor > ref:
         return anchor
@@ -139,12 +139,12 @@ def _next_fire_after(
     if sched.repeat_unit == "minute":
         step = max(15, sched.repeat_every)
         grid = anchor_local.replace(second=0, microsecond=0)
-        return _first_after(grid, ref_local, timedelta(minutes=step)).astimezone(timezone.utc)
+        return p_first_after(grid, ref_local, timedelta(minutes=step)).astimezone(timezone.utc)
 
     if sched.repeat_unit == "hour":
         step = max(1, sched.repeat_every)
         grid = anchor_local.replace(minute=sched.minute, second=0, microsecond=0)
-        return _first_after(grid, ref_local, timedelta(hours=step)).astimezone(timezone.utc)
+        return p_first_after(grid, ref_local, timedelta(hours=step)).astimezone(timezone.utc)
 
     candidate = base.replace(hour=sched.hour, minute=sched.minute)
 
@@ -328,6 +328,11 @@ async def _fire(wf: Workflow, scheduled_for: Optional[datetime]) -> None:
 
 
 def _seconds_until_next() -> float:
+    # While globally paused, _tick no-ops and never rolls next_run_at forward,
+    # so an overdue slot would otherwise spin this loop at the 1s floor. Resume
+    # calls kick(), so idling the full interval here costs nothing.
+    if storage.get_paused():
+        return 60.0
     now_utc = datetime.now(timezone.utc)
     soonest: Optional[datetime] = None
     for wf in storage.list_workflows():
@@ -372,7 +377,7 @@ def _mark_stuck_runs_failed() -> None:
                 storage.update_run(
                     r.id,
                     status="failure",
-                    error="OpenSwarm closed before this run finished.",
+                    error="Interrupted: OpenSwarm or your computer shut down before this run finished.",
                     finished_at=now,
                 )
                 # The run row is fixed, but the workflow still summarizes this

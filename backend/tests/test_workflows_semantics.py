@@ -317,17 +317,17 @@ def test_weekly_every_n_weeks_phase_is_stable_across_recompute():
 def test_ran_late_is_measured_from_start_not_finish():
     """A run that STARTS on time is 'success' no matter how long it runs; a run
     that starts >5min after its slot is 'ran_late'."""
-    from backend.apps.workflows.executor import _ran_late
+    from backend.apps.workflows.executor import p_ran_late
     slot = datetime(2026, 6, 22, 9, 0, tzinfo=timezone.utc)
     # Started on time -> not late (even though such a run might finish much later).
-    assert _ran_late(slot, slot) is False
-    assert _ran_late(slot + timedelta(minutes=4), slot) is False
+    assert p_ran_late(slot, slot) is False
+    assert p_ran_late(slot + timedelta(minutes=4), slot) is False
     # Started well after the slot -> late.
-    assert _ran_late(slot + timedelta(minutes=6), slot) is True
+    assert p_ran_late(slot + timedelta(minutes=6), slot) is True
     # Naive started_at (host-local, as datetime.now() produces) is normalized
     # to UTC rather than subtracted across the offset.
     naive_on_time = slot.astimezone().replace(tzinfo=None)
-    assert _ran_late(naive_on_time, slot) is False
+    assert p_ran_late(naive_on_time, slot) is False
 
 
 def test_frozen_empty_tool_set_does_not_fall_back_to_defaults():
@@ -864,7 +864,7 @@ def test_killed_by_restart_message_is_friendly():
     storage.record_run(WorkflowRun(workflow_id=wf.id, status="running"))
     scheduler._mark_stuck_runs_failed()
     runs = storage.list_runs(wf.id, limit=10)
-    assert any(r.status == "failure" and "OpenSwarm closed" in (r.error or "") for r in runs)
+    assert any(r.status == "failure" and "Interrupted" in (r.error or "") and "shut down" in (r.error or "") for r in runs)
     assert not any("Killed by restart" in (r.error or "") for r in runs)
 
 
