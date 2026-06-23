@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import html
 import re
-from typing import Any
+from typing import Any, Optional
 
 import httpx
+from typeguard import typechecked
 
 from backend.apps.agents.tools.base import BaseTool, ToolContext
 from backend.apps.agents.tools.ssrf_guard import SSRFBlocked, safe_fetch
@@ -46,6 +47,50 @@ def anthropic_web_search_is_reliable(*, uses_direct_anthropic_api: bool,
     token, reset after ~2m'). Only a `*-api` route model talks to Anthropic
     directly. Everyone else keeps the free, always-working DDG path."""
     return bool(uses_direct_anthropic_api or is_pro)
+
+
+@typechecked
+def should_register_web_mcp(
+    *,
+    model: str,
+    router_model_id: object,
+    api_type: Optional[str],
+    anthropic_api_key: Optional[str],
+    connection_mode: str,
+) -> bool:
+    """True when the agent loop must register the DDG-backed openswarm-web MCP because the
+    primary model has NO reliable native Anthropic web-search path. We prefer Anthropic's
+    hosted search (return False) whenever it's actually reachable, and cascade through our own
+    /api/web/search (Gemini -> OpenAI -> DuckDuckGo) otherwise. The three no-path cases:
+    a non-Claude primary, a custom-provider session (ANTHROPIC_BASE_URL points at 9Router with
+    no Claude connection), and a subscription-route Claude model on a non-Pro account (the
+    built-in WebSearch's aux haiku call 401s). Pro pool is deliberately NOT counted for a
+    non-Claude primary: spending it on WebSearch would drain the user's Claude turns."""
+    from backend.apps.agents.providers.registry import _find_builtin_model as find_builtin_model
+
+    m = router_model_id if isinstance(router_model_id, str) else ""
+    primary_is_claude = m.startswith("cc/") or (
+        isinstance(router_model_id, str)
+        and not router_model_id.startswith(("cc/", "cx/", "gc/", "ag/", "gemini/"))
+        and api_type == "anthropic"
+    )
+    is_custom_session = api_type == "custom"
+    web_model_entry = find_builtin_model(model)
+    uses_direct_anthropic_api = (
+        web_model_entry is not None
+        and web_model_entry.get("route") == "api"
+        and web_model_entry.get("api") == "anthropic"
+        and bool(anthropic_api_key)
+    )
+    has_anthropic_path = (
+        not is_custom_session
+        and primary_is_claude
+        and anthropic_web_search_is_reliable(
+            uses_direct_anthropic_api=uses_direct_anthropic_api,
+            is_pro=(connection_mode in ("openswarm-pro", "free-trial")),
+        )
+    )
+    return not has_anthropic_path
 
 
 def _truncate(text: str, limit: int = _MAX_OUTPUT_BYTES) -> str:

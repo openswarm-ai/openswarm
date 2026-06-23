@@ -62,6 +62,7 @@ from backend.apps.agents.manager.streaming import thinking as thinking_mod
 from backend.apps.agents.manager.streaming import tool_result_hook
 from backend.apps.agents.manager.streaming import stop_hook as stop_hook_mod
 from backend.apps.agents.manager.prompt.system_prompt import compose_turn_system_prompt
+from backend.apps.agents.tools.web import should_register_web_mcp
 from backend.apps.agents.manager.permissions import gate_hooks
 from backend.apps.agents.manager.view_builder_state import (
     view_builder_render_retry_counts,
@@ -552,63 +553,18 @@ class AgentManager:
             }
 
 
-            # The CLI's built-in WebSearch/WebFetch wraps Anthropic's
-            # web_search_20250305. For non-Claude primaries the CLI
-            # delegates execution back to Anthropic via
-            # ANTHROPIC_SMALL_FAST_MODEL, needs an Anthropic credential
-            # or it 401s. We register our DDG-backed MCP only for users
-            # with no Anthropic path; Anthropic's hosted search is
-            # higher-quality so we prefer it whenever it's reachable.
+            # Register the DDG-backed openswarm-web MCP only when the primary has no reliable
+            # native Anthropic web path (decided in tools/web.py); _m feeds the registration log
+            # + provider branch just below, so it stays a loop local.
             _m = _router_model_id if isinstance(_router_model_id, str) else ""
-            # When the primary is non-Claude we deliberately don't count
-            # OpenSwarm Pro as an Anthropic path, using the Pro pool for
-            # WebSearch on a GPT/Gemini session would drain it for the
-            # user's Claude turns. The user's GPT/Gemini subscription
-            # serves their non-Claude turns at zero cost to us.
-            _primary_is_claude = _m.startswith("cc/") or (
-                isinstance(_router_model_id, str)
-                and not _router_model_id.startswith(("cc/", "cx/", "gc/", "ag/", "gemini/"))
-                and _api_type_for_session == "anthropic"
+            need_web_mcp = should_register_web_mcp(
+                model=session.model,
+                router_model_id=_router_model_id,
+                api_type=_api_type_for_session,
+                anthropic_api_key=getattr(global_settings, "anthropic_api_key", None),
+                connection_mode=getattr(global_settings, "connection_mode", "own_key"),
             )
-            # Custom-provider sessions (Ollama Cloud, Together, Groq, etc.)
-            # set ANTHROPIC_BASE_URL to 9Router but 9Router has no Claude
-            # connection unless the user separately set up one. The CLI's
-            # built-in WebSearch delegates to Anthropic Haiku, which falls
-            # through 9Router to whichever connection serves anthropic/...
-            # ids, usually OpenRouter, and 401s. Force the openswarm-web
-            # MCP to register so WebSearch always cascades through our own
-            # /api/web/search (Gemini → OpenAI → DuckDuckGo).
-            _is_custom_session = _api_type_for_session == "custom"
-            # The built-in WebSearch's aux haiku call only authenticates when it
-            # reaches an ENTITLED Anthropic endpoint. That's true in exactly two
-            # cases, mirroring the direct-Anthropic env-branch built further down:
-            # a direct Anthropic api-route model (base_url = api.anthropic.com
-            # with the user's key), or OpenSwarm Pro (entitled to the managed pool
-            # 9Router's anthropic/* resolves to). A SUBSCRIPTION-route Claude
-            # model (opus-4-8, route=None) routes the haiku call through 9Router
-            # to the managed pool and 401s for non-Pro users, so a bare key in
-            # settings is NOT enough; it must be a *-api route model. Everyone
-            # else registers openswarm-web and cascades through /api/web/search.
-            from backend.apps.agents.tools.web import anthropic_web_search_is_reliable
-            from backend.apps.agents.providers.registry import _find_builtin_model as _fbm_web
-            _web_model_entry = _fbm_web(session.model)
-            _uses_direct_anthropic_api = (
-                _web_model_entry is not None
-                and _web_model_entry.get("route") == "api"
-                and _web_model_entry.get("api") == "anthropic"
-                and bool(getattr(global_settings, "anthropic_api_key", None))
-            )
-            _has_anthropic_path = (
-                not _is_custom_session
-                and _primary_is_claude
-                and anthropic_web_search_is_reliable(
-                    uses_direct_anthropic_api=_uses_direct_anthropic_api,
-                    is_pro=(getattr(global_settings, "connection_mode", "own_key") in ("openswarm-pro", "free-trial")),
-                )
-            )
-
-            _need_web_mcp = not _has_anthropic_path
-            if _need_web_mcp:
+            if need_web_mcp:
                 web_mcp_server_path = os.path.join(
                     os.path.dirname(__file__), "web_mcp_server.py"
                 )
@@ -701,7 +657,7 @@ class AgentManager:
             # WebSearch/WebFetch are guaranteed to fail (no Anthropic
             # backend). Suppress them so the model picks our MCP variants
             # and doesn't waste a turn on a broken tool.
-            if _need_web_mcp:
+            if need_web_mcp:
                 effective_allowed = [t for t in effective_allowed if t not in ("WebSearch", "WebFetch")]
                 for _bt in ("WebSearch", "WebFetch"):
                     if _bt not in effective_disallowed:
@@ -719,7 +675,7 @@ class AgentManager:
             # web MCP, AND (b) the user hasn't disabled the policy, matches
             # the same gate the MCP allowlist uses, so disabling WebSearch in
             # Settings still wins.
-            _web_tools_available = _need_web_mcp and (
+            _web_tools_available = need_web_mcp and (
                 "mcp__openswarm-web__WebSearch" in effective_allowed
                 or "mcp__openswarm-web__WebFetch" in effective_allowed
             )
