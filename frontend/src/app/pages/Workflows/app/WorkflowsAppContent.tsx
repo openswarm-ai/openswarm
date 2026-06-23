@@ -58,7 +58,7 @@ const WorkflowsAppContent: React.FC = () => {
   }), [mode, selectedId, calView, refDate, dashboardId, dispatch]);
 
   return (
-    <div style={{ flex: 1, display: 'flex', minHeight: 0, fontFamily: FONT_SANS, color: WC.ink, background: WC.paper }}>
+    <div style={{ flex: 1, display: 'flex', minHeight: 0, fontFamily: FONT_SANS, color: WC.ink, background: WC.page }}>
       <LeftRail nav={nav} />
       {mode === 'home' && <HomeView nav={nav} />}
       {mode === 'calendar' && <CalendarView nav={nav} />}

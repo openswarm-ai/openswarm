@@ -87,7 +87,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
   const reRunAll = () => { if (missed.length) dispatch(runMissedRuns(missed.map((m) => m.id))); };
 
   return (
-    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: WC.paper }}>
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: WC.page }}>
       <div style={{ flex: 'none', padding: '22px 30px 14px', borderBottom: `1px solid rgba(${WC.inkRGB},0.06)` }}>
         <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: WC.muted2 }}>{todayLabel}</div>
       </div>

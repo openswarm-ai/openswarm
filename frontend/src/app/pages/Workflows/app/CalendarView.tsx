@@ -99,7 +99,7 @@ const CalendarView: React.FC<{ nav: AppNav }> = ({ nav }) => {
   const selectFromPop = (id: string) => { setDayPop(null); nav.selectWorkflow(id); };
 
   return (
-    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: WC.paper }}>
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: WC.page }}>
       <div style={{ flex: 'none', padding: '14px 26px', borderBottom: `1px solid ${WC.line}`, display: 'flex', alignItems: 'center', gap: 14 }}>
         <button onClick={() => nav.setRefDate(new Date())} style={{ background: WC.paper, border: `1px solid rgba(${WC.inkRGB},0.14)`, borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, color: WC.ink, cursor: 'pointer' }}>Today</button>
         <div style={{ display: 'flex', gap: 4 }}>

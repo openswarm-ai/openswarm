@@ -201,7 +201,7 @@ const WorkflowsAppCard: React.FC<Props> = ({
         contain: 'layout style',
         willChange: 'transform',
         left: dx, top: dy, width: dw, height: dh,
-        background: WC.paper,
+        background: WC.page,
         border,
         borderRadius: WC.radius.lg,
         boxShadow: (isDragging || isResizing) ? WC.shadow.lg : WC.shadow.md,

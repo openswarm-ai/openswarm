@@ -10,6 +10,7 @@ import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 export interface WCPalette {
   accent: string;
   paper: string;
+  page: string;
   panel: string;
   rail: string;
   inset: string;
@@ -43,7 +44,7 @@ export interface WCPalette {
 // The identity half of the palette: accent, text, status, hairlines. The neutral
 // surfaces + structural primitives are blended in from claudeTokens by useWC(),
 // so the window is the same material as every other card.
-type WCColors = Omit<WCPalette, 'shadow' | 'radius' | 'border' | 'paper' | 'panel' | 'rail' | 'inset' | 'raised'>;
+type WCColors = Omit<WCPalette, 'shadow' | 'radius' | 'border' | 'paper' | 'page' | 'panel' | 'rail' | 'inset' | 'raised'>;
 
 export const WC_LIGHT: WCColors = {
   accent: '#C25A36',
@@ -97,15 +98,22 @@ export function useWC(): WCPalette {
   const base = mode === 'dark' ? WC_DARK : WC_LIGHT;
   return {
     ...base,
-    // Surfaces straight from the app tokens, so the window is the same material
-    // as every other card in both themes (the warmth lives in accent + text).
-    // Title bar + sidebar stay on bg.surface (not a darker fill) so the whole
-    // window reads as one card like the chat card; borders separate the regions.
-    paper: c.bg.surface,
-    panel: c.bg.surface,
-    rail: c.bg.surface,
+    // Three-tone depth from the app tokens (matches the Claude design): the
+    // content area sits on `page`, cards/title bar pop on `surface` above it,
+    // and the sidebar/right rail recede on `secondary`. surface > page in BOTH
+    // themes, so cards always pop (no light/dark inversion).
+    // Light's palette inverts (elevated is lighter than surface in light, darker
+    // in dark), so the mid content tone must flip per mode: in light it steps UP
+    // to bg.elevated so the window stands apart from the bg.page canvas behind it
+    // and cards still pop on bg.surface above; in dark bg.page is already darker
+    // than the cards, so it stays. Rows mirror it (surface in light, elevated in
+    // dark) so they always sit above the content.
+    paper: c.bg.surface,                                       // cards, title bar, popovers
+    page: mode === 'dark' ? c.bg.secondary : c.bg.elevated,   // content area: one step above the canvas in both modes
+    panel: c.bg.surface,                                       // title bar
+    rail: mode === 'dark' ? c.bg.page : c.bg.secondary,        // sidebar / right rail: the recessed darkest column
     inset: c.bg.page,
-    raised: c.bg.elevated,
+    raised: mode === 'dark' ? c.bg.elevated : c.bg.surface,    // extra-raised rows / dropdowns
     shadow: c.shadow,
     radius: c.radius,
     border: c.border,

@@ -39,7 +39,7 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
     if (workflow) dispatch(setWorkflowsRunContext(runContextChip(workflow, r)));
   }, [detailRuns, workflowId, dispatch, workflow]);
 
-  if (!workflow) return <div style={{ flex: 1, background: WC.paper }} />;
+  if (!workflow) return <div style={{ flex: 1, background: WC.page }} />;
 
   const running = isRunning(workflow, active);
   const enabled = isScheduleActive(workflow.schedule);
@@ -59,7 +59,7 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
 
   return (
     <>
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: WC.paper }}>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: WC.page }}>
         <div style={{ flex: 'none', padding: '20px 28px 16px', borderBottom: `1px solid rgba(${WC.inkRGB},0.06)` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
             <ColorSwatch value={colorForWorkflow(workflow)} onChange={(hex) => patch(workflow, { color: hex })} size={14} />
