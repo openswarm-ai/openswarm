@@ -2,37 +2,22 @@ import asyncio
 import json
 import logging
 import os
-import re
 import sys
 import time
-from datetime import datetime
-from uuid import uuid4
 from typing import Dict, List, Optional
 from typeguard import typechecked
 
 from backend.apps.agents.core.models import (
-    AgentConfig, AgentSession, Message, MessageBranch, ApprovalRequest, ToolGroupMeta,
+    AgentSession, Message,
 )
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.tools_lib.tools_lib import (
     _load_all as load_all_tools,
-    _save as save_tool,
     _sanitize_server_name as sanitize_server_name,
-    derive_mcp_config,
     load_builtin_permissions,
-    load_trusted_sensitive_paths,
-    refresh_airtable_token,
-    refresh_google_token,
-    refresh_hubspot_token,
-    resolve_policy_slot,
-    save_builtin_permissions,
-    save_trusted_sensitive_paths,
 )
-from backend.config.paths import SESSIONS_DIR
 from backend.apps.agents.core.error_classify import (
-    _NON_TRANSIENT_PATTERNS as NON_TRANSIENT_PATTERNS,
-    _TRANSIENT_CAPACITY_PATTERNS as TRANSIENT_CAPACITY_PATTERNS,
     CAPACITY_BACKOFFS,
     capacity_retry_wait,
     _is_auth_error as is_auth_error,
@@ -43,14 +28,13 @@ from backend.apps.agents.core.error_classify import (
     parse_retry_after,
     redact_for_telemetry,
 )
+# SESSIONS_DIR is re-exported on purpose: session_store reads agent_manager.SESSIONS_DIR at
+# call time (dodging a circular import), and the disk-resilience test monkeypatches it here.
+from backend.config.paths import SESSIONS_DIR
 from backend.apps.agents.manager.session.session_store import (
-    _load_session_data as load_session_data,
     _save_session as save_session,
+    _load_session_data as load_session_data,
 )
-from backend.apps.agents.manager import metadata
-from backend.apps.agents.manager.session.apply_context_window import apply_context_window
-from backend.apps.agents.manager.permissions import path_gate
-from backend.apps.agents.manager import context_budget
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming.hook_context import HookContext
 from backend.apps.agents.manager.streaming import thinking as thinking_mod
@@ -60,7 +44,6 @@ from backend.apps.agents.manager.streaming import stream_event
 from backend.apps.agents.manager.streaming import assistant_message
 from backend.apps.agents.manager.streaming import result_message
 from backend.apps.agents.manager.streaming.LivePartial import LivePartial
-from backend.apps.agents.manager.streaming.upsert_message import upsert_message
 from backend.apps.agents.manager.prompt.system_prompt import compose_turn_system_prompt
 from backend.apps.agents.tools.web import should_register_web_mcp
 from backend.apps.agents.manager.permissions.effective_tools import build_effective_tool_lists
@@ -71,16 +54,10 @@ from backend.apps.agents.manager.MessagingMixin import MessagingMixin
 from backend.apps.agents.manager.AgentLaunchMixin import AgentLaunchMixin
 from backend.apps.agents.manager.RunSupportMixin import RunSupportMixin
 from backend.apps.agents.manager.permissions import gate_hooks
-from backend.apps.agents.manager.session.workspace_git import detect_git_identity, ensure_cwd_git_repo
+from backend.apps.agents.manager.session.workspace_git import ensure_cwd_git_repo
 from backend.apps.agents.manager.prompt.tool_catalog import (
-    FULL_TOOLS,
-    get_all_known_tool_names,
-    get_denied_tool_names,
-    is_fully_denied,
-    gated_mcp_server_names,
     get_all_tool_names,
 )
-from backend.apps.agents.core.aux_llm import _safe_resp_text as safe_resp_text, clean_short_label, aux_max_tokens_for
 from backend.apps.agents.manager.session.history_compaction import (
     _build_history_prefix as build_history_prefix,
     _estimate_post_compact_input as estimate_post_compact_input,
@@ -145,8 +122,7 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin, AgentLaunchMixin, RunS
             )
             from claude_agent_sdk.types import (
                 HookMatcher,
-                TextBlock, ToolUseBlock, ThinkingBlock, StreamEvent,
-                SystemMessage,
+                StreamEvent, SystemMessage,
             )
         except ImportError:
             logger.warning("claude_agent_sdk not installed, running in mock mode")
@@ -1139,7 +1115,7 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin, AgentLaunchMixin, RunS
                 # the row's name is still the default placeholder.
                 if session.mode == "view-builder":
                     try:
-                        from backend.apps.outputs.outputs import sync_output_from_meta_json, _load_all
+                        from backend.apps.outputs.outputs import sync_output_from_meta_json
                         if sync_output_from_meta_json(session_id, fallback_name=session.name):
                             # Broadcast the renamed row so the sidebar
                             # flips from "Untitled App" to the real name

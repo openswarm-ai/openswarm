@@ -1169,7 +1169,7 @@ def test_custom_provider_round_trip():
 @pytest.mark.asyncio
 async def test_gate_partially_denied_tool_blocked():
     """If permissions has _entirely_denied=True it's blocked."""
-    from backend.apps.agents.agent_manager import is_fully_denied
+    from backend.apps.agents.manager.prompt.tool_catalog import is_fully_denied
     fake = _fake_tool("Gmail", permissions={
         "_tool_descriptions": {"send_email": "Send email"},
         "send_email": "deny",
