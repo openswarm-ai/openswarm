@@ -53,6 +53,9 @@ export interface WorkflowStep {
   /** LLM-generated 3-6 word label shown when the step row is collapsed. The
    *  full `text` is what the agent actually runs; this is just the title. */
   label?: string | null;
+  /** Disabled steps stay in the list but the executor skips them. Undefined
+   *  (legacy records) is treated as enabled. */
+  enabled?: boolean;
 }
 
 export interface Workflow {

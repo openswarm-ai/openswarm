@@ -217,7 +217,7 @@ async def execute(
 
     session = None
     try:
-        steps = [s for s in wf.steps if s.text and s.text.strip()]
+        steps = [s for s in wf.steps if s.enabled and s.text and s.text.strip()]
         if not steps:
             raise ValueError("Workflow has no steps")
 

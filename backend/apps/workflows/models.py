@@ -83,6 +83,9 @@ class WorkflowStep(BaseModel):
     # 3 to 6 word LLM-generated headline shown in the collapsed step row.
     # The full prompt lives in `text`; this is the "at-a-glance" label.
     label: Optional[str] = None
+    # Disabled steps stay in the list but the executor skips them, so a user
+    # can mute a step without losing its prompt. Defaults true for old records.
+    enabled: bool = True
 
 
 def _empty_str_default() -> str:
