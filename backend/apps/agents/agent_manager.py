@@ -56,6 +56,8 @@ from backend.apps.agents.manager.streaming import thinking as thinking_mod
 from backend.apps.agents.manager.streaming import tool_result_hook
 from backend.apps.agents.manager.streaming import stop_hook as stop_hook_mod
 from backend.apps.agents.manager.streaming import stream_event
+from backend.apps.agents.manager.streaming import assistant_message
+from backend.apps.agents.manager.streaming.upsert_message import upsert_message
 from backend.apps.agents.manager.prompt.system_prompt import compose_turn_system_prompt
 from backend.apps.agents.tools.web import should_register_web_mcp
 from backend.apps.agents.manager.session.SessionLifecycleMixin import SessionLifecycleMixin
@@ -1362,183 +1364,9 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin):
                         )
 
                     elif isinstance(message, AssistantMessage):
-                        content_parts = []
-                        new_thinking_parts = []
-                        tool_uses = []
-                        # Capture the latest Gemini thoughtSignature
-                        # (and Anthropic's signature_delta if present)
-                        # off any ThinkingBlock in this message. We
-                        # store it on the turn's consolidated thinking
-                        # message so it survives session.json
-                        # serialization, and re-attach it on the next
-                        # request so Google's continuity check passes.
-                        new_thought_signature: str | None = None
-                        for block in message.content:
-                            if isinstance(block, ThinkingBlock):
-                                thinking_text = getattr(block, "thinking", None) or getattr(block, "text", None) or ""
-                                if thinking_text:
-                                    new_thinking_parts.append(thinking_text)
-                                # Try multiple field-name variants, SDK
-                                # versions and 9Router translations have
-                                # used `signature`, `thoughtSignature`,
-                                # and `thought_signature` over time.
-                                _sig = (
-                                    getattr(block, "signature", None)
-                                    or getattr(block, "thoughtSignature", None)
-                                    or getattr(block, "thought_signature", None)
-                                )
-                                if _sig:
-                                    new_thought_signature = _sig
-                            elif isinstance(block, TextBlock):
-                                content_parts.append(block.text)
-                            elif isinstance(block, ToolUseBlock):
-                                tool_uses.append({
-                                    "id": block.id,
-                                    "tool": block.name,
-                                    "input": block.input,
-                                })
-
-                        # Accumulate this AssistantMessage's contributions
-                        # into the turn-level thinking pill. We re-emit
-                        # the SAME message id each time so the frontend
-                        # dedupes (addMessage replaces by id) and the
-                        # bubble updates live as more thought / tools
-                        # arrive. This is what gives us "Thought for 18s
-                        # · 412 tokens · 3 tools used" reflecting the
-                        # whole turn rather than just one think-step.
-                        #
-                        # NOTE: tool count is incremented in the
-                        # content_block_start (block_type=="tool_use")
-                        # branch above, NOT here. That path fires for
-                        # both Anthropic and 9Router-translated
-                        # providers; counting again here would double.
-                        # If a provider somehow doesn't surface
-                        # content_block_start for tool blocks but DOES
-                        # surface them in the AssistantMessage envelope
-                        # (defensive case), the max() in the
-                        # consolidated emit will still pick up the
-                        # higher count.
-                        if new_thinking_parts:
-                            thinking.text_parts.extend(new_thinking_parts)
-                        # Latch the most recent thoughtSignature, Gemini
-                        # only validates against the LATEST one in the
-                        # conversation history, so older signatures from
-                        # earlier think-steps in the same turn are
-                        # superseded by newer ones.
-                        if new_thought_signature:
-                            thinking.thought_signature = new_thought_signature
-                        # Accumulate this message's total output tokens
-                        # (SDK populates `usage.output_tokens` with the
-                        # full output for the inference: thinking text +
-                        # visible text + tool-call JSON args). Summing
-                        # across the turn's AssistantMessages gives us
-                        # "all output the model produced this turn,"
-                        # which is what users intuit when they see a
-                        # token count.
-                        try:
-                            _msg_usage = getattr(message, "usage", None) or {}
-                            if isinstance(_msg_usage, dict):
-                                _ot = int(_msg_usage.get("output_tokens", 0) or 0)
-                                if _ot > 0:
-                                    turn.output_tokens += _ot
-                        except Exception:
-                            pass
-
-                        # Re-emit the consolidated thinking message on
-                        # every AssistantMessage (event-driven). The
-                        # background ticker loop keeps it updating
-                        # between events too, so the elapsed counter
-                        # ticks even during tool execution / slow text
-                        # generation gaps.
-                        if thinking.text_parts:
-                            await thinking_mod.emit_consolidated_thinking(thinking, turn, session, session_id, self.sessions)
-                            # Start the 1Hz ticker once we have a
-                            # consolidated message in flight so the
-                            # bubble keeps updating between SDK events.
-                            if thinking.ticker_task is None or thinking.ticker_task.done():
-                                thinking.ticker_task = asyncio.create_task(thinking_mod.ticker_loop(thinking, turn, session, session_id, self.sessions))
-
-                        if content_parts:
-                            _asst_text = "\n".join(content_parts)
-                            # 9Router sometimes returns upstream 401s as
-                            # the assistant reply (no SDK exception), so
-                            # the catch-all auth handler never fires.
-                            # Match the text pattern and surface a
-                            # friendly system bubble instead.
-                            _lower_text = _asst_text.lower()
-                            _looks_like_router_auth_error = (
-                                ("failed to authenticate" in _lower_text and "401" in _lower_text)
-                                or ("authentication token is expired" in _lower_text)
-                                or ("authentication token has expired" in _lower_text)
-                                or ("provided authentication token" in _lower_text and ("401" in _lower_text or "expired" in _lower_text))
-                            )
-                            if _looks_like_router_auth_error:
-                                if "codex/" in _lower_text or "[codex" in _lower_text:
-                                    friendly = (
-                                        "GPT subscription token expired. Open Settings → Models and click "
-                                        "Reconnect on the OpenAI / GPT row to refresh, should take ~10s, "
-                                        "then send your message again."
-                                    )
-                                    reason = "codex_token_expired"
-                                elif "gemini-cli/" in _lower_text or "[gemini" in _lower_text:
-                                    friendly = (
-                                        "Gemini subscription token expired. Open Settings → Models and click "
-                                        "Reconnect on the Google / Gemini row, then send your message again."
-                                    )
-                                    reason = "gemini_token_expired"
-                                else:
-                                    friendly = (
-                                        "Provider authentication expired. Open Settings → Models and "
-                                        "reconnect, then send your message again."
-                                    )
-                                    reason = "router_auth_expired"
-                                _err_msg = Message(
-                                    id=uuid4().hex,
-                                    role="system",
-                                    content=friendly,
-                                    branch_id=session.active_branch_id,
-                                )
-                                session.messages.append(_err_msg)
-                                await ws_manager.send_to_session(session_id, "agent:auth_error", {
-                                    "session_id": session_id,
-                                    "reason": reason,
-                                    "message": friendly,
-                                    "model": session.model,
-                                })
-                                await ws_manager.send_to_session(session_id, "agent:message", {
-                                    "session_id": session_id,
-                                    "message": _err_msg.model_dump(mode="json"),
-                                })
-                            else:
-                                asst_msg = Message(
-                                    id=turn.stream_text_msg_id or uuid4().hex,
-                                    role="assistant",
-                                    content=_asst_text,
-                                    branch_id=session.active_branch_id,
-                                )
-                                self._upsert_message(session, asst_msg)
-                                turn.stream_text_accum = ""
-                                self._live_partial.pop(session_id, None)
-                                await ws_manager.send_to_session(session_id, "agent:message", {
-                                    "session_id": session_id,
-                                    "message": asst_msg.model_dump(mode="json"),
-                                })
-
-                        for i, tu in enumerate(tool_uses):
-                            msg_id = turn.stream_tool_msg_ids_ordered[i] if i < len(turn.stream_tool_msg_ids_ordered) else uuid4().hex
-                            tool_msg = Message(id=msg_id, role="tool_call", content=tu, branch_id=session.active_branch_id)
-                            self._upsert_message(session, tool_msg)
-                            await ws_manager.send_to_session(session_id, "agent:message", {
-                                "session_id": session_id,
-                                "message": tool_msg.model_dump(mode="json"),
-                            })
-
-                        turn.number += 1
-
-                        turn.stream_text_msg_id = None
-                        turn.stream_tool_msg_ids_ordered = []
-                        turn.stream_block_index_map = {}
-
+                        await assistant_message.handle_assistant_message(
+                            message, session, session_id, turn, thinking, self._live_partial, self.sessions
+                        )
                     elif isinstance(message, ResultMessage):
                         # ResultMessage carries the AUTHORITATIVE per-turn
                         # output_tokens count. Some providers (notably
@@ -2298,7 +2126,7 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin):
             content=text,
             branch_id=live.get("branch_id") or session.active_branch_id,
         )
-        self._upsert_message(session, partial)
+        upsert_message(session, partial)
         try:
             await ws_manager.send_to_session(session.id, "agent:message", {
                 "session_id": session.id,
@@ -2318,17 +2146,6 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin):
             await task
         except (asyncio.CancelledError, Exception):
             pass
-
-    def _upsert_message(self, session, msg) -> None:
-        """Append msg, or replace it in place if its id is already present.
-        Makes a duplicate-id row unrepresentable when a stream commit races a
-        stop's early partial commit (both carry the same stream message id).
-        Same pattern the consolidated-thinking pill already uses inline."""
-        for i, existing in enumerate(session.messages):
-            if getattr(existing, "id", None) == msg.id:
-                session.messages[i] = msg
-                return
-        session.messages.append(msg)
 
 
 
