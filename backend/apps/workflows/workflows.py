@@ -248,6 +248,7 @@ async def create_workflow(body: WorkflowCreate):
         title=body.title,
         description=body.description,
         icon=body.icon,
+        color=body.color,
         system_prompt=body.system_prompt,
         use_synced_prompt=body.use_synced_prompt,
         steps=body.steps,

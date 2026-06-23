@@ -105,6 +105,8 @@ class Workflow(BaseModel):
     title: str = "Untitled workflow"
     description: str = ""
     icon: str = ""
+    # User-chosen swatch (hex). None falls back to the id-hash color in the UI.
+    color: Optional[str] = None
     system_prompt: Optional[str] = None
     use_synced_prompt: bool = True
     steps: list[WorkflowStep] = Field(default_factory=list)
@@ -212,6 +214,7 @@ class WorkflowCreate(BaseModel):
     unsaved: bool = False
     description: str = ""
     icon: str = ""
+    color: Optional[str] = None
     system_prompt: Optional[str] = None
     use_synced_prompt: bool = True
     steps: list[WorkflowStep] = Field(default_factory=list)
@@ -246,6 +249,7 @@ class WorkflowUpdate(BaseModel):
     auto_named: Optional[bool] = None
     description: Optional[str] = None
     icon: Optional[str] = None
+    color: Optional[str] = None
     system_prompt: Optional[str] = None
     use_synced_prompt: Optional[bool] = None
     steps: Optional[list[WorkflowStep]] = None

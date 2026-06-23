@@ -63,6 +63,8 @@ export interface Workflow {
   title: string;
   description: string;
   icon: string;
+  /** User-chosen swatch (hex). Null/undefined falls back to the id-hash color. */
+  color?: string | null;
   system_prompt: string | null;
   use_synced_prompt: boolean;
   steps: WorkflowStep[];
