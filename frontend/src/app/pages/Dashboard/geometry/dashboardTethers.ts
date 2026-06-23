@@ -1,5 +1,5 @@
 import { useMemo, type RefObject } from 'react';
-import type { CardPosition, BrowserCardPosition, WorkflowCardPosition, ConfigurePanelPosition } from '@/shared/state/dashboardLayoutSlice';
+import type { CardPosition, BrowserCardPosition, WorkflowCardPosition, ConfigurePanelPosition, WorkflowsHubPosition } from '@/shared/state/dashboardLayoutSlice';
 import type { Workflow, OpenCard } from '@/shared/state/workflowsSlice';
 import { EXPANDED_CARD_MIN_H, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
 import type { AgentSession } from '@/shared/state/agentsSlice';
@@ -88,6 +88,9 @@ interface UseTethersArgs {
   measuredHeightsRef: RefObject<Record<string, number>>;
   measuredHeightsTick: number;
   sessionList: AgentSession[];
+  workflowsHub: WorkflowsHubPosition | null;
+  workflowsMonitorCard: WorkflowsHubPosition | null;
+  workflowsMonitorLabel: string;
 }
 
 export function useTethers({
@@ -104,6 +107,9 @@ export function useTethers({
   measuredHeightsRef,
   measuredHeightsTick,
   sessionList,
+  workflowsHub,
+  workflowsMonitorCard,
+  workflowsMonitorLabel,
 }: UseTethersArgs): Tether[] {
   return useMemo(() => {
     const wfHeight = (wc: WorkflowCardPosition): number =>
@@ -432,9 +438,41 @@ export function useTethers({
       });
     }
 
-    return [...agentTethers, ...browserTethers, ...workflowTethers, ...configureTethers];
+    // Run Monitor tether: the Workflows window to its spawned live-run card.
+    // Same border-anchor + elbow math as the sidecar "Watching" arrow.
+    const monitorTethers: Tether[] = [];
+    if (workflowsHub && workflowsMonitorCard) {
+      let hubX = workflowsHub.x, hubY = workflowsHub.y;
+      let monX = workflowsMonitorCard.x, monY = workflowsMonitorCard.y;
+      // Track live drag so the line follows the card in real time instead of
+      // snapping into place on drop (same mechanism as the agent->browser tether).
+      if (liveDragInfo) {
+        if (liveDragInfo.cardId === 'workflows-hub') { hubX += liveDragInfo.dx; hubY += liveDragInfo.dy; }
+        if (liveDragInfo.cardId === 'workflows-monitor') { monX += liveDragInfo.dx; monY += liveDragInfo.dy; }
+      }
+      const hubRect = { x: hubX, y: hubY, width: workflowsHub.width, height: workflowsHub.height };
+      const monRect = { x: monX, y: monY, width: workflowsMonitorCard.width, height: workflowsMonitorCard.height };
+      const hubC = rectCenter(hubRect);
+      const monC = rectCenter(monRect);
+      const a = borderPoint(hubRect.x, hubRect.y, hubRect.width, hubRect.height, monC.x, monC.y);
+      const b = borderPoint(monRect.x, monRect.y, monRect.width, monRect.height, hubC.x, hubC.y);
+      const midX = a.x + (b.x - a.x) / 2;
+      const midY = a.y + (b.y - a.y) / 2;
+      // The label box is left-anchored at labelX (rect starts there and grows
+      // right), so shift left by half the text width to truly center it on the line.
+      monitorTethers.push({
+        key: 'workflows-monitor',
+        path: elbowPath(a.x, a.y, b.x, b.y),
+        labelX: midX - (workflowsMonitorLabel.length * 7.5) / 2,
+        labelY: midY,
+        label: workflowsMonitorLabel,
+        fading: false,
+      });
+    }
+
+    return [...agentTethers, ...browserTethers, ...workflowTethers, ...configureTethers, ...monitorTethers];
   // measuredHeightsTick re-runs the memo once ResizeObserver reports a new
   // height after a collapse (the ref read is invisible to the dep checker).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, configurePanels, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList]);
+  }, [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, configurePanels, expandedSessionIds, liveDragInfo, measuredHeightsTick, sessionList, workflowsHub, workflowsMonitorCard, workflowsMonitorLabel]);
 }

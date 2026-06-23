@@ -741,6 +741,11 @@ class WebSocketManager {
           // or close themselves.
           const watchedSidecar = Object.values(store.getState().workflows.openCards)
             .some((oc) => oc.sidecarSessionId === session_id);
+          // The Run Monitor watches a run via its workflow id, not a sidecar:
+          // keep that run's session so the transcript survives completion.
+          const monWf = store.getState().dashboardLayout.workflowsMonitorId;
+          const watchedByMonitor = !!monWf
+            && (store.getState().workflows.runs[monWf] || []).some((r) => r.session_id === session_id);
           store.dispatch(closeSessionFromWs({
             id: session_id,
             name: data.name ?? 'Untitled',
@@ -751,7 +756,7 @@ class WebSocketManager {
             closed_at: data.closed_at ?? new Date().toISOString(),
             cost_usd: data.cost_usd ?? 0,
             dashboard_id: data.dashboard_id,
-            keepSession: watchedSidecar,
+            keepSession: watchedSidecar || watchedByMonitor,
           }));
           // Auto-delete browsers spawned by this agent when it finishes
           // normally or errors out. We intentionally skip 'stopped' , the

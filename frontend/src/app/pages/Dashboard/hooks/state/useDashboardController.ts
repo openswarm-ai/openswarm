@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { useCanvasControls } from '../interaction/useCanvasControls';
@@ -41,6 +42,18 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
   // is stable when sessions hasn't actually changed (RTK only swaps the dict
   // ref when one of its values changes, so this is the right granularity).
   const sessionList = useMemo(() => Object.values(sessions), [sessions]);
+
+  // Run Monitor card geometry + its tether label ("Watching" live, "Viewing" done).
+  // Only "active" while its workflow still exists; otherwise the card is gone and
+  // the tether must not dangle (e.g. the workflow was trashed while watching).
+  const workflowsMonitorIdRaw = useAppSelector((s) => s.dashboardLayout.workflowsMonitorId);
+  const monitorActive = !!workflowsMonitorIdRaw && !!workflowItems[workflowsMonitorIdRaw];
+  const workflowsMonitorId = monitorActive ? workflowsMonitorIdRaw : null;
+  const workflowsMonitorCard = useAppSelector((s) =>
+    (monitorActive ? s.dashboardLayout.workflowsMonitorCard : null));
+  const monitorIsLive = useAppSelector((s) =>
+    !!workflowsMonitorId && s.workflows.active.some((a) => a.workflow_id === workflowsMonitorId));
+  const workflowsMonitorLabel = monitorIsLive ? 'Watching' : 'Viewing';
 
   const contentBounds = useMemo(
     () => computeContentBounds(cards, viewCards, browserCards, workflowCards, workflowsHub),
@@ -289,6 +302,9 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     measuredHeightsRef,
     measuredHeightsTick,
     sessionList,
+    workflowsHub,
+    workflowsMonitorCard,
+    workflowsMonitorLabel,
   });
 
   return {

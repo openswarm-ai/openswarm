@@ -29,7 +29,7 @@ export const GRID_GAP = 24;
 const GRID_ORIGIN = { x: 40, y: 100 };
 const GRID_COLS_FALLBACK = 4;
 
-export type CardType = 'agent' | 'view' | 'browser' | 'note' | 'workflow' | 'workflows-hub' | 'missed_runs';
+export type CardType = 'agent' | 'view' | 'browser' | 'note' | 'workflow' | 'workflows-hub' | 'workflows-monitor' | 'missed_runs';
 
 export interface CardPosition {
   session_id: string;
@@ -158,6 +158,12 @@ export interface DashboardLayoutState {
   pendingFocusWorkflowsHub: boolean;
   /** Transient deep-link target: the Workflows card jumps to this workflow's detail on open, then clears it. */
   workflowsAppTarget: string | null;
+  /** Workflow id whose live run is being watched in the Run Monitor card docked beside the window. Null = closed. */
+  workflowsMonitorId: string | null;
+  /** Specific run id to show in the monitor (e.g. clicked from history); null = follow the latest run. */
+  workflowsMonitorRunId: string | null;
+  /** Geometry of the spawned Run Monitor card (a real canvas card, tethered to the window). Ephemeral, not persisted. */
+  workflowsMonitorCard: WorkflowsHubPosition | null;
 }
 
 const initialState: DashboardLayoutState = {
@@ -185,6 +191,9 @@ const initialState: DashboardLayoutState = {
   pendingFocusMissedRuns: false,
   pendingFocusWorkflowsHub: false,
   workflowsAppTarget: null,
+  workflowsMonitorId: null,
+  workflowsMonitorRunId: null,
+  workflowsMonitorCard: null,
 };
 
 interface LayoutPayload {
@@ -497,12 +506,14 @@ const dashboardLayoutSlice = createSlice({
       for (const c of Object.values(state.workflowCards)) tally(c.zOrder);
       for (const n of Object.values(state.notes)) tally(n.zOrder);
       if (state.workflowsHub) tally(state.workflowsHub.zOrder);
+      if (state.workflowsMonitorCard) tally(state.workflowsMonitorCard.zOrder);
       if (state.missedRunsCard) tally(state.missedRunsCard.zOrder);
       if (type === 'agent') currentZ = state.cards[id]?.zOrder ?? 0;
       else if (type === 'view') currentZ = state.viewCards[id]?.zOrder ?? 0;
       else if (type === 'note') currentZ = state.notes[id]?.zOrder ?? 0;
       else if (type === 'workflow') currentZ = state.workflowCards[id]?.zOrder ?? 0;
       else if (type === 'workflows-hub') currentZ = state.workflowsHub?.zOrder ?? 0;
+      else if (type === 'workflows-monitor') currentZ = state.workflowsMonitorCard?.zOrder ?? 0;
       else if (type === 'missed_runs') currentZ = state.missedRunsCard?.zOrder ?? 0;
       else currentZ = state.browserCards[id]?.zOrder ?? 0;
       if (currentZ >= maxZ) return;  // Already on top: no-op.
@@ -522,6 +533,8 @@ const dashboardLayoutSlice = createSlice({
         if (card) card.zOrder = z;
       } else if (type === 'workflows-hub') {
         if (state.workflowsHub) state.workflowsHub.zOrder = z;
+      } else if (type === 'workflows-monitor') {
+        if (state.workflowsMonitorCard) state.workflowsMonitorCard.zOrder = z;
       } else if (type === 'missed_runs') {
         if (state.missedRunsCard) state.missedRunsCard.zOrder = z;
       } else {
@@ -1008,10 +1021,46 @@ const dashboardLayoutSlice = createSlice({
     closeWorkflowsApp(state) {
       state.workflowsHub = null;
       state.workflowsAppTarget = null;
+      state.workflowsMonitorId = null;
+      state.workflowsMonitorRunId = null;
+      state.workflowsMonitorCard = null;
     },
 
     clearWorkflowsAppTarget(state) {
       state.workflowsAppTarget = null;
+    },
+
+    // Spawn the Run Monitor as a real canvas card to the right of the window,
+    // tethered back to it. Reuses the window's geometry to place + size it.
+    // runId pins a specific (e.g. history) run; omit it to follow the latest.
+    openWorkflowMonitor(state, action: PayloadAction<{ workflowId: string; runId?: string }>) {
+      state.workflowsMonitorId = action.payload.workflowId;
+      state.workflowsMonitorRunId = action.payload.runId ?? null;
+      const hub = state.workflowsHub;
+      // Keep the existing card position when just switching the run shown.
+      if (!state.workflowsMonitorCard) {
+        state.workflowsMonitorCard = {
+          x: hub ? hub.x + hub.width + 96 : 220,
+          y: hub ? hub.y : 160,
+          width: 520,
+          height: hub ? hub.height : 560,
+          zOrder: state.nextZOrder++,
+        };
+      } else {
+        state.workflowsMonitorCard.zOrder = state.nextZOrder++;
+      }
+    },
+
+    closeWorkflowMonitor(state) {
+      state.workflowsMonitorId = null;
+      state.workflowsMonitorRunId = null;
+      state.workflowsMonitorCard = null;
+    },
+
+    setWorkflowsMonitorPosition(state, action: PayloadAction<{ x: number; y: number }>) {
+      if (!state.workflowsMonitorCard) return;
+      state.workflowsMonitorCard.x = action.payload.x;
+      state.workflowsMonitorCard.y = action.payload.y;
     },
 
     setWorkflowsHubPosition(state, action: PayloadAction<{ x: number; y: number }>) {
@@ -1519,6 +1568,9 @@ export const {
   openWorkflowsApp,
   closeWorkflowsApp,
   clearWorkflowsAppTarget,
+  openWorkflowMonitor,
+  closeWorkflowMonitor,
+  setWorkflowsMonitorPosition,
   setWorkflowsHubPosition,
   setWorkflowsHubSize,
   clearPendingFocusWorkflowsHub,

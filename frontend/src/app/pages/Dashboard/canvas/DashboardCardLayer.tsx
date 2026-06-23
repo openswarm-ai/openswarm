@@ -5,6 +5,7 @@ import DashboardViewCard from '../cards/DashboardViewCard';
 import BrowserCard from '../cards/BrowserCard';
 import NoteCard from '../cards/NoteCard';
 import WorkflowsAppCard from '@/app/pages/Workflows/app/WorkflowsAppCard';
+import RunMonitor from '@/app/pages/Workflows/app/RunMonitor';
 import {
   EXPANDED_CARD_MIN_H,
   DEFAULT_CARD_W,
@@ -17,7 +18,8 @@ import {
   type WorkflowsHubPosition,
   type ConfigurePanelPosition,
 } from '@/shared/state/dashboardLayoutSlice';
-import { useAppSelector } from '@/shared/hooks';
+import { useAppSelector, useAppDispatch } from '@/shared/hooks';
+import { closeWorkflowMonitor } from '@/shared/state/dashboardLayoutSlice';
 import type { Output } from '@/shared/state/outputsSlice';
 import type { CardType, useDashboardSelection } from '../hooks/state/useDashboardSelection';
 
@@ -102,6 +104,15 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
   // Ephemeral singleton, not part of the saved layout, so read it straight
   // from the store rather than threading it through the selector chain.
   const missedRunsCard = useAppSelector((s) => s.dashboardLayout.missedRunsCard);
+  const dispatch = useAppDispatch();
+  const monitorCard = useAppSelector((s) => s.dashboardLayout.workflowsMonitorCard);
+  const monitorWorkflowId = useAppSelector((s) => s.dashboardLayout.workflowsMonitorId);
+  const monitorWorkflow = useAppSelector((s) => (monitorWorkflowId ? s.workflows.items[monitorWorkflowId] : undefined));
+  // The monitor's workflow vanished (trashed/deleted) while open: tear the card
+  // + its tether down instead of leaving an orange line pointing at nothing.
+  React.useEffect(() => {
+    if (monitorCard && !monitorWorkflow) dispatch(closeWorkflowMonitor());
+  }, [monitorCard, monitorWorkflow, dispatch]);
   return (
     <>
       <AnimatePresence>
@@ -285,6 +296,22 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
           onDragMove={onDragMove}
           onDragEnd={onDragEnd}
           onBringToFront={onBringToFront}
+        />
+      )}
+      {monitorCard && monitorWorkflow && (
+        <RunMonitor
+          workflow={monitorWorkflow}
+          cardX={monitorCard.x}
+          cardY={monitorCard.y}
+          cardWidth={monitorCard.width}
+          cardHeight={monitorCard.height}
+          cardZOrder={monitorCard.zOrder ?? 0}
+          zoom={zoom}
+          panX={panX}
+          panY={panY}
+          onDragStart={onDragStart}
+          onDragMove={onDragMove}
+          onDragEnd={onDragEnd}
         />
       )}
       {/* Marquee selection rectangle */}

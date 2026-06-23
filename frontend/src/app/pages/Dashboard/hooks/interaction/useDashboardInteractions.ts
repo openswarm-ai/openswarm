@@ -52,6 +52,12 @@ export function useDashboardInteractions({
     selection.selectCard(id, type, false);
     dispatch(bringToFront({ id, type }));
 
+    // The Workflows window is an app you click around inside, not a card you
+    // re-center every tap. Single-click only raises + selects it; double-click
+    // still zoom-to-fits (handleCardDoubleClick). Without this, clicking any
+    // button inside it yanked the canvas into a re-zoom.
+    if (type === 'workflows-hub' || type === 'workflows-monitor') return;
+
     const alreadyExpanded = type === 'agent' && expandedSessionIds.includes(id);
 
     if (alreadyExpanded) {
