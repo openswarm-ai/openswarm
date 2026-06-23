@@ -18,7 +18,7 @@ from backend.apps.agents.manager.session.session_store import (
     _save_session as save_session,
     build_search_text,
 )
-from backend.apps.agents.manager.session.cloud_sync import _sync_session_close as sync_session_close
+from backend.apps.agents.manager.session.cloud_sync import sync_session_close
 from backend.apps.agents.manager.session.apply_context_window import apply_context_window
 from backend.apps.agents.manager.session import lifecycle
 from backend.apps.agents.manager.view_builder_state import (
