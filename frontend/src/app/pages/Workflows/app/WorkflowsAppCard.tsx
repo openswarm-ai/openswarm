@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
 import { closeWorkflowsApp, setWorkflowsHubPosition, setWorkflowsHubSize } from '@/shared/state/dashboardLayoutSlice';
-import { WC, FONT_SERIF } from './uiKit';
+import EventRepeatIcon from '@mui/icons-material/EventRepeat';
+import { useWC, FONT_SERIF } from './uiKit';
 import WorkflowsAppContent from './WorkflowsAppContent';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -53,6 +54,7 @@ const WorkflowsAppCard: React.FC<Props> = ({
   isSelected = false, isHighlighted = false, multiDragDelta = null,
   onCardSelect, onDragStart, onDragMove, onDragEnd, onBringToFront,
 }) => {
+  const WC = useWC();
   const dispatch = useAppDispatch();
 
   const panRef = useRef({ panX, panY });
@@ -175,7 +177,7 @@ const WorkflowsAppCard: React.FC<Props> = ({
   const dw = localResize?.w ?? cardWidth;
   const dh = localResize?.h ?? cardHeight;
 
-  const border = isHighlighted ? `2px solid ${WC.accent}` : isSelected ? '2px solid #3b82f6' : '1px solid rgba(33,30,27,0.12)';
+  const border = isHighlighted ? `2px solid ${WC.accent}` : isSelected ? '2px solid #3b82f6' : `1px solid ${WC.border.subtle}`;
   const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
 
   return (
@@ -201,8 +203,8 @@ const WorkflowsAppCard: React.FC<Props> = ({
         left: dx, top: dy, width: dw, height: dh,
         background: WC.paper,
         border,
-        borderRadius: 15,
-        boxShadow: '0 30px 80px -24px rgba(33,30,27,0.34), 0 8px 24px -12px rgba(33,30,27,0.18)',
+        borderRadius: WC.radius.lg,
+        boxShadow: (isDragging || isResizing) ? WC.shadow.lg : WC.shadow.md,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
@@ -218,11 +220,8 @@ const WorkflowsAppCard: React.FC<Props> = ({
         style={{ height: 42, flex: 'none', display: 'flex', alignItems: 'center', padding: '0 16px', borderBottom: `1px solid ${WC.line}`, background: WC.panel, gap: 14, cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={WC.accent} strokeWidth="1.9">
-            <circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="12" r="2.5" />
-            <path d="M8.2 7.1l7.6 3.8M8.2 16.9l7.6-3.8" />
-          </svg>
-          <span style={{ fontFamily: FONT_SERIF, fontSize: 14.5, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}>Workflows</span>
+          <EventRepeatIcon sx={{ fontSize: 18, color: WC.accent, display: 'block' }} />
+          <span style={{ fontFamily: FONT_SERIF, fontSize: 14.5, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em', lineHeight: 1, transform: 'translateY(2.5px)' }}>Workflows</span>
         </div>
         <div style={{ flex: 1 }} />
         <div
@@ -266,7 +265,12 @@ function ensureAssets(): void {
   document.head.appendChild(link);
   const style = document.createElement('style');
   style.id = 'workflows-app-keyframes';
-  style.textContent = '@keyframes os-spin { to { transform: rotate(360deg); } }';
+  style.textContent = [
+    '@keyframes os-spin { to { transform: rotate(360deg); } }',
+    '@keyframes os-flow { to { stroke-dashoffset: -18; } }',
+    '@keyframes os-pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.55); opacity: 0.45; } }',
+    '@keyframes os-slidein { from { opacity: 0; transform: translateX(-22px) scale(0.97); } to { opacity: 1; transform: none; } }',
+  ].join('\n');
   document.head.appendChild(style);
 }
 

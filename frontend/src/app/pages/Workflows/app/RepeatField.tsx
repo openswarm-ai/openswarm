@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { WC } from './uiKit';
+import { useWC } from './uiKit';
 
 // Combobox for the run limit: pick a preset OR type any count. Self-rendered
 // (no native <select>, no portal) because a native popup over the canvas card
@@ -12,6 +12,7 @@ const OPTIONS: Array<{ label: string; val: number | null }> = [
 ];
 
 const RepeatField: React.FC<{ value: number | null; onChange: (n: number | null) => void }> = ({ value, onChange }) => {
+  const WC = useWC();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -43,7 +44,7 @@ const RepeatField: React.FC<{ value: number | null; onChange: (n: number | null)
 
   return (
     <div ref={ref} style={{ position: 'relative', width: 134 }}>
-      <div style={{ display: 'flex', alignItems: 'center', background: '#FFFFFF', border: `1px solid ${open ? WC.accent : 'rgba(33,30,27,0.12)'}`, borderRadius: 8, height: 32, padding: '0 2px 0 9px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', background: WC.raised, border: `1px solid ${open ? WC.accent : `rgba(${WC.inkRGB},0.12)`}`, borderRadius: 8, height: 32, padding: '0 2px 0 9px' }}>
         <input
           value={editing ? draft : display}
           placeholder="Forever"
@@ -61,7 +62,7 @@ const RepeatField: React.FC<{ value: number | null; onChange: (n: number | null)
         </button>
       </div>
       {open && (
-        <div style={{ position: 'absolute', top: 37, left: 0, right: 0, background: '#FFFFFF', border: `1px solid ${WC.line}`, borderRadius: 9, boxShadow: '0 8px 22px rgba(33,30,27,0.16)', padding: 4, zIndex: 40 }}>
+        <div style={{ position: 'absolute', top: 37, left: 0, right: 0, background: WC.raised, border: `1px solid ${WC.line}`, borderRadius: WC.radius.md, boxShadow: WC.shadow.md, padding: 4, zIndex: 40 }}>
           {OPTIONS.map((o) => {
             const active = (o.val == null && value == null) || o.val === value;
             return (

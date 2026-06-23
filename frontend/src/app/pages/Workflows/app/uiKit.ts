@@ -1,20 +1,60 @@
 import type { CSSProperties } from 'react';
+import { useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
+import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 
 // The Workflows app renders in its own warm-paper visual language (from the
 // Claude design), deliberately separate from the MUI theme so the window reads
-// as a focused app. All tokens live here so the panes stay consistent.
-export const WC = {
+// as a focused app. Two palettes (light/dark) keyed to the app theme; grab one
+// per component with useWC(). inkRGB is the ink color as a bare "r,g,b" so the
+// many rgba(ink, opacity) borders/hovers can flip with the theme too.
+export interface WCPalette {
+  accent: string;
+  paper: string;
+  panel: string;
+  rail: string;
+  inset: string;
+  raised: string;
+  ink: string;
+  ink2: string;
+  ink3: string;
+  ink4: string;
+  muted: string;
+  muted2: string;
+  faint: string;
+  inkRGB: string;
+  line: string;
+  line2: string;
+  hover: string;
+  selBg: string;
+  success: string;
+  successBg: string;
+  danger: string;
+  dangerBg: string;
+  warn: string;
+  warnBg: string;
+  trackOff: string;
+  // Structural primitives shared with the rest of OpenSwarm (sourced from
+  // claudeTokens in useWC), so the window stops looking built-separate.
+  shadow: ClaudeTokens['shadow'];
+  radius: ClaudeTokens['radius'];
+  border: ClaudeTokens['border'];
+}
+
+// The identity half of the palette: accent, text, status, hairlines. The neutral
+// surfaces + structural primitives are blended in from claudeTokens by useWC(),
+// so the window is the same material as every other card.
+type WCColors = Omit<WCPalette, 'shadow' | 'radius' | 'border' | 'paper' | 'panel' | 'rail' | 'inset' | 'raised'>;
+
+export const WC_LIGHT: WCColors = {
   accent: '#C25A36',
-  paper: '#FBFAF7',
-  panel: '#F4F2EC',
-  rail: '#F4F2EC',
-  inset: '#F0EEE7',
   ink: '#211E1B',
   ink2: '#2B2722',
   ink3: '#4B463E',
-  muted: '#8C857A',
-  muted2: '#A39C92',
-  faint: '#B5AEA3',
+  ink4: '#6B655C',
+  muted: '#73726C',
+  muted2: '#8C857A',
+  faint: '#A39C92',
+  inkRGB: '33,30,27',
   line: 'rgba(33,30,27,0.07)',
   line2: 'rgba(33,30,27,0.12)',
   hover: 'rgba(33,30,27,0.045)',
@@ -24,7 +64,53 @@ export const WC = {
   danger: '#C2483A',
   dangerBg: 'rgba(194,72,58,0.10)',
   warn: '#B98A2E',
-} as const;
+  warnBg: 'rgba(185,138,46,0.14)',
+  trackOff: '#D5D1C8',
+};
+
+export const WC_DARK: WCColors = {
+  accent: '#C25A36',
+  ink: '#F2EFE9',
+  ink2: '#E2DDD4',
+  ink3: '#B3ABA0',
+  ink4: '#9A9389',
+  muted: '#938C82',
+  muted2: '#736D64',
+  faint: '#6E6860',
+  inkRGB: '240,236,228',
+  line: 'rgba(240,236,228,0.07)',
+  line2: 'rgba(240,236,228,0.12)',
+  hover: 'rgba(240,236,228,0.045)',
+  selBg: 'rgba(240,236,228,0.06)',
+  success: '#2E7D5B',
+  successBg: 'rgba(46,125,91,0.22)',
+  danger: '#C2483A',
+  dangerBg: 'rgba(194,72,58,0.18)',
+  warn: '#B98A2E',
+  warnBg: 'rgba(185,138,46,0.18)',
+  trackOff: 'rgba(240,236,228,0.18)',
+};
+
+export function useWC(): WCPalette {
+  const { mode } = useThemeMode();
+  const c = useClaudeTokens();
+  const base = mode === 'dark' ? WC_DARK : WC_LIGHT;
+  return {
+    ...base,
+    // Surfaces straight from the app tokens, so the window is the same material
+    // as every other card in both themes (the warmth lives in accent + text).
+    // Title bar + sidebar stay on bg.surface (not a darker fill) so the whole
+    // window reads as one card like the chat card; borders separate the regions.
+    paper: c.bg.surface,
+    panel: c.bg.surface,
+    rail: c.bg.surface,
+    inset: c.bg.page,
+    raised: c.bg.elevated,
+    shadow: c.shadow,
+    radius: c.radius,
+    border: c.border,
+  };
+}
 
 export const FONT_SERIF = "'Newsreader', Georgia, serif";
 export const FONT_SANS = "'Hanken Grotesk', system-ui, sans-serif";
@@ -44,16 +130,22 @@ export function colorForId(id: string): string {
   return WORKFLOW_PALETTE[h % WORKFLOW_PALETTE.length];
 }
 
+// Prefer the user's chosen swatch; fall back to the stable id-hash hue when
+// they haven't picked one. Single source of truth for every dot/bar.
+export function colorForWorkflow(wf: { id: string; color?: string | null }): string {
+  return wf.color || colorForId(wf.id);
+}
+
 export type RunStatus = 'success' | 'failure' | 'ran_late' | 'running' | 'skipped' | 'paused';
 
-export function statusChip(status: RunStatus): CSSProperties {
+export function statusChip(status: RunStatus, wc: WCPalette): CSSProperties {
   const map: Record<string, [string, string]> = {
-    success: [WC.success, WC.successBg],
-    ran_late: [WC.warn, 'rgba(185,138,46,0.14)'],
-    failure: [WC.danger, 'rgba(194,72,58,0.12)'],
-    skipped: [WC.muted, 'rgba(33,30,27,0.07)'],
-    running: [WC.accent, 'rgba(0,0,0,0.04)'],
-    paused: [WC.muted, 'rgba(33,30,27,0.07)'],
+    success: [wc.success, wc.successBg],
+    ran_late: [wc.warn, wc.warnBg],
+    failure: [wc.danger, wc.dangerBg],
+    skipped: [wc.muted, `rgba(${wc.inkRGB},0.07)`],
+    running: [wc.accent, `rgba(${wc.inkRGB},0.06)`],
+    paused: [wc.muted, `rgba(${wc.inkRGB},0.07)`],
   };
   const [color, background] = map[status] || map.paused;
   return {
@@ -62,17 +154,17 @@ export function statusChip(status: RunStatus): CSSProperties {
   };
 }
 
-export function statusDot(status: RunStatus): CSSProperties {
+export function statusDot(status: RunStatus, wc: WCPalette): CSSProperties {
   const map: Record<string, string> = {
-    success: WC.success, ran_late: WC.warn, failure: WC.danger,
-    running: WC.accent, skipped: WC.faint, paused: WC.faint,
+    success: wc.success, ran_late: wc.warn, failure: wc.danger,
+    running: wc.accent, skipped: wc.faint, paused: wc.faint,
   };
-  return { width: 8, height: 8, borderRadius: '50%', background: map[status] || WC.faint, flex: 'none' };
+  return { width: 8, height: 8, borderRadius: '50%', background: map[status] || wc.faint, flex: 'none' };
 }
 
-export function track(on: boolean): CSSProperties {
+export function track(on: boolean, wc: WCPalette): CSSProperties {
   return {
-    width: 34, height: 20, borderRadius: 999, background: on ? WC.accent : '#D5D1C8',
+    width: 34, height: 20, borderRadius: 999, background: on ? wc.accent : wc.trackOff,
     position: 'relative', cursor: 'pointer', transition: 'background .15s', flex: 'none',
   };
 }
