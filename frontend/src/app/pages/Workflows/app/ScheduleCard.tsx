@@ -79,6 +79,10 @@ const ScheduleCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
   // Picking a finite limit resets the lifetime counter so "run 3 times" always means 3 from now.
   const setMaxRuns = (n: number | null) => patchSched(n == null ? { max_runs: null } : { max_runs: n, runs_count: 0 });
 
+  // A scheduled workflow with no steps fires but does nothing, so flag it.
+  // Mirror the test-warning's draft-or-live read so the banner tracks edits.
+  const hasNoSteps = !(workflow.draft_steps ?? workflow.steps ?? []).some((s) => s.text && s.text.trim());
+
   return (
     <div style={{ background: WC.paper, border: `1px solid rgba(${WC.inkRGB},0.08)`, borderRadius: WC.radius.lg, padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 }}>
@@ -89,7 +93,14 @@ const ScheduleCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
         </div>
       </div>
 
-      {enabled && needsScheduleTestWarning(workflow) && (
+      {enabled && hasNoSteps && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12, padding: '9px 11px', background: `${WC.warn}14`, border: `1px solid ${WC.warn}40`, borderRadius: 8 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={WC.warn} strokeWidth="1.9" style={{ flex: 'none', marginTop: 1 }}><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /></svg>
+          <span style={{ fontSize: 12, color: WC.ink3, lineHeight: 1.45 }}>This workflow has no steps, so a scheduled run won&apos;t do anything. Add a step first.</span>
+        </div>
+      )}
+
+      {enabled && !hasNoSteps && needsScheduleTestWarning(workflow) && (
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12, padding: '9px 11px', background: `${WC.warn}14`, border: `1px solid ${WC.warn}40`, borderRadius: 8 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={WC.warn} strokeWidth="1.9" style={{ flex: 'none', marginTop: 1 }}><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /></svg>
           <span style={{ fontSize: 12, color: WC.ink3, lineHeight: 1.45 }}>Not test-run yet. A scheduled run can&apos;t pause for permission prompts, so if this needs tool access it may fail silently. Hit <b>Run</b> once to grant access.</span>
