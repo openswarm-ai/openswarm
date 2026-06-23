@@ -51,6 +51,7 @@ from backend.apps.agents.manager.builtin_mcp_servers import register_builtin_mcp
 from backend.apps.agents.manager.provider_env import configure_provider_env
 from backend.apps.agents.manager.session.SessionLifecycleMixin import SessionLifecycleMixin
 from backend.apps.agents.manager.MessagingMixin import MessagingMixin
+from backend.apps.agents.manager.SessionControlMixin import SessionControlMixin
 from backend.apps.agents.manager.AgentLaunchMixin import AgentLaunchMixin
 from backend.apps.agents.manager.RunSupportMixin import RunSupportMixin
 from backend.apps.agents.manager.permissions import gate_hooks
@@ -70,7 +71,7 @@ logger = logging.getLogger(__name__)
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 
 
-class AgentManager(SessionLifecycleMixin, MessagingMixin, AgentLaunchMixin, RunSupportMixin):
+class AgentManager(SessionLifecycleMixin, MessagingMixin, SessionControlMixin, AgentLaunchMixin, RunSupportMixin):
     @typechecked
     def __init__(self):
         self.sessions: Dict[str, AgentSession] = {}
@@ -592,7 +593,7 @@ class AgentManager(SessionLifecycleMixin, MessagingMixin, AgentLaunchMixin, RunS
 
             logger.info(f"[MCP-DEBUG] Creating ClaudeAgentOptions short={session.model} resolved={resolved_model} api_type={api_type}")
             options = ClaudeAgentOptions(**options_kwargs)
-            logger.info(f"[MCP-DEBUG] ClaudeAgentOptions created. Starting query...")
+            logger.info("[MCP-DEBUG] ClaudeAgentOptions created. Starting query...")
 
             async def prompt_stream():
                 yield {
