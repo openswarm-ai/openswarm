@@ -164,6 +164,16 @@ export interface DashboardLayoutState {
   workflowsMonitorRunId: string | null;
   /** Geometry of the spawned Run Monitor card (a real canvas card, tethered to the window). Ephemeral, not persisted. */
   workflowsMonitorCard: WorkflowsHubPosition | null;
+  /** A run attached to a workflow's chat as a removable context chip; its transcript rides along each send until removed. */
+  workflowsRunContext: WorkflowsRunContext | null;
+}
+
+export interface WorkflowsRunContext {
+  workflowId: string;
+  runId: string;
+  title: string;
+  metaLabel: string;
+  color: string;
 }
 
 const initialState: DashboardLayoutState = {
@@ -194,6 +204,7 @@ const initialState: DashboardLayoutState = {
   workflowsMonitorId: null,
   workflowsMonitorRunId: null,
   workflowsMonitorCard: null,
+  workflowsRunContext: null,
 };
 
 interface LayoutPayload {
@@ -1063,6 +1074,14 @@ const dashboardLayoutSlice = createSlice({
       state.workflowsMonitorCard.y = action.payload.y;
     },
 
+    setWorkflowsRunContext(state, action: PayloadAction<WorkflowsRunContext>) {
+      state.workflowsRunContext = action.payload;
+    },
+
+    clearWorkflowsRunContext(state) {
+      state.workflowsRunContext = null;
+    },
+
     setWorkflowsHubPosition(state, action: PayloadAction<{ x: number; y: number }>) {
       if (!state.workflowsHub) return;
       state.workflowsHub.x = action.payload.x;
@@ -1571,6 +1590,8 @@ export const {
   openWorkflowMonitor,
   closeWorkflowMonitor,
   setWorkflowsMonitorPosition,
+  setWorkflowsRunContext,
+  clearWorkflowsRunContext,
   setWorkflowsHubPosition,
   setWorkflowsHubSize,
   clearPendingFocusWorkflowsHub,

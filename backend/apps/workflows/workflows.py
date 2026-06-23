@@ -14,6 +14,7 @@ from backend.apps.workflows.models import (
     WorkflowRun,
     WorkflowStep,
     DraftCommitBody,
+    AskRunBody,
     MissedRunAction,
     GenerateMetadataRequest,
     GenerateMetadataResponse,
@@ -977,6 +978,49 @@ async def edit_agent_session(workflow_id: str):
     except Exception:
         logger.debug("could not persist edit_agent_session_id (legacy schema)", exc_info=True)
     return {"session_id": session.id}
+
+
+@workflows.router.post("/{workflow_id}/ask-run")
+async def ask_run(workflow_id: str, body: AskRunBody):
+    """Answer a chat question with a run's transcript folded in as context for
+    that one turn. The run rides along hidden (prepend_context), so the user's
+    bubble shows just their question and there's no extra "reviewed it" turn.
+    """
+    wf = storage.get_workflow(workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    run = next((r for r in storage.list_runs(workflow_id, limit=200) if r.id == body.run_id), None)
+    if not run or not run.session_id:
+        raise HTTPException(status_code=404, detail="Run has no chat to attach")
+
+    from backend.apps.agents.agent_manager import agent_manager
+    sess = agent_manager.sessions.get(run.session_id)
+    if sess is None:
+        try:
+            sess = await agent_manager.resume_session(run.session_id)
+        except ValueError:
+            sess = None
+    transcript = p_render_test_transcript(getattr(sess, "messages", []) or []) if sess else ""
+
+    edit = await edit_agent_session(workflow_id)
+    edit_sid = edit["session_id"]
+
+    status_word = {
+        "success": "completed", "ran_late": "completed (late)", "failure": "failed",
+    }.get(run.status, run.status)
+    context = (
+        f"The user is asking about a run of this workflow (run {status_word}). Use the run's full "
+        f"transcript below, including each step's tool calls and results, to answer their question. "
+        f"Do not summarize unless asked.\n\n=== RUN TRANSCRIPT ===\n{transcript or '(transcript unavailable)'}\n=== END TRANSCRIPT ==="
+    )
+    try:
+        await agent_manager.send_message(
+            edit_sid, body.prompt, mode=body.mode, model=body.model, prepend_context=context,
+        )
+    except Exception:
+        logger.exception("ask-run: failed to answer with run context for workflow %s", workflow_id)
+
+    return {"session_id": edit_sid}
 
 
 async def p_end_edit_session(wf) -> None:

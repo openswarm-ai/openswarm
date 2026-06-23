@@ -10,6 +10,7 @@ import { ContextPath } from '@/app/components/editor/DirectoryBrowser';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { TriggerState } from '@/app/components/editor/richEditorUtils';
 import { AttachedImage, ForcedToolGroup } from '../types';
+import type { WorkflowsRunContext } from '@/shared/state/dashboardLayoutSlice';
 import { SendBlock } from '../hooks/useContextFiles';
 import { ModelPickerState } from '../hooks/useModelPicker';
 import { SendBlockBanner } from './SendBlockBanner';
@@ -59,6 +60,9 @@ interface Props {
   isRunning?: boolean;
   queueLength: number;
   modeConf: ModeConf;
+  placeholderOverride?: string;
+  runContext?: WorkflowsRunContext;
+  onClearRunContext?: () => void;
   handleInput: () => void;
   handleEditorClick: () => void;
   handleKeyDown: (e: React.KeyboardEvent) => void;
@@ -180,6 +184,32 @@ export const ChatInputView: React.FC<Props> = (p) => {
         />
       )}
 
+      {p.runContext && (
+        <Box sx={{ display: 'flex', mt: 1, mx: 1.5 }}>
+          <Box
+            title={p.runContext.metaLabel}
+            sx={{
+              display: 'inline-flex', alignItems: 'center', gap: 0.625, maxWidth: '100%',
+              pl: 0.875, pr: 0.5, py: 0.25, borderRadius: '999px',
+              bgcolor: c.bg.secondary, border: `1px solid ${c.border.subtle}`,
+            }}
+          >
+            <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: p.runContext.color, flex: 'none' }} />
+            <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: c.text.secondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              Run attached · {p.runContext.title}
+            </Typography>
+            <Box
+              role="button"
+              aria-label="Remove run context"
+              onClick={p.onClearRunContext}
+              sx={{ width: 15, height: 15, flex: 'none', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: c.text.tertiary, '&:hover': { color: c.text.secondary } }}
+            >
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
       <AttachmentChips
         c={c}
         images={p.images}
@@ -207,7 +237,7 @@ export const ChatInputView: React.FC<Props> = (p) => {
         autoRunMode={p.autoRunMode}
         isRunning={p.isRunning}
         queueLength={p.queueLength}
-        placeholderLabel={`${p.modeConf.label}, @ for context, / for commands`}
+        placeholderLabel={p.placeholderOverride ?? `${p.modeConf.label}, @ for context, / for commands`}
         onInput={p.handleInput}
         onClick={p.handleEditorClick}
         onKeyDown={p.handleKeyDown}

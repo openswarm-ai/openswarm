@@ -64,6 +64,7 @@ import ContextDrawer from './shell/ContextDrawer';
 import { ErrorSlime } from '@/app/components/feedback/ErrorSlime';
 import { ContextPath } from '@/app/components/editor/DirectoryBrowser';
 import { setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards, removeCard } from '@/shared/state/dashboardLayoutSlice';
+import type { WorkflowsRunContext } from '@/shared/state/dashboardLayoutSlice';
 import { setCardSidecar, commitDraft, updateWorkflowCard, controlWorkflowRun } from '@/shared/state/workflowsSlice';
 import { shallowEqual } from 'react-redux';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -238,6 +239,7 @@ interface QueuedMessage {
   attachedSkills?: Array<{ id: string; name: string; content: string }>;
   selectedBrowserIds?: string[];
   selectedAppIds?: string[];
+  attachedRunId?: string;
 }
 
 interface AgentChatProps {
@@ -252,9 +254,20 @@ interface AgentChatProps {
   // Set when this chat is the workflow build/edit agent: the out-of-tokens card
   // then warns that switching models here also changes the workflow's run model.
   workflowEditId?: string;
+  // View-only transcript (e.g. the Run Monitor): renders messages + tool calls
+  // but no composer, so the session can't be typed into.
+  readOnly?: boolean;
+  // One-shot text to drop into the composer (e.g. a run attached as context).
+  prefillPrompt?: string;
+  // A workflow run attached as a removable context chip above the composer; while
+  // present, each send routes through onSendRunQuestion so the run's transcript
+  // rides along as hidden context for that turn.
+  runContext?: WorkflowsRunContext;
+  onClearRunContext?: () => void;
+  onSendRunQuestion?: (prompt: string, runId: string) => Promise<void>;
 }
 
-const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, initialContextPaths, onBranch, workflowEditId }) => {
+const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, initialContextPaths, onBranch, workflowEditId, readOnly, prefillPrompt, runContext, onClearRunContext, onSendRunQuestion }) => {
   const c = useClaudeTokens();
   const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
     running: { color: c.status.success, bg: c.status.successBg },
@@ -361,6 +374,13 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   // when the user switches models, so the run-model change isn't silent.
   const [workflowModelNotice, setWorkflowModelNotice] = useState<string | null>(null);
   const workflowModelNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Read live in the stable handleSend/dispatchMessage closures without busting
+  // their memo (ChatInput leans on handleSend identity holding across renders).
+  const runContextRef = useRef(runContext);
+  runContextRef.current = runContext;
+  const onSendRunQuestionRef = useRef(onSendRunQuestion);
+  onSendRunQuestionRef.current = onSendRunQuestion;
 
   const wsRef = useRef<ReturnType<typeof createSessionWs> | null>(null);
   // Current status for the WS-cleanup closure (effect deps can't include it).
@@ -470,6 +490,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
           }
         }
       });
+    } else if (msg.attachedRunId && onSendRunQuestionRef.current) {
+      // Run-context question: the backend folds the run transcript into this one
+      // turn and echoes the user bubble + answer over WS, so no optimistic thunk.
+      onSendRunQuestionRef.current(msg.prompt, msg.attachedRunId).catch(() => setAwaitingResponse(false));
     } else {
       if (msg.selectedBrowserIds?.length) {
         dispatch(setGlowingBrowserCards({ browserIds: msg.selectedBrowserIds, sessionId: id, label: 'Use Browser' }));
@@ -906,7 +930,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     ) => {
       if (!id) return;
       scrollToBottom();
-      const msg: QueuedMessage = { prompt, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedAppIds };
+      const msg: QueuedMessage = { prompt, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedAppIds, attachedRunId: runContextRef.current?.runId };
       if (agentBusy) {
         messageQueueRef.current.push(msg);
         setQueueLength(messageQueueRef.current.length);
@@ -1819,7 +1843,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 />
               </Box>
             )}
-            {showResumeBubble && session.status === 'stopped' && !isWorkflowRunSidecar && (
+            {showResumeBubble && session.status === 'stopped' && !isWorkflowRunSidecar && !readOnly && (
               <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75 }}>
                 <Box
                   onClick={handleResume}
@@ -2255,7 +2279,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   </Fade>
                 );
               })()}
-              {isStoppableSidecar ? (
+              {readOnly ? null : isStoppableSidecar ? (
                 <ForceStopAgentBar onStop={handleStop} onSaveWorkflow={onTestSaveWorkflow} onContinueEditing={onTestContinueEditing} testState={testState} />
               ) : (
                 <Box sx={{ position: 'relative' }}>
@@ -2274,6 +2298,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   contextEstimate={contextEstimate}
                   sessionId={id}
                   autoFocus={autoFocus}
+                  prefillPrompt={prefillPrompt}
+                  placeholderOverride={runContext ? 'Ask about this run...' : undefined}
+                  runContext={runContext}
+                  onClearRunContext={onClearRunContext}
                   thinkingLevel={session?.thinking_level ?? 'auto'}
                   onThinkingLevelChange={handleThinkingLevelChange}
                   onActivityLabelChange={setPreSendActivityLabel}
@@ -2306,7 +2334,7 @@ function WorkflowModelNotice({ c, label }: { c: ReturnType<typeof useClaudeToken
       }}>
         <SwapHorizRoundedIcon sx={{ fontSize: 17, color: c.accent.primary, flexShrink: 0 }} />
         <Box sx={{ fontSize: '0.83rem', color: c.text.primary, lineHeight: 1.4 }}>
-          This workflow will run on <b>{display}</b> after you save.
+          This workflow will now be using <b>{display}</b>.
         </Box>
       </Box>
     </Fade>

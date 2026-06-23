@@ -1,4 +1,5 @@
 import type { Workflow, WorkflowRun, ScheduleConfig, ActiveRun } from '@/shared/state/workflowsSlice';
+import type { WorkflowsRunContext } from '@/shared/state/dashboardLayoutSlice';
 import { isScheduleActive, fireTimesWithin } from '@/app/pages/Workflows/scheduleUtils';
 
 // The design speaks in four cadence buckets; the backend speaks in repeat_unit.
@@ -127,6 +128,31 @@ export function runDuration(run: WorkflowRun): string {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;
   return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+export function runContextChip(workflow: Workflow, run: WorkflowRun): WorkflowsRunContext {
+  const total = workflow.steps.length;
+  const aidx = run.active_step_idx ?? 0;
+  const dur = runDuration(run);
+  const statusWord = run.status === 'success' ? 'completed'
+    : run.status === 'ran_late' ? 'completed late'
+    : run.status === 'failure' ? 'failed'
+    : run.status === 'running' ? 'running'
+    : run.status === 'skipped' ? 'skipped' : run.status;
+  const stepsPart = run.status === 'failure' ? `failed at step ${Math.min(aidx + 1, total)}`
+    : (run.status === 'success' || run.status === 'ran_late') ? `${total}/${total} steps`
+    : total > 0 ? `${Math.min(aidx, total)}/${total} steps` : '';
+  const title = run.triggered_by === 'manual' ? 'Manual run'
+    : run.triggered_by === 'retry' ? 'Re-run' : 'Scheduled run';
+  const color = run.status === 'failure' ? '#C2483A'
+    : (run.status === 'success' || run.status === 'ran_late') ? '#3F8E5B' : '#C25A36';
+  return {
+    workflowId: workflow.id,
+    runId: run.id,
+    title,
+    metaLabel: [statusWord, dur, stepsPart].filter(Boolean).join(' · '),
+    color,
+  };
 }
 
 export function toRunRow(run: WorkflowRun, title: string): RunRow {

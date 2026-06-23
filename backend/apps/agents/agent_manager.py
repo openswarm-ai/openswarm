@@ -3617,8 +3617,14 @@ class AgentManager:
         selected_browser_ids: list[str] | None = None,
         selected_app_output_ids: list[str] | None = None,
         client_message_id: str | None = None,
+        prepend_context: str | None = None,
     ):
-        """Send a follow-up message to an existing session."""
+        """Send a follow-up message to an existing session.
+
+        prepend_context rides along with this single turn (folded into the model
+        prompt) but never shows in the user's bubble, so a run transcript can be
+        the context for a question without a separate "I've reviewed it" turn.
+        """
         session = self.sessions.get(session_id)
         if not session:
             data = _load_session_data(session_id)
@@ -3683,6 +3689,9 @@ class AgentManager:
             "message": user_msg.model_dump(mode="json"),
         })
 
+        # The model sees the context prefix; the displayed user_msg above does not.
+        model_prompt = f"{prepend_context}\n\n{prompt}" if prepend_context else prompt
+
         # Fire a background aux LLM call to generate a 3-6 word verb-phrase
         # describing this turn ("Auditing the pull request", "Drafting your
         # email"). The narrator pill swaps from its heuristic verb to this
@@ -3725,7 +3734,7 @@ class AgentManager:
         # error falls through to the normal loop.
         fast_verdict = "no"
         fast_brief = ""
-        if not hidden:
+        if not hidden and not prepend_context:
             try:
                 from backend.apps.agents.browser import browser_fast_path
                 _extras = bool(images or context_paths or forced_tools or attached_skills
@@ -3741,9 +3750,9 @@ class AgentManager:
                 logger.warning(f"[browser-fast-path] gate error, normal path: {e}")
 
         if fast_verdict != "no":
-            task = asyncio.create_task(self._run_browser_fast_path(session_id, prompt, selected_browser_ids, fast_brief, fast_verdict))
+            task = asyncio.create_task(self._run_browser_fast_path(session_id, model_prompt, selected_browser_ids, fast_brief, fast_verdict))
         else:
-            task = asyncio.create_task(self._run_agent_loop(session_id, prompt, images=images, context_paths=context_paths, forced_tools=forced_tools, attached_skills=attached_skills, selected_browser_ids=selected_browser_ids, selected_app_output_ids=selected_app_output_ids))
+            task = asyncio.create_task(self._run_agent_loop(session_id, model_prompt, images=images, context_paths=context_paths, forced_tools=forced_tools, attached_skills=attached_skills, selected_browser_ids=selected_browser_ids, selected_app_output_ids=selected_app_output_ids))
         self.tasks[session_id] = task
 
     async def _run_browser_fast_path(self, session_id: str, prompt: str, selected_browser_ids: list[str] | None, brief: str = "", verdict: str = "act"):

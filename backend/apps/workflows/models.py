@@ -271,6 +271,15 @@ class MissedRunAction(BaseModel):
     ids: list[str] = Field(default_factory=list)
 
 
+class AskRunBody(BaseModel):
+    # Answer a chat question with a finished run's transcript folded in as context.
+    # run_id picks the run's session to pull in; prompt is the user's question.
+    run_id: str
+    prompt: str
+    mode: Optional[str] = None
+    model: Optional[str] = None
+
+
 class DraftCommitBody(BaseModel):
     # The model the user settled on in the Edit Agent picker, applied to the
     # workflow's run model only on Save (save-gated; Discard drops it).

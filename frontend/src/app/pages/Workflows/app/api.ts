@@ -23,3 +23,22 @@ export async function ensureEditAgentSession(workflowId: string): Promise<string
     return null;
   }
 }
+
+// Send a chat question with a run's transcript riding along as hidden context
+// for that single turn, so the answer is grounded in the run without an extra
+// "I've reviewed it" round-trip. The user's bubble shows just their question.
+export async function askRun(
+  workflowId: string,
+  body: { runId: string; prompt: string; mode?: string; model?: string },
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${base}/${encodeURIComponent(workflowId)}/ask-run`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ run_id: body.runId, prompt: body.prompt, mode: body.mode, model: body.model }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

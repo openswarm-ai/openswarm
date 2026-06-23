@@ -1,26 +1,43 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { runWorkflowNow } from '@/shared/state/workflowsSlice';
+import { openWorkflowMonitor, setWorkflowsRunContext, clearWorkflowsRunContext } from '@/shared/state/dashboardLayoutSlice';
 import { stepsSignature, isScheduleActive } from '@/app/pages/Workflows/scheduleUtils';
+import { askRun } from './api';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
-import { WC, colorForId, statusChip } from './uiKit';
-import { isRunning } from './model';
+import { useWC, colorForWorkflow, statusChip } from './uiKit';
+import { isRunning, runContextChip } from './model';
 import { useEditAgentSession } from './useEditAgentSession';
 import { useWorkflowPatch } from './useWorkflowPatch';
 import ScheduleCard from './ScheduleCard';
 import StepsCard from './StepsCard';
 import HistoryCard from './HistoryCard';
+import ColorSwatch from './ColorSwatch';
 import type { AppNav } from './types';
 
 const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId }) => {
+  const WC = useWC();
   const dispatch = useAppDispatch();
   const patch = useWorkflowPatch();
   const workflow = useAppSelector((s) => s.workflows.items[workflowId]);
   const active = useAppSelector((s) => s.workflows.active);
-  const sessionId = useEditAgentSession(workflowId, 'modify');
+  const sessionId = useEditAgentSession(workflowId);
   const [name, setName] = useState(workflow?.title ?? '');
+  const detailRuns = useAppSelector((s) => s.workflows.runs[workflowId]);
+  const runContext = useAppSelector((s) => s.dashboardLayout.workflowsRunContext);
+  // When you Run now from this chat, attach that run as a context chip once it
+  // finishes, so the next question rides on its transcript (removable, no popup).
+  const autoCtxRunId = useRef<string | null>(null);
 
   useEffect(() => { setName(workflow?.title ?? ''); }, [workflow?.title]);
+  useEffect(() => {
+    const rid = autoCtxRunId.current;
+    if (!rid) return;
+    const r = (detailRuns || []).find((x) => x.id === rid);
+    if (!r || r.status === 'running') return;
+    autoCtxRunId.current = null;
+    if (workflow) dispatch(setWorkflowsRunContext(runContextChip(workflow, r)));
+  }, [detailRuns, workflowId, dispatch, workflow]);
 
   if (!workflow) return <div style={{ flex: 1, background: WC.paper }} />;
 
@@ -31,7 +48,9 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
 
   const runNow = () => {
     if (running) return;
-    dispatch(runWorkflowNow({ id: workflow.id, signature: stepsSignature(workflow.steps) }));
+    dispatch(runWorkflowNow({ id: workflow.id, signature: stepsSignature(workflow.steps) }))
+      .unwrap().then((res) => { autoCtxRunId.current = res.run_id || null; }).catch(() => {});
+    dispatch(openWorkflowMonitor({ workflowId: workflow.id }));
   };
   const commitName = () => {
     const t = name.trim();
@@ -41,9 +60,9 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
   return (
     <>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: WC.paper }}>
-        <div style={{ flex: 'none', padding: '20px 28px 16px', borderBottom: '1px solid rgba(33,30,27,0.06)' }}>
+        <div style={{ flex: 'none', padding: '20px 28px 16px', borderBottom: `1px solid rgba(${WC.inkRGB},0.06)` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
-            <div style={{ width: 14, height: 14, borderRadius: 4, background: colorForId(workflow.id), boxShadow: '0 0 0 1px rgba(33,30,27,0.14)', flex: 'none' }} />
+            <ColorSwatch value={colorForWorkflow(workflow)} onChange={(hex) => patch(workflow, { color: hex })} size={14} />
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -51,12 +70,12 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
               style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontFamily: "'Newsreader',serif", fontSize: 25, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}
             />
-            <span style={statusChip(status)}>{statusText}</span>
+            <span style={statusChip(status, WC)}>{statusText}</span>
             <button onClick={runNow} disabled={running} style={{ display: 'flex', alignItems: 'center', gap: 8, background: running ? WC.inset : WC.ink, color: running ? WC.muted : WC.paper, border: 'none', borderRadius: 9, padding: '8px 15px', fontSize: 13, fontWeight: 600, cursor: running ? 'default' : 'pointer', flex: 'none' }}>
               {running
                 ? <div style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(140,133,122,0.3)', borderTopColor: WC.muted, animation: 'os-spin 0.7s linear infinite', flex: 'none' }} />
                 : <div style={{ width: 0, height: 0, borderTop: '5px solid transparent', borderBottom: '5px solid transparent', borderLeft: `8px solid ${WC.paper}`, flex: 'none' }} />}
-              <span>{running ? 'Running…' : 'Run now'}</span>
+              <span>{running ? 'Running…' : 'Run'}</span>
             </button>
           </div>
           {workflow.description && <div style={{ fontSize: 13.5, color: WC.muted, marginTop: 7, paddingLeft: 27 }}>{workflow.description}</div>}
@@ -64,7 +83,14 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {sessionId
-            ? <AgentChat sessionId={sessionId} embedded workflowEditId={workflow.id} />
+            ? <AgentChat
+                sessionId={sessionId}
+                embedded
+                workflowEditId={workflow.id}
+                runContext={runContext?.workflowId === workflow.id ? runContext : undefined}
+                onClearRunContext={() => dispatch(clearWorkflowsRunContext())}
+                onSendRunQuestion={(prompt, runId) => askRun(workflow.id, { runId, prompt }).then((ok) => { if (!ok) throw new Error('ask-run failed'); })}
+              />
             : <div style={{ flex: 1 }} />}
         </div>
       </div>

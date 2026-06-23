@@ -19,6 +19,7 @@ import { ChatInputView } from './ChatInput/view/ChatInputView';
 import { PastePreviewDialog } from './ChatInput/view/PastePreviewDialog';
 import { ICON_MAP, FALLBACK_MODE_BASE } from './ChatInput/modeConfig';
 import { AttachedImage, ForcedToolGroup, ChatInputHandle } from './ChatInput/types';
+import type { WorkflowsRunContext } from '@/shared/state/dashboardLayoutSlice';
 
 export type { AttachedImage, ForcedToolGroup, ChatInputHandle };
 export type { AttachedSkill } from '@/app/components/editor/richEditorUtils';
@@ -46,9 +47,14 @@ interface Props {
   // Seed the composer with this text (unsent), so a starter-prompt click opens
   // the chat with the message already typed, ready for the user to hit send.
   prefillPrompt?: string;
+  // Replaces the default "Agent, @ for context..." placeholder (e.g. "Ask about this run...").
+  placeholderOverride?: string;
+  // A workflow run shown as a small removable chip inside the composer.
+  runContext?: WorkflowsRunContext;
+  onClearRunContext?: () => void;
 }
 
-const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, provider, onProviderChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0, thinkingLevel = 'auto', onThinkingLevelChange, onActivityLabelChange, prefillPrompt }, ref) => {
+const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, provider, onProviderChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0, thinkingLevel = 'auto', onThinkingLevelChange, onActivityLabelChange, prefillPrompt, placeholderOverride, runContext, onClearRunContext }, ref) => {
   const c = useClaudeTokens();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -349,6 +355,9 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
       isRunning={isRunning}
       queueLength={queueLength}
       modeConf={modeConf}
+      placeholderOverride={placeholderOverride}
+      runContext={runContext}
+      onClearRunContext={onClearRunContext}
       handleInput={handleInput}
       handleEditorClick={handleEditorClick}
       handleKeyDown={handleKeyDown}
