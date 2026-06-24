@@ -1,10 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { runWorkflowNow } from '@/shared/state/workflowsSlice';
 import { openWorkflowMonitor, setWorkflowsRunContext, clearWorkflowsRunContext } from '@/shared/state/dashboardLayoutSlice';
 import { stepsSignature, isScheduleActive } from '@/app/pages/Workflows/scheduleUtils';
 import { askRun } from './api';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
+import InlineEditableTitle from '@/app/components/InlineEditableTitle';
+import { Typewriter } from '@/app/components/feedback/Animated';
 import { useWC, colorForWorkflow, statusChip } from './uiKit';
 import { isRunning, runContextChip } from './model';
 import { useEditAgentSession } from './useEditAgentSession';
@@ -22,14 +24,12 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
   const workflow = useAppSelector((s) => s.workflows.items[workflowId]);
   const active = useAppSelector((s) => s.workflows.active);
   const sessionId = useEditAgentSession(workflowId);
-  const [name, setName] = useState(workflow?.title ?? '');
   const detailRuns = useAppSelector((s) => s.workflows.runs[workflowId]);
   const runContext = useAppSelector((s) => s.dashboardLayout.workflowsRunContext);
   // When you Run now from this chat, attach that run as a context chip once it
   // finishes, so the next question rides on its transcript (removable, no popup).
   const autoCtxRunId = useRef<string | null>(null);
 
-  useEffect(() => { setName(workflow?.title ?? ''); }, [workflow?.title]);
   useEffect(() => {
     const rid = autoCtxRunId.current;
     if (!rid) return;
@@ -52,10 +52,6 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
       .unwrap().then((res) => { autoCtxRunId.current = res.run_id || null; }).catch(() => {});
     dispatch(openWorkflowMonitor({ workflowId: workflow.id }));
   };
-  const commitName = () => {
-    const t = name.trim();
-    if (t && t !== workflow.title) patch(workflow, { title: t, auto_named: false });
-  };
 
   return (
     <>
@@ -63,13 +59,18 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
         <div style={{ flex: 'none', padding: '20px 28px 16px', borderBottom: `1px solid rgba(${WC.inkRGB},0.06)` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
             <ColorSwatch value={colorForWorkflow(workflow)} onChange={(hex) => patch(workflow, { color: hex })} size={14} />
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={commitName}
-              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-              style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontFamily: "'Newsreader',serif", fontSize: 25, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}
-            />
+            <InlineEditableTitle
+              value={workflow.title || ''}
+              onCommit={(t) => patch(workflow, { title: t, auto_named: false })}
+              placeholder="Untitled workflow"
+              sx={{ flex: 1, minWidth: 0, fontFamily: "'Newsreader',serif", fontSize: 25, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}
+            >
+              <Typewriter value={workflow.title || 'Untitled workflow'} enabled={workflow.auto_named !== false}>
+                {(t) => (
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: "'Newsreader',serif", fontSize: 25, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}>{t}</span>
+                )}
+              </Typewriter>
+            </InlineEditableTitle>
             <span style={statusChip(status, WC)}>{statusText}</span>
             <button onClick={runNow} disabled={running} style={{ display: 'flex', alignItems: 'center', gap: 8, background: running ? WC.inset : WC.ink, color: running ? WC.muted : WC.paper, border: 'none', borderRadius: 9, padding: '8px 15px', fontSize: 13, fontWeight: 600, cursor: running ? 'default' : 'pointer', flex: 'none' }}>
               {running

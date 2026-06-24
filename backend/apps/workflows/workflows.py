@@ -335,12 +335,22 @@ async def generate_workflow_metadata(body: GenerateMetadataRequest) -> GenerateM
 
 
 async def _generate_workflow_metadata(wf: Workflow) -> tuple[str, str, list[str]]:
+    """(title, description, step_labels) for the workflow's live steps. Thin
+    wrapper over p_generate_metadata_for_steps."""
+    return await p_generate_metadata_for_steps(wf.steps, wf.model)
+
+
+async def p_generate_metadata_for_steps(
+    steps: list[WorkflowStep], model: Optional[str]
+) -> tuple[str, str, list[str]]:
     """Single aux-model call returning (title, description, step_labels).
 
     One round-trip for all three so we don't burn 3x aux cost. Returns
-    ("", "", []) on any failure; caller writes back unconditionally.
+    ("", "", []) on any failure; caller writes back unconditionally. Takes an
+    explicit step list so the draft-build path can name from draft_steps before
+    they're committed onto the live workflow.
     """
-    if not wf.steps:
+    if not steps:
         return "", "", []
     try:
         from backend.apps.agents.providers.registry import resolve_aux_model, get_api_type
@@ -354,13 +364,13 @@ async def _generate_workflow_metadata(wf: Workflow) -> tuple[str, str, list[str]
         # generate_title); without primary_api the aux call can resolve to a
         # lane that returns nothing on subscription setups.
         aux_model, _ = await resolve_aux_model(
-            settings, preferred_tier="haiku", primary_api=get_api_type(wf.model),
+            settings, preferred_tier="haiku", primary_api=get_api_type(model),
         )
         client = get_anthropic_client_for_model(settings, aux_model)
     except Exception:
         return "", "", []
-    steps_lines = "\n".join(f"{i+1}. {s.text}" for i, s in enumerate(wf.steps) if s.text)
-    n_steps = len(wf.steps)
+    steps_lines = "\n".join(f"{i+1}. {s.text}" for i, s in enumerate(steps) if s.text)
+    n_steps = len(steps)
     prompt = (
         "You name and describe a saved automation routine that the user "
         "can re-run later, AND produce a short at-a-glance label for "
@@ -442,12 +452,12 @@ async def _generate_workflow_metadata(wf: Workflow) -> tuple[str, str, list[str]
 _PLACEHOLDER_TITLES = {"", "New workflow", "Untitled workflow", "Scheduled workflow"}
 
 
-def _fallback_title(wf: Workflow) -> str:
+def p_fallback_title_for_steps(steps: list[WorkflowStep]) -> str:
     """Deterministic title derived from the steps, used when the aux model is
     unreachable. A step-based name beats leaving the workflow as "New workflow".
     Takes the first meaningful step's label (or its text), keeps it to ~5 words,
     and Title-Cases it while preserving already-capitalized tokens (Gmail)."""
-    for s in wf.steps:
+    for s in steps:
         base = ((s.label or "") or (s.text or "")).strip()
         if base:
             words = base.split()[:5]
@@ -455,14 +465,32 @@ def _fallback_title(wf: Workflow) -> str:
     return ""
 
 
-async def p_relabel_changed_steps(wf: Workflow, before_steps: list[dict]) -> None:
+def p_short_step_label(text: str) -> str:
+    """Deterministic short label from a step's prompt, used when the aux model is
+    unreachable or hands back a mis-sized list. Without it an unlabeled step falls
+    back to showing its whole prompt as the title. First ~6 words, sentence case."""
+    base = (text or "").strip()
+    if not base:
+        return ""
+    label = " ".join(base.split()[:6])
+    return (label[:1].upper() + label[1:])[:48]
+
+
+async def p_relabel_steps(
+    wf: Workflow, before_steps: list[dict], steps: list[WorkflowStep], model: Optional[str]
+) -> None:
+    """Generate short per-step labels for changed/unlabeled steps, and name the
+    workflow once from the steps. Works on any step list (live `steps` or the
+    build `draft_steps`) so naming fires the moment a step lands, agent or manual.
+
+    Auto-name fires only while the title is still a placeholder ("Untitled
+    workflow") and the workflow is still auto-named: that names it once on the
+    first real step, never drifts on later edits, and stops two paths (the draft
+    stage and its commit) from both spending an aux call on the same title."""
     before_by_id = {s.get("id"): s for s in before_steps}
     regen_idxs: list[int] = []
-    # Step content changed at all? Drives auto-naming, which must fire even when
-    # every step already carries a label (regen_idxs empty) because the title
-    # describes the whole routine, not a single step.
-    content_changed = len(before_steps) != len(wf.steps)
-    for i, step in enumerate(wf.steps):
+    content_changed = len(before_steps) != len(steps)
+    for i, step in enumerate(steps):
         old = before_by_id.get(step.id)
         old_text = (old or {}).get("text") or ""
         old_label = (old or {}).get("label") or ""
@@ -473,15 +501,19 @@ async def p_relabel_changed_steps(wf: Workflow, before_steps: list[dict]) -> Non
             if not new_label and old_label:
                 step.label = old_label
             continue
+        # A step with no distinct user label gets one generated from its prompt.
         if not (new_label and new_label != old_label):
             regen_idxs.append(i)
-    # Auto-name while the workflow is still auto-named (user hasn't renamed it)
-    # and the step content actually changed and there's text to name from.
-    need_autoname = wf.auto_named and content_changed and any(s.text for s in wf.steps)
+    need_autoname = (
+        wf.auto_named
+        and (wf.title or "").strip() in _PLACEHOLDER_TITLES
+        and content_changed
+        and any(s.text for s in steps)
+    )
     if not regen_idxs and not need_autoname:
         return
     try:
-        title, description, labels = await _generate_workflow_metadata(wf)
+        title, description, labels = await p_generate_metadata_for_steps(steps, model)
     except Exception:
         return
     # One aux call covers labels AND auto-naming. A manual rename sets
@@ -489,18 +521,27 @@ async def p_relabel_changed_steps(wf: Workflow, before_steps: list[dict]) -> Non
     if need_autoname:
         if title:
             wf.title = title
-        elif (wf.title or "").strip() in _PLACEHOLDER_TITLES:
+        else:
             # Aux model returned nothing (flaky lane / rate limit). Fall back to
-            # a step-derived name so the workflow doesn't stay "New workflow".
-            fb = _fallback_title(wf)
+            # a step-derived name so the workflow doesn't stay "Untitled workflow".
+            fb = p_fallback_title_for_steps(steps)
             if fb:
                 wf.title = fb
         if description:
             wf.description = description
-    if labels and len(labels) == len(wf.steps):
-        for i in regen_idxs:
-            if labels[i]:
-                wf.steps[i].label = labels[i]
+    # Per-index, not all-or-nothing: the cheap aux tier sometimes returns a
+    # mis-sized (or non-list) step_labels, which used to drop EVERY label and
+    # leave the raw prompt showing as the step title. Take whatever aux gave for
+    # this slot, else a deterministic short label so a step is never its prompt.
+    for i in regen_idxs:
+        aux = labels[i].strip() if i < len(labels) and labels[i] else ""
+        new_label = aux or p_short_step_label(steps[i].text)
+        if new_label:
+            steps[i].label = new_label
+
+
+async def p_relabel_changed_steps(wf: Workflow, before_steps: list[dict]) -> None:
+    await p_relabel_steps(wf, before_steps, wf.steps, wf.model)
 
 
 def _last_run_cost(wid: str) -> float:
@@ -786,12 +827,17 @@ async def update_workflow(
     # the stale draft). The main chat agent never opens an Edit Agent, so it
     # has no draft and falls through to the live path below.
     if wf.draft_steps is not None and "steps" in data:
+        before_draft = before.get("draft_steps") or []
         wf.draft_steps = data["steps"]
         # Any non-steps fields in the same patch still apply live (rare from
         # the Edit Agent, whose tools only touch steps).
         for k, v in data.items():
             if k != "steps":
                 setattr(wf, k, v)
+        # Label the new draft steps and name the workflow off them (once, while
+        # still "Untitled"), so the title + step labels fill in the instant a
+        # step lands instead of waiting for Save.
+        await p_relabel_steps(wf, before_draft, wf.draft_steps, wf.model)
         wf.updated_at = datetime.now()
         _normalize_schedule_state(wf)
         storage.save_workflow(wf)

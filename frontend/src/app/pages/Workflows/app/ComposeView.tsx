@@ -5,6 +5,8 @@ import { sendMessage } from '@/shared/state/agentsSlice';
 import { defaultSchedule, stepsSignature, needsScheduleTestWarning } from '@/app/pages/Workflows/scheduleUtils';
 import { runWorkflowTest } from '@/app/pages/Workflows/runWorkflowTest';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
+import InlineEditableTitle from '@/app/components/InlineEditableTitle';
+import { Typewriter } from '@/app/components/feedback/Animated';
 import { useWC, FONT_SERIF, colorForWorkflow } from './uiKit';
 import ColorSwatch from './ColorSwatch';
 import { useEditAgentSession } from './useEditAgentSession';
@@ -26,35 +28,19 @@ const NEW_CHIPS: Array<{ label: string; prompt: string }> = [
   { label: 'Watch a webpage for changes', prompt: 'Watch a webpage and alert me when it changes.' },
 ];
 
-// Short provisional name from the first message so the workflow isn't "Untitled"
-// the moment it lands in the sidebar; the agent refines it once it adds steps.
-function deriveTitle(content: unknown): string {
-  const text = typeof content === 'string' ? content : '';
-  const words = text.trim().split(/\s+/).filter(Boolean).slice(0, 6).join(' ');
-  return words.slice(0, 60);
-}
-
 const ComposeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
   const WC = useWC();
   const dispatch = useAppDispatch();
   const patch = useWorkflowPatch();
   const [draftId, setDraftId] = useState<string | null>(null);
-  const [name, setName] = useState('');
   const [testing, setTesting] = useState(false);
   const [guardOpen, setGuardOpen] = useState(false);
   // null = follow the auto open-on-first-message behavior; true/false = user override.
   const [paneManual, setPaneManual] = useState<boolean | null>(null);
   const created = useRef(false);
-  const nameFocused = useRef(false);
   const handedOff = useRef(false);
 
   const workflow = useAppSelector((s) => (draftId ? s.workflows.items[draftId] : undefined));
-
-  // Track the live title (agent rename) unless the user is editing the field,
-  // so the header never shows a stale name nor blurs it back over the rename.
-  useEffect(() => {
-    if (!nameFocused.current) setName(workflow?.title ?? '');
-  }, [workflow?.title]);
 
   // One unsaved draft per visit to "New". The backend hides unsaved drafts from
   // lists, so an abandoned one stays out of the way until GC.
@@ -65,7 +51,6 @@ const ComposeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
       try {
         const wf = await dispatch(createWorkflow({ unsaved: true, title: 'Untitled workflow', steps: [], schedule: defaultSchedule() })).unwrap();
         setDraftId(wf.id);
-        setName(wf.title || '');
       } catch { /* surfaced by the empty state */ }
     })();
   }, [dispatch]);
@@ -106,24 +91,17 @@ const ComposeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
   };
 
   // The conversation started, so the workflow is real: reveal it under Workflows
-  // (and hand off to its detail) right away, even before any step or save, and
-  // give it a name from the first message. auto_named stays true so the agent's
-  // step-based naming still refines it later.
+  // (and hand off to its detail) right away. The title stays "Untitled workflow"
+  // until the first step lands and the backend auto-names it (auto_named stays
+  // true), so the name types in from the steps, not the raw prompt.
   const revealed = useRef(false);
   const firstUserMsg = (session?.messages || []).find((m) => m.role === 'user' && !m.hidden);
   useEffect(() => {
     if (revealed.current || !workflow || !firstUserMsg || workflow.unsaved === false) return;
     revealed.current = true;
-    const id = workflow.id;
-    const cur = (workflow.title || '').trim();
-    const fresh = workflow.auto_named !== false && (cur === '' || cur === 'Untitled workflow');
-    const provisional = fresh ? deriveTitle(firstUserMsg.content) : '';
     // Reveal immediately so it lands in the sidebar the moment you send; the
     // handoff to detail waits for the agent to finish (see effect above).
-    dispatch(updateWorkflow({
-      id,
-      patch: provisional ? { unsaved: false, title: provisional, auto_named: true } : { unsaved: false },
-    }));
+    dispatch(updateWorkflow({ id: workflow.id, patch: { unsaved: false } }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstUserMsg, workflow?.unsaved, dispatch]);
 
@@ -139,7 +117,6 @@ const ComposeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
   }
 
   const tested = workflow.steps.length > 0 && stepsSignature(workflow.steps) === (workflow.tested_signature ?? '');
-  const commitName = () => { const t = name.trim(); if (t && t !== workflow.title) patch(workflow, { title: t, auto_named: false }); };
 
   const doTest = async () => {
     if (testing || workflow.steps.length === 0) return;
@@ -165,14 +142,18 @@ const ComposeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: WC.page, position: 'relative' }}>
         <div style={{ flex: 'none', padding: '15px 28px', borderBottom: `1px solid rgba(${WC.inkRGB},0.06)`, display: 'flex', alignItems: 'center', gap: 12 }}>
           <ColorSwatch value={colorForWorkflow(workflow)} onChange={(hex) => patch(workflow, { color: hex })} size={15} />
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onFocus={() => { nameFocused.current = true; }}
-            onBlur={() => { nameFocused.current = false; commitName(); }}
+          <InlineEditableTitle
+            value={workflow.title || ''}
+            onCommit={(t) => patch(workflow, { title: t, auto_named: false })}
             placeholder="Untitled workflow"
-            style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontFamily: "'Newsreader',serif", fontSize: 21, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}
-          />
+            sx={{ flex: 1, minWidth: 0, fontFamily: "'Newsreader',serif", fontSize: 21, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}
+          >
+            <Typewriter value={workflow.title || 'Untitled workflow'} enabled={workflow.auto_named !== false}>
+              {(t) => (
+                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: "'Newsreader',serif", fontSize: 21, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}>{t}</span>
+              )}
+            </Typewriter>
+          </InlineEditableTitle>
           <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 500, color: WC.muted, background: `rgba(${WC.inkRGB},0.07)`, padding: '4px 10px', borderRadius: 999, flex: 'none' }}>Draft</span>
           <div
             onClick={() => setPaneManual(!paneOpen)}

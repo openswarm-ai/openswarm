@@ -43,6 +43,26 @@ const StepsCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
 
+  // A manual add lands with an empty label that the backend names from the step
+  // text. The label arrives without changing the steps signature (same text), so
+  // fill it in here without a full reseed and without touching a label you're
+  // mid-typing.
+  useEffect(() => {
+    setLocal((prev) => {
+      const byId = new Map(workflow.steps.map((s) => [s.id, s]));
+      let changed = false;
+      const next = prev.map((s) => {
+        const srv = byId.get(s.id);
+        if (srv && !s.label.trim() && (srv.label || '').trim()) {
+          changed = true;
+          return { ...s, label: srv.label as string };
+        }
+        return s;
+      });
+      return changed ? next : prev;
+    });
+  }, [workflow.steps]);
+
   const commit = (next: LocalStep[]) => {
     patch(workflow, { steps: next.map((s) => ({ id: s.id, text: s.text, label: s.label, enabled: s.enabled })) });
   };
@@ -56,7 +76,9 @@ const StepsCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
   const onAdd = () => {
     const t = draft.trim();
     if (!t) return;
-    const next = [...local, { id: newStepId(), label: t, text: t, open: false, enabled: true }];
+    // What you type is the step's prompt; the short label is generated from it
+    // server-side (empty label tells the backend to name this step).
+    const next = [...local, { id: newStepId(), label: '', text: t, open: false, enabled: true }];
     setLocal(next);
     setDraft('');
     commit(next);

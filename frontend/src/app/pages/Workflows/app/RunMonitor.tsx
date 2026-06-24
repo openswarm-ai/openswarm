@@ -10,6 +10,7 @@ import {
   bringToFront, closeWorkflowMonitor, setWorkflowsMonitorPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import type { CardType } from '@/shared/state/dashboardLayoutSlice';
+import WorkflowTitle from './WorkflowTitle';
 
 type StepState = 'done' | 'running' | 'failed' | 'pending';
 const DRAG_THRESHOLD = 3;
@@ -181,7 +182,9 @@ const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHe
         style={{ height: 44, flex: 'none', display: 'flex', alignItems: 'center', gap: 9, padding: '0 10px 0 14px', borderBottom: `1px solid ${c.border.subtle}`, background: c.bg.elevated, cursor: localPos ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none' }}
       >
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: headColor, flex: 'none', ...(isRunning ? { animation: 'os-pulse 1.1s ease-in-out infinite' } : {}) }} />
-        <span style={{ fontSize: 13.5, fontWeight: 600, color: c.text.primary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{workflow.title || 'Untitled workflow'}</span>
+        <WorkflowTitle value={workflow.title} animate={workflow.auto_named !== false}>
+          {(t) => <span style={{ fontSize: 13.5, fontWeight: 600, color: c.text.primary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</span>}
+        </WorkflowTitle>
         <span style={{ fontSize: 11, fontWeight: 600, color: headColor, background: headBg, padding: '2px 9px', borderRadius: 999, flex: 'none' }}>{headStatus}</span>
         <div style={{ flex: 1 }} />
         <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11.5, color: c.text.tertiary, flex: 'none' }}>{clock}</span>

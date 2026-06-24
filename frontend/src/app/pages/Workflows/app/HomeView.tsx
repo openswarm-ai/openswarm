@@ -5,6 +5,7 @@ import { openWorkflowMonitor } from '@/shared/state/dashboardLayoutSlice';
 import { useCalendarOccurrences } from './useCalendarOccurrences';
 import { colorForWorkflow, useWC, statusChip, statusDot } from './uiKit';
 import { clockOf, whenText } from './model';
+import WorkflowTitle from './WorkflowTitle';
 import type { AppNav } from './types';
 
 interface ComingRun { wfId: string; title: string; time: string; sortKey: number; steps: number; color: string; }
@@ -23,6 +24,8 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
 
   const now = new Date();
   const todayLabel = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  // Animate only AI-driven renames; a user-renamed workflow (auto_named false) snaps.
+  const animateOf = (wfId: string) => items[wfId]?.auto_named !== false;
 
   const ongoing = useMemo(() => active.map((a) => {
     const wf = items[a.workflow_id];
@@ -105,7 +108,9 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: o.color, flex: 'none' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: WC.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.title}</span>
+                      <WorkflowTitle value={o.title} animate={animateOf(o.wfId)}>
+                        {(t) => <span style={{ fontSize: 14, fontWeight: 600, color: WC.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</span>}
+                      </WorkflowTitle>
                       <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: WC.muted2, flex: 'none' }}>{o.stepLabel}</span>
                     </div>
                     <div style={{ height: 4, borderRadius: 999, background: WC.inset, overflow: 'hidden', marginTop: 7 }}>
@@ -137,7 +142,9 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
                 <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: WC.raised, border: '1px solid rgba(194,72,58,0.20)', borderRadius: WC.radius.md, padding: '10px 14px' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: WC.danger, flex: 'none' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600, color: WC.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.workflow_title}</div>
+                    <WorkflowTitle value={m.workflow_title} animate={animateOf(m.workflow_id)}>
+                      {(t) => <div style={{ fontSize: 13.5, fontWeight: 600, color: WC.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</div>}
+                    </WorkflowTitle>
                     <div style={{ fontSize: 11.5, color: WC.muted, marginTop: 1 }}>Missed while the app was closed</div>
                   </div>
                   <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: WC.muted2, flex: 'none' }}>{whenText(new Date(m.scheduled_for), now)}</span>
@@ -174,7 +181,9 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
                 {(expandedDays.has(g.key) ? g.runs : g.runs.slice(0, COMING_CAP)).map((r, i) => (
                   <div key={`${r.wfId}-${i}`} onClick={() => nav.selectWorkflow(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.08)`, borderRadius: WC.radius.md, padding: '12px 15px', cursor: 'pointer' }}>
                     <div style={{ width: 3, height: 30, borderRadius: 3, background: r.color, flex: 'none' }} />
-                    <span style={{ fontSize: 14, fontWeight: 600, color: WC.ink, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.title}</span>
+                    <WorkflowTitle value={r.title} animate={animateOf(r.wfId)}>
+                      {(t) => <span style={{ fontSize: 14, fontWeight: 600, color: WC.ink, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</span>}
+                    </WorkflowTitle>
                     <span style={{ fontSize: 12, color: WC.muted }}>{r.steps} steps</span>
                     <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: WC.ink3, minWidth: 74, textAlign: 'right' }}>{r.time}</span>
                   </div>
@@ -200,7 +209,9 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
               <div key={r.id} onClick={() => nav.selectWorkflow(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 4px', borderBottom: `1px solid rgba(${WC.inkRGB},0.05)`, cursor: 'pointer' }}>
                 <div style={statusDot(r.status, WC)} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: WC.ink }}>{r.title}</div>
+                  <WorkflowTitle value={r.title} animate={animateOf(r.wfId)}>
+                    {(t) => <div style={{ fontSize: 13.5, fontWeight: 600, color: WC.ink }}>{t}</div>}
+                  </WorkflowTitle>
                   <div style={{ fontSize: 12, color: WC.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.summary}</div>
                 </div>
                 <div style={{ width: 72, display: 'flex', justifyContent: 'flex-end', flex: 'none' }}>

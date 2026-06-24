@@ -4,6 +4,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { deleteWorkflow } from '@/shared/state/workflowsSlice';
 import { isScheduleActive, describeSchedule } from '@/app/pages/Workflows/scheduleUtils';
 import { colorForWorkflow, useWC } from './uiKit';
+import WorkflowTitle from './WorkflowTitle';
 import type { AppNav } from './types';
 
 const navBase: CSSProperties = {
@@ -96,7 +97,9 @@ const LeftRail: React.FC<{ nav: AppNav }> = ({ nav }) => {
             >
               <div style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: colorForWorkflow(w), opacity: active ? 1 : 0.35 }} />
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: active ? WC.ink : WC.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.title || 'Untitled workflow'}</div>
+                <WorkflowTitle value={w.title} animate={w.auto_named !== false}>
+                  {(t) => <div style={{ fontSize: 13.5, fontWeight: 600, color: active ? WC.ink : WC.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</div>}
+                </WorkflowTitle>
                 <div style={{ fontSize: 11, color: WC.muted2, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {active ? describeSchedule(w.schedule) : 'Paused'}
                 </div>
