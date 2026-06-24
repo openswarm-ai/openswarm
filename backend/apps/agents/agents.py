@@ -435,9 +435,9 @@ async def subscriptions_exchange(body: dict):
     """Exchange OAuth code for tokens via 9Router."""
     from backend.apps.nine_router import exchange_oauth
     from backend.apps.oauth_state import (
-        _pending_oauth as pending_oauth,
-        _completed_oauth as completed_oauth,
-        _mark_oauth_completed as mark_completed,
+        pending_oauth as pending_oauth,
+        completed_oauth as completed_oauth,
+        mark_oauth_completed as mark_completed,
     )
     provider = body.get("provider", "")
     code = body.get("code", "")

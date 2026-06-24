@@ -92,7 +92,7 @@ def call_backend(action: str, payload: dict) -> dict:
         return {"error": str(e)}
 
 
-def _format_read(settings: dict) -> str:
+def p_format_read(settings: dict) -> str:
     """Render redacted settings compactly so the model spends tokens on the
     values it can act on, not on JSON punctuation."""
     lines = ["Current OpenSwarm Settings (secrets shown as configured/not):"]
@@ -106,7 +106,7 @@ def _format_read(settings: dict) -> str:
     return "\n".join(lines)
 
 
-def _format_write(outcomes: dict) -> str:
+def p_format_write(outcomes: dict) -> str:
     applied = [f for f, o in outcomes.items() if o.get("status") == "applied"]
     parts = []
     if applied:
@@ -128,7 +128,7 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         result = call_backend("read", {})
         if "error" in result:
             return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
-        return {"content": [{"type": "text", "text": _format_read(result.get("settings", {}))}]}
+        return {"content": [{"type": "text", "text": p_format_read(result.get("settings", {}))}]}
 
     if tool_name == "SettingsWrite":
         changes = arguments.get("changes")
@@ -137,7 +137,7 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         result = call_backend("write", {"changes": changes})
         if "error" in result:
             return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
-        return {"content": [{"type": "text", "text": _format_write(result.get("outcomes", {}))}]}
+        return {"content": [{"type": "text", "text": p_format_write(result.get("outcomes", {}))}]}
 
     return {"content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}], "isError": True}
 

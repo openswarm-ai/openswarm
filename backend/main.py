@@ -22,10 +22,10 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi import Request
 
 from backend.apps.oauth_state import (
-    _pending_oauth,
-    _completed_oauth,
-    _MAX_COMPLETED_OAUTH,
-    _mark_oauth_completed,
+    pending_oauth,
+    completed_oauth,
+    MAX_COMPLETED_OAUTH,
+    mark_oauth_completed,
 )
 from backend.config.Apps import MainApp
 from backend.apps.health.health import health
@@ -438,7 +438,7 @@ async def browser_command(request: Request):
 @app.get("/api/subscriptions/pending/{state}")
 async def subscriptions_pending(state: str):
     """Return pending OAuth data for a state param. Called by 9Router's callback page."""
-    pending = _pending_oauth.get(state)
+    pending = pending_oauth.get(state)
     if not pending:
         return JSONResponse({"error": "not found"}, status_code=404,
                            headers={"Access-Control-Allow-Origin": "*"})
@@ -467,10 +467,10 @@ async def subscriptions_callback(request: Request):
 
     Must be idempotent: the browser can legitimately hit this URL more than
     once (Chrome prefetch, user refresh, Google retrying a slow first
-    redirect). The first call consumes `_pending_oauth[state]`, so a second
+    redirect). The first call consumes `pending_oauth[state]`, so a second
     call would otherwise render a misleading "Session expired" even though
     the connection is already saved. To handle that, we track recently-
-    completed state values in `_completed_oauth` and return the success
+    completed state values in `completed_oauth` and return the success
     page whenever we see a duplicate.
     """
     code = request.query_params.get("code", "")
@@ -486,12 +486,12 @@ async def subscriptions_callback(request: Request):
         desc = html.escape(request.query_params.get("error_description", error))
         return HTMLResponse(f'<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif"><div style="text-align:center"><h2>Authorization failed</h2><p style="color:#888">{desc}</p></div></body></html>')
 
-    pending = _pending_oauth.pop(state, None)
+    pending = pending_oauth.pop(state, None)
     if not pending:
         # Either a duplicate callback for a state we've already exchanged,
         # or a truly stale state. Duplicates are the expected case:
         # Chrome's prefetcher and some extensions speculatively GET URLs.
-        if state and state in _completed_oauth:
+        if state and state in completed_oauth:
             logger.info(f"Duplicate OAuth callback for state {state[:8]}... (already completed)")
             return HTMLResponse(_SUCCESS_HTML)
         logger.warning(f"OAuth callback with unknown state {state[:8] if state else '(empty)'}...")
@@ -509,7 +509,7 @@ async def subscriptions_callback(request: Request):
         safe_e = html.escape(str(e))
         return HTMLResponse(f'<html><body style="background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif"><div style="text-align:center"><h2>Connection failed</h2><p style="color:#888">{safe_e}</p></div></body></html>')
 
-    _mark_oauth_completed(state)
+    mark_oauth_completed(state)
     logger.info(f"OAuth exchange succeeded for provider={pending.get('provider')}")
     return HTMLResponse(_SUCCESS_HTML)
 

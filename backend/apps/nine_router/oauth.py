@@ -11,7 +11,7 @@ import os
 import httpx
 
 from .process import NINE_ROUTER_API, NINE_ROUTER_PORT, NINE_ROUTER_V1, cli_auth_headers
-from backend.apps.oauth_state import _pending_oauth, _mark_oauth_completed
+from backend.apps.oauth_state import pending_oauth, mark_oauth_completed
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
                     code = (q.get("code") or [""])[0]
                     state = (q.get("state") or [""])[0]
                     if code and state:
-                        pending = _pending_oauth.pop(state, None)
+                        pending = pending_oauth.pop(state, None)
                         if pending:
                             try:
                                 await exchange_oauth(
@@ -119,7 +119,7 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
                                     pending["code_verifier"],
                                     state,
                                 )
-                                _mark_oauth_completed(state)
+                                mark_oauth_completed(state)
                                 logger.info(
                                     f"Codex callback: server-side exchange succeeded for state {state[:8]}..."
                                 )
@@ -129,7 +129,7 @@ async def _start_codex_callback_listener(timeout: float = 300.0) -> asyncio.base
                                 # /agents/subscriptions/exchange still
                                 # has a shot. Safe because we only popped
                                 # it a moment ago.
-                                _pending_oauth[state] = pending
+                                pending_oauth[state] = pending
                                 logger.debug(
                                     f"Codex callback: server-side exchange failed ({e}); leaving for frontend retry"
                                 )

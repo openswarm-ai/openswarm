@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 # AppSettings fields holding a user-writable API key, keyed by provider api-type.
 # Blanking whichever of these powers the current run is the one suicide the guard
 # stops. Anything not here (subscription tokens, bearers) is not settings-writable.
-_API_KEY_FIELD_BY_API: dict[str, str] = {
+P_API_KEY_FIELD_BY_API: dict[str, str] = {
     "anthropic": "anthropic_api_key",
     "openai": "openai_api_key",
     "codex": "openai_api_key",
@@ -47,7 +47,7 @@ _API_KEY_FIELD_BY_API: dict[str, str] = {
 
 # Every settings field that can hold an API key (the full guarded set). Custom
 # providers keep their keys inside the custom_providers list, guarded separately.
-ALL_API_KEY_FIELDS: frozenset[str] = frozenset(_API_KEY_FIELD_BY_API.values())
+ALL_API_KEY_FIELDS: frozenset[str] = frozenset(P_API_KEY_FIELD_BY_API.values())
 
 CredentialKind = Literal["api_key", "subscription", "unknown"]
 
@@ -72,7 +72,7 @@ class PoweringCredential:
     label: str = ""
 
 
-def _custom_slug_for_model(model_value: str, settings: AppSettings) -> str | None:
+def p_custom_slug_for_model(model_value: str, settings: AppSettings) -> str | None:
     cp = find_custom_provider_for_value(settings, model_value)
     if cp is not None:
         return custom_provider_slug_for_lookup(getattr(cp, "name", ""))
@@ -98,7 +98,7 @@ def resolve_powering_credential(model_value: str, settings: AppSettings) -> Powe
     # placeholder key, so suicide is removing the provider ENTRY, not blanking
     # its key; the guard keys off the slug.
     if api == "custom":
-        slug = _custom_slug_for_model(model_value, settings)
+        slug = p_custom_slug_for_model(model_value, settings)
         return PoweringCredential(
             kind="api_key", provider="custom",
             protected_custom_slug=slug,
@@ -107,7 +107,7 @@ def resolve_powering_credential(model_value: str, settings: AppSettings) -> Powe
 
     # Explicit API-key route: the matching *_api_key field is the live one.
     if route == "api":
-        field = _API_KEY_FIELD_BY_API.get(api)
+        field = P_API_KEY_FIELD_BY_API.get(api)
         if field:
             return PoweringCredential(kind="api_key", provider=api, protected_field=field,
                                       label=f"{field} (powers this run)")
@@ -151,7 +151,7 @@ def resolve_powering_credential(model_value: str, settings: AppSettings) -> Powe
                               label=f"{api or 'unknown'} provider (unclassified)")
 
 
-def _is_blank(value: Any) -> bool:
+def p_is_blank(value: Any) -> bool:
     """A credential write that removes the credential: None, "", or whitespace."""
     if value is None:
         return True
@@ -160,7 +160,7 @@ def _is_blank(value: Any) -> bool:
     return False
 
 
-def _powering_custom_slug_present(new_providers: Any, slug: str) -> bool:
+def p_powering_custom_slug_present(new_providers: Any, slug: str) -> bool:
     """True if the powering custom provider's entry still exists after the write."""
     if not isinstance(new_providers, list):
         return False
@@ -183,13 +183,13 @@ def write_would_suicide(field: str, new_value: Any, powering: PoweringCredential
         # local provider's placeholder key being blanked is not. When the run is
         # unknown, any custom run could be the live one, so refuse a vanish.
         if powering.kind == "api_key" and powering.provider == "custom" and powering.protected_custom_slug:
-            return not _powering_custom_slug_present(new_value, powering.protected_custom_slug)
+            return not p_powering_custom_slug_present(new_value, powering.protected_custom_slug)
         if powering.kind == "unknown":
-            return not _powering_custom_slug_present(new_value, powering.protected_custom_slug or "")
+            return not p_powering_custom_slug_present(new_value, powering.protected_custom_slug or "")
         return False
 
     if field in ALL_API_KEY_FIELDS:
-        if not _is_blank(new_value):
+        if not p_is_blank(new_value):
             return False
         if powering.kind == "unknown":
             return True

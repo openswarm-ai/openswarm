@@ -12,7 +12,7 @@ import logging
 from typing import Any, TYPE_CHECKING
 
 from .openrouter import (
-    _OPENROUTER_VALUE_PREFIX,
+    OPENROUTER_VALUE_PREFIX,
     fetch_openrouter_models,
     get_direct_pricing,
     get_openrouter_pricing,
@@ -189,8 +189,8 @@ def find_builtin_model(short_name: str) -> dict | None:
         for m in models:
             if m.get("value") == short_name:
                 return m
-    if isinstance(short_name, str) and short_name.startswith(_OPENROUTER_VALUE_PREFIX):
-        bare = short_name[len(_OPENROUTER_VALUE_PREFIX):]
+    if isinstance(short_name, str) and short_name.startswith(OPENROUTER_VALUE_PREFIX):
+        bare = short_name[len(OPENROUTER_VALUE_PREFIX):]
         if bare:
             return {
                 "value": short_name,

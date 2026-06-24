@@ -1605,7 +1605,7 @@ def test_gemini_proxy_rewrites_document_to_openai_image_url_for_9router():
     Anthropic-shape image/document blocks get stringified. We rewrite to
     OpenAI image_url with data: URL so 9router emits Gemini inlineData."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_gemini
+    from backend.apps.agents.proxy.anthropic_proxy import scrub_request_for_gemini
     body = json.dumps({
         "model": "gemini-3.1-pro-preview",
         "messages": [{
@@ -1620,7 +1620,7 @@ def test_gemini_proxy_rewrites_document_to_openai_image_url_for_9router():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_gemini(body))
+    out = json.loads(scrub_request_for_gemini(body))
     blocks = out["messages"][0]["content"]
     assert blocks[0]["type"] == "text"
     assert blocks[1]["type"] == "image_url"
@@ -1631,7 +1631,7 @@ def test_gemini_proxy_also_rewrites_anthropic_image_blocks_to_image_url():
     """Same fix applies to plain images: Anthropic image → OpenAI image_url
     with data: URL, so 9router's filter preserves it instead of stringifying."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_gemini
+    from backend.apps.agents.proxy.anthropic_proxy import scrub_request_for_gemini
     body = json.dumps({
         "model": "gemini-3-pro-preview",
         "messages": [{
@@ -1645,7 +1645,7 @@ def test_gemini_proxy_also_rewrites_anthropic_image_blocks_to_image_url():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_gemini(body))
+    out = json.loads(scrub_request_for_gemini(body))
     block = out["messages"][0]["content"][0]
     assert block["type"] == "image_url"
     assert block["image_url"]["url"] == "data:image/png;base64,iVBORw0KGgo="
@@ -1692,7 +1692,7 @@ def test_gemini_translated_block_matches_9router_image_url_filter():
     (it stringifies any other shape). Our translator must emit exactly that
     shape for PDFs and images both."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_gemini
+    from backend.apps.agents.proxy.anthropic_proxy import scrub_request_for_gemini
     body = json.dumps({
         "model": "gemini-3.1-pro-preview",
         "messages": [{"role": "user", "content": [
@@ -1703,7 +1703,7 @@ def test_gemini_translated_block_matches_9router_image_url_filter():
             }},
         ]}],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_gemini(body))
+    out = json.loads(scrub_request_for_gemini(body))
     block = out["messages"][0]["content"][0]
     assert block["type"] == "image_url"
     assert "image_url" in block
@@ -1719,16 +1719,16 @@ def test_gemini_schema_normalizer_allowlists_and_folds_nullable():
     Live-confirmed against the Gemini API 2026-06-14."""
     import json
     from backend.apps.agents.proxy.anthropic_proxy import (
-        _normalize_schema_for_gemini, _scrub_request_for_gemini,
+        normalize_schema_for_gemini, scrub_request_for_gemini,
     )
     # union type -> single type + nullable
-    assert _normalize_schema_for_gemini({"type": ["string", "null"], "description": "d"}) == \
+    assert normalize_schema_for_gemini({"type": ["string", "null"], "description": "d"}) == \
         {"type": "string", "description": "d", "nullable": True}
     # anyOf-with-null -> chosen branch + nullable, allowed constraint preserved
-    assert _normalize_schema_for_gemini({"anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]}) == \
+    assert normalize_schema_for_gemini({"anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]}) == \
         {"type": "integer", "minimum": 0, "nullable": True}
     # forbidden keys dropped, enum kept
-    assert _normalize_schema_for_gemini({
+    assert normalize_schema_for_gemini({
         "type": "object", "additionalProperties": False, "title": "T",
         "properties": {"u": {"type": "string", "format": "uri", "$comment": "x", "minLength": 2},
                        "d": {"type": "string", "enum": ["a", "b"]}},
@@ -1749,7 +1749,7 @@ def test_gemini_schema_normalizer_allowlists_and_folds_nullable():
                 "size": {"type": ["integer", "null"], "minimum": 1, "default": 10},
                 "url": {"type": "string", "format": "uri", "$comment": "c"}},
             "required": ["filter"]}}]}).encode()
-    schema = json.loads(_scrub_request_for_gemini(body))["tools"][0]["input_schema"]
+    schema = json.loads(scrub_request_for_gemini(body))["tools"][0]["input_schema"]
     seen, stack = set(), [schema]
     while stack:
         n = stack.pop()
@@ -1765,12 +1765,12 @@ def test_gpt5_param_scrub_drops_unsupported_sampling_knobs():
     penalty/logprobs family. Both the proxy and the passthrough must strip them.
     Live-confirmed the 400s against the OpenAI API 2026-06-14."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_openai_gpt5
+    from backend.apps.agents.proxy.anthropic_proxy import scrub_request_for_openai_gpt5
     from backend.apps.agents.core.openai_passthrough import scrub_gpt5_params
     dirty = json.dumps({"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}],
                         "max_tokens": 200, "temperature": 0, "top_p": 0.9,
                         "frequency_penalty": 0.5, "presence_penalty": 0.1, "logprobs": True}).encode()
-    for fn in (_scrub_request_for_openai_gpt5, scrub_gpt5_params):
+    for fn in (scrub_request_for_openai_gpt5, scrub_gpt5_params):
         out = json.loads(fn(dirty))
         assert out.get("max_completion_tokens") == 200 and "max_tokens" not in out, fn.__name__
         for k in ("temperature", "top_p", "frequency_penalty", "presence_penalty", "logprobs"):
@@ -1790,7 +1790,7 @@ def test_openrouter_plugin_array_matches_docs():
     at the top level. Engines: pdf-text (free, deprecated → cloudflare),
     mistral-ocr ($2/1k pages), native (model-supported)."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _inject_openrouter_file_parser
+    from backend.apps.agents.proxy.anthropic_proxy import inject_openrouter_file_parser
     body = json.dumps({
         "model": "openrouter/qwen/qwen-2.5-72b-instruct",
         "messages": [{"role": "user", "content": [
@@ -1799,7 +1799,7 @@ def test_openrouter_plugin_array_matches_docs():
             }},
         ]}],
     }).encode("utf-8")
-    out = json.loads(_inject_openrouter_file_parser(body))
+    out = json.loads(inject_openrouter_file_parser(body))
     plugins = out["plugins"]
     assert isinstance(plugins, list)
     fp = [p for p in plugins if p.get("id") == "file-parser"][0]
@@ -1815,7 +1815,7 @@ def test_openai_translated_image_block_matches_image_url_data_uri():
     translator rewrites Anthropic image blocks; document blocks are
     refused upstream in agent_manager."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_openai_gpt5
+    from backend.apps.agents.proxy.anthropic_proxy import scrub_request_for_openai_gpt5
     body = json.dumps({
         "model": "gpt-5.5",
         "max_tokens": 100,
@@ -1827,7 +1827,7 @@ def test_openai_translated_image_block_matches_image_url_data_uri():
             }},
         ]}],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_openai_gpt5(body))
+    out = json.loads(scrub_request_for_openai_gpt5(body))
     block = out["messages"][0]["content"][0]
     assert block["type"] == "image_url"
     assert block["image_url"]["url"] == "data:image/png;base64,iVBORw0KGgo="
@@ -1837,7 +1837,7 @@ def test_openai_proxy_rewrites_image_block_only_documents_pass_through():
     """OpenAI image_url only accepts image/* mime; documents are refused
     upstream. Translator handles images, leaves documents untouched."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_openai_gpt5
+    from backend.apps.agents.proxy.anthropic_proxy import scrub_request_for_openai_gpt5
     body = json.dumps({
         "model": "gpt-5.5",
         "max_tokens": 500,
@@ -1853,7 +1853,7 @@ def test_openai_proxy_rewrites_image_block_only_documents_pass_through():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_openai_gpt5(body))
+    out = json.loads(scrub_request_for_openai_gpt5(body))
     blocks = out["messages"][0]["content"]
     assert blocks[0]["type"] == "text"
     assert blocks[1]["type"] == "image_url"
@@ -1865,13 +1865,13 @@ def test_openai_proxy_rewrites_image_block_only_documents_pass_through():
 def test_openai_proxy_skips_rewrite_when_no_document():
     """Pure text turn on GPT-5 should only get the max_tokens rename."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_openai_gpt5
+    from backend.apps.agents.proxy.anthropic_proxy import scrub_request_for_openai_gpt5
     body = json.dumps({
         "model": "gpt-5.5",
         "max_tokens": 100,
         "messages": [{"role": "user", "content": "hi"}],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_openai_gpt5(body))
+    out = json.loads(scrub_request_for_openai_gpt5(body))
     assert out["messages"][0]["content"] == "hi"
     assert out.get("max_completion_tokens") == 100
 
@@ -1881,7 +1881,7 @@ def test_openai_proxy_defensive_on_malformed_document_blocks():
     through untouched so the upstream returns a proper error rather
     than us silently dropping the file."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_openai_gpt5
+    from backend.apps.agents.proxy.anthropic_proxy import scrub_request_for_openai_gpt5
     body = json.dumps({
         "model": "gpt-5.5",
         "messages": [{
@@ -1893,7 +1893,7 @@ def test_openai_proxy_defensive_on_malformed_document_blocks():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_openai_gpt5(body))
+    out = json.loads(scrub_request_for_openai_gpt5(body))
     for b in out["messages"][0]["content"]:
         assert b["type"] == "document"
 
@@ -1941,7 +1941,7 @@ def test_openrouter_proxy_injects_file_parser_plugin_when_document_present():
     """OR's universal-PDF feature requires top-level plugins:[{id:file-parser,...}].
     When a document block is in the request bound for OR, inject it."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _inject_openrouter_file_parser
+    from backend.apps.agents.proxy.anthropic_proxy import inject_openrouter_file_parser
     body = json.dumps({
         "model": "openrouter/qwen/qwen-2.5-72b-instruct",
         "messages": [{
@@ -1956,7 +1956,7 @@ def test_openrouter_proxy_injects_file_parser_plugin_when_document_present():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_inject_openrouter_file_parser(body))
+    out = json.loads(inject_openrouter_file_parser(body))
     plugins = out.get("plugins")
     assert isinstance(plugins, list) and len(plugins) >= 1
     fp = next((p for p in plugins if p.get("id") == "file-parser"), None)
@@ -1967,19 +1967,19 @@ def test_openrouter_proxy_skips_plugin_when_no_document():
     """No document block → don't inject the plugin (costs nothing, but
     keeps the request body clean)."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _inject_openrouter_file_parser
+    from backend.apps.agents.proxy.anthropic_proxy import inject_openrouter_file_parser
     body = json.dumps({
         "model": "openrouter/qwen/qwen-2.5-72b-instruct",
         "messages": [{"role": "user", "content": "just a question"}],
     }).encode("utf-8")
-    out = json.loads(_inject_openrouter_file_parser(body))
+    out = json.loads(inject_openrouter_file_parser(body))
     assert "plugins" not in out
 
 
 def test_openrouter_proxy_dedupes_existing_file_parser_plugin():
     """If a caller already provided file-parser, don't duplicate it."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _inject_openrouter_file_parser
+    from backend.apps.agents.proxy.anthropic_proxy import inject_openrouter_file_parser
     body = json.dumps({
         "model": "openrouter/qwen/qwen-2.5-72b-instruct",
         "plugins": [{"id": "file-parser", "pdf": {"engine": "mistral-ocr"}}],
@@ -1990,7 +1990,7 @@ def test_openrouter_proxy_dedupes_existing_file_parser_plugin():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_inject_openrouter_file_parser(body))
+    out = json.loads(inject_openrouter_file_parser(body))
     fps = [p for p in out["plugins"] if p.get("id") == "file-parser"]
     assert len(fps) == 1
     assert fps[0]["pdf"]["engine"] == "mistral-ocr"  # caller's engine wins
@@ -2001,7 +2001,7 @@ def test_gemini_proxy_defensive_on_malformed_blocks():
     must NOT be rewritten; they pass through so the upstream sees the
     error rather than a silently-corrupted block."""
     import json
-    from backend.apps.agents.proxy.anthropic_proxy import _scrub_request_for_gemini
+    from backend.apps.agents.proxy.anthropic_proxy import scrub_request_for_gemini
     body = json.dumps({
         "model": "gemini-3.1-pro-preview",
         "messages": [{
@@ -2014,7 +2014,7 @@ def test_gemini_proxy_defensive_on_malformed_blocks():
             ],
         }],
     }).encode("utf-8")
-    out = json.loads(_scrub_request_for_gemini(body))
+    out = json.loads(scrub_request_for_gemini(body))
     for b in out["messages"][0]["content"]:
         assert b["type"] == "document"
 
@@ -2064,23 +2064,23 @@ def test_bypass_estimate_body_bytes_sums_image_url_and_file_blocks():
     """The size estimator must sum payload bytes across BOTH content
     types the translator emits (image_url with data: URL, file with
     file_data) so the pre-flight reject can fire before httpx serializes."""
-    from backend.apps.agents.proxy.anthropic_to_openai import _estimate_body_bytes
+    from backend.apps.agents.proxy.anthropic_to_openai import estimate_body_bytes
     body = {"messages": [{"role": "user", "content": [
         {"type": "text", "text": "hi"},
         {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJDRA=="}},  # 8 bytes b64
         {"type": "file", "file": {"file_data": "data:application/pdf;base64,RUZHSA=="}},  # 8 bytes b64
     ]}]}
-    assert _estimate_body_bytes(body) == 16
+    assert estimate_body_bytes(body) == 16
 
 
 def test_bypass_concurrency_semaphore_serializes_excess_requests():
     """The semaphore caps in-flight bypass requests to prevent OOM. Cap=2
     means a third concurrent request waits rather than allocating another
     ~40MB buffer."""
-    from backend.apps.agents.proxy.anthropic_to_openai import _bypass_sema, _BYPASS_CONCURRENCY
-    assert _BYPASS_CONCURRENCY == 2
+    from backend.apps.agents.proxy.anthropic_to_openai import bypass_sema, BYPASS_CONCURRENCY
+    assert BYPASS_CONCURRENCY == 2
     # Initial value matches the cap (no in-flight at import time).
-    assert _bypass_sema._value == _BYPASS_CONCURRENCY
+    assert bypass_sema._value == BYPASS_CONCURRENCY
 
 
 def test_anthropic_to_openai_should_bypass_fires_for_gpt5_pdf():

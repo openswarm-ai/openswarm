@@ -21,7 +21,7 @@ async def anthropic_proxy_lifespan():
 anthropic_proxy = SubApp("anthropic-proxy", anthropic_proxy_lifespan)
 
 
-_CLAUDE_MODEL_PREFIXES = (
+P_CLAUDE_MODEL_PREFIXES = (
     "claude-",
     "claude/",
     "sonnet",
@@ -30,10 +30,10 @@ _CLAUDE_MODEL_PREFIXES = (
     "cc/",
 )
 
-_GEMINI_MODEL_PREFIXES = ("gemini/", "gc/", "ag/")
+P_GEMINI_MODEL_PREFIXES = ("gemini/", "gc/", "ag/")
 
 # Own-key Gemini ("gemini-3-flash-api" etc.) skips the gemini/ prefix; match bare names so $schema scrub still fires.
-_GEMINI_BARE_MODEL_PATTERNS = ("gemini-",)
+P_GEMINI_BARE_MODEL_PATTERNS = ("gemini-",)
 
 # Gemini's function_declarations validator accepts only a small OpenAPI subset.
 # A denylist was whack-a-mole: every new JSON Schema construct that slipped
@@ -43,20 +43,20 @@ _GEMINI_BARE_MODEL_PATTERNS = ("gemini-",)
 # anyOf whose other branch is `{"type":"null"}`) into the `nullable` flag Gemini
 # actually understands. Everything dropped is advisory; the model still reads it
 # from `description`. The win is structural: an unknown future key can't 400 us.
-_GEMINI_ALLOWED_SCHEMA_KEYS = {
+P_GEMINI_ALLOWED_SCHEMA_KEYS = {
     "type", "description", "nullable", "enum", "items", "properties",
     "required", "minimum", "maximum", "minItems", "maxItems",
 }
 
-_GEMINI_NULL_TYPES = {"null", None}
+P_GEMINI_NULL_TYPES = {"null", None}
 
 
-def _normalize_schema_for_gemini(node):
+def normalize_schema_for_gemini(node):
     """Allowlist-rewrite a JSON Schema node into the subset Gemini accepts.
     Returns a NEW node (callers must assign the result); folds union/anyOf
     nullability into `nullable`. Never raises on odd input."""
     if isinstance(node, list):
-        return [_normalize_schema_for_gemini(v) for v in node]
+        return [normalize_schema_for_gemini(v) for v in node]
     if not isinstance(node, dict):
         return node
 
@@ -69,11 +69,11 @@ def _normalize_schema_for_gemini(node):
         if isinstance(branches, list) and branches:
             picked = None
             for b in branches:
-                if isinstance(b, dict) and b.get("type") in _GEMINI_NULL_TYPES and len(b) == 1:
+                if isinstance(b, dict) and b.get("type") in P_GEMINI_NULL_TYPES and len(b) == 1:
                     nullable = True
                 elif picked is None:
                     picked = b
-            base = _normalize_schema_for_gemini(picked) if isinstance(picked, dict) else {}
+            base = normalize_schema_for_gemini(picked) if isinstance(picked, dict) else {}
             if nullable and isinstance(base, dict):
                 base["nullable"] = True
             return base
@@ -81,7 +81,7 @@ def _normalize_schema_for_gemini(node):
     out = {}
     t = node.get("type")
     if isinstance(t, list):  # ["string", "null"] -> "string" + nullable
-        non_null = [x for x in t if x not in _GEMINI_NULL_TYPES]
+        non_null = [x for x in t if x not in P_GEMINI_NULL_TYPES]
         if len(non_null) != len(t):
             nullable = True
         t = non_null[0] if non_null else None
@@ -89,12 +89,12 @@ def _normalize_schema_for_gemini(node):
         out["type"] = t
 
     for k, v in node.items():
-        if k in ("type", "nullable") or k not in _GEMINI_ALLOWED_SCHEMA_KEYS:
+        if k in ("type", "nullable") or k not in P_GEMINI_ALLOWED_SCHEMA_KEYS:
             continue
         if k == "properties" and isinstance(v, dict):
-            out[k] = {pk: _normalize_schema_for_gemini(pv) for pk, pv in v.items()}
+            out[k] = {pk: normalize_schema_for_gemini(pv) for pk, pv in v.items()}
         elif k == "items":
-            out[k] = _normalize_schema_for_gemini(v)
+            out[k] = normalize_schema_for_gemini(v)
         else:
             out[k] = v
 
@@ -104,10 +104,10 @@ def _normalize_schema_for_gemini(node):
 
 
 # GPT-5.x rejects max_tokens; needs max_completion_tokens. Anthropic-format wire still emits max_tokens; we rename on the way out.
-_OPENAI_MAX_COMPLETION_TOKENS_MODELS = ("gpt-5",)
+P_OPENAI_MAX_COMPLETION_TOKENS_MODELS = ("gpt-5",)
 
 
-def _is_openai_max_completion_tokens_model(model: str) -> bool:
+def p_is_openai_max_completion_tokens_model(model: str) -> bool:
     """Match every shape a GPT-5 name might arrive in (bare, api-suffixed, openai/-prefixed, cx/-routed)."""
     m = (model or "").strip().lower()
     if not m:
@@ -116,10 +116,10 @@ def _is_openai_max_completion_tokens_model(model: str) -> bool:
         if m.startswith(prefix):
             m = m[len(prefix):]
             break
-    return any(m.startswith(p) for p in _OPENAI_MAX_COMPLETION_TOKENS_MODELS)
+    return any(m.startswith(p) for p in P_OPENAI_MAX_COMPLETION_TOKENS_MODELS)
 
 
-def _rewrite_document_to_openai_file(parsed: dict) -> None:
+def p_rewrite_document_to_openai_file(parsed: dict) -> None:
     """In-place: rewrite Anthropic base64 `image` blocks to OpenAI `image_url` (PDFs go via OpenRouter)."""
     msgs = parsed.get("messages") if isinstance(parsed, dict) else None
     if not isinstance(msgs, list):
@@ -160,7 +160,7 @@ def _rewrite_document_to_openai_file(parsed: dict) -> None:
             }
 
 
-def _scrub_request_for_openai_gpt5(body: bytes) -> bytes:
+def scrub_request_for_openai_gpt5(body: bytes) -> bytes:
     """Rename max_tokens→max_completion_tokens for GPT-5 AND rewrite any
     Anthropic document blocks to OpenAI type:file shape so PDFs flow
     natively on GPT-5.x vision models. Bytes in/out; never raises."""
@@ -190,7 +190,7 @@ def _scrub_request_for_openai_gpt5(body: bytes) -> bytes:
             mutated = True
     try:
         before = json.dumps(parsed.get("messages"), sort_keys=True) if "messages" in parsed else ""
-        _rewrite_document_to_openai_file(parsed)
+        p_rewrite_document_to_openai_file(parsed)
         after = json.dumps(parsed.get("messages"), sort_keys=True) if "messages" in parsed else ""
         if before != after:
             mutated = True
@@ -199,7 +199,7 @@ def _scrub_request_for_openai_gpt5(body: bytes) -> bytes:
     return json.dumps(parsed).encode("utf-8") if mutated else body
 
 
-def _rewrite_document_to_image(parsed: dict) -> None:
+def p_rewrite_document_to_image(parsed: dict) -> None:
     """In-place: rewrite Anthropic `document` (PDF) AND `image` content
     blocks → OpenAI `image_url` shape with a `data:` URL. Critical fix
     for 9router 0.3.60 which **only translates `image_url` blocks** to
@@ -245,15 +245,15 @@ def _rewrite_document_to_image(parsed: dict) -> None:
             }
 
 
-_OPENROUTER_MODEL_PREFIXES = ("openrouter/", "or:")
+P_OPENROUTER_MODEL_PREFIXES = ("openrouter/", "or:")
 
 
-def _is_openrouter_model(model: str) -> bool:
+def p_is_openrouter_model(model: str) -> bool:
     m = (model or "").strip().lower()
-    return any(m.startswith(p) for p in _OPENROUTER_MODEL_PREFIXES)
+    return any(m.startswith(p) for p in P_OPENROUTER_MODEL_PREFIXES)
 
 
-def _inject_openrouter_file_parser(body: bytes) -> bytes:
+def inject_openrouter_file_parser(body: bytes) -> bytes:
     """When the request has document blocks AND is bound for OpenRouter,
     inject the file-parser plugin so OR's universal PDF support kicks in
     on any model (free models get pdf-text engine; native PDF models can
@@ -293,7 +293,7 @@ def _inject_openrouter_file_parser(body: bytes) -> bytes:
     return json.dumps(parsed).encode("utf-8")
 
 
-def _scrub_request_for_gemini(body: bytes) -> bytes:
+def scrub_request_for_gemini(body: bytes) -> bytes:
     """Strip Gemini-incompatible schema keys from request tools AND
     rewrite Anthropic document blocks to image-shape so 9router's
     inline_data translator picks them up. Bytes-in/out, never raises."""
@@ -309,19 +309,19 @@ def _scrub_request_for_gemini(body: bytes) -> bytes:
             if not isinstance(t, dict):
                 continue
             if isinstance(t.get("input_schema"), (dict, list)):
-                t["input_schema"] = _normalize_schema_for_gemini(t["input_schema"])
+                t["input_schema"] = normalize_schema_for_gemini(t["input_schema"])
             if isinstance(t.get("parameters"), (dict, list)):
-                t["parameters"] = _normalize_schema_for_gemini(t["parameters"])
+                t["parameters"] = normalize_schema_for_gemini(t["parameters"])
     try:
         if isinstance(parsed, dict):
-            _rewrite_document_to_image(parsed)
+            p_rewrite_document_to_image(parsed)
     except Exception:
         pass
     return json.dumps(parsed).encode("utf-8")
 
 
 # Hop-by-hop headers or auth we replace with the upstream-specific value.
-_HOP_HEADERS = {
+P_HOP_HEADERS = {
     "host",
     "content-length",
     "authorization",
@@ -337,22 +337,22 @@ _HOP_HEADERS = {
 }
 
 
-def _is_claude_model(model: str) -> bool:
+def p_is_claude_model(model: str) -> bool:
     m = (model or "").strip().lower()
-    return m.startswith(_CLAUDE_MODEL_PREFIXES)
+    return m.startswith(P_CLAUDE_MODEL_PREFIXES)
 
 
-def _is_gemini_model(model: str) -> bool:
+def p_is_gemini_model(model: str) -> bool:
     m = (model or "").strip().lower()
-    if m.startswith(_GEMINI_MODEL_PREFIXES):
+    if m.startswith(P_GEMINI_MODEL_PREFIXES):
         return True
     # Bare-name match for own-key Gemini; excludes anthropic-routed gemini (those carry "/").
     if "/" in m:
         return False
-    return any(m.startswith(p) for p in _GEMINI_BARE_MODEL_PATTERNS)
+    return any(m.startswith(p) for p in P_GEMINI_BARE_MODEL_PATTERNS)
 
 
-def _pick_upstream(model: str) -> tuple[str, dict[str, str]]:
+def p_pick_upstream(model: str) -> tuple[str, dict[str, str]]:
     """Return (base_url_without_v1, auth_headers) for this model.
 
     Routing for Claude-family models:
@@ -364,7 +364,7 @@ def _pick_upstream(model: str) -> tuple[str, dict[str, str]]:
     from backend.apps.settings.settings import load_settings
     s = load_settings()
 
-    if _is_claude_model(model):
+    if p_is_claude_model(model):
         if getattr(s, "connection_mode", "own_key") == "openswarm-pro":
             bearer = getattr(s, "openswarm_bearer_token", "") or ""
             proxy = (getattr(s, "openswarm_proxy_url", "") or "https://api.openswarm.com").rstrip("/")
@@ -390,7 +390,7 @@ def _pick_upstream(model: str) -> tuple[str, dict[str, str]]:
     methods=["GET", "HEAD", "OPTIONS"],
     include_in_schema=False,
 )
-async def _healthcheck():
+async def p_healthcheck():
     """CLI healthchecks the proxy root; return 200 so it doesn't 404."""
     return {"ok": True}
 
@@ -427,7 +427,7 @@ async def proxy(rest: str, request: Request):
         )
         from backend.apps.settings.settings import load_settings as _load
         _s = _load()
-        if _is_openai_max_completion_tokens_model(model):
+        if p_is_openai_max_completion_tokens_model(model):
             _oak = (getattr(_s, "openai_api_key", "") or "").strip()
             if _should_bypass_oai(parsed_for_bypass, _oak):
                 status, body_stream, hdrs = await _forward_oai(
@@ -437,7 +437,7 @@ async def proxy(rest: str, request: Request):
                     body_stream, status_code=status, headers=hdrs,
                     media_type=hdrs.get("content-type", "text/event-stream"),
                 )
-        if _is_openrouter_model(model):
+        if p_is_openrouter_model(model):
             _ork = (getattr(_s, "openrouter_api_key", "") or "").strip()
             if _should_bypass_or(parsed_for_bypass, _ork):
                 status, body_stream, hdrs = await _forward_or(
@@ -448,18 +448,18 @@ async def proxy(rest: str, request: Request):
                     media_type=hdrs.get("content-type", "text/event-stream"),
                 )
 
-    if _is_gemini_model(model):
-        body = _scrub_request_for_gemini(body)
-    if _is_openai_max_completion_tokens_model(model):
-        body = _scrub_request_for_openai_gpt5(body)
-    if _is_openrouter_model(model):
-        body = _inject_openrouter_file_parser(body)
+    if p_is_gemini_model(model):
+        body = scrub_request_for_gemini(body)
+    if p_is_openai_max_completion_tokens_model(model):
+        body = scrub_request_for_openai_gpt5(body)
+    if p_is_openrouter_model(model):
+        body = inject_openrouter_file_parser(body)
 
-    base_url, auth_headers = _pick_upstream(model)
+    base_url, auth_headers = p_pick_upstream(model)
 
     forward_headers: dict[str, str] = {}
     for k, v in request.headers.items():
-        if k.lower() in _HOP_HEADERS:
+        if k.lower() in P_HOP_HEADERS:
             continue
         # CLI carries our install token as x-api-key; never forward (leak + shadows real upstream auth).
         if k.lower() == "x-api-key":
@@ -479,7 +479,7 @@ async def proxy(rest: str, request: Request):
     # the retry, which hangs the whole turn for the full read window. Bound Gemini
     # so a stalled first response fails fast (~2 min) instead of stalling ~10 min;
     # other providers keep the generous window for long reasoning turns.
-    _read_timeout = 120.0 if _is_gemini_model(model) else 600.0
+    _read_timeout = 120.0 if p_is_gemini_model(model) else 600.0
 
     try:
         if wants_stream:
@@ -503,7 +503,7 @@ async def proxy(rest: str, request: Request):
                 streamer(),
                 status_code=upstream.status_code,
                 headers={k: v for k, v in upstream.headers.items()
-                         if k.lower() not in _HOP_HEADERS},
+                         if k.lower() not in P_HOP_HEADERS},
                 media_type=upstream.headers.get("content-type", "text/event-stream"),
             )
         else:
@@ -515,7 +515,7 @@ async def proxy(rest: str, request: Request):
                 return JSONResponse(
                     content=r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text},
                     status_code=r.status_code,
-                    headers={k: v for k, v in r.headers.items() if k.lower() not in _HOP_HEADERS},
+                    headers={k: v for k, v in r.headers.items() if k.lower() not in P_HOP_HEADERS},
                 )
     except httpx.TimeoutException:
         return JSONResponse({"error": "upstream timeout"}, status_code=504)

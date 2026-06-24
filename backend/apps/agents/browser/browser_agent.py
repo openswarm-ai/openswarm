@@ -77,7 +77,7 @@ from backend.apps.agents.browser.browser_schema import (
     SYSTEM_PROMPT,
 )
 from backend.apps.agents.core.models import AgentSession, ApprovalRequest, Message
-from backend.apps.agents.core.ws_manager import ws_manager, _await_reconnect
+from backend.apps.agents.core.ws_manager import ws_manager, await_reconnect
 from backend.apps.tools_lib.tools_lib import load_builtin_permissions
 
 logger = logging.getLogger(__name__)
@@ -2290,7 +2290,7 @@ async def run_browser_agents(
     # corpse before card-gone detection trips. But a CPU-starved renderer can
     # briefly drop its WS then auto-reconnect, so wait (capped) for it to come
     # back before refusing, turning a load blip into a pause, not a failed run.
-    if not ws_manager.global_connections and not await _await_reconnect(lambda: bool(ws_manager.global_connections)):
+    if not ws_manager.global_connections and not await await_reconnect(lambda: bool(ws_manager.global_connections)):
         logger.warning("[browser-agent] dispatch refused: no dashboard after reconnect wait")
         return [{
             "summary": (

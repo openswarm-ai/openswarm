@@ -102,7 +102,7 @@ def test_dispatch_refused_when_no_dashboard_connected(monkeypatch):
     # Dispatch now waits briefly for a momentary WS drop to reconnect; with a
     # genuinely-closed window that wait just elapses and it still refuses without
     # dispatching an agent or burning a turn. Zero the wait so the test is instant.
-    monkeypatch.setattr(wsm, "_WS_RECONNECT_WAIT_S", 0.0)
+    monkeypatch.setattr(wsm, "P_WS_RECONNECT_WAIT_S", 0.0)
     assert not wsm.ws_manager.global_connections
     results = asyncio.run(run_browser_agents(tasks=[{"task": "go to example.com"}], model="sonnet"))
     assert len(results) == 1

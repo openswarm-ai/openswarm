@@ -76,7 +76,7 @@ def send_response(id_, result=None, error=None):
     sys.stdout.flush()
 
 
-def _post(url: str, body: dict, timeout: float = 60.0) -> dict:
+def p_post(url: str, body: dict, timeout: float = 60.0) -> dict:
     payload = json.dumps(body).encode()
     headers = {"Content-Type": "application/json"}
     if BACKEND_AUTH:
@@ -107,7 +107,7 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         body = {"query": query, "num_results": num}
         if PRIMARY_HINT:
             body["primary"] = PRIMARY_HINT
-        r = _post(SEARCH_URL, body, timeout=45.0)
+        r = p_post(SEARCH_URL, body, timeout=45.0)
         if "error" in r:
             return {"content": [{"type": "text", "text": f"Search failed: {r['error']}"}], "isError": True}
         results = r.get("results", "")
@@ -127,7 +127,7 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
             body["prompt"] = str(prompt)
         if PRIMARY_HINT:
             body["primary"] = PRIMARY_HINT
-        r = _post(FETCH_URL, body, timeout=45.0)
+        r = p_post(FETCH_URL, body, timeout=45.0)
         if "error" in r:
             return {"content": [{"type": "text", "text": f"Fetch failed: {r['error']}"}], "isError": True}
         content = r.get("content", "")

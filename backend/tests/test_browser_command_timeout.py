@@ -26,19 +26,19 @@ def _mgr():
 
 def test_timeout_map_reads_are_short_navigation_longer():
     # reads/clicks act on a loaded page -> short; navigation loads network -> longer
-    assert wsm._BROWSER_CMD_TIMEOUT_DEFAULT <= 15
-    assert wsm._BROWSER_CMD_TIMEOUTS["navigate"] <= 25
-    assert wsm._BROWSER_CMD_TIMEOUTS["navigate"] > wsm._BROWSER_CMD_TIMEOUT_DEFAULT
+    assert wsm.BROWSER_CMD_TIMEOUT_DEFAULT <= 15
+    assert wsm.BROWSER_CMD_TIMEOUTS["navigate"] <= 25
+    assert wsm.BROWSER_CMD_TIMEOUTS["navigate"] > wsm.BROWSER_CMD_TIMEOUT_DEFAULT
     # the old flat 30s is gone for the common path
-    assert wsm._BROWSER_CMD_TIMEOUT_DEFAULT < 30
+    assert wsm.BROWSER_CMD_TIMEOUT_DEFAULT < 30
 
 
 @pytest.mark.asyncio
 async def test_hung_command_returns_fast_at_the_bound(monkeypatch):
     # shrink the bounds so the test is quick, then never resolve the future:
     # the command must return a timeout error at ~the (default) bound, not hang.
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUT_DEFAULT", 0.3)
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUTS", {"navigate": 0.6})
+    monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUT_DEFAULT", 0.3)
+    monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUTS", {"navigate": 0.6})
     m = _mgr()
     t0 = time.monotonic()
     res = await m.send_browser_command("rid1", "get_text", "b1", {})  # never resolved
@@ -49,8 +49,8 @@ async def test_hung_command_returns_fast_at_the_bound(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_navigate_gets_the_longer_leash(monkeypatch):
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUT_DEFAULT", 0.3)
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUTS", {"navigate": 0.7})
+    monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUT_DEFAULT", 0.3)
+    monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUTS", {"navigate": 0.7})
     m = _mgr()
     t0 = time.monotonic()
     await m.send_browser_command("rid2", "navigate", "b1", {"url": "x"})
@@ -62,8 +62,8 @@ async def test_navigate_gets_the_longer_leash(monkeypatch):
 async def test_lost_first_delivery_heals_via_rebroadcast(monkeypatch):
     # a silently-dead socket eats the first broadcast; the re-send after the
     # rebroadcast interval must reach the (reconnected) client and succeed
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUT_DEFAULT", 5.0)
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_REBROADCAST_S", 0.1)
+    monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUT_DEFAULT", 5.0)
+    monkeypatch.setattr(wsm, "BROWSER_CMD_REBROADCAST_S", 0.1)
     m = _mgr()
     sends = []
 
@@ -83,7 +83,7 @@ async def test_lost_first_delivery_heals_via_rebroadcast(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_resolved_command_returns_immediately(monkeypatch):
     # a healthy command returns the moment the renderer resolves it, not at the bound
-    monkeypatch.setattr(wsm, "_BROWSER_CMD_TIMEOUT_DEFAULT", 5.0)
+    monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUT_DEFAULT", 5.0)
     m = _mgr()
 
     async def _resolve_soon():
