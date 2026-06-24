@@ -8,7 +8,7 @@ from unittest.mock import patch
 from backend.apps.agents.tools.web import should_register_web_mcp
 
 
-def _call(**kw):
+def p_call(**kw):
     base = dict(model="m", router_model_id="cc/opus", api_type="anthropic",
                 anthropic_api_key=None, connection_mode="own_key")
     base.update(kw)
@@ -18,23 +18,23 @@ def _call(**kw):
 
 def test_custom_session_always_registers():
     # ANTHROPIC_BASE_URL points at 9Router with no Claude connection -> native WebSearch 401s.
-    assert _call(api_type="custom") is True
+    assert p_call(api_type="custom") is True
 
 
 def test_non_claude_primary_registers():
     # A Gemini/GPT primary has no native Anthropic web path; Pro pool is not counted for it.
-    assert _call(router_model_id="gemini/flash", api_type="google") is True
+    assert p_call(router_model_id="gemini/flash", api_type="google") is True
 
 
 def test_claude_pro_uses_native_path():
     # Claude primary on Pro: the managed pool entitles the built-in WebSearch, so don't register.
-    assert _call(router_model_id="cc/opus", api_type="anthropic", connection_mode="openswarm-pro") is False
+    assert p_call(router_model_id="cc/opus", api_type="anthropic", connection_mode="openswarm-pro") is False
 
 
 def test_subscription_route_claude_non_pro_registers():
     # opus-4-8 on a non-Pro own-key account: the aux haiku call 401s through 9Router, so a bare
     # key isn't enough -> fall back to openswarm-web.
-    assert _call(router_model_id="cc/opus", api_type="anthropic",
+    assert p_call(router_model_id="cc/opus", api_type="anthropic",
                  connection_mode="own_key", anthropic_api_key="sk-ant-xxx") is True
 
 

@@ -108,23 +108,23 @@ def test_advance_fires_again_at_max():
 # Catches the worst measured ghost: multi-minute runs, every tool errored, still
 # reported 'completed'. Must NOT cry wolf on real successes (it overrides status).
 
-def _ok(tool, summary="done"):
+def p_ok(tool, summary="done"):
     return {"tool": tool, "ok": True, "result_summary": summary}
 
 
-def _err(tool):
+def p_err(tool):
     return {"tool": tool, "ok": False, "result_summary": "Element not found: '.x'"}
 
 
 def test_completion_honest_when_an_action_succeeded():
-    log = [_ok("BrowserListInteractives", "1 button"), _ok("BrowserClickIndex", "Clicked")]
+    log = [p_ok("BrowserListInteractives", "1 button"), p_ok("BrowserClickIndex", "Clicked")]
     honest, reason = completion_is_honest(log)
     assert honest and reason == ""
 
 
 def test_completion_ghost_when_every_action_errored():
     # the exact LinkedIn ghost: 8 tools, all errored, model said 'completed'
-    log = [_err("BrowserClick") for _ in range(8)]
+    log = [p_err("BrowserClick") for _ in range(8)]
     honest, reason = completion_is_honest(log)
     assert not honest and "every state-changing action failed" in reason
 
@@ -143,14 +143,14 @@ def test_completion_ghost_when_only_looked_around_with_no_content():
 
 def test_completion_honest_for_a_read_only_task_that_returned_content():
     # a legit "tell me what's on the page" task: no action, but a read got content
-    log = [_ok("BrowserGetText", "The page says hello world")]
+    log = [p_ok("BrowserGetText", "The page says hello world")]
     honest, reason = completion_is_honest(log)
     assert honest and reason == ""
 
 
 def test_completion_honest_when_some_errors_but_an_action_landed():
     # partial failure is fine as long as a real action ultimately succeeded
-    log = [_err("BrowserClick"), _err("BrowserClick"), _ok("BrowserClickIndex", "Clicked Submit")]
+    log = [p_err("BrowserClick"), p_err("BrowserClick"), p_ok("BrowserClickIndex", "Clicked Submit")]
     honest, reason = completion_is_honest(log)
     assert honest
 

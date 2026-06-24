@@ -46,7 +46,7 @@ from .runtime_proc import (
 
 logger = logging.getLogger(__name__)
 
-# Module-level lock so only ONE vite optimizeDeps runs at a time; must be acquired before manager._lock to avoid deadlock with manager.attach.
+# Module-level lock so only ONE vite optimizeDeps runs at a time; must be acquired before manager.p_lock to avoid deadlock with manager.attach.
 p_vite_boot_lock = asyncio.Lock()
 
 
@@ -105,7 +105,7 @@ class AppRuntime:
         self._stderr_task: Optional[asyncio.Task] = None
         self._wait_task: Optional[asyncio.Task] = None
         self._frontend_ready_task: Optional[asyncio.Task] = None
-        self._lock = asyncio.Lock()
+        self.p_lock = asyncio.Lock()
 
     def drain_errors(self) -> list[str]:
         """Pop and return all accumulated error lines. Used by the
@@ -178,7 +178,7 @@ class AppRuntime:
         burst of "create 3 apps in 5 seconds" doesn't trigger 3 parallel
         MUI pre-bundle runs each pegging a core.
         """
-        async with self._lock:
+        async with self.p_lock:
             if self.running:
                 return True
 
@@ -444,7 +444,7 @@ class AppRuntime:
         return env
 
     async def stop(self) -> None:
-        async with self._lock:
+        async with self.p_lock:
             if not self.process or self.process.returncode is not None:
                 # Still cancel the bind poller in case stop() races a
                 # never-launched runtime; defensive no-op otherwise.
@@ -558,7 +558,7 @@ class AppRuntimeManager:
         # alive. OrderedDict gives O(1) move_to_end + popitem(last=False)
         # for LRU semantics.
         self._idle_lru: "OrderedDict[str, AppRuntime]" = OrderedDict()
-        self._lock = asyncio.Lock()
+        self.p_lock = asyncio.Lock()
 
     async def attach(self, workspace_id: str, workspace_path: str) -> AppRuntime:
         revived = False
@@ -566,7 +566,7 @@ class AppRuntimeManager:
         # revive-idle branch used to skip the assignment, leaving the
         # post-lock `if dead is not None:` check throwing UnboundLocalError.
         dead: Optional[AppRuntime] = None
-        async with self._lock:
+        async with self.p_lock:
             rt = self.runtimes.get(workspace_id)
             if rt is None:
                 # Maybe the runtime is sitting idle in the LRU; revive
@@ -609,7 +609,7 @@ class AppRuntimeManager:
     async def detach(self, workspace_id: str) -> None:
         to_idle: Optional[AppRuntime] = None
         to_reap: list[AppRuntime] = []
-        async with self._lock:
+        async with self.p_lock:
             count = self._attached.get(workspace_id, 0) - 1
             if count > 0:
                 self._attached[workspace_id] = count
@@ -714,7 +714,7 @@ class AppRuntimeManager:
         so they can run their own shutdown. Parallel via gather; with the
         per-runtime 3s SIGTERM grace, worst case is one ~3s wait rather than
         N*3s. Idempotent; safe to invoke from multiple shutdown paths."""
-        async with self._lock:
+        async with self.p_lock:
             victims: list[AppRuntime] = []
             for rt in list(self.runtimes.values()):
                 victims.append(rt)

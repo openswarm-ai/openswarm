@@ -82,13 +82,13 @@ def install_sync_sink():
             "properties": props,
         })
 
-    old_sink = svc_client._test_sink
-    old_iid = svc_client._install_id
+    old_sink = svc_client.test_sink
+    old_iid = svc_client.install_id
     svc_client.set_test_sink(_sink)
-    svc_client._install_id = "test-install-id"
+    svc_client.install_id = "test-install-id"
     yield
     svc_client.set_test_sink(old_sink)
-    svc_client._install_id = old_iid
+    svc_client.install_id = old_iid
 
 
 @pytest.fixture(autouse=True)

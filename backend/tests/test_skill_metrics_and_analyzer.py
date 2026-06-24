@@ -24,7 +24,7 @@ def _load_analyzer():
     return mod
 
 
-def _log():
+def p_log():
     return [
         {"tool": "BrowserNavigate", "input": {"url": "http://h/form"}, "ok": True},
         {"tool": "BrowserType", "input": {"selector": "#q", "text": "shoes"}, "ok": True},
@@ -36,13 +36,13 @@ def _task_row(sig, path, dur_s, turns=None, playbook_seeded=False):
     # started_at in the past makes record_task compute a realistic total_ms.
     bm.record_task("s-" + sig + path + str(turns) + str(playbook_seeded), "b", sig, "completed",
                    time.time() - dur_s, turns if turns is not None else (0 if path == "replay" else 3),
-                   _log(), {"input": 10, "output": 5}, path=path, task_sig=sig,
+                   p_log(), {"input": 10, "output": 5}, path=path, task_sig=sig,
                    playbook_seeded=playbook_seeded)
 
 
 def test_skill_events_are_emitted_for_each_transition(_metrics_dir):
     sk.clear(wipe_disk=True)
-    sk.record_skill("shop.com", "search now", _log())            # learn
+    sk.record_skill("shop.com", "search now", p_log())            # learn
     sk.mark_replay_succeeded("shop.com", "search now")           # promote
     sk.mark_replay_failed("shop.com", "search now")              # kept (trusted, 1)
     sk.mark_replay_failed("shop.com", "search now")              # demote
@@ -56,7 +56,7 @@ def test_skill_events_are_emitted_for_each_transition(_metrics_dir):
 def test_analyzer_measures_replay_speedup_when_the_layer_helps(_metrics_dir, capsys):
     sk.clear(wipe_disk=True)
     # A repeated task: 1 slow LLM run, then 2 fast replays -> measurable speedup.
-    sk.record_skill("shop.com", "search now", _log())
+    sk.record_skill("shop.com", "search now", p_log())
     _task_row(sk.compute_sig("search now"), "llm", 4.0)
     sk.mark_replay_succeeded("shop.com", "search now")
     _task_row(sk.compute_sig("search now"), "replay", 0.04)
@@ -75,9 +75,9 @@ def test_analyzer_flags_silent_non_help_thrash(_metrics_dir, capsys):
     sk.clear(wipe_disk=True)
     # A task that keeps getting re-learned/edited and quarantined, never promoted,
     # and whose runs always go via the LLM (never the fast path) = the ghost.
-    sk.record_skill("bad.com", "do thing now", _log())                  # learn
+    sk.record_skill("bad.com", "do thing now", p_log())                  # learn
     sk.mark_replay_failed("bad.com", "do thing now")                    # quarantine
-    edited = _log()[:-1] + [{"tool": "BrowserClickIndex", "input": {}, "ok": True,
+    edited = p_log()[:-1] + [{"tool": "BrowserClickIndex", "input": {}, "ok": True,
                              "clicked_role": "button", "clicked_name": "Other"}]
     sk.record_skill("bad.com", "do thing now", edited)                  # edit (un-quarantine)
     sk.mark_replay_failed("bad.com", "do thing now")                    # quarantine again
@@ -95,9 +95,9 @@ def test_analyzer_flags_silent_non_help_thrash(_metrics_dir, capsys):
 
 def test_analyzer_reports_composition(_metrics_dir, capsys):
     sk.clear(wipe_disk=True)
-    sk.record_skill("shop.com", "search now", _log())
+    sk.record_skill("shop.com", "search now", p_log())
     sk.mark_replay_succeeded("shop.com", "search now")            # trusted foundation
-    plus = _log() + [{"tool": "BrowserClickIndex", "input": {}, "ok": True,
+    plus = p_log() + [{"tool": "BrowserClickIndex", "input": {}, "ok": True,
                       "clicked_role": "button", "clicked_name": "Checkout"}]
     sk.record_skill("shop.com", "search and checkout now", plus)  # composes on foundation
     sk.mark_replay_succeeded("shop.com", "search and checkout now")  # dependent earns trust too

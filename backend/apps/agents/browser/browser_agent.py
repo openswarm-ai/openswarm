@@ -1891,10 +1891,10 @@ async def run_browser_agent(
                                 {"type": "text", "text": f"\n\n💡 Suggested next step: {guidance}"}
                                 ]
 
-                _ok = "error" not in result
+                p_ok = "error" not in result
                 browser_metrics.record_tool(
                     session_id, browser_id, turn, tu.name, elapsed_ms,
-                    ok=_ok, error=result.get("error", ""),
+                    ok=p_ok, error=result.get("error", ""),
                     is_loop=is_loop, stagnation_streak=stagnation_streak,
                     result_len=len(str(result.get("text") or result.get("error") or "")),
                 )

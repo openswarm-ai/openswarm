@@ -2678,7 +2678,7 @@ def _make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=No
             return _resp(200, {"connections": state["connections"]})
         return _resp(404)
 
-    async def _post(url, json=None, **kw):
+    async def p_post(url, json=None, **kw):
         state["calls"].append(("POST", url, json))
         if "/api/provider-nodes" in url and not url.endswith("/provider-nodes/"):
             if "POST:provider-nodes" in fail:
@@ -2739,7 +2739,7 @@ def _make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=No
         async def __aexit__(self, *a):
             return False
         get = AsyncMock(side_effect=_get)
-        post = AsyncMock(side_effect=_post)
+        post = AsyncMock(side_effect=p_post)
         put = AsyncMock(side_effect=_put)
         patch = AsyncMock(side_effect=_patch)
         delete = AsyncMock(side_effect=_delete)

@@ -140,9 +140,9 @@ import backend.apps.agents.tools.ssrf_guard as _ssrf
 
 @pytest.fixture(autouse=True)
 def _allow_urls(monkeypatch):
-    async def _ok(url):
+    async def p_ok(url):
         return None
-    monkeypatch.setattr(_ssrf, "assert_safe_url", _ok)
+    monkeypatch.setattr(_ssrf, "assert_safe_url", p_ok)
 
 
 def _local_returns(monkeypatch, text):

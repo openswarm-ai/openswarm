@@ -171,7 +171,7 @@ async def discover_mcp_tools_stdio(command: str, args: list[str] | None = None, 
 
     stderr_task = asyncio.create_task(_drain_stderr())
 
-    async def _send(msg: dict) -> None:
+    async def p_send(msg: dict) -> None:
         line = json.dumps(msg) + "\n"
         proc.stdin.write(line.encode())
         await proc.stdin.drain()
@@ -204,7 +204,7 @@ async def discover_mcp_tools_stdio(command: str, args: list[str] | None = None, 
                 return data
 
     try:
-        await _send({
+        await p_send({
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": {
                 "protocolVersion": "2025-03-26",
@@ -219,9 +219,9 @@ async def discover_mcp_tools_stdio(command: str, args: list[str] | None = None, 
         # against an already-running server and stay at the default 30 s.
         await _recv(timeout_s=120.0)
 
-        await _send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        await p_send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 
-        await _send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        await p_send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         data = await _recv()
 
         tools_list = data.get("result", {}).get("tools", [])
