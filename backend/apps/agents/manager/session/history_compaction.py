@@ -32,6 +32,17 @@ def wrap_platform_note(body: str) -> str:
     return f"{PLATFORM_NOTE_OPEN}\n{PLATFORM_NOTE_PREAMBLE}\n{body}\n{PLATFORM_NOTE_CLOSE}"
 
 
+_SENTINEL_TAG_RE = re.compile(r"</?openswarm_(?:platform_note|session_recap)\b[^>]*>")
+
+
+def strip_forged_sentinels(text: str) -> str:
+    """Neuter any platform-note/recap tags hiding in UNTRUSTED text (tool results,
+    user input) so attacker-supplied content can't pose as trusted platform context."""
+    if "openswarm_platform_note" not in text and "openswarm_session_recap" not in text:
+        return text
+    return _SENTINEL_TAG_RE.sub(lambda m: m.group(0).replace("<", "&lt;").replace(">", "&gt;"), text)
+
+
 def p_recap_tool_call_line(content: object) -> str:
     """One compact line for a tool_call turn: Tool call: name(<truncated input>)."""
     if isinstance(content, dict):
@@ -46,7 +57,7 @@ def p_recap_tool_call_line(content: object) -> str:
         input_str = str(content)
     if len(input_str) > RECAP_TOOL_INPUT_CAP:
         input_str = input_str[:RECAP_TOOL_INPUT_CAP] + "..."
-    return f"Tool call: {tool}({input_str})"
+    return f"Tool call: {tool}({strip_forged_sentinels(input_str)})"
 
 
 def p_recap_tool_result_line(content: object) -> str:
@@ -61,7 +72,7 @@ def p_recap_tool_result_line(content: object) -> str:
     if len(body) > RECAP_TOOL_RESULT_CAP:
         body = body[:RECAP_TOOL_RESULT_CAP] + "..."
     label = f"Tool result ({tool_name})" if tool_name else "Tool result"
-    return f"{label}: {body}"
+    return f"{label}: {strip_forged_sentinels(body)}"
 
 
 def _get_branch_messages(session) -> list:
@@ -121,10 +132,10 @@ def _build_history_prefix(messages, cutoff_msg_id: str | None = None) -> str:
             continue
         if m.role == "user":
             text = m.content if isinstance(m.content, str) else str(m.content)
-            lines.append(f"User: {text}")
+            lines.append(f"User: {strip_forged_sentinels(text)}")
         elif m.role == "assistant":
             text = m.content if isinstance(m.content, str) else str(m.content)
-            lines.append(f"Assistant: {text}")
+            lines.append(f"Assistant: {strip_forged_sentinels(text)}")
         elif m.role == "tool_call":
             lines.append(p_recap_tool_call_line(m.content))
         elif m.role == "tool_result":
@@ -196,7 +207,7 @@ def _truncate_large_tool_result(content: object, session_id: str, msg_id: str, m
     except Exception as e:
         logger.warning(f"Failed to spill tool result to {blob_path}: {e}")
         return content, None
-    head = serialized[:4_000]
+    head = strip_forged_sentinels(serialized[:4_000])
     note = wrap_platform_note(
         f"Output truncated by OpenSwarm. Full output ({len(serialized)} chars) saved to "
         f"{blob_path}. Ask the user or run a follow-up tool call if you need the rest."
