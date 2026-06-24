@@ -104,7 +104,7 @@ def p_reclassify_existing_tools() -> None:
         if not fname.endswith(".json"):
             continue
         try:
-            tool = p_load(fname[:-5])
+            tool = load(fname[:-5])
         except Exception:
             continue
         perms = tool.tool_permissions or {}
@@ -134,7 +134,7 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 # Tool JSONs total ~1.5MB and load_all_tools runs on every dispatch, prompt build, and
 # MCPSearch keystroke; the cache skips re-parsing, revalidated by a per-file stat
 # signature so any write (ours or external) invalidates instantly. Callers treat
-# the returned ToolDefinitions as immutable; mutate via p_load(tool_id) + save.
+# the returned ToolDefinitions as immutable; mutate via load(tool_id) + save.
 p_tools_cache: list[ToolDefinition] | None = None
 p_tools_cache_sig: tuple | None = None
 
@@ -176,7 +176,7 @@ def save(tool: ToolDefinition):
         json.dump(tool.model_dump(), f, indent=2)
 
 
-def p_load(tool_id: str) -> ToolDefinition:
+def load(tool_id: str) -> ToolDefinition:
     path = os.path.join(DATA_DIR, f"{tool_id}.json")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Tool not found")
@@ -338,7 +338,7 @@ def p_connected_html() -> HTMLResponse:
 
 @tools_lib.router.get("/{tool_id}")
 async def get_tool(tool_id: str):
-    return p_load(tool_id).model_dump()
+    return load(tool_id).model_dump()
 
 
 @tools_lib.router.post("/create")
@@ -358,7 +358,7 @@ async def create_tool(body: ToolCreate):
 
 @tools_lib.router.put("/{tool_id}")
 async def update_tool(tool_id: str, body: ToolUpdate):
-    tool = p_load(tool_id)
+    tool = load(tool_id)
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(tool, k, v)
     save(tool)
@@ -375,7 +375,7 @@ async def delete_tool(tool_id: str):
 
 @tools_lib.router.post("/{tool_id}/discover")
 async def discover_tools(tool_id: str):
-    tool = p_load(tool_id)
+    tool = load(tool_id)
 
     if tool.auth_type == "oauth2" and tool.auth_status == "connected":
         if tool.oauth_tokens.get("refresh_token"):
@@ -468,7 +468,7 @@ async def m365_device_login(tool_id: str):
     """
     import subprocess
 
-    tool = p_load(tool_id)
+    tool = load(tool_id)
     script = m365_server_script()
     if not os.path.isfile(script):
         raise HTTPException(status_code=500, detail="M365 MCP server not installed")
@@ -534,7 +534,7 @@ async def m365_device_login(tool_id: str):
                 pass
             # Update tool status
             try:
-                t = p_load(tool_id)
+                t = load(tool_id)
                 t.auth_status = "connected"
                 if login_state.get("email"):
                     t.connected_account_email = login_state["email"]
@@ -574,7 +574,7 @@ async def m365_device_login_status(tool_id: str):
         cache_env = m365_cache_env()
         cache_path = cache_env["MS365_MCP_TOKEN_CACHE_PATH"]
         if os.path.isfile(cache_path):
-            tool = p_load(tool_id)
+            tool = load(tool_id)
             if tool.auth_status == "connected":
                 return {"status": "connected", "email": tool.connected_account_email}
         return {"status": "no_login_in_progress"}
@@ -594,7 +594,7 @@ async def m365_device_login_status(tool_id: str):
 @tools_lib.router.post("/{tool_id}/m365/disconnect")
 async def m365_disconnect(tool_id: str):
     """Disconnect M365 by clearing the cached token."""
-    tool = p_load(tool_id)
+    tool = load(tool_id)
     cache_env = m365_cache_env()
     for path in cache_env.values():
         if os.path.isfile(path):
@@ -608,7 +608,7 @@ async def m365_disconnect(tool_id: str):
 @tools_lib.router.post("/{tool_id}/oauth/disconnect")
 async def oauth_disconnect(tool_id: str):
     """Clear OAuth tokens and reset auth status so the user can reconnect with a different account."""
-    tool = p_load(tool_id)
+    tool = load(tool_id)
     access_token = tool.oauth_tokens.get("access_token")
 
     if access_token and tool.name.lower() != "notion":
@@ -634,7 +634,7 @@ async def oauth_disconnect(tool_id: str):
 async def oauth_start(tool_id: str):
     """Return the OAuth start URL for this tool. All built-in providers
     proxy through Fly so client_secret values stay server-side."""
-    tool = p_load(tool_id)
+    tool = load(tool_id)
     proxied = proxied_provider_for(tool)
     if not proxied:
         raise HTTPException(
@@ -704,7 +704,7 @@ async def oauth_cloud_claim(
 
     data = resp.json()
     tokens = data.get("tokens", {}) or {}
-    tool = p_load(tool_id)
+    tool = load(tool_id)
     # Google's token endpoint doesn't include the user's email; fetch it
     # from userinfo so the UI can show "you connected you@gmail.com"
     # rather than the generic "Google account" placeholder.
