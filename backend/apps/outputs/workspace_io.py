@@ -75,19 +75,20 @@ WALK_SKIP_DIRS = frozenset({
     ".ruff_cache",
 })
 
-# Cap per-file response size at 256 KB. Hand-written source rarely exceeds this; auto-generated bundles routinely run into the MBs and they're not what the user/agent is editing. Anything over the cap returns a truncated stub the frontend treats as "open the file directly to see full contents."
-P_WALK_MAX_FILE_BYTES = 256 * 1024
+# Poll-payload guard, NOT an editor limit: the endpoint re-serializes the whole tree every 2 s, so a multi-MB bundle would peg the backend; 2 MB clears real hand-authored apps but traps minified bundles/sourcemaps, which are reported out-of-band (the `truncated` map) and NEVER stubbed, so a placeholder can't round-trip back into storage and destroy the real source.
+P_WALK_MAX_FILE_BYTES = 2 * 1024 * 1024
 
 
-def walk_directory(folder: str) -> dict[str, str]:
-    """Walk a directory tree and return {relative_path: content} for all
-    text files the user is actually authoring. Skips build/install
-    directories AND truncates oversize files; both critical for the
-    polling endpoint, which is called every 2 s while the agent is
-    writing code and would otherwise serialize hundreds of MB per poll."""
+def walk_directory(folder: str) -> tuple[dict[str, str], dict[str, int]]:
+    """Walk a directory tree and return ({relative_path: content}, {relative_path: size}).
+    The second map lists files over the cap: they are OMITTED from the
+    content map (not stubbed) so no consumer can mistake a placeholder for
+    real content. Skips build/install dirs; both critical for the polling
+    endpoint, which is called every 2 s while the agent writes code."""
     files: dict[str, str] = {}
+    truncated: dict[str, int] = {}
     if not os.path.isdir(folder):
-        return files
+        return files, truncated
     for root, dirs, filenames in os.walk(folder):
         # Mutate `dirs` in place; that's how os.walk skips a subtree. Doing it here means we never even stat the children, so a 10k-file `.venv/` costs ~one stat (on the dir itself) instead of 10k.
         dirs[:] = [d for d in dirs if d not in WALK_SKIP_DIRS]
@@ -99,14 +100,25 @@ def walk_directory(folder: str) -> dict[str, str]:
                 # Stat first; cheap, lets us skip giant files without opening + reading them.
                 size = os.path.getsize(full_path)
                 if size > P_WALK_MAX_FILE_BYTES:
-                    files[rel_path] = (
-                        f"// [openswarm] file truncated ({size} bytes > "
-                        f"{P_WALK_MAX_FILE_BYTES} byte cap). Open directly "
-                        f"to view full contents."
-                    )
+                    truncated[rel_path] = size
                     continue
                 with open(full_path) as f:
                     files[rel_path] = f.read()
             except Exception:
                 pass
-    return files
+    return files, truncated
+
+
+def would_shrink_oversize_file(full_path: str, incoming: str) -> bool:
+    """True when this write would replace a known-oversize file (already past
+    the poll cap) with a smaller payload. The polling read omits oversize
+    files, so a client never holds their bytes; a smaller write is a
+    truncation marker, not a real edit. Refusing it makes the export/snapshot
+    corruption impossible at the disk boundary, for any client."""
+    if not os.path.isfile(full_path):
+        return False
+    try:
+        existing = os.path.getsize(full_path)
+    except OSError:
+        return False
+    return existing > P_WALK_MAX_FILE_BYTES and len(incoming.encode("utf-8")) < existing

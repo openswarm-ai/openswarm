@@ -44,6 +44,7 @@ from backend.apps.outputs.workspace_io import (
     load,
     load_output,
     walk_directory,
+    would_shrink_oversize_file,
 )
 from backend.apps.outputs.prompts import VIBE_CODE_SYSTEM_PROMPT
 
@@ -128,7 +129,7 @@ async def read_workspace(workspace_id: str):
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    files = walk_directory(folder)
+    files, truncated = walk_directory(folder)
 
     meta = None
     if "meta.json" in files:
@@ -137,8 +138,8 @@ async def read_workspace(workspace_id: str):
         except (json.JSONDecodeError, ValueError):
             pass
 
-    # Include `path` so the frontend can rehydrate without re-calling /seed. /seed unconditionally overwrites, which would clobber any in-progress edits the agent made since the last save.
-    return {"files": files, "meta": meta, "path": os.path.abspath(folder)}
+    # Include `path` so the frontend can rehydrate without re-calling /seed. /seed unconditionally overwrites, which would clobber any in-progress edits the agent made since the last save. `truncated` lists oversize files omitted from `files` so the editor shows them read-only instead of writing back a stub.
+    return {"files": files, "meta": meta, "path": os.path.abspath(folder), "truncated": truncated}
 
 
 def sync_output_from_meta_json(workspace_id: str, fallback_name: str | None = None) -> bool:
@@ -470,9 +471,12 @@ async def write_workspace_file(workspace_id: str, filepath: str, body: dict):
     # `startswith(folder_norm + os.sep)` (not just folder_norm) so a workspace `abc-123` can't be tricked into writing into a sibling `abc-1234-evil`, prefix-string collision rather than path-component containment. Today's UUID-format ids make the collision unlikely in practice, but the check is one character and immunizes future id schemes.
     if full_path != folder_norm and not full_path.startswith(folder_norm + os.sep):
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
+    content = body.get("content", "")
+    if would_shrink_oversize_file(full_path, content):
+        return {"ok": True, "skipped": "oversize"}
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
     with open(full_path, "w", encoding="utf-8") as f:
-        f.write(body.get("content", ""))
+        f.write(content)
     return {"ok": True}
 
 
