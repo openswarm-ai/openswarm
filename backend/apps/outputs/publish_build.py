@@ -17,16 +17,16 @@ from backend.apps.outputs.publish_common import PublishError, is_webapp, workspa
 
 logger = logging.getLogger(__name__)
 
-_BUILD_TIMEOUT = 180  # vite build on a cold-ish node_modules can be slow
-_MAX_BUNDLE_FILE = 25 * 1024 * 1024
-_SECRET_KEY_EXTS = (".pem", ".key", ".p12", ".pfx", ".keystore")
+P_BUILD_TIMEOUT = 180  # vite build on a cold-ish node_modules can be slow
+P_MAX_BUNDLE_FILE = 25 * 1024 * 1024
+P_SECRET_KEY_EXTS = (".pem", ".key", ".p12", ".pfx", ".keystore")
 
 
-def _node_bin() -> Optional[str]:
+def p_node_bin() -> Optional[str]:
     return os.environ.get("OPENSWARM_NODE_PATH") or shutil.which("node")
 
 
-def _safe_build_config(fe: str) -> tuple[list[str], Optional[str]]:
+def p_safe_build_config(fe: str) -> tuple[list[str], Optional[str]]:
     """vite-plugin-terminal injects a dev-only `virtual:terminal` module that
     breaks `vite build` in older workspaces (the template later gated it to dev,
     but apps seeded before that still carry the ungated plugin). Build against a
@@ -65,12 +65,12 @@ async def build_static(output: Output) -> Optional[str]:
         return None
     fe = os.path.join(workspace_dir(output), "frontend")
     vite = os.path.join(fe, "node_modules", "vite", "bin", "vite.js")
-    node = _node_bin()
+    node = p_node_bin()
     if not node or not os.path.exists(vite):
         raise PublishError(
             "This app isn't set up to build yet. Open it once in the editor, then try publishing again."
         )
-    config_args, temp_cfg = _safe_build_config(fe)
+    config_args, temp_cfg = p_safe_build_config(fe)
     proc = await asyncio.create_subprocess_exec(
         node, "node_modules/vite/bin/vite.js", "build", *config_args,
         cwd=fe,
@@ -79,7 +79,7 @@ async def build_static(output: Output) -> Optional[str]:
         env={**os.environ, "NODE_ENV": "production"},
     )
     try:
-        _out, err = await asyncio.wait_for(proc.communicate(), timeout=_BUILD_TIMEOUT)
+        _out, err = await asyncio.wait_for(proc.communicate(), timeout=P_BUILD_TIMEOUT)
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
@@ -99,7 +99,7 @@ async def build_static(output: Output) -> Optional[str]:
     return dist
 
 
-def _is_secret_file(rel_path: str) -> bool:
+def p_is_secret_file(rel_path: str) -> bool:
     """This bundle is served publicly, so anything secret-shaped must never make it
     in. dotenv files and private-key material are the realistic leaks; the webapp
     path already ships only the built dist, this also covers a hand-built flat app."""
@@ -107,7 +107,7 @@ def _is_secret_file(rel_path: str) -> bool:
     return (
         base == ".env"
         or base.startswith(".env.")
-        or base.endswith(_SECRET_KEY_EXTS)
+        or base.endswith(P_SECRET_KEY_EXTS)
         or base in (".npmrc", ".git-credentials", ".htpasswd")
     )
 
@@ -126,10 +126,10 @@ def collect_bundle(output: Output, dist_dir: Optional[str]) -> bytes:
                     if os.path.islink(full):
                         continue
                     rel = os.path.relpath(full, dist_dir).replace(os.sep, "/")
-                    if _is_secret_file(rel):
+                    if p_is_secret_file(rel):
                         continue
                     try:
-                        if os.path.getsize(full) > _MAX_BUNDLE_FILE:
+                        if os.path.getsize(full) > P_MAX_BUNDLE_FILE:
                             continue
                     except OSError:
                         continue
@@ -137,10 +137,10 @@ def collect_bundle(output: Output, dist_dir: Optional[str]) -> bytes:
         else:
             for name, content in (output.files or {}).items():
                 rel = name.replace(os.sep, "/")
-                if _is_secret_file(rel):
+                if p_is_secret_file(rel):
                     continue
                 data = content.encode("utf-8")
-                if len(data) > _MAX_BUNDLE_FILE:
+                if len(data) > P_MAX_BUNDLE_FILE:
                     continue
                 info = tarfile.TarInfo(name=rel)
                 info.size = len(data)

@@ -14,24 +14,24 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # SIGTERM grace; well-behaved servers shut down under a second so 3s is enough.
-_TERMINATE_GRACE_SECONDS = 3
+TERMINATE_GRACE_SECONDS = 3
 
 # 180s covers npm install (60-90s on typical hardware) plus the Vite bind.
-_FRONTEND_BIND_TIMEOUT_SECONDS = 180
+FRONTEND_BIND_TIMEOUT_SECONDS = 180
 # 80ms probe: dropping from 500ms was pure user-visible preview latency win; cheap on localhost.
-_FRONTEND_BIND_POLL_INTERVAL = 0.08
+FRONTEND_BIND_POLL_INTERVAL = 0.08
 
 # 2000 lines per runtime; lets a Terminal tab opened mid-session replay context. ~few hundred KB at worst.
-_LOG_BUFFER_LINES = 2000
+LOG_BUFFER_LINES = 2000
 
 # Idle runtimes kept in LRU; trades memory for instant switch-back, beyond 1 because typical users ping-pong 2-3 apps.
-_MAX_IDLE_RUNTIMES = 3
+MAX_IDLE_RUNTIMES = 3
 
 # Cap on recent error lines the agent gets; 50 is enough for babel error + stack + a few warnings.
-_RECENT_ERRORS_MAX = 50
+RECENT_ERRORS_MAX = 50
 
 # Narrow regex for build errors (vite, babel, tsc, uvicorn); keeps routine logs out of agent context.
-_ERROR_PATTERNS = re.compile(
+ERROR_PATTERNS = re.compile(
     r"(?:"
     r"\[plugin:[^\]]+\]|"      # vite plugin errors
     r"SyntaxError|"            # node / babel
@@ -49,7 +49,7 @@ _ERROR_PATTERNS = re.compile(
 )
 
 
-def _suspend_process_tree(proc) -> None:
+def suspend_process_tree(proc) -> None:
     """Send SIGSTOP to a workspace's subprocess so it consumes 0% CPU
     while sitting in the LRU idle pool. The signal is delivered to the
     PROCESS GROUP (negative PID) when the child is a session leader,
@@ -71,9 +71,9 @@ def _suspend_process_tree(proc) -> None:
         pass
 
 
-def _resume_process_tree(proc) -> None:
+def resume_process_tree(proc) -> None:
     """SIGCONT a previously-suspended workspace process. Pair with
-    _suspend_process_tree. Microsecond cost; idempotent if the process
+    suspend_process_tree. Microsecond cost; idempotent if the process
     was never paused."""
     if proc is None or os.name == "nt":
         return
@@ -85,7 +85,7 @@ def _resume_process_tree(proc) -> None:
         pass
 
 
-def _background_priority_kwargs() -> dict:
+def background_priority_kwargs() -> dict:
     """Return the kwargs that lower the spawned subprocess's OS priority
     to a "background" level. On POSIX this is `preexec_fn=os.nice(10)`,
     which sets the child's nice to +10 BEFORE exec (so the renice covers
@@ -112,7 +112,7 @@ def _background_priority_kwargs() -> dict:
     return {"preexec_fn": lambda: os.nice(10)}
 
 
-def _find_free_port() -> int:
+def find_free_port() -> int:
     """Ask the kernel for an unused localhost port. There's a tiny race
     between this socket closing and the backend re-binding, but we hand
     each port to exactly one runtime so no caller competes for it, and
@@ -122,7 +122,7 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _kill_descendant_tree(pid: int, sig_name: str = "TERM") -> None:
+def kill_descendant_tree(pid: int, sig_name: str = "TERM") -> None:
     """Recursively signal every descendant of `pid`, leaves-first. The
     webapp template's run.sh installs `trap cleanup EXIT` (no TERM), so a
     plain SIGTERM to the bash wrapper exits bash silently and leaves
@@ -154,7 +154,7 @@ def _kill_descendant_tree(pid: int, sig_name: str = "TERM") -> None:
     except Exception:
         children = []
     for child in children:
-        _kill_descendant_tree(child, sig_name)
+        kill_descendant_tree(child, sig_name)
     sig = getattr(signal, f"SIG{sig_name}", signal.SIGTERM)
     for child in children:
         try:
@@ -163,7 +163,7 @@ def _kill_descendant_tree(pid: int, sig_name: str = "TERM") -> None:
             pass
 
 
-def _is_port_free(port: int) -> bool:
+def is_port_free(port: int) -> bool:
     """True if nothing currently holds a TCP listener on 127.0.0.1:port.
     Cheap kernel-probe; resolves on bind success. Used as the cross-session
     safety net: if a prior OpenSwarm run left a ghost subprocess holding
@@ -177,7 +177,7 @@ def _is_port_free(port: int) -> bool:
         return False
 
 
-def _write_env_value(env_path: str, key: str, value: str) -> None:
+def write_env_value(env_path: str, key: str, value: str) -> None:
     """Update KEY=VALUE in an existing `.env`, preserving every other
     line. Creates the file if missing. Used when a persisted port collides
     with a ghost from a prior session and we have to reallocate before
@@ -210,7 +210,7 @@ def _write_env_value(env_path: str, key: str, value: str) -> None:
         logger.exception("failed writing %s=%s to %s", key, value, env_path)
 
 
-def _is_new_mode(workspace_path: str) -> bool:
+def is_new_mode(workspace_path: str) -> bool:
     """A workspace is "new-mode" (webapp-template scaffold) if it has a
     `run.sh` at its root. Old-mode workspaces are flat `index.html`-only
     apps that pre-date the template swap; they're served by OpenSwarm's
@@ -222,7 +222,7 @@ def _is_new_mode(workspace_path: str) -> bool:
     return os.path.isfile(os.path.join(workspace_path, "run.sh"))
 
 
-def _read_env_value(env_path: str, key: str) -> Optional[str]:
+def read_env_value(env_path: str, key: str) -> Optional[str]:
     """Parse one value out of a workspace's `.env` without the cost of a
     full subprocess-source. Strips quotes + trailing comments. Returns
     None if the file or key is missing."""

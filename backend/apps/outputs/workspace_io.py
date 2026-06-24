@@ -13,7 +13,7 @@ from backend.config.json_store import read_json_or_none, atomic_write_json
 logger = logging.getLogger(__name__)
 
 
-def _load_all() -> list[Output]:
+def load_all() -> list[Output]:
     result = []
     if not os.path.exists(DATA_DIR):
         return result
@@ -29,11 +29,11 @@ def _load_all() -> list[Output]:
     return result
 
 
-def _save(output: Output):
+def save(output: Output):
     atomic_write_json(os.path.join(DATA_DIR, f"{output.id}.json"), output.model_dump())
 
 
-def _load(output_id: str) -> Output:
+def load(output_id: str) -> Output:
     data = read_json_or_none(os.path.join(DATA_DIR, f"{output_id}.json"))
     if data is None:
         raise HTTPException(status_code=404, detail="Output not found")
@@ -54,7 +54,7 @@ def load_output(output_id: str) -> Output | None:
 # agent is active. Result: backend CPU pegged on JSON-serializing
 # auto-generated chunks the frontend will then throw away. The frontend
 # already filters these for display; this skip is the real fix.
-_WALK_SKIP_DIRS = frozenset({
+WALK_SKIP_DIRS = frozenset({
     "node_modules",
     ".vite",
     ".vite-cache",
@@ -75,10 +75,10 @@ _WALK_SKIP_DIRS = frozenset({
 # they're not what the user/agent is editing. Anything over the cap
 # returns a truncated stub the frontend treats as "open the file
 # directly to see full contents."
-_WALK_MAX_FILE_BYTES = 256 * 1024
+P_WALK_MAX_FILE_BYTES = 256 * 1024
 
 
-def _walk_directory(folder: str) -> dict[str, str]:
+def walk_directory(folder: str) -> dict[str, str]:
     """Walk a directory tree and return {relative_path: content} for all
     text files the user is actually authoring. Skips build/install
     directories AND truncates oversize files; both critical for the
@@ -92,7 +92,7 @@ def _walk_directory(folder: str) -> dict[str, str]:
         # Doing it here means we never even stat the children, so a
         # 10k-file `.venv/` costs ~one stat (on the dir itself) instead
         # of 10k.
-        dirs[:] = [d for d in dirs if d not in _WALK_SKIP_DIRS]
+        dirs[:] = [d for d in dirs if d not in WALK_SKIP_DIRS]
         for fname in filenames:
             full_path = os.path.join(root, fname)
             # Normalize to forward-slash keys so the frontend's
@@ -106,10 +106,10 @@ def _walk_directory(folder: str) -> dict[str, str]:
                 # Stat first; cheap, lets us skip giant files without
                 # opening + reading them.
                 size = os.path.getsize(full_path)
-                if size > _WALK_MAX_FILE_BYTES:
+                if size > P_WALK_MAX_FILE_BYTES:
                     files[rel_path] = (
                         f"// [openswarm] file truncated ({size} bytes > "
-                        f"{_WALK_MAX_FILE_BYTES} byte cap). Open directly "
+                        f"{P_WALK_MAX_FILE_BYTES} byte cap). Open directly "
                         f"to view full contents."
                     )
                     continue

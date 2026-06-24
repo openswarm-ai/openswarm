@@ -6,7 +6,7 @@ What this proves:
 1. slugify makes url-safe, length-capped slugs and never empties.
 2. quick_ast_gate flags backend code that reaches outside the sandbox allowlist
    and stays silent for allowlist-only code.
-3. _collect_source picks up flat files and skips binary/non-source.
+3. collect_source picks up flat files and skips binary/non-source.
 4. collect_bundle (flat) tars exactly the files dict; (webapp) tars a dist tree
    and skips symlinks; secret-shaped files never make it into a public bundle.
 5. scan_for_publish merges AST findings into the review when the LLM pass is a
@@ -55,7 +55,7 @@ def test_collect_source_filters():
         "data.bin": "not source",
         "notes.txt": "ignore me",
     })
-    src = publish_scan._collect_source(o)
+    src = publish_scan.collect_source(o)
     assert set(src.keys()) == {"index.html", "backend.py"}
 
 
@@ -115,9 +115,9 @@ def test_scan_for_publish_merges_ast():
     # Force the LLM pass to a deterministic no-op so the test is hermetic.
     async def _no_llm(src, settings):
         return [], "clean"
-    orig = publish_scan._llm_findings
-    publish_scan._llm_findings = _no_llm
-    publish_scan._memo.clear()
+    orig = publish_scan.llm_findings
+    publish_scan.llm_findings = _no_llm
+    publish_scan.memo.clear()
     try:
         unsafe = Output(name="x", files={"backend.py": "import socket\nresult={}\n"})
         review = asyncio.run(publish_scan.scan_for_publish(unsafe, settings=object()))
@@ -129,8 +129,8 @@ def test_scan_for_publish_merges_ast():
         assert review2.verdict == "clean"
         assert review2.findings == []
     finally:
-        publish_scan._llm_findings = orig
-        publish_scan._memo.clear()
+        publish_scan.llm_findings = orig
+        publish_scan.memo.clear()
 
 
 def test_scan_memo_skips_second_llm_call():
@@ -141,9 +141,9 @@ def test_scan_memo_skips_second_llm_call():
         calls["n"] += 1
         return ["from the llm"], "warn"
 
-    orig = publish_scan._llm_findings
-    publish_scan._llm_findings = _counting_llm
-    publish_scan._memo.clear()
+    orig = publish_scan.llm_findings
+    publish_scan.llm_findings = _counting_llm
+    publish_scan.memo.clear()
     try:
         app = Output(name="x", files={"index.html": "<html>same</html>"})
         r1 = asyncio.run(publish_scan.scan_for_publish(app, settings=object()))
@@ -155,23 +155,23 @@ def test_scan_memo_skips_second_llm_call():
         asyncio.run(publish_scan.scan_for_publish(changed, settings=object()))
         assert calls["n"] == 2, "changed source must bust the memo"
     finally:
-        publish_scan._llm_findings = orig
-        publish_scan._memo.clear()
+        publish_scan.llm_findings = orig
+        publish_scan.memo.clear()
 
 
 def test_runtime_injection():
-    from backend.apps.outputs.html_inject import _build_data_injection, _inject_data_into_html
+    from backend.apps.outputs.html_inject import build_data_injection, inject_data_into_html
 
-    base = _build_data_injection("{}", "null")
+    base = build_data_injection("{}", "null")
     assert "OUTPUT_COMPUTE" not in base and "OUTPUT_LLM" not in base  # off by default
 
-    rt = _build_data_injection("{}", "null", "null", with_runtime=True)
+    rt = build_data_injection("{}", "null", "null", with_runtime=True)
     assert "OUTPUT_COMPUTE" in rt and "OUTPUT_LLM" in rt  # preview stubs are defined
     # Preview must NEVER embed the install token into app JS (SECURITY.md item A).
     assert "Bearer" not in rt and "Authorization" not in rt
     assert "once this app is published" in rt
 
-    html = _inject_data_into_html("<html><head></head><body>x</body></html>", "{}", "null", "null", with_runtime=True)
+    html = inject_data_into_html("<html><head></head><body>x</body></html>", "{}", "null", "null", with_runtime=True)
     assert "OUTPUT_LLM" in html and "</head>" in html
 
 

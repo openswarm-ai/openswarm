@@ -18,15 +18,15 @@ from typing import Literal
 from backend.apps.outputs.executor import get_code_warnings
 from backend.apps.outputs.models import Output, PublishReview
 from backend.apps.outputs.publish_common import is_webapp, workspace_dir
-from backend.apps.outputs.workspace_io import _WALK_SKIP_DIRS
+from backend.apps.outputs.workspace_io import WALK_SKIP_DIRS
 
 logger = logging.getLogger(__name__)
 
-_SCAN_CODE_BUDGET = 60_000  # chars of source we hand the aux model
-_SCAN_EXTS = (".py", ".html", ".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte", ".css")
-_MEMO_MAX = 32
+P_SCAN_CODE_BUDGET = 60_000  # chars of source we hand the aux model
+P_SCAN_EXTS = (".py", ".html", ".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte", ".css")
+P_MEMO_MAX = 32
 
-_SCAN_SYSTEM_PROMPT = (
+P_SCAN_SYSTEM_PROMPT = (
     "You are a security reviewer for a no-code app host. The app below will be "
     "served publicly at a *.openswarm.host subdomain. Read the source and report "
     "only concrete, real risks a reviewer would act on: hardcoded secrets or API "
@@ -39,22 +39,22 @@ _SCAN_SYSTEM_PROMPT = (
 )
 
 # slug-content-hash -> PublishReview, so a reopened modal doesn't re-bill the LLM.
-_memo: "OrderedDict[str, PublishReview]" = OrderedDict()
+memo: "OrderedDict[str, PublishReview]" = OrderedDict()
 
 
-def _collect_source(output: Output) -> dict[str, str]:
+def collect_source(output: Output) -> dict[str, str]:
     """Gather human-readable source text for the scan. Flat apps come from the
     files dict; webapp apps walk the workspace skipping node_modules/.venv/dist."""
     src: dict[str, str] = {}
     for name, content in (output.files or {}).items():
-        if name.lower().endswith(_SCAN_EXTS):
+        if name.lower().endswith(P_SCAN_EXTS):
             src[name] = content
     if is_webapp(output):
         root = workspace_dir(output)
         for base, _dirs, fnames in os.walk(root):
-            _dirs[:] = [d for d in _dirs if d not in _WALK_SKIP_DIRS]
+            _dirs[:] = [d for d in _dirs if d not in WALK_SKIP_DIRS]
             for fn in fnames:
-                if not fn.lower().endswith(_SCAN_EXTS):
+                if not fn.lower().endswith(P_SCAN_EXTS):
                     continue
                 full = os.path.join(base, fn)
                 if os.path.islink(full):
@@ -70,7 +70,7 @@ def _collect_source(output: Output) -> dict[str, str]:
     return src
 
 
-def _source_hash(src: dict[str, str]) -> str:
+def p_source_hash(src: dict[str, str]) -> str:
     h = hashlib.sha256()
     for path in sorted(src):
         h.update(path.encode("utf-8"))
@@ -80,21 +80,21 @@ def _source_hash(src: dict[str, str]) -> str:
     return h.hexdigest()
 
 
-def _scan_blob(src: dict[str, str]) -> str:
+def p_scan_blob(src: dict[str, str]) -> str:
     parts: list[str] = []
     total = 0
     for path, code in src.items():
         chunk = f"=== {path} ===\n{code}\n"
-        if total + len(chunk) > _SCAN_CODE_BUDGET:
-            chunk = chunk[: max(0, _SCAN_CODE_BUDGET - total)]
+        if total + len(chunk) > P_SCAN_CODE_BUDGET:
+            chunk = chunk[: max(0, P_SCAN_CODE_BUDGET - total)]
         parts.append(chunk)
         total += len(chunk)
-        if total >= _SCAN_CODE_BUDGET:
+        if total >= P_SCAN_CODE_BUDGET:
             break
     return "".join(parts)
 
 
-def _ast_findings(src: dict[str, str]) -> tuple[list[str], list[str]]:
+def p_ast_findings(src: dict[str, str]) -> tuple[list[str], list[str]]:
     findings: list[str] = []
     scanned: list[str] = []
     for path, code in src.items():
@@ -105,10 +105,10 @@ def _ast_findings(src: dict[str, str]) -> tuple[list[str], list[str]]:
     return findings, scanned
 
 
-async def _llm_findings(src: dict[str, str], settings) -> tuple[list[str], str]:
+async def llm_findings(src: dict[str, str], settings) -> tuple[list[str], str]:
     """Aux-tier semantic pass. Best-effort: if no aux model is configured or the
     call fails, return clean so the AST pass still gates. Runs on the user's creds."""
-    blob = _scan_blob(src)
+    blob = p_scan_blob(src)
     if not blob.strip():
         return [], "clean"
     from backend.apps.agents.providers.registry import resolve_aux_model
@@ -123,7 +123,7 @@ async def _llm_findings(src: dict[str, str], settings) -> tuple[list[str], str]:
         resp = await client.messages.create(
             model=model,
             max_tokens=1200,
-            system=_SCAN_SYSTEM_PROMPT,
+            system=P_SCAN_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": blob}],
         )
     except Exception:
@@ -146,15 +146,15 @@ async def _llm_findings(src: dict[str, str], settings) -> tuple[list[str], str]:
 
 
 async def scan_for_publish(output: Output, settings) -> PublishReview:
-    src = _collect_source(output)
-    key = _source_hash(src)
-    cached = _memo.get(key)
+    src = collect_source(output)
+    key = p_source_hash(src)
+    cached = memo.get(key)
     if cached is not None:
-        _memo.move_to_end(key)
+        memo.move_to_end(key)
         return cached
-    ast_findings, scanned = _ast_findings(src)
-    llm_findings, llm_sev = await _llm_findings(src, settings)
-    findings = ast_findings + llm_findings
+    ast_findings, scanned = p_ast_findings(src)
+    llm_list, llm_sev = await llm_findings(src, settings)
+    findings = ast_findings + llm_list
     verdict: Literal["clean", "warn", "block"] = "clean"
     if findings:
         verdict = "warn"
@@ -165,15 +165,15 @@ async def scan_for_publish(output: Output, settings) -> PublishReview:
         findings=findings,
         scanned_files=scanned or sorted(src.keys()),
     )
-    _memo[key] = review
-    _memo.move_to_end(key)
-    while len(_memo) > _MEMO_MAX:
-        _memo.popitem(last=False)
+    memo[key] = review
+    memo.move_to_end(key)
+    while len(memo) > P_MEMO_MAX:
+        memo.popitem(last=False)
     return review
 
 
 def quick_ast_gate(output: Output) -> list[str]:
     """Cheap, free safety net used by /publish when force is not set: flags the
     AST-visible 'runs code outside the sandbox' findings without an LLM call."""
-    findings, _ = _ast_findings(_collect_source(output))
+    findings, _ = p_ast_findings(collect_source(output))
     return findings

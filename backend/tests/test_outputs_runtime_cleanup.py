@@ -4,8 +4,8 @@ What this proves:
 1. AppRuntimeManager.stop_all() reaps active runtimes.
 2. AppRuntimeManager.stop_all() reaps idle (LRU) runtimes too.
 3. AppRuntimeManager.stop_all() resumes SIGSTOP'd idle runtimes before reaping (otherwise the SIGTERM is queued and the process never dies).
-4. _is_port_free() correctly detects collisions.
-5. _write_env_value() updates a single key without clobbering siblings.
+4. is_port_free() correctly detects collisions.
+5. write_env_value() updates a single key without clobbering siblings.
 6. _start_new_mode() rewrites .env's FRONTEND_PORT when the persisted port is in use, and the spawned child sees the rewritten value.
 7. Same collision-rewrite happens for BACKEND_PORT when it's not "NONE".
 
@@ -25,17 +25,17 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from backend.apps.outputs.runtime import (
     AppRuntime,
     AppRuntimeManager,
-    _find_free_port,
-    _is_port_free,
-    _read_env_value,
-    _write_env_value,
+    find_free_port,
+    is_port_free,
+    read_env_value,
+    write_env_value,
 )
 
 
 # --- Fixture: matches the production webapp_template run.sh signal habits ---
 # trap cleanup EXIT only, no TERM. Reproduces the actual bug: SIGTERM kills
 # bash silently, EXIT trap doesn't fire on uncaught signal, python child gets
-# reparented to launchd. _kill_descendant_tree must walk the tree to nuke it.
+# reparented to launchd. kill_descendant_tree must walk the tree to nuke it.
 FAKE_RUN_SH = """#!/bin/bash
 set -e
 if [ -f .env ]; then
@@ -82,13 +82,13 @@ def _pid_alive(pid: int) -> bool:
 
 # --- Test 1: helpers ---
 def test_is_port_free():
-    p = _find_free_port()
-    assert _is_port_free(p), "freshly-allocated port should be free"
+    p = find_free_port()
+    assert is_port_free(p), "freshly-allocated port should be free"
     s = socket.socket()
     s.bind(("127.0.0.1", p))
     s.listen(1)
     try:
-        assert not _is_port_free(p), "_is_port_free must return False while bound"
+        assert not is_port_free(p), "is_port_free must return False while bound"
     finally:
         s.close()
     print("PASS test_is_port_free")
@@ -99,13 +99,13 @@ def test_write_env_value():
         env = os.path.join(tmp, ".env")
         with open(env, "w") as f:
             f.write("A=1\nB=2\nC=3\n# comment\n")
-        _write_env_value(env, "B", "999")
-        assert _read_env_value(env, "A") == "1"
-        assert _read_env_value(env, "B") == "999"
-        assert _read_env_value(env, "C") == "3"
+        write_env_value(env, "B", "999")
+        assert read_env_value(env, "A") == "1"
+        assert read_env_value(env, "B") == "999"
+        assert read_env_value(env, "C") == "3"
         # New key appended.
-        _write_env_value(env, "D", "new")
-        assert _read_env_value(env, "D") == "new"
+        write_env_value(env, "D", "new")
+        assert read_env_value(env, "D") == "new"
         # Comment line + sibling values preserved.
         with open(env) as f:
             body = f.read()
@@ -117,7 +117,7 @@ def test_write_env_value():
 # --- Test 2: stop_all reaps an active runtime (real spawn). ---
 async def test_stop_all_kills_active():
     with tempfile.TemporaryDirectory() as tmp:
-        port = _find_free_port()
+        port = find_free_port()
         ws = _make_fake_workspace(tmp, port)
         m = AppRuntimeManager()
         rt = await m.attach("ws1", ws)
@@ -125,7 +125,7 @@ async def test_stop_all_kills_active():
         pid = rt.process.pid
         # Wait for the child python to actually bind the port.
         for _ in range(40):
-            if not _is_port_free(port):
+            if not is_port_free(port):
                 break
             await asyncio.sleep(0.05)
         else:
@@ -141,7 +141,7 @@ async def test_stop_all_kills_active():
             raise AssertionError(f"pid {pid} still alive after stop_all")
         # Port must be released too.
         for _ in range(40):
-            if _is_port_free(port):
+            if is_port_free(port):
                 break
             await asyncio.sleep(0.05)
         else:
@@ -153,7 +153,7 @@ async def test_stop_all_kills_active():
 # --- Test 3: stop_all reaps an idle (LRU + SIGSTOP'd) runtime. ---
 async def test_stop_all_kills_idle():
     with tempfile.TemporaryDirectory() as tmp:
-        port = _find_free_port()
+        port = find_free_port()
         ws = _make_fake_workspace(tmp, port)
         m = AppRuntimeManager()
         rt = await m.attach("ws-idle", ws)
@@ -173,7 +173,7 @@ async def test_stop_all_kills_idle():
         else:
             raise AssertionError("idle process never died, stop_all probably didn't SIGCONT first")
         for _ in range(40):
-            if _is_port_free(port):
+            if is_port_free(port):
                 break
             await asyncio.sleep(0.05)
         else:
@@ -184,7 +184,7 @@ async def test_stop_all_kills_idle():
 # --- Test 4: persisted port collision triggers .env rewrite + new spawn. ---
 async def test_port_collision_reallocates_env():
     with tempfile.TemporaryDirectory() as tmp:
-        squatted_port = _find_free_port()
+        squatted_port = find_free_port()
         ws = _make_fake_workspace(tmp, squatted_port)
         # Squat the persisted port so the runtime can't use it.
         squatter = socket.socket()
@@ -202,12 +202,12 @@ async def test_port_collision_reallocates_env():
                 f"frontend_port should have changed from {squatted_port}, got {rt.frontend_port}"
             # .env should reflect the new port (so run.sh and subsequent
             # restarts pick it up too).
-            written = _read_env_value(os.path.join(ws, ".env"), "FRONTEND_PORT")
+            written = read_env_value(os.path.join(ws, ".env"), "FRONTEND_PORT")
             assert written == str(rt.frontend_port), \
                 f".env not rewritten; expected {rt.frontend_port}, found {written}"
             # Sibling .env keys untouched.
-            assert _read_env_value(os.path.join(ws, ".env"), "SOMETHING_ELSE") == "untouched"
-            assert _read_env_value(os.path.join(ws, ".env"), "TRAILING") == "keep"
+            assert read_env_value(os.path.join(ws, ".env"), "SOMETHING_ELSE") == "untouched"
+            assert read_env_value(os.path.join(ws, ".env"), "TRAILING") == "keep"
             await m.stop_all()
         finally:
             squatter.close()
@@ -231,7 +231,7 @@ async def test_descendant_tree_killed_despite_exit_only_trap():
     silently and reparents the vite/uvicorn grandchild to PID 1. stop()
     must walk the descendant tree to nuke the grandchild explicitly."""
     with tempfile.TemporaryDirectory() as tmp:
-        port = _find_free_port()
+        port = find_free_port()
         ws = _make_fake_workspace(tmp, port)
         m = AppRuntimeManager()
         rt = await m.attach("ws-tree", ws)
@@ -239,7 +239,7 @@ async def test_descendant_tree_killed_despite_exit_only_trap():
         # Wait until the python grandchild is actually listening on the port,
         # so we know it exists as a separate process.
         for _ in range(60):
-            if not _is_port_free(port):
+            if not is_port_free(port):
                 break
             await asyncio.sleep(0.05)
         else:
@@ -280,7 +280,7 @@ async def test_descendant_tree_killed_despite_exit_only_trap():
                 "(EXIT-only trap let them escape)"
             )
         for _ in range(40):
-            if _is_port_free(port):
+            if is_port_free(port):
                 break
             await asyncio.sleep(0.05)
         else:

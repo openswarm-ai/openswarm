@@ -31,7 +31,7 @@ def stores(tmp_path, monkeypatch):
 
 def _flat_app(html="<h1>v1</h1>"):
     o = Output(name="Flat", files={"index.html": html})
-    workspace_io._save(o)
+    workspace_io.save(o)
     return o
 
 
@@ -45,7 +45,7 @@ def _webapp(ws_dir, files):
         with open(p, "w") as f:
             f.write(content)
     o = Output(name="Web", workspace_id=wsid)
-    workspace_io._save(o)
+    workspace_io.save(o)
     return o, folder
 
 
@@ -55,14 +55,14 @@ def test_flat_capture_list_and_restore(stores):
     assert v1 is not None
 
     o.files = {"index.html": "<h1>v2</h1>"}
-    workspace_io._save(o)
+    workspace_io.save(o)
     versions.capture(o.id, source="auto", label="made v2")
 
     assert [v.label for v in versions.list_versions(o.id)] == ["made v2", "v1"]
 
     # diverge the live state WITHOUT capturing, so restore must back it up.
     o.files = {"index.html": "<h1>v3 uncaptured</h1>"}
-    workspace_io._save(o)
+    workspace_io.save(o)
 
     restored = versions.restore(o.id, v1.id)
     assert restored.files["index.html"] == "<h1>v1</h1>"
@@ -70,7 +70,7 @@ def test_flat_capture_list_and_restore(stores):
     after = versions.list_versions(o.id)
     pre = [v for v in after if v.source == "pre_restore"]
     assert len(pre) == 1
-    meta = versions._read_manifest(o.id, pre[0].id)
+    meta = versions.read_manifest(o.id, pre[0].id)
     assert meta["app_meta"]["files"]["index.html"] == "<h1>v3 uncaptured</h1>"
 
 
@@ -86,7 +86,7 @@ def test_restore_no_redundant_backup_when_current_already_saved(stores):
     o = _flat_app("<h1>v1</h1>")
     versions.capture(o.id, label="v1")
     o.files = {"index.html": "<h1>v2</h1>"}
-    workspace_io._save(o)
+    workspace_io.save(o)
     v2 = versions.capture(o.id, label="v2")  # live state == latest version
     versions.restore(o.id, v2.id)
     # current already equalled the latest version, so no pre_restore junk.
@@ -147,10 +147,10 @@ def test_restore_is_undoable(stores):
     o = _flat_app("<h1>v1</h1>")
     v1 = versions.capture(o.id, label="v1")
     o.files = {"index.html": "<h1>v2</h1>"}
-    workspace_io._save(o)
+    workspace_io.save(o)
     versions.capture(o.id, label="v2")
     o.files = {"index.html": "<h1>v3 live</h1>"}  # uncaptured live edit
-    workspace_io._save(o)
+    workspace_io.save(o)
 
     versions.restore(o.id, v1.id)
     assert workspace_io.load_output(o.id).files["index.html"] == "<h1>v1</h1>"
@@ -180,10 +180,10 @@ def test_restore_clears_empty_schema(stores):
     """Regression: an empty {} input_schema must actually restore as empty, not
     fall back to the current one (the falsy-dict bug)."""
     o = Output(name="S", files={"index.html": "x"}, input_schema={})
-    workspace_io._save(o)
+    workspace_io.save(o)
     v1 = versions.capture(o.id, label="empty schema")
     o.input_schema = {"type": "object", "properties": {"a": {}}, "required": []}
-    workspace_io._save(o)
+    workspace_io.save(o)
     versions.capture(o.id, label="full schema")
 
     versions.restore(o.id, v1.id)
@@ -199,7 +199,7 @@ def test_unchanged_files_are_not_duplicated(stores):
         f.write("changed")
     versions.capture(o.id, label="v2")
 
-    blobs = os.listdir(versions._blobs_dir(o.id))
+    blobs = os.listdir(versions.blobs_dir(o.id))
     assert len(blobs) == 11  # 10 originals shared + 1 changed; NOT 20
 
 

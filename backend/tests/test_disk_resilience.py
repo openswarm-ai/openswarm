@@ -123,9 +123,9 @@ def test_outputs_load_all_skips_corrupt(tmp_path, monkeypatch):
     from backend.apps.outputs.models import Output
     # _load_all/_save live in workspace_io after the structure refactor; patch where they read DATA_DIR.
     monkeypatch.setattr(wio, "DATA_DIR", str(tmp_path))
-    omod._save(Output(name="good"))
+    omod.save(Output(name="good"))
     (tmp_path / "garbled.json").write_text("nope")
-    loaded = omod._load_all()
+    loaded = omod.load_all()
     assert [o.name for o in loaded] == ["good"]
     assert (tmp_path / "garbled.json").exists()
 

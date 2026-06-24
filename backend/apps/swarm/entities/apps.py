@@ -12,7 +12,7 @@ import socket
 from uuid import uuid4
 
 from backend.apps.outputs.models import Output
-from backend.apps.outputs.workspace_io import _WALK_SKIP_DIRS, _save, load_output
+from backend.apps.outputs.workspace_io import WALK_SKIP_DIRS, save, load_output
 from backend.config.paths import OUTPUTS_DIR, OUTPUTS_WORKSPACE_DIR
 
 from ..exportable import DepRef, ExportContext, RemapTable
@@ -52,7 +52,7 @@ class AppExportable:
         if not os.path.isdir(folder):
             return out
         for root, dirs, fnames in os.walk(folder):
-            dirs[:] = [d for d in dirs if d not in _WALK_SKIP_DIRS]
+            dirs[:] = [d for d in dirs if d not in WALK_SKIP_DIRS]
             for fn in fnames:
                 # .env is install-specific (absolute paths + port); .env.example travels instead.
                 if fn == ".env":
@@ -102,7 +102,7 @@ class AppExportable:
             workspace_id=new_wsid if wrote_workspace else None,
             session_id=None,
         )
-        _save(o)
+        save(o)
         return o.id
 
     @classmethod
@@ -144,17 +144,17 @@ def _localize_env(folder: str) -> None:
             return  # flat app: no run.sh, no env needed
     try:
         from backend.apps.outputs.view_builder_templates import (
-            _DEBUGGER_PATH,
-            _TEMPLATE_BACKEND_PATH,
-            _patch_env_port,
-            _warm_venv_dir,
+            DEBUGGER_PATH,
+            TEMPLATE_BACKEND_PATH,
+            patch_env_port,
+            warm_venv_dir,
         )
     except Exception:
         return
-    _patch_env_port(env_path, "FRONTEND_PORT", str(_free_port()))
-    _patch_env_port(env_path, "OPENSWARM_TEMPLATE_BACKEND_PATH", _TEMPLATE_BACKEND_PATH)
-    _patch_env_port(env_path, "OPENSWARM_DEBUGGER_PATH", _DEBUGGER_PATH)
+    patch_env_port(env_path, "FRONTEND_PORT", str(_free_port()))
+    patch_env_port(env_path, "OPENSWARM_TEMPLATE_BACKEND_PATH", TEMPLATE_BACKEND_PATH)
+    patch_env_port(env_path, "OPENSWARM_DEBUGGER_PATH", DEBUGGER_PATH)
     try:
-        _patch_env_port(env_path, "OPENSWARM_BACKEND_VENV_CACHE", _warm_venv_dir())
+        patch_env_port(env_path, "OPENSWARM_BACKEND_VENV_CACHE", warm_venv_dir())
     except Exception:
         pass
