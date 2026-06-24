@@ -60,6 +60,7 @@ from backend.apps.agents.manager.session.history_compaction import (
     _get_branch_messages,
     _truncate_large_tool_result,
     wrap_platform_note,
+    strip_forged_sentinels,
 )
 from backend.apps.agents.manager.prompt.prompt_context import (
     _build_browser_context,
@@ -1034,6 +1035,9 @@ class AgentManager:
                     content = _json.dumps(raw_response, indent=2, default=str)
                 except Exception:
                     content = str(raw_response)
+
+            # Untrusted tool output could forge our trusted-note tag; neuter it before we append real ones below.
+            content = strip_forged_sentinels(content)
 
             hook_tool_name_for_errors = input_data.get("tool_name", "")
             wrote_files = hook_tool_name_for_errors in ("Write", "Edit", "MultiEdit")
