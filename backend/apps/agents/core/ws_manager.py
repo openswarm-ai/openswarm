@@ -90,12 +90,10 @@ class ConnectionManager:
             if event == "agent:status" and data.get("status") in TERMINAL_STATUSES:
                 seq_log.persist_terminal(session_id, payload_str)
 
-        # Mirror every discrete agent message into swarm-analytics. Outside the
-        # stamp lock (fire-and-forget; must not gate the broadcast). Replays use
-        # ws.send_text directly, not this path, so reconnects don't double-count.
+        # Outside the stamp lock so analytics can't gate the broadcast; replays go via ws.send_text, so reconnects don't double-count.
         if event == "agent:message":
             try:
-                from backend.apps.service.analytics_agent_bridge import bridge_agent_message, BroadcastMessage
+                from backend.apps.service.analytics.agent_bridge import bridge_agent_message, BroadcastMessage
                 bridge_agent_message(session_id, BroadcastMessage.model_validate(data.get("message") or {}))
             except Exception:
                 logger.debug("agent:message analytics bridge failed", exc_info=True)

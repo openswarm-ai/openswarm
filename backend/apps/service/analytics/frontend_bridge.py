@@ -11,7 +11,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict
 from typeguard import typechecked
 
-from backend.apps.service.analytics import (
+from backend.apps.service.analytics.client import (
     persist_client_env,
     track_app_opened,
     track_dashboard_event,

@@ -191,7 +191,7 @@ async def service_lifespan():
         svc.sync({"identity": id_props})
 
         # First-boot log write doubles as the token-registration trigger.
-        from backend.apps.service.analytics import get_analytics_client, track_link_email
+        from backend.apps.service.analytics.client import get_analytics_client, track_link_email
         analytics_client = get_analytics_client()
         if analytics_client is not None:
             try:
@@ -251,7 +251,7 @@ async def service_lifespan():
 
     # Flush before the process exits or buffered events are lost.
     try:
-        from backend.apps.service.analytics import track_app_closed, shutdown_analytics
+        from backend.apps.service.analytics.client import track_app_closed, shutdown_analytics
         track_app_closed()
         shutdown_analytics()
     except Exception:
@@ -444,7 +444,7 @@ async def service_status():
 
 def p_bridge_to_analytics(item: dict) -> None:
     # Boundary adapter: validate the raw report() envelope into a typed event, hand it to the analytics bridge.
-    from backend.apps.service.analytics_frontend_bridge import bridge_frontend_event, FrontendEvent
+    from backend.apps.service.analytics.frontend_bridge import bridge_frontend_event, FrontendEvent
     try:
         bridge_frontend_event(FrontendEvent.model_validate(item))
     except Exception:

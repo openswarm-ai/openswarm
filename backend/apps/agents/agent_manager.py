@@ -382,7 +382,7 @@ class AgentManager:
         })
 
         try:
-            from backend.apps.service.analytics import track_agent_created
+            from backend.apps.service.analytics.client import track_agent_created
             track_agent_created(id=session.id, dashboard_id=session.dashboard_id)
         except Exception:
             pass
@@ -4214,7 +4214,7 @@ class AgentManager:
             "name": title,
         })
         try:
-            from backend.apps.service.analytics import track_agent_title
+            from backend.apps.service.analytics.client import track_agent_title
             track_agent_title(id=session_id, title=title)
         except Exception:
             pass

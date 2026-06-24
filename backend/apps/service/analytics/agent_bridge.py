@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession
-from backend.apps.service.analytics import track_agent_message
+from backend.apps.service.analytics.client import track_agent_message
 
 logger = logging.getLogger(__name__)
 

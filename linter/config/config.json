@@ -137,6 +137,7 @@
       "backend/apps/agents/core",
       "backend/apps/outputs",
       "backend/apps/tools_lib",
+      "backend/apps/service",
       "backend/tests",
       "frontend/src/shared",
       "frontend/src/shared/state",
