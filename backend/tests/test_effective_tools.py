@@ -5,7 +5,7 @@ builtin allow/deny resolution and the web-MCP suppression of the native WebSearc
 import pytest
 
 from backend.apps.agents.core.models import AgentSession
-from backend.apps.agents.manager.permissions.effective_tools import build_effective_tool_lists
+from backend.apps.agents.manager.permissions.build_effective_tool_lists import build_effective_tool_lists
 
 
 def p_session(allowed):

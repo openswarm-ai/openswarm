@@ -23,7 +23,7 @@ from .pricing import (
     compute_tiers,
     heuristic_tiers,
 )
-from .thinking import thinking_params_for
+from .thinking_params_for import thinking_params_for
 
 if TYPE_CHECKING:
     from backend.apps.settings.models import AppSettings

@@ -7,8 +7,8 @@ import pytest
 from unittest.mock import patch, AsyncMock
 
 from backend.apps.agents.core.models import AgentSession
-from backend.apps.agents.manager.streaming.hook_context import HookContext
-from backend.apps.agents.manager.streaming import tool_result_hook
+from backend.apps.agents.manager.streaming.HookContext import HookContext
+from backend.apps.agents.manager.streaming import post_tool_hook as tool_result_hook
 
 
 def p_ctx(registry: dict) -> HookContext:

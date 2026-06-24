@@ -34,7 +34,7 @@ import tempfile
 import time
 from urllib.parse import urlparse
 
-from backend.apps.agents.browser.seed_playbooks import seed_for
+from backend.apps.agents.browser.seed_for import seed_for
 
 logger = logging.getLogger(__name__)
 

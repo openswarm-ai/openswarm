@@ -169,7 +169,7 @@ def test_workflow_unavailable_on_this_branch():
 
 
 def test_session_export_carries_transcript_drops_runtime_and_secrets():
-    from backend.apps.swarm.entities.sessions import SessionExportable
+    from backend.apps.swarm.entities.SessionExportable import SessionExportable
     from backend.apps.swarm.redact import scrub_payload
     data = {
         "name": "A", "provider": "anthropic", "model": "sonnet", "mode": "agent",
@@ -200,7 +200,7 @@ def test_session_export_carries_transcript_drops_runtime_and_secrets():
 
 
 def test_session_import_restores_transcript_without_granting_mcp(monkeypatch):
-    from backend.apps.swarm.entities.sessions import SessionExportable
+    from backend.apps.swarm.entities.SessionExportable import SessionExportable
     from backend.apps.swarm.exportable import RemapTable
     from backend.apps.agents.manager.session import session_store
     saved: dict = {}
@@ -226,7 +226,7 @@ def test_session_import_restores_transcript_without_granting_mcp(monkeypatch):
 def test_session_import_old_bundle_without_transcript(monkeypatch):
     # A bundle made before transcripts were carried has no messages; it must
     # still import as a valid empty-history agent (single main branch), not crash.
-    from backend.apps.swarm.entities.sessions import SessionExportable
+    from backend.apps.swarm.entities.SessionExportable import SessionExportable
     from backend.apps.swarm.exportable import RemapTable
     from backend.apps.agents.manager.session import session_store
     saved: dict = {}
@@ -241,7 +241,7 @@ def test_session_load_prefers_live_memory_over_stale_disk(tmp_path, monkeypatch)
     # The freshest transcript lives in memory; a disk-only load would ship a
     # stale one. load() must read the live session first, disk only as fallback.
     from backend.apps.agents import agent_manager as am
-    from backend.apps.swarm.entities.sessions import SessionExportable
+    from backend.apps.swarm.entities.SessionExportable import SessionExportable
     sdir = tmp_path / "sessions"
     sdir.mkdir()
     monkeypatch.setattr(am, "SESSIONS_DIR", str(sdir))

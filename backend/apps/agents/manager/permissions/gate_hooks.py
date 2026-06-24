@@ -21,7 +21,7 @@ from backend.apps.agents.manager.prompt.prompt_context import (
     TOOLSEARCH_LOOP_THRESHOLD,
     toolsearch_loop_redirect,
 )
-from backend.apps.agents.manager.streaming.hook_context import HookContext
+from backend.apps.agents.manager.streaming.HookContext import HookContext
 
 logger = logging.getLogger(__name__)
 

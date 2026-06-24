@@ -8,7 +8,7 @@ from unittest.mock import patch, AsyncMock
 from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
 
 from backend.apps.agents.core.models import AgentSession
-from backend.apps.agents.manager.streaming.hook_context import HookContext
+from backend.apps.agents.manager.streaming.HookContext import HookContext
 from backend.apps.agents.manager.permissions import gate_hooks
 from backend.apps.agents.manager.permissions.ApprovalDecision import ApprovalDecision
 from backend.apps.agents.manager.prompt.prompt_context import TOOLSEARCH_LOOP_THRESHOLD

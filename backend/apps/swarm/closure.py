@@ -316,7 +316,7 @@ def review_bundle(sandbox: str, manifest: Manifest):
     """Safety read of any app code in the staged bundle. Returns None when the
     bundle contains no apps (nothing to review)."""
     from .models import ReviewSummary
-    from .review import scan_app_files
+    from .scan_app_files import scan_app_files
 
     findings: list[str] = []
     scanned: list[str] = []

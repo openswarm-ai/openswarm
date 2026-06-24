@@ -9,7 +9,7 @@ from typing import Dict
 
 from typeguard import typechecked
 
-from backend.apps.agents.manager.streaming.hook_context import HookContext
+from backend.apps.agents.manager.streaming.HookContext import HookContext
 from backend.apps.agents.manager.view_builder_state import (
     VIEW_BUILDER_RENDER_MAX_RETRIES,
     view_builder_render_retry_counts,

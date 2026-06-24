@@ -9,7 +9,7 @@ from claude_agent_sdk.types import StreamEvent
 
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.streaming.state import TurnState, ThinkingState
-from backend.apps.agents.manager.streaming import stream_event
+from backend.apps.agents.manager.streaming import handle_stream_event as stream_event
 
 
 def p_ev(event: dict) -> StreamEvent:

@@ -10,7 +10,7 @@ from claude_agent_sdk.types import TextBlock, ToolUseBlock
 
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.streaming.state import TurnState, ThinkingState
-from backend.apps.agents.manager.streaming import assistant_message
+from backend.apps.agents.manager.streaming import handle_assistant_message as assistant_message
 
 
 def p_asst(blocks, usage=None):

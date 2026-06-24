@@ -1,10 +1,10 @@
-"""Drives the moved browser fast-path dispatch (manager/browser_dispatch.py) end to end
+"""Drives the moved browser fast-path dispatch (manager/run_browser_fast_path.py) end to end
 with a real AgentSession + a mocked browser sub-agent. This path was never directly
 tested before it was lifted out of agent_manager, so this pins its actual behavior."""
 
 import asyncio
 
-import backend.apps.agents.manager.browser_dispatch as bd
+import backend.apps.agents.manager.run_browser_fast_path as bd
 import backend.apps.agents.browser.browser_agent as browser_agent_mod
 from backend.apps.agents.core.models import AgentSession
 

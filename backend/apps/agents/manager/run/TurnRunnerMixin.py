@@ -13,12 +13,10 @@ from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.core.error_classify import CAPACITY_BACKOFFS, capacity_retry_wait
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
-from backend.apps.agents.manager.streaming import (
-    stream_event,
-    assistant_message,
-    result_message,
-    thinking as thinking_mod,
-)
+from backend.apps.agents.manager.streaming.handle_stream_event import handle_stream_event
+from backend.apps.agents.manager.streaming.handle_assistant_message import handle_assistant_message
+from backend.apps.agents.manager.streaming.handle_result_message import handle_result_message
+from backend.apps.agents.manager.streaming import thinking as thinking_mod
 from backend.apps.settings.models import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -116,16 +114,16 @@ class TurnRunnerMixin:
                     logger.info(f"[MCP-DEBUG] SystemMessage: {raw}")
 
                 if isinstance(message, StreamEvent):
-                    await stream_event.handle_stream_event(
+                    await handle_stream_event(
                         message, session, session_id, turn, thinking, self.live_partial
                     )
 
                 elif isinstance(message, AssistantMessage):
-                    await assistant_message.handle_assistant_message(
+                    await handle_assistant_message(
                         message, session, session_id, turn, thinking, self.live_partial, self.sessions
                     )
                 elif isinstance(message, ResultMessage):
-                    await result_message.handle_result_message(
+                    await handle_result_message(
                         message, session, session_id, turn, thinking, self.sessions,
                         resolved_model, api_type, global_settings,
                     )

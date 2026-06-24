@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from backend.apps.agents.core.models import AgentSession
-from backend.apps.agents.manager.streaming.hook_context import HookContext
+from backend.apps.agents.manager.streaming.HookContext import HookContext
 from backend.apps.agents.manager.streaming import stop_hook as stop_hook_mod
 from backend.apps.agents.manager import view_builder_state
 

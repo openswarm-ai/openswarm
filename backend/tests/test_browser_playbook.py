@@ -173,7 +173,7 @@ async def test_forget_and_list_hosts_for_ux():
 
 
 def test_seed_playbook_fallback_and_supersede():
-    from backend.apps.agents.browser.seed_playbooks import seed_for
+    from backend.apps.agents.browser.seed_for import seed_for
     # pure lookup: www-normalized, canonical key, unknown -> empty
     assert seed_for("www.amazon.com") == seed_for("amazon.com") != []
     assert seed_for("x.com")

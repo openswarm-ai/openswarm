@@ -10,7 +10,7 @@ from claude_agent_sdk import ResultMessage
 
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.streaming.state import TurnState, ThinkingState
-from backend.apps.agents.manager.streaming import result_message
+from backend.apps.agents.manager.streaming import handle_result_message as result_message
 from backend.apps.settings.settings import load_settings
 
 

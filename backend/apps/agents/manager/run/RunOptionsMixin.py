@@ -15,15 +15,15 @@ from backend.apps.settings.settings import load_settings
 from backend.apps.tools_lib.tools_lib import load_all_tools, sanitize_server_name
 from backend.apps.agents.tools.web import should_register_web_mcp
 from backend.apps.agents.manager.permissions import gate_hooks
-from backend.apps.agents.manager.streaming import tool_result_hook
+from backend.apps.agents.manager.streaming import post_tool_hook as post_tool_hook_mod
 from backend.apps.agents.manager.streaming import stop_hook as stop_hook_mod
-from backend.apps.agents.manager.streaming.hook_context import HookContext
-from backend.apps.agents.manager.permissions.effective_tools import build_effective_tool_lists
+from backend.apps.agents.manager.streaming.HookContext import HookContext
+from backend.apps.agents.manager.permissions.build_effective_tool_lists import build_effective_tool_lists
 from backend.apps.agents.manager.register_builtin_mcp_servers import register_builtin_mcp_servers
-from backend.apps.agents.manager.provider_env import configure_provider_env
+from backend.apps.agents.manager.configure_provider_env import configure_provider_env
 from backend.apps.agents.manager.session.workspace_git import ensure_cwd_git_repo
 from backend.apps.agents.manager.session.history_compaction import build_history_prefix, get_branch_messages
-from backend.apps.agents.manager.prompt.system_prompt import compose_turn_system_prompt
+from backend.apps.agents.manager.prompt.compose_turn_system_prompt import compose_turn_system_prompt
 from backend.apps.agents.manager.prompt.tool_catalog import get_all_tool_names
 from backend.apps.agents.manager.prompt.prompt_context import resolve_mode
 from backend.apps.agents.manager.run.run_options_helpers import (
@@ -63,7 +63,7 @@ class RunOptionsMixin:
             return await gate_hooks.pre_tool_hook(hook_ctx, input_data, tool_use_id, context)
 
         async def post_tool_hook(input_data, tool_use_id, context):
-            return await tool_result_hook.post_tool_hook(hook_ctx, input_data, tool_use_id, context)
+            return await post_tool_hook_mod.post_tool_hook(hook_ctx, input_data, tool_use_id, context)
         _, mode_sys_prompt, _ = resolve_mode(session.mode, get_all_tool_names)
 
         # Reconcile active_mcps against currently-enabled tools (Phase 3).

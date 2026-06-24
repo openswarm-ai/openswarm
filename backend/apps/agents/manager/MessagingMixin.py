@@ -12,7 +12,7 @@ from uuid import uuid4
 from backend.apps.agents.core.models import AgentSession, Message, MessageBranch
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
-from backend.apps.agents.manager import browser_dispatch
+from backend.apps.agents.manager.run_browser_fast_path import run_browser_fast_path
 from backend.apps.agents.manager.session.session_store import load_session_data
 from backend.apps.agents.manager.session.apply_context_window import apply_context_window
 from backend.apps.agents.manager.prompt.tool_catalog import get_all_tool_names
@@ -152,7 +152,7 @@ class MessagingMixin:
                 logger.warning(f"[browser-fast-path] gate error, normal path: {e}")
 
         if fast_verdict != "no":
-            task = asyncio.create_task(browser_dispatch.run_browser_fast_path(session, session_id, prompt, selected_browser_ids, fast_brief, fast_verdict))
+            task = asyncio.create_task(run_browser_fast_path(session, session_id, prompt, selected_browser_ids, fast_brief, fast_verdict))
         else:
             task = asyncio.create_task(self.run_agent_loop(session_id, prompt, images=images, context_paths=context_paths, forced_tools=forced_tools, attached_skills=attached_skills, selected_browser_ids=selected_browser_ids, selected_app_output_ids=selected_app_output_ids, selected_setting_ids=selected_setting_ids))
         self.tasks[session_id] = task

@@ -18,7 +18,7 @@ from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.session.apply_context_window import apply_context_window
 from backend.apps.agents.manager.session.history_compaction import truncate_large_tool_result
-from backend.apps.agents.manager.streaming.hook_context import HookContext
+from backend.apps.agents.manager.streaming.HookContext import HookContext
 from backend.apps.agents.manager.view_builder_state import view_builder_dirty_sessions
 
 logger = logging.getLogger(__name__)

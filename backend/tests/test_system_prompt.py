@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import patch
 
 from backend.apps.agents.core.models import AgentSession
-from backend.apps.agents.manager.prompt import system_prompt as sp
+from backend.apps.agents.manager.prompt import compose_turn_system_prompt as sp
 
 
 def p_compose(session: AgentSession):
