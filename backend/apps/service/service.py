@@ -190,9 +190,7 @@ async def service_lifespan():
 
         svc.sync({"identity": id_props})
 
-        # swarm-analytics: bootstrap the client (registers + persists a token on
-        # first run), prove the pipe with one diagnostic log write, and link the
-        # user's email. All best-effort; the wrappers swallow every error.
+        # First-boot log write doubles as the token-registration trigger.
         from backend.apps.service.analytics import get_analytics_client, track_link_email
         analytics_client = get_analytics_client()
         if analytics_client is not None:
@@ -251,8 +249,7 @@ async def service_lifespan():
     except Exception:
         pass
 
-    # swarm-analytics: fire the app-closed event and flush+close the client so
-    # buffered events land before the process exits. Best-effort.
+    # Flush before the process exits or buffered events are lost.
     try:
         from backend.apps.service.analytics import track_app_closed, shutdown_analytics
         track_app_closed()

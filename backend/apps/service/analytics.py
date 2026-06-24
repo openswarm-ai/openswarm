@@ -18,10 +18,7 @@ logger = logging.getLogger(__name__)
 
 P_CLIENT: Optional[AnalyticsClient] = None
 
-# Where the SDK ships events. Configurable so local dev hits a local
-# product-analytics-v1 (its .env BACKEND_PORT) while prod points at the
-# cloud-hosted ingest via OPENSWARM_ANALYTICS_URL. NOT the desktop backend's
-# port (8324); the analytics service listens on 6792.
+# Env-overridable so prod points at the cloud edge; this default is the analytics service's own port, not the desktop's 8324.
 P_DEFAULT_ANALYTICS_URL = "http://127.0.0.1:6792"
 
 

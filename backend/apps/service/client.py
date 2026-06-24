@@ -47,9 +47,7 @@ P_MAX_INFLIGHT = 16
 
 
 def resolve_timezone() -> str:
-    """Best-effort IANA timezone for analytics. Prefers the renderer-reported
-    value persisted in settings (the only source that works on dev / OSS where
-    Electron's env injection never runs), then the OS, then UTC."""
+    """Settings-first (the only source that works on dev / OSS), then OS, then UTC."""
     try:
         from backend.apps.settings.store import load_settings
         tz = getattr(load_settings(), "timezone", None)
@@ -80,8 +78,8 @@ def resolve_locale() -> str:
     except Exception:
         pass
     try:
-        import locale as _locale
-        code = _locale.getlocale()[0]
+        import locale
+        code = locale.getlocale()[0]
         if code:
             return code.replace("_", "-")
     except Exception:

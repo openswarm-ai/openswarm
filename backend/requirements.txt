@@ -16,9 +16,7 @@ python-dotenv==1.1.1
 Pillow==12.2.0
 httpx==0.28.1
 trafilatura==2.0.0
-# swarm-analytics: typed client for the product-analytics ingest service.
-# Validates payloads against the server schema locally; all calls are
-# fire-and-forget and swallow errors so analytics can never break the app.
+# swarm-analytics: typed client for the product-analytics ingest; fire-and-forget so it never breaks the app.
 swarm-analytics==0.1.1
 # tzlocal: dev-mode fallback for resolving the user's IANA timezone when
 # Electron's OPENSWARM_TIMEZONE env var isn't set (i.e. `bash run.sh`).
