@@ -72,13 +72,13 @@ def _get_install_id() -> str:
     if _install_id:
         return _install_id
     try:
-        from backend.apps.settings.store import load_settings, _save_settings
+        from backend.apps.settings.store import load_settings, save_settings
         s = load_settings()
         iid = getattr(s, "installation_id", None)
         if not iid:
             iid = uuid4().hex
             s.installation_id = iid
-            _save_settings(s)
+            save_settings(s)
         _install_id = iid
     except Exception:
         _install_id = uuid4().hex

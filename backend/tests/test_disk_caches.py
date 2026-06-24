@@ -15,8 +15,8 @@ def settings_tmp(tmp_path, monkeypatch):
     f = tmp_path / "settings.json"
     monkeypatch.setattr(store, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(store, "SETTINGS_FILE", str(f))
-    monkeypatch.setattr(store, "_cached_settings", None)
-    monkeypatch.setattr(store, "_cached_sig", None)
+    monkeypatch.setattr(store, "p_cached_settings", None)
+    monkeypatch.setattr(store, "p_cached_sig", None)
     return f
 
 

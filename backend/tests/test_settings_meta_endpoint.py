@@ -20,13 +20,13 @@ async def test_second_wall_restores_protected_credential_even_if_body_blanks_it(
     live credential blanked (a guard slip upstream), the second-wall restore puts
     it back. Proves the api-key guard isn't a single point of failure."""
     from backend.apps.settings.settings import (
-        apply_settings_update, settings_write_lock, load_settings, _save_settings,
+        apply_settings_update, settings_write_lock, load_settings, save_settings,
     )
     original = load_settings().model_copy(deep=True)
     try:
         s = load_settings()
         s.anthropic_api_key = "sk-live-KEEP-ME"
-        _save_settings(s)
+        save_settings(s)
         # A body that (as if a guard bug let it through) clears the live key.
         body = load_settings()
         body.anthropic_api_key = ""
@@ -41,7 +41,7 @@ async def test_second_wall_restores_protected_credential_even_if_body_blanks_it(
             await apply_settings_update(body2, protect_fields={"anthropic_api_key"})
         assert not load_settings().openai_api_key
     finally:
-        _save_settings(original)
+        save_settings(original)
 
 
 @pytest.fixture
@@ -55,10 +55,10 @@ def client():
 
 @pytest.fixture
 def reset_settings():
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
     original = load_settings().model_copy(deep=True)
     yield
-    _save_settings(original)
+    save_settings(original)
 
 
 @pytest.fixture
@@ -67,13 +67,13 @@ def session_on_anthropic_key():
     Anthropic key powers it. Registered in agent_manager so the guard sees it."""
     from backend.apps.agents.agent_manager import agent_manager
     from backend.apps.agents.core.models import AgentSession
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
 
     s = load_settings()
     s.connection_mode = "own_key"
     s.anthropic_api_key = "sk-ant-test-LIVE"
     s.openai_api_key = "sk-openai-test-OTHER"
-    _save_settings(s)
+    save_settings(s)
 
     sess = AgentSession(id="settings-meta-test", name="t", model="opus-4-8")
     agent_manager.sessions["settings-meta-test"] = sess

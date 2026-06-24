@@ -31,11 +31,11 @@ def client():
 @pytest.fixture
 def reset_settings():
     """Snapshot + restore settings around each test so writes don't leak."""
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
 
     original = load_settings().model_copy(deep=True)
     yield
-    _save_settings(original)
+    save_settings(original)
 
 
 # ---------------------------------------------------------------------------
@@ -140,14 +140,14 @@ def test_signin_activate_short_token_rejected_locally(client, reset_settings):
 # ---------------------------------------------------------------------------
 
 def test_signout_clears_local_identity(client, reset_settings):
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
     s = load_settings()
     s.user_id = "u-bye"
     s.user_email = "bye@example.com"
     s.signin_method = "google"
     s.openswarm_bearer_token = "bearer-to-revoke-xxxxxxxx"
     s.connection_mode = "openswarm-pro"
-    _save_settings(s)
+    save_settings(s)
 
     fake_response = AsyncMock()
     fake_response.status_code = 200
@@ -168,11 +168,11 @@ def test_signout_clears_local_identity(client, reset_settings):
 
 def test_signout_succeeds_even_when_cloud_unreachable(client, reset_settings):
     """A flaky network shouldn't strand the user signed-in locally."""
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
     s = load_settings()
     s.user_id = "u-flaky"
     s.openswarm_bearer_token = "bearer-flaky-network-xxxx"
-    _save_settings(s)
+    save_settings(s)
 
     with patch("httpx.AsyncClient") as MockClient:
         instance = MockClient.return_value.__aenter__.return_value

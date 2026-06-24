@@ -31,7 +31,7 @@ def proxy_auth(settings: AppSettings) -> tuple[str | None, str | None]:
     return (None, None)
 
 
-def _check_9router() -> bool:
+def p_check_9router() -> bool:
     """Check if 9Router is running locally."""
     try:
         import httpx
@@ -50,7 +50,7 @@ def validate_credentials(settings: AppSettings, provider: str = "anthropic") -> 
         return
 
     # 9Router proxies every provider, so if it's up we don't need keys here.
-    if _check_9router():
+    if p_check_9router():
         return
 
     if p == "anthropic":
@@ -135,7 +135,7 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
         return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     # Fall back to 9Router (free for users with Claude/ChatGPT/Gemini subscriptions).
-    if _check_9router():
+    if p_check_9router():
         return anthropic.AsyncAnthropic(
             api_key="9router",
             base_url="http://localhost:20128",

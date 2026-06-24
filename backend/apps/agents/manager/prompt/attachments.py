@@ -96,7 +96,7 @@ def resolve_attachments(context_paths: Optional[List], api_type: str, model: str
     """
     if not context_paths:
         return "", [], []
-    from backend.apps.settings.settings import _sniff_file_kind
+    from backend.apps.settings.settings import sniff_file_kind
     import base64 as _b64
     sections: List[str] = []
     native: List[dict] = []
@@ -182,7 +182,7 @@ def resolve_attachments(context_paths: Optional[List], api_type: str, model: str
             size = os.path.getsize(path)
             with open(path, "rb") as fh:
                 head = fh.read(4096)
-            kind, media_type = _sniff_file_kind(head, os.path.basename(path))
+            kind, media_type = sniff_file_kind(head, os.path.basename(path))
 
             if kind == "text":
                 with open(path, "r", errors="replace") as f:

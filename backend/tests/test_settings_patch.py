@@ -30,18 +30,18 @@ def client():
 
 @pytest.fixture
 def reset_settings():
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
     original = load_settings().model_copy(deep=True)
     yield
-    _save_settings(original)
+    save_settings(original)
 
 
 def test_patch_changes_only_sent_fields(client, reset_settings):
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
     s = load_settings()
     s.theme = "dark"
     s.default_mode = "chat"  # as if something else had set this
-    _save_settings(s)
+    save_settings(s)
 
     r = client.patch("/api/settings", json={"theme": "light"})
     assert r.status_code == 200, r.text
@@ -64,11 +64,11 @@ async def test_concurrent_renderer_patch_and_agent_write_both_survive(reset_sett
     """The renderer PATCHes one field while an autonomous agent writes another,
     at the same time. Both must land: the renderer never sends the agent's field,
     so it can't clobber it, and both reads happen fresh under the shared lock."""
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
     base = load_settings()
     base.theme = "dark"
     base.default_mode = "agent"
-    _save_settings(base)
+    save_settings(base)
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=_auth_headers()) as client:

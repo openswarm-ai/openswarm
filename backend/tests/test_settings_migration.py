@@ -27,25 +27,25 @@ def _write(path, obj):
         json.dump(obj, fh)
 
 
-# ---------------- _migrate_legacy_fields ----------------
+# ---------------- migrate_legacy_fields ----------------
 
 def test_migrate_managed_to_openswarm_pro():
-    assert store._migrate_legacy_fields({"connection_mode": "managed"})["connection_mode"] == "openswarm-pro"
+    assert store.migrate_legacy_fields({"connection_mode": "managed"})["connection_mode"] == "openswarm-pro"
 
 
 def test_migrate_auth_token_renamed_and_popped():
-    out = store._migrate_legacy_fields({"openswarm_auth_token": "tok"})
+    out = store.migrate_legacy_fields({"openswarm_auth_token": "tok"})
     assert out["openswarm_bearer_token"] == "tok"
     assert "openswarm_auth_token" not in out
 
 
 def test_migrate_does_not_clobber_existing_bearer():
-    out = store._migrate_legacy_fields({"openswarm_auth_token": "old", "openswarm_bearer_token": "new"})
+    out = store.migrate_legacy_fields({"openswarm_auth_token": "old", "openswarm_bearer_token": "new"})
     assert out["openswarm_bearer_token"] == "new"
 
 
 def test_migrate_leaves_modern_values_untouched():
-    out = store._migrate_legacy_fields({"connection_mode": "own_key"})
+    out = store.migrate_legacy_fields({"connection_mode": "own_key"})
     assert out["connection_mode"] == "own_key"
 
 

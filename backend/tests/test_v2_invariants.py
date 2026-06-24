@@ -1315,18 +1315,18 @@ def test_apply_context_window_silent_on_unknown_model():
 def test_estimate_pdf_tokens_floors_empty_pdf_at_byte_heuristic():
     """A truly empty / minimal PDF still returns a non-zero estimate so
     the dry-run guard doesn't allow many tiny PDFs through silently."""
-    from backend.apps.settings.settings import _estimate_pdf_tokens
-    assert _estimate_pdf_tokens(b"") >= 1_000
-    assert _estimate_pdf_tokens(b"%PDF-1.4\n") >= 1_000
+    from backend.apps.settings.settings import estimate_pdf_tokens
+    assert estimate_pdf_tokens(b"") >= 1_000
+    assert estimate_pdf_tokens(b"%PDF-1.4\n") >= 1_000
 
 
 def test_estimate_pdf_tokens_takes_max_of_pages_and_bytes():
     """An image-heavy PDF with low page count should still report high
     tokens via the byte-size signal; we never under-report."""
-    from backend.apps.settings.settings import _estimate_pdf_tokens
+    from backend.apps.settings.settings import estimate_pdf_tokens
     # 8MB PDF with 1 page (image-heavy), byte heuristic should dominate.
     fake = b"%PDF-1.4\n/Type /Pages /Count 1\n" + b"X" * (8 * 1024 * 1024)
-    tokens = _estimate_pdf_tokens(fake)
+    tokens = estimate_pdf_tokens(fake)
     # byte heuristic: 8MB / 80 = 100k tokens > pages * 750 = 750
     assert tokens >= 100_000
 
@@ -1334,9 +1334,9 @@ def test_estimate_pdf_tokens_takes_max_of_pages_and_bytes():
 def test_estimate_pdf_tokens_caps_malformed_count():
     """A PDF with /Count 999999 (malformed or hostile) does NOT bypass
     the 10k pages sanity cap; falls through to byte heuristic instead."""
-    from backend.apps.settings.settings import _estimate_pdf_tokens
+    from backend.apps.settings.settings import estimate_pdf_tokens
     fake = b"%PDF-1.4\n/Type /Pages /Count 999999\n"
-    t = _estimate_pdf_tokens(fake)
+    t = estimate_pdf_tokens(fake)
     # Should NOT be 999999 * 750 = 750 million.
     assert t < 50_000_000
 
@@ -1526,20 +1526,20 @@ def test_resolve_attachments_uses_os_path_basename_for_windows_paths():
 def test_sniff_file_kind_consistent_across_platforms():
     """The sniffer reads bytes, never paths. So platform doesn't matter
     for the classification logic, same bytes → same kind on Windows/Mac/Linux."""
-    from backend.apps.settings.settings import _sniff_file_kind
-    assert _sniff_file_kind(b"%PDF-1.4\n", "x.pdf") == ("pdf", "application/pdf")
-    assert _sniff_file_kind(b"\x89PNG\r\n\x1a\n", "x.png") == ("image", "image/png")
-    assert _sniff_file_kind(b"PK\x03\x04", "x.zip") == ("binary", None)
-    assert _sniff_file_kind(b"MZ\x90\x00", "x.exe") == ("binary", None)
-    assert _sniff_file_kind(b"hello world", "x.txt") == ("text", "text/plain")
+    from backend.apps.settings.settings import sniff_file_kind
+    assert sniff_file_kind(b"%PDF-1.4\n", "x.pdf") == ("pdf", "application/pdf")
+    assert sniff_file_kind(b"\x89PNG\r\n\x1a\n", "x.png") == ("image", "image/png")
+    assert sniff_file_kind(b"PK\x03\x04", "x.zip") == ("binary", None)
+    assert sniff_file_kind(b"MZ\x90\x00", "x.exe") == ("binary", None)
+    assert sniff_file_kind(b"hello world", "x.txt") == ("text", "text/plain")
 
 
 def test_estimate_pdf_tokens_consistent_across_platforms():
     """Same byte-level math regardless of OS."""
-    from backend.apps.settings.settings import _estimate_pdf_tokens
+    from backend.apps.settings.settings import estimate_pdf_tokens
     # 5MB PDF should always estimate ≥ 5MB/80 = 65536 tokens.
     fake = b"%PDF-1.4\n" + b"X" * (5 * 1024 * 1024)
-    assert _estimate_pdf_tokens(fake) >= 65000
+    assert estimate_pdf_tokens(fake) >= 65000
 
 
 def test_sniff_handles_windows_style_backslash_path_string():

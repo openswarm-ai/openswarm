@@ -125,13 +125,13 @@ async def service_lifespan():
     global _pulse_task, _drain_task, _9r_start_task
 
     try:
-        from backend.apps.settings.settings import load_settings, _save_settings
+        from backend.apps.settings.settings import load_settings, save_settings
         settings = load_settings()
 
         is_first_open = settings.first_opened_at is None
         if is_first_open:
             settings.first_opened_at = datetime.now().isoformat()
-            _save_settings(settings)
+            save_settings(settings)
 
         days_since_install = 0
         if settings.first_opened_at:

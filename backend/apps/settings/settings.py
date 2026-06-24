@@ -16,9 +16,8 @@ from backend.apps.settings.store import (
     SETTINGS_FILE,
     load_settings,
     save_settings,
-    _save_settings,
-    _atomic_write_settings,
-    _migrate_legacy_fields,
+    atomic_write_settings,
+    migrate_legacy_fields,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,13 +76,13 @@ async def settings_lifespan():
             await sync_custom_providers(getattr(s, "custom_providers", None) or [])
 
         _asyncio.create_task(_boot_router_then_sync())
-        _asyncio.create_task(_upload_dir_gc_loop())
+        _asyncio.create_task(p_upload_dir_gc_loop())
     except Exception as e:
         logger.warning(f"9Router sync startup failed: {e}")
     yield
 
 
-async def _upload_dir_gc_loop():
+async def p_upload_dir_gc_loop():
     """Daily GC of UPLOAD_DIR. Without this, every PDF/image the user
     drops sits in the OS temp dir forever, growing unbounded across
     sessions. We keep files for 7 days to make resume-after-restart
@@ -116,7 +115,7 @@ async def save_settings_async(settings_obj: AppSettings) -> None:
     """Async atomic save via thread pool; shares the lock with the sync variant."""
     payload = settings_obj.model_dump()
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, _atomic_write_settings, payload)
+    await loop.run_in_executor(None, atomic_write_settings, payload)
 
 
 @settings.router.get("")
@@ -157,15 +156,15 @@ import weakref as _weakref
 # the first loop that uses it and then errors on reuse from another loop (every
 # async test spins a fresh one). WeakKeyDictionary auto-drops a loop's lock once
 # the loop is gone.
-_settings_write_locks: "_weakref.WeakKeyDictionary" = _weakref.WeakKeyDictionary()
+p_settings_write_locks: "_weakref.WeakKeyDictionary" = _weakref.WeakKeyDictionary()
 
 
 def settings_write_lock() -> asyncio.Lock:
     loop = asyncio.get_running_loop()
-    lock = _settings_write_locks.get(loop)
+    lock = p_settings_write_locks.get(loop)
     if lock is None:
         lock = asyncio.Lock()
-        _settings_write_locks[loop] = lock
+        p_settings_write_locks[loop] = lock
     return lock
 
 
@@ -382,7 +381,7 @@ async def reset_system_prompt():
 # defaults EXCEPT the things a "reset my preferences" click must never silently
 # sever, your connections (server-owned subscription fields AND your pasted
 # provider credentials) and your identity. Hard-erase is the separate flow.
-_RESET_PRESERVE_FIELDS = SERVER_OWNED_FIELDS + (
+P_RESET_PRESERVE_FIELDS = SERVER_OWNED_FIELDS + (
     "anthropic_api_key",
     "openai_api_key",
     "google_api_key",
@@ -399,7 +398,7 @@ _RESET_PRESERVE_FIELDS = SERVER_OWNED_FIELDS + (
 async def reset_to_defaults():
     old = load_settings()
     fresh = AppSettings()
-    for k in _RESET_PRESERVE_FIELDS:
+    for k in P_RESET_PRESERVE_FIELDS:
         setattr(fresh, k, getattr(old, k, None))
     await save_settings_async(fresh)
     return {"ok": True, "settings": fresh.model_dump()}
@@ -416,7 +415,7 @@ UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "self-swarm-uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-def _sniff_file_kind(contents: bytes, name: str) -> tuple[str, str | None]:
+def sniff_file_kind(contents: bytes, name: str) -> tuple[str, str | None]:
     """Classify an uploaded file as text/pdf/image/binary so the agent
     layer can route it (inline as text, send as native document/image
     block, or refuse). Returns (kind, media_type)."""
@@ -457,7 +456,7 @@ def _sniff_file_kind(contents: bytes, name: str) -> tuple[str, str | None]:
         return ("binary", None)
 
 
-def _estimate_pdf_tokens(contents: bytes) -> int:
+def estimate_pdf_tokens(contents: bytes) -> int:
     """Conservative PDF token estimate without a parser dep.
 
     We use two signals and take the MAX so the chip + dry-run never
@@ -546,7 +545,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
                 pass
             raise
 
-        kind, media_type = _sniff_file_kind(contents, safe_name)
+        kind, media_type = sniff_file_kind(contents, safe_name)
 
         if kind == "text":
             try:
@@ -556,7 +555,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
             except Exception:
                 tokens_est = min(len(contents), 512_000) // 4
         elif kind == "pdf":
-            tokens_est = _estimate_pdf_tokens(contents)
+            tokens_est = estimate_pdf_tokens(contents)
         elif kind == "image":
             tokens_est = 1_500
         else:
@@ -574,14 +573,14 @@ async def upload_files(files: list[UploadFile] = File(...)):
     return JSONResponse({"files": results})
 
 
-class _SummarizeRequest(BaseModel):
+class p_SummarizeRequest(BaseModel):
     path: str
     target_tokens: int = 4_000
     primary_model: Optional[str] = None
 
 
 @settings.router.post("/summarize-file")
-async def summarize_file(req: _SummarizeRequest):
+async def summarize_file(req: p_SummarizeRequest):
     """Compress an attached file down to a fact-dense summary the agent can
     still reason over without paying the full token cost.
 

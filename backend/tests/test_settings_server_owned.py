@@ -28,11 +28,11 @@ def client():
 
 @pytest.fixture
 def reset_settings():
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
 
     original = load_settings().model_copy(deep=True)
     yield
-    _save_settings(original)
+    save_settings(original)
 
 
 def _activate_pro(client, token="repro-bearer-0123456789abcdef"):

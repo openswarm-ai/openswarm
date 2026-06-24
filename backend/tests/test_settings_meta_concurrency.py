@@ -29,20 +29,20 @@ def _auth_headers():
 
 @pytest.fixture
 def reset_settings():
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
     original = load_settings().model_copy(deep=True)
     yield
-    _save_settings(original)
+    save_settings(original)
 
 
 @pytest.mark.asyncio
 async def test_concurrent_writes_to_different_fields_both_survive(reset_settings):
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
 
     base = load_settings()
     base.theme = "dark"
     base.default_mode = "agent"
-    _save_settings(base)
+    save_settings(base)
 
     headers = _auth_headers()
     transport = httpx.ASGITransport(app=app)

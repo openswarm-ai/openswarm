@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 
 
-def _migrate_legacy_fields(raw: dict) -> dict:
+def migrate_legacy_fields(raw: dict) -> dict:
     """Translate deprecated pre-launch field names ('managed', 'openswarm_auth_token') into production schema."""
     if raw.get("connection_mode") == "managed":
         raw["connection_mode"] = "openswarm-pro"
@@ -31,7 +31,7 @@ def _migrate_legacy_fields(raw: dict) -> dict:
     return raw
 
 
-def _coerce_settings(raw: dict) -> AppSettings:
+def p_coerce_settings(raw: dict) -> AppSettings:
     """Build AppSettings, surviving a settings.json written by a different app
     version. Unknown fields are already ignored by pydantic; the case this guards
     is a field whose TYPE drifted across versions (e.g. a list that is now a
@@ -55,7 +55,7 @@ def _coerce_settings(raw: dict) -> AppSettings:
             return AppSettings()
 
 
-def _preserve_corrupt_settings() -> None:
+def p_preserve_corrupt_settings() -> None:
     """Move an unparseable settings.json aside so boot proceeds on defaults while
     the original stays recoverable (the next save would otherwise overwrite it)."""
     try:
@@ -70,11 +70,11 @@ def _preserve_corrupt_settings() -> None:
 # so even a hand-edited file or an unexpected writer is picked up immediately. A stat
 # skips the open+parse+validate that Defender turns into 5-50ms on Windows. Copies on
 # both sides keep handler isolation: callers mutate their copy, never the cache.
-_cached_settings: AppSettings | None = None
-_cached_sig: tuple[int, int] | None = None
+p_cached_settings: AppSettings | None = None
+p_cached_sig: tuple[int, int] | None = None
 
 
-def _settings_sig() -> tuple[int, int] | None:
+def p_settings_sig() -> tuple[int, int] | None:
     try:
         st = os.stat(SETTINGS_FILE)
         return (st.st_mtime_ns, st.st_size)
@@ -86,38 +86,38 @@ def load_settings() -> AppSettings:
     """Load settings from JSON file, returning defaults if not found. Never raises
     on a corrupt or version-mismatched file: a single bad settings.json must not
     brick boot (it is read at startup, by the settings endpoint, and per dispatch)."""
-    global _cached_settings, _cached_sig
-    sig = _settings_sig()
-    if sig is not None and _cached_settings is not None and sig == _cached_sig:
-        return _cached_settings.model_copy(deep=True)
+    global p_cached_settings, p_cached_sig
+    sig = p_settings_sig()
+    if sig is not None and p_cached_settings is not None and sig == p_cached_sig:
+        return p_cached_settings.model_copy(deep=True)
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE) as f:
                 raw = json.load(f)
         except (json.JSONDecodeError, OSError, ValueError):
-            _preserve_corrupt_settings()
+            p_preserve_corrupt_settings()
             return AppSettings()
         if not isinstance(raw, dict):
             # Valid JSON but not an object (e.g. a bare list/number); unusable.
-            _preserve_corrupt_settings()
+            p_preserve_corrupt_settings()
             return AppSettings()
-        settings = _coerce_settings(_migrate_legacy_fields(raw))
+        settings = p_coerce_settings(migrate_legacy_fields(raw))
         if settings.default_system_prompt is None:
             settings.default_system_prompt = DEFAULT_SYSTEM_PROMPT
-        _cached_settings = settings.model_copy(deep=True)
-        _cached_sig = sig
+        p_cached_settings = settings.model_copy(deep=True)
+        p_cached_sig = sig
         return settings
     return AppSettings()
 
 
 # threading.Lock guards every SETTINGS_FILE write; works for sync paths and async run_in_executor paths.
-_settings_write_lock = threading.Lock()
+p_settings_write_lock = threading.Lock()
 
 
-def _atomic_write_settings(payload: dict) -> None:
+def atomic_write_settings(payload: dict) -> None:
     """Atomic SETTINGS_FILE write; call via save_settings*, not directly."""
-    global _cached_settings, _cached_sig
-    with _settings_write_lock:
+    global p_cached_settings, p_cached_sig
+    with p_settings_write_lock:
         os.makedirs(DATA_DIR, exist_ok=True)
         fd, tmp = tempfile.mkstemp(prefix=".settings.", suffix=".tmp", dir=DATA_DIR)
         try:
@@ -128,10 +128,10 @@ def _atomic_write_settings(payload: dict) -> None:
                 try:
                     os.replace(tmp, SETTINGS_FILE)
                     # Refresh the cache inside the lock so cache order matches disk order.
-                    _cached_settings = _coerce_settings(_migrate_legacy_fields(dict(payload)))
-                    if _cached_settings.default_system_prompt is None:
-                        _cached_settings.default_system_prompt = DEFAULT_SYSTEM_PROMPT
-                    _cached_sig = _settings_sig()
+                    p_cached_settings = p_coerce_settings(migrate_legacy_fields(dict(payload)))
+                    if p_cached_settings.default_system_prompt is None:
+                        p_cached_settings.default_system_prompt = DEFAULT_SYSTEM_PROMPT
+                    p_cached_sig = p_settings_sig()
                     return
                 except PermissionError:
                     if attempt == 1:
@@ -147,8 +147,4 @@ def _atomic_write_settings(payload: dict) -> None:
 
 def save_settings(settings_obj: AppSettings) -> None:
     """Sync atomic persist; thread-safe. Async callers should prefer save_settings_async (Defender can stretch writes to 50-200ms)."""
-    _atomic_write_settings(settings_obj.model_dump())
-
-
-def _save_settings(settings_obj: AppSettings) -> None:
-    save_settings(settings_obj)
+    atomic_write_settings(settings_obj.model_dump())

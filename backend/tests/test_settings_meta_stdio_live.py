@@ -58,10 +58,10 @@ def live_backend():
 
 @pytest.fixture
 def reset_settings():
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
     original = load_settings().model_copy(deep=True)
     yield
-    _save_settings(original)
+    save_settings(original)
 
 
 def _run_stdio(port: int, token: str, session_id: str, changes: dict) -> str:
@@ -84,7 +84,7 @@ def _run_stdio(port: int, token: str, session_id: str, changes: dict) -> str:
 
 def test_live_stdio_settingswrite_refuses_live_key_clears_other(live_backend, reset_settings):
     port, token = live_backend
-    from backend.apps.settings.settings import load_settings, _save_settings
+    from backend.apps.settings.settings import load_settings, save_settings
     from backend.apps.agents.agent_manager import agent_manager
     from backend.apps.agents.core.models import AgentSession
 
@@ -94,7 +94,7 @@ def test_live_stdio_settingswrite_refuses_live_key_clears_other(live_backend, re
     s.connection_mode = "own_key"
     s.anthropic_api_key = "sk-ant-LIVE-do-not-clear"
     s.openai_api_key = "sk-oai-OTHER-ok-to-clear"
-    _save_settings(s)
+    save_settings(s)
     agent_manager.sessions["live-stdio-test"] = AgentSession(id="live-stdio-test", name="t", model="opus-4-8")
 
     try:
