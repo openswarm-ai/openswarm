@@ -43,6 +43,49 @@ _PATH_BY_KIND = {
 }
 
 _TIMEOUT_SECONDS = 5.0
+
+
+def resolve_timezone() -> str:
+    """Best-effort IANA timezone for analytics. Prefers the renderer-reported
+    value persisted in settings (the only source that works on dev / OSS where
+    Electron's env injection never runs), then the OS, then UTC."""
+    try:
+        from backend.apps.settings.store import load_settings
+        tz = getattr(load_settings(), "timezone", None)
+        if tz:
+            return tz
+    except Exception:
+        pass
+    try:
+        from tzlocal import get_localzone_name
+        name = get_localzone_name()
+        if name:
+            return name
+    except Exception:
+        pass
+    try:
+        return time.tzname[0] or "UTC"
+    except Exception:
+        return "UTC"
+
+
+def resolve_locale() -> str:
+    """Best-effort BCP-47 locale, settings-first then OS, defaulting to en-US."""
+    try:
+        from backend.apps.settings.store import load_settings
+        loc = getattr(load_settings(), "locale", None)
+        if loc:
+            return loc
+    except Exception:
+        pass
+    try:
+        import locale as _locale
+        code = _locale.getlocale()[0]
+        if code:
+            return code.replace("_", "-")
+    except Exception:
+        pass
+    return "en-US"
 _MAX_INFLIGHT = 16
 
 _test_sink: Optional[Any] = None

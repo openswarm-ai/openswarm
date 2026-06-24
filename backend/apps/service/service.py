@@ -189,6 +189,18 @@ async def service_lifespan():
             id_props["subscription_expires"] = settings.openswarm_subscription_expires
 
         svc.sync({"identity": id_props})
+
+        # swarm-analytics: bootstrap the client (registers + persists a token on
+        # first run), prove the pipe with one diagnostic log write, and link the
+        # user's email. All best-effort; the wrappers swallow every error.
+        from backend.apps.service.analytics import get_analytics_client, track_link_email
+        analytics_client = get_analytics_client()
+        if analytics_client is not None:
+            try:
+                analytics_client.logs.write(tag="app", subtag="backend_started", data={"app_version": APP_VERSION})
+            except Exception:
+                pass
+        track_link_email(getattr(settings, "user_email", None))
     except Exception as e:
         logger.debug(f"Service startup event failed (non-critical): {e}")
 
@@ -236,6 +248,15 @@ async def service_lifespan():
     try:
         from backend.apps.nine_router import stop as stop_9router
         stop_9router()
+    except Exception:
+        pass
+
+    # swarm-analytics: fire the app-closed event and flush+close the client so
+    # buffered events land before the process exits. Best-effort.
+    try:
+        from backend.apps.service.analytics import track_app_closed, shutdown_analytics
+        track_app_closed()
+        shutdown_analytics()
     except Exception:
         pass
 
@@ -424,6 +445,50 @@ async def service_status():
 # Frontend event endpoints
 # ---------------------------------------------------------------------------
 
+def p_bridge_to_analytics(item: dict) -> None:
+    """Re-emit frontend `report()` events through the typed swarm-analytics SDK.
+
+    The frontend is browser-side and can't reach the analytics service
+    directly, so onboarding steps and dashboard open/close arrive here as
+    {s, a, p} envelopes. We translate the ones we care about into product
+    events. Best-effort: never raises (the track_* wrappers swallow errors).
+    Dashboard create/delete are NOT bridged here; those fire authoritatively
+    from the dashboards routes, bridging them too would double-count.
+    """
+    s = item.get("s")
+    a = item.get("a")
+    p = item.get("p") or {}
+    if not isinstance(p, dict):
+        return
+    if s == "onboarding_v2":
+        status = {
+            "step_started": "started",
+            "step_completed": "completed",
+            "step_aborted": "abandoned",
+            "step_selector_timeout": "abandoned",
+            "step_error": "abandoned",
+        }.get(a)
+        step_id = p.get("step_id")
+        if status and step_id:
+            from backend.apps.service.analytics import track_onboarding_step
+            track_onboarding_step(step_id=str(step_id), status=status)
+    elif s == "dashboard" and a in ("open", "close"):
+        dashboard_id = p.get("dashboard_id")
+        if dashboard_id:
+            from backend.apps.service.analytics import track_dashboard_event
+            track_dashboard_event(dashboard_id=str(dashboard_id), action=a)
+    elif s == "app" and a == "opened":
+        # The renderer reports the browser's canonical IANA timezone + BCP 47
+        # locale on launch. Persist them (overwriting last launch, so a timezone
+        # switch is picked up) for the cloud envelope, then emit the once-per-
+        # process app_lifecycle.opened carrying those exact values.
+        tz = p.get("timezone") if isinstance(p.get("timezone"), str) else None
+        loc = p.get("locale") if isinstance(p.get("locale"), str) else None
+        from backend.apps.service.analytics import persist_client_env, track_app_opened
+        persist_client_env(timezone=tz, locale=loc)
+        track_app_opened(timezone=tz, locale=loc)
+
+
 @service.router.post("/submit")
 async def post_submit(body=Body(...)):
     """Accepts three body shapes for backward compatibility:
@@ -453,6 +518,7 @@ async def post_submit(body=Body(...)):
             if isinstance(item, dict):
                 if any(k in item for k in ("s", "a", "p")):
                     svc.sync(item)
+                    p_bridge_to_analytics(item)
                     continue
                 kind = item.get("kind") or ""
                 payload = item.get("payload") or {}
@@ -465,6 +531,7 @@ async def post_submit(body=Body(...)):
     # Shape 1: frontend `report()`; flat {s, a, p, ...}
     if any(k in body for k in ("s", "a", "p")):
         svc.sync(body)
+        p_bridge_to_analytics(body)
         return {"ok": True}
     # Shape 2: legacy {kind, payload}
     kind = body.get("kind") or ""
@@ -488,11 +555,13 @@ async def post_event(body: dict):
     if not action:
         action = "fired"
 
-    svc.sync({
+    envelope = {
         "s": str(surface)[:64],
         "a": str(action)[:64],
         "p": body.get("props") or body.get("properties") or {},
-    })
+    }
+    svc.sync(envelope)
+    p_bridge_to_analytics(envelope)
     return {"ok": True}
 
 

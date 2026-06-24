@@ -78,7 +78,7 @@ if (typeof window !== 'undefined') {
   if (ric) ric(prefetchAll, { timeout: 1500 });
   else window.setTimeout(prefetchAll, 500);
 }
-import { report, getSessionTraceState, getRecentActions } from '@/shared/serviceClient';
+import { report, reportAppOpened, getSessionTraceState, getRecentActions } from '@/shared/serviceClient';
 import { useRouteTracker } from '@/shared/hooks/useRouteTracker';
 import { useDeepLink } from '@/shared/hooks/useDeepLink';
 import { useWindowFocus } from '@/shared/hooks/useWindowFocus';
@@ -223,6 +223,10 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   useEffect(() => {
     dispatch(fetchSettings());
     dispatch(fetchModels());
+    // Report the app launch with the browser's canonical tz/locale so the backend
+    // can emit analytics app_lifecycle.opened with values that work in packaged,
+    // dev, and open-source builds. Guarded once per page load; backend dedupes per process.
+    reportAppOpened();
     // Connected subscriptions live in their own slice; without this the dashboard
     // (and the onboarding gate) think no model is connected until the user opens
     // Settings > Models, so a fresh launch shows a false "connect a model" empty

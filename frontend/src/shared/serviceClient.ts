@@ -87,6 +87,31 @@ export function report(
   sync({ s: surface, a: action, p: props || {} }, opts);
 }
 
+let _openedSent = false;
+
+/**
+ * Report the app launch with the browser's canonical timezone + locale (the
+ * Intl API gives the same values Electron does, but works in dev and the
+ * open-source build too, where Electron's env injection never runs). The backend
+ * persists these and emits analytics `app_lifecycle.opened` from them.
+ *
+ * Guarded so a remount won't re-send within one page load; the backend also
+ * dedupes per process, so a hard reload can't double-count an app launch.
+ */
+export function reportAppOpened(): void {
+  if (_openedSent) return;
+  _openedSent = true;
+  let timezone = '';
+  let locale = '';
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  } catch { /* leave empty; backend resolver/fallback handles it */ }
+  try {
+    locale = (typeof navigator !== 'undefined' && navigator.language) || '';
+  } catch { /* leave empty */ }
+  report('app', 'opened', { timezone, locale }, { immediate: true });
+}
+
 export function getSessionTraceState(): {
   appStartTs: number;
   lastTs: number;
@@ -99,5 +124,5 @@ export function getSessionTraceState(): {
   };
 }
 
-const serviceClient = { sync, report, getSessionTraceState, getRecentActions };
+const serviceClient = { sync, report, reportAppOpened, getSessionTraceState, getRecentActions };
 export default serviceClient;
