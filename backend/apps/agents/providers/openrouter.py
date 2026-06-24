@@ -16,7 +16,7 @@ P_OR_MODELS_TTL_OK = 3600.0
 P_OR_MODELS_TTL_FAIL = 30.0
 p_or_models_cache: dict = {"models": None, "fetched_at": 0.0, "ok": False}
 
-_9router_cache: dict = {"available": None, "checked_at": 0}
+p_9router_cache: dict = {"available": None, "checked_at": 0}
 
 
 # Per-model published pricing in $/1M tokens (input, output) for direct

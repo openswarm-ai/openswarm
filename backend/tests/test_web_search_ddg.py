@@ -61,7 +61,7 @@ P_HTML_WITH_AD = """
 async def test_202_raises_rate_limited_not_empty(monkeypatch):
     p_patch_client(monkeypatch, p_FakeResp(202, "<html>throttle challenge, no results</html>"))
     with pytest.raises(DDGRateLimited):
-        await WebSearchTool._search_ddg("anything", 5)
+        await WebSearchTool.search_ddg("anything", 5)
 
 
 @pytest.mark.asyncio
@@ -76,7 +76,7 @@ async def test_execute_reports_rate_limit_clearly(monkeypatch):
 @pytest.mark.asyncio
 async def test_ads_are_stripped_real_results_kept(monkeypatch):
     p_patch_client(monkeypatch, p_FakeResp(200, P_HTML_WITH_AD))
-    out = await WebSearchTool._search_ddg("topic", 5)
+    out = await WebSearchTool.search_ddg("topic", 5)
     assert "example.com/real" in out
     assert "Real Result Title" in out
     # the sponsored row and its tracker URL must not appear
@@ -89,5 +89,5 @@ async def test_ads_are_stripped_real_results_kept(monkeypatch):
 async def test_genuinely_empty_is_not_a_rate_limit(monkeypatch):
     # 200 with no result blocks is a real empty result set, not a throttle.
     p_patch_client(monkeypatch, p_FakeResp(200, "<html><body>nothing here</body></html>"))
-    out = await WebSearchTool._search_ddg("zxcvqwer no hits", 5)
+    out = await WebSearchTool.search_ddg("zxcvqwer no hits", 5)
     assert out == ""

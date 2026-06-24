@@ -452,7 +452,7 @@ async def search(body: SearchBody) -> dict:
         # through to the slower-but-grounded backends.
         from backend.apps.agents.tools.web import WebSearchTool, DDGRateLimited
         try:
-            text = await WebSearchTool._search_ddg(body.query, body.num_results)
+            text = await WebSearchTool.search_ddg(body.query, body.num_results)
         except DDGRateLimited:
             # Surface the throttle as a recorded error (not a silent None) so the
             # caller can see WHY we fell through to a slower backend.

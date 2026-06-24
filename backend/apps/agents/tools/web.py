@@ -139,7 +139,7 @@ class WebSearchTool(BaseTool):
         num_results: int = input_data.get("num_results", 5)
 
         try:
-            results = await self._search_ddg(query, num_results)
+            results = await self.search_ddg(query, num_results)
             if not results:
                 return [{"type": "text", "text": f"No search results found for: {query}"}]
             return [{"type": "text", "text": results}]
@@ -152,7 +152,7 @@ class WebSearchTool(BaseTool):
             return [{"type": "text", "text": f"Web search error: {exc}"}]
 
     @staticmethod
-    async def _search_ddg(query: str, num_results: int) -> str:
+    async def search_ddg(query: str, num_results: int) -> str:
         """Query DuckDuckGo HTML endpoint and parse results."""
         async with httpx.AsyncClient(
             timeout=P_HTTP_TIMEOUT,

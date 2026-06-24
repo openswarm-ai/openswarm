@@ -63,10 +63,10 @@ def get_auth_token() -> str:
 class p_TokenScrubFilter(logging.Filter):
     """Logging filter that redacts the install token from log records (defense in depth)."""
 
-    _PLACEHOLDER = "<REDACTED:openswarm-token>"
+    P_PLACEHOLDER = "<REDACTED:openswarm-token>"
 
     @staticmethod
-    def _args_might_contain_token(args) -> bool:
+    def p_args_might_contain_token(args) -> bool:
         """Cheap pre-check; avoids eager %-formatting on the >99% of records that don't mention the token."""
         if not args:
             return False
@@ -81,7 +81,7 @@ class p_TokenScrubFilter(logging.Filter):
         return False
 
     @classmethod
-    def _scrub_args(cls, args):
+    def p_scrub_args(cls, args):
         """Scrub token from args while preserving tuple/dict shape; uvicorn's AccessFormatter unpacks args as a 5-tuple and explodes on None."""
         if args is None:
             return args
@@ -91,7 +91,7 @@ class p_TokenScrubFilter(logging.Filter):
                 if isinstance(v, str) and TOKEN in v:
                     if new_dict is None:
                         new_dict = dict(args)
-                    new_dict[k] = v.replace(TOKEN, cls._PLACEHOLDER)
+                    new_dict[k] = v.replace(TOKEN, cls.P_PLACEHOLDER)
             return new_dict if new_dict is not None else args
         if isinstance(args, tuple):
             new_list = None
@@ -99,10 +99,10 @@ class p_TokenScrubFilter(logging.Filter):
                 if isinstance(v, str) and TOKEN in v:
                     if new_list is None:
                         new_list = list(args)
-                    new_list[i] = v.replace(TOKEN, cls._PLACEHOLDER)
+                    new_list[i] = v.replace(TOKEN, cls.P_PLACEHOLDER)
             return tuple(new_list) if new_list is not None else args
         if isinstance(args, str) and TOKEN in args:
-            return args.replace(TOKEN, cls._PLACEHOLDER)
+            return args.replace(TOKEN, cls.P_PLACEHOLDER)
         return args
 
     def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover (defensive)
@@ -110,19 +110,19 @@ class p_TokenScrubFilter(logging.Filter):
             return True
         # Fast path: skip eager %-formatting on records that don't mention the token.
         raw_msg = record.msg if isinstance(record.msg, str) else ""
-        if TOKEN not in raw_msg and not self._args_might_contain_token(record.args):
+        if TOKEN not in raw_msg and not self.p_args_might_contain_token(record.args):
             return True
         # Slow path: in-place args rewrite (preserves shape for AccessFormatter), then re-render to catch tokens buried in custom reprs.
         try:
             if isinstance(record.msg, str) and TOKEN in record.msg:
-                record.msg = record.msg.replace(TOKEN, self._PLACEHOLDER)
-            scrubbed = self._scrub_args(record.args)
+                record.msg = record.msg.replace(TOKEN, self.P_PLACEHOLDER)
+            scrubbed = self.p_scrub_args(record.args)
             if scrubbed is not record.args:
                 record.args = scrubbed
             try:
                 rendered = record.getMessage()
                 if TOKEN in rendered:
-                    record.msg = rendered.replace(TOKEN, self._PLACEHOLDER)
+                    record.msg = rendered.replace(TOKEN, self.P_PLACEHOLDER)
                     record.args = None
             except Exception:
                 pass

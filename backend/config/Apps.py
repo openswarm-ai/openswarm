@@ -35,7 +35,7 @@ class MainApp:
                 # per-SubApp markers and a cold-start stall can only be guessed at.
                 # One perf_counter + flushed print per app pins exactly which
                 # lifespan (or the cold first-touch I/O entering it) dominates.
-                _boot_t0 = time.perf_counter()
+                p_boot_t0 = time.perf_counter()
                 for sub_app in sub_apps:
                     debug(sub_app.name)
                     _t0 = time.perf_counter()
@@ -43,7 +43,7 @@ class MainApp:
                     _dt = (time.perf_counter() - _t0) * 1000
                     if _dt > 50:  # only flag a slow lifespan; keeps boot logs quiet
                         print(f"[perf] lifespan {sub_app.name} t={_dt:.0f}ms", flush=True)
-                print(f"[perf] lifespans-total t={(time.perf_counter() - _boot_t0) * 1000:.0f}ms", flush=True)
+                print(f"[perf] lifespans-total t={(time.perf_counter() - p_boot_t0) * 1000:.0f}ms", flush=True)
                 _port = os.environ.get("OPENSWARM_PORT", "8324")
                 print(f"\nCheck out the API docs at: http://127.0.0.1:{_port}/docs\n")
                 yield

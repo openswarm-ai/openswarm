@@ -82,7 +82,7 @@ class AppRuntime:
         self.frontend_port: Optional[int] = None
         # New-mode only: flips True once something is actually listening
         # on frontend_port (we kick off a background poll task in
-        # _start_new_mode). frontend_url returns null until this flips,
+        # p_start_new_mode). frontend_url returns null until this flips,
         # so the preview pane doesn't try to navigate to an unbound port
         # and show a "Site can't be reached" error mid-npm-install.
         self.p_frontend_ready: bool = False
@@ -142,7 +142,7 @@ class AppRuntime:
     @property
     def frontend_url(self) -> Optional[str]:
         # Gated on `_frontend_ready` (set by the background bind-poll
-        # task in _start_new_mode) so the preview pane only switches
+        # task in p_start_new_mode) so the preview pane only switches
         # over once Vite is actually accepting connections. Without
         # this, the editor flashes a "Site can't be reached" error
         # while `npm install` is running.
@@ -189,10 +189,10 @@ class AppRuntime:
                 # vite emits "frontend ready" (or its 180s timeout
                 # fires), which is the moment the next workspace can
                 # start its own vite without competing for the same
-                # CPU. See `_await_frontend_bind` for the release.
+                # CPU. See `p_await_frontend_bind` for the release.
                 await p_vite_boot_lock.acquire()
                 try:
-                    ok = await self._start_new_mode()
+                    ok = await self.p_start_new_mode()
                     if not ok:
                         # Spawn failed before the bind-poll task was
                         # created; release synchronously so we don't
@@ -202,9 +202,9 @@ class AppRuntime:
                 except Exception:
                     p_vite_boot_lock.release()
                     raise
-            return await self._start_old_mode()
+            return await self.p_start_old_mode()
 
-    async def _start_new_mode(self) -> bool:
+    async def p_start_new_mode(self) -> bool:
         env_path = os.path.join(self.workspace_path, ".env")
         fp_raw = read_env_value(env_path, "FRONTEND_PORT")
         bp_raw = read_env_value(env_path, "BACKEND_PORT")
@@ -222,7 +222,7 @@ class AppRuntime:
         # .env so the bash run.sh subprocess reads the new port.
         if self.frontend_port and not is_port_free(self.frontend_port):
             new_port = find_free_port()
-            self._broadcast(LogLine(
+            self.p_broadcast(LogLine(
                 "runtime",
                 f"[runtime] persisted FRONTEND_PORT {self.frontend_port} is in use; reallocating to {new_port}",
             ))
@@ -240,7 +240,7 @@ class AppRuntime:
             # from a prior session would otherwise block the new spawn.
             if self.port and not is_port_free(self.port):
                 new_port = find_free_port()
-                self._broadcast(LogLine(
+                self.p_broadcast(LogLine(
                     "runtime",
                     f"[runtime] persisted BACKEND_PORT {self.port} is in use; reallocating to {new_port}",
                 ))
@@ -249,7 +249,7 @@ class AppRuntime:
         else:
             self.port = None
 
-        env = self._spawn_env_base()
+        env = self.p_spawn_env_base()
         # bash run.sh reads .env itself; we don't need to set
         # FRONTEND_PORT / BACKEND_PORT here. We DO export the install
         # paths so the template's `backend/run.sh` can find our
@@ -264,7 +264,7 @@ class AppRuntime:
         env["OPENSWARM_DEBUGGER_PATH"] = DEBUGGER_PATH
         env["OPENSWARM_TEMPLATE_BACKEND_PATH"] = TEMPLATE_BACKEND_PATH
 
-        cmd, spawn_cwd, launch_desc = self._resolve_launch(env)
+        cmd, spawn_cwd, launch_desc = self.p_resolve_launch(env)
         try:
             self.process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -276,23 +276,23 @@ class AppRuntime:
             )
         except Exception as e:
             logger.exception("failed to start new-mode runtime for %s", self.workspace_id)
-            self._broadcast(LogLine("runtime", f"[runtime] failed to start: {e}"))
+            self.p_broadcast(LogLine("runtime", f"[runtime] failed to start: {e}"))
             self.frontend_port = None
             self.port = None
             self.process = None
             return False
         backend_note = f" + backend on {self.port}" if self.port else ""
-        self._broadcast(LogLine("runtime", f"[runtime] {launch_desc} started; frontend on {self.frontend_port}{backend_note} (pid {self.process.pid})"))
-        self.p_stdout_task = asyncio.create_task(self._pipe_stream(self.process.stdout, "stdout"))
-        self.p_stderr_task = asyncio.create_task(self._pipe_stream(self.process.stderr, "stderr"))
-        self.p_wait_task = asyncio.create_task(self._await_exit())
+        self.p_broadcast(LogLine("runtime", f"[runtime] {launch_desc} started; frontend on {self.frontend_port}{backend_note} (pid {self.process.pid})"))
+        self.p_stdout_task = asyncio.create_task(self.p_pipe_stream(self.process.stdout, "stdout"))
+        self.p_stderr_task = asyncio.create_task(self.p_pipe_stream(self.process.stderr, "stderr"))
+        self.p_wait_task = asyncio.create_task(self.p_await_exit())
         # Kick off the port-bind poller so frontend_url flips on once
         # Vite is actually accepting connections.
         self.p_frontend_ready = False
-        self.p_frontend_ready_task = asyncio.create_task(self._await_frontend_bind())
+        self.p_frontend_ready_task = asyncio.create_task(self.p_await_frontend_bind())
         return True
 
-    def _resolve_launch(self, env: dict) -> tuple[list[str], str, str]:
+    def p_resolve_launch(self, env: dict) -> tuple[list[str], str, str]:
         """Pick the new-mode launch command.
 
         Default is `bash run.sh` at the workspace root, which handles both
@@ -319,7 +319,7 @@ class AppRuntime:
                 )
         return [p_resolve_bash(), "run.sh"], self.workspace_path, "bash run.sh"
 
-    async def _await_frontend_bind(self) -> None:
+    async def p_await_frontend_bind(self) -> None:
         """Poll `frontend_port` every FRONTEND_BIND_POLL_INTERVAL until
         something binds (Vite dev server) or we hit the timeout. Emits a
         `[runtime]` log line on success/failure so the Terminal pane
@@ -369,7 +369,7 @@ class AppRuntime:
                     except Exception:
                         pass
                     self.p_frontend_ready = True
-                    self._broadcast(LogLine(
+                    self.p_broadcast(LogLine(
                         "runtime",
                         f"[runtime] frontend ready at http://127.0.0.1:{port}/",
                     ))
@@ -384,7 +384,7 @@ class AppRuntime:
                 await asyncio.sleep(FRONTEND_BIND_POLL_INTERVAL)
             # Timed out; keep the runtime up (Terminal might show useful
             # errors) but surface why the preview never appeared.
-            self._broadcast(LogLine(
+            self.p_broadcast(LogLine(
                 "runtime",
                 f"[runtime] frontend did NOT bind on port {port} after "
                 f"{FRONTEND_BIND_TIMEOUT_SECONDS}s; check the Terminal "
@@ -397,12 +397,12 @@ class AppRuntime:
             # already released.
             p_release_boot_lock()
 
-    async def _start_old_mode(self) -> bool:
+    async def p_start_old_mode(self) -> bool:
         if not self.has_backend_file:
             self.port = None
             return False
         self.port = find_free_port()
-        env = self._spawn_env_base()
+        env = self.p_spawn_env_base()
         env["PORT"] = str(self.port)
         env["BACKEND_PORT"] = str(self.port)  # alias; both common names work
         try:
@@ -419,17 +419,17 @@ class AppRuntime:
             )
         except Exception as e:
             logger.exception("failed to start backend for %s", self.workspace_id)
-            self._broadcast(LogLine("runtime", f"[runtime] failed to start: {e}"))
+            self.p_broadcast(LogLine("runtime", f"[runtime] failed to start: {e}"))
             self.port = None
             self.process = None
             return False
-        self._broadcast(LogLine("runtime", f"[runtime] backend started on port {self.port} (pid {self.process.pid})"))
-        self.p_stdout_task = asyncio.create_task(self._pipe_stream(self.process.stdout, "stdout"))
-        self.p_stderr_task = asyncio.create_task(self._pipe_stream(self.process.stderr, "stderr"))
-        self.p_wait_task = asyncio.create_task(self._await_exit())
+        self.p_broadcast(LogLine("runtime", f"[runtime] backend started on port {self.port} (pid {self.process.pid})"))
+        self.p_stdout_task = asyncio.create_task(self.p_pipe_stream(self.process.stdout, "stdout"))
+        self.p_stderr_task = asyncio.create_task(self.p_pipe_stream(self.process.stderr, "stderr"))
+        self.p_wait_task = asyncio.create_task(self.p_await_exit())
         return True
 
-    def _spawn_env_base(self) -> dict[str, str]:
+    def p_spawn_env_base(self) -> dict[str, str]:
         """Inherited env minus the install token. Backend.py can hit our
         REST API back via its own creds if it really needs to, but it
         shouldn't inherit the host process's token by default."""
@@ -492,7 +492,7 @@ class AppRuntime:
 
         return p_unsub
 
-    def _broadcast(self, line: LogLine) -> None:
+    def p_broadcast(self, line: LogLine) -> None:
         self.log_buffer.append(line)
         # Snapshot subscribers; they can self-remove during dispatch.
         for cb in list(self.p_subscribers):
@@ -501,7 +501,7 @@ class AppRuntime:
             except Exception:
                 pass
 
-    def _maybe_capture_error(self, text: str) -> None:
+    def p_maybe_capture_error(self, text: str) -> None:
         if ERROR_PATTERNS.search(text):
             self.recent_errors.append(text.rstrip())
 
@@ -512,7 +512,7 @@ class AppRuntime:
             idx = text.index("[openswarm:app-error]") + len("[openswarm:app-error]")
             self.set_render_error(text[idx:].strip())
 
-    async def _pipe_stream(self, stream: Optional[asyncio.StreamReader], name: str) -> None:
+    async def p_pipe_stream(self, stream: Optional[asyncio.StreamReader], name: str) -> None:
         if stream is None:
             return
         try:
@@ -522,14 +522,14 @@ class AppRuntime:
                     break
                 text = raw.decode(errors="replace").rstrip("\r\n")
                 if text:
-                    self._broadcast(LogLine(name, text))
+                    self.p_broadcast(LogLine(name, text))
                     if name == "stderr" or name == "stdout":
-                        self._maybe_capture_error(text)
+                        self.p_maybe_capture_error(text)
                         self.p_maybe_capture_render_beacon(text)
         except Exception:
             logger.exception("log pipe error (%s) for %s", name, self.workspace_id)
 
-    async def _await_exit(self) -> None:
+    async def p_await_exit(self) -> None:
         if not self.process:
             return
         rc = await self.process.wait()
@@ -537,7 +537,7 @@ class AppRuntime:
         # otherwise frontend_url keeps advertising a dead port and the preview
         # navigates into ERR_FAILED. stop() already does this for clean stops.
         self.p_frontend_ready = False
-        self._broadcast(LogLine("runtime", f"[runtime] backend exited with code {rc}"))
+        self.p_broadcast(LogLine("runtime", f"[runtime] backend exited with code {rc}"))
 
 
 class AppRuntimeManager:

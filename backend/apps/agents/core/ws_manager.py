@@ -135,8 +135,8 @@ class ConnectionManager:
             # wipes pending_futures, which is correct because
             # reconcile_on_startup also marks waiting_approval sessions as
             # stopped so there's nothing to answer anyway.
-            events = self._filter_stale_approvals(events)
-            events = self._strip_replayed_closes(events)
+            events = self.p_filter_stale_approvals(events)
+            events = self.p_strip_replayed_closes(events)
             for s in events:
                 try:
                     await websocket.send_text(s)
@@ -164,7 +164,7 @@ class ConnectionManager:
             "current_seq": newest if newest is not None else 0,
         }
 
-    def _strip_replayed_closes(self, events: list[str]) -> list[str]:
+    def p_strip_replayed_closes(self, events: list[str]) -> list[str]:
         """Drop `agent:closed` events from a replay buffer.
 
         agent:closed is a transition event ("session JUST closed") whose
@@ -188,7 +188,7 @@ class ConnectionManager:
             out.append(payload_str)
         return out
 
-    def _filter_stale_approvals(self, events: list[str]) -> list[str]:
+    def p_filter_stale_approvals(self, events: list[str]) -> list[str]:
         """Return events minus any `agent:approval_request` whose request_id
         is no longer in pending_futures. JSON parse is per-event but replay
         only runs on (re)connect, so it isn't a hot path.

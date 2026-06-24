@@ -21,12 +21,12 @@ import time
 
 logger = logging.getLogger(__name__)
 
-_write_lock = threading.Lock()
+p_write_lock = threading.Lock()
 
 
 def atomic_write_json(path: str, payload, *, indent: int = 2) -> None:
     directory = os.path.dirname(path) or "."
-    with _write_lock:
+    with p_write_lock:
         os.makedirs(directory, exist_ok=True)
         fd, tmp = tempfile.mkstemp(prefix=".tmp-", suffix=".json", dir=directory)
         try:

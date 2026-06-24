@@ -79,10 +79,10 @@ install_token_scrubber()
 try:
     import uuid as p_uuid
     from backend.apps.settings.store import load_settings as p_load_boot_settings, save_settings as p_save_boot_settings
-    _boot_settings = p_load_boot_settings()
-    if not getattr(_boot_settings, "installation_id", None):
-        _boot_settings.installation_id = p_uuid.uuid4().hex
-        p_save_boot_settings(_boot_settings)
+    p_boot_settings = p_load_boot_settings()
+    if not getattr(p_boot_settings, "installation_id", None):
+        p_boot_settings.installation_id = p_uuid.uuid4().hex
+        p_save_boot_settings(p_boot_settings)
 except Exception:
     pass
 
@@ -956,7 +956,7 @@ if __name__ == "__main__":
 
     import uvicorn.config
 
-    class _ReadyServer(uvicorn.Server):
+    class p_ReadyServer(uvicorn.Server):
         """Subclass that prints a machine-readable READY line on startup."""
         async def startup(self, sockets=None):
             await super().startup(sockets)
@@ -966,6 +966,6 @@ if __name__ == "__main__":
         uvicorn.run("backend.main:app", host=args.host, port=args.port, reload=True)
     else:
         config = uvicorn.Config("backend.main:app", host=args.host, port=args.port)
-        server = _ReadyServer(config)
+        server = p_ReadyServer(config)
         import asyncio
         asyncio.run(server.serve())

@@ -6,7 +6,7 @@ What this proves:
 3. AppRuntimeManager.stop_all() resumes SIGSTOP'd idle runtimes before reaping (otherwise the SIGTERM is queued and the process never dies).
 4. is_port_free() correctly detects collisions.
 5. write_env_value() updates a single key without clobbering siblings.
-6. _start_new_mode() rewrites .env's FRONTEND_PORT when the persisted port is in use, and the spawned child sees the rewritten value.
+6. p_start_new_mode() rewrites .env's FRONTEND_PORT when the persisted port is in use, and the spawned child sees the rewritten value.
 7. Same collision-rewrite happens for BACKEND_PORT when it's not "NONE".
 
 Run with:  backend/.venv/bin/python backend/tests/test_outputs_runtime_cleanup.py

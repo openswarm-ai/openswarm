@@ -34,7 +34,7 @@ class Output(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _migrate_flat_fields(cls, data: Any) -> Any:
+    def p_migrate_flat_fields(cls, data: Any) -> Any:
         """Migrate legacy frontend_code/backend_code fields into the files dict."""
         if not isinstance(data, dict):
             return data
@@ -91,7 +91,7 @@ class OutputCreate(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _migrate_flat_fields(cls, data: Any) -> Any:
+    def p_migrate_flat_fields(cls, data: Any) -> Any:
         if not isinstance(data, dict):
             return data
         if "files" not in data or not data["files"]:
@@ -121,7 +121,7 @@ class OutputUpdate(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _migrate_flat_fields(cls, data: Any) -> Any:
+    def p_migrate_flat_fields(cls, data: Any) -> Any:
         if not isinstance(data, dict):
             return data
         if "files" not in data:
@@ -186,7 +186,7 @@ class WorkspaceSeedRequest(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _migrate_flat_fields(cls, data: Any) -> Any:
+    def p_migrate_flat_fields(cls, data: Any) -> Any:
         """Accept legacy frontend_code/backend_code/schema_json fields."""
         if not isinstance(data, dict):
             return data

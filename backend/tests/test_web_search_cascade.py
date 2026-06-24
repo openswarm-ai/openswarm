@@ -40,13 +40,13 @@ def p_no_network(monkeypatch):
 def p_ddg_returns(monkeypatch, text):
     async def p_f(query, num):
         return text
-    monkeypatch.setattr(WebSearchTool, "_search_ddg", staticmethod(p_f))
+    monkeypatch.setattr(WebSearchTool, "search_ddg", staticmethod(p_f))
 
 
 def p_ddg_throttled(monkeypatch):
     async def p_f(query, num):
         raise DDGRateLimited(query)
-    monkeypatch.setattr(WebSearchTool, "_search_ddg", staticmethod(p_f))
+    monkeypatch.setattr(WebSearchTool, "search_ddg", staticmethod(p_f))
 
 
 @pytest.mark.asyncio

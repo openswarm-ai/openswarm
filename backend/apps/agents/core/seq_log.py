@@ -44,7 +44,7 @@ class SeqLogStore:
             except Exception:
                 logger.warning("seq_log: failed to create persist dir %s", persist_dir)
 
-    async def _get_or_create(self, session_id: str) -> p_SessionSeqLog:
+    async def p_get_or_create(self, session_id: str) -> p_SessionSeqLog:
         log = self.per_session.get(session_id)
         if log is not None:
             return log
@@ -55,7 +55,7 @@ class SeqLogStore:
                 self.per_session[session_id] = log
             return log
 
-    def _peek(self, session_id: str) -> Optional[p_SessionSeqLog]:
+    def p_peek(self, session_id: str) -> Optional[p_SessionSeqLog]:
         return self.per_session.get(session_id)
 
     @asynccontextmanager
@@ -63,7 +63,7 @@ class SeqLogStore:
         self, session_id: str, event: str, data: dict
     ) -> AsyncIterator[tuple[int, str]]:
         """Atomically assign seq, buffer, and yield (seq, payload); caller's send must happen inside the with-block."""
-        log = await self._get_or_create(session_id)
+        log = await self.p_get_or_create(session_id)
         async with log.lock:
             log.seq += 1
             seq = log.seq
@@ -81,7 +81,7 @@ class SeqLogStore:
         self, session_id: str, last_seq: int
     ) -> tuple[Optional[int], Optional[int], list[str]]:
         """Return (oldest_buffered_seq, newest_buffered_seq, events)."""
-        log = self._peek(session_id)
+        log = self.p_peek(session_id)
         if log is None:
             return (None, None, [])
         # asyncio is single-threaded; deque list() is safe vs concurrent append/eviction. No lock needed for read.
@@ -95,10 +95,10 @@ class SeqLogStore:
 
     def current_seq(self, session_id: str) -> int:
         """Last assigned seq, or 0 if no log exists for the session."""
-        log = self._peek(session_id)
+        log = self.p_peek(session_id)
         return log.seq if log else 0
 
-    def _terminal_path(self, session_id: str) -> Optional[str]:
+    def p_terminal_path(self, session_id: str) -> Optional[str]:
         if not self.p_persist_dir:
             return None
         # Session ids are uuid4 hex; sanitize anyway against path traversal.
@@ -109,7 +109,7 @@ class SeqLogStore:
 
     def persist_terminal(self, session_id: str, payload_str: str) -> None:
         """Atomic write of a terminal event for post-restart clients; best-effort, never blocks broadcast."""
-        path = self._terminal_path(session_id)
+        path = self.p_terminal_path(session_id)
         if not path:
             return
         try:
@@ -123,7 +123,7 @@ class SeqLogStore:
             )
 
     def load_terminal(self, session_id: str) -> Optional[str]:
-        path = self._terminal_path(session_id)
+        path = self.p_terminal_path(session_id)
         if not path or not os.path.exists(path):
             return None
         try:
@@ -135,7 +135,7 @@ class SeqLogStore:
     def clear(self, session_id: str) -> None:
         """Drop in-memory log and persisted terminal; for full deletion only, closed-but-retained sessions keep it."""
         self.per_session.pop(session_id, None)
-        path = self._terminal_path(session_id)
+        path = self.p_terminal_path(session_id)
         if path and os.path.exists(path):
             try:
                 os.remove(path)

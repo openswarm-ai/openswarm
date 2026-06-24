@@ -3,20 +3,20 @@
 import os
 import sys
 
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+P_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-_is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+p_is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
 
-if _is_packaged:
+if p_is_packaged:
     if sys.platform == "darwin":
-        _app_support = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "OpenSwarm")
+        p_app_support = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "OpenSwarm")
     elif sys.platform == "win32":
-        _app_support = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "OpenSwarm")
+        p_app_support = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "OpenSwarm")
     else:
-        _app_support = os.path.join(os.environ.get("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share")), "OpenSwarm")
-    DATA_ROOT = os.path.join(_app_support, "data")
+        p_app_support = os.path.join(os.environ.get("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share")), "OpenSwarm")
+    DATA_ROOT = os.path.join(p_app_support, "data")
 else:
-    DATA_ROOT = os.path.join(_BACKEND_DIR, "data")
+    DATA_ROOT = os.path.join(P_BACKEND_DIR, "data")
 
 SESSIONS_DIR = os.path.join(DATA_ROOT, "sessions")
 TOOLS_DIR = os.path.join(DATA_ROOT, "tools")
@@ -34,4 +34,4 @@ TRUSTED_SENSITIVE_PATHS_PATH = os.path.join(DATA_ROOT, "trusted_sensitive_paths.
 # Per-install auth token for the localhost API; see auth.py.
 AUTH_TOKEN_FILE = os.path.join(DATA_ROOT, "auth.token")
 
-BACKEND_DIR = _BACKEND_DIR
+BACKEND_DIR = P_BACKEND_DIR
