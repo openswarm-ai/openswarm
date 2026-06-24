@@ -123,7 +123,7 @@ TOOLS = [
     },
     {
         "name": "DeleteScheduledWorkflow",
-        "description": "Permanently delete a scheduled workflow. Cannot be undone. ALWAYS confirm via AskUserQuestion before calling this — the user should pick from a list, not have you guess.",
+        "description": "Permanently delete a scheduled workflow. Cannot be undone. ALWAYS confirm via AskUserQuestion before calling this; the user should pick from a list, not have you guess.",
         "inputSchema": {
             "type": "object",
             "properties": {"workflow_id": {"type": "string"}},

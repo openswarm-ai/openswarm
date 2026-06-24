@@ -216,7 +216,7 @@ const WorkflowsAppCard: React.FC<Props> = ({
         transition: noTransition ? 'none' : 'box-shadow 0.3s ease, border-color 0.2s ease',
       }}
     >
-      {/* TITLE BAR — drag handle */}
+      {/* TITLE BAR (drag handle) */}
       <div
         onPointerDown={onHeaderPointerDown}
         onPointerMove={onHeaderPointerMove}

@@ -214,7 +214,7 @@ const ComposeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
           {!tested && (
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, fontSize: 11.5, lineHeight: 1.4, color: WC.muted }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={WC.warn} strokeWidth="2" style={{ flex: 'none', marginTop: 1 }}><circle cx="12" cy="12" r="9" /><path d="M12 8v5" /><path d="M12 16h.01" /></svg>
-              <span>Not tested yet — a test run grants the tool access this workflow needs.</span>
+              <span>Not tested yet. A test run grants the tool access this workflow needs.</span>
             </div>
           )}
           <div style={{ display: 'flex', gap: 9 }}>

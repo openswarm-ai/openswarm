@@ -21,7 +21,7 @@ interface Props {
   refDate?: Date;
 }
 
-// Both compact (popover) and roomy (hub) show the full 24 hours scrollable —
+// Both compact (popover) and roomy (hub) show the full 24 hours scrollable;
 // the user explicitly wants midnight visible at the top, not "9am" as the
 // starting hour. The scroll container caps the visible window.
 const HOURS_24 = Array.from({ length: 24 }, (_, i) => i);

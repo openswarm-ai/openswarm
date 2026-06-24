@@ -74,7 +74,7 @@ export default function SchedulePopover({
       const endStr = sameMonth
         ? String(end.getDate())
         : end.toLocaleString('en', { month: 'short', day: 'numeric' });
-      return `${startStr} – ${endStr}, ${end.getFullYear()}`;
+      return `${startStr} to ${endStr}, ${end.getFullYear()}`;
     }
     return refDate.toLocaleString('en', { month: 'long', day: 'numeric', year: 'numeric' });
   }, [refDate, calendarView]);
@@ -112,7 +112,7 @@ export default function SchedulePopover({
         </Box>
       )}
 
-      {/* Content card — separately bordered/rounded, like image #30.
+      {/* Content card, separately bordered/rounded, like image #30.
           Inner content crossfades on tab switch so search↔schedule isn't
           a jarring jump. Outer card stays fixed-size (W×H) so the toolbar
           doesn't reflow. */}
