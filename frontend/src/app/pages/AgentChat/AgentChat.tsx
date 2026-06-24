@@ -481,6 +481,18 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     }
   }, [session?.status, mode, modesMap, id, isDraft, dispatch, dispatchMessage]);
 
+  // A reload remounts past the live running->stopped transition that first shows
+  // the resume button, so re-derive it once from the persisted 'stopped' status
+  // (transcript-gated so a cleared chat can't resurrect it).
+  const resumeHydratedRef = useRef(false);
+  useEffect(() => {
+    if (resumeHydratedRef.current) return;
+    if (session?.status === 'stopped' && (session?.messages?.length ?? 0) > 0) {
+      resumeHydratedRef.current = true;
+      setShowResumeBubble(true);
+    }
+  }, [session?.status, session?.messages?.length]);
+
   // Idle reconcile: if the session has been 'running' for 5s with no
   // WebSocket activity (no new messages, no streaming updates), do a
   // single GET to fetch the real status from the backend. Catches the
