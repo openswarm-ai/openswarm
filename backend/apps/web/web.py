@@ -58,7 +58,7 @@ class FetchBody(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _join_text(parts: list[dict[str, Any]]) -> str:
+def p_join_text(parts: list[dict[str, Any]]) -> str:
     out = []
     for p in parts:
         if isinstance(p, dict) and p.get("type") == "text":
@@ -84,16 +84,16 @@ OPENAI_SEARCH_MODEL = "gpt-5-mini"  # cheapest model that supports web_search_pr
 # provider (no response at all) gets cut. Grounded native search legitimately
 # takes 32-42s (httpx ceiling 45s), so its leash sits at 48s, NOT below 45, or
 # we'd clip the slow tail of a valid paid call.
-_DDG_ATTEMPT_TIMEOUT = 6.0       # DDG answers <1s; >6s is a network hang, fall through
-_GROUNDED_ATTEMPT_TIMEOUT = 48.0  # just above the providers' own 45s httpx timeout
+P_DDG_ATTEMPT_TIMEOUT = 6.0       # DDG answers <1s; >6s is a network hang, fall through
+P_GROUNDED_ATTEMPT_TIMEOUT = 48.0  # just above the providers' own 45s httpx timeout
 # Local httpx + trafilatura fetch of a real page; the fast path for /fetch
 # (normal pages return in <2s). Set just above WebFetchTool's own 30s httpx
 # ceiling so a valid-but-slow page still completes locally instead of being
 # clipped down to a grounded summary; only a truly hung server gets cut.
-_LOCAL_FETCH_TIMEOUT = 32.0
+P_LOCAL_FETCH_TIMEOUT = 32.0
 
 
-async def _gemini_grounded_call(api_key: str, prompt: str, *, use_url_context: bool) -> dict:
+async def p_gemini_grounded_call(api_key: str, prompt: str, *, use_url_context: bool) -> dict:
     """Call Gemini with googleSearch (+ optionally urlContext) grounding.
 
     Returns {"text": grounded_answer, "chunks": [(title, uri), ...],
@@ -135,7 +135,7 @@ async def _gemini_grounded_call(api_key: str, prompt: str, *, use_url_context: b
     return {"text": text, "chunks": chunks, "queries": queries}
 
 
-def _format_grounded_as_search_results(grounded: dict, query: str) -> str:
+def p_format_grounded_as_search_results(grounded: dict, query: str) -> str:
     """Format Gemini grounding output to match WebSearchTool's text shape."""
     lines = []
     chunks = grounded.get("chunks") or []
@@ -149,7 +149,7 @@ def _format_grounded_as_search_results(grounded: dict, query: str) -> str:
     return "\n\n".join(lines)
 
 
-def _format_grounded_as_fetch(grounded: dict, url: str) -> str:
+def p_format_grounded_as_fetch(grounded: dict, url: str) -> str:
     """Format Gemini urlContext output to match WebFetchTool's text shape."""
     parts = [f"Contents of {url}:", ""]
     text = grounded.get("text") or ""
@@ -163,7 +163,7 @@ def _format_grounded_as_fetch(grounded: dict, url: str) -> str:
     return "\n".join(parts)
 
 
-def _resolve_gemini_api_key() -> str | None:
+def p_resolve_gemini_api_key() -> str | None:
     """Pull the AI Studio API key from settings, or None."""
     try:
         from backend.apps.settings.settings import load_settings
@@ -173,7 +173,7 @@ def _resolve_gemini_api_key() -> str | None:
         return None
 
 
-def _resolve_openai_api_key() -> str | None:
+def p_resolve_openai_api_key() -> str | None:
     try:
         from backend.apps.settings.settings import load_settings
         s = load_settings()
@@ -186,38 +186,38 @@ def _resolve_openai_api_key() -> str | None:
 # `_refresh_9r_connected()` rather than hit on every search call , 
 # 9Router's /api/providers is fast but not free, and we already
 # query it from many places.
-_NINE_ROUTER_CONNECTED: set[str] = set()
-_NINE_ROUTER_CACHE_AT: float = 0.0
+P_NINE_ROUTER_CONNECTED: set[str] = set()
+P_NINE_ROUTER_CACHE_AT: float = 0.0
 
 
-async def _refresh_9r_connected() -> set[str]:
+async def p_refresh_9r_connected() -> set[str]:
     """Return the set of currently-active 9Router subscription providers
     (e.g. {"claude", "codex", "antigravity", "gemini-cli"}). Cached for
     20s to keep search/fetch endpoints snappy."""
-    global _NINE_ROUTER_CONNECTED, _NINE_ROUTER_CACHE_AT
-    import time as _t
-    now = _t.time()
-    if now - _NINE_ROUTER_CACHE_AT < 20.0:
-        return _NINE_ROUTER_CONNECTED
+    global P_NINE_ROUTER_CONNECTED, P_NINE_ROUTER_CACHE_AT
+    import time as p_t
+    now = p_t.time()
+    if now - P_NINE_ROUTER_CACHE_AT < 20.0:
+        return P_NINE_ROUTER_CONNECTED
     try:
-        from backend.apps.nine_router import is_running as _9r_running, get_providers as _9r_providers
-        if not _9r_running():
-            _NINE_ROUTER_CONNECTED = set()
+        from backend.apps.nine_router import is_running as p_9r_running, get_providers as p_9r_providers
+        if not p_9r_running():
+            P_NINE_ROUTER_CONNECTED = set()
         else:
-            conns = await _9r_providers()
-            _NINE_ROUTER_CONNECTED = {
+            conns = await p_9r_providers()
+            P_NINE_ROUTER_CONNECTED = {
                 c.get("provider")
                 for c in conns
                 if isinstance(c, dict) and c.get("isActive") and c.get("provider")
             }
-        _NINE_ROUTER_CACHE_AT = now
+        P_NINE_ROUTER_CACHE_AT = now
     except Exception:
         # Cache stays; best-effort.
         pass
-    return _NINE_ROUTER_CONNECTED
+    return P_NINE_ROUTER_CONNECTED
 
 
-async def _gemini_grounded_via_9router(prompt: str, use_url_context: bool) -> dict:
+async def p_gemini_grounded_via_9router(prompt: str, use_url_context: bool) -> dict:
     """Call 9Router's /v1/messages endpoint with a Gemini model so the
     user's OAuth subscription (Gemini CLI or Antigravity) covers the
     search call instead of needing a separate AI Studio API key.
@@ -230,7 +230,7 @@ async def _gemini_grounded_via_9router(prompt: str, use_url_context: bool) -> di
     import httpx
     # Prefer Gemini CLI (broader model coverage). Fall back to
     # Antigravity if CLI isn't connected.
-    connected = await _refresh_9r_connected()
+    connected = await p_refresh_9r_connected()
     if "gemini-cli" in connected:
         model = "gc/gemini-2.5-flash"
     elif "antigravity" in connected:
@@ -271,12 +271,12 @@ async def _gemini_grounded_via_9router(prompt: str, use_url_context: bool) -> di
     return {"text": text, "chunks": []}
 
 
-async def _openai_websearch_via_9router(query: str) -> dict:
+async def p_openai_websearch_via_9router(query: str) -> dict:
     """Same idea, but for OpenAI's web_search_preview through Codex's
     9Router connection. Goes through 9Router's openai-compat endpoint
     (the responses API) so the user's Codex subscription covers it."""
     import httpx
-    connected = await _refresh_9r_connected()
+    connected = await p_refresh_9r_connected()
     if "codex" not in connected:
         return {}
     body = {
@@ -304,7 +304,7 @@ async def _openai_websearch_via_9router(query: str) -> dict:
     return {"text": text, "chunks": []}
 
 
-async def _openai_websearch(api_key: str, query: str) -> dict:
+async def p_openai_websearch(api_key: str, query: str) -> dict:
     """Call OpenAI Responses API with the web_search_preview tool.
 
     Returns {"text": grounded_answer, "chunks": [(title, uri), ...]}.
@@ -343,7 +343,7 @@ async def _openai_websearch(api_key: str, query: str) -> dict:
     return {"text": "".join(text_parts), "chunks": chunks, "queries": [query]}
 
 
-async def _openai_urlfetch(api_key: str, url: str, prompt: str | None) -> dict:
+async def p_openai_urlfetch(api_key: str, url: str, prompt: str | None) -> dict:
     """Use OpenAI's web_search_preview to fetch/summarize a specific URL."""
     prompt_text = f"Fetch and summarize the content at: {url}"
     if prompt:
@@ -393,8 +393,8 @@ async def search(body: SearchBody) -> dict:
 
     If the primary's own native path fails, we cascade to whichever
     other provider's credentials are available, then DDG last."""
-    gemini_key = _resolve_gemini_api_key()
-    openai_key = _resolve_openai_api_key()
+    gemini_key = p_resolve_gemini_api_key()
+    openai_key = p_resolve_openai_api_key()
     primary = (body.primary or "").lower()
     errors: list[str] = []
 
@@ -405,20 +405,20 @@ async def search(body: SearchBody) -> dict:
             f"Search the web for: {body.query}\n\n"
             f"Return a concise summary of what you found. Cite sources."
         )
-        grounded = await _gemini_grounded_call(gemini_key, prompt, use_url_context=False)
+        grounded = await p_gemini_grounded_call(gemini_key, prompt, use_url_context=False)
         return {
             "query": body.query,
-            "results": _format_grounded_as_search_results(grounded, body.query),
+            "results": p_format_grounded_as_search_results(grounded, body.query),
             "backend": "gemini_native",
         }
 
     async def try_openai():
         if not openai_key:
             return None
-        grounded = await _openai_websearch(openai_key, body.query)
+        grounded = await p_openai_websearch(openai_key, body.query)
         return {
             "query": body.query,
-            "results": _format_grounded_as_search_results(grounded, body.query),
+            "results": p_format_grounded_as_search_results(grounded, body.query),
             "backend": "openai_native",
         }
 
@@ -427,22 +427,22 @@ async def search(body: SearchBody) -> dict:
             f"Search the web for: {body.query}\n\n"
             f"Return a concise summary of what you found. Cite sources."
         )
-        grounded = await _gemini_grounded_via_9router(prompt, use_url_context=False)
+        grounded = await p_gemini_grounded_via_9router(prompt, use_url_context=False)
         if not grounded.get("text"):
             return None
         return {
             "query": body.query,
-            "results": _format_grounded_as_search_results(grounded, body.query),
+            "results": p_format_grounded_as_search_results(grounded, body.query),
             "backend": "gemini_subscription",
         }
 
     async def try_openai_subscription():
-        grounded = await _openai_websearch_via_9router(body.query)
+        grounded = await p_openai_websearch_via_9router(body.query)
         if not grounded.get("text"):
             return None
         return {
             "query": body.query,
-            "results": _format_grounded_as_search_results(grounded, body.query),
+            "results": p_format_grounded_as_search_results(grounded, body.query),
             "backend": "openai_subscription",
         }
 
@@ -475,8 +475,8 @@ async def search(body: SearchBody) -> dict:
     if primary == "openai":
         grounded = grounded[2:] + grounded[:2]
 
-    cascade = [("ddg", try_ddg, _DDG_ATTEMPT_TIMEOUT)] + [
-        (name, fn, _GROUNDED_ATTEMPT_TIMEOUT) for name, fn in grounded
+    cascade = [("ddg", try_ddg, P_DDG_ATTEMPT_TIMEOUT)] + [
+        (name, fn, P_GROUNDED_ATTEMPT_TIMEOUT) for name, fn in grounded
     ]
 
     for name, fn, timeout in cascade:
@@ -492,7 +492,7 @@ async def search(body: SearchBody) -> dict:
             errors.append(f"{name}: {str(e)[:150]}")
 
     # Everything failed. Be honest about why instead of an empty "no results".
-    connected = await _refresh_9r_connected()
+    connected = await p_refresh_9r_connected()
     has_subscription = bool(connected & {"codex", "antigravity", "gemini-cli"})
     if not (gemini_key or openai_key or has_subscription):
         tail = (
@@ -526,8 +526,8 @@ async def fetch(body: FetchBody) -> dict:
     except SSRFBlocked as exc:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"Refused: {exc}")
-    gemini_key = _resolve_gemini_api_key()
-    openai_key = _resolve_openai_api_key()
+    gemini_key = p_resolve_gemini_api_key()
+    openai_key = p_resolve_openai_api_key()
     primary = (body.primary or "").lower()
 
     async def try_gemini():
@@ -536,22 +536,22 @@ async def fetch(body: FetchBody) -> dict:
         prompt_bits = [f"Fetch and summarize this URL: {body.url}"]
         if body.prompt:
             prompt_bits.append(f"Focus on: {body.prompt}")
-        grounded = await _gemini_grounded_call(
+        grounded = await p_gemini_grounded_call(
             gemini_key, "\n".join(prompt_bits), use_url_context=True,
         )
         return {
             "url": body.url,
-            "content": _format_grounded_as_fetch(grounded, body.url),
+            "content": p_format_grounded_as_fetch(grounded, body.url),
             "backend": "gemini_native",
         }
 
     async def try_openai():
         if not openai_key:
             return None
-        grounded = await _openai_urlfetch(openai_key, body.url, body.prompt)
+        grounded = await p_openai_urlfetch(openai_key, body.url, body.prompt)
         return {
             "url": body.url,
-            "content": _format_grounded_as_fetch(grounded, body.url),
+            "content": p_format_grounded_as_fetch(grounded, body.url),
             "backend": "openai_native",
         }
 
@@ -559,14 +559,14 @@ async def fetch(body: FetchBody) -> dict:
         prompt_bits = [f"Fetch and summarize this URL: {body.url}"]
         if body.prompt:
             prompt_bits.append(f"Focus on: {body.prompt}")
-        grounded = await _gemini_grounded_via_9router(
+        grounded = await p_gemini_grounded_via_9router(
             "\n".join(prompt_bits), use_url_context=True,
         )
         if not grounded.get("text"):
             return None
         return {
             "url": body.url,
-            "content": _format_grounded_as_fetch(grounded, body.url),
+            "content": p_format_grounded_as_fetch(grounded, body.url),
             "backend": "gemini_subscription",
         }
 
@@ -576,12 +576,12 @@ async def fetch(body: FetchBody) -> dict:
         prompt = f"Fetch this URL and summarize: {body.url}"
         if body.prompt:
             prompt += f"\nFocus on: {body.prompt}"
-        grounded = await _openai_websearch_via_9router(prompt)
+        grounded = await p_openai_websearch_via_9router(prompt)
         if not grounded.get("text"):
             return None
         return {
             "url": body.url,
-            "content": _format_grounded_as_fetch(grounded, body.url),
+            "content": p_format_grounded_as_fetch(grounded, body.url),
             "backend": "openai_subscription",
         }
 
@@ -599,7 +599,7 @@ async def fetch(body: FetchBody) -> dict:
         parts = await WebFetchTool().execute(
             {"url": body.url, "prompt": body.prompt or ""}, None,
         )
-        text = _join_text(parts)
+        text = p_join_text(parts)
         local_text = text
         if text.startswith(("HTTP error", "Error fetching", "Refused to fetch")):
             return None
@@ -617,8 +617,8 @@ async def fetch(body: FetchBody) -> dict:
     if primary == "openai":
         grounded = grounded[2:] + grounded[:2]
 
-    cascade = [("local", try_local, _LOCAL_FETCH_TIMEOUT)] + [
-        (name, fn, _GROUNDED_ATTEMPT_TIMEOUT) for name, fn in grounded
+    cascade = [("local", try_local, P_LOCAL_FETCH_TIMEOUT)] + [
+        (name, fn, P_GROUNDED_ATTEMPT_TIMEOUT) for name, fn in grounded
     ]
 
     errors: list[str] = []
