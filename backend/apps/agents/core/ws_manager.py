@@ -95,8 +95,8 @@ class ConnectionManager:
         # ws.send_text directly, not this path, so reconnects don't double-count.
         if event == "agent:message":
             try:
-                from backend.apps.service.analytics import bridge_agent_message
-                bridge_agent_message(session_id, data.get("message") or {})
+                from backend.apps.service.analytics_agent_bridge import bridge_agent_message, BroadcastMessage
+                bridge_agent_message(session_id, BroadcastMessage.model_validate(data.get("message") or {}))
             except Exception:
                 logger.debug("agent:message analytics bridge failed", exc_info=True)
 

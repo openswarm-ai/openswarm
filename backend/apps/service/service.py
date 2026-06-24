@@ -443,47 +443,12 @@ async def service_status():
 # ---------------------------------------------------------------------------
 
 def p_bridge_to_analytics(item: dict) -> None:
-    """Re-emit frontend `report()` events through the typed swarm-analytics SDK.
-
-    The frontend is browser-side and can't reach the analytics service
-    directly, so onboarding steps and dashboard open/close arrive here as
-    {s, a, p} envelopes. We translate the ones we care about into product
-    events. Best-effort: never raises (the track_* wrappers swallow errors).
-    Dashboard create/delete are NOT bridged here; those fire authoritatively
-    from the dashboards routes, bridging them too would double-count.
-    """
-    s = item.get("s")
-    a = item.get("a")
-    p = item.get("p") or {}
-    if not isinstance(p, dict):
-        return
-    if s == "onboarding_v2":
-        status = {
-            "step_started": "started",
-            "step_completed": "completed",
-            "step_aborted": "abandoned",
-            "step_selector_timeout": "abandoned",
-            "step_error": "abandoned",
-        }.get(a)
-        step_id = p.get("step_id")
-        if status and step_id:
-            from backend.apps.service.analytics import track_onboarding_step
-            track_onboarding_step(step_id=str(step_id), status=status)
-    elif s == "dashboard" and a in ("open", "close"):
-        dashboard_id = p.get("dashboard_id")
-        if dashboard_id:
-            from backend.apps.service.analytics import track_dashboard_event
-            track_dashboard_event(dashboard_id=str(dashboard_id), action=a)
-    elif s == "app" and a == "opened":
-        # The renderer reports the browser's canonical IANA timezone + BCP 47
-        # locale on launch. Persist them (overwriting last launch, so a timezone
-        # switch is picked up) for the cloud envelope, then emit the once-per-
-        # process app_lifecycle.opened carrying those exact values.
-        tz = p.get("timezone") if isinstance(p.get("timezone"), str) else None
-        loc = p.get("locale") if isinstance(p.get("locale"), str) else None
-        from backend.apps.service.analytics import persist_client_env, track_app_opened
-        persist_client_env(timezone=tz, locale=loc)
-        track_app_opened(timezone=tz, locale=loc)
+    # Boundary adapter: validate the raw report() envelope into a typed event, hand it to the analytics bridge.
+    from backend.apps.service.analytics_frontend_bridge import bridge_frontend_event, FrontendEvent
+    try:
+        bridge_frontend_event(FrontendEvent.model_validate(item))
+    except Exception:
+        pass
 
 
 @service.router.post("/submit")
