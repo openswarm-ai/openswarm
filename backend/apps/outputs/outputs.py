@@ -44,6 +44,7 @@ from backend.apps.outputs.workspace_io import (
     _load,
     load_output,
     _walk_directory,
+    p_would_shrink_oversize_file,
 )
 from backend.apps.outputs.prompts import VIBE_CODE_SYSTEM_PROMPT
 
@@ -137,7 +138,7 @@ async def read_workspace(workspace_id: str):
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    files = _walk_directory(folder)
+    files, truncated = _walk_directory(folder)
 
     meta = None
     if "meta.json" in files:
@@ -148,8 +149,7 @@ async def read_workspace(workspace_id: str):
 
     # Include `path` so the frontend can rehydrate without re-calling /seed.
     # /seed unconditionally overwrites, which would clobber any in-progress edits
-    # the agent made since the last save.
-    return {"files": files, "meta": meta, "path": os.path.abspath(folder)}
+    return {"files": files, "meta": meta, "path": os.path.abspath(folder), "truncated": truncated}
 
 
 def sync_output_from_meta_json(workspace_id: str, fallback_name: str | None = None) -> bool:
@@ -352,6 +352,8 @@ async def seed_workspace(body: WorkspaceSeedRequest):
             full_path = os.path.normpath(os.path.join(folder, rel_path))
             if not full_path.startswith(os.path.normpath(folder)):
                 continue
+            if p_would_shrink_oversize_file(full_path, content):
+                continue
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -513,9 +515,12 @@ async def write_workspace_file(workspace_id: str, filepath: str, body: dict):
     # is one character and immunizes future id schemes.
     if full_path != folder_norm and not full_path.startswith(folder_norm + os.sep):
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
+    content = body.get("content", "")
+    if p_would_shrink_oversize_file(full_path, content):
+        return {"ok": True, "skipped": "oversize"}
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
     with open(full_path, "w", encoding="utf-8") as f:
-        f.write(body.get("content", ""))
+        f.write(content)
     return {"ok": True}
 
 

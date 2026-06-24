@@ -344,6 +344,11 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
   // null when there's no thumbnail yet, so the first paint backfills one.
   const filesRef = useRef(files);
   filesRef.current = files;
+  // Files over the backend poll cap: served out-of-band (path -> bytes), never
+  // as content, so we show them read-only and keep them out of every save path.
+  const [oversizeFiles, setOversizeFiles] = useState<Record<string, number>>({});
+  const oversizeFilesRef = useRef(oversizeFiles);
+  oversizeFilesRef.current = oversizeFiles;
   const isAgentActiveRef = useRef(false);
   const lastCapturedRenderKeyRef = useRef<string | null>(
     output?.thumbnail ? previewRenderKey(initialFiles) : null,
@@ -665,6 +670,7 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
         setFiles(data.files);
         setFileVersion(v => v + 1);
       }
+      setOversizeFiles(data.truncated ?? {});
 
       if (data.meta) {
         const eid = output?.id ?? createdIdRef.current;
@@ -800,6 +806,9 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
     delete outputFiles['meta.json'];
     delete outputFiles['schema.json'];
     delete outputFiles['SKILL.md'];
+    // Never persist a file we only have out-of-band (oversize); this also drops
+    // a legacy truncation marker from a previously-corrupted record on save.
+    for (const p of Object.keys(oversizeFilesRef.current)) delete outputFiles[p];
 
     return {
       name: name || 'Untitled App',
@@ -1039,15 +1048,20 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
 
   const filePaths = useMemo(
     () =>
-      Object.keys(files)
+      // Oversize files aren't in `files` (omitted by the backend), so union them
+      // in to keep them listed; they render read-only when selected.
+      Array.from(new Set([...Object.keys(files), ...Object.keys(oversizeFiles)]))
         .filter((p) => p !== 'meta.json' && p !== 'SKILL.md')
         .filter((p) => !isHiddenPath(p))
         .sort(),
-    [files, isHiddenPath],
+    [files, oversizeFiles, isHiddenPath],
   );
   const fileTree = useMemo(() => buildFileTree(filePaths), [filePaths]);
 
   const updateFile = useCallback((path: string, content: string) => {
+    // Oversize files are shown read-only; never round-trip the placeholder we
+    // hold for them back to disk (that's the corruption this whole fix kills).
+    if (oversizeFilesRef.current[path] != null) return;
     setFiles(prev => ({ ...prev, [path]: content }));
     const wsId = workspaceIdRef.current;
     if (wsId) {
@@ -1506,7 +1520,13 @@ const ViewEditor: React.FC<Props> = ({ output }) => {
               </Box>
               {/* Editor area */}
               <Box sx={{ flex: 1, overflow: 'hidden' }}>
-                {activeFile && files[activeFile] != null ? (
+                {activeFile && oversizeFiles[activeFile] != null ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', px: 4 }}>
+                    <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', textAlign: 'center', maxWidth: 360, lineHeight: 1.5 }}>
+                      This file is {(oversizeFiles[activeFile] / (1024 * 1024)).toFixed(1)} MB, too large to edit here. Open it directly to see the full contents.
+                    </Typography>
+                  </Box>
+                ) : activeFile && files[activeFile] != null ? (
                   <CodeEditor
                     key={activeFile}
                     value={activeFileContent}
