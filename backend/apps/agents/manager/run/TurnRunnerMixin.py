@@ -6,23 +6,33 @@ except-handlers can still read them after a mid-stream failure."""
 import asyncio
 import logging
 import time
+from typing import Dict, List, Union
+from typeguard import typechecked
 
+from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.core.error_classify import CAPACITY_BACKOFFS, capacity_retry_wait
+from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming import (
     stream_event,
     assistant_message,
     result_message,
     thinking as thinking_mod,
 )
+from backend.apps.settings.models import AppSettings
 
 logger = logging.getLogger(__name__)
 
 
 class TurnRunnerMixin:
-    async def p_run_turn_with_retry(self, session, session_id, prompt_content, options,
-                                    options_kwargs, turn, thinking, p_stderr_buffer,
-                                    resolved_model, api_type, global_settings):
+    # `options` is the SDK ClaudeAgentOptions, lazy-imported below (so mock-mode can import the
+    # manager without the SDK present), so it's left unannotated; everything else is typed.
+    @typechecked
+    async def run_turn_with_retry(self, session: AgentSession, session_id: str,
+                                    prompt_content: Union[str, List], options,
+                                    options_kwargs: Dict, turn: TurnState, thinking: ThinkingState,
+                                    p_stderr_buffer: List[str], resolved_model: str, api_type: str,
+                                    global_settings: AppSettings) -> None:
         from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
         from claude_agent_sdk.types import StreamEvent, SystemMessage
 

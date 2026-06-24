@@ -4,10 +4,13 @@ emits the matching system message + WS event. Pulled out of agent_manager so the
 the file ceiling; pure relocation, no self (operates on the passed run state)."""
 
 import logging
+from typing import List
+from typeguard import typechecked
 
-from backend.apps.agents.core.models import Message
+from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
+from backend.apps.agents.manager.streaming.state import TurnState
 from backend.apps.agents.core.error_classify import (
     is_long_context_error,
     is_transient_capacity_error,
@@ -21,7 +24,8 @@ from backend.apps.agents.core.error_classify import (
 logger = logging.getLogger(__name__)
 
 
-async def handle_run_error(e, session, session_id, turn, p_stderr_buffer) -> None:
+@typechecked
+async def handle_run_error(e: Exception, session: AgentSession, session_id: str, turn: TurnState, p_stderr_buffer: List[str]) -> None:
     logger.exception(f"Agent {session_id} error: {e}")
     session.status = "error"
 
@@ -85,7 +89,7 @@ async def handle_run_error(e, session, session_id, turn, p_stderr_buffer) -> Non
             from backend.apps.service.client import submit_diagnostic
             submit_diagnostic({
                 "kind": "context_overflow",
-                "where": "agent_manager.p_run_streaming_turn",
+                "where": "manager.run.error_cards.handle_run_error",
                 "session_id": session_id,
                 "model": session.model,
                 "provider": session.provider,

@@ -62,7 +62,7 @@ def p_capture_env(monkeypatch, settings, api_type, resolved_model, model_entry):
     into ClaudeAgentOptions (the provider-route auth config the SDK runs under)."""
     import backend.apps.agents.providers.registry as reg
     import backend.apps.agents.agent_manager as am
-    import backend.apps.agents.manager.run.run_options as run_opts
+    import backend.apps.agents.manager.run.RunOptionsMixin as run_opts
     monkeypatch.setattr(am, "load_settings", lambda: settings, raising=True)
     monkeypatch.setattr(run_opts, "load_settings", lambda: settings, raising=True)
     monkeypatch.setattr(reg, "get_api_type", lambda model: api_type, raising=True)
@@ -169,7 +169,7 @@ def test_loop_builds_direct_anthropic_key_env(monkeypatch):
     from backend.apps.settings.models import AppSettings
     import backend.apps.agents.providers.registry as reg
     import backend.apps.agents.agent_manager as am
-    import backend.apps.agents.manager.run.run_options as run_opts
+    import backend.apps.agents.manager.run.RunOptionsMixin as run_opts
 
     settings = AppSettings(anthropic_api_key="sk-ant-test123", connection_mode="own_key")
     monkeypatch.setattr(am, "load_settings", lambda: settings, raising=True)
@@ -206,7 +206,7 @@ def test_loop_with_session_cwd_runs_workspace_git_init(monkeypatch):
     # sessions normally have no cwd, which masked a NameError (the call said ensure_cwd_git_repo
     # while only _ensure_cwd_git_repo was imported). raising=True here would fail if the name were
     # missing again; the assertions confirm the cwd path actually runs and the turn completes.
-    import backend.apps.agents.manager.run.run_options as run_opts
+    import backend.apps.agents.manager.run.RunOptionsMixin as run_opts
     called = {}
 
     def fake_ensure(cwd, home=None):

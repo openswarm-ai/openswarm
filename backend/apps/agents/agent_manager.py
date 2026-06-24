@@ -27,8 +27,8 @@ from backend.apps.agents.manager.AgentLaunchMixin import AgentLaunchMixin
 from backend.apps.agents.manager.MockAgentMixin import MockAgentMixin
 from backend.apps.agents.manager.RunSupportMixin import RunSupportMixin
 from backend.apps.agents.manager.run.error_cards import handle_run_error
-from backend.apps.agents.manager.run.turn_runner import TurnRunnerMixin
-from backend.apps.agents.manager.run.run_options import RunOptionsMixin
+from backend.apps.agents.manager.run.TurnRunnerMixin import TurnRunnerMixin
+from backend.apps.agents.manager.run.RunOptionsMixin import RunOptionsMixin
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,7 @@ class AgentManager(SessionLifecycleMixin, SessionPersistenceMixin, MessagingMixi
         # who want a prompt on every command can flip Bash to "ask" in the UI.
         try:
             (options, options_kwargs, prompt_content, p_stderr_buffer,
-             global_settings) = await self.p_build_agent_options(
+             global_settings) = await self.build_agent_options(
                 session, session_id, prompt, prompt_content, builtin_perms,
                 selected_browser_ids, selected_app_output_ids, selected_setting_ids,
                 fork_session, p_router_model_id, p_api_type_for_session)
@@ -131,7 +131,7 @@ class AgentManager(SessionLifecycleMixin, SessionPersistenceMixin, MessagingMixi
 
             turn = TurnState()
             thinking = ThinkingState()
-            await self.p_run_turn_with_retry(
+            await self.run_turn_with_retry(
                 session, session_id, prompt_content, options, options_kwargs,
                 turn, thinking, p_stderr_buffer, resolved_model, api_type, global_settings,
             )

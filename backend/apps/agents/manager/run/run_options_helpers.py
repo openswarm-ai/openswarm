@@ -3,15 +3,20 @@ assembly so each file stays under the ceiling. Free functions taking the manager
 emit_context_update); pure relocation."""
 
 import logging
+from typing import Dict, List, Optional
+from typeguard import typechecked
 
-from backend.apps.agents.core.models import Message
+from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.session.history_compaction import estimate_post_compact_input
 
 logger = logging.getLogger(__name__)
 
 
-async def pre_send_context_guard(manager, session, session_id) -> None:
+# `manager` is the AgentManager; it isn't annotated because typing it would import agent_manager
+# back into a module agent_manager already imports (a cycle). Same reason self is never annotated.
+@typechecked
+async def pre_send_context_guard(manager, session: AgentSession, session_id: str) -> None:
     try:
         if manager.maybe_compact(session):
             new_input = estimate_post_compact_input(session)
@@ -42,7 +47,7 @@ async def pre_send_context_guard(manager, session, session_id) -> None:
         p_est_tokens = session.tokens.get("input", 0)
         p_hard_cap = int(session.context_window * session.context_soft_cap_pct)
         if p_est_tokens >= p_hard_cap:
-            trimmed: list[str] = []
+            trimmed: List[str] = []
             while p_est_tokens >= p_hard_cap and len(session.active_mcps) > 1:
                 # Keep at least one MCP active so the model can
                 # finish whatever it was doing; trim from oldest
@@ -88,7 +93,23 @@ async def pre_send_context_guard(manager, session, session_id) -> None:
         logger.exception("pre-send token guard failed; proceeding")
 
 
-def register_web_mcp_server(mcp_servers, p_m) -> None:
+@typechecked
+def set_framework_overhead(session: AgentSession, composed_prompt: Optional[str]) -> None:
+    """Per-turn estimate of framework overhead (subtracted from displayed input). Conservative on
+    purpose so honest over-shows beat lies: 16K Claude Code preset, 12K base+deferred tools, ~3K/MCP
+    (real defs span 1-10K; 3K median keeps the meter honest), char/4 of the composed prompt."""
+    p_PRESET_OVERHEAD = 16_000
+    p_TOOL_DEFS_OVERHEAD = 12_000
+    p_PER_MCP_OVERHEAD = 3_000
+    p_composed_tokens = len(composed_prompt or "") // 4
+    p_mcp_tokens = len(session.active_mcps) * p_PER_MCP_OVERHEAD
+    session.framework_overhead_tokens = (
+        p_PRESET_OVERHEAD + p_TOOL_DEFS_OVERHEAD + p_composed_tokens + p_mcp_tokens
+    )
+
+
+@typechecked
+def register_web_mcp_server(mcp_servers: Dict, p_m: str) -> None:
     """Register the DDG-backed openswarm-web stdio MCP into the server set when the primary has no
     reliable native web path. The server script lives in the agents package (not here), so resolve
     it off that package dir, not __file__."""
@@ -121,7 +142,8 @@ def register_web_mcp_server(mcp_servers, p_m) -> None:
     )
 
 
-def append_web_tools_hint(composed_prompt, need_web_mcp, effective_allowed) -> str:
+@typechecked
+def append_web_tools_hint(composed_prompt: Optional[str], need_web_mcp: bool, effective_allowed: List[str]) -> str:
     """Append a <web_tools> block naming the MCP-backed WebSearch/WebFetch when the deferred bare
     WebSearch tool isn't usable on this session, so smaller models don't thrash on ToolSearch."""
     p_web_tools_available = need_web_mcp and (
@@ -158,7 +180,8 @@ def append_web_tools_hint(composed_prompt, need_web_mcp, effective_allowed) -> s
     return f"{composed_prompt}\n\n{p_web_hint}" if composed_prompt else p_web_hint
 
 
-def inject_thinking_options(options_kwargs, session, prompt, resolved_model, api_type) -> None:
+@typechecked
+def inject_thinking_options(options_kwargs: Dict, session: AgentSession, prompt: str, resolved_model: str, api_type: str) -> None:
     """Map the session's thinking_level onto the SDK options (anthropic thinking/effort, openai/codex
     reasoning_effort), with the short-prompt + gc/gemini-3 force-off overrides. Best-effort."""
     try:

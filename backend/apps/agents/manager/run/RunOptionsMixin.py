@@ -7,7 +7,10 @@ the gate hooks resolve across the MRO unchanged."""
 import os
 import json
 import logging
+from typing import Dict, List, Optional, Union
+from typeguard import typechecked
 
+from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.tools_lib.tools_lib import load_all_tools, sanitize_server_name
@@ -25,17 +28,23 @@ from backend.apps.agents.manager.prompt.system_prompt import compose_turn_system
 from backend.apps.agents.manager.prompt.tool_catalog import get_all_tool_names
 from backend.apps.agents.manager.prompt.prompt_context import resolve_mode
 from backend.apps.agents.manager.run.run_options_helpers import (
-    pre_send_context_guard, register_web_mcp_server, append_web_tools_hint, inject_thinking_options,
+    pre_send_context_guard, set_framework_overhead, register_web_mcp_server,
+    append_web_tools_hint, inject_thinking_options,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class RunOptionsMixin:
-    async def p_build_agent_options(self, session, session_id, prompt, prompt_content,
-                                    builtin_perms, selected_browser_ids, selected_app_output_ids,
-                                    selected_setting_ids, fork_session, p_router_model_id,
-                                    p_api_type_for_session):
+    # No return annotation: the returned tuple carries an SDK ClaudeAgentOptions, which can't be
+    # module-imported here (mock-mode would fail to import the manager); it's lazy-imported below.
+    @typechecked
+    async def build_agent_options(self, session: AgentSession, session_id: str, prompt: str,
+                                    prompt_content: Union[str, List], builtin_perms: Dict[str, str],
+                                    selected_browser_ids: Optional[List[str]],
+                                    selected_app_output_ids: Optional[List[str]],
+                                    selected_setting_ids: Optional[List[str]], fork_session: bool,
+                                    p_router_model_id: str, p_api_type_for_session: str):
         from claude_agent_sdk import ClaudeAgentOptions
         from claude_agent_sdk.types import HookMatcher
 
@@ -92,20 +101,7 @@ class RunOptionsMixin:
             selected_setting_ids,
         )
 
-        # Per-turn estimate of framework overhead (subtracted from displayed
-        # input). Conservative on purpose so honest over-shows beat lies.
-        # 16K Claude Code preset, 12K base+deferred tools, ~3K/MCP (real
-        # MCP tool definitions range 1-10K depending on server; 3K is a
-        # rough median that keeps the meter honest without over-trimming),
-        # char/4 of composed prompt.
-        p_PRESET_OVERHEAD = 16_000
-        p_TOOL_DEFS_OVERHEAD = 12_000
-        p_PER_MCP_OVERHEAD = 3_000
-        p_composed_tokens = len(composed_prompt or "") // 4
-        p_mcp_tokens = len(session.active_mcps) * p_PER_MCP_OVERHEAD
-        session.framework_overhead_tokens = (
-            p_PRESET_OVERHEAD + p_TOOL_DEFS_OVERHEAD + p_composed_tokens + p_mcp_tokens
-        )
+        set_framework_overhead(session, composed_prompt)
 
         # Pass session.active_mcps as the activation filter. Empty list ⇒
         # no MCP tools shipped to the SDK; the model must MCPSearch and
@@ -163,7 +159,7 @@ class RunOptionsMixin:
         # SDK's ProcessError only stringifies to "Command failed with
         # exit code 1 / Check stderr output for details", which masks
         # transient capacity issues.
-        p_stderr_buffer: list[str] = []
+        p_stderr_buffer: List[str] = []
 
         def p_stderr_cb(line: str) -> None:
             p_stderr_buffer.append(line)
