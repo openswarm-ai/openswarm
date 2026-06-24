@@ -268,6 +268,21 @@ class AgentManager:
     async def launch_agent(self, config: AgentConfig) -> AgentSession:
         session_id = uuid4().hex
 
+        # Editing an existing App: when the user selected exactly one App card
+        # in App Builder mode, point the chat at that app's workspace so it
+        # edits in place. Without this the view-builder seed below fires (no
+        # target_directory) and registers a fresh empty "Untitled App" dupe.
+        if (
+            config.mode == "view-builder"
+            and not config.target_directory
+            and config.selected_app_output_ids
+            and len(config.selected_app_output_ids) == 1
+        ):
+            from backend.apps.outputs.workspace_io import app_workspace_dir
+            bound = app_workspace_dir(config.selected_app_output_ids[0])
+            if bound:
+                config.target_directory = bound
+
         mode_tools, _, mode_folder = self._resolve_mode(config.mode)
         tools = mode_tools
 
@@ -365,6 +380,12 @@ class AgentManager:
             "status": "running",
             "session": session.model_dump(mode="json"),
         })
+
+        try:
+            from backend.apps.service.analytics.client import track_agent_created
+            track_agent_created(id=session.id, dashboard_id=session.dashboard_id)
+        except Exception:
+            pass
 
         return session
 
@@ -4192,6 +4213,11 @@ class AgentManager:
             "session_id": session_id,
             "name": title,
         })
+        try:
+            from backend.apps.service.analytics.client import track_agent_title
+            track_agent_title(id=session_id, title=title)
+        except Exception:
+            pass
         return title
 
     async def generate_turn_label(

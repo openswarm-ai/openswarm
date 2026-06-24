@@ -7,7 +7,7 @@ import os
 from fastapi import HTTPException
 
 from backend.apps.outputs.models import Output
-from backend.config.paths import OUTPUTS_DIR as DATA_DIR
+from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR
 from backend.config.json_store import read_json_or_none, atomic_write_json
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,18 @@ def load_output(output_id: str) -> Output | None:
     """Public helper for other modules to resolve an output by ID."""
     data = read_json_or_none(os.path.join(DATA_DIR, f"{output_id}.json"))
     return Output(**data) if data is not None else None
+
+
+def app_workspace_dir(output_id: str) -> str | None:
+    """Resolve an App (Output) id to its on-disk workspace folder, or None if
+    the app or its folder is gone. Shared by the prompt-context builder (which
+    files the agent should edit) and launch (binds the chat's cwd to the app so
+    editing it doesn't seed a duplicate 'Untitled App')."""
+    output = load_output(output_id)
+    if not output or not output.workspace_id:
+        return None
+    path = os.path.abspath(os.path.join(OUTPUTS_WORKSPACE_DIR, output.workspace_id))
+    return path if os.path.isdir(path) else None
 
 
 # Build/install/cache directories that the polling endpoint must never

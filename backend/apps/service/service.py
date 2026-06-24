@@ -189,6 +189,16 @@ async def service_lifespan():
             id_props["subscription_expires"] = settings.openswarm_subscription_expires
 
         svc.sync({"identity": id_props})
+
+        # First-boot log write doubles as the token-registration trigger.
+        from backend.apps.service.analytics.client import get_analytics_client, track_link_email
+        analytics_client = get_analytics_client()
+        if analytics_client is not None:
+            try:
+                analytics_client.logs.write(tag="app", subtag="backend_started", data={"app_version": APP_VERSION})
+            except Exception:
+                pass
+        track_link_email(getattr(settings, "user_email", None))
     except Exception as e:
         logger.debug(f"Service startup event failed (non-critical): {e}")
 
@@ -236,6 +246,14 @@ async def service_lifespan():
     try:
         from backend.apps.nine_router import stop as stop_9router
         stop_9router()
+    except Exception:
+        pass
+
+    # Flush before the process exits or buffered events are lost.
+    try:
+        from backend.apps.service.analytics.client import track_app_closed, shutdown_analytics
+        track_app_closed()
+        shutdown_analytics()
     except Exception:
         pass
 
@@ -424,6 +442,15 @@ async def service_status():
 # Frontend event endpoints
 # ---------------------------------------------------------------------------
 
+def p_bridge_to_analytics(item: dict) -> None:
+    # Boundary adapter: validate the raw report() envelope into a typed event, hand it to the analytics bridge.
+    from backend.apps.service.analytics.frontend_bridge import bridge_frontend_event, FrontendEvent
+    try:
+        bridge_frontend_event(FrontendEvent.model_validate(item))
+    except Exception:
+        pass
+
+
 @service.router.post("/submit")
 async def post_submit(body=Body(...)):
     """Accepts three body shapes for backward compatibility:
@@ -453,6 +480,7 @@ async def post_submit(body=Body(...)):
             if isinstance(item, dict):
                 if any(k in item for k in ("s", "a", "p")):
                     svc.sync(item)
+                    p_bridge_to_analytics(item)
                     continue
                 kind = item.get("kind") or ""
                 payload = item.get("payload") or {}
@@ -465,6 +493,7 @@ async def post_submit(body=Body(...)):
     # Shape 1: frontend `report()`; flat {s, a, p, ...}
     if any(k in body for k in ("s", "a", "p")):
         svc.sync(body)
+        p_bridge_to_analytics(body)
         return {"ok": True}
     # Shape 2: legacy {kind, payload}
     kind = body.get("kind") or ""
@@ -488,11 +517,13 @@ async def post_event(body: dict):
     if not action:
         action = "fired"
 
-    svc.sync({
+    envelope = {
         "s": str(surface)[:64],
         "a": str(action)[:64],
         "p": body.get("props") or body.get("properties") or {},
-    })
+    }
+    svc.sync(envelope)
+    p_bridge_to_analytics(envelope)
     return {"ok": True}
 
 

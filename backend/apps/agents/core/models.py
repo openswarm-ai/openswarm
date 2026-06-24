@@ -13,6 +13,9 @@ class AgentConfig(BaseModel):
     max_turns: Optional[int] = None
     target_directory: Optional[str] = None
     dashboard_id: Optional[str] = None
+    # App cards the user picked to edit. When exactly one resolves, launch
+    # binds the chat's cwd to that app instead of seeding a new "Untitled App".
+    selected_app_output_ids: Optional[list[str]] = None
 
 class ApprovalRequest(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)

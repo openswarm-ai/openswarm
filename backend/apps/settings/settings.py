@@ -140,6 +140,9 @@ SERVER_OWNED_FIELDS = (
     "user_id",
     "signin_method",
     "installation_id",
+    "analytics_token",
+    "timezone",
+    "locale",
     "claude_subscription_token",
     "openai_subscription_token",
     "gemini_subscription_token",
@@ -245,7 +248,7 @@ async def apply_settings_update(body: AppSettings, protect_fields: set[str] | No
 
     secret_keys = {"anthropic_api_key", "openai_api_key", "google_api_key", "openrouter_api_key",
                    "claude_subscription_token", "openai_subscription_token", "gemini_subscription_token",
-                   "openswarm_bearer_token", "free_trial_token", "installation_id"}
+                   "openswarm_bearer_token", "free_trial_token", "installation_id", "analytics_token"}
     safe = {k: v for k, v in body.model_dump().items() if k not in secret_keys}
     _sync(safe)
 
@@ -263,6 +266,9 @@ async def apply_settings_update(body: AppSettings, protect_fields: set[str] | No
             id_props["referral_source"] = body.user_referral_source
         if id_props:
             _identify(id_props)
+        if body.user_email:
+            from backend.apps.service.analytics.client import track_link_email
+            track_link_email(body.user_email)
 
     await save_settings_async(body)
 

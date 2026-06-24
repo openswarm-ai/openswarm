@@ -127,6 +127,7 @@ export function useAgentSpawn({
       forcedTools?: string[],
       attachedSkills?: Array<{ id: string; name: string; content: string }>,
       selectedBrowserIds?: string[],
+      selectedAppIds?: string[],
     ) => {
       setToolbarOpen(false);
       report('dashboard', 'agent_created', { mode, model, has_images: !!images?.length, has_context: !!contextPaths?.length, has_browser: !!selectedBrowserIds?.length });
@@ -148,6 +149,9 @@ export function useAgentSpawn({
       }
 
       const config: AgentConfig = { name: 'New chat', model, mode, dashboard_id: dashboardId };
+      // Editing an existing app: bind the launch to it so the backend edits in
+      // place instead of seeding a duplicate empty app (App Builder mode only).
+      if (selectedAppIds?.length) config.selected_app_output_ids = selectedAppIds;
 
       dispatch(
         launchAndSendFirstMessage({
@@ -161,6 +165,7 @@ export function useAgentSpawn({
           forcedTools,
           attachedSkills,
           selectedBrowserIds,
+          selectedAppIds,
           expand: expandNewChats,
         }),
       ).then((action) => {

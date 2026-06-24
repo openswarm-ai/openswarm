@@ -136,6 +136,11 @@ async def list_dashboards():
 async def create_dashboard(body: DashboardCreate):
     dashboard = Dashboard(name=body.name)
     _save(dashboard)
+    try:
+        from backend.apps.service.analytics.client import track_dashboard_event
+        track_dashboard_event(dashboard_id=dashboard.id, action="create")
+    except Exception:
+        pass
     return dashboard.model_dump(mode="json")
 
 
@@ -452,6 +457,11 @@ async def delete_dashboard(dashboard_id: str):
             logger.warning(f"Failed to delete active session {sid} during dashboard deletion")
 
     _delete(dashboard_id)
+    try:
+        from backend.apps.service.analytics.client import track_dashboard_event
+        track_dashboard_event(dashboard_id=dashboard_id, action="delete")
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -553,5 +563,11 @@ async def duplicate_dashboard(dashboard_id: str):
         "layout": new_layout,
     }
     atomic_write_json(os.path.join(DATA_DIR, f"{new_id}.json"), new_dashboard)
+
+    try:
+        from backend.apps.service.analytics.client import track_dashboard_event
+        track_dashboard_event(dashboard_id=new_id, action="create")
+    except Exception:
+        pass
 
     return new_dashboard

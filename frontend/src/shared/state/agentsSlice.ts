@@ -125,6 +125,7 @@ export interface AgentConfig {
   max_turns?: number;
   target_directory?: string;
   dashboard_id?: string;
+  selected_app_output_ids?: string[];
 }
 
 export interface HistorySession {

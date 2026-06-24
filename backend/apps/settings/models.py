@@ -65,6 +65,11 @@ class AppSettings(BaseModel):
     dismissed_mcp_suggestions: dict[str, str] = Field(default_factory=dict)
     analytics_opt_in: bool = True
     installation_id: Optional[str] = None
+    # Minted once by the analytics SDK's register() and reused forever; server-owned.
+    analytics_token: Optional[str] = None
+    # Renderer-reported browser Intl values, stamped on analytics submissions; server-owned.
+    timezone: Optional[str] = None
+    locale: Optional[str] = None
     first_opened_at: Optional[str] = None
     connection_mode: str = "own_key"
     openswarm_bearer_token: Optional[str] = None

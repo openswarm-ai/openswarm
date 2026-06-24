@@ -90,6 +90,14 @@ class ConnectionManager:
             if event == "agent:status" and data.get("status") in TERMINAL_STATUSES:
                 seq_log.persist_terminal(session_id, payload_str)
 
+        # Outside the stamp lock so analytics can't gate the broadcast; replays go via ws.send_text, so reconnects don't double-count.
+        if event == "agent:message":
+            try:
+                from backend.apps.service.analytics.agent_bridge import bridge_agent_message, BroadcastMessage
+                bridge_agent_message(session_id, BroadcastMessage.model_validate(data.get("message") or {}))
+            except Exception:
+                logger.debug("agent:message analytics bridge failed", exc_info=True)
+
     async def replay_to(
         self, session_id: str, websocket: WebSocket, last_seq: int
     ) -> dict:

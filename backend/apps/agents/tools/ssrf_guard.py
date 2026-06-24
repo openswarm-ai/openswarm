@@ -62,6 +62,11 @@ def _is_forbidden_ip(ip_str: str) -> bool:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
         return True  # unparseable -> block
+    # v6 can carry a v4 target (v4-mapped ::ffff:, 6to4 2002::) and routes to it; judge by the embedded v4 or a private host slips past the v6 list.
+    if ip.version == 6:
+        embedded = ip.ipv4_mapped or ip.sixtofour
+        if embedded is not None:
+            ip = embedded
     if ip.is_loopback:
         return False
     if ip.version == 4:

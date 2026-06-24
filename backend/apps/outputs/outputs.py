@@ -346,13 +346,17 @@ async def seed_workspace(body: WorkspaceSeedRequest):
             "already_seeded": already_seeded,
         }
 
-    # Legacy flat path; unchanged.
+    # Legacy flat path. Seed only fills in MISSING files; it never overwrites
+    # what's already on disk. A reopen re-sends the inline output.files snapshot,
+    # which lags behind whatever the agent just wrote to the workspace; writing it
+    # back reverted every edited file (new files survived, edited ones snapped to
+    # the snapshot). Disk wins once an app exists.
     if body.files:
         for rel_path, content in body.files.items():
             full_path = os.path.normpath(os.path.join(folder, rel_path))
             if not full_path.startswith(os.path.normpath(folder)):
                 continue
-            if p_would_shrink_oversize_file(full_path, content):
+            if os.path.exists(full_path):
                 continue
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w", encoding="utf-8") as f:
@@ -360,21 +364,23 @@ async def seed_workspace(body: WorkspaceSeedRequest):
     else:
         for rel_path, content in VIEW_TEMPLATE_FILES.items():
             full_path = os.path.join(folder, rel_path)
+            if os.path.exists(full_path):
+                continue
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-    # Seed the workspace's SKILL.md with the LIVE skill content so an
-    # agent that Reads SKILL.md sees the same text the Skills page shows.
-    # Snapshot at workspace creation; subsequent edits don't rewrite
-    # already-seeded workspaces (the system-prompt injection in
-    # agent_manager reads live, so the agent always has the latest
-    # rules regardless of this on-disk copy).
-    with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as f:
-        f.write(load_app_builder_skill())
+    # SKILL.md is a creation-time snapshot; the live rules reach the agent via
+    # the system-prompt injection regardless, so never rewrite an existing one.
+    skill_path = os.path.join(folder, "SKILL.md")
+    if not os.path.exists(skill_path):
+        with open(skill_path, "w", encoding="utf-8") as f:
+            f.write(load_app_builder_skill())
 
     if body.meta:
-        with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
-            json.dump(body.meta, f, indent=2)
+        meta_path = os.path.join(folder, "meta.json")
+        if not os.path.exists(meta_path):
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(body.meta, f, indent=2)
 
     return {"path": os.path.abspath(folder), "template_mode": "flat"}
 

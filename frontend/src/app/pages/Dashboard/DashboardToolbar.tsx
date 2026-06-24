@@ -49,6 +49,7 @@ interface Props {
     forcedTools?: string[],
     attachedSkills?: Array<{ id: string; name: string; content: string }>,
     selectedBrowserIds?: string[],
+    selectedAppIds?: string[],
   ) => void;
   onAddView: (outputId: string) => void;
   onHistoryResume: (sessionId: string) => void;
@@ -213,8 +214,9 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         forcedTools?: string[],
         attachedSkills?: Array<{ id: string; name: string; content: string }>,
         selectedBrowserIds?: string[],
+        selectedAppIds?: string[],
       ) => {
-        onSend(message, mode, model, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds);
+        onSend(message, mode, model, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedAppIds);
       },
       [onSend, mode, model],
     );

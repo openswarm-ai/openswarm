@@ -407,6 +407,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       // session lands dashboard_id=null, drops out of the reconcile filter, and its card vanishes
       // the instant you send (looked like "the chat quit when I clicked an option").
       if (session?.dashboard_id) config.dashboard_id = session.dashboard_id;
+      // Editing an existing app: bind the launch to it so the backend edits in
+      // place instead of seeding a duplicate empty app (App Builder mode only).
+      if (msg.selectedAppIds?.length) config.selected_app_output_ids = msg.selectedAppIds;
       dispatch(
         launchAndSendFirstMessage({ draftId: id, config, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds, selectedAppIds: msg.selectedAppIds, selectedSettingIds: msg.selectedSettingIds })
       ).then((action) => {
@@ -477,6 +480,18 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       setAwaitingResponse(false);
     }
   }, [session?.status, mode, modesMap, id, isDraft, dispatch, dispatchMessage]);
+
+  // A reload remounts past the live running->stopped transition that first shows
+  // the resume button, so re-derive it once from the persisted 'stopped' status
+  // (transcript-gated so a cleared chat can't resurrect it).
+  const resumeHydratedRef = useRef(false);
+  useEffect(() => {
+    if (resumeHydratedRef.current) return;
+    if (session?.status === 'stopped' && (session?.messages?.length ?? 0) > 0) {
+      resumeHydratedRef.current = true;
+      setShowResumeBubble(true);
+    }
+  }, [session?.status, session?.messages?.length]);
 
   // Idle reconcile: if the session has been 'running' for 5s with no
   // WebSocket activity (no new messages, no streaming updates), do a
