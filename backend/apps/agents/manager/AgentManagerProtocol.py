@@ -28,9 +28,7 @@ class AgentManagerProtocol:
     cancel_events: Dict[str, asyncio.Event]
 
     if TYPE_CHECKING:
-        # Methods implemented on sibling mixins / AgentManager itself and called
-        # cross-mixin. Loose signatures on purpose: typeCheckingMode is off, so this
-        # only has to assert the names exist, not pin their call shapes.
+        # Methods implemented on sibling mixins / AgentManager itself and called cross-mixin. Loose signatures on purpose: typeCheckingMode is off, so this only has to assert the names exist, not pin their call shapes.
         def run_agent_loop(self, *args: Any, **kwargs: Any) -> Any: ...
         def generate_turn_label(self, *args: Any, **kwargs: Any) -> Any: ...
         def commit_partial_now(self, *args: Any, **kwargs: Any) -> Any: ...

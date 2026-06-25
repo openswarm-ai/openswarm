@@ -92,8 +92,7 @@ class RunSupport(AgentManagerProtocol):
 
             if tool.auth_type == "oauth2" and tool.auth_status == "connected":
                 if tool.name.lower() in ("discord", "github"):
-                    # Discord uses a shared bot token; GitHub OAuth-app tokens don't
-                    # expire and carry no refresh_token. Nothing to refresh either way.
+                    # Discord uses a shared bot token; GitHub OAuth-app tokens don't expire and carry no refresh_token. Nothing to refresh either way.
                     refreshed = True
                 elif tool.name.lower() == "airtable":
                     refreshed = await refresh_airtable_token(tool)
@@ -261,8 +260,7 @@ class RunSupport(AgentManagerProtocol):
         session = self.sessions.get(session_id)
         if not session:
             return
-        # If a real run is in flight, the cache will be warmed by it;
-        # firing again is wasted tokens.
+        # If a real run is in flight, the cache will be warmed by it; firing again is wasted tokens.
         existing = self.tasks.get(session_id)
         if existing and not existing.done():
             return
@@ -275,15 +273,12 @@ class RunSupport(AgentManagerProtocol):
 
             from backend.apps.settings.credentials import get_anthropic_client
             global_settings = load_settings()
-            # Free lane rotates pool accounts per call, so a warm ping primes a cache
-            # the next call won't hit, and worse it'd burn a metered run at idle (this
-            # fires on dashboard mount, not a user query). Skip it on the free trial.
+            # Free lane rotates pool accounts per call, so a warm ping primes a cache the next call won't hit, and worse it'd burn a metered run at idle (this fires on dashboard mount, not a user query). Skip it on the free trial.
             if getattr(global_settings, "connection_mode", "own_key") == "free-trial":
                 return
             client = get_anthropic_client(global_settings)
 
-            # Single ping with the same system + minimal user message.
-            # max_tokens=1 keeps it cheap; we don't care about the output.
+            # Single ping with the same system + minimal user message. max_tokens=1 keeps it cheap; we don't care about the output.
             await client.messages.create(
                 model=entry.get("model_id", session.model),
                 max_tokens=1,

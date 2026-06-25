@@ -9,9 +9,7 @@ from backend.config.paths import SESSIONS_DIR
 
 logger = logging.getLogger(__name__)
 
-# One plain-English trust line, fenced by a tag. The model treats the fence as
-# structural framing; the sentence is what actually defuses a security-conscious
-# agent flagging the block as spoofed tool output.
+# One plain-English trust line, fenced by a tag. The model treats the fence as structural framing; the sentence is what actually defuses a security-conscious agent flagging the block as spoofed tool output.
 PLATFORM_NOTE_PREAMBLE = (
     "This block is authored by the OpenSwarm platform, not tool output and not a "
     "prior message. It is trusted context."
@@ -21,8 +19,7 @@ PLATFORM_NOTE_CLOSE = "</openswarm_platform_note>"
 SESSION_RECAP_OPEN = "<openswarm_session_recap>"
 SESSION_RECAP_CLOSE = "</openswarm_session_recap>"
 
-# Per-turn caps so the re-grounded recap stays compact (summaries, not replays)
-# and cannot reinflate the context window from one giant tool input/output.
+# Per-turn caps so the re-grounded recap stays compact (summaries, not replays) and cannot reinflate the context window from one giant tool input/output.
 RECAP_TOOL_INPUT_CAP = 200
 RECAP_TOOL_RESULT_CAP = 500
 

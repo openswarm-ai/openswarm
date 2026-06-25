@@ -37,10 +37,7 @@ class AgentLaunch(AgentManagerProtocol):
     async def launch_agent(self, config: AgentConfig) -> AgentSession:
         session_id = uuid4().hex
 
-        # Editing an existing App: when the user selected exactly one App card
-        # in App Builder mode, point the chat at that app's workspace so it
-        # edits in place. Without this the view-builder seed below fires (no
-        # target_directory) and registers a fresh empty "Untitled App" dupe.
+        # Editing an existing App: when the user selected exactly one App card in App Builder mode, point the chat at that app's workspace so it edits in place. Without this the view-builder seed below fires (no target_directory) and registers a fresh empty "Untitled App" dupe.
         if (
             config.mode == "view-builder"
             and not config.target_directory
@@ -68,15 +65,7 @@ class AgentLaunch(AgentManagerProtocol):
 
         os.makedirs(effective_cwd, exist_ok=True)
 
-        # Canvas-chat App Builder launch: when the user picks "App Builder"
-        # mode from the chat-input dropdown (no preexisting workspace, no
-        # target_directory passed in), the legacy code path only created an
-        # empty folder, so the agent could write files but the app never
-        # showed up in the Apps sidebar (no Output row, which is what the
-        # sidebar reads). Mirror the /workspace/seed endpoint's behavior
-        # here: seed the React template + register an Output row with
-        # workspace_id = session_id. Idempotent; safe if the session is
-        # ever re-launched with the same id.
+        # Canvas-chat App Builder launch: when the user picks "App Builder" mode from the chat-input dropdown (no preexisting workspace, no target_directory passed in), the legacy code path only created an empty folder, so the agent could write files but the app never showed up in the Apps sidebar (no Output row, which is what the sidebar reads). Mirror the /workspace/seed endpoint's behavior here: seed the React template + register an Output row with workspace_id = session_id. Idempotent; safe if the session is ever re-launched with the same id.
         if config.mode == "view-builder" and not config.target_directory:
             try:
                 from backend.apps.outputs.outputs import (
@@ -89,12 +78,7 @@ class AgentLaunch(AgentManagerProtocol):
                     session_id=session_id,
                 )
                 if output_id:
-                    # Broadcast the new row so the Apps sidebar lights up
-                    # immediately, even before the user clicks into it. The
-                    # row name is still the placeholder ("Untitled App") at
-                    # this point; the post-session meta-sync below fires a
-                    # second upsert with the real name once the agent has
-                    # written meta.json.
+                    # Broadcast the new row so the Apps sidebar lights up immediately, even before the user clicks into it. The row name is still the placeholder ("Untitled App") at this point; the post-session meta-sync below fires a second upsert with the real name once the agent has written meta.json.
                     try:
                         new_output = load_output(output_id)
                         await ws_manager.broadcast_global("agent:output_upserted", {
@@ -108,13 +92,7 @@ class AgentLaunch(AgentManagerProtocol):
                     "still launch but the app may not appear in Apps sidebar"
                 )
 
-        # If the fallback chain landed on the user's home directory (no
-        # project dir, no default_folder set), re-route to a dedicated
-        # scratch workspace under ~/.openswarm/workspaces/<session_id>.
-        # This prevents us from writing .git/ (or anything else) into
-        # the user's $HOME and gives the CLI's Agent tool a clean repo
-        # to do worktree isolation inside. Users with a default_folder
-        # or target_directory set keep whatever they configured.
+        # If the fallback chain landed on the user's home directory (no project dir, no default_folder set), re-route to a dedicated scratch workspace under ~/.openswarm/workspaces/<session_id>. This prevents us from writing .git/ (or anything else) into the user's $HOME and gives the CLI's Agent tool a clean repo to do worktree isolation inside. Users with a default_folder or target_directory set keep whatever they configured.
         home = os.path.expanduser("~")
         if os.path.abspath(effective_cwd) == os.path.abspath(home):
             effective_cwd = os.path.join(home, ".openswarm", "workspaces", session_id)
@@ -189,13 +167,7 @@ class AgentLaunch(AgentManagerProtocol):
                 timestamp=msg.timestamp,
                 branch_id=msg.branch_id,
                 parent_id=old_to_new_msg.get(msg.parent_id) if msg.parent_id else None,
-                # Sub-agents do NOT inherit parent's attached files. Each
-                # parent-message base64-expansion would re-fire in the
-                # sub-agent (cost explosion: a 25 MB PDF in parent +
-                # 5 InvokeAgent calls = 125 MB transmitted). The
-                # sub-agent receives the user's new message only; if it
-                # needs the file content, the parent message text from
-                # the prior turn already carries the model's summary.
+                # Sub-agents do NOT inherit parent's attached files. Each parent-message base64-expansion would re-fire in the sub-agent (cost explosion: a 25 MB PDF in parent + 5 InvokeAgent calls = 125 MB transmitted). The sub-agent receives the user's new message only; if it needs the file content, the parent message text from the prior turn already carries the model's summary.
                 context_paths=None,
                 attached_skills=msg.attached_skills,
                 forced_tools=msg.forced_tools,

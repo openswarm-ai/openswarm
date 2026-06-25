@@ -61,10 +61,7 @@ def build_effective_tool_lists(
                 continue
 
             if name == "openswarm-web":
-                # Expose our DDG-backed web tools under an MCP prefix.
-                # Honor existing WebSearch/WebFetch permission policy
-                #, if the user disabled them in Settings, don't offer
-                # the MCP variants either.
+                # Expose our DDG-backed web tools under an MCP prefix. Honor existing WebSearch/WebFetch permission policy, if the user disabled them in Settings, don't offer the MCP variants either.
                 for wt in ("WebSearch", "WebFetch"):
                     policy = builtin_perms.get(wt, "always_allow")
                     if policy == "always_allow":
@@ -90,17 +87,13 @@ def build_effective_tool_lists(
             else:
                 effective_allowed.append(f"mcp__{name}__*")
 
-    # If the openswarm-web MCP was registered, the CLI's built-in
-    # WebSearch/WebFetch are guaranteed to fail (no Anthropic
-    # backend). Suppress them so the model picks our MCP variants
-    # and doesn't waste a turn on a broken tool.
+    # If the openswarm-web MCP was registered, the CLI's built-in WebSearch/WebFetch are guaranteed to fail (no Anthropic backend). Suppress them so the model picks our MCP variants and doesn't waste a turn on a broken tool.
     if need_web_mcp:
         effective_allowed = [t for t in effective_allowed if t not in ("WebSearch", "WebFetch")]
         for wt_name in ("WebSearch", "WebFetch"):
             if wt_name not in effective_disallowed:
                 effective_disallowed.append(wt_name)
-    # Claude's internal Cron* scheduler is denied in favour of the visible native
-    # one; withhold it from the SDK so the model doesn't even reach for it.
+    # Claude's internal Cron* scheduler is denied in favour of the visible native one; withhold it from the SDK so the model doesn't even reach for it.
     for bt in path_gate.CLAUDE_INTERNAL_SCHEDULER_TOOLS:
         if bt not in effective_disallowed:
             effective_disallowed.append(bt)

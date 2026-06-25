@@ -21,8 +21,7 @@ def apply_context_window(session: AgentSession, settings: Optional[AppSettings] 
     try:
         from backend.apps.agents.providers.registry import get_context_window
         if settings is None:
-            # Falling back to load_settings() inside the guard lets get_context_window
-            # still find a model-default cap when the settings file itself is unreadable.
+            # Falling back to load_settings() inside the guard lets get_context_window still find a model-default cap when the settings file itself is unreadable.
             try:
                 settings = load_settings()
             except Exception:

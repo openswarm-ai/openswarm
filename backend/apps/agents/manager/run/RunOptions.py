@@ -38,8 +38,7 @@ from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtoco
 
 
 class RunOptions(AgentManagerProtocol):
-    # No return annotation: the returned tuple carries an SDK ClaudeAgentOptions, which can't be
-    # module-imported here (mock-mode would fail to import the manager); it's lazy-imported below.
+    # No return annotation: the returned tuple carries an SDK ClaudeAgentOptions, which can't be module-imported here (mock-mode would fail to import the manager); it's lazy-imported below.
     @typechecked
     async def build_agent_options(self, session: AgentSession, session_id: str, prompt: str,
                                     prompt_content: Union[str, List], builtin_perms: Dict[str, str],
@@ -69,11 +68,7 @@ class RunOptions(AgentManagerProtocol):
             return await post_tool_hook_mod.post_tool_hook(hook_ctx, input_data, tool_use_id, context)
         _, mode_sys_prompt, _ = resolve_mode(session.mode, get_all_tool_names)
 
-        # Reconcile active_mcps against currently-enabled tools (Phase 3).
-        # If the user toggled a server off in the Tools page mid-session,
-        # drop it from active_mcps automatically so the model isn't told
-        # "X is active" while build_mcp_servers silently filters it out.
-        # Emit a context_status event so the model and UI both know.
+        # Reconcile active_mcps against currently-enabled tools (Phase 3). If the user toggled a server off in the Tools page mid-session, drop it from active_mcps automatically so the model isn't told "X is active" while build_mcp_servers silently filters it out. Emit a context_status event so the model and UI both know.
         try:
             p_enabled = {
                 sanitize_server_name(t.name)
@@ -105,10 +100,7 @@ class RunOptions(AgentManagerProtocol):
 
         set_framework_overhead(session, composed_prompt)
 
-        # Pass session.active_mcps as the activation filter. Empty list ⇒
-        # no MCP tools shipped to the SDK; the model must MCPSearch and
-        # MCPActivate first. The product invariant lives here at the
-        # dispatch layer (see build_mcp_servers docstring).
+        # Pass session.active_mcps as the activation filter. Empty list ⇒ no MCP tools shipped to the SDK; the model must MCPSearch and MCPActivate first. The product invariant lives here at the dispatch layer (see build_mcp_servers docstring).
         mcp_servers = await self.build_mcp_servers(session.allowed_tools, session.active_mcps)
 
         browser_delegation_tools, invoke_agent_tools = register_builtin_mcp_servers(
@@ -116,9 +108,7 @@ class RunOptions(AgentManagerProtocol):
         )
 
 
-        # Register the DDG-backed openswarm-web MCP only when the primary has no reliable
-        # native Anthropic web path (decided in tools/web.py); p_m feeds the registration log
-        # + provider branch just below, so it stays a loop local.
+        # Register the DDG-backed openswarm-web MCP only when the primary has no reliable native Anthropic web path (decided in tools/web.py); p_m feeds the registration log + provider branch just below, so it stays a loop local.
         p_m = p_router_model_id if isinstance(p_router_model_id, str) else ""
         need_web_mcp = should_register_web_mcp(
             model=session.model,
@@ -146,21 +136,12 @@ class RunOptions(AgentManagerProtocol):
         if effective_disallowed:
             logger.info(f"[MCP-DEBUG] effective_disallowed: {effective_disallowed}")
 
-        # `p_router_model_id` and `p_api_type_for_session` were resolved
-        # at the top of run_agent_loop (before any closures were
-        # defined) so analytics closures could tag events with them.
-        # Reuse those values here and keep session.provider in sync.
+        # `p_router_model_id` and `p_api_type_for_session` were resolved at the top of run_agent_loop (before any closures were defined) so analytics closures could tag events with them. Reuse those values here and keep session.provider in sync.
         resolved_model = p_router_model_id
         api_type = p_api_type_for_session
         session.provider = api_type
 
-        # Capture the Claude CLI's stderr into a buffer so the retry
-        # classifier can see the real cause of a process crash (e.g.
-        # "No pool capacity available" from the OpenSwarm proxy, or the
-        # Anthropic SDK's 429/overloaded error body). Without this the
-        # SDK's ProcessError only stringifies to "Command failed with
-        # exit code 1 / Check stderr output for details", which masks
-        # transient capacity issues.
+        # Capture the Claude CLI's stderr into a buffer so the retry classifier can see the real cause of a process crash (e.g. "No pool capacity available" from the OpenSwarm proxy, or the Anthropic SDK's 429/overloaded error body). Without this the SDK's ProcessError only stringifies to "Command failed with exit code 1 / Check stderr output for details", which masks transient capacity issues.
         p_stderr_buffer: List[str] = []
 
         def p_stderr_cb(line: str) -> None:
@@ -174,12 +155,7 @@ class RunOptions(AgentManagerProtocol):
 
         options_kwargs = {
             "model": resolved_model,
-            # 64 MB ceiling on the SDK <-> CLI JSON-RPC channel. The
-            # default 5 MB blocked any base64'd PDF over ~3.5 MB; we
-            # now route PDFs/images as native content blocks, which
-            # base64-expand by ~33%. 64 MB clears the largest single
-            # Anthropic PDF (32 MB raw) with headroom for prompt +
-            # tool results sharing the same frame.
+            # 64 MB ceiling on the SDK <-> CLI JSON-RPC channel. The default 5 MB blocked any base64'd PDF over ~3.5 MB; we now route PDFs/images as native content blocks, which base64-expand by ~33%. 64 MB clears the largest single Anthropic PDF (32 MB raw) with headroom for prompt + tool results sharing the same frame.
             "max_buffer_size": 64 * 1024 * 1024,
             "permission_mode": "default",
             "can_use_tool": can_use_tool,
@@ -193,8 +169,7 @@ class RunOptions(AgentManagerProtocol):
             "disallowed_tools": effective_disallowed,
             "include_partial_messages": True,
         }
-        # cc/cx/gc/ag/gemini/openrouter prefixes force 9Router; route="api"
-        # bypasses to the provider's host directly; otherwise Pro proxy or key.
+        # cc/cx/gc/ag/gemini/openrouter prefixes force 9Router; route="api" bypasses to the provider's host directly; otherwise Pro proxy or key.
         await configure_provider_env(
             options_kwargs, session, resolved_model, api_type, global_settings, []
         )
@@ -202,16 +177,12 @@ class RunOptions(AgentManagerProtocol):
             options_kwargs["mcp_servers"] = mcp_servers
             mcp_json_len = len(json.dumps({"mcpServers": mcp_servers}))
             logger.info(f"[MCP-DEBUG] mcp_servers passed to SDK: {list(mcp_servers.keys())}, JSON length={mcp_json_len}")
-        # claude_code preset for BOTH system_prompt and tools so the CLI's
-        # deferred-tools scaffolding survives. Raw string would replace it.
+        # claude_code preset for BOTH system_prompt and tools so the CLI's deferred-tools scaffolding survives. Raw string would replace it.
         options_kwargs["tools"] = {
             "type": "preset",
             "preset": "claude_code",
         }
-        # exclude_dynamic_sections=True moves cwd/git/OS grounding out of
-        # the cached prefix and into the first user message, unlocks
-        # Anthropic prompt cache (~80% input-token cut, 13-31% faster TTFT).
-        # Trade-off: grounding freezes at turn 1.
+        # exclude_dynamic_sections=True moves cwd/git/OS grounding out of the cached prefix and into the first user message, unlocks Anthropic prompt cache (~80% input-token cut, 13-31% faster TTFT). Trade-off: grounding freezes at turn 1.
         if composed_prompt:
             options_kwargs["system_prompt"] = {
                 "type": "preset",
@@ -228,34 +199,19 @@ class RunOptions(AgentManagerProtocol):
         if session.max_turns:
             options_kwargs["max_turns"] = session.max_turns
 
-        # The claude_code preset auto-attaches the user's claude.ai-
-        # connected partner MCPs (`mcp__claude_ai_*`). Those bypass our
-        # MCPActivate gate, don't share OAuth state with the OpenSwarm
-        # Gmail/Calendar/Drive connectors the user actually configured
-        # here, and confuse the model into picking the partner shim
-        # instead of our vetted server. Hard-block them at the SDK
-        # layer so the model can't even attempt the call.
+        # The claude_code preset auto-attaches the user's claude.ai- connected partner MCPs (`mcp__claude_ai_*`). Those bypass our MCPActivate gate, don't share OAuth state with the OpenSwarm Gmail/Calendar/Drive connectors the user actually configured here, and confuse the model into picking the partner shim instead of our vetted server. Hard-block them at the SDK layer so the model can't even attempt the call.
         options_kwargs["disallowed_tools"] = [
             "mcp__claude_ai_*",
         ]
 
         if session.cwd:
-            # Pre-existing sessions may have workspaces that predate
-            # the git-init block in launch_agent, leaving them
-            # without a valid HEAD. Ensure it here so subagent
-            # worktree-add always works.
+            # Pre-existing sessions may have workspaces that predate the git-init block in launch_agent, leaving them without a valid HEAD. Ensure it here so subagent worktree-add always works.
             ensure_cwd_git_repo(session.cwd)
             options_kwargs["cwd"] = session.cwd
 
         inject_thinking_options(options_kwargs, session, prompt, resolved_model, api_type)
 
-        # Fresh-restart path: some session changes must not reuse the
-        # CLI's resume transcript. MCPActivate needs a new transport so
-        # tool schemas are reread; branch edits/switches need the model
-        # to see only get_branch_messages(session), not facts from the
-        # old branch's SDK transcript. Soft restart: drop resume +
-        # sdk_session_id, replay local history via the prompt, let the
-        # SDK build a clean session from the current app state.
+        # Fresh-restart path: some session changes must not reuse the CLI's resume transcript. MCPActivate needs a new transport so tool schemas are reread; branch edits/switches need the model to see only get_branch_messages(session), not facts from the old branch's SDK transcript. Soft restart: drop resume + sdk_session_id, replay local history via the prompt, let the SDK build a clean session from the current app state.
         if session.needs_fresh_session:
             if session.sdk_session_id:
                 logger.info(
@@ -283,11 +239,7 @@ class RunOptions(AgentManagerProtocol):
                 elif isinstance(prompt_content, list):
                     prompt_content.insert(0, {"type": "text", "text": history})
 
-        # Compaction trigger (Phase 2). Driven by live ctx_used ratio
-        # rather than turn count, fires when input_tokens/context_window
-        # crosses session.compact_threshold_pct (default 0.65). Cheap,
-        # programmatic summarization (no aux LLM call) so this adds
-        # zero latency on the user's turn.
+        # Compaction trigger (Phase 2). Driven by live ctx_used ratio rather than turn count, fires when input_tokens/context_window crosses session.compact_threshold_pct (default 0.65). Cheap, programmatic summarization (no aux LLM call) so this adds zero latency on the user's turn.
         await pre_send_context_guard(self, session, session_id)
 
         logger.info(f"[MCP-DEBUG] Creating ClaudeAgentOptions short={session.model} resolved={resolved_model} api_type={api_type}")

@@ -99,11 +99,7 @@ class MockAgent(AgentManagerProtocol):
 
         session.status = "completed"
         session.closed_at = datetime.now()
-        # Mock branch (claude_agent_sdk missing): leave cost untouched so
-        # it stays at its 0.0 default. A fake nonzero value here would
-        # poison the cost shown in the session header during dev. The
-        # `_mock_run` flag is read by the close path so a mock session
-        # doesn't get reported to the cloud as a real one.
+        # Mock branch (claude_agent_sdk missing): leave cost untouched so it stays at its 0.0 default. A fake nonzero value here would poison the cost shown in the session header during dev. The `_mock_run` flag is read by the close path so a mock session doesn't get reported to the cloud as a real one.
         setattr(session, "_mock_run", True)
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,

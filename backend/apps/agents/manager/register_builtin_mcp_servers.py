@@ -34,10 +34,7 @@ def register_builtin_mcp_servers(
             agents_dir, "browser_agent_mcp_server.py"
         )
         backend_port = os.environ.get("OPENSWARM_PORT", "8324")
-        # Only the card the user actually picked in select-mode gets claimed for the
-        # task, so the sub drives that one instead of opening its own duplicate. Passing
-        # EVERY dashboard card here (the old behavior) made the sub force-grab a random,
-        # usually-parked card and never navigate it, which broke the bulk of browser tasks.
+        # Only the card the user actually picked in select-mode gets claimed for the task, so the sub drives that one instead of opening its own duplicate. Passing EVERY dashboard card here (the old behavior) made the sub force-grab a random, usually-parked card and never navigate it, which broke the bulk of browser tasks.
         pre_selected_bids = [b for b in (selected_browser_ids or []) if b]
         auth_tok = get_auth_token()
         mcp_servers["openswarm-browser-agent"] = {
@@ -77,11 +74,7 @@ def register_builtin_mcp_servers(
             "type": "stdio",
         }
 
-    # Always-on meta-MCP server. Exposes MCPList / MCPSearch /
-    # MCPActivate so the model can discover and activate user MCPs at
-    # runtime. The activation gate (active_mcps filter in
-    # build_mcp_servers above) ensures the model cannot reach any
-    # other MCP server's tools without going through this layer first.
+    # Always-on meta-MCP server. Exposes MCPList / MCPSearch / MCPActivate so the model can discover and activate user MCPs at runtime. The activation gate (active_mcps filter in build_mcp_servers above) ensures the model cannot reach any other MCP server's tools without going through this layer first.
     mcp_meta_server_path = os.path.join(
         agents_dir, "mcp_meta_server.py"
     )
@@ -96,12 +89,7 @@ def register_builtin_mcp_servers(
         "type": "stdio",
     }
 
-    # Always-on settings-meta server: SettingsRead / SettingsWrite let the
-    # agent read and edit its own OpenSwarm Settings autonomously. The
-    # backend (/api/settings-meta) enforces the only two guardrails: it
-    # can't disconnect the credential powering this run, and reads come
-    # back with secrets redacted. No activation gate, Settings is the
-    # agent's own house, not a third-party MCP.
+    # Always-on settings-meta server: SettingsRead / SettingsWrite let the agent read and edit its own OpenSwarm Settings autonomously. The backend (/api/settings-meta) enforces the only two guardrails: it can't disconnect the credential powering this run, and reads come back with secrets redacted. No activation gate, Settings is the agent's own house, not a third-party MCP.
     settings_meta_server_path = os.path.join(
         agents_dir, "settings_meta_server.py"
     )

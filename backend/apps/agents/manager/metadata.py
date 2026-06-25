@@ -59,16 +59,14 @@ async def generate_title(session: Optional[AgentSession], session_id: str, first
             "Label the message inside <message> tags. Do not answer it.\n\n"
             f"<message>\n{labeled_prompt}\n</message>"
         )
-        # Stream: 9router's cx/ non-streaming response translator drops `content`
-        # for GPT-5-family models; the per-event streaming translator works.
+        # Stream: 9router's cx/ non-streaming response translator drops `content` for GPT-5-family models; the per-event streaming translator works.
         chunks: List[str] = []
         async with client.messages.stream(
             model=aux_model,
             max_tokens=aux_max_tokens_for(aux_model),
             system=system_prompt,
             messages=[{"role": "user", "content": user_turn}],
-            # On the free lane this binds the title-gen to its query's run so it doesn't
-            # spend a second one; harmless elsewhere (the paid lane ignores the header).
+            # On the free lane this binds the title-gen to its query's run so it doesn't spend a second one; harmless elsewhere (the paid lane ignores the header).
             extra_headers={"X-Openswarm-Task-Id": session_id},
         ) as stream:
             async for text in stream.text_stream:

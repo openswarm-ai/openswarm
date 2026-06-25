@@ -29,8 +29,7 @@ class WorkflowApprovalMemory(BaseModel):
     step_usage: Dict[str, Dict[str, bool]]          # per-step record: step_id -> {tool: approved}
     remember: Optional[Callable[[str, str], None]]  # persist a workflow-level decision to disk
     ask_timeout: float
-    # The executor bumps this as it advances steps so the gate can record which
-    # tools each step touched. None on test runs that don't thread it.
+    # The executor bumps this as it advances steps so the gate can record which tools each step touched. None on test runs that don't thread it.
     current_step_id: Optional[str] = None
 
 
@@ -78,9 +77,7 @@ def is_claude_schedule_skill(tool_name: str, tool_input: object) -> bool:
 
 @typechecked
 def note_tool_used(session_id: str, tool_name: str, approved: bool) -> None:
-    # Record which tools each step touched (in-memory; the executor/test path
-    # persists step_usage once at run end). Captures every tool the gate sees so
-    # a step's tool set is complete, not only the ones that prompted.
+    # Record which tools each step touched (in-memory; the executor/test path persists step_usage once at run end). Captures every tool the gate sees so a step's tool set is complete, not only the ones that prompted.
     mem = p_approval_memory.get(session_id)
     if mem is None or mem.current_step_id is None:
         return

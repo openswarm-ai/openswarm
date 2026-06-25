@@ -48,8 +48,7 @@ class TurnState(BaseModel):
     output_tokens: int = 0
     assistant_text_chars: int = 0
     tool_input_chars: int = 0
-    # Cumulative-token snapshot taken at turn start; subtracted at emit time so the thinking
-    # pill shows THIS turn's new tokens, not the whole session's running total.
+    # Cumulative-token snapshot taken at turn start; subtracted at emit time so the thinking pill shows THIS turn's new tokens, not the whole session's running total.
     baseline_session_in: int = 0
     baseline_session_out: int = 0
     baseline_children_in: int = 0

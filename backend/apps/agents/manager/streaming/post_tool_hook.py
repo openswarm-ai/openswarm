@@ -39,9 +39,7 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
 
     raw_response = input_data.get("tool_response", "")
 
-    # Accumulate per-tool latency on the session. Lets the cloud aggregate a
-    # tool-latency distribution into the existing daily.summary without firing
-    # per-tool events.
+    # Accumulate per-tool latency on the session. Lets the cloud aggregate a tool-latency distribution into the existing daily.summary without firing per-tool events.
     hook_tool_name_early = input_data.get("tool_name", "")
     if hook_tool_name_early and elapsed_ms is not None and elapsed_ms >= 0:
         latencies = getattr(session, "tool_latencies", None)
@@ -152,8 +150,7 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
             usage = raw_response.get("usage", {})
             if isinstance(usage, dict):
                 sub_tokens["input"] = usage.get("input_tokens", 0) + usage.get("cache_creation_input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
-                # Pill-only lane: NEW (uncached) input, excludes the cached
-                # static prefix so the bubble shows what this turn added.
+                # Pill-only lane: NEW (uncached) input, excludes the cached static prefix so the bubble shows what this turn added.
                 sub_tokens["input_fresh"] = usage.get("input_tokens", 0)
                 sub_tokens["output"] = usage.get("output_tokens", 0)
             if raw_response.get("total_cost_usd"):
@@ -163,21 +160,7 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
 
         sub_session_id = uuid4().hex
         sub_name = agent_prompt[:50] if agent_prompt else "Sub-agent"
-        # Subagent context isolation invariant (Phase 3, Layer P):
-        # children DO NOT inherit the parent's active_mcps or
-        # compaction state. They start with the AgentSession
-        # defaults (empty lists). Reasoning:
-        #   - Security: a parent that activated Gmail shouldn't
-        #     leak Gmail tools to a subagent doing an unrelated
-        #     task. The user only approved Gmail for the parent.
-        #   - Token cost: subagents typically have a narrow task,
-        #     they don't need the parent's full activated set.
-        #   - Failure isolation: if the parent compacted history,
-        #     the subagent shouldn't inherit a summary it can't
-        #     re-expand.
-        # If a subagent ever needs a parent activation, the user
-        # must approve it explicitly via MCPActivate inside the
-        # subagent session, same gate as a fresh top-level chat.
+        # Subagent context isolation invariant (Phase 3, Layer P): children DO NOT inherit the parent's active_mcps or compaction state. They start with the AgentSession defaults (empty lists). Reasoning: - Security: a parent that activated Gmail shouldn't leak Gmail tools to a subagent doing an unrelated task. The user only approved Gmail for the parent. - Token cost: subagents typically have a narrow task, they don't need the parent's full activated set. - Failure isolation: if the parent compacted history, the subagent shouldn't inherit a summary it can't re-expand. If a subagent ever needs a parent activation, the user must approve it explicitly via MCPActivate inside the subagent session, same gate as a fresh top-level chat.
         sub_session = AgentSession(
             id=sub_session_id,
             name=sub_name,
@@ -194,9 +177,7 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
             ],
             dashboard_id=session.dashboard_id,
             parent_session_id=session_id,
-            # Explicit empty list (matches the model default) so
-            # the invariant is visible at the spawn site rather
-            # than relying on the field's default_factory.
+            # Explicit empty list (matches the model default) so the invariant is visible at the spawn site rather than relying on the field's default_factory.
             active_mcps=[],
         )
         apply_context_window(sub_session)
@@ -209,12 +190,7 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
         result_payload["sub_session_id"] = sub_session_id
 
     result_msg = Message(role="tool_result", content=result_payload, branch_id=session.active_branch_id)
-    # Spill oversized tool results to per-session disk storage.
-    # The replacement keeps the first 4KB inline so the model
-    # retains some signal; the rest lives on disk for the UI to
-    # surface in the compaction drawer. Crucially this happens
-    # at *write* time (before the next turn ships history to the
-    # SDK) so the bloat never re-enters context.
+    # Spill oversized tool results to per-session disk storage. The replacement keeps the first 4KB inline so the model retains some signal; the rest lives on disk for the UI to surface in the compaction drawer. Crucially this happens at *write* time (before the next turn ships history to the SDK) so the bloat never re-enters context.
     try:
         truncated_content, blob_path = truncate_large_tool_result(
             result_msg.content, session.id, result_msg.id

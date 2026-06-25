@@ -38,13 +38,7 @@ async def emit_consolidated_thinking(thinking: ThinkingState, turn: TurnState, s
          token count.
     """
     upstream_reasoning_tokens: Optional[int] = None
-    # Probe 9Router for the upstream reasoning-token count
-    # whenever (a) there's no in-process text, OR (b) the
-    # caller flagged this as a force-emit for a route that
-    # strips reasoning. Case (b) is what makes the FINAL
-    # emit on GPT/Gemini show the real reasoning count
-    # (e.g. 196) instead of the heuristic chars/3.6 of the
-    # answer text (e.g. 13).
+    # Probe 9Router for the upstream reasoning-token count whenever (a) there's no in-process text, OR (b) the caller flagged this as a force-emit for a route that strips reasoning. Case (b) is what makes the FINAL emit on GPT/Gemini show the real reasoning count (e.g. 196) instead of the heuristic chars/3.6 of the answer text (e.g. 13).
     if not thinking.text_parts or force_provider_unavailable:
         try:
             from backend.apps.nine_router import (
@@ -62,22 +56,10 @@ async def emit_consolidated_thinking(thinking: ThinkingState, turn: TurnState, s
             and upstream_reasoning_tokens is None
             and not force_provider_unavailable
         ):
-            # No text, no upstream signal, and caller didn't
-            # ask for the unavailable-pill, nothing to show.
+            # No text, no upstream signal, and caller didn't ask for the unavailable-pill, nothing to show.
             return
     joined_text = "\n".join(thinking.text_parts)
-    # Total turn output token estimate. Combines two sources:
-    #   - SDK usage.output_tokens summed across completed
-    #     AssistantMessages (authoritative for finished
-    #     blocks).
-    #   - chars/3.6 heuristic over the running streams of
-    #     thinking + assistant-text + tool-input JSON
-    #     (covers in-flight blocks the SDK hasn't billed
-    #     yet, i.e. the answer the user is currently
-    #     reading).
-    # Take the max so the number doesn't visually shrink as
-    # the SDK's authoritative count overtakes our running
-    # heuristic.
+    # Total turn output token estimate. Combines two sources: - SDK usage.output_tokens summed across completed AssistantMessages (authoritative for finished blocks). - chars/3.6 heuristic over the running streams of thinking + assistant-text + tool-input JSON (covers in-flight blocks the SDK hasn't billed yet, i.e. the answer the user is currently reading). Take the max so the number doesn't visually shrink as the SDK's authoritative count overtakes our running heuristic.
     running_chars = (
         len(joined_text)
         + turn.assistant_text_chars
@@ -85,11 +67,7 @@ async def emit_consolidated_thinking(thinking: ThinkingState, turn: TurnState, s
     )
     heuristic_tokens = max(1, round(running_chars / 3.6)) if running_chars else 0
     turn_tokens: Optional[int] = None
-    # Priority order:
-    #   1. Upstream reasoning-token count from 9Router (the
-    #      only honest signal for GPT/Gemini, captured above).
-    #   2. SDK-reported usage.output_tokens (Anthropic).
-    #   3. chars/3.6 heuristic over running streams (live UI).
+    # Priority order: 1. Upstream reasoning-token count from 9Router (the only honest signal for GPT/Gemini, captured above). 2. SDK-reported usage.output_tokens (Anthropic). 3. chars/3.6 heuristic over running streams (live UI).
     if upstream_reasoning_tokens and upstream_reasoning_tokens > 0:
         turn_tokens = upstream_reasoning_tokens
     elif turn.output_tokens > 0 or heuristic_tokens > 0:
@@ -108,13 +86,7 @@ async def emit_consolidated_thinking(thinking: ThinkingState, turn: TurnState, s
             pass
     if turn.started_ts is not None:
         turn.total_ms = int((time.time() - turn.started_ts) * 1000)
-        # Accumulate into session-level "agent active time" and
-        # the per-model breakdown so a session that spans
-        # multiple turns reports the total wall-clock time the
-        # agent was running. Per-model bucket uses the model
-        # active *now* (model can be switched mid-turn but the
-        # current value is the right attribution for the work
-        # just produced).
+        # Accumulate into session-level "agent active time" and the per-model breakdown so a session that spans multiple turns reports the total wall-clock time the agent was running. Per-model bucket uses the model active *now* (model can be switched mid-turn but the current value is the right attribution for the work just produced).
         try:
             session.agent_active_ms = int(getattr(session, "agent_active_ms", 0) or 0) + turn.total_ms
             m = session.model or "unknown"
@@ -123,34 +95,7 @@ async def emit_consolidated_thinking(thinking: ThinkingState, turn: TurnState, s
             pass
     if thinking.msg_id is None:
         thinking.msg_id = uuid4().hex
-    # Combined token total for the pill, input + output for
-    # the parent turn PLUS any work delegated to subagents
-    # (browser agents, invoke-agent forks) and tool MCP
-    # servers that produced their own usage on this turn.
-    # The user-visible answer to "how big is this turn" is
-    # the all-in sum, not just the primary's output. We sum
-    # every reachable source:
-    #   - parent's input  (session.tokens["input"],
-    #     ResultMessage.usage at line ~2886)
-    #   - parent's output (session.tokens["output"], same
-    #     ResultMessage)
-    #   - every direct sub-session whose parent_session_id
-    #     points at this session (browser agents, sub-agent
-    #     forks, invoke-agent calls book their own usage at
-    #     subprocess return time, agent_manager.py:1365 +
-    #     browser_agent.py:1000-1001)
-    # This mirrors how billing accumulates per-turn, caches,
-    # tool MCP servers that talk to LLMs (e.g. summarizers),
-    # and subagent reasoning all show up under the parent's
-    # "session.tokens" once their result lands.
-    # Read cumulative session totals + cumulative subagent
-    # totals at this moment, then subtract the turn-start
-    # baseline to get THIS TURN'S delta. Without subtracting,
-    # the second turn's pill would show turn-1 work added
-    # to turn-2 work, the third would show all three, etc.
-    # Pill uses the FRESH lane (uncached input only). session.tokens
-    # ["input"] stays full for the context-fullness bar + cost; the
-    # bubble shows the NEW tokens this turn, not the cached re-reads.
+    # Combined token total for the pill, input + output for the parent turn PLUS any work delegated to subagents (browser agents, invoke-agent forks) and tool MCP servers that produced their own usage on this turn. The user-visible answer to "how big is this turn" is the all-in sum, not just the primary's output. We sum every reachable source: - parent's input  (session.tokens["input"], ResultMessage.usage at line ~2886) - parent's output (session.tokens["output"], same ResultMessage) - every direct sub-session whose parent_session_id points at this session (browser agents, sub-agent forks, invoke-agent calls book their own usage at subprocess return time, agent_manager.py:1365 + browser_agent.py:1000-1001) This mirrors how billing accumulates per-turn, caches, tool MCP servers that talk to LLMs (e.g. summarizers), and subagent reasoning all show up under the parent's "session.tokens" once their result lands. Read cumulative session totals + cumulative subagent totals at this moment, then subtract the turn-start baseline to get THIS TURN'S delta. Without subtracting, the second turn's pill would show turn-1 work added to turn-2 work, the third would show all three, etc. Pill uses the FRESH lane (uncached input only). session.tokens ["input"] stays full for the context-fullness bar + cost; the bubble shows the NEW tokens this turn, not the cached re-reads.
     cum_in = 0
     cum_out = 0
     if isinstance(session.tokens, dict):
@@ -170,8 +115,7 @@ async def emit_consolidated_thinking(thinking: ThinkingState, turn: TurnState, s
     except Exception:
         pass
 
-    # Fall back to cumulative if the baseline wasn't captured
-    # (degenerate empty turn, better than showing zero).
+    # Fall back to cumulative if the baseline wasn't captured (degenerate empty turn, better than showing zero).
     if turn.baseline_captured:
         parent_in = max(0, cum_in - turn.baseline_session_in)
         parent_out = max(0, cum_out - turn.baseline_session_out)
@@ -183,11 +127,7 @@ async def emit_consolidated_thinking(thinking: ThinkingState, turn: TurnState, s
         children_in = cum_children_in
         children_out = cum_children_out
 
-    # Fresh input + output = the NEW tokens this turn. The old
-    # framework-overhead subtraction is gone on purpose: it was an
-    # estimate to strip the cached static prefix out of the full
-    # input number, and the fresh lane already excludes that prefix
-    # exactly, so subtracting it again would double-discount to ~0.
+    # Fresh input + output = the NEW tokens this turn. The old framework-overhead subtraction is gone on purpose: it was an estimate to strip the cached static prefix out of the full input number, and the fresh lane already excludes that prefix exactly, so subtracting it again would double-discount to ~0.
     turn_total_tokens: Optional[int] = (
         parent_in + parent_out + children_in + children_out
     )
@@ -219,7 +159,6 @@ async def emit_consolidated_thinking(thinking: ThinkingState, turn: TurnState, s
         })
     except Exception:
         logger.exception("Failed to emit consolidated thinking message")
-
 
 
 @typechecked

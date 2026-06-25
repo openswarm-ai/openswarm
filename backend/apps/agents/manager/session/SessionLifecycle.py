@@ -206,13 +206,7 @@ class SessionLifecycle(AgentManagerProtocol):
     def get_all_sessions(self, dashboard_id: Optional[str] = None) -> List[AgentSession]:
         if not dashboard_id:
             return list(self.sessions.values())
-        # Memory first, then promote on-disk sessions for this dashboard, but
-        # ONLY ones the dashboard's layout still has a card for. A session keeps
-        # its dashboard_id when its card is deleted, so promoting by tag alone
-        # resurrected deleted chats on every reopen; the layout's cards are the
-        # real source of truth for what's on the board. Imported sessions ARE in
-        # the layout, so they still surface, and this bounds the disk read to
-        # once per session per run, like resume_session.
+        # Memory first, then promote on-disk sessions for this dashboard, but ONLY ones the dashboard's layout still has a card for. A session keeps its dashboard_id when its card is deleted, so promoting by tag alone resurrected deleted chats on every reopen; the layout's cards are the real source of truth for what's on the board. Imported sessions ARE in the layout, so they still surface, and this bounds the disk read to once per session per run, like resume_session.
         result = [s for s in self.sessions.values() if s.dashboard_id == dashboard_id]
         seen = {s.id for s in result}
         card_ids = self.p_dashboard_card_ids(dashboard_id)

@@ -19,8 +19,7 @@ class HookContext(BaseModel):
     prompt: str
     builtin_perms: Dict[str, str]
     policy_defaults: Dict[str, str]
-    # The manager's LIVE session registry (InstanceOf keeps the reference, so a sub-agent
-    # the post hook spawns is visible to the manager; a plain Dict field pydantic would copy).
+    # The manager's LIVE session registry (InstanceOf keeps the reference, so a sub-agent the post hook spawns is visible to the manager; a plain Dict field pydantic would copy).
     sessions: InstanceOf[dict]
     # tool_use_id -> wall-clock start (s); pre records it, post pops it for elapsed_ms.
     tool_start_times: Dict[str, float] = {}

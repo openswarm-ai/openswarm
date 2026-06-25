@@ -32,8 +32,7 @@ class SessionControl(AgentManagerProtocol):
 
         session = self.sessions.get(session_id)
         if session:
-            # Set cancel event BEFORE cancelling the task so in-flight
-            # browser agent loops see it immediately
+            # Set cancel event BEFORE cancelling the task so in-flight browser agent loops see it immediately
             ev = self.cancel_events.get(session_id)
             if ev:
                 ev.set()
@@ -46,29 +45,20 @@ class SessionControl(AgentManagerProtocol):
             session.needs_fresh_session = True
             if not session.closed_at:
                 session.closed_at = datetime.now()
-            # Persist the partial reply NOW, before tearing down the SDK. The
-            # cancel handler also does this, but it sits behind the generator's
-            # teardown, which can take several seconds; doing it here means the
-            # streamed text stays put the instant Stop is pressed instead of
-            # blinking out and reappearing once teardown finishes.
+            # Persist the partial reply NOW, before tearing down the SDK. The cancel handler also does this, but it sits behind the generator's teardown, which can take several seconds; doing it here means the streamed text stays put the instant Stop is pressed instead of blinking out and reappearing once teardown finishes.
             await self.commit_partial_now(session)
             await ws_manager.send_to_session(session_id, "agent:status", {
                 "session_id": session_id,
                 "status": "stopped",
                 "session": session.model_dump(mode="json"),
             })
-            # Snapshot now: the cancelled task's finally skips the save (it's no
-            # longer the live task once we pop it below), so persist the partial
-            # here or it'd live only in memory until the next turn / shutdown.
+            # Snapshot now: the cancelled task's finally skips the save (it's no longer the live task once we pop it below), so persist the partial here or it'd live only in memory until the next turn / shutdown.
             try:
                 save_session(session_id, session.model_dump(mode="json"))
             except Exception:
                 pass
 
-        # Drop the task from the registry immediately so a follow-up message
-        # isn't rejected as "still running" while the cancelled task slowly
-        # tears down (that window was eating user messages). Drain it in the
-        # background; we've already captured the partial above.
+        # Drop the task from the registry immediately so a follow-up message isn't rejected as "still running" while the cancelled task slowly tears down (that window was eating user messages). Drain it in the background; we've already captured the partial above.
         task = self.tasks.pop(session_id, None)
         if task and not task.done():
             task.cancel()

@@ -8,8 +8,7 @@ from backend.config.json_store import read_json_or_none, atomic_write_json
 
 @typechecked
 def sessions_dir() -> str:
-    # Resolve live so test patches on either the paths module or the
-    # agent_manager facade re-export land on the same directory.
+    # Resolve live so test patches on either the paths module or the agent_manager facade re-export land on the same directory.
     from backend.apps.agents import agent_manager
     return agent_manager.SESSIONS_DIR
 

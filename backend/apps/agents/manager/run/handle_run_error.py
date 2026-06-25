@@ -31,25 +31,15 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
     logger.exception(f"Agent {session_id} error: {e}")
     session.status = "error"
 
-    # Long-context-required 429 fork: surface a friendly overflow event
-    # so the frontend can render an actionable card ("Switch to Chat
-    # mode" / "Start a fresh chat") instead of a raw error blob. The
-    # user can't recover by waiting, this is a tier-gate, not a rate
-    # limit, so the UX matters.
+    # Long-context-required 429 fork: surface a friendly overflow event so the frontend can render an actionable card ("Switch to Chat mode" / "Start a fresh chat") instead of a raw error blob. The user can't recover by waiting, this is a tier-gate, not a rate limit, so the UX matters.
     try:
         p_stderr_tail = "\n".join(p_stderr_buffer[-50:])
     except Exception:
         p_stderr_tail = ""
-    # If we already streamed a substantive assistant response this
-    # turn, the user got their answer; the error fired on a
-    # subsequent step (title gen, follow-up tool turn, etc.).
-    # Don't blast a "context exceeded" card over a completed reply.
+    # If we already streamed a substantive assistant response this turn, the user got their answer; the error fired on a subsequent step (title gen, follow-up tool turn, etc.). Don't blast a "context exceeded" card over a completed reply.
     p_streamed_substantive = bool(turn.stream_text_msg_id) and turn.current_turn_emitted
     if p_streamed_substantive and is_long_context_error(e, extra_text=p_stderr_tail):
-        # Mark the session completed (not error), keep the assistant
-        # reply visible, and skip the overflow card. The next user
-        # turn will properly hit the pre-send guard if the chat is
-        # still over cap.
+        # Mark the session completed (not error), keep the assistant reply visible, and skip the overflow card. The next user turn will properly hit the pre-send guard if the chat is still over cap.
         session.status = "completed"
         if turn.stream_text_msg_id:
             try:
@@ -105,11 +95,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         except Exception:
             logger.debug("submit_diagnostic for context_overflow failed", exc_info=True)
     elif is_transient_capacity_error(e, extra_text=p_stderr_tail):
-        # A genuine throttle (429/overload/capacity) that already burned
-        # the whole silent-backoff budget (the only way one reaches here).
-        # It's a limit, not a failure, so don't append a system-message
-        # card; emit a transient signal for the muted pill and mark the
-        # turn completed so it doesn't read as an error.
+        # A genuine throttle (429/overload/capacity) that already burned the whole silent-backoff budget (the only way one reaches here). It's a limit, not a failure, so don't append a system-message card; emit a transient signal for the muted pill and mark the turn completed so it doesn't read as an error.
         session.status = "completed"
         if turn.stream_text_msg_id:
             try:
@@ -124,8 +110,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "retry_after_s": parse_retry_after(e, p_stderr_tail),
         })
     elif is_free_trial_exhausted(e, extra_text=p_stderr_tail):
-        # Free runs spent. Flip back to own_key and show a friendly
-        # "connect a model" upsell instead of a raw 402.
+        # Free runs spent. Flip back to own_key and show a friendly "connect a model" upsell instead of a raw 402.
         try:
             from backend.apps.subscription.free_trial import clear_free_trial
             await clear_free_trial(load_settings())
@@ -147,11 +132,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "message": error_msg.model_dump(mode="json"),
         })
     elif is_out_of_tokens(e, extra_text=p_stderr_tail):
-        # The user's PROVIDER account is out of credits / over quota, distinct from
-        # OpenSwarm free-trial exhaustion above and from a 401 below ("credit balance
-        # too low", "insufficient_quota", "usage cap exceeded", OpenSwarm plan limit).
-        # Show a friendly card with the provider's reset hint when it gave one, instead
-        # of dropping to the raw-error blob in the else branch.
+        # The user's PROVIDER account is out of credits / over quota, distinct from OpenSwarm free-trial exhaustion above and from a 401 below ("credit balance too low", "insufficient_quota", "usage cap exceeded", OpenSwarm plan limit). Show a friendly card with the provider's reset hint when it gave one, instead of dropping to the raw-error blob in the else branch.
         p_reset_hint = extract_reset_hint(f"{e!s}\n{p_stderr_tail}")
         friendly_msg = (
             "Your model provider reports you're out of credits or over your usage "
@@ -172,19 +153,10 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "message": error_msg.model_dump(mode="json"),
         })
     elif is_auth_error(e, extra_text=p_stderr_tail):
-        # Three sub-cases the user can hit, with distinct fixes:
-        #   1. "No credentials for provider: claude", user picked a
-        #      -cc route but doesn't have Claude Pro/Max connected
-        #      via 9Router. Tell them to either connect Claude
-        #      Pro/Max OR pick a non--cc model.
-        #   2. OpenSwarm Pro 401, bearer expired. Reconnect.
-        #   3. Anthropic API key 401, wrong key. Re-enter.
+        # Three sub-cases the user can hit, with distinct fixes: 1. "No credentials for provider: claude", user picked a -cc route but doesn't have Claude Pro/Max connected via 9Router. Tell them to either connect Claude Pro/Max OR pick a non--cc model. 2. OpenSwarm Pro 401, bearer expired. Reconnect. 3. Anthropic API key 401, wrong key. Re-enter.
         p_model = (session.model or "").lower()
         p_combined = f"{e!s}\n{p_stderr_tail}".lower()
-        # Codex/OpenAI subscription tokens rotate every ~2-3
-        # minutes, the user sees the rotation window as a 401
-        # with "reset after 1m 59s" or similar. Don't ask them to
-        # reconnect; just tell them to wait it out and retry.
+        # Codex/OpenAI subscription tokens rotate every ~2-3 minutes, the user sees the rotation window as a 401 with "reset after 1m 59s" or similar. Don't ask them to reconnect; just tell them to wait it out and retry.
         if (
             ("codex/" in p_combined or "[codex/" in p_combined or p_model.startswith(("cx/", "gpt-")))
             and ("authentication token is expired" in p_combined or "authentication token has expired" in p_combined or "401" in p_combined)
@@ -238,9 +210,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "message": error_msg.model_dump(mode="json"),
         })
     elif is_unknown_model_error(e, extra_text=p_stderr_tail):
-        # Upstream rejected the model code itself (e.g. Codex 1211 on a
-        # ChatGPT plan that lacks our GPT ids). Track it; the friendly
-        # "add an API key / pick another model" card is rendered frontend-side.
+        # Upstream rejected the model code itself (e.g. Codex 1211 on a ChatGPT plan that lacks our GPT ids). Track it; the friendly "add an API key / pick another model" card is rendered frontend-side.
         try:
             from backend.apps.service.client import submit_diagnostic
             submit_diagnostic({

@@ -26,8 +26,7 @@ from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtoco
 
 
 class TurnRunner(AgentManagerProtocol):
-    # `options` is the SDK ClaudeAgentOptions, lazy-imported below (so mock-mode can import the
-    # manager without the SDK present), so it's left unannotated; everything else is typed.
+    # `options` is the SDK ClaudeAgentOptions, lazy-imported below (so mock-mode can import the manager without the SDK present), so it's left unannotated; everything else is typed.
     @typechecked
     async def run_turn_with_retry(self, session: AgentSession, session_id: str,
                                     prompt_content: Union[str, List], options,
@@ -44,11 +43,7 @@ class TurnRunner(AgentManagerProtocol):
             }
 
         async def p_run_streaming_turn():
-            # Per-turn thinking aggregation trackers (added for the
-            # "Thought for Ns · M tokens" persisted label). Without
-            # nonlocal, the int reassignments at AssistantMessage emission
-            # below shadow them as locals and the dict access at
-            # content_block_start crashes with UnboundLocalError.
+            # Per-turn thinking aggregation trackers (added for the "Thought for Ns · M tokens" persisted label). Without nonlocal, the int reassignments at AssistantMessage emission below shadow them as locals and the dict access at content_block_start crashes with UnboundLocalError.
             async for message in query(
                 prompt=prompt_stream(),
                 options=options,
@@ -57,19 +52,12 @@ class TurnRunner(AgentManagerProtocol):
                     turn.current_turn_emitted = False
                 else:
                     turn.current_turn_emitted = True
-                    # Stamp the turn's wall-clock start at the FIRST
-                    # non-Result message we see, this is when the
-                    # user actually started waiting. We use the same
-                    # timestamp as the basis for "Thought for Ns"
-                    # so the duration covers thinking + tool exec
-                    # + assistant text generation.
+                    # Stamp the turn's wall-clock start at the FIRST non-Result message we see, this is when the user actually started waiting. We use the same timestamp as the basis for "Thought for Ns" so the duration covers thinking + tool exec + assistant text generation.
                     if turn.started_ts is None:
                         turn.started_ts = time.time()
-                        # Snapshot cumulative tokens at turn start;
-                        # subtracted at emit time for per-turn deltas.
+                        # Snapshot cumulative tokens at turn start; subtracted at emit time for per-turn deltas.
                         try:
-                            # Baselines track the SAME fresh lane the pill reads,
-                            # so the per-turn delta is fresh-minus-fresh.
+                            # Baselines track the SAME fresh lane the pill reads, so the per-turn delta is fresh-minus-fresh.
                             if isinstance(session.tokens, dict):
                                 turn.baseline_session_in = int(session.tokens.get("input_fresh", 0) or 0)
                                 turn.baseline_session_out = int(session.tokens.get("output", 0) or 0)
@@ -88,15 +76,7 @@ class TurnRunner(AgentManagerProtocol):
                             turn.baseline_captured = True
                         except Exception:
                             pass
-                        # Pre-emit thinking pill for routes whose
-                        # translator strips reasoning content (cx/, gc/,
-                        # ag/, gemini/). Without this, the pill emits
-                        # at turn end and lands BELOW the assistant
-                        # text in session.messages, visually wrong.
-                        # Pre-emitting here gives the pill the same
-                        # ordering as Anthropic's natural streaming
-                        # path. Updates in place at turn end via the
-                        # stable thinking.msg_id dedupe.
+                        # Pre-emit thinking pill for routes whose translator strips reasoning content (cx/, gc/, ag/, gemini/). Without this, the pill emits at turn end and lands BELOW the assistant text in session.messages, visually wrong. Pre-emitting here gives the pill the same ordering as Anthropic's natural streaming path. Updates in place at turn end via the stable thinking.msg_id dedupe.
                         try:
                             p_route_strips_reasoning_pre = (
                                 isinstance(resolved_model, str)
@@ -137,10 +117,7 @@ class TurnRunner(AgentManagerProtocol):
                 await p_run_streaming_turn()
                 break
             except Exception as e:
-                # Make sure the consolidated-thinking ticker doesn't
-                # outlive the turn on error/retry. Without this, an
-                # exception mid-stream leaves a dangling task that
-                # keeps re-emitting against a stale msg id.
+                # Make sure the consolidated-thinking ticker doesn't outlive the turn on error/retry. Without this, an exception mid-stream leaves a dangling task that keeps re-emitting against a stale msg id.
                 if thinking.ticker_task is not None and not thinking.ticker_task.done():
                     thinking.ticker_task.cancel()
                     try:
@@ -159,14 +136,7 @@ class TurnRunner(AgentManagerProtocol):
                         f"mid_stream={mid_stream}); sleeping {wait}s before retry. "
                         f"exc={e!r} stderr_tail={stderr_snapshot[-400:]!r}"
                     )
-                    # Finalize any in-flight stream messages so the UI
-                    # doesn't leave them pinned as "still streaming" while
-                    # we wait and restart. On resume the CLI re-runs the
-                    # last turn from scratch (Anthropic doesn't persist
-                    # in-progress responses), so the partial assistant
-                    # text / tool call we emitted is now orphaned, cap
-                    # it with stream_end and start the fresh turn under a
-                    # new message id.
+                    # Finalize any in-flight stream messages so the UI doesn't leave them pinned as "still streaming" while we wait and restart. On resume the CLI re-runs the last turn from scratch (Anthropic doesn't persist in-progress responses), so the partial assistant text / tool call we emitted is now orphaned, cap it with stream_end and start the fresh turn under a new message id.
                     if turn.stream_text_msg_id:
                         await ws_manager.send_to_session(session_id, "agent:stream_end", {
                             "session_id": session_id,

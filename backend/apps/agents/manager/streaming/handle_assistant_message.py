@@ -37,23 +37,14 @@ async def handle_assistant_message(
     content_parts = []
     new_thinking_parts = []
     tool_uses = []
-    # Capture the latest Gemini thoughtSignature
-    # (and Anthropic's signature_delta if present)
-    # off any ThinkingBlock in this message. We
-    # store it on the turn's consolidated thinking
-    # message so it survives session.json
-    # serialization, and re-attach it on the next
-    # request so Google's continuity check passes.
+    # Capture the latest Gemini thoughtSignature (and Anthropic's signature_delta if present) off any ThinkingBlock in this message. We store it on the turn's consolidated thinking message so it survives session.json serialization, and re-attach it on the next request so Google's continuity check passes.
     new_thought_signature: Optional[str] = None
     for block in message.content:
         if isinstance(block, ThinkingBlock):
             thinking_text = getattr(block, "thinking", None) or getattr(block, "text", None) or ""
             if thinking_text:
                 new_thinking_parts.append(thinking_text)
-            # Try multiple field-name variants, SDK
-            # versions and 9Router translations have
-            # used `signature`, `thoughtSignature`,
-            # and `thought_signature` over time.
+            # Try multiple field-name variants, SDK versions and 9Router translations have used `signature`, `thoughtSignature`, and `thought_signature` over time.
             sig = (
                 getattr(block, "signature", None)
                 or getattr(block, "thoughtSignature", None)
@@ -70,43 +61,13 @@ async def handle_assistant_message(
                 "input": block.input,
             })
 
-    # Accumulate this AssistantMessage's contributions
-    # into the turn-level thinking pill. We re-emit
-    # the SAME message id each time so the frontend
-    # dedupes (addMessage replaces by id) and the
-    # bubble updates live as more thought / tools
-    # arrive. This is what gives us "Thought for 18s
-    # · 412 tokens · 3 tools used" reflecting the
-    # whole turn rather than just one think-step.
-    #
-    # NOTE: tool count is incremented in the
-    # content_block_start (block_type=="tool_use")
-    # branch above, NOT here. That path fires for
-    # both Anthropic and 9Router-translated
-    # providers; counting again here would double.
-    # If a provider somehow doesn't surface
-    # content_block_start for tool blocks but DOES
-    # surface them in the AssistantMessage envelope
-    # (defensive case), the max() in the
-    # consolidated emit will still pick up the
-    # higher count.
+    # Accumulate this AssistantMessage's contributions into the turn-level thinking pill. We re-emit the SAME message id each time so the frontend dedupes (addMessage replaces by id) and the bubble updates live as more thought / tools arrive. This is what gives us "Thought for 18s · 412 tokens · 3 tools used" reflecting the whole turn rather than just one think-step. NOTE: tool count is incremented in the content_block_start (block_type=="tool_use") branch above, NOT here. That path fires for both Anthropic and 9Router-translated providers; counting again here would double. If a provider somehow doesn't surface content_block_start for tool blocks but DOES surface them in the AssistantMessage envelope (defensive case), the max() in the consolidated emit will still pick up the higher count.
     if new_thinking_parts:
         thinking.text_parts.extend(new_thinking_parts)
-    # Latch the most recent thoughtSignature, Gemini
-    # only validates against the LATEST one in the
-    # conversation history, so older signatures from
-    # earlier think-steps in the same turn are
-    # superseded by newer ones.
+    # Latch the most recent thoughtSignature, Gemini only validates against the LATEST one in the conversation history, so older signatures from earlier think-steps in the same turn are superseded by newer ones.
     if new_thought_signature:
         thinking.thought_signature = new_thought_signature
-    # Accumulate this message's total output tokens
-    # (SDK populates `usage.output_tokens` with the
-    # full output for the inference: thinking text +
-    # visible text + tool-call JSON args). Summing
-    # across the turn's AssistantMessages gives us
-    # "all output the model produced this turn,"
-    # which is what users intuit when they see a
-    # token count.
+    # Accumulate this message's total output tokens (SDK populates `usage.output_tokens` with the full output for the inference: thinking text + visible text + tool-call JSON args). Summing across the turn's AssistantMessages gives us "all output the model produced this turn," which is what users intuit when they see a token count.
     try:
         msg_usage = getattr(message, "usage", None) or {}
         if isinstance(msg_usage, dict):
@@ -116,27 +77,16 @@ async def handle_assistant_message(
     except Exception:
         pass
 
-    # Re-emit the consolidated thinking message on
-    # every AssistantMessage (event-driven). The
-    # background ticker loop keeps it updating
-    # between events too, so the elapsed counter
-    # ticks even during tool execution / slow text
-    # generation gaps.
+    # Re-emit the consolidated thinking message on every AssistantMessage (event-driven). The background ticker loop keeps it updating between events too, so the elapsed counter ticks even during tool execution / slow text generation gaps.
     if thinking.text_parts:
         await thinking_mod.emit_consolidated_thinking(thinking, turn, session, session_id, sessions)
-        # Start the 1Hz ticker once we have a
-        # consolidated message in flight so the
-        # bubble keeps updating between SDK events.
+        # Start the 1Hz ticker once we have a consolidated message in flight so the bubble keeps updating between SDK events.
         if thinking.ticker_task is None or thinking.ticker_task.done():
             thinking.ticker_task = asyncio.create_task(thinking_mod.ticker_loop(thinking, turn, session, session_id, sessions))
 
     if content_parts:
         asst_text = "\n".join(content_parts)
-        # 9Router sometimes returns upstream 401s as
-        # the assistant reply (no SDK exception), so
-        # the catch-all auth handler never fires.
-        # Match the text pattern and surface a
-        # friendly system bubble instead.
+        # 9Router sometimes returns upstream 401s as the assistant reply (no SDK exception), so the catch-all auth handler never fires. Match the text pattern and surface a friendly system bubble instead.
         lower_text = asst_text.lower()
         looks_like_router_auth_error = (
             ("failed to authenticate" in lower_text and "401" in lower_text)

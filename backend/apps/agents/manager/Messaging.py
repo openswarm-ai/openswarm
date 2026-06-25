@@ -61,14 +61,7 @@ class Messaging(AgentManagerProtocol):
 
         session_changed = False
         if model and model != session.model:
-            # Cross-provider model switches force a session fork. The CLI's
-            # resume transcript stores Anthropic-format content blocks with
-            # Anthropic tool_use_ids; replaying them on a non-Anthropic
-            # provider via 9Router's claude→openai translator corrupts
-            # history silently (fixMissingToolResponses stubs missing tool
-            # responses with placeholder text). Forking starts a new CLI
-            # session so history is re-sent fresh in whichever format the
-            # new provider expects.
+            # Cross-provider model switches force a session fork. The CLI's resume transcript stores Anthropic-format content blocks with Anthropic tool_use_ids; replaying them on a non-Anthropic provider via 9Router's claude→openai translator corrupts history silently (fixMissingToolResponses stubs missing tool responses with placeholder text). Forking starts a new CLI session so history is re-sent fresh in whichever format the new provider expects.
             from backend.apps.agents.providers.registry import get_api_type as get_api_type_for_model
             if get_api_type_for_model(session.model) != get_api_type_for_model(model):
                 session.needs_fork = True
@@ -108,13 +101,7 @@ class Messaging(AgentManagerProtocol):
             "message": user_msg.model_dump(mode="json"),
         })
 
-        # Fire a background aux LLM call to generate a 3-6 word verb-phrase
-        # describing this turn ("Auditing the pull request", "Drafting your
-        # email"). The narrator pill swaps from its heuristic verb to this
-        # label as soon as it lands, usually ~500ms-1s into the turn,
-        # which is exactly when "Thinking…" starts feeling generic.
-        # Provider-agnostic via resolve_aux_model. Non-blocking; failure
-        # is silent and the heuristic stays.
+        # Fire a background aux LLM call to generate a 3-6 word verb-phrase describing this turn ("Auditing the pull request", "Drafting your email"). The narrator pill swaps from its heuristic verb to this label as soon as it lands, usually ~500ms-1s into the turn, which is exactly when "Thinking…" starts feeling generic. Provider-agnostic via resolve_aux_model. Non-blocking; failure is silent and the heuristic stays.
         if not hidden and prompt:
             try:
                 asyncio.create_task(
@@ -132,11 +119,7 @@ class Messaging(AgentManagerProtocol):
             "session": session.model_dump(mode="json"),
         })
 
-        # Browser fast path: a plainly browser-only first message skips the
-        # orchestrator LLM entirely (it was ~2/3 of the token bill on these
-        # tasks, spent deciding "delegate to a browser" and restating the
-        # outcome). Conservative gates + a cheap aux classifier; any miss or
-        # error falls through to the normal loop.
+        # Browser fast path: a plainly browser-only first message skips the orchestrator LLM entirely (it was ~2/3 of the token bill on these tasks, spent deciding "delegate to a browser" and restating the outcome). Conservative gates + a cheap aux classifier; any miss or error falls through to the normal loop.
         fast_verdict = "no"
         fast_brief = ""
         if not hidden:

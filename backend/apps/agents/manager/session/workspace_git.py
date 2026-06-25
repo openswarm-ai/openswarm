@@ -36,11 +36,7 @@ def ensure_cwd_git_repo(cwd: str, home: Optional[str] = None) -> None:
             return
 
         import subprocess as sp_git
-        # Case A: cwd is inside some git repo (possibly parent). Verify
-        # HEAD resolves. If the enclosing repo is broken (e.g. a stray
-        # `.git` in $HOME with no commits, which makes workspaces
-        # under ~/.openswarm/workspaces/ inherit a broken HEAD), we
-        # need to init a fresh repo AT cwd so it shadows the parent.
+        # Case A: cwd is inside some git repo (possibly parent). Verify HEAD resolves. If the enclosing repo is broken (e.g. a stray `.git` in $HOME with no commits, which makes workspaces under ~/.openswarm/workspaces/ inherit a broken HEAD), we need to init a fresh repo AT cwd so it shadows the parent.
         inside = sp_git.run(
             ["git", "rev-parse", "--is-inside-work-tree"],
             cwd=cwd,
@@ -66,12 +62,9 @@ def ensure_cwd_git_repo(cwd: str, home: Optional[str] = None) -> None:
                     stdout=sp_git.DEVNULL, stderr=sp_git.DEVNULL, timeout=10,
                 )
                 return
-            # .git is in a parent dir (broken home-dir repo, etc.).
-            # Init our own repo at cwd so it shadows the broken parent.
-            # Fall through to Case B.
+            # .git is in a parent dir (broken home-dir repo, etc.). Init our own repo at cwd so it shadows the broken parent. Fall through to Case B.
 
-        # Case B: cwd is not a git repo at all (or parent is broken):
-        # init + empty commit here.
+        # Case B: cwd is not a git repo at all (or parent is broken): init + empty commit here.
         sp_git.run(
             ["git", "init", "-q", "-b", "main"],
             cwd=cwd,

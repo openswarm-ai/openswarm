@@ -14,9 +14,7 @@ from typeguard import typechecked
 
 from backend.apps.tools_lib.tools_lib import load_trusted_sensitive_paths
 
-# Each entry: pattern -> (short label, plain-English risk). The label/risk is what the
-# approval card shows, so it has to read clearly to a non-developer who has never heard
-# of `~/.ssh/authorized_keys`.
+# Each entry: pattern -> (short label, plain-English risk). The label/risk is what the approval card shows, so it has to read clearly to a non-developer who has never heard of `~/.ssh/authorized_keys`.
 P_SENSITIVE_PATH_INFO: Dict[str, Tuple[str, str]] = {
     "*/.ssh": ("SSH folder (~/.ssh)", "Controls who can log in to your computer remotely."),
     "*/.ssh/*": ("SSH folder (~/.ssh)", "Controls who can log in to your computer remotely."),
@@ -45,9 +43,7 @@ P_SENSITIVE_PATH_PATTERNS: Tuple[str, ...] = tuple(P_SENSITIVE_PATH_INFO.keys())
 
 P_PATH_GATED_TOOLS: Tuple[str, ...] = ("Write", "Edit", "NotebookEdit")
 
-# OS-level scheduling across macOS/Linux/Windows. The agent must not install cron entries,
-# launchd plists, Windows scheduled tasks, or PowerShell ScheduledTask cmdlets behind the
-# user's back. Word-bounded so stray strings in echo etc. don't trip it.
+# OS-level scheduling across macOS/Linux/Windows. The agent must not install cron entries, launchd plists, Windows scheduled tasks, or PowerShell ScheduledTask cmdlets behind the user's back. Word-bounded so stray strings in echo etc. don't trip it.
 P_OS_SCHED_RE = re.compile(
     r"\b("
     r"crontab|launchctl|launchd|schtasks|systemd-run|"
@@ -58,10 +54,7 @@ P_OS_SCHED_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Catastrophic-path Bash gate. Bash is intentionally NOT in P_PATH_GATED_TOOLS (gating
-# every `echo ... > /tmp/foo` would interrupt routine work), but a single redirected write
-# to one of these can grant persistent attacker access or break the OS unrecoverably. The
-# trust list is shared with Write/Edit so one "Always allow" covers both surfaces.
+# Catastrophic-path Bash gate. Bash is intentionally NOT in P_PATH_GATED_TOOLS (gating every `echo ... > /tmp/foo` would interrupt routine work), but a single redirected write to one of these can grant persistent attacker access or break the OS unrecoverably. The trust list is shared with Write/Edit so one "Always allow" covers both surfaces.
 P_BASH_CATASTROPHIC_INFO: Dict[str, Tuple[str, str]] = {
     "*/.ssh/*": ("SSH folder (~/.ssh)", "Controls who can log in to your computer remotely."),
     "/etc/sudoers": ("Sudo permissions (/etc/sudoers)", "Controls which commands can run with admin privileges."),
@@ -73,14 +66,12 @@ P_BASH_CATASTROPHIC_INFO: Dict[str, Tuple[str, str]] = {
 }
 P_BASH_CATASTROPHIC_PATTERNS: Tuple[str, ...] = tuple(P_BASH_CATASTROPHIC_INFO.keys())
 
-# Pulls quoted strings AND bare path-like tokens out of a Bash command. Intentionally loose:
-# a false positive just means an extra approval prompt, never a missed gate.
+# Pulls quoted strings AND bare path-like tokens out of a Bash command. Intentionally loose: a false positive just means an extra approval prompt, never a missed gate.
 P_BASH_PATH_TOKEN_RE = re.compile(
     r"""(?P<quoted>"[^"]+"|'[^']+')|(?P<bare>[~/.][\w./~\-]*)"""
 )
 
-# Write operators we care about; presence alone isn't enough, a sensitive target in the
-# same command is also required. Covers shell redirection and tools with a destination flag.
+# Write operators we care about; presence alone isn't enough, a sensitive target in the same command is also required. Covers shell redirection and tools with a destination flag.
 P_BASH_WRITE_OP_RE = re.compile(
     r"(?:>>?|\btee\b|\bsed\s+-i\b|\bcp\b|\bmv\b|\bdd\b[^|]*\bof=|\binstall\b|\bchmod\b|\bchown\b|\brm\b|\btouch\b|\bmkdir\b|\bln\b)",
     re.IGNORECASE,
@@ -98,9 +89,7 @@ def match_sensitive_pattern(file_path: str) -> Optional[str]:
         norm = os.path.normpath(os.path.expanduser(file_path))
     except Exception:
         return None
-    # Forward-slash the path so patterns match on Windows too; os.path.normpath emits
-    # backslashes there and fnmatch treats '/' as literal. Without this the gate would
-    # silently no-op on Windows and a prompt-injected Write to ~/.ssh/... would pass.
+    # Forward-slash the path so patterns match on Windows too; os.path.normpath emits backslashes there and fnmatch treats '/' as literal. Without this the gate would silently no-op on Windows and a prompt-injected Write to ~/.ssh/... would pass.
     if os.sep != '/':
         norm = norm.replace(os.sep, '/')
     trusted = set(load_trusted_sensitive_paths())
@@ -160,10 +149,7 @@ def extract_target_path(tool_name: str, tool_input: object) -> str:
     return str(tool_input.get("file_path") or "")
 
 
-# Native-scheduler MCP tools that commit or mutate a recurring schedule. Always-on
-# MCP servers fall through to the always_allow default, so these would otherwise fire
-# silently; force them through ApprovalBar. The Cron* tools are Claude's own internal
-# scheduler, denied outright in favour of the visible/auditable native one.
+# Native-scheduler MCP tools that commit or mutate a recurring schedule. Always-on MCP servers fall through to the always_allow default, so these would otherwise fire silently; force them through ApprovalBar. The Cron* tools are Claude's own internal scheduler, denied outright in favour of the visible/auditable native one.
 p_SCHEDULE_GATED = {
     "mcp__openswarm-schedule__ScheduleWorkflow",
     "mcp__openswarm-schedule__UpdateScheduledWorkflow",
@@ -184,9 +170,7 @@ def maybe_override_policy(policy: str, tool_name: str, tool_input: object) -> Tu
         return "ask", None
     if tool_name in CLAUDE_INTERNAL_SCHEDULER_TOOLS:
         return "deny", None
-    # Committing or mutating a native recurring schedule is the in-app twin of the
-    # crontab gate above: real, user-visible, hard-to-undo, so it goes through
-    # ApprovalBar every time regardless of the always_allow default.
+    # Committing or mutating a native recurring schedule is the in-app twin of the crontab gate above: real, user-visible, hard-to-undo, so it goes through ApprovalBar every time regardless of the always_allow default.
     if tool_name in p_SCHEDULE_GATED:
         return "ask", None
     if tool_name == "Bash" and isinstance(tool_input, dict):

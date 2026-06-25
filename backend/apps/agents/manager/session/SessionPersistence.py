@@ -32,8 +32,7 @@ class SessionPersistence(AgentManagerProtocol):
                 data["status"] = "stopped"
                 dirty = True
                 logger.info(f"Marked stale session {sid} as stopped")
-            # Mode migration: Chat was merged into Ask. Rewrite mode="chat"
-            # so old sessions keep loading after the chat.json file is gone.
+            # Mode migration: Chat was merged into Ask. Rewrite mode="chat" so old sessions keep loading after the chat.json file is gone.
             if data.get("mode") == "chat":
                 data["mode"] = "ask"
                 dirty = True
@@ -50,9 +49,7 @@ class SessionPersistence(AgentManagerProtocol):
             for req in list(session.pending_approvals):
                 ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Server shutting down"})
             session.pending_approvals = []
-            # Tag this close as "shutdown" so the cloud can tell it apart
-            # from a user-initiated close. The desktop doesn't care; the
-            # tag rides along in the dump for whoever consumes it.
+            # Tag this close as "shutdown" so the cloud can tell it apart from a user-initiated close. The desktop doesn't care; the tag rides along in the dump for whoever consumes it.
             self.sync_session_close(session, close_reason="shutdown")
             doc_data = session.model_dump(mode="json")
             doc_data["search_text"] = self.build_search_text(session)

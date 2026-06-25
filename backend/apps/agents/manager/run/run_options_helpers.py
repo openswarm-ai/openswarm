@@ -13,8 +13,7 @@ from backend.apps.agents.manager.session.history_compaction import estimate_post
 logger = logging.getLogger(__name__)
 
 
-# `manager` is the AgentManager; it isn't annotated because typing it would import agent_manager
-# back into a module agent_manager already imports (a cycle). Same reason self is never annotated.
+# `manager` is the AgentManager; it isn't annotated because typing it would import agent_manager back into a module agent_manager already imports (a cycle). Same reason self is never annotated.
 @typechecked
 async def pre_send_context_guard(manager, session: AgentSession, session_id: str) -> None:
     try:
@@ -34,24 +33,15 @@ async def pre_send_context_guard(manager, session: AgentSession, session_id: str
     except Exception:
         logger.exception("compaction failed; proceeding without it")
 
-    # Pre-send hard guard (Phase 2). After compaction, if the
-    # session is still over context_soft_cap_pct of the window,
-    # LRU-trim oldest active_mcps. Stops the 429 from ever
-    # firing on predictable overflow paths.
+    # Pre-send hard guard (Phase 2). After compaction, if the session is still over context_soft_cap_pct of the window, LRU-trim oldest active_mcps. Stops the 429 from ever firing on predictable overflow paths.
     try:
-        # Use the most recent measurement (the prior turn's
-        # input_tokens) as the estimate. Conservative because the
-        # current turn's user prompt + any new history adds on top
-        #, but the first turn of a fresh session has tokens=0 so
-        # we only act once we've seen real numbers.
+        # Use the most recent measurement (the prior turn's input_tokens) as the estimate. Conservative because the current turn's user prompt + any new history adds on top, but the first turn of a fresh session has tokens=0 so we only act once we've seen real numbers.
         p_est_tokens = session.tokens.get("input", 0)
         p_hard_cap = int(session.context_window * session.context_soft_cap_pct)
         if p_est_tokens >= p_hard_cap:
             trimmed: List[str] = []
             while p_est_tokens >= p_hard_cap and len(session.active_mcps) > 1:
-                # Keep at least one MCP active so the model can
-                # finish whatever it was doing; trim from oldest
-                # which is FIFO order in the list.
+                # Keep at least one MCP active so the model can finish whatever it was doing; trim from oldest which is FIFO order in the list.
                 trimmed.append(f"mcp:{session.active_mcps.pop(0)}")
                 p_est_tokens -= 8_000  # rough per-MCP schema cost
             if trimmed:
@@ -61,11 +51,7 @@ async def pre_send_context_guard(manager, session: AgentSession, session_id: str
                     "trimmed": trimmed,
                     "estimate_after": p_est_tokens,
                 })
-                # Surface a visible system breadcrumb in the chat so
-                # the user (and the model on the next turn) know
-                # which MCPs got dropped. Without this, the model
-                # may keep trying to call a now-missing tool and
-                # the user has no idea why.
+                # Surface a visible system breadcrumb in the chat so the user (and the model on the next turn) know which MCPs got dropped. Without this, the model may keep trying to call a now-missing tool and the user has no idea why.
                 try:
                     p_names = ", ".join(t.replace("mcp:", "") for t in trimmed)
                     p_trim_msg = Message(
@@ -84,10 +70,7 @@ async def pre_send_context_guard(manager, session: AgentSession, session_id: str
                     })
                 except Exception:
                     logger.exception("failed to emit MCP-trimmed breadcrumb")
-                # Trimming changes mcp_servers / outputs context →
-                # rebuild options. The cheapest correct path is
-                # to flag for fork on next turn via needs_fork
-                # and let the existing fork path handle it.
+                # Trimming changes mcp_servers / outputs context → rebuild options. The cheapest correct path is to flag for fork on next turn via needs_fork and let the existing fork path handle it.
                 session.needs_fork = True
     except Exception:
         logger.exception("pre-send token guard failed; proceeding")
@@ -117,8 +100,7 @@ def register_web_mcp_server(mcp_servers: Dict, p_m: str) -> None:
     import sys
     import backend.apps.agents as p_agents_pkg
     web_mcp_server_path = os.path.join(os.path.dirname(p_agents_pkg.__file__), "web_mcp_server.py")
-    # Tell the MCP which primary the session is using so it
-    # can route to that provider's native search tool.
+    # Tell the MCP which primary the session is using so it can route to that provider's native search tool.
     if p_m.startswith(("gc/", "gemini/", "ag/")):
         p_primary_hint = "gemini"
     elif p_m.startswith("cx/"):

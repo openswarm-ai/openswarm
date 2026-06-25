@@ -20,11 +20,7 @@ def resolve_mode(mode_id: str, get_all_tool_names: Callable[[], List[str]]) -> T
     return get_all_tool_names(), None, None
 
 
-# A run of this many ToolSearch calls with no other tool between them is the
-# "looping on ToolSearch" wedge: the model hunts for a gated MCP server's tools,
-# which ToolSearch can never see, gets empty results, and retries. Two free
-# calls (a power user with many activated MCPs may legitimately ToolSearch to
-# load a deferred tool); redirect on the third.
+# A run of this many ToolSearch calls with no other tool between them is the "looping on ToolSearch" wedge: the model hunts for a gated MCP server's tools, which ToolSearch can never see, gets empty results, and retries. Two free calls (a power user with many activated MCPs may legitimately ToolSearch to load a deferred tool); redirect on the third.
 TOOLSEARCH_LOOP_THRESHOLD = 3
 
 
@@ -244,8 +240,7 @@ def build_mcp_registry_summary(allowed_tools: List[str], active_mcps: List[str],
         server_name = sanitize_server_name(tool.name)
         desc = (getattr(tool, "description", None) or "").strip()
         if not desc:
-            # Fall back to a generic blurb keyed on the tool name so the
-            # model still has *some* signal to MCPSearch against.
+            # Fall back to a generic blurb keyed on the tool name so the model still has *some* signal to MCPSearch against.
             desc = f"{tool.name} integration"
         line = f"- `{server_name}`, {desc}"
         if server_name in active_set:
@@ -256,10 +251,7 @@ def build_mcp_registry_summary(allowed_tools: List[str], active_mcps: List[str],
     if not active_lines and not available_lines:
         return None
 
-    # Static preamble first (kept byte-identical across users so it caches),
-    # then the per-session server list. Worked-example uses generic
-    # placeholders so a Pro Anthropic prompt-cache hit isn't broken by
-    # one user's connector names differing from another's.
+    # Static preamble first (kept byte-identical across users so it caches), then the per-session server list. Worked-example uses generic placeholders so a Pro Anthropic prompt-cache hit isn't broken by one user's connector names differing from another's.
     sections = ["<mcp_servers>"]
     sections.append(
         "MCP servers are gated: their tools are uncallable until the user "
@@ -314,12 +306,7 @@ def build_mcp_registry_summary(allowed_tools: List[str], active_mcps: List[str],
     return "\n".join(sections)
 
 
-# The agent runs on the claude_code preset (kept for its tool scaffolding, safety
-# rules, and the exclude_dynamic_sections prompt-cache win, which a raw-string
-# system prompt would all throw away). The preset opens with "You are Claude Code,
-# Anthropic's official CLI", which leaks into chat. This block is APPENDED after the
-# preset, so being later it overrides that identity. Edit AGENT_NAME / AGENT_BLURB
-# to rebrand. Kept short so it costs ~80 cached tokens, not a wall.
+# The agent runs on the claude_code preset (kept for its tool scaffolding, safety rules, and the exclude_dynamic_sections prompt-cache win, which a raw-string system prompt would all throw away). The preset opens with "You are Claude Code, Anthropic's official CLI", which leaks into chat. This block is APPENDED after the preset, so being later it overrides that identity. Edit AGENT_NAME / AGENT_BLURB to rebrand. Kept short so it costs ~80 cached tokens, not a wall.
 AGENT_NAME = "OpenSwarm"
 AGENT_IDENTITY = (
     f"# Who you are\n"
@@ -340,8 +327,7 @@ AGENT_IDENTITY = (
 
 @typechecked
 def compose_system_prompt(default_prompt: Optional[str], mode_prompt: Optional[str], session_prompt: Optional[str], browser_ctx: Optional[str] = None, mcp_registry_ctx: Optional[str] = None) -> Optional[str]:
-    # Identity always leads so it overrides the preset's Claude Code persona, even
-    # when the user has no custom default/mode/session prompt of their own.
+    # Identity always leads so it overrides the preset's Claude Code persona, even when the user has no custom default/mode/session prompt of their own.
     parts = [AGENT_IDENTITY] + [p for p in (default_prompt, mode_prompt, session_prompt, mcp_registry_ctx, browser_ctx) if p]
     return "\n\n".join(parts)
 

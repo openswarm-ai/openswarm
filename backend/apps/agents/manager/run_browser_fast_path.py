@@ -37,11 +37,7 @@ async def run_browser_fast_path(
     p_fp_path = verdict
     logger.info(f"[browser-fast-path] direct dispatch for session {session_id} ({verdict})")
     text = ""
-    # The fast-path skips the orchestrator, so the UI never gets the BrowserAgent
-    # tool-call that draws the "Browser Agent" bubble. Emit a synthetic tool_call/
-    # tool_result pair (same shape + mcp__ name the orchestrator uses) so the bubble
-    # shows here too. None until we actually dispatch a browser (a pure READ answer
-    # has no browser, so no bubble).
+    # The fast-path skips the orchestrator, so the UI never gets the BrowserAgent tool-call that draws the "Browser Agent" bubble. Emit a synthetic tool_call/ tool_result pair (same shape + mcp__ name the orchestrator uses) so the bubble shows here too. None until we actually dispatch a browser (a pure READ answer has no browser, so no bubble).
     p_browser_tool = "mcp__openswarm-browser-agent__CreateBrowserAgent"
     p_bubble_tid: Optional[str] = None
     try:
@@ -80,8 +76,7 @@ async def run_browser_fast_path(
             return (str(r.get("summary") or "")).strip()
 
         if not text:
-            # show the "Browser Agent" bubble during the dispatch (it renders as
-            # running, then completes when we emit the matching result below)
+            # show the "Browser Agent" bubble during the dispatch (it renders as running, then completes when we emit the matching result below)
             p_bubble_tid = uuid4().hex
             p_tc = Message(role="tool_call", branch_id=session.active_branch_id,
                            content={"id": p_bubble_tid, "tool": p_browser_tool, "input": {"task": prompt}})
@@ -91,8 +86,7 @@ async def run_browser_fast_path(
             first = await p_dispatch(browser_fast_path.compose_task(prompt, brief))
             text = p_summary(first)
             if browser_fast_path.dispatch_failed(first):
-                # Retry only transient failures; a dead dashboard fails the
-                # retry identically, so skip it and tell the user instead.
+                # Retry only transient failures; a dead dashboard fails the retry identically, so skip it and tell the user instead.
                 if not ws_manager.global_connections:
                     p_fp_path += "+no-dashboard"
                     text = browser_fast_path.NO_DASHBOARD_REPLY
@@ -100,9 +94,7 @@ async def run_browser_fast_path(
                     from backend.apps.agents.browser import browser_batch_replay
                     payload = browser_batch_replay.send_payload_from_log(first.get("action_log"), prompt)
                     if payload:
-                        # The dead attempt had already typed into a composer, so a
-                        # blind retry risks a double-send: a read-only probe's
-                        # verdict gates the retry in code, not prose.
+                        # The dead attempt had already typed into a composer, so a blind retry risks a double-send: a read-only probe's verdict gates the retry in code, not prose.
                         logger.info(f"[browser-fast-path] send-zone failure for {session_id}; payload probe before any retry")
                         probe_text = p_summary(await p_dispatch(browser_fast_path.send_probe_task(prompt, payload)))
                         pv = browser_fast_path.probe_verdict(probe_text)
@@ -131,8 +123,7 @@ async def run_browser_fast_path(
         f"[browser-fast-path] session {session_id} done: path={p_fp_path} "
         f"reply={len(text)}ch in {int((time.monotonic() - p_fp_t0) * 1000)}ms"
     )
-    # Close the synthetic bubble (always, even if the dispatch threw) so it never
-    # hangs as "running"; the bubble pairs this result with its call positionally.
+    # Close the synthetic bubble (always, even if the dispatch threw) so it never hangs as "running"; the bubble pairs this result with its call positionally.
     if p_bubble_tid:
         p_tr = Message(role="tool_result", branch_id=session.active_branch_id,
                        content={"tool_use_id": p_bubble_tid, "tool": p_browser_tool, "text": "done"})
