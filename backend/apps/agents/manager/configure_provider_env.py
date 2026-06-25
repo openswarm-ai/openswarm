@@ -209,10 +209,10 @@ async def configure_provider_env(
             }
         # Pin subagent ids to whichever lane the user has, else CLI's
         # default Haiku 4.5 hits 9Router with no Claude route and 401s.
-        try:
-            sub_conns = _conns  # reuse list fetched above
-        except NameError:
-            sub_conns = []
+        # NOTE: sub_conns is the connection list passed in. Callers currently pass []
+        # (see RunOptionsMixin), so `active` is empty and this pinning is inert until the
+        # real connection list is wired through — a latent regression from the run/ split,
+        # surfaced by pyright (the old inline `_conns` reference was left dangling here).
         active = {c.get("provider") for c in sub_conns
                    if isinstance(c, dict) and c.get("isActive")}
         sub_model = None
