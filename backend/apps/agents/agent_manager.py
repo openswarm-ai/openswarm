@@ -79,8 +79,7 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
 
         builtin_perms = load_builtin_permissions()
 
-        # Builtins default to always_allow (frictionless); path_gate still force-prompts on catastrophic patterns (rm -rf), OS-scheduling, and sensitive paths, so poisoned-email -> destructive-command is still caught. Flip Bash to "ask" in the UI for a prompt on every command.
-        # Bind turn + stderr first: build_agent_options can raise early (no provider) and the except hands both to handle_run_error.
+        # Builtins default to always_allow (frictionless); path_gate still force-prompts on catastrophic patterns (rm -rf), OS-scheduling, and sensitive paths, so poisoned-email -> destructive-command is still caught. Flip Bash to "ask" in the UI for a prompt on every command. Bind turn + stderr first: build_agent_options can raise early (no provider) and the except hands both to handle_run_error.
         turn = TurnState()
         p_stderr_buffer: List[str] = []
         try:

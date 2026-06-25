@@ -37,8 +37,7 @@ def test_proxy_auth_for_each_mode():
 def test_free_trial_resolves_to_a_bare_anthropic_id():
     s = AppSettings(connection_mode="free-trial", free_trial_token="ftk")
     mid = resolve_model_id_for_sdk("sonnet", s)
-    # The bug this fixes: without the free-trial branch this returns a cc/-prefixed
-    # id that 401s when no Claude subscription is connected.
+    # The bug this fixes: without the free-trial branch this returns a cc/-prefixed id that 401s when no Claude subscription is connected.
     assert "cc/" not in mid
     assert mid.startswith("claude-")
 
@@ -141,8 +140,7 @@ async def test_arm_with_no_sub_is_bounded_and_falls_through_to_arm(monkeypatch):
     import backend.apps.nine_router as nr
     monkeypatch.setattr(nr, "ensure_running", fake_ensure_running)
     monkeypatch.setattr(ft, "p_has_connected_subscription", never_sub)
-    # Short-circuit before the cloud mint so the test stays offline + deterministic;
-    # reaching this branch proves arm did NOT falsely conclude has_model.
+    # Short-circuit before the cloud mint so the test stays offline + deterministic; reaching this branch proves arm did NOT falsely conclude has_model.
     monkeypatch.setattr(ft, "p_fingerprint", lambda _s: None)
 
     s = AppSettings()

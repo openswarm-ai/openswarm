@@ -88,8 +88,7 @@ def test_live_stdio_settingswrite_refuses_live_key_clears_other(live_backend, re
     from backend.apps.agents.agent_manager import agent_manager
     from backend.apps.agents.core.models import AgentSession
 
-    # A real run on opus-4-8 in own_key mode: the Anthropic key powers it; an
-    # OpenAI key is also connected (the "other provider").
+    # A real run on opus-4-8 in own_key mode: the Anthropic key powers it; an OpenAI key is also connected (the "other provider").
     s = load_settings()
     s.connection_mode = "own_key"
     s.anthropic_api_key = "sk-ant-LIVE-do-not-clear"

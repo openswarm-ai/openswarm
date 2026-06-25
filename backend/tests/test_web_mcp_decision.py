@@ -32,8 +32,7 @@ def test_claude_pro_uses_native_path():
 
 
 def test_subscription_route_claude_non_pro_registers():
-    # opus-4-8 on a non-Pro own-key account: the aux haiku call 401s through 9Router, so a bare
-    # key isn't enough -> fall back to openswarm-web.
+    # opus-4-8 on a non-Pro own-key account: the aux haiku call 401s through 9Router, so a bare key isn't enough -> fall back to openswarm-web.
     assert p_call(router_model_id="cc/opus", api_type="anthropic",
                  connection_mode="own_key", anthropic_api_key="sk-ant-xxx") is True
 

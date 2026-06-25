@@ -19,9 +19,7 @@ import re
 import pytest
 
 
-# ===========================================================================
-# Mirror: parseMcpToolName.displayName (sentence-case rule)
-# ===========================================================================
+# =========================================================================== Mirror: parseMcpToolName.displayName (sentence-case rule) ===========================================================================
 
 def parse_mcp_tool_name_display(raw_name: str) -> str | None:
     """Mirror of frontend parseMcpToolName().displayName."""
@@ -63,9 +61,7 @@ def test_parse_mcp_tool_name_no_title_case():
     assert "A New Page" not in bad
 
 
-# ===========================================================================
-# Mirror: getResultSummary (glyph-free regression test)
-# ===========================================================================
+# =========================================================================== Mirror: getResultSummary (glyph-free regression test) ===========================================================================
 
 def get_result_summary_bash_success(stdout: str, exit_code: int = 0) -> str:
     """Mirror of getResultSummary for bash success case."""
@@ -103,9 +99,7 @@ def test_no_check_glyph_in_summaries():
         assert "✓" not in s and "✔" not in s and "✗" not in s and "✘" not in s
 
 
-# ===========================================================================
-# Mirror: bashCommandDetail extraction
-# ===========================================================================
+# =========================================================================== Mirror: bashCommandDetail extraction ===========================================================================
 
 def bash_command_detail(raw_cmd: str) -> str:
     """Mirror of frontend bashCommandDetail."""
@@ -181,9 +175,7 @@ def test_bash_detail_handles_empty():
     assert bash_command_detail("   ") == ""
 
 
-# ===========================================================================
-# Mirror: prettyPath (basename a path)
-# ===========================================================================
+# =========================================================================== Mirror: prettyPath (basename a path) ===========================================================================
 
 def pretty_path(p: str) -> str:
     if not p:
@@ -209,9 +201,7 @@ def test_pretty_path_empty():
     assert pretty_path("") == ""
 
 
-# ===========================================================================
-# Mirror: prettyUrl (host-only)
-# ===========================================================================
+# =========================================================================== Mirror: prettyUrl (host-only) ===========================================================================
 
 def pretty_url(u: str) -> str:
     if not u:
@@ -241,9 +231,7 @@ def test_pretty_url_empty():
     assert pretty_url("") == ""
 
 
-# ===========================================================================
-# Mirror: quoteQuery
-# ===========================================================================
+# =========================================================================== Mirror: quoteQuery ===========================================================================
 
 def quote_query(q: str, max_len: int = 60) -> str:
     if not q:
@@ -268,9 +256,7 @@ def test_quote_query_empty():
     assert quote_query("") == ""
 
 
-# ===========================================================================
-# Mirror: stable-seeded variant pick (djb2 hash → mod n)
-# ===========================================================================
+# =========================================================================== Mirror: stable-seeded variant pick (djb2 hash → mod n) ===========================================================================
 
 def stable_index(seed: str | None, n: int) -> int:
     """Mirror of frontend _stableIndex."""
@@ -324,9 +310,7 @@ def test_stable_index_n_one():
     assert stable_index("anything", 1) == 0
 
 
-# ===========================================================================
-# Mirror: bash verb extraction (the leading-binary lookup)
-# ===========================================================================
+# =========================================================================== Mirror: bash verb extraction (the leading-binary lookup) ===========================================================================
 
 BIN_VERB_MAP = {
     "rm": ("Deleting", "Deleted"),

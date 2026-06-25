@@ -30,10 +30,7 @@ from backend.apps.settings.redaction import is_secret_field, redact_settings
 
 CONNECTION_MODES = ["own_key", "openswarm-pro", "free-trial"]
 
-# Every credential field the settings PUT path already treats as secret. Kept
-# here as the contract the redactor must honor; if PUT's notion of "secret"
-# grows, this list should too, and the drift-seal test fails until the redactor
-# also covers it.
+# Every credential field the settings PUT path already treats as secret. Kept here as the contract the redactor must honor; if PUT's notion of "secret" grows, this list should too, and the drift-seal test fails until the redactor also covers it.
 KNOWN_SECRET_FIELDS = [
     "anthropic_api_key", "openai_api_key", "google_api_key", "openrouter_api_key",
     "claude_subscription_token", "openai_subscription_token", "gemini_subscription_token",
@@ -67,9 +64,7 @@ def p_settings_with(mode: str, keys: set[str], custom: bool = False) -> AppSetti
     return s
 
 
-# ---------------------------------------------------------------------------
-# The invariant: the live credential can never be blanked; others always can.
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- The invariant: the live credential can never be blanked; others always can. ---------------------------------------------------------------------------
 
 def test_live_api_key_can_never_be_blanked_but_others_can():
     key_subsets = [set(c) for r in range(5)
@@ -98,8 +93,7 @@ def test_live_api_key_can_never_be_blanked_but_others_can():
                             )
 
                     elif p.kind == "subscription":
-                        # The live credential isn't a settings field, so clearing
-                        # ANY api key is safe (it can't be the powering one).
+                        # The live credential isn't a settings field, so clearing ANY api key is safe (it can't be the powering one).
                         for field in ALL_API_KEY_FIELDS:
                             assert not write_would_suicide(field, "", p), (
                                 f"subscription run wrongly protected {field}: model={model} mode={mode}"
@@ -145,9 +139,7 @@ def test_disconnect_all_models_spec_scenario():
     assert not write_would_suicide("anthropic_api_key", "", p2)
 
 
-# ---------------------------------------------------------------------------
-# Drift seals.
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Drift seals. ---------------------------------------------------------------------------
 
 def test_every_shipped_model_lane_classifies():
     """A new model row that the resolver can't place would silently fall to the
@@ -174,9 +166,7 @@ def test_redactor_catches_every_known_secret():
 
 
 def test_redaction_fail_safe_catches_misnamed_secret_by_value():
-    # The name rule (_key/_token/_secret) would MISS a field named off-convention.
-    # The value-shape backstop must still redact it, so a leak needs BOTH a bad
-    # name AND a non-credential-shaped value, not just one.
+    # The name rule (_key/_token/_secret) would MISS a field named off-convention. The value-shape backstop must still redact it, so a leak needs BOTH a bad name AND a non-credential-shaped value, not just one.
     import json
     raw = {"theme": "dark", "weird_field": "sk-ant-api03-AAAABBBBCCCCDDDDEEEEFFFF"}
     red = redact_settings(raw)

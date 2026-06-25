@@ -65,8 +65,7 @@ def main() -> None:
     # C. The permission gate still binds: a denied server is never forwarded.
     ok &= prove("denied(t)  =>  !forwarded(t)", Implies(denied, Not(fwd)))
 
-    # Teeth: the buggy gate (activation check dropped) MUST be refutable, else
-    # the proof above would be vacuous.
+    # Teeth: the buggy gate (activation check dropped) MUST be refutable, else the proof above would be vacuous.
     print("Sanity-checking the proof has teeth (a buggy gate must be refuted):")
     bug = buggy_forwarded(installed, allowed, denied, active_is_none, active_t)
     s = Solver()

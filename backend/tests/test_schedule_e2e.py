@@ -38,8 +38,7 @@ def isolated_data_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(_storage, "_cache_loaded", False)
     monkeypatch.setattr(_storage, "_paused", False)
     monkeypatch.setattr(_audit, "AUDIT_DIR", str(tmp_path / "workflows" / "audit"))
-    # Module-level scheduler state survives across tests; reset it so
-    # each test gets a fresh _wake Event bound to its own event loop.
+    # Module-level scheduler state survives across tests; reset it so each test gets a fresh _wake Event bound to its own event loop.
     _scheduler._loop_task = None
     _scheduler._wake = asyncio.Event()
     _escalation._tasks.clear()
@@ -161,8 +160,7 @@ async def test_reconcile_captures_missed_fires(monkeypatch):
     startup captures the missed fires as pending MissedRuns and rolls
     next_run_at forward (no auto-firing)."""
     from backend.apps.workflows import storage, scheduler
-    # created_at must predate the missed window; occurrences_between never
-    # enumerates fires from before the workflow existed.
+    # created_at must predate the missed window; occurrences_between never enumerates fires from before the workflow existed.
     wf = _make_wf(created_at=datetime.now(timezone.utc) - timedelta(days=10))
     wf.next_run_at = datetime.now(timezone.utc) - timedelta(days=3)
     storage.save_workflow(wf)
@@ -340,8 +338,7 @@ async def test_kick_wakes_loop_before_timeout(monkeypatch):
         wf.next_run_at = datetime.now(timezone.utc) - timedelta(seconds=1)
         storage.save_workflow(wf)
         scheduler.kick()
-        # Without kick(), the loop would sleep up to 60s before checking
-        # the freshly-saved workflow. With kick, it should fire fast.
+        # Without kick(), the loop would sleep up to 60s before checking the freshly-saved workflow. With kick, it should fire fast.
         await asyncio.wait_for(fired.wait(), timeout=3.0)
     finally:
         await scheduler.stop()

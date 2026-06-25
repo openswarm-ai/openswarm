@@ -30,11 +30,7 @@ class MainApp:
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             async with AsyncExitStack() as stack:
-                # [perf] per-lifespan boot timing. debug() is a no-op in the
-                # packaged build, so without this the packaged backend.log has no
-                # per-SubApp markers and a cold-start stall can only be guessed at.
-                # One perf_counter + flushed print per app pins exactly which
-                # lifespan (or the cold first-touch I/O entering it) dominates.
+                # [perf] per-lifespan boot timing. debug() is a no-op in the packaged build, so without this the packaged backend.log has no per-SubApp markers and a cold-start stall can only be guessed at. One perf_counter + flushed print per app pins exactly which lifespan (or the cold first-touch I/O entering it) dominates.
                 p_boot_t0 = time.perf_counter()
                 for sub_app in sub_apps:
                     debug(sub_app.name)

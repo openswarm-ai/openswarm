@@ -90,24 +90,20 @@ def p_install(monkeypatch, primary, aux):
 
     async def p_send_browser_command(request_id, action, browser_id, params, tab_id=""):
         sent.append({"action": action, "params": params})
-        # smart-wait probes via evaluate; report 'settled' so BrowserWait returns
-        # fast in tests instead of riding the full cap.
+        # smart-wait probes via evaluate; report 'settled' so BrowserWait returns fast in tests instead of riding the full cap.
         if action == "evaluate" and "getEntriesByType('resource')" in str(params.get("expression", "")):
             expr = str(params.get("expression", ""))
             # a confirm/target probe embeds a non-empty `const spec="..."`; report it found
             found = "const spec=" in expr and 'const spec=""' not in expr
             return {"text": json.dumps({"ready": True, "quiet": 9999, "elems": 100, "found": found}), "url": DOC_URL}
-        # generic evaluate echoes its expression so distinct reads yield distinct
-        # results (lets a test exercise new-data-each-turn gather vs spinning)
+        # generic evaluate echoes its expression so distinct reads yield distinct results (lets a test exercise new-data-each-turn gather vs spinning)
         if action == "evaluate":
             return {"text": f"eval:{str(params.get('expression',''))[:120]}", "url": DOC_URL}
         if action == "list_interactives":
-            # a non-irreversible label on purpose: Send/Submit-named steps are
-            # refused by the replay send-gate, which has its own test below
+            # a non-irreversible label on purpose: Send/Submit-named steps are refused by the replay send-gate, which has its own test below
             return {"text": '1 interactive elements:\n[1]<button "Search">', "url": DOC_URL}
         if action == "click_index":
-            # frontend surfaces the clicked element's role/name for skill recording;
-            # index 99 is the test sentinel for the irreversible "Send" button
+            # frontend surfaces the clicked element's role/name for skill recording; index 99 is the test sentinel for the irreversible "Send" button
             p_nm = "Send" if params.get("index") == 99 else "Search"
             return {"text": f"Clicked index {params.get('index')}", "url": DOC_URL, "clickedRole": "button", "clickedName": p_nm}
         if action == "click_by_name":
@@ -153,8 +149,7 @@ def test_full_loop_goal_stagnation_adjudication_and_hint_write(monkeypatch):
     ))
     assert result["browser_id"] == "b1"
 
-    # 1) goal threaded into the loop's list_interactives call (a no-goal perception
-    #    front-load may precede it now, so assert SOME call carries the goal)
+    # 1) goal threaded into the loop's list_interactives call (a no-goal perception front-load may precede it now, so assert SOME call carries the goal)
     list_calls = [c for c in sent if c["action"] == "list_interactives"]
     assert any(c["params"].get("goal") == "click the Search button" for c in list_calls)
 
@@ -171,9 +166,7 @@ def test_full_loop_goal_stagnation_adjudication_and_hint_write(monkeypatch):
 
 
 def test_action_with_expect_is_confirmed(monkeypatch):
-    # An action that declares `expect` is CONFIRMED after it runs: the loop issues a
-    # target-aware confirm probe and feeds the next turn a tool_result stating the
-    # expected change is present (observed success, never assumed).
+    # An action that declares `expect` is CONFIRMED after it runs: the loop issues a target-aware confirm probe and feeds the next turn a tool_result stating the expected change is present (observed success, never assumed).
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         Resp([p_rp("click submit and confirm"),
@@ -194,8 +187,7 @@ def test_action_with_expect_is_confirmed(monkeypatch):
 
 
 def test_missing_report_progress_runs_the_action_and_reminds_not_rejects(monkeypatch):
-    # The model acts WITHOUT ReportProgress. Old behavior rejected the turn (wasted
-    # a round-trip); new behavior runs the action and folds in a one-line reminder.
+    # The model acts WITHOUT ReportProgress. Old behavior rejected the turn (wasted a round-trip); new behavior runs the action and folds in a one-line reminder.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         Resp([p_tu("BrowserClickIndex", index=2)]),  # NO ReportProgress this turn
@@ -215,9 +207,7 @@ def test_missing_report_progress_runs_the_action_and_reminds_not_rejects(monkeyp
 
 
 def test_confirmed_send_ends_the_run_instead_of_stalling(monkeypatch):
-    # After an irreversible send CONFIRMS, the model must not burn turns re-verifying.
-    # Here it sends (index 99 = "Send", expect confirms) then tries to stall forever
-    # with pure-perception turns; the loop must END within a turn or two, not spin.
+    # After an irreversible send CONFIRMS, the model must not burn turns re-verifying. Here it sends (index 99 = "Send", expect confirms) then tries to stall forever with pure-perception turns; the loop must END within a turn or two, not spin.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         Resp([p_rp("send the message"), p_tu("BrowserClickIndex", index=99, expect="Sent")]),
@@ -230,8 +220,7 @@ def test_confirmed_send_ends_the_run_instead_of_stalling(monkeypatch):
 
     result = asyncio.run(BA.run_browser_agent(task="text Tyler hello", browser_id="b1", model="sonnet"))
 
-    # the send ran and the run ended FAST (the stall guard stopped it), well before
-    # consuming all 8 scripted stall turns
+    # the send ran and the run ended FAST (the stall guard stopped it), well before consuming all 8 scripted stall turns
     assert any(c["action"] == "click_index" and c["params"].get("index") == 99 for c in sent)
     assert primary.turn <= 4, f"run stalled {primary.turn} turns after a confirmed send"
     # structured success + a clean human summary, never the internal tag
@@ -241,8 +230,7 @@ def test_confirmed_send_ends_the_run_instead_of_stalling(monkeypatch):
 
 
 def test_done_tool_delivers_a_clean_human_summary(monkeypatch):
-    # Canonical finish: the model calls Done(message); that message is the user's
-    # reply verbatim (no OUTCOME tag, no UI mechanics) and `done` is True.
+    # Canonical finish: the model calls Done(message); that message is the user's reply verbatim (no OUTCOME tag, no UI mechanics) and `done` is True.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         Resp([p_rp("open profile + send"), p_tu("BrowserClickIndex", index=5, expect="Sent")]),
@@ -257,8 +245,7 @@ def test_done_tool_delivers_a_clean_human_summary(monkeypatch):
 
 
 def test_done_tool_success_false_marks_not_done(monkeypatch):
-    # Done(success=false) is the honest "couldn't finish": done is False so the
-    # fast path knows to recover, and the message still reads like a person wrote it.
+    # Done(success=false) is the honest "couldn't finish": done is False so the fast path knows to recover, and the message still reads like a person wrote it.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         Resp([p_rp("look for thread"), p_tu("BrowserClickIndex", index=3)]),
@@ -272,9 +259,7 @@ def test_done_tool_success_false_marks_not_done(monkeypatch):
 
 
 def test_run_that_never_calls_done_is_not_a_clean_success(monkeypatch):
-    # A run that does real work but stops with plain text (never calls Done) is a
-    # half-finish, not a clean success: done must be False so the fast path recovers
-    # instead of shipping a silent stop (the 'Task completed.' that wasn't).
+    # A run that does real work but stops with plain text (never calls Done) is a half-finish, not a clean success: done must be False so the fast path recovers instead of shipping a silent stop (the 'Task completed.' that wasn't).
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         Resp([p_rp("click it"), p_tu("BrowserClickIndex", index=3)]),
@@ -287,11 +272,7 @@ def test_run_that_never_calls_done_is_not_a_clean_success(monkeypatch):
 
 
 def test_send_shortcut_does_not_arm_on_a_gather_task(monkeypatch):
-    # The Airbnb bug: a send-class click (here the index-99 sentinel = "Send", same
-    # as a cookie "Accept all" tripping the detector) on a FIND/gather task must NOT
-    # arm the send-completion shortcut, there is no send to confirm. If it did, the
-    # run cuts at the 2-turn post-send limit and leaks the canned "message went
-    # through" line. On a gather task it should run the full perception budget.
+    # The Airbnb bug: a send-class click (here the index-99 sentinel = "Send", same as a cookie "Accept all" tripping the detector) on a FIND/gather task must NOT arm the send-completion shortcut, there is no send to confirm. If it did, the run cuts at the 2-turn post-send limit and leaks the canned "message went through" line. On a gather task it should run the full perception budget.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         Resp([p_rp("dismiss the cookie banner"), p_tu("BrowserClickIndex", index=99)]),
@@ -301,16 +282,13 @@ def test_send_shortcut_does_not_arm_on_a_gather_task(monkeypatch):
     aux = FakeAux()
     p_install(monkeypatch, primary, aux)
     result = asyncio.run(BA.run_browser_agent(task="find me the top 10 repos", browser_id="b1", model="sonnet"))
-    # the send shortcut never armed: it ran past the 2-turn post-send cutoff toward
-    # the 6-turn perception budget, and no send-confirmation line leaked
+    # the send shortcut never armed: it ran past the 2-turn post-send cutoff toward the 6-turn perception budget, and no send-confirmation line leaked
     assert primary.turn >= 6, f"gather task cut short at turn {primary.turn} (send shortcut wrongly armed)"
     assert "went through" not in result["summary"]
 
 
 def test_browser_save_data_writes_a_file_and_returns_a_receipt(monkeypatch, tmp_path):
-    # BrowserSaveData should run the JS, write the result to a sandboxed file, and
-    # return a path receipt (NOT the data), so a big list lands in one step instead
-    # of a dozen reply-chunks. The mock's evaluate echoes its expression as the data.
+    # BrowserSaveData should run the JS, write the result to a sandboxed file, and return a path receipt (NOT the data), so a big list lands in one step instead of a dozen reply-chunks. The mock's evaluate echoes its expression as the data.
     import os as p_os
     monkeypatch.setattr(p_os.path, "expanduser", lambda p: str(tmp_path))  # fallback workspace -> tmp
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
@@ -325,10 +303,7 @@ def test_browser_save_data_writes_a_file_and_returns_a_receipt(monkeypatch, tmp_
     saved = list(tmp_path.glob("**/browser-data/rows.json"))
     assert saved, "BrowserSaveData did not write the file"
     assert result.get("done") is True
-    # The Airbnb regression: a page-by-page gather (a fresh Extract returning NEW
-    # listings every turn) must NOT trip the spin backstop, gathering is the work,
-    # not spinning. Here 9 straight Extract turns each return distinct data; the run
-    # should keep going (no early wrap-up nudge) and finish on the model's own Done.
+    # The Airbnb regression: a page-by-page gather (a fresh Extract returning NEW listings every turn) must NOT trip the spin backstop, gathering is the work, not spinning. Here 9 straight Extract turns each return distinct data; the run should keep going (no early wrap-up nudge) and finish on the model's own Done.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         # each turn reads a DIFFERENT page (distinct expression -> distinct result)
@@ -338,17 +313,14 @@ def test_browser_save_data_writes_a_file_and_returns_a_receipt(monkeypatch, tmp_
     aux = FakeAux()
     p_install(monkeypatch, primary, aux)
     result = asyncio.run(BA.run_browser_agent(task="find me all the airbnbs in sf", browser_id="b1", model="sonnet"))
-    # it ran the full gather (all 9 extract turns) and finished on its own Done,
-    # NOT cut short by a wrap-up nudge at turn 6
+    # it ran the full gather (all 9 extract turns) and finished on its own Done, NOT cut short by a wrap-up nudge at turn 6
     assert primary.turn >= 9, f"gather cut short at turn {primary.turn} (new-data reads wrongly counted as spinning)"
     assert "Gathered all pages" in result["summary"]
     assert result.get("done") is True
 
 
 def test_spin_backstop_nudges_a_clean_wrapup_instead_of_a_midthought(monkeypatch):
-    # The Airbnb mid-thought bug: a read-heavy run that trips the spin backstop must
-    # get ONE wrap-up nudge to summarize via Done, not be cut off mid-sentence. The
-    # final reply is the model's clean Done answer, and the nudge actually reached it.
+    # The Airbnb mid-thought bug: a read-heavy run that trips the spin backstop must get ONE wrap-up nudge to summarize via Done, not be cut off mid-sentence. The final reply is the model's clean Done answer, and the nudge actually reached it.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         Resp([p_rp("open the list"), p_tu("BrowserClickIndex", index=3)]),   # an action arms the backstop
@@ -365,12 +337,9 @@ def test_spin_backstop_nudges_a_clean_wrapup_instead_of_a_midthought(monkeypatch
 
 
 def test_early_perception_is_not_cut_short_before_any_action(monkeypatch):
-    # Orienting on a cold/slow page can take several look-only turns; the stall
-    # backstop must NOT fire before the agent has done anything (it only bounds a
-    # POST-action spin). Here 7 perception turns precede the finish; all must run.
+    # Orienting on a cold/slow page can take several look-only turns; the stall backstop must NOT fire before the agent has done anything (it only bounds a POST-action spin). Here 7 perception turns precede the finish; all must run.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
-    # varied read tools so the (separate) identical-repeat loop detector doesn't trip;
-    # this isolates the stall backstop, which must NOT fire pre-action
+    # varied read tools so the (separate) identical-repeat loop detector doesn't trip; this isolates the stall backstop, which must NOT fire pre-action
     p_reads = ["BrowserListInteractives", "BrowserGetText", "BrowserScreenshot"]
     primary = FakeLLM([
         *[Resp([p_rp("still orienting"), p_tu(p_reads[i % 3])]) for i in range(7)],
@@ -384,9 +353,7 @@ def test_early_perception_is_not_cut_short_before_any_action(monkeypatch):
 
 
 def test_aux_adjudication_fires_even_when_loop_detector_trips(monkeypatch):
-    # Repeated IDENTICAL failing clicks trip the exact-repeat loop detector AND
-    # reach stagnation exhaustion on the same turn. The aux escape hatch must
-    # still fire (it was previously suppressed by the `not is_loop` guard).
+    # Repeated IDENTICAL failing clicks trip the exact-repeat loop detector AND reach stagnation exhaustion on the same turn. The aux escape hatch must still fire (it was previously suppressed by the `not is_loop` guard).
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         Resp([p_rp("click submit"), p_tu("BrowserListInteractives")]),
@@ -408,8 +375,7 @@ def test_aux_adjudication_fires_even_when_loop_detector_trips(monkeypatch):
 
 
 def test_tier1_and_tier2_tools_drive_through_the_real_loop(monkeypatch):
-    # The agent can call the new tier-1 (WebMCP detect) and tier-2 (list/replay)
-    # tools through the actual run_browser_agent loop, and replay threads its url.
+    # The agent can call the new tier-1 (WebMCP detect) and tier-2 (list/replay) tools through the actual run_browser_agent loop, and replay threads its url.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([
         Resp([p_rp("check for a faster path"), p_tu("BrowserDetectWebMCP")]),
@@ -434,8 +400,7 @@ def test_tier1_and_tier2_tools_drive_through_the_real_loop(monkeypatch):
 
 
 def test_skill_is_recorded_then_replayed_with_zero_llm_calls(monkeypatch):
-    # Run 1: full LLM agent completes a click task -> records a skill.
-    # Run 2: same task/host -> replays via the no-LLM fast path (the speed win).
+    # Run 1: full LLM agent completes a click task -> records a skill. Run 2: same task/host -> replays via the no-LLM fast path (the speed win).
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
@@ -467,8 +432,7 @@ def test_skill_is_recorded_then_replayed_with_zero_llm_calls(monkeypatch):
 
 
 def test_replay_falls_back_to_full_agent_when_a_step_fails(monkeypatch):
-    # If the page changed and a replay step errors, we must abort replay and run
-    # the full LLM agent instead (never ghost-succeed on a stale skill).
+    # If the page changed and a replay step errors, we must abort replay and run the full LLM agent instead (never ghost-succeed on a stale skill).
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -498,10 +462,7 @@ def test_replay_falls_back_to_full_agent_when_a_step_fails(monkeypatch):
 
 
 def test_deferred_replay_fires_after_navigating_to_the_right_host(monkeypatch):
-    # The #30 fix: the orchestrator opens a fresh card on the WRONG host (google),
-    # so the dispatch-time replay check misses. Once the agent navigates to the
-    # host that DOES have a skill, and nothing has dirtied the page yet, the
-    # deferred re-check must switch to replay instead of grinding the LLM loop.
+    # The #30 fix: the orchestrator opens a fresh card on the WRONG host (google), so the dispatch-time replay check misses. Once the agent navigates to the host that DOES have a skill, and nothing has dirtied the page yet, the deferred re-check must switch to replay instead of grinding the LLM loop.
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -520,8 +481,7 @@ def test_deferred_replay_fires_after_navigating_to_the_right_host(monkeypatch):
     orig = BA.ws_manager.send_browser_command
 
     async def p_cmd(request_id, action, browser_id, params, tab_id=""):
-        # perception + reads report GOOGLE (so the DISPATCH replay misses there),
-        # navigation + clicks report the doc host (so the re-check matches)
+        # perception + reads report GOOGLE (so the DISPATCH replay misses there), navigation + clicks report the doc host (so the re-check matches)
         if action in ("list_interactives", "get_text"):
             return {"text": "stuff", "url": GOOGLE}
         return await orig(request_id, action, browser_id, params, tab_id)
@@ -539,9 +499,7 @@ def test_deferred_replay_fires_after_navigating_to_the_right_host(monkeypatch):
 
 
 def test_deferred_replay_does_not_fire_after_the_page_was_dirtied(monkeypatch):
-    # Safety guard: if the agent already typed/clicked before reaching the right
-    # host, replaying from here is NOT equivalent to a clean dispatch (the page
-    # state is dirty), so the re-check must stay disabled and the LLM finishes.
+    # Safety guard: if the agent already typed/clicked before reaching the right host, replaying from here is NOT equivalent to a clean dispatch (the page state is dirty), so the re-check must stay disabled and the LLM finishes.
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -575,11 +533,7 @@ def test_deferred_replay_does_not_fire_after_the_page_was_dirtied(monkeypatch):
 
 
 def test_replay_resolves_host_from_live_page_when_no_initial_url(monkeypatch):
-    # The real-flow fix: the parent often delegates to an EXISTING browser card
-    # with no initial_url (and the backend doesn't track where that card
-    # navigated). The agent must perceive the live page, learn its host, and STILL
-    # replay a previously-learned skill. Without this, replay was dead in the real
-    # orchestrated flow (records skills it can never look up again).
+    # The real-flow fix: the parent often delegates to an EXISTING browser card with no initial_url (and the backend doesn't track where that card navigated). The agent must perceive the live page, learn its host, and STILL replay a previously-learned skill. Without this, replay was dead in the real orchestrated flow (records skills it can never look up again).
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -601,10 +555,7 @@ def test_replay_resolves_host_from_live_page_when_no_initial_url(monkeypatch):
 
 
 def test_skill_keys_on_parent_user_message_so_reformulations_share_a_skill(monkeypatch):
-    # The measured real-flow blocker: the orchestrator reformulates the same user
-    # request differently each run ("click the search box" vs "find the search
-    # box"), so exact-key replay never hits. Keying on the parent's STABLE user
-    # message instead lets two different reformulations share one skill and replay.
+    # The measured real-flow blocker: the orchestrator reformulates the same user request differently each run ("click the search box" vs "find the search box"), so exact-key replay never hits. Keying on the parent's STABLE user message instead lets two different reformulations share one skill and replay.
     import backend.apps.agents.browser.browser_skills as SK
     import backend.apps.agents.agent_manager as am_mod
     SK.clear()
@@ -618,8 +569,7 @@ def test_skill_keys_on_parent_user_message_so_reformulations_share_a_skill(monke
         messages = [p_Msg("user", 'search Wikipedia for "Ada Lovelace"')]
     monkeypatch.setattr(am_mod.agent_manager, "get_session", lambda sid: p_Parent(), raising=False)
 
-    # Run 1: ONE reformulation of the request -> learns a skill keyed on the
-    # parent's user message (not this delegated wording).
+    # Run 1: ONE reformulation of the request -> learns a skill keyed on the parent's user message (not this delegated wording).
     primary1 = FakeLLM([
         Resp([p_rp("click submit"), p_tu("BrowserListInteractives")]),
         Resp([p_rp("click it"), p_tu("BrowserClickIndex", index=1)]),
@@ -633,8 +583,7 @@ def test_skill_keys_on_parent_user_message_so_reformulations_share_a_skill(monke
     assert SK.find_skill("docs.google.com", 'search Wikipedia for "Ada Lovelace"') is not None, \
         "skill must be keyed on the stable parent message, not the delegated reformulation"
 
-    # Run 2: a DIFFERENT reformulation, same parent intent -> must REPLAY (the
-    # exact thing that failed live, now fixed).
+    # Run 2: a DIFFERENT reformulation, same parent intent -> must REPLAY (the exact thing that failed live, now fixed).
     primary2 = FakeLLM([Resp([Blk("text", "should not be needed")], stop_reason="end_turn")])
     sent = p_install(monkeypatch, primary2, FakeAux())
     r = asyncio.run(BA.run_browser_agent(
@@ -646,8 +595,7 @@ def test_skill_keys_on_parent_user_message_so_reformulations_share_a_skill(monke
 
 
 def test_skill_key_falls_back_to_delegated_task_on_multi_quote_message(monkeypatch):
-    # Guard against same-host collisions: a user message with several quoted
-    # values could spawn several same-host sub-tasks that must NOT share one key.
+    # Guard against same-host collisions: a user message with several quoted values could spawn several same-host sub-tasks that must NOT share one key.
     import backend.apps.agents.browser.browser_skills as SK
     import backend.apps.agents.agent_manager as am_mod
     SK.clear()
@@ -676,8 +624,7 @@ def test_skill_key_falls_back_to_delegated_task_on_multi_quote_message(monkeypat
 
 
 def test_replay_success_promotes_skill_to_trusted_through_the_loop(monkeypatch):
-    # The verify gate, end to end: run 1 learns a PROBATION skill; run 2 replays
-    # it successfully, which must PROMOTE it to trusted (proven by a real replay).
+    # The verify gate, end to end: run 1 learns a PROBATION skill; run 2 replays it successfully, which must PROMOTE it to trusted (proven by a real replay).
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
@@ -700,9 +647,7 @@ def test_replay_success_promotes_skill_to_trusted_through_the_loop(monkeypatch):
 
 
 def test_skill_with_send_step_never_replays_silently(monkeypatch):
-    # The audit finding: replay bypasses act-and-confirm and the per-tool gate,
-    # so a recorded Send/Submit must NOT auto-replay; the live agent (which
-    # confirms before anything outward) runs instead, and trust is untouched.
+    # The audit finding: replay bypasses act-and-confirm and the per-tool gate, so a recorded Send/Submit must NOT auto-replay; the live agent (which confirms before anything outward) runs instead, and trust is untouched.
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -723,9 +668,7 @@ def test_skill_with_send_step_never_replays_silently(monkeypatch):
 
 
 def test_unproven_skill_that_fails_is_quarantined_and_never_retried(monkeypatch):
-    # The anti-ghost guard, end to end: an unproven skill that fails a replay must
-    # be quarantined so the NEXT run does not even attempt the (known-bad) replay,
-    # it goes straight to the pure-LLM baseline. A silent re-fail would be a ghost.
+    # The anti-ghost guard, end to end: an unproven skill that fails a replay must be quarantined so the NEXT run does not even attempt the (known-bad) replay, it goes straight to the pure-LLM baseline. A silent re-fail would be a ghost.
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -763,10 +706,7 @@ def test_unproven_skill_that_fails_is_quarantined_and_never_retried(monkeypatch)
 
 
 def test_informational_run_records_no_skill_to_avoid_thin_ghost(monkeypatch):
-    # The 'find me 10 X' guard: a run that did real productive actions AND
-    # succeeded, but whose deliverable is gathered/judged content (a list), must
-    # NOT record a replayable skill, because replay would redo the clicks and
-    # falsely claim the whole task done without regenerating the judged list.
+    # The 'find me 10 X' guard: a run that did real productive actions AND succeeded, but whose deliverable is gathered/judged content (a list), must NOT record a replayable skill, because replay would redo the clicks and falsely claim the whole task done without regenerating the judged list.
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -786,10 +726,7 @@ def test_informational_run_records_no_skill_to_avoid_thin_ghost(monkeypatch):
 
 
 def test_read_answered_from_frontloaded_perception_is_not_a_ghost(monkeypatch):
-    # REGRESSION: front-loading reads perception into turn 1; if the agent answers
-    # a read task straight from that (zero further tools), the honesty gate must
-    # NOT flag it as 'declared done without taking a single action'. The front-
-    # loaded reads are real and seed action_log. (This bug caused retry loops.)
+    # REGRESSION: front-loading reads perception into turn 1; if the agent answers a read task straight from that (zero further tools), the honesty gate must NOT flag it as 'declared done without taking a single action'. The front- loaded reads are real and seed action_log. (This bug caused retry loops.)
     BH.BROWSER_HISTORY.clear()
     primary = FakeLLM([
         # the model answers immediately from the front-loaded page text, no tools
@@ -814,9 +751,7 @@ def test_read_answered_from_frontloaded_perception_is_not_a_ghost(monkeypatch):
 
 
 def test_ghost_completion_is_reported_as_error_not_completed(monkeypatch):
-    # The measured ghost, end to end: the model does a bunch of failing clicks
-    # then declares done. The honesty gate must report 'error' (not 'completed')
-    # and must NOT record a skill from a run that accomplished nothing.
+    # The measured ghost, end to end: the model does a bunch of failing clicks then declares done. The honesty gate must report 'error' (not 'completed') and must NOT record a skill from a run that accomplished nothing.
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -849,9 +784,7 @@ def test_ghost_completion_is_reported_as_error_not_completed(monkeypatch):
 
 
 def test_dead_browser_card_aborts_fast_without_spinning(monkeypatch):
-    # The measured waste: a sub-agent dispatched to a released card retried the
-    # dead webview for many turns. Now a gone card must abort fast (a couple of
-    # turns, not the whole budget) and report the precise reason.
+    # The measured waste: a sub-agent dispatched to a released card retried the dead webview for many turns. Now a gone card must abort fast (a couple of turns, not the whole budget) and report the precise reason.
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -884,10 +817,7 @@ def test_dead_browser_card_aborts_fast_without_spinning(monkeypatch):
 
 
 def test_hung_browser_card_aborts_fast_not_a_20_minute_loop(monkeypatch):
-    # THE regression from the user's 20-min LinkedIn freeze: a HUNG tab returns
-    # "Browser command timed out" on every command (not "card not found"), so the
-    # gone-detector never tripped and the agent spun for minutes. Now a hung card
-    # feeds the same fast-fail streak and aborts in a couple of turns.
+    # THE regression from the user's 20-min LinkedIn freeze: a HUNG tab returns "Browser command timed out" on every command (not "card not found"), so the gone-detector never tripped and the agent spun for minutes. Now a hung card feeds the same fast-fail streak and aborts in a couple of turns.
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -918,9 +848,7 @@ def test_hung_browser_card_aborts_fast_not_a_20_minute_loop(monkeypatch):
 
 
 def test_perception_is_frontloaded_into_first_turn(monkeypatch):
-    # With a known start URL, the agent should prefetch the element list + page
-    # text and put them in the FIRST user message, so the model can act on turn 1
-    # instead of spending early turns orienting.
+    # With a known start URL, the agent should prefetch the element list + page text and put them in the FIRST user message, so the model can act on turn 1 instead of spending early turns orienting.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([Resp([Blk("text", "done")], stop_reason="end_turn")])
     aux = FakeAux()
@@ -936,9 +864,7 @@ def test_perception_is_frontloaded_into_first_turn(monkeypatch):
 
 
 def test_prompt_caching_markers_present(monkeypatch):
-    # The fixed system+tools prefix must carry cache_control so it's cached
-    # across turns (the first-run speed/cost win). Without the marker the
-    # ~4k-token prefix is reprocessed every turn.
+    # The fixed system+tools prefix must carry cache_control so it's cached across turns (the first-run speed/cost win). Without the marker the ~4k-token prefix is reprocessed every turn.
     BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
     primary = FakeLLM([Resp([Blk("text", "done")], stop_reason="end_turn")])
     aux = FakeAux()
@@ -954,8 +880,7 @@ def test_prompt_caching_markers_present(monkeypatch):
 
 
 def test_agent_can_list_and_deprecate_its_own_skills(monkeypatch):
-    # The agent calls BrowserListSkills + BrowserDeprecateSkill inline (backend-
-    # handled, never sent to the webview), giving it agency over its own memory.
+    # The agent calls BrowserListSkills + BrowserDeprecateSkill inline (backend- handled, never sent to the webview), giving it agency over its own memory.
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear()
     BH.BROWSER_HISTORY.clear()
@@ -984,10 +909,7 @@ def test_agent_can_list_and_deprecate_its_own_skills(monkeypatch):
 
 
 def test_playbook_distills_on_success_survives_restart_and_seeds_next_run(monkeypatch):
-    # The tier-2 memory, end to end: a substantive judgment run distills a durable
-    # strategy playbook (one aux call), it persists across a restart, and the NEXT
-    # run on the same host gets it seeded into the system prompt, so the model
-    # skips re-discovery. This is what makes LinkedIn-style tasks wiser over time.
+    # The tier-2 memory, end to end: a substantive judgment run distills a durable strategy playbook (one aux call), it persists across a restart, and the NEXT run on the same host gets it seeded into the system prompt, so the model skips re-discovery. This is what makes LinkedIn-style tasks wiser over time.
     import backend.apps.agents.browser.browser_playbook as PB
     import backend.apps.agents.browser.browser_skills as SK
     import json as p_json
@@ -1040,9 +962,7 @@ def test_playbook_distills_on_success_survives_restart_and_seeds_next_run(monkey
 
 
 def test_ambient_memory_signals_fire_calmly(monkeypatch):
-    # Perceived value, zero clicks: the user should SEE the agent (a) pick up what
-    # it learned when strategy is seeded, and (b) note new learning at the end,
-    # both as calm one-liners in the existing stream, only when real.
+    # Perceived value, zero clicks: the user should SEE the agent (a) pick up what it learned when strategy is seeded, and (b) note new learning at the end, both as calm one-liners in the existing stream, only when real.
     import backend.apps.agents.browser.browser_playbook as PB
     import backend.apps.agents.browser.browser_skills as SK
     import json as p_json
@@ -1090,8 +1010,7 @@ def test_ambient_memory_signals_fire_calmly(monkeypatch):
 
 
 def test_playbook_not_learned_from_a_ghost_completion(monkeypatch):
-    # Fail-safe: a dishonest 'completion' (all actions errored) must NOT distill a
-    # playbook, garbage strategy from a failed run would mislead future runs.
+    # Fail-safe: a dishonest 'completion' (all actions errored) must NOT distill a playbook, garbage strategy from a failed run would mislead future runs.
     import backend.apps.agents.browser.browser_playbook as PB
     import backend.apps.agents.browser.browser_skills as SK
     SK.clear(); PB.clear(wipe_disk=True)
@@ -1118,14 +1037,12 @@ def test_playbook_not_learned_from_a_ghost_completion(monkeypatch):
     asyncio.run(BA.run_browser_agent(
         task="do the thing", browser_id="b1", model="sonnet", initial_url=DOC_URL,
     ))
-    # the only aux call allowed here is the stuck-adjudication; the playbook distill
-    # must NOT have stored anything for a dishonest run
+    # the only aux call allowed here is the stuck-adjudication; the playbook distill must NOT have stored anything for a dishonest run
     assert PB.get_playbook("docs.google.com") == []
 
 
 def test_batch_replay_runs_a_read_loop_for_all_values(monkeypatch):
-    # The win: do one item the slow way, then BrowserRepeatFlow runs the same
-    # read flow for the rest at machine speed, one tool turn, no screenshots.
+    # The win: do one item the slow way, then BrowserRepeatFlow runs the same read flow for the rest at machine speed, one tool turn, no screenshots.
     BH.BROWSER_HISTORY.clear()
     steps = [{"action": "navigate", "url": "https://docs.google.com/in/{{value}}"},
              {"action": "evaluate", "expression": "read('{{value}}')"}]
@@ -1156,9 +1073,7 @@ def test_batch_replay_runs_a_read_loop_for_all_values(monkeypatch):
 
 
 def test_batch_replay_is_ghost_proof_when_an_item_does_not_match(monkeypatch):
-    # THE anti-ghost test: per-item pages vary. Value 'grace' errors mid-flow ->
-    # it must be reported as needs-manual, the others still succeed, and the tally
-    # is HONEST ('2 of 3'), never a silent 'did them all'.
+    # THE anti-ghost test: per-item pages vary. Value 'grace' errors mid-flow -> it must be reported as needs-manual, the others still succeed, and the tally is HONEST ('2 of 3'), never a silent 'did them all'.
     BH.BROWSER_HISTORY.clear()
     steps = [{"action": "navigate", "url": "https://docs.google.com/in/{{value}}"},
              {"action": "evaluate", "expression": "read('{{value}}')"}]
@@ -1189,8 +1104,7 @@ def test_batch_replay_is_ghost_proof_when_an_item_does_not_match(monkeypatch):
 
 
 def test_batch_replay_refuses_a_send_loop_and_executes_nothing(monkeypatch):
-    # The send gate: a flow that clicks 'Send message' must be REFUSED outright,
-    # nothing is clicked, so we can never auto-message N people.
+    # The send gate: a flow that clicks 'Send message' must be REFUSED outright, nothing is clicked, so we can never auto-message N people.
     BH.BROWSER_HISTORY.clear()
     steps = [{"action": "navigate", "url": "https://docs.google.com/in/{{value}}"},
              {"action": "click", "role": "button", "name": "Message"},
@@ -1210,8 +1124,7 @@ def test_batch_replay_refuses_a_send_loop_and_executes_nothing(monkeypatch):
 
 
 def test_batch_replay_uses_the_fast_network_route_per_value(monkeypatch):
-    # Folds in the audit finding: a read-loop can hit a captured API endpoint
-    # (replay_route) per value instead of clicking the UI, the fast tier.
+    # Folds in the audit finding: a read-loop can hit a captured API endpoint (replay_route) per value instead of clicking the UI, the fast tier.
     BH.BROWSER_HISTORY.clear()
     steps = [{"action": "replay_route", "url": "https://docs.google.com/api/p?u={{value}}"}]
     primary = FakeLLM([
@@ -1225,9 +1138,7 @@ def test_batch_replay_uses_the_fast_network_route_per_value(monkeypatch):
 
 
 def test_captured_routes_are_surfaced_once_per_host(monkeypatch):
-    # Drives the dead network tier: when a READ shows safe GET routes were captured
-    # (sampled on get_text, after the SPA's XHRs fired, not on navigate), the agent
-    # gets a ONE-TIME nudge per host toward BrowserReplayRoute, not on every read.
+    # Drives the dead network tier: when a READ shows safe GET routes were captured (sampled on get_text, after the SPA's XHRs fired, not on navigate), the agent gets a ONE-TIME nudge per host toward BrowserReplayRoute, not on every read.
     BH.BROWSER_HISTORY.clear()
     primary = FakeLLM([
         Resp([p_rp("read 1"), p_tu("BrowserEvaluate", expression="document.title")]),
@@ -1244,15 +1155,13 @@ def test_captured_routes_are_surfaced_once_per_host(monkeypatch):
     monkeypatch.setattr(BA.ws_manager, "send_browser_command", p_with_routes, raising=False)
 
     asyncio.run(BA.run_browser_agent(task="browse", browser_id="b1", model="sonnet", initial_url=DOC_URL))
-    # messages are cumulative across calls, so count within ONE call's full
-    # conversation: the nudge must appear exactly once for docs.google.com (not per read)
+    # messages are cumulative across calls, so count within ONE call's full conversation: the nudge must appear exactly once for docs.google.com (not per read)
     final_convo = json.dumps(primary.calls[-1]["messages"])
     assert final_convo.count("API endpoint(s) were captured") == 1
 
 
 def test_browser_wait_routes_through_smart_wait_and_returns_early(monkeypatch):
-    # BrowserWait must no longer be a blind sleep: it probes the page (evaluate)
-    # and returns as soon as it's settled, well under the requested cap.
+    # BrowserWait must no longer be a blind sleep: it probes the page (evaluate) and returns as soon as it's settled, well under the requested cap.
     BH.BROWSER_HISTORY.clear()
     primary = FakeLLM([
         Resp([p_rp("let it settle"), p_tu("BrowserWait", milliseconds=8000)]),
@@ -1293,9 +1202,7 @@ def test_prior_domain_hint_is_seeded_into_system_prompt(monkeypatch):
 
 
 def test_find_reusable_card_reuses_own_then_orphan_never_user(monkeypatch):
-    # Concurrent same-site webviews wedge each other, so a re-dispatch must
-    # reuse the parent's own (or an orphaned) spawned card instead of stacking
-    # another. User-created cards (no spawned_by) are never grabbed implicitly.
+    # Concurrent same-site webviews wedge each other, so a re-dispatch must reuse the parent's own (or an orphaned) spawned card instead of stacking another. User-created cards (no spawned_by) are never grabbed implicitly.
     import backend.apps.dashboards.dashboards as dash_mod
     import backend.apps.agents.agent_manager as am_mod
 
@@ -1569,8 +1476,7 @@ def test_message_pairing_validator_catches_both_orphan_and_dangling():
 
 
 def test_composer_fill_detection():
-    # detecting a composer fill is what arms the post-type wait for the Send button
-    # to render before we re-list (so the model sees it instead of hunting)
+    # detecting a composer fill is what arms the post-type wait for the Send button to render before we re-list (so the model sees it instead of hunting)
     from backend.apps.agents.browser.browser_agent import is_composer_fill
     assert is_composer_fill("BrowserClickIndex", {"index": 4, "text": "hello world"})
     assert is_composer_fill("BrowserType", {"selector": "#m", "text": "hi"})
@@ -1582,8 +1488,7 @@ def test_composer_fill_detection():
 
 
 def test_send_index_handoff_points_only_at_a_real_send_button():
-    # after a composer fill we hand the model the Send button's index so it clicks
-    # it directly instead of hunting; must never mistake an upsell/profile link for it
+    # after a composer fill we hand the model the Send button's index so it clicks it directly instead of hunting; must never mistake an upsell/profile link for it
     from backend.apps.agents.browser.browser_agent import send_index_in_state
     page = '[1]<link "Tyler Chen">\n[33]<textbox "Write a message">\n[44]<button "Send">'
     assert send_index_in_state(page) == (44, "Send")
@@ -1594,8 +1499,7 @@ def test_send_index_handoff_points_only_at_a_real_send_button():
 
 def test_strip_lone_surrogates():
     from backend.apps.agents.browser.browser_agent import strip_lone_surrogates, format_tool_result
-    # an orphan UTF-16 surrogate (half an emoji from the webview) is what crashes
-    # the turn at .encode('utf-8'); it must be swapped, not carried through
+    # an orphan UTF-16 surrogate (half an emoji from the webview) is what crashes the turn at .encode('utf-8'); it must be swapped, not carried through
     out = strip_lone_surrogates("Twitch \ud83e live")
     assert "\ud83e" not in out and "�" in out
     out.encode("utf-8")  # the operation that used to raise "surrogates not allowed"

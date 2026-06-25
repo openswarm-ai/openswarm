@@ -12,8 +12,7 @@ def metrics(monkeypatch):
     d = tempfile.mkdtemp(prefix="bm_test_")
     monkeypatch.setenv("OPENSWARM_BROWSER_METRICS_DIR", d)
     from backend.apps.agents.browser import browser_metrics as bm
-    # The dir is memoized once for the prod hot path; drop the cache so each test
-    # re-resolves to its own temp dir instead of inheriting a prior test's.
+    # The dir is memoized once for the prod hot path; drop the cache so each test re-resolves to its own temp dir instead of inheriting a prior test's.
     bm.p_metrics_dir_cache = None
     return bm, d
 

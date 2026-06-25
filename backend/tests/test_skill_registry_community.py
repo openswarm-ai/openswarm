@@ -75,8 +75,7 @@ def test_github_headers_adds_token_when_set(monkeypatch):
 
 
 def test_install_disclosure_flags_secret_shaped_files():
-    # The scan we wire into the install disclosure (reused from the .swarm importer)
-    # must flag a community skill shipping credentials, and leave clean files alone.
+    # The scan we wire into the install disclosure (reused from the .swarm importer) must flag a community skill shipping credentials, and leave clean files alone.
     from backend.apps.swarm.redact import find_secrets_in_files
     files = {
         "SKILL.md": b"Renders PDFs. No secrets.",
@@ -97,9 +96,7 @@ def test_script_classification():
     assert not is_script_path("data.json")
 
 
-# ---------------------------------------------------------------------------
-# Safe install (write_folder_skill).
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Safe install (write_folder_skill). ---------------------------------------------------------------------------
 
 @pytest.fixture
 def skills_dir(tmp_path, monkeypatch):

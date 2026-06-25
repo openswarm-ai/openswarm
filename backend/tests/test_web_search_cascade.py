@@ -128,10 +128,7 @@ async def test_everything_fails_is_honest_not_empty(monkeypatch):
     assert "Settings" in res["results"] or "API key" in res["results"]
 
 
-# --------------------------------------------------------------------------
-# /fetch mirrors /search: local httpx + trafilatura is the fast path, grounded
-# fetchers are the fallback for JS/paywalled pages, every attempt is bounded.
-# --------------------------------------------------------------------------
+# -------------------------------------------------------------------------- /fetch mirrors /search: local httpx + trafilatura is the fast path, grounded fetchers are the fallback for JS/paywalled pages, every attempt is bounded. --------------------------------------------------------------------------
 
 from backend.apps.web.web import fetch, FetchBody
 from backend.apps.agents.tools.web import WebFetchTool

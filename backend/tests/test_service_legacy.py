@@ -45,8 +45,7 @@ def install_sync_sink():
         cs = body.get("client_state") or {}
         payload = body.get("d") or body.get("payload") or {}
 
-        # Infer a synthetic kind from payload shape, same dispatch logic
-        # as the cloud uses in production.
+        # Infer a synthetic kind from payload shape, same dispatch logic as the cloud uses in production.
         if "status" in payload and "messages" in payload:
             status = payload.get("status", "unknown")
             kind = f"session.{status}" if status != "unknown" else "session.completed"
@@ -146,9 +145,7 @@ def manager():
     return AgentManager()
 
 
-# ---------------------------------------------------------------------------
-# 1. record(), legacy shim correctness
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- 1. record(), legacy shim correctness ---------------------------------------------------------------------------
 
 class TestRecordBasics:
     def test_record_sends_payload(self):
@@ -174,9 +171,7 @@ class TestRecordBasics:
         assert s["properties"]["dashboard_id"] == "dash456"
 
 
-# ---------------------------------------------------------------------------
-# 2. Multi-message session, close fires exactly once
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- 2. Multi-message session, close fires exactly once ---------------------------------------------------------------------------
 
 class TestMultiMessageSession:
     @pytest.mark.asyncio
@@ -200,9 +195,7 @@ class TestMultiMessageSession:
         assert len(completed) == 1, f"expected 1 completed sync, got {len(completed)}"
 
 
-# ---------------------------------------------------------------------------
-# 3. Token + cost capture on close
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- 3. Token + cost capture on close ---------------------------------------------------------------------------
 
 class TestTokenTracking:
     @pytest.mark.asyncio

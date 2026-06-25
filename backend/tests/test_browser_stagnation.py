@@ -104,9 +104,7 @@ def test_advance_fires_again_at_max():
     assert stagnation_exhausted(streak)
 
 
-# --- completion honesty gate ----------------------------------------------
-# Catches the worst measured ghost: multi-minute runs, every tool errored, still
-# reported 'completed'. Must NOT cry wolf on real successes (it overrides status).
+# --- completion honesty gate ---------------------------------------------- Catches the worst measured ghost: multi-minute runs, every tool errored, still reported 'completed'. Must NOT cry wolf on real successes (it overrides status).
 
 def p_ok(tool, summary="done"):
     return {"tool": tool, "ok": True, "result_summary": summary}
@@ -159,8 +157,7 @@ def test_card_is_unavailable_only_for_unrecoverable_errors():
     # a gone card is unrecoverable (fail fast); a missing selector is not (route around)
     assert card_is_unavailable({"error": "Browser card 'b1' not found or not an Electron webview"})
     assert card_is_unavailable({"error": "No dashboard is connected. Open the dashboard to use browser tools."})
-    # a HUNG card (the 20-min LinkedIn freeze) also counts: commands time out, the
-    # page never responds, retrying is pointless -> same fast-fail streak as gone
+    # a HUNG card (the 20-min LinkedIn freeze) also counts: commands time out, the page never responds, retrying is pointless -> same fast-fail streak as gone
     assert card_is_unavailable({"error": "Browser command timed out"})
     assert card_is_unavailable({"error": "page unresponsive"})
     # but normal, recoverable problems do NOT (the agent can route around these)
@@ -168,8 +165,7 @@ def test_card_is_unavailable_only_for_unrecoverable_errors():
     assert not card_is_unavailable({"text": "ok", "url": "http://x"})
 
 
-# --- informational-deliverable gate (don't record a thin shortcut for a run
-# whose answer was gathered/judged content that replay can't reproduce) ---------
+# --- informational-deliverable gate (don't record a thin shortcut for a run whose answer was gathered/judged content that replay can't reproduce) ---------
 
 def test_deliverable_informational_blocks_gathered_content_records_confirmations():
     # a short action confirmation (the PROVEN Wikipedia case) -> safe to record

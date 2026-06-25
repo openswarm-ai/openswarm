@@ -75,8 +75,7 @@ def test_distill_skips_failed_steps():
 
 
 def test_distill_flattens_browser_batch():
-    # the agent's efficient path bundles type+press_key into one BrowserBatch;
-    # the recorder must flatten those into discrete robust steps.
+    # the agent's efficient path bundles type+press_key into one BrowserBatch; the recorder must flatten those into discrete robust steps.
     log = [
         {"tool": "BrowserNavigate", "input": {"url": "http://h/form"}, "ok": True},
         {"tool": "BrowserBatch", "ok": True, "input": {"actions": [
@@ -120,8 +119,7 @@ def test_record_refuses_unrecordable_run():
 
 # --- persistence + redaction ----------------------------------------------
 def test_skill_persists_across_restart(p_isolated_skills):
-    # record, then simulate a process restart by wiping ONLY the in-memory cache;
-    # find must re-load it from disk.
+    # record, then simulate a process restart by wiping ONLY the in-memory cache; find must re-load it from disk.
     assert sk.record_skill("localhost:8901", "type hello and click Send", p_log()) is True
     sk.clear(wipe_disk=False)            # in-memory gone, disk intact (== restart)
     assert not sk.SKILLS                # cache truly empty
@@ -275,10 +273,7 @@ def test_deprecate_unknown_is_false(p_isolated_skills):
     assert sk.deprecate_skill("shop.com", "never recorded this") is False
 
 
-# --- versioned safe-edit: the trust gate ----------------------------------
-# A skill is never trusted until a real replay proves it; an unproven skill that
-# fails is quarantined (never replayed again) so a lossy skill can't ghost-succeed
-# or run slower-than-baseline; re-deriving different steps is a re-versioned EDIT.
+# --- versioned safe-edit: the trust gate ---------------------------------- A skill is never trusted until a real replay proves it; an unproven skill that fails is quarantined (never replayed again) so a lossy skill can't ghost-succeed or run slower-than-baseline; re-deriving different steps is a re-versioned EDIT.
 
 def test_new_skill_starts_on_probation(p_isolated_skills):
     sk.record_skill("shop.com", "do a thing now", p_log())
@@ -317,8 +312,7 @@ def test_quarantined_skill_re_recorded_identical_stays_quarantined(p_isolated_sk
 def test_quarantined_skill_unquarantines_on_a_real_edit(p_isolated_skills):
     sk.record_skill("shop.com", "do a thing now", p_log())
     sk.mark_replay_failed("shop.com", "do a thing now")            # quarantined
-    # now the page changed and the LLM derives a DIFFERENT click -> a real edit,
-    # which earns the skill another chance (back on probation, re-versioned)
+    # now the page changed and the LLM derives a DIFFERENT click -> a real edit, which earns the skill another chance (back on probation, re-versioned)
     edited = p_log()[:-1] + [{"tool": "BrowserClickIndex", "input": {}, "ok": True,
                              "clicked_role": "button", "clicked_name": "Submit"}]
     sk.record_skill("shop.com", "do a thing now", edited)
@@ -427,8 +421,7 @@ def test_deprecating_a_foundation_demotes_everything_built_on_it(p_isolated_skil
     p_trust("shop.com", "search shoes and checkout now", p_log_plus())   # composed + trusted
     assert sk.find_skill("shop.com", "search shoes and checkout now")["state"] == sk.TRUSTED
     sk.deprecate_skill("shop.com", "search shoes now")            # foundation pulled
-    # the ghost guard for composition: the dependent must NOT stay trusted on a
-    # foundation that no longer exists; it's knocked back to re-prove
+    # the ghost guard for composition: the dependent must NOT stay trusted on a foundation that no longer exists; it's knocked back to re-prove
     assert sk.find_skill("shop.com", "search shoes and checkout now")["state"] == sk.PROBATION
 
 
@@ -486,8 +479,7 @@ def test_extract_first_json_strips_fences_and_prose():
 
 
 def test_widened_redaction_catches_audit_bypasses():
-    # the audit's three named bypasses: bare 2FA digits, credential-shaped
-    # fields the old regex missed, and seed/recovery phrase boxes
+    # the audit's three named bypasses: bare 2FA digits, credential-shaped fields the old regex missed, and seed/recovery phrase boxes
     assert sk.looks_sensitive("481922", "")
     assert sk.looks_sensitive("hunter2", "#user")
     assert sk.looks_sensitive("me@corp.com", "#login-email")
@@ -538,16 +530,13 @@ def test_long_card_blob_click_names_are_not_send_steps():
         {"tool": "BrowserClickByName", "params": {"name": "Send"}},
     ]
     i, why = first_unsafe_step(flow)
-    # the 100ch blob at step 1 isn't flagged (len guard); the composer OPENER
-    # "Message" at step 2 isn't either (reversible, it just opens the box); the
-    # boundary is the real "Send" at step 3, so the prefix can open the composer.
+    # the 100ch blob at step 1 isn't flagged (len guard); the composer OPENER "Message" at step 2 isn't either (reversible, it just opens the box); the boundary is the real "Send" at step 3, so the prefix can open the composer.
     assert i == 3, f"expected the Send click flagged, got {i}: {why}"
 
 
 def test_composer_opener_is_not_the_replay_boundary():
     from backend.apps.agents.browser.browser_skills import first_unsafe_step, replay_safety
-    # clicking "Message"/"DM" just OPENS the composer (reversible); the boundary
-    # is the real Send, so the open-the-composer steps can mechanically replay.
+    # clicking "Message"/"DM" just OPENS the composer (reversible); the boundary is the real Send, so the open-the-composer steps can mechanically replay.
     flow = [
         {"tool": "BrowserClickByName", "params": {"role": "link", "name": "Message"}},
         {"tool": "BrowserClickByName", "params": {"role": "textbox", "name": "Write a message…"}},
@@ -679,17 +668,14 @@ def test_route_hint_adoption_matching(p_isolated_skills):
         {"tool": "BrowserType", "input": {"selector": "div.msg-form", "text": "x"}, "ok": True},
     ]
     adopted = [sk.hint_step_adopted(k, run_log) for k in keys]
-    # navigate (query-stripped match), profile click (containment), type all adopt;
-    # the Message and Send clicks did not run
+    # navigate (query-stripped match), profile click (containment), type all adopt; the Message and Send clicks did not run
     assert adopted[0] and adopted[1] and adopted[3]
     assert not adopted[2] and not adopted[4]
 
 
 # --- conservative detour pruning ---------------------------------------------
 def test_distill_prunes_abandoned_navigate_detour():
-    # wrong profile opened (navigate), abandoned for a search (navigate), then
-    # the right profile + the real productive steps. The first navigate is a
-    # detour: nothing acted on its page before the next navigate.
+    # wrong profile opened (navigate), abandoned for a search (navigate), then the right profile + the real productive steps. The first navigate is a detour: nothing acted on its page before the next navigate.
     log = [
         {"tool": "BrowserNavigate", "input": {"url": "https://x.com/in/wrong"}, "ok": True},
         {"tool": "BrowserNavigate", "input": {"url": "https://x.com/search?q=tyler"}, "ok": True},

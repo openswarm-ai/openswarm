@@ -34,17 +34,14 @@ def test_metrics_dir_is_cached_makedirs_runs_once(monkeypatch):
 
 
 def test_excluded_tools_never_register_a_loop():
-    # The invariant the hash-skip relies on: for every excluded tool, even ten
-    # identical calls in a row are NOT a loop, so computing/storing the hash for
-    # them was dead work. Setting is_loop=False directly is therefore equivalent.
+    # The invariant the hash-skip relies on: for every excluded tool, even ten identical calls in a row are NOT a loop, so computing/storing the hash for them was dead work. Setting is_loop=False directly is therefore equivalent.
     for tool in LOOP_DETECTION_EXCLUDED_TOOLS:
         key = (tool, "in", "out")
         assert detect_loop([key] * 10, key) is False, f"{tool} wrongly looped"
 
 
 def test_non_excluded_tool_still_loops_after_threshold():
-    # Guard the other side: the fix must NOT disable loop detection for the tools
-    # that need it (clicks/types/etc.).
+    # Guard the other side: the fix must NOT disable loop detection for the tools that need it (clicks/types/etc.).
     key = ("BrowserClick", '{"selector":"#x"}', "clicked")
     # below threshold -> not a loop; at/over threshold within the window -> loop
     assert detect_loop([], key) is False        # 1st occurrence: not yet a wall

@@ -18,8 +18,7 @@ from backend.apps.agents.browser import browser_wait as bw
 
 # --- the pure decision (hammer it) ------------------------------------------
 def test_decide_stop_waits_until_past_the_floor():
-    # even a fully-settled page must not return before the floor (a momentary gap
-    # between two requests would otherwise look 'settled')
+    # even a fully-settled page must not return before the floor (a momentary gap between two requests would otherwise look 'settled')
     assert bw.decide_stop(True, 9999, 0, False, 100, floor_ms=250) is False
     assert bw.decide_stop(True, 9999, 0, False, 300, floor_ms=250) is True
 
@@ -101,8 +100,7 @@ async def test_rides_to_cap_when_page_never_settles():
 
 @pytest.mark.asyncio
 async def test_settles_on_dom_stable_when_network_never_idles():
-    # the LinkedIn case: network always busy (quiet tiny) but the DOM count is
-    # constant -> DOM-settle fires instead of riding to the cap
+    # the LinkedIn case: network always busy (quiet tiny) but the DOM count is constant -> DOM-settle fires instead of riding to the cap
     ex = FakeExec([p_probe(True, 5, elems=500)])
     out = await bw.smart_wait(ex, "b", "", 3000, poll_ms=20, floor_ms=20, quiet_window_ms=200)
     assert out["settled"] is True and out["waited_ms"] < 3000
@@ -111,8 +109,7 @@ async def test_settles_on_dom_stable_when_network_never_idles():
 
 @pytest.mark.asyncio
 async def test_returns_the_instant_target_is_found():
-    # network busy AND DOM churning, but the agent's target appears on probe 2 ->
-    # stop immediately, bypassing even the floor
+    # network busy AND DOM churning, but the agent's target appears on probe 2 -> stop immediately, bypassing even the floor
     ex = FakeExec([p_probe(False, 5, elems=100, found=False),
                    p_probe(False, 5, elems=200, found=True)])
     out = await bw.smart_wait(ex, "b", "", 5000, until="Send",
@@ -157,9 +154,7 @@ async def test_garbage_probe_text_does_not_crash():
 
 @pytest.mark.asyncio
 async def test_hung_tab_returns_fast_not_after_the_full_command_timeout():
-    # THE bug from the 20-min loop: a wedged tab made each 'wait' block ~30s.
-    # Now each probe is bounded, so after a couple of timeouts it returns hung,
-    # in a few seconds, NOT 30s+, regardless of how long the command would block.
+    # THE bug from the 20-min loop: a wedged tab made each 'wait' block ~30s. Now each probe is bounded, so after a couple of timeouts it returns hung, in a few seconds, NOT 30s+, regardless of how long the command would block.
     ex = HangingExec(block_s=30.0)  # mimic the 30s command timeout
     t0 = time.monotonic()
     out = await bw.smart_wait(ex, "b", "", 8000, poll_ms=20, probe_timeout_s=0.3)

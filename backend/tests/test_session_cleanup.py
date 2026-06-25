@@ -34,8 +34,7 @@ def test_purge_session_memory_clears_every_structure():
 
 
 def test_purge_is_safe_on_an_untracked_id():
-    # Purging an id that was never tracked must be a quiet no-op, not a KeyError,
-    # so the delete/close paths can call it unconditionally.
+    # Purging an id that was never tracked must be a quiet no-op, not a KeyError, so the delete/close paths can call it unconditionally.
     mgr = am.AgentManager()
     mgr.purge_session_memory("never-existed")
     assert mgr.sessions == {}

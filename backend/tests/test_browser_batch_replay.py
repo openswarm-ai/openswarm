@@ -96,8 +96,7 @@ def test_replay_route_maps_to_the_fast_network_tool():
 
 
 def test_fill_handles_a_value_with_url_characters():
-    # a value with spaces/specials is substituted literally (caller is responsible
-    # for encoding); we just don't mangle or drop it
+    # a value with spaces/specials is substituted literally (caller is responsible for encoding); we just don't mangle or drop it
     tool, params = br.fill_step({"action": "navigate", "url": "https://x.com/s?q={{value}}"}, "a b&c")
     assert params["url"] == "https://x.com/s?q=a b&c"
 

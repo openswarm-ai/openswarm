@@ -179,15 +179,9 @@ P_AUTH_EXEMPT_EXACT = {
     "/api/subscription/activate",
     "/api/auth/signin-activate",
     "/api/version",
-    # Local Google OAuth token-endpoint proxy: hit by the
-    # google-workspace-mcp subprocess we spawn. It doesn't (and can't
-    # easily) carry the install bearer in google-auth's refresh post.
-    # Localhost binding is the gate, and the route does nothing the
-    # public api.openswarm.com/api/oauth/google/refresh doesn't already
-    # do for any internet caller, so no new attack surface.
+    # Local Google OAuth token-endpoint proxy: hit by the google-workspace-mcp subprocess we spawn. It doesn't (and can't easily) carry the install bearer in google-auth's refresh post. Localhost binding is the gate, and the route does nothing the public api.openswarm.com/api/oauth/google/refresh doesn't already do for any internet caller, so no new attack surface.
     "/api/tools/google-oauth-token",
-    # Dev-only token handoff for the split-port frontend (no Electron preload
-    # to read the token from). The route itself 404s in packaged builds.
+    # Dev-only token handoff for the split-port frontend (no Electron preload to read the token from). The route itself 404s in packaged builds.
     "/api/dev/token",
 }
 

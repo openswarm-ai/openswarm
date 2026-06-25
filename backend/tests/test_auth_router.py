@@ -20,9 +20,7 @@ def client():
     so the LocalAuthMiddleware doesn't reject our requests with 401."""
     import backend.auth as auth_mod
     if not auth_mod.TOKEN:
-        # Tests sometimes run without backend.main's startup hook firing.
-        # Generate a token directly so request_matches_token has something
-        # to compare against.
+        # Tests sometimes run without backend.main's startup hook firing. Generate a token directly so request_matches_token has something to compare against.
         import secrets
         auth_mod.TOKEN = secrets.token_urlsafe(32)
     return TestClient(app, headers={"Authorization": f"Bearer {auth_mod.TOKEN}"})
@@ -38,9 +36,7 @@ def reset_settings():
     save_settings(original)
 
 
-# ---------------------------------------------------------------------------
-# /api/auth/signin-activate
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- /api/auth/signin-activate ---------------------------------------------------------------------------
 
 def test_signin_activate_persists_user_id(client, reset_settings):
     fake_response = AsyncMock()
@@ -135,9 +131,7 @@ def test_signin_activate_short_token_rejected_locally(client, reset_settings):
     assert r.status_code == 400
 
 
-# ---------------------------------------------------------------------------
-# /api/auth/signout
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- /api/auth/signout ---------------------------------------------------------------------------
 
 def test_signout_clears_local_identity(client, reset_settings):
     from backend.apps.settings.settings import load_settings, save_settings
@@ -186,9 +180,7 @@ def test_signout_succeeds_even_when_cloud_unreachable(client, reset_settings):
     assert s2.openswarm_bearer_token is None
 
 
-# ---------------------------------------------------------------------------
-# The dev-token handoff must be dev-only so it can't widen prod surface (#49).
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- The dev-token handoff must be dev-only so it can't widen prod surface (#49). ---------------------------------------------------------------------------
 
 def test_dev_token_is_dev_only():
     """/api/dev/token hands the install token to the split-port dev frontend

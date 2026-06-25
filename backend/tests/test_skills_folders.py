@@ -154,9 +154,7 @@ def test_injection_no_folder_note_for_flat_skill(skills_dir):
     assert "supporting files" not in block.lower()
 
 
-# ---------------------------------------------------------------------------
-# .swarm round-trip for folder skills (export carries files, import rebuilds them).
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- .swarm round-trip for folder skills (export carries files, import rebuilds them). ---------------------------------------------------------------------------
 
 def test_swarm_export_folder_skill_carries_supporting_files(skills_dir):
     from backend.apps.swarm.entities.skills import SkillExportable
@@ -182,8 +180,7 @@ def test_swarm_import_writes_folder_when_files_present(skills_dir):
 
 
 def test_swarm_import_always_writes_folder(skills_dir):
-    # Unified storage: even a one-file skill imports as a folder, so a skill's
-    # on-disk shape never depends on whether it had supporting files.
+    # Unified storage: even a one-file skill imports as a folder, so a skill's on-disk shape never depends on whether it had supporting files.
     from backend.apps.swarm.entities.skills import SkillExportable
     payload = {"slug": "note", "name": "Note", "content": "just text"}
     new_id = SkillExportable.import_(payload, {}, None)
@@ -196,8 +193,7 @@ async def test_create_writes_folder_and_supersedes_legacy_flat(skills_dir):
     from backend.apps.skills.models import SkillCreate
     # A pre-existing legacy flat skill of the same id...
     p_write(str(skills_dir / "notes.md"), "old flat")
-    # ...is superseded (not shadowed) when the user (re)creates it; folder wins,
-    # and the phantom flat file is removed so there's exactly one shape on disk.
+    # ...is superseded (not shadowed) when the user (re)creates it; folder wins, and the phantom flat file is removed so there's exactly one shape on disk.
     res = await skills_mod.create_skill(SkillCreate(name="Notes", content="new body", description="d"))
     sid = res["skill"]["id"]
     assert sid == "notes"

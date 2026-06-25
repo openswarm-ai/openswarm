@@ -40,10 +40,7 @@ import pytest
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.testclient import TestClient
 
-# ---------------------------------------------------------------------------
-# Boot env: route data to a tempdir BEFORE importing backend modules so
-# the persistence dir for terminal events lives under our control.
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Boot env: route data to a tempdir BEFORE importing backend modules so the persistence dir for terminal events lives under our control. ---------------------------------------------------------------------------
 
 P_TMPROOT = tempfile.mkdtemp(prefix="openswarm-disconnect-test-")
 os.environ.setdefault("OPENSWARM_DATA_DIR", P_TMPROOT)
@@ -71,12 +68,7 @@ def p_patch_persist_dir():
     wm_monkey.stop()
 
 
-# ---------------------------------------------------------------------------
-# Minimal FastAPI app with the real WS endpoint logic. We import
-# ws_manager directly and replicate the handler from backend/main.py
-# without any of its auth middleware so the TestClient can connect
-# without a token.
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Minimal FastAPI app with the real WS endpoint logic. We import ws_manager directly and replicate the handler from backend/main.py without any of its auth middleware so the TestClient can connect without a token. ---------------------------------------------------------------------------
 
 
 def p_build_app(seq_log):
@@ -138,9 +130,7 @@ def p_emit(client, session_id: str, n: int, terminate: str | None = None, concur
     return r.json()
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Helpers ---------------------------------------------------------------------------
 
 
 async def p_emit_run(session_id: str, n_events: int, terminate: str | None = "completed", concurrent_tasks: int = 1):
@@ -159,8 +149,7 @@ async def p_emit_run(session_id: str, n_events: int, terminate: str | None = "co
                 "message_id": "m1",
                 "delta": f"chunk-{start + i}",
             })
-            # Yield to the scheduler so other coroutines interleave;
-            # this is what surfaces the seq race if locking is wrong.
+            # Yield to the scheduler so other coroutines interleave; this is what surfaces the seq race if locking is wrong.
             await asyncio.sleep(0)
 
     if concurrent_tasks <= 1:
@@ -184,9 +173,7 @@ async def p_emit_run(session_id: str, n_events: int, terminate: str | None = "co
         })
 
 
-# ---------------------------------------------------------------------------
-# Unit-level: seq log fundamentals
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Unit-level: seq log fundamentals ---------------------------------------------------------------------------
 
 
 def test_seq_monotonic_under_concurrency(p_patch_persist_dir):
@@ -226,9 +213,7 @@ def test_replay_after_eviction_reports_gap(p_patch_persist_dir):
     assert all(json.loads(s)["seq"] > 10 for s in events)
 
 
-# ---------------------------------------------------------------------------
-# Integration: full WS connect / disconnect / resume cycle
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Integration: full WS connect / disconnect / resume cycle ---------------------------------------------------------------------------
 
 
 def test_resume_after_disconnect_recovers_all_events(p_patch_persist_dir):
@@ -251,12 +236,10 @@ def test_resume_after_disconnect_recovers_all_events(p_patch_persist_dir):
             assert len(received) == 10
             assert received[-1]["seq"] == 10
 
-        # Phase 2: between connections, the server keeps emitting. The
-        # agent task is alive; only the WS is gone.
+        # Phase 2: between connections, the server keeps emitting. The agent task is alive; only the WS is gone.
         p_emit(client, sid, n=10, terminate="completed")
 
-        # Phase 3: reconnect with last_seq=10, expect replay of seq 11..21
-        # (10 deltas + 1 status), then the server:hello ack.
+        # Phase 3: reconnect with last_seq=10, expect replay of seq 11..21 (10 deltas + 1 status), then the server:hello ack.
         with client.websocket_connect(f"/ws/agents/{sid}") as ws:
             ws.send_text(json.dumps({"event": "client:hello", "data": {"last_seq": 10, "connection_uuid": "c2"}}))
             replay: list[dict] = []
@@ -284,8 +267,7 @@ def test_terminal_event_visible_after_full_eviction(p_patch_persist_dir):
     with TestClient(app) as client:
         p_emit(client, sid, n=5, terminate="completed")
 
-        # Simulate a process restart: clear the in-memory ring buffer
-        # but keep the persisted terminal file.
+        # Simulate a process restart: clear the in-memory ring buffer but keep the persisted terminal file.
         seq_log.per_session.pop(sid, None)
 
         with client.websocket_connect(f"/ws/agents/{sid}") as ws:
@@ -341,9 +323,7 @@ def test_ping_pong_round_trip(p_patch_persist_dir):
             assert pong["data"]["nonce"] == "abc"
 
 
-# ---------------------------------------------------------------------------
-# The big one: hundreds of randomized disconnect scenarios.
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- The big one: hundreds of randomized disconnect scenarios. ---------------------------------------------------------------------------
 
 
 N_STRESS_ITERATIONS = int(os.environ.get("DISCONNECT_STRESS_N", "500"))
@@ -364,10 +344,7 @@ def test_stress_random_disconnect(iteration, p_patch_persist_dir):
     n_disconnects = rng.randint(1, min(5, total_events // 2 or 1))
     will_terminate = rng.random() < 0.7  # 70% of runs reach a terminal
 
-    # Disconnect points: each is a count of events emitted *before*
-    # the WS drops. We deliberately exclude `total_events` itself
-    # so the breakpoint list never collides with the appended final
-    # iteration (which is when the optional terminal status fires).
+    # Disconnect points: each is a count of events emitted *before* the WS drops. We deliberately exclude `total_events` itself so the breakpoint list never collides with the appended final iteration (which is when the optional terminal status fires).
     if total_events > 1:
         breakpoints = sorted(rng.sample(range(1, total_events), min(n_disconnects, total_events - 1)))
     else:
@@ -395,12 +372,7 @@ def test_stress_random_disconnect(iteration, p_patch_persist_dir):
                 emitted_so_far = bp
                 terminate = "completed" if (bp == total_events and will_terminate) else None
 
-                # Drive the emit through the test app's HTTP endpoint so
-                # the broadcast happens on the same event loop as the WS
-                # handler. Using asyncio.run() here would create an
-                # isolated loop and re-bind the per-session asyncio.Lock
-                # to a different loop, which is hostile to anyio's
-                # blocking-portal pattern.
+                # Drive the emit through the test app's HTTP endpoint so the broadcast happens on the same event loop as the WS handler. Using asyncio.run() here would create an isolated loop and re-bind the per-session asyncio.Lock to a different loop, which is hostile to anyio's blocking-portal pattern.
                 p_emit(client, sid, n=to_emit, terminate=terminate)
 
                 expected = to_emit + (1 if terminate else 0)
@@ -409,8 +381,7 @@ def test_stress_random_disconnect(iteration, p_patch_persist_dir):
                     seen[msg["seq"]] = msg
                     last_seq = max(last_seq, msg["seq"])
 
-            # Closing the with-block disconnects the WS. The loop
-            # opens a fresh socket on the next iteration.
+            # Closing the with-block disconnects the WS. The loop opens a fresh socket on the next iteration.
 
     # ----- Assertions: completeness, ordering, no dups, terminal -----
     expected_total = total_events + (1 if will_terminate else 0)
@@ -423,9 +394,7 @@ def test_stress_random_disconnect(iteration, p_patch_persist_dir):
         assert last["data"]["status"] == "completed"
 
 
-# ---------------------------------------------------------------------------
-# Concurrent broadcast: many fan-out coroutines must preserve seq order
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Concurrent broadcast: many fan-out coroutines must preserve seq order ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("trial", range(30))
@@ -447,19 +416,10 @@ def test_concurrent_broadcast_preserves_order(trial, p_patch_persist_dir):
     assert len(seqs) == len(set(seqs))
 
 
-# ---------------------------------------------------------------------------
-# Auth/security smoke: the WS endpoint here is unauth'd by design (test
-# scaffolding), but main.py's p_ws_auth_ok must remain in place. This
-# test pins that contract so a future refactor can't accidentally
-# strip it.
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Auth/security smoke: the WS endpoint here is unauth'd by design (test scaffolding), but main.py's p_ws_auth_ok must remain in place. This test pins that contract so a future refactor can't accidentally strip it. ---------------------------------------------------------------------------
 
 
-# ---------------------------------------------------------------------------
-# Extra stress: terminate happens INSIDE a disconnect window. The
-# client must see the terminal event on its next reconnect (whether
-# from ring buffer or persisted disk record).
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Extra stress: terminate happens INSIDE a disconnect window. The client must see the terminal event on its next reconnect (whether from ring buffer or persisted disk record). ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("trial", range(50))
@@ -484,9 +444,7 @@ def test_terminate_during_disconnect_is_observable(trial, p_patch_persist_dir):
                     last_seq = max(last_seq, msg["seq"])
         # Disconnected. Emit the rest + terminate while WS is gone.
         p_emit(client, sid, n=n_post, terminate="completed")
-        # Reconnect. We expect to receive everything from last_seq+1
-        # through to the terminal, possibly via disk if the buffer
-        # rolled (it won't here; numbers are small).
+        # Reconnect. We expect to receive everything from last_seq+1 through to the terminal, possibly via disk if the buffer rolled (it won't here; numbers are small).
         with client.websocket_connect(f"/ws/agents/{sid}") as ws:
             ws.send_text(json.dumps({"event": "client:hello", "data": {"last_seq": last_seq, "connection_uuid": "c2"}}))
             while True:
@@ -505,12 +463,7 @@ def test_terminate_during_disconnect_is_observable(trial, p_patch_persist_dir):
     assert last["data"]["status"] == "completed"
 
 
-# ---------------------------------------------------------------------------
-# Sanity: an explicit `WebSocketDisconnect` MUST NOT cancel the
-# underlying agent task. We don't have a real agent here, but we can
-# at least assert that the ws_manager's disconnect path doesn't touch
-# any task registry.
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Sanity: an explicit `WebSocketDisconnect` MUST NOT cancel the underlying agent task. We don't have a real agent here, but we can at least assert that the ws_manager's disconnect path doesn't touch any task registry. ---------------------------------------------------------------------------
 
 
 def test_disconnect_does_not_touch_agent_task(p_patch_persist_dir):
@@ -519,10 +472,7 @@ def test_disconnect_does_not_touch_agent_task(p_patch_persist_dir):
     `tasks` dict starts empty; we register a sentinel task and confirm
     disconnect_session doesn't poke it."""
     from backend.apps.agents.core.ws_manager import ws_manager
-    # Insert a real Future into a parallel registry to mimic
-    # `agent_manager.tasks[session_id]` and confirm ws_manager
-    # never reaches into it. We don't import agent_manager (heavy);
-    # we just inspect the source.
+    # Insert a real Future into a parallel registry to mimic `agent_manager.tasks[session_id]` and confirm ws_manager never reaches into it. We don't import agent_manager (heavy); we just inspect the source.
     import inspect
     src = inspect.getsource(ws_manager.disconnect_session)
     assert "cancel" not in src.lower()
@@ -536,8 +486,7 @@ def test_main_ws_endpoints_still_gated_by_auth(p_patch_persist_dir):
         "main.py WS endpoints must still call p_ws_auth_ok before accepting "
         "the connection, otherwise any local web page can read agent traffic."
     )
-    # And the disconnect handler must NOT call any task-cancel helper
-    #, that's the regression we're guarding against.
+    # And the disconnect handler must NOT call any task-cancel helper, that's the regression we're guarding against.
     assert "stop_agent" not in src.split("WebSocketDisconnect")[1].split("def ")[0], (
         "WebSocketDisconnect handler must not cancel the agent task."
     )

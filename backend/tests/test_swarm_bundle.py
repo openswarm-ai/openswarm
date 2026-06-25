@@ -70,8 +70,7 @@ def test_content_secret_redacted_in_bundle(skill_store):
     secret = "sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA"
     p_make_skill(skill_store, "leaky", "Leaky", f"use this key: {secret}")
     raw, p_name = closure.build_bundle(EntityType.skill, "leaky")
-    # Inspect the actual packed payload (zip entries are compressed, so grepping
-    # the raw bytes proves nothing).
+    # Inspect the actual packed payload (zip entries are compressed, so grepping the raw bytes proves nothing).
     with zipfile.ZipFile(io.BytesIO(raw)) as zf:
         payload_name = next(n for n in zf.namelist() if n.endswith("payload.json"))
         payload = json.loads(zf.read(payload_name))
@@ -100,8 +99,7 @@ def test_pack_refuses_denied_key():
 
 
 def test_pack_refuses_secret_in_workspace_file():
-    # A key hardcoded in app source (not .env) must not ride along; pack scans
-    # file bytes, not just payload keys.
+    # A key hardcoded in app source (not .env) must not ride along; pack scans file bytes, not just payload keys.
     leak = b"const KEY = 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA';\n"
     with pytest.raises(BundleError):
         pack({"format_version": 1}, {"bid1": {"name": "ok"}}, {"entities/bid1/files/config.js": leak})
@@ -113,8 +111,7 @@ def test_pack_allows_clean_workspace_file():
 
 
 def test_app_export_drops_machine_env(tmp_path, monkeypatch):
-    # The live .env holds the source machine's absolute paths + pinned port; it
-    # must never ride along. .env.example (portable) does.
+    # The live .env holds the source machine's absolute paths + pinned port; it must never ride along. .env.example (portable) does.
     from backend.apps.swarm.entities import apps as appmod
     from backend.apps.outputs.models import Output
 
@@ -159,11 +156,7 @@ def test_workflow_sanitize_disables_schedule_and_strips_pii():
 
 
 def test_workflow_round_trips_through_the_store(isolated_workflows_data):
-    # The workflow store landed on this branch, so a workflow bundle imports into an
-    # (isolated) store: an unknown id loads as None, import_ creates a fresh row with its
-    # schedule forced OFF (so an imported workflow never auto-runs on someone else's machine),
-    # and load reads it back. Supersedes test_workflow_unavailable_on_this_branch, which dated
-    # from before the workflow store was on eric/dev.
+    # The workflow store landed on this branch, so a workflow bundle imports into an (isolated) store: an unknown id loads as None, import_ creates a fresh row with its schedule forced OFF (so an imported workflow never auto-runs on someone else's machine), and load reads it back. Supersedes test_workflow_unavailable_on_this_branch, which dated from before the workflow store was on eric/dev.
     from backend.apps.swarm.entities.workflows import WorkflowExportable
     from backend.apps.swarm.exportable import RemapTable
     from backend.apps.workflows import storage
@@ -175,8 +168,7 @@ def test_workflow_round_trips_through_the_store(isolated_workflows_data):
     loaded = WorkflowExportable.load(new_id)
     assert loaded is not None
     assert loaded.name == "Shared WF"
-    # Read the persisted row back through the store's public API (not the entity's
-    # private data) to confirm the schedule was forced off on import.
+    # Read the persisted row back through the store's public API (not the entity's private data) to confirm the schedule was forced off on import.
     saved = storage.get_workflow(new_id)
     assert saved is not None and saved.schedule.enabled is False
 
@@ -205,8 +197,7 @@ def test_session_export_carries_transcript_drops_runtime_and_secrets():
     # Runtime, identity, and gate state still never leave.
     for gone in ("cwd", "active_mcps", "cost_usd", "sdk_session_id"):
         assert gone not in out
-    # The closure runs scrub_payload on every payload, so a secret-shaped
-    # string sitting in the transcript is redacted before it ships.
+    # The closure runs scrub_payload on every payload, so a secret-shaped string sitting in the transcript is redacted before it ships.
     assert "sk-ant-" not in json.dumps(scrub_payload(out))
     reqs = ex.requirements()
     assert any(r.kind.value == "mcp_action" and r.key == "Gmail" for r in reqs)
@@ -237,8 +228,7 @@ def test_session_import_restores_transcript_without_granting_mcp(monkeypatch):
 
 
 def test_session_import_old_bundle_without_transcript(monkeypatch):
-    # A bundle made before transcripts were carried has no messages; it must
-    # still import as a valid empty-history agent (single main branch), not crash.
+    # A bundle made before transcripts were carried has no messages; it must still import as a valid empty-history agent (single main branch), not crash.
     from backend.apps.swarm.entities.SessionExportable import SessionExportable
     from backend.apps.swarm.exportable import RemapTable
     from backend.apps.agents.manager.session import session_store
@@ -251,8 +241,7 @@ def test_session_import_old_bundle_without_transcript(monkeypatch):
 
 
 def test_session_load_prefers_live_memory_over_stale_disk(tmp_path, monkeypatch):
-    # The freshest transcript lives in memory; a disk-only load would ship a
-    # stale one. load() must read the live session first, disk only as fallback.
+    # The freshest transcript lives in memory; a disk-only load would ship a stale one. load() must read the live session first, disk only as fallback.
     from backend.apps.agents import agent_manager as am
     from backend.apps.swarm.entities.SessionExportable import SessionExportable
     sdir = tmp_path / "sessions"
@@ -275,10 +264,7 @@ def test_session_load_prefers_live_memory_over_stale_disk(tmp_path, monkeypatch)
 
 
 def test_dashboard_export_import_carries_agent_cards_and_transcript(tmp_path, monkeypatch):
-    # The path the single-session tests missed: a whole dashboard with agent
-    # cards + a browser card. Both agents (with their transcripts) and the
-    # browser must survive export -> import. An empty-history import is the bug
-    # the user hit ("the chats didn't even show up, let alone the history").
+    # The path the single-session tests missed: a whole dashboard with agent cards + a browser card. Both agents (with their transcripts) and the browser must survive export -> import. An empty-history import is the bug the user hit ("the chats didn't even show up, let alone the history").
     import shutil
     from backend.apps.agents import agent_manager as am
     import backend.config.paths as paths
@@ -327,19 +313,14 @@ def test_dashboard_export_import_carries_agent_cards_and_transcript(tmp_path, mo
         assert doc["active_mcps"] == [], "import must not grant MCP access"
     assert total_msgs == 2, "each agent's transcript must carry through"
 
-    # The bug behind "the chats didn't even show up": after import the sessions
-    # are on disk but not in memory, and the dashboard-open fetch
-    # (get_all_sessions) was memory-only, so the cards rendered blank. The fetch
-    # must now see the freshly-imported sessions straight off disk.
+    # The bug behind "the chats didn't even show up": after import the sessions are on disk but not in memory, and the dashboard-open fetch (get_all_sessions) was memory-only, so the cards rendered blank. The fetch must now see the freshly-imported sessions straight off disk.
     found = am.agent_manager.get_all_sessions(dashboard_id=root_id)
     assert len(found) == 2, f"dashboard-open fetch must see imported agent sessions, got {len(found)}"
     assert sum(len(s.messages) for s in found) == 2, "and with their transcripts"
 
 
 def test_get_all_sessions_does_not_resurrect_deleted_cards(tmp_path, monkeypatch):
-    # Deleting a card removes it from the layout but the session keeps its
-    # dashboard_id on disk. get_all_sessions must surface only sessions the
-    # layout still has a card for, or deleted chats come back on every reopen.
+    # Deleting a card removes it from the layout but the session keeps its dashboard_id on disk. get_all_sessions must surface only sessions the layout still has a card for, or deleted chats come back on every reopen.
     from backend.apps.agents import agent_manager as am
     import backend.config.paths as paths
     sdir = tmp_path / "sessions"
@@ -422,12 +403,7 @@ def test_dashboard_import_remaps_to_fresh_local_ids(monkeypatch):
 
 
 def test_dashboard_remap_invariant_generative(monkeypatch):
-    # The hand-written remap tests only check the id-bearing fields I remembered.
-    # Generate random dashboards and assert the real invariant on a serialize ->
-    # import round-trip: no source-local id and no bundle id survives into the
-    # imported layout, and every card id is a freshly-minted local id. This is
-    # what catches "someone adds a new layout field holding a session id and
-    # forgets to remap it."
+    # The hand-written remap tests only check the id-bearing fields I remembered. Generate random dashboards and assert the real invariant on a serialize -> import round-trip: no source-local id and no bundle id survives into the imported layout, and every card id is a freshly-minted local id. This is what catches "someone adds a new layout field holding a session id and forgets to remap it."
     import random
 
     from backend.apps.swarm.entities import dashboards as dmod
@@ -523,10 +499,7 @@ def test_skill_rollback_removes_it(skill_store):
 
 
 def test_commit_rolls_back_created_on_failure(skill_store, tmp_path, monkeypatch):
-    # A bundle of [skill, workflow]: the skill imports first and lands, then the workflow
-    # import fails, so the skill must be rolled back (all-or-nothing, no half-write). The
-    # failure used to come for free (no workflow store on this branch); now the store exists,
-    # so force it deterministically by making the workflow import raise.
+    # A bundle of [skill, workflow]: the skill imports first and lands, then the workflow import fails, so the skill must be rolled back (all-or-nothing, no half-write). The failure used to come for free (no workflow store on this branch); now the store exists, so force it deterministically by making the workflow import raise.
     from backend.apps.swarm.models import BundlePreview, EntityRef, Manifest
     from backend.apps.swarm.entities.workflows import WorkflowExportable
 
@@ -552,8 +525,7 @@ def test_commit_rolls_back_created_on_failure(skill_store, tmp_path, monkeypatch
 
 
 def test_manifest_duplicate_ids_rejected():
-    # Two entities sharing a bundle_id silently collapse in the topo/summary
-    # dicts, dropping one; reject up front. (The manifest is outside the checksum.)
+    # Two entities sharing a bundle_id silently collapse in the topo/summary dicts, dropping one; reject up front. (The manifest is outside the checksum.)
     from backend.apps.swarm.closure import validate_manifest
     from backend.apps.swarm.models import BundlePreview, EntityRef, Manifest
     ref = EntityRef(type=EntityType.skill, bundle_id="dup", name="A", path="entities/dup")
@@ -603,8 +575,7 @@ def test_absolute_path_rejected():
 
 
 def test_symlink_entry_rejected():
-    # A symlink entry could point outside the sandbox once followed; unpack must
-    # refuse it before writing anything.
+    # A symlink entry could point outside the sandbox once followed; unpack must refuse it before writing anything.
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zi = zipfile.ZipInfo("link")

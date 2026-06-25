@@ -24,8 +24,7 @@ def test_registers_always_on_and_delegation_servers():
     assert "openswarm-invoke-agent" in mcp_servers
     assert browser_tools == ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents"]
     assert invoke_tools == ["InvokeAgent"]
-    # Every registered server's script path must resolve to a file that ACTUALLY EXISTS.
-    # This is the assertion that catches a moved-caller resolving the wrong agents dir.
+    # Every registered server's script path must resolve to a file that ACTUALLY EXISTS. This is the assertion that catches a moved-caller resolving the wrong agents dir.
     for name in ("openswarm-mcp-meta", "openswarm-settings-meta",
                  "openswarm-browser-agent", "openswarm-invoke-agent"):
         script = mcp_servers[name]["args"][0]

@@ -97,8 +97,7 @@ def test_unknown_removed_fields_are_ignored(settings_file):
 
 
 def test_type_drifted_field_reverts_to_default_keeps_rest(settings_file):
-    # dismissed_mcp_suggestions is dict[str,str] now; an old build stored a list.
-    # The bad field must revert to its default, every valid field must survive.
+    # dismissed_mcp_suggestions is dict[str,str] now; an old build stored a list. The bad field must revert to its default, every valid field must survive.
     p_write(settings_file, {"theme": "light", "dismissed_mcp_suggestions": ["legacy", "list"]})
     s = store.load_settings()
     assert s.theme == "light"

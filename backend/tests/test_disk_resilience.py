@@ -96,8 +96,7 @@ def test_dashboards_load_all_skips_corrupt_and_invalid(tmp_path, monkeypatch):
     monkeypatch.setattr(dmod, "DATA_DIR", str(tmp_path))
     dmod.save(Dashboard(name="good", layout=DashboardLayout()))
     (tmp_path / "garbled.json").write_text("{ not json")
-    # Valid JSON the model can't accept (a list can't be **-unpacked into the model).
-    # Models are lenient about missing/extra fields, so this is what an unloadable file actually looks like.
+    # Valid JSON the model can't accept (a list can't be **-unpacked into the model). Models are lenient about missing/extra fields, so this is what an unloadable file actually looks like.
     (tmp_path / "wrongshape.json").write_text(json.dumps([1, 2, 3]))
     loaded = dmod.load_all()
     assert [d.name for d in loaded] == ["good"]

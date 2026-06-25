@@ -29,6 +29,5 @@ def test_both_is_reliable():
 
 
 def test_subscription_route_claude_is_NOT_reliable():
-    # The exact bug: opus-4-8 (subscription route) + key in settings. The haiku
-    # call still 401s via the managed pool, so this must stay unreliable -> DDG.
+    # The exact bug: opus-4-8 (subscription route) + key in settings. The haiku call still 401s via the managed pool, so this must stay unreliable -> DDG.
     assert ok(uses_direct_anthropic_api=False, is_pro=False) is False

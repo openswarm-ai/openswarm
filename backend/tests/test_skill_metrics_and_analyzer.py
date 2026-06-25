@@ -73,8 +73,7 @@ def test_analyzer_measures_replay_speedup_when_the_layer_helps(p_metrics_dir, ca
 
 def test_analyzer_flags_silent_non_help_thrash(p_metrics_dir, capsys):
     sk.clear(wipe_disk=True)
-    # A task that keeps getting re-learned/edited and quarantined, never promoted,
-    # and whose runs always go via the LLM (never the fast path) = the ghost.
+    # A task that keeps getting re-learned/edited and quarantined, never promoted, and whose runs always go via the LLM (never the fast path) = the ghost.
     sk.record_skill("bad.com", "do thing now", p_log())                  # learn
     sk.mark_replay_failed("bad.com", "do thing now")                    # quarantine
     edited = p_log()[:-1] + [{"tool": "BrowserClickIndex", "input": {}, "ok": True,
@@ -115,8 +114,7 @@ def test_analyzer_reports_composition(p_metrics_dir, capsys):
 
 
 def test_analyzer_reports_playbook_cutting_exploration_turns(p_metrics_dir, capsys):
-    # tier-2 win: a cold run on a host takes many turns; once strategy is seeded,
-    # the same kind of task takes fewer. The analyzer must report HELPS.
+    # tier-2 win: a cold run on a host takes many turns; once strategy is seeded, the same kind of task takes fewer. The analyzer must report HELPS.
     sig = sk.compute_sig("find people")
     p_task_row(sig, "llm", 60.0, turns=14, playbook_seeded=False)   # cold
     p_task_row(sig, "llm", 40.0, turns=8, playbook_seeded=True)     # seeded -> fewer turns

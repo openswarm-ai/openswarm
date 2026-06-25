@@ -36,9 +36,7 @@ P_TMPROOT = tempfile.mkdtemp(prefix="openswarm-v2-invariants-")
 os.environ.setdefault("OPENSWARM_DATA_DIR", P_TMPROOT)
 
 
-# ---------------------------------------------------------------------------
-# Fixture: build a fake ToolDefinition without touching disk.
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Fixture: build a fake ToolDefinition without touching disk. ---------------------------------------------------------------------------
 
 def p_fake_tool(
     name: str,
@@ -60,14 +58,7 @@ def p_fake_tool(
     )
 
 
-# ===========================================================================
-# Group A, MCP activation gate (the non-bypassable ToolSearch invariant)
-# ===========================================================================
-# The product invariant: NO MCP tool is callable until the model has
-# explicitly searched + activated the server, and the user has approved
-# the activation. The gate lives at the dispatch layer in
-# `_build_mcp_servers`, even if the prompt rules are ignored, the SDK
-# never sees the unactivated server.
+# =========================================================================== Group A, MCP activation gate (the non-bypassable ToolSearch invariant) =========================================================================== The product invariant: NO MCP tool is callable until the model has explicitly searched + activated the server, and the user has approved the activation. The gate lives at the dispatch layer in `_build_mcp_servers`, even if the prompt rules are ignored, the SDK never sees the unactivated server.
 
 
 @pytest.mark.asyncio
@@ -210,14 +201,7 @@ async def test_gate_stress_random_activations():
             )
 
 
-# ===========================================================================
-# Group A2, ToolSearch loop-breaker
-# ===========================================================================
-# Gated MCP servers are withheld from the SDK, so the CLI's native ToolSearch
-# can never see them; small models loop (empty ToolSearch -> retry) until the
-# user pauses. The break must (a) not fire on the first call or two (a power
-# user may legitimately ToolSearch a deferred tool), (b) fire once it's clearly
-# stuck, steering to MCPActivate, and (c) reset when any real tool runs.
+# =========================================================================== Group A2, ToolSearch loop-breaker =========================================================================== Gated MCP servers are withheld from the SDK, so the CLI's native ToolSearch can never see them; small models loop (empty ToolSearch -> retry) until the user pauses. The break must (a) not fire on the first call or two (a power user may legitimately ToolSearch a deferred tool), (b) fire once it's clearly stuck, steering to MCPActivate, and (c) reset when any real tool runs.
 
 
 def test_toolsearch_redirect_holds_below_threshold():
@@ -242,8 +226,7 @@ def test_toolsearch_redirect_fires_at_threshold_and_names_gated_servers():
 
 
 def test_toolsearch_redirect_works_with_no_gated_servers():
-    # Even with nothing to activate, the steer must still tell the model its
-    # tools are already loaded so it stops searching (no crash on empty list).
+    # Even with nothing to activate, the steer must still tell the model its tools are already loaded so it stops searching (no crash on empty list).
     from backend.apps.agents.manager.prompt.prompt_context import (
         toolsearch_loop_redirect,
         TOOLSEARCH_LOOP_THRESHOLD,
@@ -277,12 +260,7 @@ async def test_gated_server_names_empty_when_all_active():
         assert gated_mcp_server_names(["mcp:Gmail"], ["gmail"]) == []
 
 
-# ===========================================================================
-# Group B, needs_fresh_session soft-restart
-# ===========================================================================
-# When MCPActivate fires mid-session, the bundled CLI doesn't re-read
-# mcp_servers from a fork. We force a fresh sdk_session_id so the new
-# server's tools actually reach the model.
+# =========================================================================== Group B, needs_fresh_session soft-restart =========================================================================== When MCPActivate fires mid-session, the bundled CLI doesn't re-read mcp_servers from a fork. We force a fresh sdk_session_id so the new server's tools actually reach the model.
 
 
 def test_needs_fresh_session_field_default_false():
@@ -352,9 +330,7 @@ def test_active_mcps_append_idempotent():
     assert s.active_mcps.count("gmail") == 1
 
 
-# ===========================================================================
-# Group C, Pydantic Message backward compat (no ghost fields, legacy loads)
-# ===========================================================================
+# =========================================================================== Group C, Pydantic Message backward compat (no ghost fields, legacy loads) ===========================================================================
 
 
 def test_message_no_ghost_fields():
@@ -425,9 +401,7 @@ def test_message_round_trip_50_iterations():
         assert m2.elapsed_ms == m.elapsed_ms
 
 
-# ===========================================================================
-# Group D, resolve_aux_model Gemini route (the gemini-3.1-flash-lite-preview fix)
-# ===========================================================================
+# =========================================================================== Group D, resolve_aux_model Gemini route (the gemini-3.1-flash-lite-preview fix) ===========================================================================
 
 
 @pytest.mark.asyncio
@@ -465,9 +439,7 @@ async def test_resolve_aux_model_anthropic_pro_returns_proxy():
     settings = AppSettings()
     settings.connection_mode = "openswarm-pro"
     settings.openswarm_proxy_url = "https://api.openswarm.test"
-    # A real Pro-connected user carries a bearer token; proxy_auth reads it.
-    # Without it the resolver can't see Pro and falls through to the raise,
-    # which is what made this test depend on live machine state.
+    # A real Pro-connected user carries a bearer token; proxy_auth reads it. Without it the resolver can't see Pro and falls through to the raise, which is what made this test depend on live machine state.
     settings.openswarm_bearer_token = "test-pro-token"
     with patch("backend.apps.nine_router.is_running", return_value=False):
         model_id, base = await registry.resolve_aux_model(settings)
@@ -640,8 +612,7 @@ async def test_mcp_gate_only_forwards_activated_servers():
         return [SimpleNamespace(name=n, mcp_config={"x": 1}, enabled=True,
                                 auth_status="configured", auth_type="apikey") for n in names]
 
-    # allowed_tools == get_all_tool_names() bypasses the (separate) permission
-    # gate so we isolate the ACTIVATION gate. sanitize_server_name -> identity.
+    # allowed_tools == get_all_tool_names() bypasses the (separate) permission gate so we isolate the ACTIVATION gate. sanitize_server_name -> identity.
     with patch("backend.apps.agents.manager.RunSupport.load_all_tools", side_effect=installed), \
          patch("backend.apps.agents.manager.RunSupport.get_all_tool_names", return_value=["__ALL__"]), \
          patch("backend.apps.agents.manager.RunSupport.sanitize_server_name", side_effect=lambda n: n), \
@@ -652,8 +623,7 @@ async def test_mcp_gate_only_forwards_activated_servers():
         assert await mgr.build_mcp_servers(allowed, active_mcps=[]) == {}
         # Boundary 2: None (legacy) -> permission gate only, all forwarded.
         assert set((await mgr.build_mcp_servers(allowed, active_mcps=None)).keys()) == set(names)
-        # Property: forwarded set is ALWAYS a subset of the activated set, and
-        # equals exactly the activated-and-installed intersection.
+        # Property: forwarded set is ALWAYS a subset of the activated set, and equals exactly the activated-and-installed intersection.
         rng = random.Random(1234)
         for _ in range(400):
             active = rng.sample(names, rng.randint(0, len(names)))
@@ -706,12 +676,7 @@ def test_banned_models_not_offered():
     assert "3.1 pro" not in all_labels
 
 
-# ===========================================================================
-# Group E, 9Router-streamed 401 detection
-# ===========================================================================
-# 9Router sometimes returns upstream auth failures AS the assistant's
-# reply text, not as an exception. We detect the pattern in the stream
-# handler to substitute a friendly bubble.
+# =========================================================================== Group E, 9Router-streamed 401 detection =========================================================================== 9Router sometimes returns upstream auth failures AS the assistant's reply text, not as an exception. We detect the pattern in the stream handler to substitute a friendly bubble.
 
 
 def test_router_auth_pattern_codex():
@@ -796,12 +761,7 @@ def test_is_auth_error_with_stderr_tail():
     assert is_auth_error(e, extra_text=stderr)
 
 
-# ===========================================================================
-# Group F, MCP_SERVER_BRAND coverage
-# ===========================================================================
-# Every server slug we surface to the user via MCPSearch / connected_servers
-# should have a brand entry, otherwise the UI falls back to the kebab-case
-# id ("microsoft-365" instead of "Microsoft 365").
+# =========================================================================== Group F, MCP_SERVER_BRAND coverage =========================================================================== Every server slug we surface to the user via MCPSearch / connected_servers should have a brand entry, otherwise the UI falls back to the kebab-case id ("microsoft-365" instead of "Microsoft 365").
 
 
 def test_mcp_brand_covers_curated_servers():
@@ -854,16 +814,12 @@ def test_sanitize_server_name_strips_special_chars():
     assert sanitize_server_name("a__b") == "a-b"
 
 
-# ===========================================================================
-# Group G, mcp_meta_server activation backend handler
-# ===========================================================================
+# =========================================================================== Group G, mcp_meta_server activation backend handler ===========================================================================
 
 
 def test_mcp_activate_handler_unknown_server():
     """Unknown server name → status='unknown_server' with the valid list."""
-    # We test the response shape independently of the FastAPI plumbing.
-    # The handler is a closure inside main.py:mcp_meta_handler, so we
-    # instead exercise the contract: invalid name surfaces alternatives.
+    # We test the response shape independently of the FastAPI plumbing. The handler is a closure inside main.py:mcp_meta_handler, so we instead exercise the contract: invalid name surfaces alternatives.
     from backend.apps.tools_lib.tools_lib import sanitize_server_name
     valid = {"gmail", "slack", "google-workspace"}
     requested = "Gmail"  # raw, needs sanitize
@@ -885,9 +841,7 @@ def test_active_mcps_persistence_on_session():
     assert rehydrated.active_mcps == ["gmail", "slack"]
 
 
-# ===========================================================================
-# Group H, long-context error classifier
-# ===========================================================================
+# =========================================================================== Group H, long-context error classifier ===========================================================================
 
 
 def test_long_context_pattern_caught():
@@ -917,8 +871,7 @@ def test_transient_capacity_patterns():
     ]
     for t in transients:
         assert TRANSIENT_CAPACITY_PATTERNS.search(t), f"transient missed: {t!r}"
-        # Importantly: must NOT also match non-transient (no double-classification)
-        # except for the fuzzy edge cases. Spot-check a couple:
+        # Importantly: must NOT also match non-transient (no double-classification) except for the fuzzy edge cases. Spot-check a couple:
         if "429" in t and "rate_limit" in t.lower():
             # rate_limit_error is transient; non-transient should not match this exact text
             assert not NON_TRANSIENT_PATTERNS.search(t)
@@ -930,9 +883,7 @@ def test_long_context_does_not_match_normal_429():
     assert not NON_TRANSIENT_PATTERNS.search("Error 429: rate_limit_error")
 
 
-# ===========================================================================
-# Group I, Mode reconciliation (regression guard)
-# ===========================================================================
+# =========================================================================== Group I, Mode reconciliation (regression guard) ===========================================================================
 
 
 def test_chat_mode_not_in_builtins():
@@ -953,9 +904,7 @@ def test_active_mcps_default_factory_creates_new_list():
     assert s2.active_mcps == [], "active_mcps must not share state across sessions"
 
 
-# ===========================================================================
-# Group J, Concurrent gate stress (real production risk: simultaneous turns)
-# ===========================================================================
+# =========================================================================== Group J, Concurrent gate stress (real production risk: simultaneous turns) ===========================================================================
 
 
 @pytest.mark.asyncio
@@ -979,9 +928,7 @@ async def test_concurrent_gate_calls_isolated():
         assert set(empty.keys()) == set()
 
 
-# ===========================================================================
-# Group K, pending_continuation auto-restart
-# ===========================================================================
+# =========================================================================== Group K, pending_continuation auto-restart ===========================================================================
 
 
 def test_pending_continuation_default_false():
@@ -1071,11 +1018,7 @@ async def test_context_update_emitter_refreshes_session_tokens(monkeypatch):
     )]
 
 
-# ===========================================================================
-# Group L, Sentence-case display (the parseMcpToolName fix)
-# ===========================================================================
-# This is technically a frontend behavior, but we mirror the rule in
-# Python so the backend's MCPSearch results don't leak Title Case either.
+# =========================================================================== Group L, Sentence-case display (the parseMcpToolName fix) =========================================================================== This is technically a frontend behavior, but we mirror the rule in Python so the backend's MCPSearch results don't leak Title Case either.
 
 
 def test_sentence_case_rule():
@@ -1094,9 +1037,7 @@ def test_sentence_case_rule():
         assert sentence_case(raw) == expected
 
 
-# ===========================================================================
-# Group M, Bash command verb extraction (frontend logic, mirrored)
-# ===========================================================================
+# =========================================================================== Group M, Bash command verb extraction (frontend logic, mirrored) ===========================================================================
 
 
 def test_bash_verb_extraction_strips_env_prefix():
@@ -1135,9 +1076,7 @@ def test_bash_command_detail_path_basename():
         assert basename(raw) == expected
 
 
-# ===========================================================================
-# Group N, Pydantic AppSettings invariants
-# ===========================================================================
+# =========================================================================== Group N, Pydantic AppSettings invariants ===========================================================================
 
 
 def test_app_settings_defaults():
@@ -1161,9 +1100,7 @@ def test_custom_provider_round_trip():
     assert s2.custom_providers[0].name == "MyCorp"
 
 
-# ===========================================================================
-# Group O, Tool gate stress with denied permissions
-# ===========================================================================
+# =========================================================================== Group O, Tool gate stress with denied permissions ===========================================================================
 
 
 @pytest.mark.asyncio
@@ -1194,9 +1131,7 @@ async def test_gate_handles_missing_refresh_token_gracefully():
         assert "myapitool" in result
 
 
-# ===========================================================================
-# Group P, resolve_aux_model failover logic
-# ===========================================================================
+# =========================================================================== Group P, resolve_aux_model failover logic ===========================================================================
 
 
 @pytest.mark.asyncio
@@ -1241,9 +1176,7 @@ async def test_aux_returns_sonnet_when_preferred_tier_set():
         assert "sonnet" in model_id
 
 
-# ===========================================================================
-# Group Q, get_api_type / model id resolution
-# ===========================================================================
+# =========================================================================== Group Q, get_api_type / model id resolution ===========================================================================
 
 
 def test_get_api_type_openai():
@@ -1265,9 +1198,7 @@ def test_find_builtin_model_returns_dict_for_known():
     assert sonnet.get("api") == "anthropic"
 
 
-# ===========================================================================
-# Group R, context window
-# ===========================================================================
+# =========================================================================== Group R, context window ===========================================================================
 
 
 def test_get_context_window_known_model():
@@ -1421,8 +1352,7 @@ def test_resolve_attachments_mixed_kinds_total_size_guard():
     mgr = AgentManager()
     paths = []
     try:
-        # 10MB PDF + 10MB image + small text → 20MB raw = ~27MB base64,
-        # under Anthropic's 28MB cap so all should land natively.
+        # 10MB PDF + 10MB image + small text → 20MB raw = ~27MB base64, under Anthropic's 28MB cap so all should land natively.
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as fh:
             fh.write(b"%PDF-1.4\n"); fh.write(b"X" * (10 * 1024 * 1024))
             paths.append(fh.name)
@@ -1511,15 +1441,10 @@ def test_resolve_attachments_uses_os_path_basename_for_windows_paths():
     no crash on Windows-shaped strings. Real Windows behavior is exercised
     in CI on Windows hosts via .github/workflows/."""
     import os, ntpath
-    # ntpath.basename simulates what Windows os.path.basename does on
-    # actual Windows hosts. Our backend uses os.path which == ntpath on
-    # Windows and posixpath on macOS/Linux, so paths go through correctly
-    # at runtime per host. This test asserts the parsing is correct WHEN
-    # routed through ntpath (the Windows code path).
+    # ntpath.basename simulates what Windows os.path.basename does on actual Windows hosts. Our backend uses os.path which == ntpath on Windows and posixpath on macOS/Linux, so paths go through correctly at runtime per host. This test asserts the parsing is correct WHEN routed through ntpath (the Windows code path).
     win_path = r"C:\Users\rrios\AppData\Local\Temp\self-swarm-uploads\palm.pdf"
     assert ntpath.basename(win_path) == "palm.pdf"
-    # And that os.path.join with mixed separators on Windows would still
-    # produce a valid path (ntpath is forgiving).
+    # And that os.path.join with mixed separators on Windows would still produce a valid path (ntpath is forgiving).
     assert ntpath.basename(r"D:/Downloads\test.pdf") == "test.pdf"
 
 
@@ -2290,9 +2215,7 @@ def test_apply_context_window_respects_custom_provider_value():
     assert s.context_window == 32_000
 
 
-# ---------------------------------------------------------------------------
-# Custom OpenAI-compatible providers (Ollama Cloud, Together, etc.)
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Custom OpenAI-compatible providers (Ollama Cloud, Together, etc.) ---------------------------------------------------------------------------
 
 
 def test_custom_provider_value_synthesises_route_api_entry():
@@ -2643,9 +2566,7 @@ def test_custom_provider_with_very_long_name_still_works():
     assert entry["model_id"] == f"cp-{slug}/some-model"
 
 
-# ===========================================================================
-# 9Router sync stress tests, async, mocked HTTP layer
-# ===========================================================================
+# =========================================================================== 9Router sync stress tests, async, mocked HTTP layer ===========================================================================
 
 
 def p_make_mock_9router(initial_nodes=None, initial_conns=None, fail_endpoints=None):
@@ -2984,9 +2905,7 @@ def p_async_return(value):
     return p_f()
 
 
-# ===========================================================================
-# Group T, Mode definitions
-# ===========================================================================
+# =========================================================================== Group T, Mode definitions ===========================================================================
 
 
 def test_agent_mode_no_explicit_tools():
@@ -3017,9 +2936,7 @@ def test_view_builder_mode_has_default_folder():
     assert vb.default_folder is not None
 
 
-# ===========================================================================
-# Group U, Stress: gate handles 100 sequential calls without state leak
-# ===========================================================================
+# =========================================================================== Group U, Stress: gate handles 100 sequential calls without state leak ===========================================================================
 
 
 @pytest.mark.asyncio
@@ -3038,9 +2955,7 @@ async def test_gate_100_sequential_calls_no_leak():
                 f"iteration {i}: expected {set(active)}, got {set(result.keys())}"
 
 
-# ===========================================================================
-# Group V, Discord shim entrypoint sanity
-# ===========================================================================
+# =========================================================================== Group V, Discord shim entrypoint sanity ===========================================================================
 
 
 def test_discord_shim_main_callable():
@@ -3055,9 +2970,7 @@ def test_discord_shim_package_importable():
     assert backend.apps.discord_mcp_shim is not None
 
 
-# ===========================================================================
-# Group W, Tools/web.py (live MCP for DDG search)
-# ===========================================================================
+# =========================================================================== Group W, Tools/web.py (live MCP for DDG search) ===========================================================================
 
 
 def test_web_tools_classes_inherit_basetool():
@@ -3081,9 +2994,7 @@ def test_web_fetch_tool_has_name_and_schema():
     assert isinstance(tool.get_schema(), dict)
 
 
-# ===========================================================================
-# Group X, ToolGroupMeta + caching
-# ===========================================================================
+# =========================================================================== Group X, ToolGroupMeta + caching ===========================================================================
 
 
 def test_tool_group_meta_round_trip():
@@ -3102,9 +3013,7 @@ def test_tool_group_meta_default_is_refined_false():
     assert m.is_refined is False
 
 
-# ===========================================================================
-# Group Y, MessageBranch invariants
-# ===========================================================================
+# =========================================================================== Group Y, MessageBranch invariants ===========================================================================
 
 
 def test_session_has_main_branch_by_default():
@@ -3124,9 +3033,7 @@ def test_branch_serialization():
     assert s2.branches["alt"].parent_branch_id == "main"
 
 
-# ===========================================================================
-# Group Z, End-to-end: realistic session lifecycle
-# ===========================================================================
+# =========================================================================== Group Z, End-to-end: realistic session lifecycle ===========================================================================
 
 
 @pytest.mark.asyncio

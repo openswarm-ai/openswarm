@@ -25,8 +25,7 @@ def p_settings(dismissed=None):
 
 
 def test_offer_resolves_both_display_name_and_hotpath_slug(monkeypatch):
-    # The hot-path passes a sanitized slug ("google-workspace"); the curated id is a display
-    # name ("Google Workspace"). Both must resolve, so the wiring isn't a load-bearing string.
+    # The hot-path passes a sanitized slug ("google-workspace"); the curated id is a display name ("Google Workspace"). Both must resolve, so the wiring isn't a load-bearing string.
     monkeypatch.setattr(pf, "load_all_tools", lambda: [])  # nothing enabled
     s = p_settings()
     for name in ("Google Workspace", "google-workspace"):
@@ -86,8 +85,7 @@ def test_preflight_default_suppresses_suggestions_on_concrete_prompt(monkeypatch
 
 
 def test_preflight_require_vague_false_keeps_suggestions(monkeypatch):
-    # MCPSearch path: the agent already proved it needs an integration, so keep the suggestion
-    # even though the prompt is concrete (is_vague False).
+    # MCPSearch path: the agent already proved it needs an integration, so keep the suggestion even though the prompt is concrete (is_vague False).
     monkeypatch.setattr(pf, "load_all_tools", lambda: [])
     monkeypatch.setattr(pf, "p_call_classifier", p_stub_classifier(False, ["Google Workspace"]))
     out = asyncio.run(run_preflight("check my unread emails", timeout_s=5, require_vague=False))

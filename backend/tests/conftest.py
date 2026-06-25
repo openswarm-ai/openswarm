@@ -37,8 +37,7 @@ def _isolate_browser_state(monkeypatch):
                 m.clear(wipe_disk=True)
             except Exception:
                 pass
-        # metrics caches its dir at first use; drop it so each test writes
-        # where ITS env var points, not where the first test's pointed
+        # metrics caches its dir at first use; drop it so each test writes where ITS env var points, not where the first test's pointed
         try:
             from backend.apps.agents.browser import browser_metrics as _bm
             _bm.p_metrics_dir_cache = None
@@ -126,8 +125,7 @@ class FakeAgentManager:
         self.tasks: dict[str, object] = {}
         self.launched_configs: list[object] = []
         self.sent_messages: list[str] = []
-        # statuses[i] is the session status after the i-th send_message; absent
-        # entries default to 'completed'. cost_usd lands on the run.
+        # statuses[i] is the session status after the i-th send_message; absent entries default to 'completed'. cost_usd lands on the run.
         self.statuses: list[str] = []
         self.cost_usd: float = 0.0
 

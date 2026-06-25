@@ -27,8 +27,7 @@ def test_web_mcp_suppresses_native_web_tools():
     session = p_session(["Read", "WebSearch", "WebFetch"])
     perms = {"Read": "always_allow", "WebSearch": "always_allow", "WebFetch": "always_allow"}
     allowed, disallowed = build_effective_tool_lists(session, {}, perms, True, [], [])
-    # native WebSearch/WebFetch are stripped (they'd fail) and force-disallowed so the model
-    # uses the openswarm-web MCP variants instead
+    # native WebSearch/WebFetch are stripped (they'd fail) and force-disallowed so the model uses the openswarm-web MCP variants instead
     assert "WebSearch" not in allowed and "WebFetch" not in allowed
     assert "WebSearch" in disallowed and "WebFetch" in disallowed
     assert "Read" in allowed

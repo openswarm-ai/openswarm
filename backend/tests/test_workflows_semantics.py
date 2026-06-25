@@ -52,8 +52,7 @@ def isolated_data_dir(monkeypatch, tmp_path):
     _escalation._state.clear()
     _executor._run_control.clear()
     _executor._run_pause_override.clear()
-    # Also clear audit dir reference; audit.py reads DATA_DIR at import via
-    # module-level expression, so reach in and override the AUDIT_DIR too.
+    # Also clear audit dir reference; audit.py reads DATA_DIR at import via module-level expression, so reach in and override the AUDIT_DIR too.
     from backend.apps.workflows import audit as _audit
     monkeypatch.setattr(_audit, "AUDIT_DIR", str(tmp_path / "workflows" / "audit"))
     yield
@@ -89,9 +88,7 @@ def test_dst_spring_forward_weekly():
     nxt = _next_fire_after(sched, ref_local.astimezone(timezone.utc))
     assert nxt is not None
     nxt_local = nxt.astimezone(tz)
-    # 02:30 wall-clock on the spring-forward day doesn't exist; zoneinfo
-    # resolves it forward to 03:30. The point is the *date* lands on the
-    # 9th, not the 8th and not the 16th.
+    # 02:30 wall-clock on the spring-forward day doesn't exist; zoneinfo resolves it forward to 03:30. The point is the *date* lands on the 9th, not the 8th and not the 16th.
     assert nxt_local.date() == datetime(2025, 3, 9).date()
     assert nxt_local.hour in (2, 3)
 
@@ -106,8 +103,7 @@ def test_dst_fall_back_no_double_fire():
     ref_local = datetime(2025, 11, 1, 23, 0, tzinfo=tz)
     nxt = _next_fire_after(sched, ref_local.astimezone(timezone.utc))
     assert nxt.astimezone(tz).date() == datetime(2025, 11, 2).date()
-    # After firing on the 2nd, the next fire should be the 3rd, not a
-    # second 2nd from the duplicated hour.
+    # After firing on the 2nd, the next fire should be the 3rd, not a second 2nd from the duplicated hour.
     after = _next_fire_after(sched, nxt)
     assert after.astimezone(tz).date() == datetime(2025, 11, 3).date()
 
@@ -294,8 +290,7 @@ def test_weekly_every_n_weeks_phase_is_stable_across_recompute():
     a tick/kick in an off week slides the whole cadence by weeks."""
     from backend.apps.workflows.scheduler import compute_next_fire
     from backend.apps.workflows.models import ScheduleConfig
-    # Created on Mon 2026-06-08. Every 2 weeks on Monday => fires 06-08,
-    # 06-22, 07-06, 07-20 (UTC). 06-15 and 06-29 are 'off' weeks.
+    # Created on Mon 2026-06-08. Every 2 weeks on Monday => fires 06-08, 06-22, 07-06, 07-20 (UTC). 06-15 and 06-29 are 'off' weeks.
     wf = _make_wf(
         created_at=datetime(2026, 6, 8, tzinfo=timezone.utc),
         schedule=ScheduleConfig(
@@ -324,8 +319,7 @@ def test_ran_late_is_measured_from_start_not_finish():
     assert p_ran_late(slot + timedelta(minutes=4), slot) is False
     # Started well after the slot -> late.
     assert p_ran_late(slot + timedelta(minutes=6), slot) is True
-    # Naive started_at (host-local, as datetime.now() produces) is normalized
-    # to UTC rather than subtracted across the offset.
+    # Naive started_at (host-local, as datetime.now() produces) is normalized to UTC rather than subtracted across the offset.
     naive_on_time = slot.astimezone().replace(tzinfo=None)
     assert p_ran_late(naive_on_time, slot) is False
 
@@ -467,8 +461,7 @@ def test_cost_cap_skips_with_clear_error(monkeypatch):
     async def fake_launch(*a, **k):
         raise AssertionError("agent_manager should not be reached when cost-capped")
 
-    # Patch agent_manager.launch_agent so we'd fail loudly if the cap
-    # didn't short-circuit before launch.
+    # Patch agent_manager.launch_agent so we'd fail loudly if the cap didn't short-circuit before launch.
     from backend.apps.agents import agent_manager
     monkeypatch.setattr(agent_manager.agent_manager, "launch_agent", fake_launch)
 
@@ -648,8 +641,7 @@ def test_legacy_timezone_coerced_on_load(monkeypatch):
     assert loaded is not None
     # In-memory should be the host zone, not "local".
     assert loaded.schedule.timezone == "America/Los_Angeles"
-    # On-disk file should be unchanged (still "local") so we don't churn
-    # mtime on every restart.
+    # On-disk file should be unchanged (still "local") so we don't churn mtime on every restart.
     with open(os.path.join(storage.DATA_DIR, f"{wf_id}.json")) as f:
         on_disk = json.load(f)
     assert on_disk["schedule"]["timezone"] == "local"
@@ -790,8 +782,7 @@ def test_executor_merge_does_not_clobber_concurrent_patch():
     storage._workflow_cache[wf.id].title = "t-patched"
     storage._workflow_cache[wf.id].description = "patched while running"
     storage.save_workflow(storage._workflow_cache[wf.id])
-    # Executor uses the stale `wf` it captured before the patch. With
-    # the merge helper, the patched fields must remain.
+    # Executor uses the stale `wf` it captured before the patch. With the merge helper, the patched fields must remain.
     executor._persist_run_fields(wf, {
         "last_run_at": datetime.now(),
         "last_run_status": "success",

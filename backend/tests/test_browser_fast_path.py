@@ -62,8 +62,7 @@ def test_compose_task_keeps_user_words_first():
 
 
 def test_dispatch_failure_detection_is_fail_closed():
-    # The result dict's structured `done` is the signal now (set true only when
-    # the sub-agent called Done with success AND the honesty gate agreed).
+    # The result dict's structured `done` is the signal now (set true only when the sub-agent called Done with success AND the honesty gate agreed).
     assert dispatch_failed({})
     assert dispatch_failed(None)
     assert dispatch_failed({"summary": "Error: browser card was deleted"})
@@ -99,9 +98,7 @@ def test_dispatch_refused_when_no_dashboard_connected(monkeypatch):
     from backend.apps.agents.browser.browser_agent import run_browser_agents
     from backend.apps.agents.core import ws_manager as wsm
 
-    # Dispatch now waits briefly for a momentary WS drop to reconnect; with a
-    # genuinely-closed window that wait just elapses and it still refuses without
-    # dispatching an agent or burning a turn. Zero the wait so the test is instant.
+    # Dispatch now waits briefly for a momentary WS drop to reconnect; with a genuinely-closed window that wait just elapses and it still refuses without dispatching an agent or burning a turn. Zero the wait so the test is instant.
     monkeypatch.setattr(wsm, "P_WS_RECONNECT_WAIT_S", 0.0)
     assert not wsm.ws_manager.global_connections
     results = asyncio.run(run_browser_agents(tasks=[{"task": "go to example.com"}], model="sonnet"))

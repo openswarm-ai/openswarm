@@ -59,8 +59,7 @@ async def test_first_success_creates_a_playbook():
 
 @pytest.mark.asyncio
 async def test_second_run_accumulates_not_overwrites():
-    # THE BUG THIS FIXES: the old domain-note store overwrote. The reconcile must
-    # ACCUMULATE: run 2's reply (which the aux builds from existing+new) grows it.
+    # THE BUG THIS FIXES: the old domain-note store overwrote. The reconcile must ACCUMULATE: run 2's reply (which the aux builds from existing+new) grows it.
     pb.clear(wipe_disk=True)
     await p_distill("linkedin.com", "t1", "m1", "s1", FakeAux(p_pb("Vercel/Linear+React surfaces real design engineers")))
     # the aux on run 2 is handed the existing bullet (we assert that), and returns existing + a new one

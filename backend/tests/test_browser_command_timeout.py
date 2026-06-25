@@ -35,8 +35,7 @@ def test_timeout_map_reads_are_short_navigation_longer():
 
 @pytest.mark.asyncio
 async def test_hung_command_returns_fast_at_the_bound(monkeypatch):
-    # shrink the bounds so the test is quick, then never resolve the future:
-    # the command must return a timeout error at ~the (default) bound, not hang.
+    # shrink the bounds so the test is quick, then never resolve the future: the command must return a timeout error at ~the (default) bound, not hang.
     monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUT_DEFAULT", 0.3)
     monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUTS", {"navigate": 0.6})
     m = p_mgr()
@@ -60,8 +59,7 @@ async def test_navigate_gets_the_longer_leash(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_lost_first_delivery_heals_via_rebroadcast(monkeypatch):
-    # a silently-dead socket eats the first broadcast; the re-send after the
-    # rebroadcast interval must reach the (reconnected) client and succeed
+    # a silently-dead socket eats the first broadcast; the re-send after the rebroadcast interval must reach the (reconnected) client and succeed
     monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUT_DEFAULT", 5.0)
     monkeypatch.setattr(wsm, "BROWSER_CMD_REBROADCAST_S", 0.1)
     m = p_mgr()

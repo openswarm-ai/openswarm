@@ -44,8 +44,7 @@ def test_slot_for_unknown_mcp_has_no_write_target():
         PolicySlot("mcp", None, "do-thing")
 
 
-# read/write mirror the dispatch-gate branches in agent_manager
-# (effective_policy / set_tool_policy): both key through resolve_policy_slot.
+# read/write mirror the dispatch-gate branches in agent_manager (effective_policy / set_tool_policy): both key through resolve_policy_slot.
 def p_read(tool_name, builtin_perms, tools):
     slot = resolve_policy_slot(tool_name, tools)
     if slot.store == "builtin":
@@ -102,9 +101,7 @@ def test_two_actions_on_the_same_mcp_server_are_independent():
     assert p_read(f"mcp__{slug}__notion-create-pages", bp, tools) == "ask"
 
 
-# ---- Integration: the same round-trip through the REAL file persistence the gate
-# uses (load_builtin_permissions / _save / _load_all), so 'write then re-read'
-# survives a save+reload, not just an in-memory dict. ----
+# ---- Integration: the same round-trip through the REAL file persistence the gate uses (load_builtin_permissions / _save / _load_all), so 'write then re-read' survives a save+reload, not just an in-memory dict. ----
 import backend.apps.tools_lib.tools_lib as tl
 
 

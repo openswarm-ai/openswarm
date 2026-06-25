@@ -13,8 +13,7 @@ from backend.apps.agents.manager.prompt import prompt_context as pc
 
 
 def p_fake_dashboard(monkeypatch):
-    # build_browser_context loads the dashboard; give it a minimal one so it
-    # gets past the load and emits the static delegation guidance.
+    # build_browser_context loads the dashboard; give it a minimal one so it gets past the load and emits the static delegation guidance.
     import backend.apps.dashboards.dashboards as dash
 
     class P_D:

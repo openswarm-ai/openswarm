@@ -105,8 +105,7 @@ def p_capture_env(monkeypatch, settings, api_type, resolved_model, model_entry):
 
 
 def test_loop_builds_pro_proxy_env(monkeypatch):
-    # OpenSwarm Pro: the run authenticates against the cloud proxy with the server bearer, never
-    # the user's own key. Pin that the proxy bearer + base url land in the env.
+    # OpenSwarm Pro: the run authenticates against the cloud proxy with the server bearer, never the user's own key. Pin that the proxy bearer + base url land in the env.
     from backend.apps.settings.models import AppSettings
     import backend.apps.settings.credentials as creds
     monkeypatch.setattr(creds, "proxy_auth", lambda s: ("pro-bearer-xyz", "https://api.openswarm.com/proxy"), raising=True)
@@ -118,8 +117,7 @@ def test_loop_builds_pro_proxy_env(monkeypatch):
 
 
 def test_loop_builds_direct_openai_key_env(monkeypatch):
-    # Direct OpenAI api-route key: routes through the local openai-passthrough that fixes the
-    # max_tokens->max_completion_tokens rename GPT-5 requires. Pin the key + passthrough base url.
+    # Direct OpenAI api-route key: routes through the local openai-passthrough that fixes the max_tokens->max_completion_tokens rename GPT-5 requires. Pin the key + passthrough base url.
     from backend.apps.settings.models import AppSettings
     settings = AppSettings(openai_api_key="sk-openai-test")
     env = p_capture_env(monkeypatch, settings, "openai", "cp-openai/gpt-5",
@@ -129,8 +127,7 @@ def test_loop_builds_direct_openai_key_env(monkeypatch):
 
 
 def test_loop_builds_pinned_anthropic_api_route_env(monkeypatch):
-    # A *-api route Claude model with a direct Anthropic key bypasses 9Router straight to
-    # api.anthropic.com, and pins the subagent + small-fast models so they don't drift to the proxy.
+    # A *-api route Claude model with a direct Anthropic key bypasses 9Router straight to api.anthropic.com, and pins the subagent + small-fast models so they don't drift to the proxy.
     from backend.apps.settings.models import AppSettings
     settings = AppSettings(anthropic_api_key="sk-ant-pinned")
     env = p_capture_env(monkeypatch, settings, "anthropic", "claude-3-5-api",
@@ -141,8 +138,7 @@ def test_loop_builds_pinned_anthropic_api_route_env(monkeypatch):
 
 
 def test_loop_builds_9router_default_env(monkeypatch):
-    # A subscription-route Claude model (cc/ -> 9Router) with no direct key and no Pro falls to
-    # the 9Router default lane. Pin that it routes through 9Router on localhost:20128.
+    # A subscription-route Claude model (cc/ -> 9Router) with no direct key and no Pro falls to the 9Router default lane. Pin that it routes through 9Router on localhost:20128.
     from backend.apps.settings.models import AppSettings
     import backend.apps.nine_router as nr
     monkeypatch.setattr(nr, "is_running", lambda: True, raising=True)
@@ -153,8 +149,7 @@ def test_loop_builds_9router_default_env(monkeypatch):
 
 
 def test_loop_builds_direct_gemini_key_env(monkeypatch):
-    # Direct Google AI Studio key: routed through the local anthropic-proxy that scrubs the
-    # JSON-Schema fields Gemini rejects. Pin the Gemini keys + the proxy base url.
+    # Direct Google AI Studio key: routed through the local anthropic-proxy that scrubs the JSON-Schema fields Gemini rejects. Pin the Gemini keys + the proxy base url.
     from backend.apps.settings.models import AppSettings
     settings = AppSettings(google_api_key="g-key-test")
     env = p_capture_env(monkeypatch, settings, "gemini", "cp-gemini/gemini-2.5-pro",
@@ -165,8 +160,7 @@ def test_loop_builds_direct_gemini_key_env(monkeypatch):
 
 
 def test_loop_builds_openrouter_env(monkeypatch):
-    # OpenRouter: routes through 9Router (must be up). Pin the 9Router base + that subagent ids
-    # fall back to OR's resold Claude when the user has no Anthropic key.
+    # OpenRouter: routes through 9Router (must be up). Pin the 9Router base + that subagent ids fall back to OR's resold Claude when the user has no Anthropic key.
     from backend.apps.settings.models import AppSettings
     import backend.apps.nine_router as nr
     monkeypatch.setattr(nr, "is_running", lambda: True, raising=True)
@@ -178,10 +172,7 @@ def test_loop_builds_openrouter_env(monkeypatch):
 
 
 def test_loop_builds_direct_anthropic_key_env(monkeypatch):
-    # Pin the provider env/route config the loop builds, the part the hook flagged as untested.
-    # Drive the REAL loop with a direct-Anthropic-key config (own_key, a non-9router model, no
-    # pinned api-route) and capture the ClaudeAgentOptions; the env must carry exactly the user's
-    # Anthropic key so the SDK authenticates against api.anthropic.com directly.
+    # Pin the provider env/route config the loop builds, the part the hook flagged as untested. Drive the REAL loop with a direct-Anthropic-key config (own_key, a non-9router model, no pinned api-route) and capture the ClaudeAgentOptions; the env must carry exactly the user's Anthropic key so the SDK authenticates against api.anthropic.com directly.
     from backend.apps.settings.models import AppSettings
     import backend.apps.agents.providers.registry as reg
     import backend.apps.agents.agent_manager as am
@@ -218,10 +209,7 @@ def test_loop_builds_direct_anthropic_key_env(monkeypatch):
 
 
 def test_loop_with_session_cwd_runs_workspace_git_init(monkeypatch):
-    # Regression: a session WITH a cwd hits the workspace git-init call in the loop. Harness
-    # sessions normally have no cwd, which masked a NameError (the call said ensure_cwd_git_repo
-    # while only _ensure_cwd_git_repo was imported). raising=True here would fail if the name were
-    # missing again; the assertions confirm the cwd path actually runs and the turn completes.
+    # Regression: a session WITH a cwd hits the workspace git-init call in the loop. Harness sessions normally have no cwd, which masked a NameError (the call said ensure_cwd_git_repo while only _ensure_cwd_git_repo was imported). raising=True here would fail if the name were missing again; the assertions confirm the cwd path actually runs and the turn completes.
     import backend.apps.agents.manager.run.RunOptions as run_opts
     called = {}
 
@@ -250,12 +238,7 @@ def test_loop_with_session_cwd_runs_workspace_git_init(monkeypatch):
 
 
 def test_full_streaming_turn_drives_the_complete_ws_contract(monkeypatch):
-    # The closest in-repo proxy for a live streaming run: drive the REAL loop with the exact
-    # SDK sequence the live provider emits, partial StreamEvents (block start -> text deltas ->
-    # stop -> message_stop), THEN the AssistantMessage envelope, THEN the ResultMessage. Asserts
-    # the FULL observable contract the live UI consumes end to end (stream_start, the streamed
-    # deltas, the committed assistant message, the token/context meter, the per-turn token math).
-    # This exercises stream_event + assistant_message + result_message together, through the loop.
+    # The closest in-repo proxy for a live streaming run: drive the REAL loop with the exact SDK sequence the live provider emits, partial StreamEvents (block start -> text deltas -> stop -> message_stop), THEN the AssistantMessage envelope, THEN the ResultMessage. Asserts the FULL observable contract the live UI consumes end to end (stream_start, the streamed deltas, the committed assistant message, the token/context meter, the per-turn token math). This exercises stream_event + assistant_message + result_message together, through the loop.
     msgs = [
         p_stream({"type": "content_block_start", "index": 0, "content_block": {"type": "text"}}),
         p_stream({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hel"}}),
@@ -280,11 +263,7 @@ def test_full_streaming_turn_drives_the_complete_ws_contract(monkeypatch):
 
 
 def test_loop_wires_all_four_hooks_to_a_live_hook_context(monkeypatch):
-    # Integration coverage the unit tests can't give: capture the ClaudeAgentOptions the real
-    # loop hands to query(), then invoke the WIRED hooks. This proves run_agent_loop builds a
-    # HookContext (all required fields, incl. the live `sessions` registry) and the four thin
-    # wrappers delegate to the extracted hook modules. The SDK never fires these under a mocked
-    # query, so without this the wiring (not just the functions) would be untested.
+    # Integration coverage the unit tests can't give: capture the ClaudeAgentOptions the real loop hands to query(), then invoke the WIRED hooks. This proves run_agent_loop builds a HookContext (all required fields, incl. the live `sessions` registry) and the four thin wrappers delegate to the extracted hook modules. The SDK never fires these under a mocked query, so without this the wiring (not just the functions) would be untested.
     captured = {}
 
     async def capturing_query(*args, **kwargs):
@@ -312,8 +291,7 @@ def test_loop_wires_all_four_hooks_to_a_live_hook_context(monkeypatch):
     stop = options.hooks["Stop"][0].hooks
     assert pre and post and stop
 
-    # Invoke the wired Stop hook: a non-view-builder session short-circuits to {} by reading
-    # ctx.session.mode, so this drives the full wrapper -> hook_ctx -> stop_hook module path.
+    # Invoke the wired Stop hook: a non-view-builder session short-circuits to {} by reading ctx.session.mode, so this drives the full wrapper -> hook_ctx -> stop_hook module path.
     assert asyncio.run(stop[0]({}, None, None)) == {}
 
 
@@ -357,8 +335,7 @@ def test_completes_even_with_no_content(monkeypatch):
 
 
 def test_thinking_block_before_text_is_handled(monkeypatch):
-    # a ThinkingBlock mutates the separate thinking-state cluster; the turn must still
-    # surface the final answer and complete (pins the thinking path for the restructuring)
+    # a ThinkingBlock mutates the separate thinking-state cluster; the turn must still surface the final answer and complete (pins the thinking path for the restructuring)
     session, events = p_drive(monkeypatch, [
         p_assistant([ThinkingBlock(thinking="let me reason about this", signature="sig-1"),
                     TextBlock(text="the answer is 42")]),
@@ -369,9 +346,7 @@ def test_thinking_block_before_text_is_handled(monkeypatch):
 
 
 def test_transient_capacity_error_is_retried_then_succeeds(monkeypatch):
-    # the capacity-retry while-loop: first query() raises a transient error, the loop
-    # backs off (sleep mocked to no-op) and re-queries, which succeeds. This is the exact
-    # behavior the streaming restructuring must preserve.
+    # the capacity-retry while-loop: first query() raises a transient error, the loop backs off (sleep mocked to no-op) and re-queries, which succeeds. This is the exact behavior the streaming restructuring must preserve.
     real_sleep = asyncio.sleep  # capture before patching to avoid self-recursion
 
     async def p_fast_sleep(*a, **k):
@@ -408,11 +383,7 @@ def test_transient_capacity_error_is_retried_then_succeeds(monkeypatch):
 
 
 def test_thinking_pill_shows_per_turn_delta_not_cumulative(monkeypatch):
-    # The pill's token total must reflect THIS turn's new tokens, not the whole session's
-    # running cumulative (the baseline-delta fix: capture-at-turn-start, subtract-at-emit,
-    # unified through TurnState). Prior turns left 1500 tokens on the session; this turn adds
-    # 100 in + 50 out = 150. Before the fix the baseline writes leaked into a closure-local
-    # and the pill showed the cumulative 1650; now it shows 150.
+    # The pill's token total must reflect THIS turn's new tokens, not the whole session's running cumulative (the baseline-delta fix: capture-at-turn-start, subtract-at-emit, unified through TurnState). Prior turns left 1500 tokens on the session; this turn adds 100 in + 50 out = 150. Before the fix the baseline writes leaked into a closure-local and the pill showed the cumulative 1650; now it shows 150.
     pills = []
 
     async def fake_send(sid, event, data):
