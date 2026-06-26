@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useAppSelector } from '@/shared/hooks';
+import { isAgentDrivingBrowser } from '@/shared/isAgentDrivingBrowser';
 
 // All of the dashboard's Redux reads in one place. Keeps Dashboard.tsx a thin composition layer instead of a 25-line selector wall.
 export function useDashboardSelectors(dashboardId: string) {
@@ -19,14 +20,14 @@ export function useDashboardSelectors(dashboardId: string) {
     }
     return out;
   }, [allBrowserCards, dashboardId]);
-  // Keep-alive browser cards from OTHER dashboards still in state (resetLayout preserved them across the switch). Rendered mounted-but-hidden by the card layer so their webContents + sessionStorage survive; kept OUT of `browserCards` so save/bounds/keyboard-nav only ever see THIS dashboard's cards (no cross-dashboard leak).
+  // Only an AGENT-driven browser from another dashboard stays mounted-but-hidden here so its run keeps going in the background; a MANUAL browser is deliberately NOT rendered off its own dashboard (it reloads on return) because a kept-alive heavy page bleeds its webview surface onto whatever dashboard you're viewing. Kept OUT of `browserCards` so save/bounds/keyboard-nav only ever see THIS dashboard's cards.
   const keepAliveBrowserCards = useMemo(() => {
     const out: typeof allBrowserCards = {};
     for (const [id, bc] of Object.entries(allBrowserCards)) {
-      if (bc.dashboard_id && bc.dashboard_id !== dashboardId) out[id] = bc;
+      if (bc.dashboard_id && bc.dashboard_id !== dashboardId && isAgentDrivingBrowser(sessions, id, bc.spawned_by)) out[id] = bc;
     }
     return out;
-  }, [allBrowserCards, dashboardId]);
+  }, [allBrowserCards, dashboardId, sessions]);
   const workflowCards = useAppSelector((state) => state.dashboardLayout.workflowCards);
   const workflowsHub = useAppSelector((state) => state.dashboardLayout.workflowsHub);
   const pendingFocusWorkflowId = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowId);

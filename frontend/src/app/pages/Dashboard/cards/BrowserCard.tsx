@@ -1160,8 +1160,7 @@ const BrowserCard: React.FC<Props> = ({
                   width: '100%',
                   height: '100%',
                   border: 'none',
-                  // A foreign (kept-alive) card lives on another dashboard: hide its surface the SAME proven way inactive tabs do (visibility:hidden reliably stops the guest compositing yet keeps the webContents + session alive), not just the off-screen card position, a heavy live page (Discord) can leave its OS-level webview surface painted at the old spot even after the card moves off-screen. Skip while an agent is driving it: a hidden guest may not paint frames for the agent's screenshots.
-                  visibility: ((keepAliveHidden && !agentActive) || tab.id !== activeTabId) ? 'hidden' : 'visible',
+                  visibility: tab.id === activeTabId ? 'visible' : 'hidden',
                   zIndex: tab.id === activeTabId ? 1 : 0,
                   // Only during select mode does the page go click-through, so the element picker can grab the whole card from anywhere instead of just the header (a live webview swallows host clicks). Off select mode = live for browsing.
                   pointerEvents: isElementSelectMode ? 'none' : 'auto',
