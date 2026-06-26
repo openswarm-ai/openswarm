@@ -123,6 +123,9 @@ const chromeUserAgent = navigator.userAgent
   .replace(/\s*Electron\/\S+/, '')
   .replace(/\s*OpenSwarm\/\S+/, '');
 
+// Persistent partition so browser-card logins/cookies/localStorage outlive a reload or quit. MUST match BROWSER_PARTITION in electron/main.js, which configures permissions + iframe header-strip on this exact partition.
+const BROWSER_PARTITION = 'persist:openswarm-browser';
+
 // Sync exposure set at preload boot; async API fallback for older builds.
 const webviewPreloadPath: string | undefined = isElectron
   ? ((window as any).__OPENSWARM_WEBVIEW_PRELOAD__
@@ -1136,6 +1139,7 @@ const BrowserCard: React.FC<Props> = ({
                   else webviewMap.current.delete(tab.id);
                 }}
                 data-tab-id={tab.id}
+                partition={BROWSER_PARTITION}
                 src="about:blank"
                 {...({ allowpopups: 'true' } as any) /* React drops boolean-valued unknown attrs, so string it stays; @types/react wrongly says boolean */}
                 useragent={chromeUserAgent}

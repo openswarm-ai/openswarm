@@ -1,5 +1,8 @@
 const { app, components, BrowserWindow, ipcMain, shell, session, dialog, crashReporter, powerMonitor } = require('electron');
 
+// Browser cards live in their own persistent partition so cookies/localStorage/IndexedDB survive reload + quit (Discord etc. stay logged in) and site data stays isolated from the app's defaultSession. The "clear browsing data" wipe nukes only this partition. MUST match BROWSER_PARTITION in frontend BrowserCard.tsx.
+const BROWSER_PARTITION = 'persist:openswarm-browser';
+
 // E2E flag: when OPENSWARM_E2E=1, append a Chromium command-line switch the
 // renderer reads at startup to set window.__OPENSWARM_E2E__ = true BEFORE any
 // page script parses, so the production-build store-on-window gate fires
@@ -1719,45 +1722,50 @@ app.whenReady().then(async () => {
     try { app.dock.setIcon(iconPath); } catch (_) {}
   }
 
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    const allowed = [
-      'media', 'mediaKeySystem', 'protected-media-identifier',
-      'geolocation', 'notifications', 'midi', 'midiSysex',
-      'clipboard-read', 'clipboard-sanitized-write',
-      'pointerLock', 'fullscreen', 'idle-detection',
-    ];
-    console.log('Permission request:', permission, '->', allowed.includes(permission) ? 'granted' : 'denied');
-    callback(allowed.includes(permission));
-  });
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    const allowed = [
-      'media', 'mediaKeySystem', 'protected-media-identifier',
-      'clipboard-read', 'clipboard-sanitized-write',
-      'pointerLock', 'fullscreen', 'idle-detection',
-    ];
-    return allowed.includes(permission);
-  });
+  // Same permission grants + iframe header-strip on BOTH the app's defaultSession and the browser-card partition. A named partition is a separate session, so without re-applying these, browser cards lose camera/mic prompts and the ability to embed sites that send X-Frame-Options.
+  const configureBrowsingSession = (ses) => {
+    ses.setPermissionRequestHandler((_wc, permission, callback) => {
+      const allowed = [
+        'media', 'mediaKeySystem', 'protected-media-identifier',
+        'geolocation', 'notifications', 'midi', 'midiSysex',
+        'clipboard-read', 'clipboard-sanitized-write',
+        'pointerLock', 'fullscreen', 'idle-detection',
+      ];
+      console.log('Permission request:', permission, '->', allowed.includes(permission) ? 'granted' : 'denied');
+      callback(allowed.includes(permission));
+    });
+    ses.setPermissionCheckHandler((_wc, permission) => {
+      const allowed = [
+        'media', 'mediaKeySystem', 'protected-media-identifier',
+        'clipboard-read', 'clipboard-sanitized-write',
+        'pointerLock', 'fullscreen', 'idle-detection',
+      ];
+      return allowed.includes(permission);
+    });
 
-  // Strip X-Frame-Options and CSP frame-ancestors directives on iframe subframe loads so the Windows BrowserCard iframe fallback (used because <webview> tag commit segfaults on Chromium 144 + this Electron 40 CastLabs build) can render sites that normally refuse to be embedded. Scoped to types:['sub_frame'] so OAuth popups, the main app frame, deep-link redirects, and DRM license fetches keep their security headers intact. urls filter limits to http/https so file:// loads of the bundled frontend are untouched.
-  session.defaultSession.webRequest.onHeadersReceived(
-    // Electron's webRequest type name for iframes is 'subFrame' (camelCase), not the Chrome-extension 'sub_frame' — passing the wrong name throws "Invalid type sub_frame" synchronously which becomes an unhandledRejection and prevents the app from booting.
-    { urls: ['http://*/*', 'https://*/*'], types: ['subFrame'] },
-    (details, callback) => {
-      const headers = { ...(details.responseHeaders || {}) };
-      for (const k of Object.keys(headers)) {
-        const lk = k.toLowerCase();
-        if (lk === 'x-frame-options') {
-          delete headers[k];
-        } else if (lk === 'content-security-policy' || lk === 'content-security-policy-report-only') {
-          const cleaned = (headers[k] || [])
-            .map((v) => v.split(';').filter((d) => !/^\s*frame-ancestors\b/i.test(d)).join(';').trim())
-            .filter(Boolean);
-          if (cleaned.length) headers[k] = cleaned; else delete headers[k];
+    // Strip X-Frame-Options and CSP frame-ancestors directives on iframe subframe loads so the Windows BrowserCard iframe fallback (used because <webview> tag commit segfaults on Chromium 144 + this Electron 40 CastLabs build) can render sites that normally refuse to be embedded. Scoped to types:['sub_frame'] so OAuth popups, the main app frame, deep-link redirects, and DRM license fetches keep their security headers intact. urls filter limits to http/https so file:// loads of the bundled frontend are untouched.
+    ses.webRequest.onHeadersReceived(
+      // Electron's webRequest type name for iframes is 'subFrame' (camelCase), not the Chrome-extension 'sub_frame' — passing the wrong name throws "Invalid type sub_frame" synchronously which becomes an unhandledRejection and prevents the app from booting.
+      { urls: ['http://*/*', 'https://*/*'], types: ['subFrame'] },
+      (details, callback) => {
+        const headers = { ...(details.responseHeaders || {}) };
+        for (const k of Object.keys(headers)) {
+          const lk = k.toLowerCase();
+          if (lk === 'x-frame-options') {
+            delete headers[k];
+          } else if (lk === 'content-security-policy' || lk === 'content-security-policy-report-only') {
+            const cleaned = (headers[k] || [])
+              .map((v) => v.split(';').filter((d) => !/^\s*frame-ancestors\b/i.test(d)).join(';').trim())
+              .filter(Boolean);
+            if (cleaned.length) headers[k] = cleaned; else delete headers[k];
+          }
         }
-      }
-      callback({ responseHeaders: headers });
-    },
-  );
+        callback({ responseHeaders: headers });
+      },
+    );
+  };
+  configureBrowsingSession(session.defaultSession);
+  configureBrowsingSession(session.fromPartition(BROWSER_PARTITION));
 
   // Read-only logging for DRM license requests — no modifying interceptors
   // so the network stack can set Content-Type and other headers normally.
