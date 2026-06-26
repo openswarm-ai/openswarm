@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
+import { setLastDashboardId } from '@/shared/lastDashboardId';
 
 const STORAGE_KEY = 'openswarm_last_dashboard_id';
-const WINDOW_KEY = '__openswarm_last_dashboard_id';
 
 /** Sticky last-visited dashboard id so Dashboard stays mounted across non-dashboard nav. */
 export function useLastDashboardId(): [string | null, (id: string | null) => void] {
@@ -23,7 +23,7 @@ export function useLastDashboardId(): [string | null, (id: string | null) => voi
       try {
         localStorage.setItem(STORAGE_KEY, match[1]);
       } catch {}
-      (window as any)[WINDOW_KEY] = match[1];
+      setLastDashboardId(match[1]);
     }
   }, [location.pathname, lastId]);
 
@@ -36,11 +36,7 @@ export function useLastDashboardId(): [string | null, (id: string | null) => voi
         localStorage.removeItem(STORAGE_KEY);
       }
     } catch {}
-    if (id) {
-      (window as any)[WINDOW_KEY] = id;
-    } else {
-      delete (window as any)[WINDOW_KEY];
-    }
+    setLastDashboardId(id);
   }, []);
 
   return [lastId, setLastId];

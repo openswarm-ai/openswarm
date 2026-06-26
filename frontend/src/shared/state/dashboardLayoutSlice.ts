@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction, createAction } from '@reduxjs/toolkit';
 import { launchAndSendFirstMessage } from './agentsSlice';
 import { API_BASE } from '@/shared/config';
+import { getLastDashboardId } from '@/shared/lastDashboardId';
 
 // fetchSession 404/410 strips the layout card to stop AgentChat remount-loop. Matched by string to avoid circular import.
 const fetchSessionRejectedAction = createAction<
@@ -708,6 +709,8 @@ const dashboardLayoutSlice = createSlice({
         width: DEFAULT_BROWSER_CARD_W,
         height: DEFAULT_BROWSER_CARD_H,
         zOrder: state.nextZOrder++,
+        // Born onto the current dashboard so it shows there and only there, never bleeding onto every dashboard while it waits for the first layout save to tag it.
+        dashboard_id: getLastDashboardId() ?? undefined,
       };
       state.pendingFocusBrowserId = id;
     },
