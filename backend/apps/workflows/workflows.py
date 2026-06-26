@@ -1226,8 +1226,8 @@ async def test_run_workflow(workflow_id: str, body: dict):
         raise HTTPException(status_code=400, detail="Workflow has no steps to test")
 
     from backend.apps.agents.core.models import AgentConfig
-    from backend.apps.agents.agent_manager import (
-        agent_manager,
+    from backend.apps.agents.agent_manager import agent_manager
+    from backend.apps.agents.manager.permissions.workflow_approval import (
         clear_workflow_approval_memory,
         get_workflow_step_usage,
         set_workflow_approval_memory,
@@ -1235,6 +1235,9 @@ async def test_run_workflow(workflow_id: str, body: dict):
     )
     from backend.apps.workflows import executor
 
+    # Like a real run, the test must attach to the dashboard the user is watching, else its browser tools have no card to drive and the test "runs" but visibly does nothing. Prefer the live active dashboard over the workflow's stored home.
+    from backend.apps.agents.core.ws_manager import ws_manager as p_wsm
+    test_dashboard_id = p_wsm.active_dashboard_id or executor.resolve_workflow_dashboard_id(wf)
     resolved_allowed_tools = executor._resolve_allowed_tools(wf)
     config = AgentConfig(
         name=f"{wf.title or 'Workflow'} (test)",
@@ -1245,7 +1248,7 @@ async def test_run_workflow(workflow_id: str, body: dict):
         allowed_tools=resolved_allowed_tools if resolved_allowed_tools is not None else [
             "Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion",
         ],
-        dashboard_id=wf.dashboard_id,
+        dashboard_id=test_dashboard_id,
     )
     session = await agent_manager.launch_agent(config)
     session.workflow_test_state = "running"
