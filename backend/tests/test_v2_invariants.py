@@ -1697,9 +1697,12 @@ def test_gpt5_param_scrub_drops_unsupported_sampling_knobs():
                         "frequency_penalty": 0.5, "presence_penalty": 0.1, "logprobs": True}).encode()
     for fn in (scrub_request_for_openai_gpt5, scrub_gpt5_params):
         out = json.loads(fn(dirty))
-        assert out.get("max_completion_tokens") == 200 and "max_tokens" not in out, fn.__name__
+        assert "max_tokens" not in out, fn.__name__
         for k in ("temperature", "top_p", "frequency_penalty", "presence_penalty", "logprobs"):
             assert k not in out, f"{fn.__name__} left {k}"
+    # Token budget diverges by lane: the proxy passes the caller's value through, while the passthrough (9Router's GPT-5 own-key lane) floors it, GPT-5 burns 8-30K hidden reasoning tokens and 400s under a tiny budget like 200. NOTE: the proxy lane is intentionally NOT floored here, so a low-budget GPT-5 request through it can still 400; revisit if that lane carries real GPT-5 traffic.
+    assert json.loads(scrub_request_for_openai_gpt5(dirty))["max_completion_tokens"] == 200
+    assert json.loads(scrub_gpt5_params(dirty))["max_completion_tokens"] >= 32768
     # temperature==1 is the one allowed value; don't over-strip it
     assert json.loads(scrub_gpt5_params(json.dumps(
         {"model": "gpt-5", "temperature": 1}).encode())).get("temperature") == 1
