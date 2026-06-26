@@ -33,6 +33,7 @@ import {
   updateBrowserTabTitle,
   updateBrowserTabFavicon,
   reorderBrowserTab,
+  recordClosedCard,
   type BrowserTab,
 } from '@/shared/state/dashboardLayoutSlice';
 import { removeBrowserCardCleanly } from '@/shared/browserTeardown';
@@ -455,6 +456,7 @@ const BrowserCard: React.FC<Props> = ({
 
   const handleRemove = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
+    dispatch(recordClosedCard({ kind: 'browser', id: browserId }));
     removeBrowserCardCleanly(browserId, dispatch);
   }, [dispatch, browserId]);
 
@@ -465,8 +467,11 @@ const BrowserCard: React.FC<Props> = ({
 
   const handleCloseTab = useCallback((tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    // Closing the last tab destroys the whole card, so record it as a browser-card close (reopen brings the card back), not a tab close.
+    if (tabs.length <= 1) dispatch(recordClosedCard({ kind: 'browser', id: browserId }));
+    else dispatch(recordClosedCard({ kind: 'tab', id: tabId, browserId }));
     dispatch(removeBrowserTab({ browserId, tabId }));
-  }, [dispatch, browserId]);
+  }, [dispatch, browserId, tabs.length]);
 
   const handleSwitchTab = useCallback((tabId: string) => {
     dispatch(setActiveBrowserTab({ browserId, tabId }));

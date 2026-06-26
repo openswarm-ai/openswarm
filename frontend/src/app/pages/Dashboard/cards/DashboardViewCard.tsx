@@ -10,7 +10,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CloseIcon from '@mui/icons-material/Close';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import { Output, SERVE_BASE } from '@/shared/state/outputsSlice';
-import { setViewCardPosition, setViewCardSize, setActiveViewCardId } from '@/shared/state/dashboardLayoutSlice';
+import { setViewCardPosition, setViewCardSize, setActiveViewCardId, recordClosedCard } from '@/shared/state/dashboardLayoutSlice';
 import { removeViewCardCleanly } from '@/shared/viewTeardown';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { API_BASE, getAuthToken } from '@/shared/config';
@@ -304,6 +304,7 @@ const DashboardViewCard: React.FC<Props> = ({
 
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
+    dispatch(recordClosedCard({ kind: 'view', id: output.id }));
     void removeViewCardCleanly(output.id, dispatch);
   };
 

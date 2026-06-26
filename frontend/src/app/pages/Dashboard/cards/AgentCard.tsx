@@ -30,6 +30,7 @@ import {
   fadeGlowingAgentCard,
   clearGlowingAgentCard,
   removeCard,
+  recordClosedCard,
 } from '@/shared/state/dashboardLayoutSlice';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { QuestionForm } from '@/app/pages/AgentChat/shell/ApprovalBar';
@@ -625,6 +626,8 @@ const AgentCard: React.FC<Props> = ({
     if (linkedWorkflowSidecarId) {
       dispatch(setCardSidecar({ workflowId: linkedWorkflowSidecarId, sessionId: null, kind: null }));
     }
+    // Record for Cmd+Shift+T BEFORE removeCard wipes the position, but only on a real close (the glow branch just clears a tether, it doesn't close the session).
+    if (!glowEntry) dispatch(recordClosedCard({ kind: 'agent', id: session.id }));
     dispatch(collapseSession(session.id));
     dispatch(removeCard(session.id));
     if (glowEntry) {

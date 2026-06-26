@@ -9,6 +9,7 @@ import {
   removeNote,
   updateNoteContent,
   setNoteColor,
+  recordClosedCard,
   NoteColor,
 } from '@/shared/state/dashboardLayoutSlice';
 import { useAppDispatch } from '@/shared/hooks';
@@ -238,6 +239,7 @@ const NoteCard: React.FC<Props> = ({
 
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
+    dispatch(recordClosedCard({ kind: 'note', id: noteId }));
     dispatch(removeNote(noteId));
   };
 

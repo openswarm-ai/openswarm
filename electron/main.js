@@ -2003,6 +2003,7 @@ function routeBrowserShortcut(event, input, webContentsId) {
   else if (mod && !input.shift && key === '-') action = 'zoom-out';
   else if (mod && !input.shift && key === '0') action = 'zoom-reset';
   else if (mod && !input.shift && key === 'f') action = 'find';
+  else if (mod && input.shift && key === 't') action = 'reopen-closed';
   else if (input.control && !input.meta && key === 'tab') action = input.shift ? 'tab-prev' : 'tab-next';
   if (!action) return;
   event.preventDefault();

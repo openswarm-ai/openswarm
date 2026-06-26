@@ -2,11 +2,12 @@ import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import { report } from '@/shared/serviceClient';
 import { useAppDispatch } from '@/shared/hooks';
 import { closeSession, toggleExpandSession } from '@/shared/state/agentsSlice';
-import { removeNote, removeWorkflowCard, closeWorkflowsHub } from '@/shared/state/dashboardLayoutSlice';
+import { removeNote, removeWorkflowCard, closeWorkflowsHub, recordClosedCard, reopenLastClosed } from '@/shared/state/dashboardLayoutSlice';
 import { closeWorkflowCard } from '@/shared/state/workflowsSlice';
 import { removeBrowserCardCleanly } from '@/shared/browserTeardown';
 import { removeViewCardCleanly } from '@/shared/viewTeardown';
 import { getLastInteractedBrowser } from '@/shared/browserFocus';
+import { getWebview } from '@/shared/browserRegistry';
 import type { useDashboardSelection } from '../state/useDashboardSelection';
 
 type Selection = ReturnType<typeof useDashboardSelection>;
@@ -77,14 +78,19 @@ export function useDashboardShortcuts({
       const viewIds: string[] = [];
       for (const [id, type] of selection.selectedIds) {
         if (type === 'agent') {
+          dispatch(recordClosedCard({ kind: 'agent', id }));
           dispatch(closeSession({ sessionId: id }));
         } else if (type === 'view') {
+          dispatch(recordClosedCard({ kind: 'view', id }));
           viewIds.push(id);
         } else if (type === 'browser') {
+          dispatch(recordClosedCard({ kind: 'browser', id }));
           removeBrowserCardCleanly(id, dispatch);
         } else if (type === 'note') {
+          dispatch(recordClosedCard({ kind: 'note', id }));
           dispatch(removeNote(id));
         } else if (type === 'workflow') {
+          dispatch(recordClosedCard({ kind: 'workflow', id }));
           dispatch(removeWorkflowCard(id));
           dispatch(closeWorkflowCard(id));
         } else if (type === 'workflows-hub') {
@@ -98,6 +104,18 @@ export function useDashboardShortcuts({
     window.addEventListener('keydown', handleDelete);
     return () => window.removeEventListener('keydown', handleDelete);
   }, [selection, dispatch]);
+
+  // Cmd/Ctrl+Shift+T reopens the most recently closed card (browser, agent, note, app, workflow, or browser tab), like a browser's reopen-closed-tab. The guest-focused case routes through main -> AppShell.
+  useEffect(() => {
+    const handleReopen = (e: KeyboardEvent) => {
+      if (!isActive) return;
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey || e.key.toLowerCase() !== 't') return;
+      e.preventDefault();
+      dispatch(reopenLastClosed());
+    };
+    window.addEventListener('keydown', handleReopen);
+    return () => window.removeEventListener('keydown', handleReopen);
+  }, [isActive, dispatch]);
 
   // Cmd/Ctrl+A selects every card so it can be deleted in one go. Skipped inside text fields so Cmd+A there still selects text, not cards.
   useEffect(() => {
@@ -118,8 +136,9 @@ export function useDashboardShortcuts({
     const handleSearch = (e: KeyboardEvent) => {
       if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'f') return;
-      // When you're in a browser card, Cmd+F is find-in-page (handled in AppShell), not card search.
-      if (getLastInteractedBrowser()) return;
+      // When you're in a LIVE browser card, Cmd+F is find-in-page (handled in AppShell), not card search. A stale id (its card was closed) must NOT suppress the palette, so require the webview to still exist.
+      const fb = getLastInteractedBrowser();
+      if (fb && getWebview(fb)) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
       e.preventDefault();

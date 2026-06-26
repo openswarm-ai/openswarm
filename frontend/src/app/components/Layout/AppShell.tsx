@@ -43,7 +43,7 @@ import { shallowEqual } from 'react-redux';
 import { fetchDashboards, createDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
 import { Typewriter } from '@/app/components/feedback/Animated';
 import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
-import { addBrowserCard, addBrowserTab, cycleBrowserTab } from '@/shared/state/dashboardLayoutSlice';
+import { addBrowserCard, addBrowserTab, cycleBrowserTab, reopenLastClosed } from '@/shared/state/dashboardLayoutSlice';
 import { setPendingBrowserUrl } from '@/shared/state/tempStateSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { setInstalling } from '@/shared/state/updateSlice';
@@ -356,6 +356,8 @@ const AppShell: React.FC = () => {
     const w = window as any;
     if (!w.openswarm?.onBrowserShortcut) return;
     return w.openswarm.onBrowserShortcut((payload: { action: string; webContentsId: number }) => {
+      // Reopen-last-closed is global (no target browser), so handle it before the per-browser id guard.
+      if (payload.action === 'reopen-closed') { dispatch(reopenLastClosed()); return; }
       const id = findBrowserByWebContentsId(payload.webContentsId) ?? getLastInteractedBrowser();
       if (!id) return;
       switch (payload.action) {
@@ -373,7 +375,8 @@ const AppShell: React.FC = () => {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const id = getLastInteractedBrowser();
-      if (!id) return;
+      // Require a LIVE webview: a stale id (its card was closed) means no browser is focused, so let the canvas shortcuts (e.g. card-search Cmd+F) handle the key instead.
+      if (!id || !getWebview(id)) return;
       const t = e.target as HTMLElement | null;
       const typing = t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || !!t?.isContentEditable;
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key || '').toLowerCase() === 'f' && !typing) {
