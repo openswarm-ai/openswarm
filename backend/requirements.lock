@@ -1469,6 +1469,10 @@ starlette==1.1.0 \
     #   fastapi
     #   mcp
     #   sse-starlette
+swarm-analytics==0.1.1 \
+    --hash=sha256:49255c5a0962ba1eca3c14471b7df8746f4258d8cd83c8c73931e62381b2be8e \
+    --hash=sha256:c1d368905a8b53a555bb53bd60c6707323fba4beff3ea2e79a8f83fb91b11cab
+    # via -r backend/requirements.txt
 tld==0.13.2 \
     --hash=sha256:9b8fdbdb880e7ba65b216a4937f2c94c49a7226723783d5838fc958ac76f4e0c \
     --hash=sha256:d983fa92b9d717400742fca844e29d5e18271079c7bcfabf66d01b39b4a14345
