@@ -46,11 +46,12 @@ from backend.apps.subscription.router import subscription
 from backend.apps.auth.router import auth
 from backend.apps.web.web import web
 from backend.apps.agents.proxy.anthropic_proxy import anthropic_proxy
+from backend.apps.agents.core.openai_passthrough import openai_passthrough
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 import json
 
-main_app = MainApp([health, agents, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, output_versions, dashboards, swarm, service, subscription, auth, web, anthropic_proxy])
+main_app = MainApp([health, agents, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, output_versions, dashboards, swarm, service, subscription, auth, web, anthropic_proxy, openai_passthrough])
 app = main_app.app
 
 # Generate per-install auth token BEFORE we bind the HTTP port. By the
