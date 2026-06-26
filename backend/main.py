@@ -355,6 +355,10 @@ async def websocket_dashboard(websocket: WebSocket):
                     payload.get("request_id", ""),
                     payload,
                 )
+            elif event == "dashboard:active":
+                dash_id = payload.get("dashboard_id")
+                if dash_id:
+                    ws_manager.set_active_dashboard(websocket, dash_id)
     except WebSocketDisconnect:
         ws_manager.disconnect_global(websocket)
 

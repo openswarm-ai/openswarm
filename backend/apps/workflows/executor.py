@@ -64,6 +64,26 @@ def _resolve_allowed_tools(wf: Workflow) -> Optional[list[str]]:
     return list(wf.actions.configured_sets)
 
 
+def p_resolve_run_dashboard_id(wf: Workflow) -> Optional[str]:
+    """Pick the dashboard this run's agent attaches to, so browser tools work like in chat.
+
+    Browser cards render only on the dashboard the renderer is currently showing, so we
+    prefer the live active dashboard over anything stored. Resolved fresh each fire (a
+    stored id goes stale the moment the user switches or deletes a dashboard). Last resort
+    is the most-recently-updated dashboard; None just means no browser this run."""
+    if wf.dashboard_id:
+        return wf.dashboard_id
+    from backend.apps.agents.core.ws_manager import ws_manager
+    if ws_manager.active_dashboard_id:
+        return ws_manager.active_dashboard_id
+    from backend.apps.dashboards.dashboards import load_all
+    dashboards = load_all()
+    if dashboards:
+        dashboards.sort(key=lambda d: d.updated_at or d.created_at, reverse=True)
+        return dashboards[0].id
+    return None
+
+
 def p_make_remember_approval(workflow_id: str):
     def p_remember_approval(tool_name: str, behavior: str) -> None:
         fresh = storage.get_workflow(workflow_id)
@@ -242,7 +262,7 @@ async def execute(
             allowed_tools=resolved_allowed_tools if resolved_allowed_tools is not None else [
                 "Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion",
             ],
-            dashboard_id=wf.dashboard_id,
+            dashboard_id=p_resolve_run_dashboard_id(wf),
         )
 
         session = await agent_manager.launch_agent(config)

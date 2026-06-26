@@ -12,7 +12,6 @@ import {
 import type { CardType } from '@/shared/state/dashboardLayoutSlice';
 import WorkflowTitle from './WorkflowTitle';
 
-type StepState = 'done' | 'running' | 'failed' | 'pending';
 const DRAG_THRESHOLD = 3;
 
 function fmtClock(ms: number): string {
@@ -131,13 +130,6 @@ const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHe
   const succeeded = run?.status === 'success' || run?.status === 'ran_late';
   const sessionId = run?.session_id || null;
 
-  const stepState = (i: number): StepState => {
-    if (succeeded) return 'done';
-    if (failed) return i < aidx ? 'done' : i === aidx ? 'failed' : 'pending';
-    if (isRunning) return i < aidx ? 'done' : i === aidx ? 'running' : 'pending';
-    return 'pending';
-  };
-
   const pct = total > 0
     ? Math.round((succeeded ? total : Math.min(aidx + (isRunning ? 0.5 : 0), total)) / total * 100)
     : (isRunning ? 10 : 0);
@@ -150,8 +142,12 @@ const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHe
   const headColor = isRunning ? c.accent.primary : succeeded ? c.status.success : failed ? c.status.error : c.text.tertiary;
   const headBg = isRunning ? c.bg.secondary : succeeded ? c.status.successBg : failed ? c.status.errorBg : c.bg.secondary;
 
+  const activeStep = total > 0 ? steps[Math.min(aidx, total - 1)] : null;
+  const activeStepName = activeStep ? (activeStep.label || activeStep.text.trim().slice(0, 60)) : '';
+
+  const stepPrefix = `Step ${Math.min(aidx + 1, total)} of ${total}`;
   const progressLabel = isRunning
-    ? `Step ${Math.min(aidx + 1, total)} of ${total}`
+    ? (activeStepName ? `${stepPrefix}: ${activeStepName}` : stepPrefix)
     : succeeded ? `All ${total} steps complete` : failed ? `Failed at step ${Math.min(aidx + 1, total)}` : `${total} steps`;
 
   const close = () => dispatch(closeWorkflowMonitor());
@@ -200,35 +196,7 @@ const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHe
         <div style={{ height: 5, borderRadius: 999, background: c.bg.secondary, overflow: 'hidden' }}>
           <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: failed ? c.status.error : c.accent.primary, transition: 'width .4s ease' }} />
         </div>
-        <div style={{ fontSize: 12, color: c.text.secondary, marginTop: 8 }}>{progressLabel}</div>
-      </div>
-
-      {/* workflow steps (bounded; the live chat fills the rest) */}
-      <div style={{ flex: sessionId ? 'none' : 1, maxHeight: sessionId ? '40%' : undefined, overflowY: 'auto', minHeight: 0, padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: 7, borderBottom: sessionId ? `1px solid ${c.border.subtle}` : undefined }}>
-        {steps.map((s, i) => {
-          const st = stepState(i);
-          const iconBg = st === 'done' ? c.status.success : st === 'failed' ? c.status.error : st === 'running' ? c.accent.primary : c.bg.secondary;
-          return (
-            <div key={s.id} style={{ background: st === 'running' ? c.bg.elevated : 'transparent', border: `1px solid ${st === 'running' ? c.border.medium : c.border.subtle}`, borderRadius: c.radius.md, padding: '10px 12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', flex: 'none', background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {st === 'done' && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2"><path d="M5 12l5 5L20 6" /></svg>}
-                  {st === 'running' && <div style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.5)', borderTopColor: '#fff', animation: 'os-spin 0.7s linear infinite' }} />}
-                  {st === 'failed' && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2"><path d="M6 6l12 12M18 6L6 18" /></svg>}
-                </div>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: st === 'pending' ? c.text.tertiary : c.text.primary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.label || s.text.slice(0, 48)}</span>
-                {st === 'done' && <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, color: c.text.tertiary, flex: 'none' }}>done</span>}
-              </div>
-              {st === 'running' && run?.last_tool_label && (
-                <div style={{ marginTop: 8, paddingLeft: 32, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: c.accent.primary, marginTop: 6, flex: 'none' }} />
-                  <span style={{ fontSize: 11.5, color: c.text.secondary, lineHeight: 1.45 }}>{run.last_tool_label}</span>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {total === 0 && <div style={{ fontSize: 12.5, color: c.text.tertiary }}>This workflow has no runnable steps.</div>}
+        <div style={{ fontSize: 12, color: c.text.secondary, marginTop: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{progressLabel}</div>
       </div>
 
       {/* live transcript: read-only (prompts we send, agent responses, tool calls). Reuses AgentChat. */}

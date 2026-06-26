@@ -93,6 +93,12 @@ export function useDashboardLifecycle({
     };
   }, [dashboardId]);
 
+  // Tell the backend which dashboard is on screen, so a scheduled workflow run spawns its browser card on the dashboard the user can actually see. send queues until the socket opens, so firing before connect is fine.
+  useEffect(() => {
+    if (!dashboardId) return;
+    dashboardWs.send('dashboard:active', { dashboard_id: dashboardId });
+  }, [dashboardId]);
+
   useEffect(() => {
     if (!dashboardId) return;
     hasFittedRef.current = false;
@@ -105,6 +111,8 @@ export function useDashboardLifecycle({
     const cleanupBrowserHandler = initBrowserCommandHandler();
     // Global broadcasts (spawned browser cards) skip the replay log, so a socket gap loses them; a reconnect refetch is the only way they return.
     const unsubReconnect = dashboardWs.on('dashboard:reconnected', () => {
+      // A socket gap drops the backend's active-dashboard pointer; re-assert it so scheduled-run browser cards still target this dashboard after a reconnect.
+      dashboardWs.send('dashboard:active', { dashboard_id: dashboardId });
       dispatch(fetchSessions({ dashboardId }));
       dispatch(fetchLayout({ dashboardId, isReconnect: true }));
       // workflow:run/updated/deleted are global broadcasts that skip the replay log, so a socket gap drops them: refetch to heal stale "running" cards, ghost workflows, and missed run history on reconnect.

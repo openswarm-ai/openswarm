@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from typing import Optional
 from fastapi import WebSocket
 
 from backend.apps.agents.core.seq_log import TERMINAL_STATUSES, seq_log
@@ -39,6 +40,9 @@ class ConnectionManager:
     def __init__(self):
         self.connections: dict[str, list[WebSocket]] = {}
         self.global_connections: list[WebSocket] = []
+        # Which dashboard each global socket is currently showing, keyed by id(websocket). active_dashboard_id is the last one activated (the window the user is looking at most recently); a scheduled run targets it so its browser card spawns where the renderer can render it.
+        self.global_dashboard_ids: dict[int, str] = {}
+        self.active_dashboard_id: Optional[str] = None
         self.pending_futures: dict[str, asyncio.Future] = {}
         self.browser_futures: dict[str, asyncio.Future] = {}
 
@@ -60,10 +64,19 @@ class ConnectionManager:
             if not self.connections[session_id]:
                 del self.connections[session_id]
 
+    def set_active_dashboard(self, websocket: WebSocket, dashboard_id: str):
+        """Record which dashboard a renderer is showing; last activation wins."""
+        self.global_dashboard_ids[id(websocket)] = dashboard_id
+        self.active_dashboard_id = dashboard_id
+
     def disconnect_global(self, websocket: WebSocket):
         self.global_connections = [
             ws for ws in self.global_connections if ws != websocket
         ]
+        # Drop this socket's active-dashboard pointer; if it owned the global one, fall back to any window still connected so a closed tab doesn't leave a stale target.
+        self.global_dashboard_ids.pop(id(websocket), None)
+        if self.active_dashboard_id not in self.global_dashboard_ids.values():
+            self.active_dashboard_id = next(iter(self.global_dashboard_ids.values()), None)
 
     async def send_to_session(self, session_id: str, event: str, data: dict):
         """Broadcast a session event with monotonic sequencing; terminal statuses also persist to disk."""
