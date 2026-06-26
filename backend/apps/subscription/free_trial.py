@@ -22,7 +22,7 @@ import time
 import httpx
 
 from backend.apps.settings.credentials import OPENSWARM_DEFAULT_PROXY_URL
-from backend.apps.settings.settings import save_settings_async
+from backend.apps.settings.settings import load_settings, save_settings_async
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +150,17 @@ async def clear_free_trial(settings_obj) -> None:
     settings_obj.free_trial_token = None
     await save_settings_async(settings_obj)
     await _sync_routing(settings_obj)
+
+
+async def clear_free_trial_on_connect() -> None:
+    """Hand the wheel back to a just-connected subscription immediately, instead of
+    waiting for the next-boot arm_free_trial reconcile. Subscriptions live in 9Router,
+    not settings, so `apply_settings_update`'s `_has_own_model` clear (which covers keys +
+    custom providers) can't see them; this is the connect-time equivalent for subs."""
+    try:
+        await clear_free_trial(load_settings())
+    except Exception as e:
+        logger.debug("clear_free_trial_on_connect skipped: %s", e)
 
 
 async def arm_free_trial(settings_obj) -> dict:

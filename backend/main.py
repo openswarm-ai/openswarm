@@ -511,6 +511,12 @@ async def subscriptions_callback(request: Request):
 
     _mark_oauth_completed(state)
     logger.info(f"OAuth exchange succeeded for provider={pending.get('provider')}")
+    # A connected subscription takes precedence over the free trial right away.
+    try:
+        from backend.apps.subscription.free_trial import clear_free_trial_on_connect
+        await clear_free_trial_on_connect()
+    except Exception:
+        pass
     return HTMLResponse(_SUCCESS_HTML)
 
 

@@ -425,6 +425,8 @@ async def subscriptions_poll(body: dict):
             from backend.apps.service.client import sync as _sync
             from backend.apps.settings.settings import load_settings
             _sync(load_settings().model_dump())
+            from backend.apps.subscription.free_trial import clear_free_trial_on_connect
+            await clear_free_trial_on_connect()
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -459,6 +461,9 @@ async def subscriptions_exchange(body: dict):
             from backend.apps.service.client import sync as do_sync
             from backend.apps.settings.settings import load_settings
             do_sync(load_settings().model_dump())
+            # A connected subscription takes precedence over the free trial right away.
+            from backend.apps.subscription.free_trial import clear_free_trial_on_connect
+            await clear_free_trial_on_connect()
         return result
     except Exception as e:
         if state and state in completed_oauth:
