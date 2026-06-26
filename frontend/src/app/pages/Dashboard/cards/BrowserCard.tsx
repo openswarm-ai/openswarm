@@ -753,11 +753,10 @@ const BrowserCard: React.FC<Props> = ({
         top: displayY,
         width: displayW,
         height: displayH,
-        borderRadius: keepAliveHidden ? 0 : `${c.radius.lg}px`,
-        // A hidden cross-dashboard card drops its border/shadow so the cover overlay below blends fully into the dashboard background instead of reading as a card outline.
-        border: keepAliveHidden ? 'none' : agentBorder,
-        bgcolor: keepAliveHidden ? c.bg.page : c.bg.surface,
-        boxShadow: keepAliveHidden ? 'none' : agentShadow,
+        borderRadius: `${c.radius.lg}px`,
+        border: agentBorder,
+        bgcolor: c.bg.surface,
+        boxShadow: agentShadow,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
@@ -1485,10 +1484,6 @@ const BrowserCard: React.FC<Props> = ({
         />
       ))}
 
-      {/* Cover the whole card (incl. the webview surface) with an opaque dashboard-colored layer when it's a kept-alive card from another dashboard: the guest stays composited underneath so its login survives, but it can't bleed onto the dashboard you're viewing. Host DOM does paint over a <webview> (same as the agent overlay), which CSS visibility/off-screen can't reliably do without killing the session. */}
-      {keepAliveHidden && (
-        <Box sx={{ position: 'absolute', inset: 0, zIndex: 2147483647, bgcolor: c.bg.page, pointerEvents: 'none', visibility: 'visible' }} />
-      )}
     </Box>
   );
 };
