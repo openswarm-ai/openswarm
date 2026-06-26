@@ -1719,12 +1719,18 @@ app.whenReady().then(async () => {
     try { app.dock.setIcon(iconPath); } catch (_) {}
   }
 
+  // NOTE: 'fullscreen' is deliberately NOT granted. A preview <webview>'s
+  // content (App Builder apps) requesting HTML5 fullscreen gets promoted by
+  // Electron into setFullScreen(true) on the top-level BrowserWindow, hijacking
+  // the whole OpenSwarm window into true OS fullscreen on load. Denying the
+  // permission breaks that chain; the user's own green-button fullscreen does
+  // not route through here and is unaffected.
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     const allowed = [
       'media', 'mediaKeySystem', 'protected-media-identifier',
       'geolocation', 'notifications', 'midi', 'midiSysex',
       'clipboard-read', 'clipboard-sanitized-write',
-      'pointerLock', 'fullscreen', 'idle-detection',
+      'pointerLock', 'idle-detection',
     ];
     console.log('Permission request:', permission, '->', allowed.includes(permission) ? 'granted' : 'denied');
     callback(allowed.includes(permission));
@@ -1733,7 +1739,7 @@ app.whenReady().then(async () => {
     const allowed = [
       'media', 'mediaKeySystem', 'protected-media-identifier',
       'clipboard-read', 'clipboard-sanitized-write',
-      'pointerLock', 'fullscreen', 'idle-detection',
+      'pointerLock', 'idle-detection',
     ];
     return allowed.includes(permission);
   });
@@ -2193,6 +2199,87 @@ app.on('web-contents-created', (_event, contents) => {
           } catch (e) {
             try { console.warn('[openswarm:shim] error:', e && e.message); } catch (_) {}
           }
+        })();
+      `).catch(() => {});
+
+      // Agent bridge (window.OPENSWARM_APP). Injected into EVERY app's main world
+      // from the shell so it exists regardless of frontend/src — the lightweight
+      // App Builder mode deletes frontend/src (and with it the template's own
+      // agentBridge.ts), so this is the only entry point a trimmed app can't lose.
+      // Idempotent + guarded: a workspace app that imports its own bridge installs
+      // first and this no-ops, so we never clobber a registered bridge. An app
+      // becomes agent-operable by calling OPENSWARM_APP.register({rules, controls,
+      // getState, invoke}); until it does, describe()/getState() report __ready:false
+      // (the agent then falls back to native keyboard/mouse). Keep this in sync with
+      // backend/apps/outputs/webapp_template/frontend/src/agentBridge.ts.
+      contents.executeJavaScript(`
+        (function() {
+          if (window.OPENSWARM_APP) return;
+          var registration = null;
+          var AUTOPILOT = '__autopilot__';
+          var autopilotRAF = 0;
+          var autopilotFrames = 0;
+          var autopilotHint = {};
+          function resolveControls() {
+            if (!registration) return [];
+            var c = registration.controls;
+            try { return (typeof c === 'function' ? c() : c) || []; } catch (e) { return []; }
+          }
+          function autopilotRunning() { return autopilotRAF !== 0; }
+          function startAutopilot() {
+            if (autopilotRAF || !registration || typeof registration.policy !== 'function') return;
+            autopilotFrames = 0;
+            var step = function() {
+              autopilotRAF = requestAnimationFrame(step);
+              autopilotFrames++;
+              try {
+                var name = registration && registration.policy ? registration.policy(autopilotHint) : null;
+                if (name) bridge.invoke(name);
+              } catch (e) {}
+            };
+            autopilotRAF = requestAnimationFrame(step);
+          }
+          function stopAutopilot() {
+            if (autopilotRAF) { cancelAnimationFrame(autopilotRAF); autopilotRAF = 0; }
+          }
+          var bridge = {
+            __openswarm: true, __ready: false, __rev: 0,
+            register: function(api) { stopAutopilot(); autopilotHint = {}; autopilotFrames = 0; registration = api; bridge.__ready = true; bridge.__rev += 1; },
+            refresh: function() { bridge.__rev += 1; },
+            describe: function() {
+              if (!bridge.__ready || !registration) return { __ready: false, __rev: bridge.__rev };
+              var controls = resolveControls().slice();
+              if (typeof registration.policy === 'function') {
+                controls.push({ name: AUTOPILOT, args: { on: true }, description: "Self-play: the app plays itself at frame rate so you never press keys per frame. {on:true} starts, {on:false} stops. Pass this app's own steering knobs (named in the app rules/state) to adjust the running policy without stopping it. Supervise on a slow cadence: poll getState; if progress stalls, take ONE screenshot to diagnose, then re-invoke with an adjusted knob." });
+              }
+              return { rules: registration.rules || '', controls: controls, __rev: bridge.__rev };
+            },
+            getState: function() {
+              if (!bridge.__ready || !registration) return { __ready: false, __rev: bridge.__rev };
+              var state = {};
+              try { state = registration.getState ? registration.getState() : {}; }
+              catch (e) { return { __error__: String((e && e.message) || e), __rev: bridge.__rev }; }
+              var out = (state && typeof state === 'object' && !Array.isArray(state)) ? Object.assign({}, state) : { value: state };
+              if (typeof registration.policy === 'function') { out.__autopilot = autopilotRunning(); out.__autopilotFrames = autopilotFrames; out.__hint = autopilotHint; }
+              out.__rev = bridge.__rev;
+              return out;
+            },
+            invoke: function(name, args) {
+              if (!bridge.__ready || !registration) throw 'OPENSWARM_APP not registered yet';
+              if (name === AUTOPILOT) {
+                if (typeof registration.policy !== 'function') return { error: 'this app registered no autopilot policy' };
+                args = args || {};
+                var on = args.on, hasKnobs = false;
+                for (var k in args) { if (k !== 'on' && Object.prototype.hasOwnProperty.call(args, k)) { autopilotHint[k] = args[k]; hasKnobs = true; } }
+                if (on !== undefined) { if (on) startAutopilot(); else stopAutopilot(); }
+                else if (!hasKnobs) { startAutopilot(); }
+                return { autopilot: autopilotRunning(), hint: autopilotHint };
+              }
+              return registration.invoke(name, args || {});
+            },
+          };
+          window.OPENSWARM_APP = bridge;
+          try { console.warn('[openswarm:bridge] shell-injected window.OPENSWARM_APP at', location.href); } catch (_) {}
         })();
       `).catch(() => {});
 

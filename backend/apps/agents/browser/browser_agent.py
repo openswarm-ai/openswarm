@@ -9,6 +9,7 @@ Sub-agents appear as visible AgentSession cards on the dashboard.
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from datetime import datetime
@@ -69,6 +70,9 @@ from backend.apps.agents.browser import browser_schema
 from backend.apps.agents.browser.browser_schema import (
     ACTION_TOOLS_REQUIRING_REPORT,
     ACTION_MAP,
+    APP_BRIDGE_TOOLS,
+    APP_SYSTEM_PROMPT,
+    APP_VISIBLE_TOOLS,
     BROWSER_TOOLS_SCHEMA,
     MAX_TURNS,
     MODEL_MAP,
@@ -87,19 +91,266 @@ P_CONFIRM_TOOLS = {
 }
 
 
+def app_bridge_expression(tool_name: str, tool_input: dict) -> str:
+    """JS for an app bridge tool. Each expression returns a JSON STRING (so it
+    round-trips as text) and never throws; bridge errors come back as JSON."""
+    if tool_name == "AppDescribe":
+        call = "window.OPENSWARM_APP.describe()"
+    elif tool_name == "AppGetState":
+        call = "window.OPENSWARM_APP.getState()"
+    else:  # AppInvoke
+        name = json.dumps(tool_input.get("name", ""))
+        args = json.dumps(tool_input.get("args") or {})
+        call = f"window.OPENSWARM_APP.invoke({name}, {args})"
+    return (
+        "(function(){try{"
+        "var A=window.OPENSWARM_APP;"
+        "if(!A||typeof A.describe!=='function'){return JSON.stringify(null);}"
+        f"var r={call};"
+        "return JSON.stringify(r===undefined?null:r);"
+        "}catch(e){return JSON.stringify({__error__:String((e&&e.message)||e)});}})()"
+    )
+
+
+# App-bridge readiness. The template ships window.OPENSWARM_APP from first paint
+# but in a "not ready" state until the app calls register(...). On the agent's
+# first turn the app may still be mounting (Vite cold-boot is 10-30s), so the
+# reads poll briefly for the bridge to come up instead of declaring it absent.
+P_BRIDGE_READY_WAIT_MS = 8000
+P_BRIDGE_POLL_INTERVAL_MS = 400
+p_bridge_known_absent: set[str] = set()
+
+
+def parse_bridge_result(result: dict) -> object:
+    """Decode the JSON string an app-bridge evaluate returns (it always returns
+    JSON text and never throws). Returns the decoded value, or None when it is
+    undecodable or errored at the transport level."""
+    if not isinstance(result, dict) or "error" in result:
+        return None
+    raw = result.get("text")
+    if raw is None:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def bridge_ready(value: object) -> bool:
+    """True when a decoded describe()/getState() value means a registered bridge.
+    Legacy apps return a plain array (ready); the template stub returns
+    {'__ready': False} until register() runs; None means no bridge present yet."""
+    if isinstance(value, list):
+        return True
+    if isinstance(value, dict):
+        return value.get("__ready") is not False and "__error__" not in value
+    return value is not None
+
+
+def p_app_output_id(browser_id: str) -> str | None:
+    return browser_id[4:] if browser_id.startswith("app:") else None
+
+
+def p_app_workspace_dir(browser_id: str) -> str | None:
+    """Resolve the on-disk workspace folder for an `app:<output_id>` target."""
+    oid = p_app_output_id(browser_id)
+    if not oid:
+        return None
+    try:
+        from backend.apps.outputs.workspace_io import load_output
+        from backend.config.paths import OUTPUTS_WORKSPACE_DIR
+        out = load_output(oid)
+        if not out or not getattr(out, "workspace_id", None):
+            return None
+        return os.path.join(OUTPUTS_WORKSPACE_DIR, out.workspace_id)
+    except Exception:
+        return None
+
+
+def render_app_controls(describe_value: object) -> tuple[str, str] | None:
+    """From a decoded describe() value build (rules_md, controls_md). Returns
+    None when the value is not a ready, usable describe."""
+    if isinstance(describe_value, list):
+        rules, controls = "", describe_value
+    elif bridge_ready(describe_value) and isinstance(describe_value, dict):
+        rules = str(describe_value.get("rules") or "")
+        controls = describe_value.get("controls") or []
+    else:
+        return None
+    lines = ["# Controls", ""]
+    for c in controls:
+        if not isinstance(c, dict):
+            continue
+        row = f"- `{c.get('name', '')}`"
+        if c.get("args"):
+            row += f" args={json.dumps(c['args'])}"
+        if c.get("keys"):
+            row += f" [{c['keys']}]"
+        if c.get("description"):
+            row += f": {c['description']}"
+        lines.append(row)
+    controls_md = "\n".join(lines) + "\n"
+    rules_md = (rules.strip() + "\n") if rules.strip() else ""
+    return rules_md, controls_md
+
+
+def p_persist_app_controls(browser_id: str, describe_value: object) -> None:
+    """Cache rules.md + controls.md into the app workspace so the agent reads them
+    up front and only re-describes when controls change. Best-effort; written
+    under .openswarm/ so they stay out of the app's own file tree."""
+    rendered = render_app_controls(describe_value)
+    if not rendered:
+        return
+    folder = p_app_workspace_dir(browser_id)
+    if not folder or not os.path.isdir(folder):
+        return
+    rules_md, controls_md = rendered
+    try:
+        cache_dir = os.path.join(folder, ".openswarm")
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(os.path.join(cache_dir, "controls.md"), "w", encoding="utf-8") as f:
+            f.write(controls_md)
+        if rules_md:
+            with open(os.path.join(cache_dir, "rules.md"), "w", encoding="utf-8") as f:
+                f.write(rules_md)
+    except Exception:
+        logger.debug("[app-agent] failed to persist controls cache", exc_info=True)
+
+
+# Single-tool names -> the sub-action type they map to, so one summarizer covers
+# both BrowserPressKey({key}) and a batch's {"type":"press_key","params":{key}}.
+P_SINGLE_ACTION_TYPE = {
+    "BrowserClick": "click", "BrowserClickIndex": "click_index",
+    "BrowserClickByName": "click_name", "BrowserType": "type",
+    "BrowserPressKey": "press_key", "BrowserScroll": "scroll",
+    "BrowserNavigate": "navigate", "BrowserClickPoint": "click_point",
+}
+
+
+def p_summ_step(stype: str, params: dict) -> str:
+    """Compact human label for one action step: the actual key/selector/text, not
+    just the verb. This is what lets the [backend] pane show 'key:ArrowRight x5'
+    instead of an opaque 'BrowserBatch'."""
+    p = params or {}
+    if stype == "press_key":
+        return f"key:{p.get('key', '?')}"
+    if stype == "click":
+        return f"click({p.get('selector', '?')})"
+    if stype == "click_index":
+        return f"click#{p.get('index', '?')}"
+    if stype == "click_point":
+        return f"tap({p.get('xPercent', '?')}%,{p.get('yPercent', '?')}%)"
+    if stype == "click_name":
+        return f"clickName({p.get('name', '?')})"
+    if stype == "type":
+        return f"type({p.get('selector', '')}={str(p.get('text', ''))[:30]!r})"
+    if stype == "wait":
+        return f"wait({p.get('milliseconds') or p.get('until') or ''})"
+    if stype == "scroll":
+        return f"scroll({p.get('direction', 'down')})"
+    if stype == "navigate":
+        return f"nav({str(p.get('url', ''))[:60]})"
+    if stype == "list_interactives":
+        return "list"
+    return stype or "?"
+
+
+def p_collapse_steps(items: list[str]) -> str:
+    """'ArrowRight, ArrowRight, ArrowRight' -> 'key:ArrowRight x3' so a 5-key
+    burst reads as one token instead of scrolling the pane."""
+    runs: list[list] = []
+    for it in items:
+        if runs and runs[-1][0] == it:
+            runs[-1][1] += 1
+        else:
+            runs.append([it, 1])
+    return ", ".join(s if n == 1 else f"{s} x{n}" for s, n in runs)
+
+
+def p_summarize_action(tool_name: str, tool_input: dict) -> str:
+    """One-line summary of what an action tool is about to do, or "" for pure
+    reads (screenshot/list/describe/getstate) that need no action log."""
+    ti = tool_input or {}
+    if tool_name == "BrowserBatch":
+        steps = [p_summ_step((a or {}).get("type", ""), (a or {}).get("params"))
+                 for a in (ti.get("actions") or [])]
+        return p_collapse_steps(steps) or "(empty batch)"
+    if tool_name == "AppInvoke":
+        args = ti.get("args")
+        return f"{ti.get('name', '?')}" + (f"({json.dumps(args)[:60]})" if args else "")
+    stype = P_SINGLE_ACTION_TYPE.get(tool_name)
+    return p_summ_step(stype, ti) if stype else ""
+
+
 async def execute_browser_tool(
     tool_name: str, tool_input: dict, browser_id: str, tab_id: str = "",
 ) -> dict:
     """Execute a browser tool via ws_manager directly (no MCP/HTTP round-trip)."""
+    # [app-agent] step trace: only for app targets / bridge tools so normal
+    # browser-agent runs stay quiet. Greppable prefix; remove when done.
+    p_trace = browser_id.startswith("app:") or tool_name in APP_BRIDGE_TOOLS
+
+    # One greppable line naming the actual buttons/keys/selectors this call drives,
+    # so a run reads as "key:ArrowRight x5" rather than an opaque tool name. Fires
+    # for action tools only (reads stay quiet) and ungated so web runs get it too.
+    p_action = p_summarize_action(tool_name, tool_input)
+    if p_action:
+        logger.info(f"[browser-action] {tool_name}: {p_action}  -> {browser_id}")
+
+    # App bridge tools translate to a single BrowserEvaluate against the app's
+    # window.OPENSWARM_APP, so they need no frontend command-handler changes.
+    if tool_name in APP_BRIDGE_TOOLS:
+        action = "evaluate"
+        expr = app_bridge_expression(tool_name, tool_input)
+        params = {"expression": expr}
+
+        async def p_eval_once() -> dict:
+            rid = uuid4().hex
+            if p_trace:
+                logger.info(f"[app-agent] DISPATCH {tool_name} -> {browser_id} (req {rid[:8]}) js={expr[:120]}")
+            r = await ws_manager.send_browser_command(rid, action, browser_id, params, tab_id=tab_id)
+            if p_trace:
+                logger.info(f"[app-agent] RESULT   {tool_name} <- {browser_id}: {json.dumps(r)[:300]}")
+            return r
+
+        result = await p_eval_once()
+        # Reads poll for the bridge to come up (app still mounting on turn 1).
+        # AppInvoke does not wait: its action either exists right now or it does
+        # not, and a missing action should surface immediately.
+        if tool_name in ("AppDescribe", "AppGetState"):
+            ready = bridge_ready(parse_bridge_result(result))
+            # Only the cold-boot read polls. Once a card is memoed bridge-absent,
+            # every later read takes the single eval above and skips the 8s sink;
+            # that single eval still detects a bridge that came up between reads.
+            if not ready and browser_id not in p_bridge_known_absent:
+                waited = 0
+                while waited < P_BRIDGE_READY_WAIT_MS and not ready:
+                    await asyncio.sleep(P_BRIDGE_POLL_INTERVAL_MS / 1000)
+                    waited += P_BRIDGE_POLL_INTERVAL_MS
+                    result = await p_eval_once()
+                    ready = bridge_ready(parse_bridge_result(result))
+            # Record the verdict so the next read knows whether to pay the wait.
+            if ready:
+                p_bridge_known_absent.discard(browser_id)
+            else:
+                p_bridge_known_absent.add(browser_id)
+        if tool_name == "AppDescribe":
+            p_persist_app_controls(browser_id, parse_bridge_result(result))
+        return result
+
     action = ACTION_MAP.get(tool_name)
     if not action:
         return {"error": f"Unknown browser tool: {tool_name}"}
 
     params = {k: v for k, v in tool_input.items()}
     request_id = uuid4().hex
+    if p_trace:
+        logger.info(f"[app-agent] DISPATCH {tool_name}/{action} -> {browser_id} (req {request_id[:8]})")
     result = await ws_manager.send_browser_command(
         request_id, action, browser_id, params, tab_id=tab_id,
     )
+    if p_trace:
+        logger.info(f"[app-agent] RESULT   {tool_name} <- {browser_id}: {json.dumps(result)[:300]}")
     return result
 
 
@@ -337,27 +588,36 @@ async def run_browser_agent(
     pre_selected: bool = False,
     initial_url: str | None = None,
     parent_session_id: str | None = None,
+    app_mode: bool = False,
 ) -> dict:
     """Run a browser sub-agent loop for a single browser card.
 
     Creates a visible AgentSession, streams progress via WebSocket,
     and returns the full action log + summary + final screenshot.
+
+    When app_mode is set, browser_id points at an OpenSwarm-built app's webview
+    (registered as "app:<output_id>"). The agent drives it through the app's
+    native bridge (window.OPENSWARM_APP) instead of web perception: no initial
+    navigate, no AX-tree front-load, and a lean app toolset + prompt.
     """
     from backend.apps.agents.agent_manager import agent_manager
 
     p_browser_perms = load_builtin_permissions()
 
+    if app_mode:
+        logger.info(f"[app-agent] START loop: browser_id={browser_id} task={task[:140]!r}")
+
     session_id = uuid4().hex
     cancel_event = asyncio.Event()
     session = AgentSession(
         id=session_id,
-        name=f"Browser Agent",
+        name="App Agent" if app_mode else "Browser Agent",
         model=model,
         mode="browser-agent",
         status="running",
         dashboard_id=dashboard_id,
         browser_id=browser_id,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=APP_SYSTEM_PROMPT if app_mode else SYSTEM_PROMPT,
         parent_session_id=parent_session_id,
     )
     agent_manager.cancel_events[session_id] = cancel_event
@@ -411,15 +671,17 @@ async def run_browser_agent(
     current_url = ""
     preloaded_reads: list[dict] = []  # real front-loaded reads, seeded into action_log
     p_resumed = bool(browser_history.BROWSER_HISTORY.get(browser_id))
-    if initial_url:
-        nav_result = await execute_browser_tool(
-            "BrowserNavigate", {"url": initial_url}, browser_id, tab_id,
-        )
-        logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
-        preloaded_perception, current_url, preloaded_reads = await p_perceive(initial_url)
-    elif not p_resumed:
-        # Fresh task on an existing card: perceive the current page to learn its host (for replay) and front-load turn 1 (this path used to start cold).
-        preloaded_perception, current_url, preloaded_reads = await p_perceive("")
+    # App mode skips this whole block: the app is already loaded and its DOM is uninformative (often a bare <canvas>), so the agent perceives via the bridge (AppDescribe) on turn 1 instead of navigating or front-loading the AX tree.
+    if not app_mode:
+        if initial_url:
+            nav_result = await execute_browser_tool(
+                "BrowserNavigate", {"url": initial_url}, browser_id, tab_id,
+            )
+            logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
+            preloaded_perception, current_url, preloaded_reads = await p_perceive(initial_url)
+        elif not p_resumed:
+            # Fresh task on an existing card: perceive the current page to learn its host (for replay) and front-load turn 1 (this path used to start cold).
+            preloaded_perception, current_url, preloaded_reads = await p_perceive("")
 
     from backend.apps.settings.settings import load_settings
     from backend.apps.settings.credentials import get_anthropic_client_for_model
@@ -473,8 +735,61 @@ async def run_browser_agent(
         )
         clear_browser_history(browser_id)
         prior_messages = []
-    # Front-load the prefetched perception into the first user turn so the model can act immediately (only when this is a fresh conversation; a resumed one already knows the page). The visible task text stays clean.
-    first_user_content = task + preloaded_perception if (preloaded_perception and not prior_messages) else task
+    # App mode: read the bridge's rules + controls ONCE up front and front-load them so the agent knows the app's purpose and every control before its first action (no screenshot fumbling) and need not call AppDescribe again until controls change. Also the runtime bridge gate: if the bridge never comes up, fail loudly into the logs + the agent's first message (and, under OPENSWARM_REQUIRE_BRIDGE=1, end the run rather than UI-fumble).
+    # NOTE: app mode runs this on EVERY task, even a resumed conversation; the bridge can appear between runs (app just made agent-operable) and a resumed history may carry a stale "no bridge, screenshot it" strategy, so re-reading + re-attaching the controls each task re-points the agent at the bridge.
+    app_front_load = ""
+    if app_mode:
+        try:
+            p_dv = parse_bridge_result(await execute_browser_tool("AppDescribe", {}, browser_id, tab_id))
+        except Exception:
+            p_dv = None
+            logger.debug("[app-agent] startup AppDescribe failed", exc_info=True)
+        p_rendered = render_app_controls(p_dv)
+        if p_rendered:
+            p_rules_md, p_controls_md = p_rendered
+            p_rev = p_dv.get("__rev") if isinstance(p_dv, dict) else None
+            p_block = [
+                "\n\n[The app's bridge is live; its rules and controls were read "
+                "for you. Act directly; do NOT call AppDescribe again unless "
+                "AppGetState reports a changed __rev.]"
+            ]
+            if p_rules_md.strip():
+                p_block.append("App rules / objective:\n" + p_rules_md.strip())
+            p_block.append(p_controls_md.strip())
+            if p_rev is not None:
+                p_block.append(f"(controls __rev: {p_rev})")
+            app_front_load = "\n\n".join(p_block)
+        else:
+            p_oid = p_app_output_id(browser_id) or browser_id
+            p_msg = (
+                f"BRIDGE MISSING: window.OPENSWARM_APP not registered - "
+                f"app '{p_oid}' is not agent-operable"
+            )
+            logger.error(f"[app-agent] {p_msg}")
+            if os.environ.get("OPENSWARM_REQUIRE_BRIDGE") == "1":
+                session.status = "completed"
+                await ws_manager.send_to_session(session_id, "agent:status", {
+                    "session_id": session_id, "status": "completed",
+                    "session": session.model_dump(mode="json"),
+                })
+                return {
+                    "session_id": session_id, "browser_id": browser_id,
+                    "summary": f"This app is not agent-operable: {p_msg}.",
+                    "done": True, "success": False,
+                    "action_log": [], "final_screenshot": None,
+                }
+            app_front_load = (
+                f"\n\n[{p_msg}. Operate it like a person instead: see with "
+                "BrowserScreenshot, then play with BrowserPressKey (keys like "
+                "w/a/s/d, arrows, Space, Enter) and BrowserClickPoint (tap a screen "
+                "point). For a normal HTML app use BrowserListInteractives + "
+                "BrowserClickIndex. Only give up (Done success=false) after you have "
+                "actually tried pressing keys and nothing responds.]"
+            )
+
+    # Front-load perception (browser) or the app's controls (app mode) into the new task's user turn so the model can act immediately. Browser perception only attaches on a fresh conversation; app-mode controls attach on every task (see note above). The visible task text stays clean.
+    p_front = app_front_load if app_mode else (preloaded_perception if not prior_messages else "")
+    first_user_content = task + p_front if p_front else task
     messages: list[dict] = list(prior_messages) + [{"role": "user", "content": first_user_content}]
     # Seed with the front-loaded reads: they really ran and returned content, so a read task the agent answers straight from them is NOT a "did nothing" ghost.
     action_log: list[dict] = list(preloaded_reads)
@@ -546,8 +861,8 @@ async def run_browser_agent(
     current_next_goal = task
 
     # Advisory per-domain hints: seed the system prompt with what a prior agent learned about this domain (if we know the domain at start), and keep the store fresh from each ReportProgress. Re-verify, never blindly trust.
-    start_domain = p_extract_domain(initial_url) if initial_url else None
-    run_system_prompt = SYSTEM_PROMPT
+    start_domain = None if app_mode else (p_extract_domain(initial_url) if initial_url else None)
+    run_system_prompt = APP_SYSTEM_PROMPT if app_mode else SYSTEM_PROMPT
     if start_domain:
         prior_note = browser_history.get_domain_note(start_domain)
         if prior_note:
@@ -561,26 +876,28 @@ async def run_browser_agent(
 
     # Tier-2 memory: seed the DURABLE strategy playbook for this host (distilled from past successful runs) so the model skips re-discovery. Advisory text, re-verified by the agent, never auto-run. Keyed by full host like skills.
     pb_seeded = False  # whether tier-2 strategy was injected, for measuring its effect
-    p_pb_host = browser_skills.host_of(initial_url or current_url or "")
+    # Playbook key: web keys by site host; app mode keys by the stable app id (app:<output_id>). A no-bridge canvas app (Paint, Doom) has no URL host, so without this it re-discovers its own geography cold on every run; keying the durable playbook by browser_id lets that knowledge accumulate across runs.
+    p_pb_host = browser_id if app_mode else browser_skills.host_of(initial_url or current_url or "")
     if p_pb_host:
         p_pb_block = browser_playbook.format_for_prompt(p_pb_host)
         if p_pb_block:
             run_system_prompt = run_system_prompt + p_pb_block
             pb_seeded = True
-    # Tier-3 memory: the cross-site priors learned on EVERY other site, injected on every run (host-agnostic) so a brand-new site isn't fully cold. Advisory, capped.
-    try:
-        p_meta_block = browser_meta_playbook.format_for_prompt()
-        if p_meta_block:
-            run_system_prompt = run_system_prompt + p_meta_block
-    except Exception:
-        pass
+    # Tier-3 memory: cross-site priors learned on EVERY other site, injected on every web run (host-agnostic) so a brand-new site isn't fully cold. Web-only: generic site heuristics don't transfer to a bespoke app canvas.
+    if not app_mode:
+        try:
+            p_meta_block = browser_meta_playbook.format_for_prompt()
+            if p_meta_block:
+                run_system_prompt = run_system_prompt + p_meta_block
+        except Exception:
+            pass
 
     # Prompt-caching shapes built once: system as a single cached text block, and the last tool carrying the cache_control marker (Anthropic keys on the trailing marker, so one marker covers the whole tool array + system).
     p_cached_system = [{
         "type": "text", "text": run_system_prompt,
         "cache_control": {"type": "ephemeral"},
     }]
-    p_cached_tools = [dict(t) for t in browser_schema.MODEL_VISIBLE_TOOLS]
+    p_cached_tools = [dict(t) for t in (APP_VISIBLE_TOOLS if app_mode else browser_schema.MODEL_VISIBLE_TOOLS)]
     if p_cached_tools:
         p_cached_tools[-1] = {**p_cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
@@ -594,8 +911,9 @@ async def run_browser_agent(
     # Perceived value, zero clicks: one calm line so the user FEELS the agent is picking up where it left off, not figuring the site out cold again. Only when strategy was actually seeded, so it's honest, never noise.
     if pb_seeded and p_pb_host:
         session.memory_recalled = True  # drives the subtle "Remembered" card chip
+        p_where = "this app" if app_mode else p_pb_host
         p_recall_msg = Message(role="assistant",
-                              content=f"Picking up what I learned about {p_pb_host} from a previous visit.")
+                              content=f"Picking up what I learned about {p_where} from a previous visit.")
         session.messages.append(p_recall_msg)
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id, "message": p_recall_msg.model_dump(mode="json"),
@@ -1872,18 +2190,20 @@ async def run_browser_agent(
         # Tier-2 memory: on a substantive verified success, distill this run into the DURABLE strategy playbook (one cheap aux call, mem0-style distill+ reconcile). Fires for BOTH mechanical and judgment tasks, it's how the judgment ones (which can't be skills) still get faster/wiser next time.
         if browser_playbook.should_learn(honest, turn + 1):
             try:
-                pb_host = browser_skills.host_of(last_seen_url)
-                if pb_host:
+                # App mode keys by the stable app id (the run had no URL host); web keys by the final host, which navigation may have changed.
+                rec_pb_host = browser_id if app_mode else browser_skills.host_of(last_seen_url)
+                if rec_pb_host:
                     aux_client, aux_model = await p_get_aux_client()
                     changed = await browser_playbook.distill_and_store(
-                        pb_host, skill_key_task, latest_working_mem, summary,
+                        rec_pb_host, skill_key_task, latest_working_mem, summary,
                         aux_client, aux_model,
                     )
                     # Perceived value, zero clicks: a calm closing line so the user sees the agent got a little smarter for next time. Only when it genuinely learned something, so it stays honest + rare.
                     if changed:
                         session.memory_learned = True  # drives the subtle "Learned" card chip
+                        p_where = "this app" if app_mode else rec_pb_host
                         p_learn_msg = Message(role="assistant",
-                                             content=f"Noted what worked on {pb_host} so I'm faster here next time.")
+                                             content=f"Noted what worked on {p_where} so I'm faster here next time.")
                         session.messages.append(p_learn_msg)
                         await ws_manager.send_to_session(session_id, "agent:message", {
                             "session_id": session_id, "message": p_learn_msg.model_dump(mode="json"),
@@ -2058,6 +2378,8 @@ async def run_browser_agents(
         browser_id = task_def.get("browser_id", "")
         task_text = task_def.get("task", "")
         url = task_def.get("url", "")
+        # App mode: browser_id is a pre-registered app webview ("app:<output_id>"); never create/reuse a browser card, never navigate (the app is loaded).
+        app_mode = bool(task_def.get("app_mode"))
         # advisory deep entry (from the fast-path brief): a NEW card opens on it directly (no google detour); a REUSED card is never moved by it, so a warm card's deeper page state always wins
         entry_url = task_def.get("entry_url", "")
 
@@ -2084,7 +2406,7 @@ async def run_browser_agents(
                         pass
             else:
                 await asyncio.sleep(2.0)
-        elif browser_id:
+        elif browser_id and not app_mode:
             ACTIVE_AGENT_CARDS.add(browser_id)
 
         is_pre_selected = browser_id in pre_selected
@@ -2097,11 +2419,13 @@ async def run_browser_agents(
                 dashboard_id=dashboard_id,
                 pre_selected=is_pre_selected,
                 # an explicit url means "go here" even on the user's picked card; with none, a picked card stays on the page they parked it
-                initial_url=p_nav_url if p_nav_url and (url or browser_id not in pre_selected) else None,
+                initial_url=None if app_mode else (p_nav_url if p_nav_url and (url or browser_id not in pre_selected) else None),
                 parent_session_id=parent_session_id,
+                app_mode=app_mode,
             )
         finally:
-            ACTIVE_AGENT_CARDS.discard(browser_id)
+            if not app_mode:
+                ACTIVE_AGENT_CARDS.discard(browser_id)
 
     results = await asyncio.gather(*[p_run_one(t) for t in tasks], return_exceptions=True)
 

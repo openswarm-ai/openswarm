@@ -22,6 +22,8 @@ MODEL = os.environ.get("OPENSWARM_AGENT_MODEL", "sonnet")
 DASHBOARD_ID = os.environ.get("OPENSWARM_DASHBOARD_ID", "")
 PRE_SELECTED_BROWSER_IDS = os.environ.get("OPENSWARM_PRE_SELECTED_BROWSER_IDS", "")
 PARENT_SESSION_ID = os.environ.get("OPENSWARM_PARENT_SESSION_ID", "")
+# Apps the user selected on the dashboard; AppAgent may only target these (anti-hallucination).
+SELECTED_APP_IDS = [a.strip() for a in os.environ.get("OPENSWARM_SELECTED_APP_IDS", "").split(",") if a.strip()]
 
 TOOLS = [
     {
@@ -110,6 +112,40 @@ TOOLS = [
                 },
             },
             "required": ["tasks"],
+        },
+    },
+    {
+        "name": "AppAgent",
+        "description": (
+            "Operate one of the user's OpenSwarm-built apps (a small web app they "
+            "created, e.g. a graphing tool, a form, or a canvas game like Doom) that "
+            "is open on the dashboard. A dedicated app agent performs the task: it "
+            "drives the app through its native bridge when one is available (reading "
+            "the app's own state and calling its controls), and otherwise falls back "
+            "to native keyboard/mouse plus screenshots for canvas and game apps that "
+            "expose no bridge. It returns a summary plus a final screenshot. Works for "
+            "ANY app in the selected-app context, including games and canvas apps; use "
+            "BrowserAgent only for websites, not these apps."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "output_id": {
+                    "type": "string",
+                    "description": (
+                        "The id of the selected app to operate (from the selected-app "
+                        "context block)."
+                    ),
+                },
+                "task": {
+                    "type": "string",
+                    "description": (
+                        "What to do in the app. Be specific (e.g. 'graph y=x^2 and "
+                        "y=sin(x)')."
+                    ),
+                },
+            },
+            "required": ["output_id", "task"],
         },
     },
 ]
@@ -245,37 +281,54 @@ def format_batch_results(results: list[dict]) -> dict:
     return {"content": all_content}
 
 
+def p_text_error(message: str) -> dict:
+    return {"content": [{"type": "text", "text": message}], "isError": True}
+
+
+def p_run_single_task(task_def: dict) -> dict:
+    """Dispatch one task to the backend and format its single result."""
+    result = call_backend([task_def])
+    if "error" in result:
+        return p_text_error(f"Error: {result['error']}")
+    results = result.get("results", [result])
+    if results:
+        return format_result(results[0])
+    return p_text_error("No result returned.")
+
+
 def handle_tool_call(tool_name: str, arguments: dict) -> dict:
     if tool_name == "CreateBrowserAgent":
-        task_def = {
+        return p_run_single_task({
             "task": arguments.get("task", ""),
             "browser_id": "",
             "url": arguments.get("url", ""),
-        }
-        result = call_backend([task_def])
-        if "error" in result:
-            return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
-        results = result.get("results", [result])
-        if results:
-            return format_result(results[0])
-        return {"content": [{"type": "text", "text": "No result returned."}], "isError": True}
+        })
 
     elif tool_name == "BrowserAgent":
         browser_id = arguments.get("browser_id", "")
         if not browser_id:
-            return {"content": [{"type": "text", "text": "Error: browser_id is required"}], "isError": True}
-        task_def = {
+            return p_text_error("Error: browser_id is required")
+        return p_run_single_task({
             "task": arguments.get("task", ""),
             "browser_id": browser_id,
             "url": "",
-        }
-        result = call_backend([task_def])
-        if "error" in result:
-            return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
-        results = result.get("results", [result])
-        if results:
-            return format_result(results[0])
-        return {"content": [{"type": "text", "text": "No result returned."}], "isError": True}
+        })
+
+    elif tool_name == "AppAgent":
+        output_id = arguments.get("output_id", "")
+        if not output_id:
+            return p_text_error("Error: output_id is required")
+        # Only drive apps the user actually selected (anti-hallucination), when we
+        # know the selection. Empty list = unknown, so don't block.
+        if SELECTED_APP_IDS and output_id not in SELECTED_APP_IDS:
+            valid = ", ".join(SELECTED_APP_IDS) or "(none)"
+            return p_text_error(f"Error: '{output_id}' is not a selected app. Selected apps: {valid}")
+        return p_run_single_task({
+            "task": arguments.get("task", ""),
+            "browser_id": f"app:{output_id}",
+            "url": "",
+            "app_mode": True,
+        })
 
     elif tool_name == "BrowserAgents":
         tasks = arguments.get("tasks", [])

@@ -1,3 +1,7 @@
+// Install window.OPENSWARM_APP BEFORE anything else so the agent bridge exists
+// from first paint, even while React + the app are still mounting. The app fills
+// it in by calling window.OPENSWARM_APP.register(...) on mount.
+import './agentBridge';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import Main from './app/Main';

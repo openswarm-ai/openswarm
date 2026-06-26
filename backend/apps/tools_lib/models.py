@@ -40,6 +40,7 @@ BUILTIN_TOOLS: list[BuiltinTool] = [
     BuiltinTool(name="CreateBrowserAgent", description="Create a new browser and run a task on it", category="browser_delegation"),
     BuiltinTool(name="BrowserAgent", description="Delegate a browser task to an existing browser agent", category="browser_delegation"),
     BuiltinTool(name="BrowserAgents", description="Run multiple browser tasks in parallel on existing browsers", category="browser_delegation"),
+    BuiltinTool(name="AppAgent", description="Operate one of the user's OpenSwarm-built apps through its native bridge or native input", category="browser_delegation"),
     # Browser action tools (Layer 2, what the sub-agent executes)
     BuiltinTool(name="BrowserScreenshot", description="Capture a screenshot of the browser page", category="browser_action"),
     BuiltinTool(name="BrowserNavigate", description="Navigate the browser to a URL", category="browser_action"),

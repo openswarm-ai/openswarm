@@ -56,6 +56,13 @@ fast.
 3. Leave `frontend/package.json`, `frontend/vite.config.ts`, `run.sh`,
    `.env`, `meta.json` alone — vite still needs them.
 4. Don't run `bash backend_init.sh` — lightweight mode has no backend.
+5. Agent control still works without the template: `window.OPENSWARM_APP` is
+   injected by the app shell, so even here you can make the app agent-operable
+   by calling `window.OPENSWARM_APP.register({ rules, controls, getState,
+   invoke })` from your inline `<script>` (see the bridge section below). This is
+   optional, the agent can also play any app via native keyboard/mouse, but for
+   a game/canvas a registered `getState` (e.g. score, alive) makes it far more
+   reliable. Don't wire up the bridge object yourself; it already exists.
 
 The rest of this document covers **workspace mode**. If you picked
 lightweight, only the "Debugging" section (frontend console logs in the
@@ -361,6 +368,79 @@ const out = await window.OUTPUT_COMPUTE({ nums: [1, 2, 3] }); // -> { total: 6 }
 Rule of thumb: if the app should be publishable, reach for `OUTPUT_LLM` /
 `OUTPUT_COMPUTE` first; only use the FastAPI backend for preview-only tools or
 things those two can't do (it won't be there once published).
+
+---
+
+## Make the app agent-operable: the `OPENSWARM_APP` bridge
+
+An agent can drive this app on the user's behalf (e.g. "graph y=x^2 on my
+Desmos app"). It does NOT do that by clicking pixels or scraping the DOM (slow,
+and an app's DOM is often a bare `<canvas>`). Instead it reads and acts through
+`window.OPENSWARM_APP`, a bridge the template already ships for you
+(`src/agentBridge.ts`, installed before your app mounts).
+
+**You do not wire up the bridge; you `register()` into it.** Call
+`window.OPENSWARM_APP.register({ rules, controls, getState, invoke })` once your
+app's core object exists (e.g. in a mount `useEffect`). This is REQUIRED for
+every app: the runtime verifies it and the agent's first action fails loudly
+with `BRIDGE MISSING` if you forget. Pass:
+
+- `rules` (string) - what the app is and its objective, in plain prose. This is
+  what the agent reads to understand the app (e.g. "Flappy Bird. Keep the bird
+  airborne through the pipe gaps; the game ends on a collision.").
+- `controls` - an array of `{ name, args?, description?, keys? }`, OR a function
+  returning that array when controls are dynamic. `keys` is an optional
+  human-style hint (e.g. `"Space = flap"`). Return only what's available now.
+- `getState()` - a **small** JSON snapshot used to verify an action landed. Keep
+  it compact; this is the latency budget.
+- `invoke(name, args)` - perform the named action and return a result (or throw
+  a string the agent will read).
+
+Keep `args` shapes simple (strings, numbers, booleans, small objects). The agent
+only ever calls actions that `controls` listed; it never edits your code. When
+dynamic controls change, call `window.OPENSWARM_APP.refresh()` so the agent
+knows to re-read them (it bumps the `__rev` the agent watches).
+
+```tsx
+// `calc` here is the app's own API (Desmos example); use whatever yours exposes.
+function registerAgentBridge(calc: any) {
+  window.OPENSWARM_APP!.register({
+    rules: 'A graphing calculator. Plot and remove expressions like y=x^2 or y=sin(x).',
+    controls() {
+      const controls = [
+        { name: 'addExpr', args: { latex: 'string' }, description: 'Add a graph expression, e.g. y=x^2' },
+        { name: 'clear', description: 'Remove all expressions' },
+      ];
+      // Dynamic: only offer removeExpr when something is on the graph.
+      if (calc.getExpressions().length > 0) {
+        controls.push({ name: 'removeExpr', args: { id: 'string' }, description: 'Remove one expression by id' });
+      }
+      return controls;
+    },
+    getState() {
+      return { expressions: calc.getExpressions().map((e: any) => ({ id: e.id, latex: e.latex })) };
+    },
+    invoke(name: string, args: any = {}) {
+      if (name === 'addExpr') { const id = String(Date.now()); calc.setExpression({ id, latex: args.latex }); window.OPENSWARM_APP!.refresh(); return { id }; }
+      if (name === 'removeExpr') { calc.removeExpression({ id: args.id }); window.OPENSWARM_APP!.refresh(); return { ok: true }; }
+      if (name === 'clear') { calc.setBlank(); window.OPENSWARM_APP!.refresh(); return { ok: true }; }
+      throw `Unknown action: ${name}`;
+    },
+  });
+}
+```
+
+### Real-time games need a high-level action, not per-frame controls
+
+An agent acts in discrete tool calls separated by network + model latency
+(hundreds of ms to seconds). It physically CANNOT hit frame-timing, so exposing
+only `invoke('flap')` makes a reflex game like Flappy Bird understandable but
+unwinnable: by the time the agent decides to flap, the bird has already fallen.
+For anything real-time, expose a **high-level action** the app executes on its
+own tick loop, e.g. `invoke('autopilot', { on: true })` that runs the optimal
+input internally, or `invoke('setDifficulty', ...)`. Let the agent set intent;
+let the app handle the milliseconds. Non-real-time apps (tools, forms, a
+Spotify-style player) don't need this: their actions are already at agent cadence.
 
 ---
 

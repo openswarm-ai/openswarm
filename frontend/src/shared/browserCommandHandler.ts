@@ -1,4 +1,4 @@
-import { getWebview, type BrowserWebview } from './browserRegistry';
+import { getWebview, registeredKeys, type BrowserWebview } from './browserRegistry';
 import { store } from './state/store';
 import { resumeBrowserCard } from './state/dashboardLayoutSlice';
 import { dashboardWs } from './ws/WebSocketManager';
@@ -8,7 +8,7 @@ import { shouldStopWaiting, SETTLE_POLL_MS, settleProbeJs } from './browserSettl
 
 let initialized = false;
 
-export type BrowserAction = 'screenshot' | 'get_text' | 'get_console' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'batch' | 'detect_webmcp' | 'list_routes' | 'replay_route' | 'click_by_name';
+export type BrowserAction = 'screenshot' | 'get_text' | 'get_console' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'click_point' | 'batch' | 'detect_webmcp' | 'list_routes' | 'replay_route' | 'click_by_name';
 
 export interface BrowserActivity {
   action: BrowserAction;
@@ -63,6 +63,7 @@ const ACTION_LABELS: Record<string, string> = {
   press_key: 'Pressing key...',
   list_interactives: 'Reading page structure...',
   click_index: 'Clicking element...',
+  click_point: 'Tapping screen...',
   click_by_name: 'Clicking element...',
   batch: 'Running batch...',
 };
@@ -325,6 +326,45 @@ async function handlePressKey(wv: BrowserWebview, params: Record<string, any>): 
   wv.sendInputEvent({ type: 'char', keyCode });
   wv.sendInputEvent({ type: 'keyUp', keyCode });
   return { text: `Pressed ${rawKey}` };
+}
+
+// Click at a viewport coordinate (percent of the view's width/height) with a
+// real, trusted CDP mouse event, NO DOM element required. This is what lets the
+// app agent operate a bare <canvas> game the way a person taps the screen: the
+// AX-tree click paths (click_index/click_by_name) can't target a canvas because
+// it exposes no nodes, but a coordinate dispatch lands anywhere. Optional
+// hold_ms presses and holds (platformers, charge-up mechanics).
+async function handleClickPoint(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
+  const xPercent = Number(params.xPercent);
+  const yPercent = Number(params.yPercent);
+  if (!Number.isFinite(xPercent) || !Number.isFinite(yPercent)) {
+    return { error: 'xPercent and yPercent are required (0-100, percent of the view).' };
+  }
+  const cx = Math.max(0, Math.min(100, xPercent));
+  const cy = Math.max(0, Math.min(100, yPercent));
+  const button = params.button === 'right' ? 'right' : params.button === 'middle' ? 'middle' : 'left';
+  const holdMs = Math.max(0, Math.min(Number(params.hold_ms) || 0, 5000));
+  // Read the guest's own viewport so coords are correct under zoom/DPR, not the
+  // host element's box. One cheap round-trip; falls back to the element box.
+  let vw = wv.clientWidth, vh = wv.clientHeight;
+  try {
+    const d = await wv.executeJavaScript('({w: window.innerWidth, h: window.innerHeight})');
+    if (d && d.w > 0 && d.h > 0) { vw = d.w; vh = d.h; }
+  } catch { /* use the element box as a fallback */ }
+  const x = (cx / 100) * vw;
+  const y = (cy / 100) * vh;
+  try {
+    await sendCdp(wv, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await sendCdp(wv, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount: 1 });
+    if (holdMs > 0) await new Promise((r) => setTimeout(r, holdMs));
+    await sendCdp(wv, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount: 1 });
+  } catch (err: any) {
+    return { error: `Click point failed: ${err?.message || String(err)}` };
+  }
+  return {
+    text: `Clicked at (${Math.round(x)}, ${Math.round(y)})${holdMs ? ` held ${holdMs}ms` : ''}.`,
+    clickX: cx, clickY: cy, url: wv.getURL(),
+  };
 }
 
 // CDP Accessibility.getFullAXTree sees computed roles/names even on hostile sites with unlabeled DOMs.
@@ -941,11 +981,12 @@ const MAX_BATCH_ACTIONS = 5;
 
 type SubActionType =
   | 'click_index' | 'press_key' | 'type' | 'wait'
-  | 'scroll' | 'navigate' | 'click' | 'list_interactives';
+  | 'scroll' | 'navigate' | 'click' | 'click_point' | 'list_interactives';
 
 const BATCH_DISPATCH: Record<SubActionType, (wv: BrowserWebview, p: Record<string, any>) => Promise<Record<string, any>>> = {
   click_index: handleClickIndex,
   press_key: handlePressKey,
+  click_point: handleClickPoint,
   type: handleType,
   wait: handleWait,
   scroll: handleScroll,
@@ -1298,8 +1339,13 @@ async function handleReplayRoute(wv: BrowserWebview, params: Record<string, any>
 async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
   const expression = params.expression as string;
   if (!expression) return { error: 'expression parameter is required' };
+  // [app-agent] step trace: surface what the app's bridge actually returned.
+  const _bridgeCall = expression.includes('OPENSWARM_APP');
   try {
     const result = await wv.executeJavaScript(expression);
+    if (_bridgeCall) {
+      console.log(`[app-agent] BRIDGE eval -> ${typeof result === 'string' ? result : JSON.stringify(result)}`);
+    }
     const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
     // evaluate is the agent's main read path; sample routes here too (XHRs have fired by now) so the backend can surface the fast network tier once.
     const routes_available = await countSafeRoutes(wv);
@@ -1359,13 +1405,26 @@ async function runBrowserCommand(
   request_id: string, action: string, browser_id: string, tab_id: string | undefined,
   params: Record<string, any>,
 ) {
+  // [app-agent] step trace: only for app targets so browser-agent runs stay quiet.
+  const _appTrace = String(browser_id || '').startsWith('app:');
+  if (_appTrace) {
+    console.log(`[app-agent] CMD recv: action=${action} browser_id=${browser_id} tab_id=${tab_id ?? ''} registered=[${registeredKeys().join(', ')}]`);
+  }
   const wv = await awaitWebview(browser_id, tab_id || undefined);
   if (!wv) {
+    if (_appTrace) {
+      console.warn(`[app-agent] LOOKUP MISS: no webview for '${browser_id}' (registered keys: [${registeredKeys().join(', ')}]) -> the app card isn't mounted on the active dashboard`);
+    }
     dashboardWs.send('browser:result', {
       request_id,
       error: `Browser card '${browser_id}'${tab_id ? ` tab '${tab_id}'` : ''} not found or not an Electron webview`,
     });
     return;
+  }
+  if (_appTrace) {
+    let _url = '';
+    try { _url = wv.getURL(); } catch (_e) {}
+    console.log(`[app-agent] LOOKUP HIT: webview for '${browser_id}' found, url=${_url} loading=${(() => { try { return wv.isLoading(); } catch { return '?'; } })()}`);
   }
 
   const detail = params.url || params.selector || params.expression || undefined;
@@ -1422,6 +1481,16 @@ async function runBrowserCommand(
         if (result.clickX != null && result.clickY != null) {
           setActivity(browser_id, {
             action: 'click_index',
+            detail,
+            coords: { xPercent: result.clickX, yPercent: result.clickY },
+          });
+        }
+        break;
+      case 'click_point':
+        result = await handleClickPoint(wv, params);
+        if (result.clickX != null && result.clickY != null) {
+          setActivity(browser_id, {
+            action: 'click_point',
             detail,
             coords: { xPercent: result.clickX, yPercent: result.clickY },
           });

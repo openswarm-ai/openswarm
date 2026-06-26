@@ -474,6 +474,14 @@ async def browser_agent_run(request: Request):
     if not tasks:
         return JSONResponse({"error": "tasks array is required"}, status_code=400)
 
+    # [app-agent] step trace: log app-mode dispatches arriving at the route.
+    for p_t in tasks:
+        if p_t.get("app_mode") or str(p_t.get("browser_id", "")).startswith("app:"):
+            logger.info(
+                f"[app-agent] ROUTE /run: browser_id={p_t.get('browser_id')!r} "
+                f"app_mode={p_t.get('app_mode')} task={str(p_t.get('task',''))[:120]!r}"
+            )
+
     results = await run_browser_agents(
         tasks=tasks,
         model=model,

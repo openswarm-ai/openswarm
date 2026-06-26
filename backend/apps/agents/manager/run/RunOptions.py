@@ -104,7 +104,7 @@ class RunOptions(AgentManagerProtocol):
         mcp_servers = await self.build_mcp_servers(session.allowed_tools, session.active_mcps)
 
         browser_delegation_tools, invoke_agent_tools = register_builtin_mcp_servers(
-            mcp_servers, session, builtin_perms, selected_browser_ids
+            mcp_servers, session, builtin_perms, selected_browser_ids, selected_app_output_ids
         )
 
 

@@ -20,10 +20,11 @@ def register_builtin_mcp_servers(
     session: AgentSession,
     builtin_perms: Dict[str, str],
     selected_browser_ids: Optional[List[str]],
+    selected_app_output_ids: Optional[List[str]],
 ) -> Tuple[List[str], List[str]]:
     import backend.apps.agents as p_agents_pkg
     agents_dir = os.path.dirname(p_agents_pkg.__file__)
-    browser_delegation_tools = ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents"]
+    browser_delegation_tools = ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents", "AppAgent"]
     browser_all_denied = all(
         builtin_perms.get(t, "always_allow") == "deny"
         for t in browser_delegation_tools
@@ -36,6 +37,8 @@ def register_builtin_mcp_servers(
         backend_port = os.environ.get("OPENSWARM_PORT", "8324")
         # Only the card the user actually picked in select-mode gets claimed for the task, so the sub drives that one instead of opening its own duplicate. Passing EVERY dashboard card here (the old behavior) made the sub force-grab a random, usually-parked card and never navigate it, which broke the bulk of browser tasks.
         pre_selected_bids = [b for b in (selected_browser_ids or []) if b]
+        # Apps the user selected this turn; the AppAgent tool may only target these (anti-hallucination gate in the MCP server, which reads this at startup).
+        selected_app_ids = [a for a in (selected_app_output_ids or []) if a]
         auth_tok = get_auth_token()
         mcp_servers["openswarm-browser-agent"] = {
             "command": sys.executable,
@@ -46,6 +49,7 @@ def register_builtin_mcp_servers(
                 "OPENSWARM_AGENT_MODEL": session.model,
                 "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
                 "OPENSWARM_PRE_SELECTED_BROWSER_IDS": ",".join(pre_selected_bids),
+                "OPENSWARM_SELECTED_APP_IDS": ",".join(selected_app_ids),
                 "OPENSWARM_PARENT_SESSION_ID": session.id,
             },
             "type": "stdio",

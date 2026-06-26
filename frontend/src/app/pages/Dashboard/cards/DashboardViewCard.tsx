@@ -720,6 +720,7 @@ const DashboardOutputPreview: React.FC<{
       onConsoleMessage={handleConsoleMessage}
       interactive={interactive}
       onAppClicked={onAppClicked}
+      agentBrowserId={`app:${output.id}`}
     />
   );
 };
