@@ -1,8 +1,6 @@
 import { getWebview } from '@/shared/browserRegistry';
 
-// Zoom the active-tab page of a browser card like a real browser (Ctrl/Cmd +/-/0), independent of the
-// dashboard canvas zoom. dir: 1 = in, -1 = out, 0 = reset. Step + clamp must match wherever this is
-// called so guest-focused and host-focused zoom never drift apart. Clamp ~0.5x..2.5x.
+// Zoom a browser card's active page like a real browser (dir 1/-1/0), separate from canvas zoom; one shared step+clamp so guest-focused and host-focused zoom never drift apart.
 const ZOOM_STEP = 0.5;
 const ZOOM_MIN = -3;
 const ZOOM_MAX = 5;
