@@ -740,14 +740,13 @@ const BrowserCard: React.FC<Props> = ({
       }}
       sx={{
         position: 'absolute',
-        // Kept-alive card from another dashboard: invisible + click-through (webContents stays live so its session survives), but never unmounted.
-        visibility: keepAliveHidden ? 'hidden' : undefined,
+        // Kept-alive card from another dashboard: parked far off-screen because a <webview> guest surface ignores CSS visibility/opacity; click-through, webContents stays live so its session survives, never unmounted.
         pointerEvents: keepAliveHidden ? 'none' : undefined,
         // contain: webview repaints don't shake neighbor cards.
         contain: 'layout style',
         // Own compositor layer so hover/paint invalidations stay contained to this card. See AgentCard for full rationale.
         willChange: 'transform',
-        left: displayX,
+        left: keepAliveHidden ? -100000 : displayX,
         top: displayY,
         width: displayW,
         height: displayH,
