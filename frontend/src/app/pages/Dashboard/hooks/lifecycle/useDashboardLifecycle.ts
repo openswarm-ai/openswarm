@@ -14,13 +14,13 @@ import {
   addBrowserCard,
   addViewCard,
   resetLayout,
-  removeViewCard,
   clearPendingFocusBrowserId,
   clearPendingFocusWorkflowId,
   clearPendingFocusWorkflowsHub,
   type ViewCardPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import { fetchOutputs, type Output } from '@/shared/state/outputsSlice';
+import { removeViewCardCleanly } from '@/shared/viewTeardown';
 import { generateDashboardName } from '@/shared/state/dashboardsSlice';
 import { fetchWorkflows, fetchAllRuns, fetchActiveRuns } from '@/shared/state/workflowsSlice';
 import { fetchMissedRuns } from '@/shared/state/missedRunsSlice';
@@ -280,11 +280,17 @@ export function useDashboardLifecycle({
   }, [sessions, layoutInitialized, dispatch, dashboardId, expandedSessionIds]);
 
   // Prune orphan view cards whose underlying output was deleted (e.g. via the Views page). Without this, the layout entry persists in the minimap and contentBounds even though DashboardViewCard renders nothing. Gated on outputsRefetched (THIS open's fresh fetch), NOT the sticky global outputsLoaded: on a freshly-imported dashboard the global flag is already true from a prior dashboard, so the old gate pruned the just-imported app card against a stale apps list and the debounced save persisted the wipe.
+  const pruningRef = useRef(false);
   useEffect(() => {
-    if (!layoutInitialized || !outputsRefetched) return;
-    for (const outputId of Object.keys(viewCards)) {
-      if (!outputs[outputId]) dispatch(removeViewCard(outputId));
-    }
+    if (!layoutInitialized || !outputsRefetched || pruningRef.current) return;
+    const orphans = Object.keys(viewCards).filter((outputId) => !outputs[outputId]);
+    if (!orphans.length) return;
+    pruningRef.current = true;
+    // Serialize the prune (one quiesce at a time) so deleting a couple of large apps via the Views page can't rip several live webview GPU surfaces out in one frame; the ref stops this effect's own dispatches from spawning overlapping loops.
+    void (async () => {
+      try { for (const outputId of orphans) await removeViewCardCleanly(outputId, dispatch); }
+      finally { pruningRef.current = false; }
+    })();
   }, [layoutInitialized, outputsRefetched, viewCards, outputs, dispatch]);
 
   // On first load after outputs settle, snapshot every existing Output id as "already accounted for." Any output that ARRIVES later (typically the agent:output_upserted WS broadcast the backend fires the instant a view-builder session is seeded, at session start) whose session_id points at a view-builder chat on this dashboard gets a view card dropped on the canvas right away. Per-mount tracked so a manual close after auto-open stays closed. Prior approach keyed off a pending-set populated inside launchAndSendFirstMessage.then(): the WS upsert won the race and the effect saw an empty set, so the card didn't pop until the session-end meta-sync re-broadcast.

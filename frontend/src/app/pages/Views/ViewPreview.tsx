@@ -6,6 +6,7 @@ import { useElementSelection } from '@/app/components/editor/ElementSelectionCon
 import { useIframeElementSelector } from './useIframeElementSelector';
 import { getAuthToken, ensureAuthToken } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { registerViewWebview, unregisterViewWebview, type ViewWebview } from '@/shared/viewWebviewRegistry';
 
 // In Electron use <webview> to escape iframe restrictions (popups, mic/camera, WebAuthn, cookied fetch); outside Electron fall back to iframe.
 const isElectron = navigator.userAgent.includes('Electron');
@@ -57,6 +58,8 @@ interface Props {
   interactive?: boolean;
   /** Fired when the preload reports a mousedown inside the guest, so the host can flip the card into interactive mode. */
   onAppClicked?: () => void;
+  /** Dashboard card's output id. When set, the live webview registers under it so the delete path can quiesce its GPU surface before unmount. Omitted in the App Builder (no card teardown). */
+  registryId?: string;
 }
 
 function buildSrcdoc(
@@ -96,6 +99,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
   onContentLoad,
   interactive = false,
   onAppClicked,
+  registryId,
 }, ref) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const webviewRef = useRef<any>(null);
@@ -275,6 +279,15 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
       try { wv.removeEventListener?.('ipc-message', handler); } catch (_e) {}
     };
   }, [useWebview, onConsoleMessage, onAppClicked, iframeSrc]);
+
+  // Register the live webview so the dashboard delete path can quiesce its GPU surface before unmount; unregister on teardown so a stale handle never gets navigated.
+  useEffect(() => {
+    if (!useWebview || !registryId) return;
+    const wv = webviewRef.current;
+    if (!wv) return;
+    registerViewWebview(registryId, wv as ViewWebview);
+    return () => unregisterViewWebview(registryId);
+  }, [useWebview, registryId, iframeSrc]);
 
   // Mirror `interactive` into a ref so the once-per-load did-finish-load listener can read the latest value when it pushes initial state.
   const interactiveRef = useRef(interactive);

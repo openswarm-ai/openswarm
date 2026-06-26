@@ -10,7 +10,8 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CloseIcon from '@mui/icons-material/Close';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import { Output, SERVE_BASE } from '@/shared/state/outputsSlice';
-import { setViewCardPosition, setViewCardSize, removeViewCard, setActiveViewCardId } from '@/shared/state/dashboardLayoutSlice';
+import { setViewCardPosition, setViewCardSize, setActiveViewCardId } from '@/shared/state/dashboardLayoutSlice';
+import { removeViewCardCleanly } from '@/shared/viewTeardown';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { API_BASE, getAuthToken } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -303,7 +304,7 @@ const DashboardViewCard: React.FC<Props> = ({
 
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
-    dispatch(removeViewCard(output.id));
+    void removeViewCardCleanly(output.id, dispatch);
   };
 
   const handleRefresh = (e: React.MouseEvent) => {
@@ -686,7 +687,7 @@ const DashboardOutputPreview: React.FC<{
           This app's files are missing.
         </Typography>
         <Typography
-          onClick={() => dispatch(removeViewCard(output.id))}
+          onClick={() => void removeViewCardCleanly(output.id, dispatch)}
           sx={{
             color: tokens.accent.primary,
             fontSize: '0.85rem',
@@ -713,6 +714,7 @@ const DashboardOutputPreview: React.FC<{
   return (
     <ViewPreview
       ref={previewRef}
+      registryId={output.id}
       serveUrl={url}
       frontendCode={output.files?.['index.html'] ?? ''}
       inputData={inputData}

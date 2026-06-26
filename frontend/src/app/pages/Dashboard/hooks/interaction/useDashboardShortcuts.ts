@@ -2,9 +2,10 @@ import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import { report } from '@/shared/serviceClient';
 import { useAppDispatch } from '@/shared/hooks';
 import { closeSession, toggleExpandSession } from '@/shared/state/agentsSlice';
-import { removeViewCard, removeNote, removeWorkflowCard, closeWorkflowsHub } from '@/shared/state/dashboardLayoutSlice';
+import { removeNote, removeWorkflowCard, closeWorkflowsHub } from '@/shared/state/dashboardLayoutSlice';
 import { closeWorkflowCard } from '@/shared/state/workflowsSlice';
 import { removeBrowserCardCleanly } from '@/shared/browserTeardown';
+import { removeViewCardCleanly } from '@/shared/viewTeardown';
 import type { useDashboardSelection } from '../state/useDashboardSelection';
 
 type Selection = ReturnType<typeof useDashboardSelection>;
@@ -27,7 +28,7 @@ export function useDashboardShortcuts({
   const dispatch = useAppDispatch();
 
   useEffect(() => {
-    const parts = newAgentShortcut.toLowerCase().split('+');
+    const parts = (newAgentShortcut || '').toLowerCase().split('+');
     const key = parts[parts.length - 1];
     const needsMeta = parts.includes('meta');
     const needsCtrl = parts.includes('ctrl');
@@ -72,11 +73,12 @@ export function useDashboardShortcuts({
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
       if (selection.selectedIds.size === 0) return;
       e.preventDefault();
+      const viewIds: string[] = [];
       for (const [id, type] of selection.selectedIds) {
         if (type === 'agent') {
           dispatch(closeSession({ sessionId: id }));
         } else if (type === 'view') {
-          dispatch(removeViewCard(id));
+          viewIds.push(id);
         } else if (type === 'browser') {
           removeBrowserCardCleanly(id, dispatch);
         } else if (type === 'note') {
@@ -88,6 +90,8 @@ export function useDashboardShortcuts({
           dispatch(closeWorkflowsHub());
         }
       }
+      // Tear view cards down ONE AT A TIME (each quiesces its GPU surface first); ripping several large app webviews out in one frame is what piles up "non-existent mailbox" errors and kills the GPU process.
+      void (async () => { for (const id of viewIds) await removeViewCardCleanly(id, dispatch); })();
       selection.deselectAll();
     };
     window.addEventListener('keydown', handleDelete);
