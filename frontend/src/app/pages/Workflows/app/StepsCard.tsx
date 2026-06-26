@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import Dialog from '@mui/material/Dialog';
 import { useAppDispatch } from '@/shared/hooks';
 import { commitDraft } from '@/shared/state/workflowsSlice';
 import type { Workflow, WorkflowStep } from '@/shared/state/workflowsSlice';
@@ -21,6 +22,7 @@ const StepsCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
   const patch = useWorkflowPatch();
   const [local, setLocal] = useState<LocalStep[]>(() => toLocal(workflow.steps));
   const [draft, setDraft] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<LocalStep | null>(null);
 
   // Agent-proposed step changes apply silently (no Apply/Discard popup): commit any staged draft as soon as it lands so the steps just update live. Guarded on real content, the edit session snapshots an empty draft on open and committing that 400s.
   useEffect(() => {
@@ -76,9 +78,15 @@ const StepsCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
     commit(next);
   };
   const onDelete = (id: string) => {
-    const next = local.filter((s) => s.id !== id);
+    const step = local.find((s) => s.id === id);
+    if (step) setPendingDelete(step);
+  };
+  const confirmDelete = () => {
+    if (!pendingDelete) return;
+    const next = local.filter((s) => s.id !== pendingDelete.id);
     setLocal(next);
     commit(next);
+    setPendingDelete(null);
   };
 
   return (
@@ -139,6 +147,29 @@ const StepsCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14" /></svg>
         </button>
       </div>
+
+      <Dialog
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        PaperProps={{ style: { background: WC.paper, borderRadius: WC.radius.lg, border: `1px solid rgba(${WC.inkRGB},0.10)`, boxShadow: WC.shadow.lg, maxWidth: 340, margin: 16 } }}
+      >
+        <div style={{ padding: '20px 22px 18px', fontFamily: FONT_SANS }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 11 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 8, background: WC.dangerBg, color: WC.danger, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
+            </div>
+            <span style={{ fontFamily: FONT_SERIF, fontSize: 18, fontWeight: 500, color: WC.ink }}>Remove step?</span>
+          </div>
+          <div style={{ fontSize: 13.5, color: WC.muted, lineHeight: 1.55 }}>
+            <span style={{ color: WC.ink3, fontWeight: 600 }}>{(pendingDelete?.label || pendingDelete?.text || 'This step').trim()}</span>
+            {' '}will be removed from this workflow.
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+            <button onClick={() => setPendingDelete(null)} style={{ background: 'transparent', border: `1px solid rgba(${WC.inkRGB},0.14)`, borderRadius: 8, padding: '8px 15px', fontSize: 13, fontWeight: 600, color: WC.ink3, cursor: 'pointer', fontFamily: FONT_SANS }}>Cancel</button>
+            <button onClick={confirmDelete} style={{ background: WC.danger, border: 'none', borderRadius: 8, padding: '8px 15px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: FONT_SANS }}>Remove</button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 };
