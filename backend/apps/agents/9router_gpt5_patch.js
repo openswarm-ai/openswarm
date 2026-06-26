@@ -55,7 +55,7 @@ const _http = require('http');
     const closePage =
       '<!doctype html><meta charset="utf-8"><body style="font-family:-apple-system,system-ui;' +
       'text-align:center;color:#888;padding-top:80px;background:#1a1a1a">' +
-      'You can close this tab, and any other Claude login tab still open.</body>';
+      'You can close this tab, and any other login tab still open.</body>';
     http.Server.prototype.emit = function patchedEmit(event, req, res) {
       if (event === 'request' && req && res) {
         try {
