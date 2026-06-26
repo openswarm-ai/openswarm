@@ -121,8 +121,8 @@ const isWindows = navigator.userAgent.includes('Windows');
 const isElectron = navigator.userAgent.includes('Electron') && (!isWindows || windowsWebviewEnabled());
 
 const chromeUserAgent = navigator.userAgent
-  .replace(/\s*Electron\/\S+/, '')
-  .replace(/\s*OpenSwarm\/\S+/, '');
+  .replace(/\s*Electron\/\S+/i, '')
+  .replace(/\s*openswarm\/\S+/i, '');
 
 // Persistent partition so browser-card logins/cookies/localStorage outlive a reload or quit. MUST match BROWSER_PARTITION in electron/main.js, which configures permissions + iframe header-strip on this exact partition.
 const BROWSER_PARTITION = 'persist:openswarm-browser';
