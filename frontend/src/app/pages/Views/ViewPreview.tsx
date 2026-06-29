@@ -7,8 +7,9 @@ import { useIframeElementSelector } from './useIframeElementSelector';
 import { getAuthToken, ensureAuthToken } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { registerViewWebview, unregisterViewWebview, type ViewWebview } from '@/shared/viewWebviewRegistry';
+import RunInDesktopMessage from '@/app/components/RunInDesktopMessage';
 
-// In Electron use <webview> to escape iframe restrictions (popups, mic/camera, WebAuthn, cookied fetch); outside Electron fall back to iframe.
+// In Electron use <webview> to escape iframe restrictions (popups, mic/camera, WebAuthn, cookied fetch); a srcdoc app still uses an iframe (data:text/html breaks webview same-origin); outside Electron we show a launch-correctly message.
 const isElectron = navigator.userAgent.includes('Electron');
 
 // Card previews render small; downscale + JPEG so thumbnails don't bloat the output JSON or every list fetch.
@@ -411,7 +412,8 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
             ...style,
           }}
         />
-      ) : (
+      ) : isElectron ? (
+        // In Electron but not useWebview = a srcdoc app (no serveUrl); the iframe is REQUIRED here (data:text/html breaks webview same-origin), not a fallback. Non-Electron falls through to the launch-correctly message.
         <iframe
           ref={iframeRef}
           // Key only changes on mode switch (URL vs srcdoc); reloadKey updates the src attribute in place to avoid blank-flash on reload.
@@ -429,6 +431,8 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
           }}
           title="App Preview"
         />
+      ) : (
+        <RunInDesktopMessage kind="app" />
       )}
       {restoring && (
         <Box

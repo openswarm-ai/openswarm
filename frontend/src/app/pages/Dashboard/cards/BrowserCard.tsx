@@ -21,6 +21,7 @@ import AddIcon from '@mui/icons-material/Add';
 import LockIcon from '@mui/icons-material/Lock';
 import SearchIcon from '@mui/icons-material/Search';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import RunInDesktopMessage from '@/app/components/RunInDesktopMessage';
 import {
   setBrowserCardPosition,
   setBrowserCardSize,
@@ -120,7 +121,8 @@ function markWindowsWebviewSurvived(): void {
 }
 
 const isWindows = navigator.userAgent.includes('Windows');
-const isElectron = navigator.userAgent.includes('Electron') && (!isWindows || windowsWebviewEnabled());
+const inElectron = navigator.userAgent.includes('Electron');
+const isElectron = inElectron && (!isWindows || windowsWebviewEnabled());
 
 // Keep the openswarm/<ver> product token: Google's sign-in flags a BARE Chrome UA as not-genuine-Chrome and blocks it ("browser may not be secure"), but tolerates a UA carrying a product token. Only the Electron token must go (that one Google hard-blocks).
 const chromeUserAgent = navigator.userAgent
@@ -1325,11 +1327,11 @@ const BrowserCard: React.FC<Props> = ({
             </Button>
           </DialogActions>
         </Dialog>
-        {!isElectron && (
+        {!isElectron && (inElectron ? (
+          // inElectron but !isElectron = Windows after the webview crashed (windowsWebviewEnabled() false); keep the iframe as the crash safety net. No sandbox so sites render; the renderer's already isolated by Electron + the main.js XFO/CSP strip.
           <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
             <iframe
               src={activeUrl}
-              // No sandbox: a restrictive sandbox blocks some sites from rendering, and our renderer is already isolated by Electron's contextIsolation + sub_frame XFO/CSP frame-ancestors strip in main.js. onLoad/onError add definitive instrumentation so we can tell whether the iframe loaded successfully (with empty body from anti-iframe JS) or genuinely failed (network error, CSP block, etc.).
               style={{ width: '100%', height: '100%', border: 'none', pointerEvents: isElementSelectMode ? 'none' : 'auto' }}
               title="Browser"
               referrerPolicy="no-referrer-when-downgrade"
@@ -1339,7 +1341,9 @@ const BrowserCard: React.FC<Props> = ({
               }}
             />
           </Box>
-        )}
+        ) : (
+          <RunInDesktopMessage kind="browser" />
+        ))}
 
         {/* Camera flash: screenshot */}
         {(agentAction === 'screenshot' || lastAction === 'screenshot') && (
