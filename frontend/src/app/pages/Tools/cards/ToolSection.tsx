@@ -20,6 +20,7 @@ import BlockIcon from '@mui/icons-material/Block';
 import SecurityIcon from '@mui/icons-material/Security';
 import PanToolIcon from '@mui/icons-material/PanTool';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { BuiltinTool } from '@/shared/state/toolsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { CATEGORY_ORDER } from '../toolsHelpers';
@@ -60,6 +61,7 @@ const ToolSection: React.FC<ToolSectionProps> = ({
     planning: { label: 'Planning', color: '#ec4899', icon: <MapIcon sx={{ fontSize: 16 }} /> },
     scheduling: { label: 'Scheduling', color: '#14b8a6', icon: <ScheduleIcon sx={{ fontSize: 16 }} /> },
     agents: { label: 'Agents', color: '#f97316', icon: <CallSplitIcon sx={{ fontSize: 16 }} /> },
+    skills: { label: 'Skills', color: '#7B61BD', icon: <AutoAwesomeIcon sx={{ fontSize: 16 }} /> },
   };
 
   const PermToggle = ({ value, onChange, size = 16 }: { value: string; onChange: (v: string) => void; size?: number }) => (

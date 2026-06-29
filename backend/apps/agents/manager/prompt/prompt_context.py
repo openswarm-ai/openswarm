@@ -306,6 +306,42 @@ def build_mcp_registry_summary(allowed_tools: List[str], active_mcps: List[str],
     return "\n".join(sections)
 
 
+@typechecked
+def build_installed_skills_catalog() -> Optional[str]:
+    """Compact catalog of the user's installed skills (id + when-to-use), the
+    surface that lets the model reach for a skill on its own instead of waiting
+    for a manual `/` attach. Lists only LOCALLY installed, non-built-in skills
+    (id + description, never the body), so it costs a few hundred tokens, not the
+    600k-entry registry. Returns None (no block, no Skill tool) when the Skill
+    tool is denied or nothing's installed, so the catalog and tool stay in sync."""
+    from backend.apps.tools_lib.tools_lib import load_builtin_permissions
+    if load_builtin_permissions().get("Skill", "always_allow") == "deny":
+        return None
+    try:
+        from backend.apps.skills.skills import sync_skills
+        skills = [s for s in sync_skills() if not s.built_in]
+    except Exception:
+        return None
+    if not skills:
+        return None
+
+    # Static preamble kept byte-identical across users so it caches; the per-skill lines below vary per install (same as the mcp registry).
+    lines = [
+        "<skills>",
+        "Skills are reusable playbooks the user installed. Each line is a skill id "
+        "and when to use it. When a request matches one, call Skill(id=\"<id>\") to "
+        "load its full instructions, then follow them. Don't load a skill that isn't "
+        "relevant, and don't guess a skill's contents without loading it.",
+        "",
+        "Installed skills:",
+    ]
+    for s in skills:
+        blurb = (s.description or s.name).strip()
+        lines.append(f"- `{s.id}`, {blurb}")
+    lines.append("</skills>")
+    return "\n".join(lines)
+
+
 # The agent runs on the claude_code preset (kept for its tool scaffolding, safety rules, and the exclude_dynamic_sections prompt-cache win, which a raw-string system prompt would all throw away). The preset opens with "You are Claude Code, Anthropic's official CLI", which leaks into chat. This block is APPENDED after the preset, so being later it overrides that identity. Edit AGENT_NAME / AGENT_BLURB to rebrand. Kept short so it costs ~80 cached tokens, not a wall.
 AGENT_NAME = "OpenSwarm"
 AGENT_IDENTITY = (
@@ -326,9 +362,9 @@ AGENT_IDENTITY = (
 
 
 @typechecked
-def compose_system_prompt(default_prompt: Optional[str], mode_prompt: Optional[str], session_prompt: Optional[str], browser_ctx: Optional[str] = None, mcp_registry_ctx: Optional[str] = None) -> Optional[str]:
+def compose_system_prompt(default_prompt: Optional[str], mode_prompt: Optional[str], session_prompt: Optional[str], browser_ctx: Optional[str] = None, mcp_registry_ctx: Optional[str] = None, skills_catalog_ctx: Optional[str] = None) -> Optional[str]:
     # Identity always leads so it overrides the preset's Claude Code persona, even when the user has no custom default/mode/session prompt of their own.
-    parts = [AGENT_IDENTITY] + [p for p in (default_prompt, mode_prompt, session_prompt, mcp_registry_ctx, browser_ctx) if p]
+    parts = [AGENT_IDENTITY] + [p for p in (default_prompt, mode_prompt, session_prompt, mcp_registry_ctx, skills_catalog_ctx, browser_ctx) if p]
     return "\n\n".join(parts)
 
 
@@ -395,19 +431,13 @@ def resolve_attached_skills(attached_skills: Optional[List]) -> str:
     except Exception:
         folder_by_id = {}
 
+    from backend.apps.skills.skills import format_skill_for_prompt
     sections = []
     for skill in attached_skills:
         name = skill.get("name", "Unknown")
         content = skill.get("content", "")
         if not content:
             continue
-        block = f"[Using skill: {name}]\n\n{content}"
         folder = folder_by_id.get(skill.get("id", ""))
-        if folder:
-            block += (
-                f"\n\nThis skill bundles supporting files in {folder}. "
-                "Read them with your normal file tools (Read / Glob / Bash) when "
-                "the steps above call for one; don't guess their contents."
-            )
-        sections.append(block)
+        sections.append(format_skill_for_prompt(name, content, folder))
     return "\n\n".join(sections)

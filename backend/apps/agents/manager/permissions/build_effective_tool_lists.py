@@ -60,6 +60,14 @@ def build_effective_tool_lists(
                         effective_disallowed.append(f"mcp__openswarm-invoke-agent__{it}")
                 continue
 
+            if name == "openswarm-skill":
+                policy = builtin_perms.get("Skill", "always_allow")
+                if policy == "always_allow":
+                    effective_allowed.append("mcp__openswarm-skill__Skill")
+                else:
+                    effective_disallowed.append("mcp__openswarm-skill__Skill")
+                continue
+
             if name == "openswarm-web":
                 # Expose our DDG-backed web tools under an MCP prefix. Honor existing WebSearch/WebFetch permission policy, if the user disabled them in Settings, don't offer the MCP variants either.
                 for wt in ("WebSearch", "WebFetch"):
@@ -97,4 +105,7 @@ def build_effective_tool_lists(
     for bt in path_gate.CLAUDE_INTERNAL_SCHEDULER_TOOLS:
         if bt not in effective_disallowed:
             effective_disallowed.append(bt)
+    # The claude_code preset ships its own bare `Skill` tool that reads ~/.claude/skills directly; always withhold it so skills only ever load through our provider-agnostic mcp__openswarm-skill__Skill (or not at all).
+    if "Skill" not in effective_disallowed:
+        effective_disallowed.append("Skill")
     return effective_allowed, effective_disallowed

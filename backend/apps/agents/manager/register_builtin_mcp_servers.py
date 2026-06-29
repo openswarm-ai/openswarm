@@ -89,6 +89,27 @@ def register_builtin_mcp_servers(
         "type": "stdio",
     }
 
+    # Skill server: exposes the Skill tool so the agent can load an installed skill on its own (the <skills> catalog in the prompt lists what's available). Gated on at least one non-built-in skill existing AND Skill not being denied, so we never offer a tool with an empty catalog. Kept in sync with build_installed_skills_catalog, which omits the catalog under the same conditions.
+    skill_denied = builtin_perms.get("Skill", "always_allow") == "deny"
+    if not skill_denied:
+        try:
+            from backend.apps.skills.skills import sync_skills
+            has_loadable_skill = any(not s.built_in for s in sync_skills())
+        except Exception:
+            has_loadable_skill = False
+        if has_loadable_skill:
+            skill_server_path = os.path.join(agents_dir, "skill_mcp_server.py")
+            mcp_servers["openswarm-skill"] = {
+                "command": sys.executable,
+                "args": [skill_server_path],
+                "env": {
+                    "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
+                    "OPENSWARM_AUTH_TOKEN": get_auth_token(),
+                    "OPENSWARM_PARENT_SESSION_ID": session.id,
+                },
+                "type": "stdio",
+            }
+
     # Always-on settings-meta server: SettingsRead / SettingsWrite let the agent read and edit its own OpenSwarm Settings autonomously. The backend (/api/settings-meta) enforces the only two guardrails: it can't disconnect the credential powering this run, and reads come back with secrets redacted. No activation gate, Settings is the agent's own house, not a third-party MCP.
     settings_meta_server_path = os.path.join(
         agents_dir, "settings_meta_server.py"

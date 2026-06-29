@@ -1,6 +1,6 @@
 import { McpServer } from '@/shared/state/mcpRegistrySlice';
 
-export const CATEGORY_ORDER = ['filesystem', 'system', 'search', 'interaction', 'agents', 'planning', 'scheduling'];
+export const CATEGORY_ORDER = ['filesystem', 'system', 'search', 'interaction', 'agents', 'skills', 'planning', 'scheduling'];
 
 export interface ToolForm {
   name: string;
