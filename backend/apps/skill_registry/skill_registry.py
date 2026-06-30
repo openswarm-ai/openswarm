@@ -33,7 +33,6 @@ p_refresh_task: Optional[asyncio.Task] = None
 
 # The curated repo's recursive file tree, warmed hourly alongside the catalog. A curated install reads paths from here and fetches contents over raw, so it makes ZERO GitHub API calls in the normal case (the trees API is the 60/hr-limited part); update detection reads per-folder tree SHAs from it too. Empty until the first refresh warms it; install falls back to one live tree call then.
 p_curated_tree: list[dict] = []
-p_curated_tree_at: float = 0
 # Community repo trees for update detection, cached briefly (best-effort) so an updates check on skills.sh-installed skills doesn't refetch every page load nor burn the API.
 P_COMMUNITY_TREE_TTL = 600
 p_community_tree_cache: dict[str, tuple] = {}
@@ -173,14 +172,13 @@ async def p_warm_curated_tree() -> None:
     over raw). One cheap call per hourly refresh, reused by every install in that hour.
     Isolated, a failure here never touches the SKILL.md catalog; install falls back to
     a live tree call while the cache is cold."""
-    global p_curated_tree, p_curated_tree_at
+    global p_curated_tree
     owner, _, repo = REPO.partition("/")
     try:
         async with httpx.AsyncClient(timeout=30.0, headers=github_headers()) as client:
             tree = await p_tree_at(client, owner, repo, BRANCH)
         if tree:
             p_curated_tree = tree
-            p_curated_tree_at = time.time()
             logger.info(f"Curated skill tree warmed: {len(p_tree_blob_paths(tree))} file paths cached")
     except RegistryRateLimited:
         # Visible on purpose: a rate-limited warm-up means installs stay on the slow live-call path until the IP's quota resets or a token is set.
@@ -432,7 +430,7 @@ async def p_build_resolved_skill(
     if "SKILL.md" not in files:
         raise ValueError("SKILL.md could not be fetched")
 
-    meta, p_body = p_parse_frontmatter(files["SKILL.md"])
+    meta, _ = p_parse_frontmatter(files["SKILL.md"])
     # Reuse the .swarm importer's content scan: flag files holding secret-shaped literals (the author's leaked key, or a sketchy skill) so the user sees it before installing from an unvetted repo.
     from backend.common.secret_scan import find_secrets_in_files
     secret_findings = find_secrets_in_files({rel: data.encode("utf-8", "ignore") for rel, data in files.items()})
@@ -624,7 +622,7 @@ async def p_safe_repo_tree(source: str):
     if owner and repo:
         try:
             async with httpx.AsyncClient(timeout=30.0, headers=github_headers()) as client:
-                p_branch, tree = await p_fetch_repo_tree(client, owner, repo)
+                _, tree = await p_fetch_repo_tree(client, owner, repo)
         except Exception:
             tree = None
     p_community_tree_cache[source] = (now, tree)
@@ -671,7 +669,7 @@ async def registry_update(req: p_UpdateRequest):
     bumping its version. Re-runs the secret scan and returns any findings so the UI can
     flag a community update that newly ships secrets. A skill with no source (user-made)
     can't be updated."""
-    from backend.apps.skills.skills import sync_skills, write_folder_skill, p_clear_skill_dir
+    from backend.apps.skills.skills import sync_skills, write_folder_skill, clear_skill_dir
     target = next((s for s in sync_skills() if s.id == req.skill_id), None)
     if target is None:
         raise HTTPException(status_code=404, detail="skill not found")
@@ -690,7 +688,7 @@ async def registry_update(req: p_UpdateRequest):
         raise HTTPException(status_code=502, detail=f"could not fetch skill: {e}")
 
     # Overwrite in place: clear first so files removed upstream don't linger, keep the user's command alias, refresh everything else from source.
-    p_clear_skill_dir(target.id)
+    clear_skill_dir(target.id)
     skill = write_folder_skill(
         target.id,
         resolved["files"],

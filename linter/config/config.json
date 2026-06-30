@@ -93,6 +93,7 @@
       "backend/tests/test_disconnect_resilience.py",
       "backend/tests/test_outputs_runtime_cleanup.py",
       "backend/tests/test_service.py",
+      "backend/tests/test_skill_registry_community.py",
       "backend/tests/test_streaming_harness.py",
       "backend/tests/test_swarm_bundle.py",
       "backend/tests/test_v2_invariants.py",
@@ -197,6 +198,7 @@
     "p-private": [
       "backend/apps/workflows/workflows.py",
       "backend/tests/test_schedule_recurrence.py",
+      "backend/tests/test_skill_registry_community.py",
       "backend/tests/test_ssrf_guard.py",
       "backend/tests/test_workflows_semantics.py",
       "backend/tests/test_workflows_storage.py"

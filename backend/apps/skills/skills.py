@@ -361,7 +361,7 @@ async def get_skill(skill_id: str):
     raise HTTPException(status_code=404, detail="Skill not found")
 
 
-def p_clear_skill_dir(skill_id: str) -> None:
+def clear_skill_dir(skill_id: str) -> None:
     """Empty a skill's folder before an in-place update so files removed upstream
     don't linger as orphans. write_folder_skill recreates the dir right after."""
     import shutil

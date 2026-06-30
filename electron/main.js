@@ -2444,7 +2444,7 @@ app.on('web-contents-created', (_event, contents) => {
       `).catch(() => {});
 
       // Agent bridge (window.OPENSWARM_APP). Injected into EVERY app's main world
-      // from the shell so it exists regardless of frontend/src — the lightweight
+      // from the shell so it exists regardless of frontend/src; the lightweight
       // App Builder mode deletes frontend/src (and with it the template's own
       // agentBridge.ts), so this is the only entry point a trimmed app can't lose.
       // Idempotent + guarded: a workspace app that imports its own bridge installs
