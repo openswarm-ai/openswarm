@@ -2336,6 +2336,35 @@ app.on('web-contents-created', (_event, contents) => {
       `).catch(() => {});
     });
 
+    // Real headed Chrome exposes window.chrome.app/csi/loadTimes; an Electron webview's window.chrome is empty ({}), the single most-checked headless/automation tell (PerimeterX/DataDome et al). Stub the same shape real Chrome reports (app = object, csi + loadTimes = functions, NO runtime, matching a non-extension page). Also restore the base 'en' language Electron drops. Page-world (contextIsolation hides the preload), measured to flip every bot.sannysoft row to its Chrome value.
+    contents.on('dom-ready', () => {
+      contents.executeJavaScript(`
+        (function(){
+          try {
+            if (typeof window.chrome !== 'object' || window.chrome === null) window.chrome = {};
+            var def = function(o, k, v){ try { if (!o[k]) Object.defineProperty(o, k, { value: v, configurable: true, writable: true, enumerable: true }); } catch(e){} };
+            def(window.chrome, 'app', {
+              isInstalled: false,
+              InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+              RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
+              getDetails: function(){ return null; },
+              getIsInstalled: function(){ return false; },
+              runningState: function(){ return 'cannot_run'; },
+            });
+            def(window.chrome, 'csi', function(){ return { startE: Date.now(), onloadT: Date.now(), pageT: (performance && performance.now ? performance.now() : 0), tran: 15 }; });
+            def(window.chrome, 'loadTimes', function(){
+              var now = Date.now() / 1000;
+              return { commitLoadTime: now, connectionInfo: 'h2', finishDocumentLoadTime: now, finishLoadTime: now, firstPaintAfterLoadTime: 0, firstPaintTime: now, navigationType: 'Other', npnNegotiatedProtocol: 'h2', requestTime: now, startLoadTime: now, wasAlternateProtocolAvailable: false, wasFetchedViaSpdy: true, wasNpnNegotiated: true };
+            });
+            if (Array.isArray(navigator.languages) && navigator.languages.length === 1) {
+              var langs = navigator.languages.concat([navigator.languages[0].split('-')[0]]);
+              Object.defineProperty(navigator, 'languages', { get: function(){ return langs; }, configurable: true });
+            }
+          } catch (e) {}
+        })();
+      `).catch(() => {});
+    });
+
     // Force the guest's PAGE WORLD to always report visible/foregrounded. When a kept-alive browser card sits on another dashboard it's parked off-screen; the page-visibility API then reads hidden, so a real-time app (Discord) backgrounds itself, drops its gateway socket, and on return can't resume the session -> "please log in again". The webview-preload patches this too but only in the isolated world (contextIsolation), so the page's OWN code never sees it; injecting here in the main world is what actually keeps Discord logged in while hidden. document.hasFocus is forced true for the same reason; visibilitychange/freeze/pagehide are swallowed so nothing downstream reacts to a backgrounding that, to us, never happens.
     contents.on('dom-ready', () => {
       contents.executeJavaScript(`
