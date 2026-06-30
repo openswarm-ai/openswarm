@@ -13,7 +13,7 @@ import os
 import pytest
 
 import backend.apps.skills.skills as skills_mod
-from backend.apps.skill_registry.skill_registry import select_skill_paths, is_script_path
+from backend.apps.skill_registry.skill_registry_github import select_skill_paths, is_script_path, tree_blob_paths
 
 
 def test_selects_shortest_matching_skill_md_at_any_depth():
@@ -66,7 +66,7 @@ def test_ambiguous_match_picks_deterministically():
 
 
 def test_github_headers_adds_token_when_set(monkeypatch):
-    from backend.apps.skill_registry.skill_registry import github_headers
+    from backend.apps.skill_registry.skill_registry_github import github_headers
     monkeypatch.delenv("OPENSWARM_GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     assert "Authorization" not in github_headers()
@@ -159,7 +159,7 @@ def test_confirm_install_writes_folder_lists_and_injects(skills_dir, monkeypatch
                       "scripts/extract.py": "print('extract')"},
             "scripts": ["scripts/extract.py"], "secret_findings": [],
         }
-    monkeypatch.setattr("backend.apps.skill_registry.skill_registry.resolve_community_skill", fake_resolve)
+    monkeypatch.setattr("backend.apps.skill_registry.skill_registry_sources.resolve_community_skill", fake_resolve)
 
     r = client.post("/api/skill-registry/install", json={"source": "o/r", "skill_id": "pdf-tools", "confirm": True})
     assert r.status_code == 200 and r.json()["installed"] is True
@@ -204,8 +204,8 @@ def test_curated_resolve_fetches_exact_folder_only(monkeypatch):
     skills/pdf-extra) must not leak in. Here the cache is COLD, so it pays one live
     tree call."""
     import asyncio
-    import backend.apps.skill_registry.skill_registry as sr
-    monkeypatch.setattr(sr, "p_curated_tree", [])
+    import backend.apps.skill_registry.skill_registry_sources as sr
+    monkeypatch.setattr(sr, "curated_tree",[])
 
     class FakeClient:
         async def __aenter__(self):
@@ -233,8 +233,8 @@ def test_curated_resolve_uses_warm_cache_with_zero_api_calls(monkeypatch):
     it reads paths from the cache and pulls contents over raw only. It also records
     provenance (source/folder/version) for later update detection."""
     import asyncio
-    import backend.apps.skill_registry.skill_registry as sr
-    monkeypatch.setattr(sr, "p_curated_tree", CURATED_TREE["tree"])
+    import backend.apps.skill_registry.skill_registry_sources as sr
+    monkeypatch.setattr(sr, "curated_tree",CURATED_TREE["tree"])
 
     class NoApiClient:
         async def __aenter__(self):
@@ -261,8 +261,8 @@ def test_curated_resolve_uses_warm_cache_with_zero_api_calls(monkeypatch):
 def test_warm_curated_tree_populates_cache(monkeypatch):
     """The hourly warm-up caches the repo's full tree so later installs skip the API."""
     import asyncio
-    import backend.apps.skill_registry.skill_registry as sr
-    monkeypatch.setattr(sr, "p_curated_tree", [])
+    import backend.apps.skill_registry.skill_registry_sources as sr
+    monkeypatch.setattr(sr, "curated_tree",[])
 
     class TreeClient:
         async def __aenter__(self):
@@ -276,8 +276,8 @@ def test_warm_curated_tree_populates_cache(monkeypatch):
             return FakeResp(200, payload=CURATED_TREE)
 
     monkeypatch.setattr(sr.httpx, "AsyncClient", lambda *a, **k: TreeClient())
-    asyncio.run(sr.p_warm_curated_tree())
-    assert "skills/pdf/SKILL.md" in sr.p_tree_blob_paths(sr.p_curated_tree)
+    asyncio.run(sr.warm_curated_tree())
+    assert "skills/pdf/SKILL.md" in tree_blob_paths(sr.curated_tree)
 
 
 def test_skill_update_detection_and_apply(skills_dir, monkeypatch):
@@ -288,14 +288,14 @@ def test_skill_update_detection_and_apply(skills_dir, monkeypatch):
     from fastapi.testclient import TestClient
     from backend.main import app
     import backend.auth as auth_mod
-    import backend.apps.skill_registry.skill_registry as sr
+    import backend.apps.skill_registry.skill_registry_sources as sr
     import backend.apps.skills.skills as skills_mod
     if not auth_mod.TOKEN:
         auth_mod.TOKEN = p_secrets.token_urlsafe(32)
     client = TestClient(app, headers={"Authorization": f"Bearer {auth_mod.TOKEN}"})
 
     # Upstream folder SHA for skills/pdf is PDFSHA1 (from the warmed tree).
-    monkeypatch.setattr(sr, "p_curated_tree", CURATED_TREE["tree"])
+    monkeypatch.setattr(sr, "curated_tree",CURATED_TREE["tree"])
     # Installed copy recorded at a STALE version, so it should read as outdated.
     skills_mod.write_folder_skill("pdf", {"SKILL.md": "old"}, {
         "name": "PDF", "source": "anthropics/skills", "folder": "skills/pdf", "version": "OLDSHA",
@@ -339,7 +339,7 @@ def test_curated_install_writes_full_folder(skills_dir, monkeypatch):
             "files": {"SKILL.md": "# PDF\nRun scripts/extract.py", "scripts/extract.py": "print('x')"},
             "scripts": ["scripts/extract.py"], "secret_findings": [],
         }
-    monkeypatch.setattr("backend.apps.skill_registry.skill_registry.resolve_curated_skill", fake_resolve)
+    monkeypatch.setattr("backend.apps.skill_registry.skill_registry_sources.resolve_curated_skill", fake_resolve)
 
     r = client.post("/api/skill-registry/install-curated", json={"folder": "skills/pdf"})
     assert r.status_code == 200 and r.json()["installed"] is True
