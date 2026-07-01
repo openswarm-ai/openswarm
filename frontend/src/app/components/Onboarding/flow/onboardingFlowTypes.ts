@@ -16,7 +16,7 @@ export interface PersonaOption {
   useCase: string;
 }
 
-export type FlowStepId = 'help' | 'name' | 'consent' | 'connect' | 'payoff';
+export type FlowStepId = 'help' | 'name' | 'consent' | 'connect' | 'greet' | 'task' | 'more';
 
 export interface PayoffIdea {
   id: string;

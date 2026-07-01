@@ -1,60 +1,52 @@
-// Placeholder payoff content keyed by persona. This is the deterministic FLOOR; the real payoff is
-// generated per-user by the aux LLM (resolve_aux_model + the p_call_classifier pattern) in a later
-// step. Kept separate so swapping the source doesn't touch the orchestrator.
+// Deterministic FLOOR content for the payoff, keyed by persona. The real payoff is generated per-user
+// (onboarding-suggest / onboarding-profile); this is the always-available fallback. Split to match
+// the 3-beat payoff: a short insight (hello), one hero task, and 3 distinct alternatives.
 
 import type { PersonaId, PayoffIdea } from './onboardingFlowTypes';
 
 export interface PayoffContent {
   insight: string;
-  prefilledPrompt: string;
-  ideas: PayoffIdea[];
+  hero: PayoffIdea;
+  more: PayoffIdea[];
 }
 
 const WORK: PayoffContent = {
-  insight: "I see you're juggling client work and a launch. Here's one I can do right now, plus a few I lined up for you.",
-  prefilledPrompt:
-    "Send me a morning briefing: today's calendar, anything urgent in my email, and what my competitors shipped. Show me a sample before it goes live.",
-  ideas: [
-    { id: 'briefing', icon: 'sun', label: 'Send me a morning briefing', prompt: 'Set up a daily morning briefing with my calendar and any urgent email.' },
-    { id: 'invoices', icon: 'tray', label: 'Clean up + chase my overdue invoices', prompt: 'Find my overdue invoices and draft polite follow-ups, ready to send.' },
-    { id: 'tracker', icon: 'build', label: 'Build me a lightweight client tracker', prompt: 'Build and run a simple client tracker I can add clients and statuses to.' },
-    { id: 'competitors', icon: 'globe', label: 'Watch my 3 competitors, ping me on changes', prompt: 'Watch 3 competitor sites and notify me when they change.' },
+  insight: "Looks like a lot's on your plate between clients and admin.",
+  hero: { id: 'briefing', icon: 'sun', label: 'Send me a morning briefing', prompt: 'Set up a daily morning briefing with my calendar and anything urgent in my email.' },
+  more: [
+    { id: 'invoices', icon: 'tray', label: 'Chase my overdue invoices', prompt: 'Find my overdue invoices and draft polite follow-ups, ready to send.' },
+    { id: 'tracker', icon: 'build', label: 'Build me a client tracker', prompt: 'Build and run a simple client tracker I can add clients and statuses to.' },
+    { id: 'competitors', icon: 'globe', label: 'Watch my competitors', prompt: 'Watch 3 competitor sites and notify me when they change.' },
   ],
 };
 
 const PERSONAL: PayoffContent = {
-  insight: "Life admin piles up. Here's one I can knock out right now, plus a few I lined up for you.",
-  prefilledPrompt:
-    'Plan my week: pull my calendar, flag any conflicts, and draft a simple to-do for what is actually due. Show me before you save anything.',
-  ideas: [
-    { id: 'inbox', icon: 'tray', label: 'Sort out my inbox pileup', prompt: 'Triage my inbox: surface what needs a reply and draft quick responses.' },
-    { id: 'book', icon: 'globe', label: 'Find + book the best option for something', prompt: 'Find the best-rated option for what I need and walk me through booking it.' },
-    { id: 'digest', icon: 'sun', label: 'Set a morning digest of what matters today', prompt: 'Send me a short morning digest of today plans and anything urgent.' },
-    { id: 'goal', icon: 'build', label: 'Build me a simple tracker for a goal', prompt: 'Build and run a simple tracker for a personal goal.' },
+  insight: 'Life admin has a way of piling up.',
+  hero: { id: 'week', icon: 'sun', label: 'Plan my week', prompt: 'Pull my calendar, flag any conflicts, and draft a simple to-do for what is due. Show me before saving.' },
+  more: [
+    { id: 'inbox', icon: 'tray', label: 'Sort out my inbox', prompt: 'Triage my inbox: surface what needs a reply and draft quick responses.' },
+    { id: 'book', icon: 'globe', label: 'Find + book something', prompt: 'Find the best-rated option for what I need and walk me through booking it.' },
+    { id: 'goal', icon: 'build', label: 'Track a personal goal', prompt: 'Build and run a simple tracker for a personal goal.' },
   ],
 };
 
 const BUILD: PayoffContent = {
-  insight: "Ideas are cheap, shipping is the thing. Here's one I can start right now, plus a few more.",
-  prefilledPrompt:
-    'Turn my idea into a working prototype: ask me 3 quick questions, then build and run a first version I can actually click.',
-  ideas: [
-    { id: 'prototype', icon: 'build', label: 'Build + run a small tool from a sentence', prompt: 'Build and run a small tool from a one-sentence description.' },
-    { id: 'stack', icon: 'globe', label: 'Research the best stack for my idea', prompt: 'Research and recommend the best stack for my idea, with tradeoffs.' },
-    { id: 'spec', icon: 'doc', label: 'Draft a spec from my rough notes', prompt: 'Turn my rough notes into a clean, buildable spec.' },
-    { id: 'board', icon: 'tray', label: 'Set up a simple task board', prompt: 'Build and run a simple task board for my project.' },
+  insight: 'Ideas are cheap, shipping is the thing.',
+  hero: { id: 'prototype', icon: 'build', label: 'Turn my idea into a prototype', prompt: 'Ask me 3 quick questions, then build and run a first version I can actually click.' },
+  more: [
+    { id: 'stack', icon: 'globe', label: 'Research the best stack', prompt: 'Research and recommend the best stack for my idea, with tradeoffs.' },
+    { id: 'spec', icon: 'doc', label: 'Draft a spec from my notes', prompt: 'Turn my rough notes into a clean, buildable spec.' },
+    { id: 'board', icon: 'tray', label: 'Set up a task board', prompt: 'Build and run a simple task board for my project.' },
   ],
 };
 
 const GENERIC: PayoffContent = {
-  insight: "Here's a taste of what I can actually do, watch, not just chat.",
-  prefilledPrompt:
-    'Find the 3 best-rated options for something under my budget, compare them side by side, and tell me which to get.',
-  ideas: [
-    { id: 'web', icon: 'globe', label: 'Do a real web task, live', prompt: 'Do a real task on the web for me, start to finish.' },
+  insight: "Here's a taste of what I can actually do, not just chat about.",
+  hero: { id: 'compare', icon: 'globe', label: 'Find + compare the best option', prompt: 'Find the 3 best-rated options for something under my budget, compare them, and tell me which to get.' },
+  more: [
     { id: 'tool', icon: 'build', label: 'Build + run a small tool', prompt: 'Build and run a small tool from a one-sentence description.' },
     { id: 'digest', icon: 'sun', label: 'Set up a daily briefing', prompt: 'Set up a short daily briefing of what matters to me.' },
-    { id: 'clean', icon: 'tray', label: 'Clean up a messy list into a sheet', prompt: 'Turn a messy list into a clean, usable sheet.' },
+    { id: 'clean', icon: 'tray', label: 'Clean a messy list into a sheet', prompt: 'Turn a messy list into a clean, usable sheet.' },
   ],
 };
 

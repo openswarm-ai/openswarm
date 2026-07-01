@@ -1,6 +1,6 @@
-// Orchestrates the onboarding flow: a small step machine (help -> name -> consent -> connect ->
-// payoff) that writes name + persona to settings and hands the payoff its content. The real launch,
-// consent persistence, and background profiling wire in as follow steps.
+// Orchestrates the onboarding flow: a step machine (help -> name -> consent -> connect -> the 3
+// payoff beats: greet -> task -> more). Writes name + persona to settings. The payoff content is
+// LLM-generated (profile > suggest > static floor); the floor is a last-resort fallback only.
 
 import React, { useMemo, useState } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
@@ -10,13 +10,15 @@ import { WhereDoYouWantHelp } from './steps/WhereDoYouWantHelp';
 import { WhatShouldICallYou } from './steps/WhatShouldICallYou';
 import { PersonalizeConsent } from './steps/PersonalizeConsent';
 import { ConnectApps } from './steps/ConnectApps';
-import { Payoff } from './Payoff';
+import { PayoffHello } from './steps/PayoffHello';
+import { PayoffTask } from './steps/PayoffTask';
+import { PayoffMore } from './steps/PayoffMore';
 import { demoPayoff } from './payoffDemoContent';
 import { useOnboardingProfile } from './useOnboardingProfile';
 import { useOnboardingSuggest } from './useOnboardingSuggest';
 import type { FlowStepId, PersonaId, PayoffIdea, IconName } from './onboardingFlowTypes';
 
-// Icons for profile-generated ideas (the agent returns text, not icons); rotated for variety.
+// Icons for LLM-generated ideas (the model returns text, not icons); rotated for variety.
 const IDEA_ICONS: IconName[] = ['sun', 'tray', 'build', 'globe'];
 
 function greetingFor(name: string): string {
@@ -33,32 +35,29 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
   const [name, setName] = useState('');
   const [consent, setConsent] = useState(false);
 
+  const onPayoff = step === 'greet' || step === 'task' || step === 'more';
   const floor = useMemo(() => demoPayoff(persona), [persona]);
-  // Personalized payoff from the persona (cheap free-trial LLM); swaps in over the floor when ready.
-  const suggest = useOnboardingSuggest(useCase, name, step === 'payoff');
+  // Personalized payoff from the persona (cheap LLM); swaps in over the floor when ready.
+  const suggest = useOnboardingSuggest(useCase, name, onPayoff);
   // Deeper: background read-only profiling (only if they consented); trumps the persona suggestion.
-  const profile = useOnboardingProfile(name, consent, step === 'payoff');
-  const payoff = useMemo(() => {
-    // Priority: real data profile > persona-generated suggestion > static floor.
+  const profile = useOnboardingProfile(name, consent, onPayoff);
+
+  // Merge into { insight, hero, more[] }. Priority: real-data profile > persona-generated > floor.
+  const content = useMemo(() => {
     if (profile && profile.observation.trim() && profile.options.length > 0) {
-      return {
-        insight: profile.observation,
-        prefilledPrompt: profile.options[0].prompt,
-        ideas: profile.options.map((o, i) => ({ id: `p${i}`, icon: IDEA_ICONS[i % IDEA_ICONS.length], label: o.label, prompt: o.prompt })),
-      };
+      const opts = profile.options.map((o, i) => ({ id: `p${i}`, icon: IDEA_ICONS[i % IDEA_ICONS.length], label: o.label, prompt: o.prompt }));
+      return { insight: profile.observation, hero: opts[0], more: opts.slice(1) };
     }
-    if (suggest && suggest.options.length > 0) {
-      return {
-        insight: suggest.insight,
-        prefilledPrompt: suggest.task,
-        ideas: suggest.options.map((o, i) => ({ id: `s${i}`, icon: IDEA_ICONS[i % IDEA_ICONS.length], label: o.label, prompt: o.prompt })),
-      };
+    if (suggest && suggest.insight.trim() && suggest.task.trim() && suggest.options.length > 0) {
+      const opts = suggest.options.map((o, i) => ({ id: `s${i}`, icon: IDEA_ICONS[i % IDEA_ICONS.length], label: o.label, prompt: o.prompt }));
+      const hero: PayoffIdea = { id: 'hero', icon: 'sun', label: opts[0].label, prompt: suggest.task };
+      return { insight: suggest.insight, hero, more: opts };
     }
     return floor;
   }, [profile, suggest, floor]);
 
-  // The prefilled task / an idea is what actually launches the first agent. Real launch (createDraftSession
-  // + prefillPrompt + launchAndSendFirstMessage) wires in a follow step; for now finishing exits the flow.
+  // Tapping a task launches the first agent. Real launch (createDraftSession + launchAndSendFirstMessage)
+  // wires in a follow step; for now finishing exits the flow.
   const launch = (unusedPrompt: string) => onExit();
 
   const body = () => {
@@ -72,7 +71,7 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
               setUseCase(p.useCase);
               setStep('name');
             }}
-            onSkip={() => { setPersona(null); setStep('payoff'); }}
+            onSkip={() => { setPersona(null); setStep('greet'); }}
           />
         );
       case 'name':
@@ -87,21 +86,28 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
           />
         );
       case 'consent':
-        return <PersonalizeConsent onConsent={(yes) => { setConsent(yes); setStep(yes ? 'connect' : 'payoff'); }} />;
+        return <PersonalizeConsent onConsent={(yes) => { setConsent(yes); setStep(yes ? 'connect' : 'greet'); }} />;
       case 'connect':
-        return <ConnectApps onContinue={() => setStep('payoff')} onSkip={() => setStep('payoff')} />;
-      case 'payoff':
+        return <ConnectApps onContinue={() => setStep('greet')} onSkip={() => setStep('greet')} />;
+      case 'greet':
         return (
-          <Payoff
+          <PayoffHello
             greeting={greetingFor(name)}
             remark={persona ? "(someone's been busy, huh)" : undefined}
-            insight={payoff.insight}
-            prefilledPrompt={payoff.prefilledPrompt}
-            ideas={payoff.ideas}
-            onRun={() => launch(payoff.prefilledPrompt)}
-            onPickIdea={(idea: PayoffIdea) => launch(idea.prompt)}
+            onContinue={() => setStep('task')}
           />
         );
+      case 'task':
+        return (
+          <PayoffTask
+            insight={content.insight}
+            hero={content.hero}
+            onRun={(prompt: string) => launch(prompt)}
+            onMore={() => setStep('more')}
+          />
+        );
+      case 'more':
+        return <PayoffMore ideas={content.more} onPick={(prompt: string) => launch(prompt)} />;
     }
   };
 
