@@ -18,14 +18,6 @@ import type { FlowStepId, PersonaId, PayoffIdea, IconName } from './onboardingFl
 // Icons for profile-generated ideas (the agent returns text, not icons); rotated for variety.
 const IDEA_ICONS: IconName[] = ['sun', 'tray', 'build', 'globe'];
 
-const DOT_INDEX: Record<FlowStepId, number | undefined> = {
-  help: 0,
-  name: 1,
-  consent: 2,
-  connect: 3,
-  payoff: undefined,
-};
-
 function greetingFor(name: string): string {
   const h = new Date().getHours();
   const part = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
@@ -108,9 +100,5 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
     }
   };
 
-  return (
-    <OnboardingShell stepKey={step} stepIndex={DOT_INDEX[step]} totalSteps={4}>
-      {body()}
-    </OnboardingShell>
-  );
+  return <OnboardingShell stepKey={step}>{body()}</OnboardingShell>;
 };

@@ -2,7 +2,7 @@
 // UI-only here: real OAuth (integrations.tsx / POST /{tool_id}/oauth/start) wires in a follow step.
 
 import React from 'react';
-import { ONBOARDING_SKIN as S } from '../onboardingSkin';
+import { useOnboardingSkin } from '../onboardingSkin';
 import { LineIcon } from '../OnboardingIcons';
 import { Heading, Sub, PrimaryButton, GhostLink } from '../OnboardingAtoms';
 import type { ConnectorOption } from '../onboardingFlowTypes';
@@ -17,43 +17,46 @@ const Row: React.FC<{ option: ConnectorOption; connected: boolean; onConnect: ()
   option,
   connected,
   onConnect,
-}) => (
-  <div
-    style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 14,
-      background: S.surface,
-      border: `1px solid ${S.border}`,
-      borderRadius: 14,
-      padding: '16px 18px',
-      textAlign: 'left',
-    }}
-  >
-    <span style={{ color: S.text, opacity: 0.9, display: 'flex' }}>
-      <LineIcon name={option.icon} size={20} />
-    </span>
-    <div>
-      <div style={{ fontSize: 15, fontWeight: 500 }}>{option.name}</div>
-      <div style={{ fontSize: 12.5, color: S.muted, marginTop: 2 }}>{option.description}</div>
-    </div>
-    <span
-      onClick={connected ? undefined : onConnect}
+}) => {
+  const S = useOnboardingSkin();
+  return (
+    <div
       style={{
-        marginLeft: 'auto',
-        fontSize: 13,
-        color: connected ? S.muted : S.text,
-        background: connected ? 'transparent' : S.surfaceHover,
-        border: `1px solid ${connected ? S.border : S.borderStrong}`,
-        borderRadius: 999,
-        padding: '6px 15px',
-        cursor: connected ? 'default' : 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        background: S.surface,
+        border: `1px solid ${S.border}`,
+        borderRadius: 14,
+        padding: '16px 18px',
+        textAlign: 'left',
       }}
     >
-      {connected ? 'Connected' : 'Connect'}
-    </span>
-  </div>
-);
+      <span style={{ color: S.text, opacity: 0.9, display: 'flex' }}>
+        <LineIcon name={option.icon} size={20} />
+      </span>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 500 }}>{option.name}</div>
+        <div style={{ fontSize: 12.5, color: S.muted, marginTop: 2 }}>{option.description}</div>
+      </div>
+      <span
+        onClick={connected ? undefined : onConnect}
+        style={{
+          marginLeft: 'auto',
+          fontSize: 13,
+          color: connected ? S.muted : S.text,
+          background: connected ? 'transparent' : S.surfaceHover,
+          border: `1px solid ${connected ? S.border : S.borderStrong}`,
+          borderRadius: 999,
+          padding: '6px 15px',
+          cursor: connected ? 'default' : 'pointer',
+        }}
+      >
+        {connected ? 'Connected' : 'Connect'}
+      </span>
+    </div>
+  );
+};
 
 export const ConnectApps: React.FC<{
   connectedIds: string[];

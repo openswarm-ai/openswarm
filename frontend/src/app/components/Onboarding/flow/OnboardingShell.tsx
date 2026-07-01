@@ -1,53 +1,39 @@
-// The premium frame every onboarding screen sits in: brand pinned top-center, content
-// vertically centered, entrance fade (reduced-motion aware), and the discovery progress dots.
+// The premium frame every onboarding screen sits in: brand pinned top-center, content vertically
+// centered, entrance fade (reduced-motion aware). Theme-aware. Portaled to body + near-max z-index
+// so it escapes any ancestor transform's stacking context and covers ALL app chrome.
 
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion';
-import { ONBOARDING_SKIN as S, ONBOARDING_EASE } from './onboardingSkin';
+import { useOnboardingSkin, ONBOARDING_EASE } from './onboardingSkin';
 import { Spark } from './OnboardingIcons';
 
 interface Props {
   children: React.ReactNode;
   /** Changing this re-triggers the entrance fade (one per screen). */
   stepKey: string;
-  /** 0-based; when set with totalSteps, renders the bottom dots. */
-  stepIndex?: number;
-  totalSteps?: number;
 }
 
-// Portaled to document.body + a near-max z-index so it escapes any ancestor transform's stacking
-// context and covers ALL app chrome (the ⌘K search bar, headers). This is the real takeover layer.
-const overlay: React.CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  zIndex: 2147483000,
-  background: S.bg,
-  color: S.text,
-  fontFamily: S.sans,
-  WebkitFontSmoothing: 'antialiased',
-  overflow: 'hidden',
-};
-
-export const OnboardingShell: React.FC<Props> = ({ children, stepKey, stepIndex, totalSteps }) => {
+export const OnboardingShell: React.FC<Props> = ({ children, stepKey }) => {
   const reduce = useReducedMotion();
-  const showDots = typeof stepIndex === 'number' && typeof totalSteps === 'number';
+  const S = useOnboardingSkin();
   if (typeof document === 'undefined') return null;
 
   return createPortal(
-    <div style={overlay}>
-      <div
-        style={{
-          position: 'fixed',
-          top: 34,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 9,
-        }}
-      >
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 2147483000,
+        background: S.bg,
+        color: S.text,
+        fontFamily: S.sans,
+        WebkitFontSmoothing: 'antialiased',
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{ position: 'fixed', top: 34, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 9 }}>
         <span style={{ lineHeight: 0 }}>
           <Spark size={20} color={S.accent} />
         </span>
@@ -73,22 +59,6 @@ export const OnboardingShell: React.FC<Props> = ({ children, stepKey, stepIndex,
           {children}
         </div>
       </motion.div>
-
-      {showDots && (
-        <div style={{ position: 'fixed', bottom: 40, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 9 }}>
-          {Array.from({ length: totalSteps as number }).map((unused, i) => (
-            <span
-              key={i}
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                background: i === stepIndex ? S.accent : 'rgba(243,241,234,0.16)',
-              }}
-            />
-          ))}
-        </div>
-      )}
     </div>,
     document.body,
   );

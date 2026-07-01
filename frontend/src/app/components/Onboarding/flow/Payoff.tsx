@@ -1,13 +1,14 @@
 // The payoff: name + quirky remark + insight + a prefilled runnable task + tailored "Ideas for you".
-// Presentational; the orchestrator feeds it content (persona-derived now, profile-derived later).
+// Presentational + theme-aware; the orchestrator feeds it content (persona floor or profile-derived).
 
 import React, { useState } from 'react';
-import { ONBOARDING_SKIN as S } from './onboardingSkin';
+import { useOnboardingSkin } from './onboardingSkin';
 import { LineIcon } from './OnboardingIcons';
 import { Heading } from './OnboardingAtoms';
 import type { PayoffIdea } from './onboardingFlowTypes';
 
 const IdeaRow: React.FC<{ idea: PayoffIdea; onPick: () => void }> = ({ idea, onPick }) => {
+  const S = useOnboardingSkin();
   const [hover, setHover] = useState(false);
   return (
     <div
@@ -42,62 +43,65 @@ export const Payoff: React.FC<{
   ideas: PayoffIdea[];
   onRun: () => void;
   onPickIdea: (idea: PayoffIdea) => void;
-}> = ({ greeting, remark, insight, prefilledPrompt, ideas, onRun, onPickIdea }) => (
-  <>
-    <Heading>{greeting}</Heading>
-    {remark && <div style={{ marginTop: 10, fontSize: 15, color: S.muted, fontStyle: 'italic' }}>{remark}</div>}
-    <div style={{ marginTop: 20, fontSize: 16, color: S.muted, lineHeight: 1.5, maxWidth: 540 }}>{insight}</div>
+}> = ({ greeting, remark, insight, prefilledPrompt, ideas, onRun, onPickIdea }) => {
+  const S = useOnboardingSkin();
+  return (
+    <>
+      <Heading>{greeting}</Heading>
+      {remark && <div style={{ marginTop: 10, fontSize: 15, color: S.muted, fontStyle: 'italic' }}>{remark}</div>}
+      <div style={{ marginTop: 20, fontSize: 16, color: S.muted, lineHeight: 1.5, maxWidth: 540 }}>{insight}</div>
 
-    <div
-      style={{
-        marginTop: 26,
-        width: '100%',
-        maxWidth: 600,
-        background: S.surface,
-        border: `1px solid ${S.border}`,
-        borderRadius: S.radius,
-        padding: '20px 22px',
-        textAlign: 'left',
-      }}
-    >
-      <div style={{ fontSize: 15.5, lineHeight: 1.55, color: S.text }}>{prefilledPrompt}</div>
       <div
         style={{
-          marginTop: 16,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          color: S.muted,
-          fontSize: 13,
-          borderTop: `1px solid ${S.border}`,
-          paddingTop: 14,
+          marginTop: 26,
+          width: '100%',
+          maxWidth: 600,
+          background: S.surface,
+          border: `1px solid ${S.border}`,
+          borderRadius: S.radius,
+          padding: '20px 22px',
+          textAlign: 'left',
         }}
       >
-        <span>+</span>
-        <span>Cowork</span>
-        <span style={{ marginLeft: 8 }}>Opus 4.8</span>
-        <span
-          onClick={onRun}
+        <div style={{ fontSize: 15.5, lineHeight: 1.55, color: S.text }}>{prefilledPrompt}</div>
+        <div
           style={{
-            marginLeft: 'auto',
-            background: S.ctaBg,
-            color: S.ctaText,
-            borderRadius: 9,
-            padding: '7px 15px',
-            fontWeight: 600,
-            cursor: 'pointer',
+            marginTop: 16,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            color: S.muted,
+            fontSize: 13,
+            borderTop: `1px solid ${S.border}`,
+            paddingTop: 14,
           }}
         >
-          Run
-        </span>
+          <span>+</span>
+          <span>Cowork</span>
+          <span style={{ marginLeft: 8 }}>Opus 4.8</span>
+          <span
+            onClick={onRun}
+            style={{
+              marginLeft: 'auto',
+              background: S.ctaBg,
+              color: S.ctaText,
+              borderRadius: 9,
+              padding: '7px 15px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Run
+          </span>
+        </div>
       </div>
-    </div>
 
-    <div style={{ marginTop: 24, width: '100%', maxWidth: 600, textAlign: 'left' }}>
-      <div style={{ fontSize: 13, color: S.muted, marginBottom: 8 }}>Ideas for you</div>
-      {ideas.map((idea) => (
-        <IdeaRow key={idea.id} idea={idea} onPick={() => onPickIdea(idea)} />
-      ))}
-    </div>
-  </>
-);
+      <div style={{ marginTop: 24, width: '100%', maxWidth: 600, textAlign: 'left' }}>
+        <div style={{ fontSize: 13, color: S.muted, marginBottom: 8 }}>Ideas for you</div>
+        {ideas.map((idea) => (
+          <IdeaRow key={idea.id} idea={idea} onPick={() => onPickIdea(idea)} />
+        ))}
+      </div>
+    </>
+  );
+};

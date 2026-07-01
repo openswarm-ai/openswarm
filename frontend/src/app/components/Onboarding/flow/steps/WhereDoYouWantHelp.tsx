@@ -1,7 +1,7 @@
 // D1: one tap on a persona card. The single personalization seed. "just show me" skips to payoff.
 
 import React, { useState } from 'react';
-import { ONBOARDING_SKIN as S } from '../onboardingSkin';
+import { useOnboardingSkin } from '../onboardingSkin';
 import { LineIcon } from '../OnboardingIcons';
 import { Heading, GhostLink } from '../OnboardingAtoms';
 import type { PersonaOption } from '../onboardingFlowTypes';
@@ -13,6 +13,7 @@ const PERSONAS: PersonaOption[] = [
 ];
 
 const Card: React.FC<{ option: PersonaOption; onPick: () => void }> = ({ option, onPick }) => {
+  const S = useOnboardingSkin();
   const [hover, setHover] = useState(false);
   return (
     <div

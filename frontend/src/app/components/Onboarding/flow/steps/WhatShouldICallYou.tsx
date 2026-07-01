@@ -1,7 +1,7 @@
 // D2: one field, the name. Claude single-control screen. Enter or Continue advances.
 
 import React, { useState } from 'react';
-import { ONBOARDING_SKIN as S } from '../onboardingSkin';
+import { useOnboardingSkin } from '../onboardingSkin';
 import { Heading, Sub, PrimaryButton, GhostLink } from '../OnboardingAtoms';
 
 export const WhatShouldICallYou: React.FC<{
@@ -9,6 +9,7 @@ export const WhatShouldICallYou: React.FC<{
   onContinue: (name: string) => void;
   onSkip: () => void;
 }> = ({ initialName = '', onContinue, onSkip }) => {
+  const S = useOnboardingSkin();
   const [name, setName] = useState(initialName);
   const [focus, setFocus] = useState(false);
   const submit = () => onContinue(name.trim());
