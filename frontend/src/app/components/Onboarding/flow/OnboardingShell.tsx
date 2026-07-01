@@ -2,6 +2,7 @@
 // vertically centered, entrance fade (reduced-motion aware), and the discovery progress dots.
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion';
 import { ONBOARDING_SKIN as S, ONBOARDING_EASE } from './onboardingSkin';
@@ -16,10 +17,12 @@ interface Props {
   totalSteps?: number;
 }
 
+// Portaled to document.body + a near-max z-index so it escapes any ancestor transform's stacking
+// context and covers ALL app chrome (the ⌘K search bar, headers). This is the real takeover layer.
 const overlay: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
-  zIndex: 2000,
+  zIndex: 2147483000,
   background: S.bg,
   color: S.text,
   fontFamily: S.sans,
@@ -30,8 +33,9 @@ const overlay: React.CSSProperties = {
 export const OnboardingShell: React.FC<Props> = ({ children, stepKey, stepIndex, totalSteps }) => {
   const reduce = useReducedMotion();
   const showDots = typeof stepIndex === 'number' && typeof totalSteps === 'number';
+  if (typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div style={overlay}>
       <div
         style={{
@@ -85,6 +89,7 @@ export const OnboardingShell: React.FC<Props> = ({ children, stepKey, stepIndex,
           ))}
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 };
