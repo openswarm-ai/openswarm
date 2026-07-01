@@ -13,6 +13,7 @@ import {
   persistToStorage,
   markStepCompleted,
   setPanelMode,
+  setCurrentStep,
   markRevealedAfterWin,
 } from '@/shared/state/onboardingProgressSlice';
 import AgenticCursor, { type AgenticCursorHandle } from './ac/AgenticCursor';
@@ -97,6 +98,13 @@ const OnboardingRoot: React.FC = () => {
       }),
     );
   }, [progress.initialized, settingsLoaded, dispatch, store]);
+
+  useEffect(() => {
+    if (!progress.initialized || !progress.currentStepId) return;
+    if (STEPS.some((step) => step.id === progress.currentStepId)) return;
+    const nextStep = STEPS.find((step) => !(progress.completedSteps ?? []).includes(step.id));
+    dispatch(setCurrentStep(nextStep?.id ?? null));
+  }, [progress.initialized, progress.currentStepId, progress.completedSteps, dispatch]);
 
   // Bridge Redux signals to bus + auto-mark on skipIf. Coalesces microtask-bursts of dispatches.
   useEffect(() => {

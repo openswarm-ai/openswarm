@@ -64,6 +64,7 @@ const OnboardingPanel: React.FC = () => {
   const lastShowMeClickRef = useRef<number>(0);
 
   const unlockedIds = useUnlockedStepIds();
+  const liveStepIds = useMemo(() => new Set(STEPS.map((s) => s.id)), []);
   const currentStep = useMemo(() => {
     // Spotlight only lands on an unlocked, not-yet-done step, so we never tell the user to "Show me" something they haven't unlocked yet.
     const explicit = progress.currentStepId
@@ -87,8 +88,11 @@ const OnboardingPanel: React.FC = () => {
   const stageOf = currentStep?.stage ?? 'get_started';
 
   // Count only what's UNLOCKED, not all 8. A brand-new user sees "0/2" (launch + connect), and the denominator grows as the first win unlocks the rest, so we never dump the whole feature surface on someone before their first output. Guard: never let completed exceed the shown total (data-weirdness safety).
-  const done = progress.completedSteps.length;
-  const total = Math.max(unlockedIds.size, done);
+  const done = progress.completedSteps.filter((id) => liveStepIds.has(id)).length;
+  const total = Math.max(
+    Array.from(unlockedIds).filter((id) => liveStepIds.has(id)).length,
+    done,
+  );
 
   // Timer lives inside CelebrationView so parent re-renders can't cancel it.
   const justDoneStepId = progress.justCompletedStepId;
