@@ -17,6 +17,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { activateSignin, fetchSettings } from '@/shared/state/settingsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { font } from '@/shared/styles/typography';
 import { OPENSWARM_DEFAULT_PROXY_URL } from '@/shared/config';
 import { report } from '@/shared/serviceClient';
 
@@ -187,7 +188,7 @@ export default function SignInDialog({ onClose }: { onClose: () => void }): JSX.
           <>
             <Typography
               variant="h5"
-              sx={{ fontFamily: '"Charter", Georgia, serif', fontWeight: 500, mb: 1 }}
+              sx={{ fontFamily: font.heading, fontWeight: 500, mb: 1 }}
             >
               Check your inbox
             </Typography>
@@ -272,7 +273,7 @@ export default function SignInDialog({ onClose }: { onClose: () => void }): JSX.
           <>
             <Typography
               variant="h5"
-              sx={{ fontFamily: '"Charter", Georgia, serif', fontWeight: 500, mb: 1 }}
+              sx={{ fontFamily: font.heading, fontWeight: 500, mb: 1 }}
             >
               Sign in to OpenSwarm
             </Typography>

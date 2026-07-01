@@ -10,6 +10,7 @@ import AddIcon from '@mui/icons-material/Add';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchOutputs, deleteOutput, Output } from '@/shared/state/outputsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { font } from '@/shared/styles/typography';
 import { byPreviewRecency } from '@/shared/previewOrder';
 import ViewCard from './ViewCard';
 import { Skeleton } from '@/app/components/feedback/Loading';
@@ -143,7 +144,7 @@ const Views: React.FC = () => {
               color: c.text.muted,
             }}
           >
-            <Typography sx={{ fontSize: '1.1rem', mb: 1 }}>
+            <Typography sx={{ fontFamily: font.heading, fontSize: '1.1rem', mb: 1 }}>
               No apps yet
             </Typography>
             <Typography sx={{ fontSize: '0.85rem', color: c.text.tertiary }}>

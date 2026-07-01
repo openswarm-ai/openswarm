@@ -35,6 +35,7 @@ import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { font } from '@/shared/styles/typography';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   fetchSkills,
@@ -288,9 +289,9 @@ const Skills: React.FC = () => {
           overflow: 'auto',
           '&::-webkit-scrollbar': { width: 5 },
           '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 3 },
-          '& h1': { fontSize: '1.3rem', fontWeight: 700, color: c.text.primary, mt: 0, mb: 1.5, fontFamily: c.font.sans },
-          '& h2': { fontSize: '1.1rem', fontWeight: 600, color: c.text.primary, mt: 2, mb: 1, fontFamily: c.font.sans },
-          '& h3': { fontSize: '0.95rem', fontWeight: 600, color: c.text.primary, mt: 1.5, mb: 0.75, fontFamily: c.font.sans },
+          '& h1': { fontSize: '1.3rem', fontWeight: 700, color: c.text.primary, mt: 0, mb: 1.5, fontFamily: font.heading },
+          '& h2': { fontSize: '1.1rem', fontWeight: 600, color: c.text.primary, mt: 2, mb: 1, fontFamily: font.heading },
+          '& h3': { fontSize: '0.95rem', fontWeight: 600, color: c.text.primary, mt: 1.5, mb: 0.75, fontFamily: font.heading },
           '& p': { fontSize: '0.88rem', color: c.text.secondary, lineHeight: 1.7, mb: 1.5 },
           '& ul, & ol': { pl: 2.5, mb: 1.5, '& li': { fontSize: '0.88rem', color: c.text.secondary, lineHeight: 1.7, mb: 0.5 } },
           '& code': { fontFamily: c.font.mono, fontSize: '0.82rem', bgcolor: 'rgba(0,0,0,0.04)', px: 0.5, py: 0.15, borderRadius: `${c.radius.xs}px` },
@@ -532,7 +533,7 @@ const Skills: React.FC = () => {
           <Box sx={{ p: 4, pb: 3, maxWidth: 1100, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5, flexShrink: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
+                <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: font.heading }}>
                   {builderPreview.name || 'Untitled Skill'}
                 </Typography>
                 <Chip
@@ -593,7 +594,7 @@ const Skills: React.FC = () => {
           ) : selectedReg ? (
             <Box sx={{ p: 4, pb: 3, maxWidth: 1100, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5, flexShrink: 0 }}>
-                <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
+                <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: font.heading }}>
                   {selectedReg.name}
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -658,7 +659,7 @@ const Skills: React.FC = () => {
           <Box sx={{ p: 4, pb: 3, maxWidth: 1100, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5, flexShrink: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
+                <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: font.heading }}>
                   {selectedLocal.name}
                 </Typography>
                 {selectedLocal.built_in && (
@@ -752,7 +753,7 @@ const Skills: React.FC = () => {
           sx: { bgcolor: c.bg.surface, backgroundImage: 'none', borderRadius: `${c.radius.lg}px`, border: `${c.border.width} solid ${c.border.subtle}`, boxShadow: c.shadow.lg },
         }}
       >
-        <DialogTitle sx={{ color: c.text.primary, fontWeight: 600, fontFamily: c.font.sans }}>
+        <DialogTitle sx={{ color: c.text.primary, fontWeight: 600, fontFamily: font.heading }}>
           {editingId ? 'Edit Skill' : 'New Skill'}
         </DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>

@@ -7,7 +7,7 @@ import { askRun } from './api';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import InlineEditableTitle from '@/app/components/InlineEditableTitle';
 import { Typewriter } from '@/app/components/feedback/Animated';
-import { useWC, colorForWorkflow, statusChip } from './uiKit';
+import { useWC, colorForWorkflow, statusChip, FONT_SERIF } from './uiKit';
 import { isRunning, runContextChip } from './model';
 import { useEditAgentSession } from './useEditAgentSession';
 import { useWorkflowPatch } from './useWorkflowPatch';
@@ -63,11 +63,11 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
               value={workflow.title || ''}
               onCommit={(t) => patch(workflow, { title: t, auto_named: false })}
               placeholder="Untitled workflow"
-              sx={{ flex: 1, minWidth: 0, fontFamily: "'Newsreader',serif", fontSize: 25, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}
+              sx={{ flex: 1, minWidth: 0, fontFamily: FONT_SERIF, fontSize: 25, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}
             >
               <Typewriter value={workflow.title || 'Untitled workflow'} enabled={workflow.auto_named !== false}>
                 {(t) => (
-                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: "'Newsreader',serif", fontSize: 25, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}>{t}</span>
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: FONT_SERIF, fontSize: 25, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}>{t}</span>
                 )}
               </Typewriter>
             </InlineEditableTitle>

@@ -27,6 +27,7 @@ import {
   Dashboard,
 } from '@/shared/state/dashboardsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { font } from '@/shared/styles/typography';
 import { byPreviewRecency } from '@/shared/previewOrder';
 
 // Module-scope: auto-enter fires once per app boot; revisiting "/" later shows the picker normally.
@@ -212,7 +213,7 @@ const DashboardSelection: React.FC = () => {
           </Box>
         ) : dashboards.length === 0 ? (
           <Box sx={{ textAlign: 'center', py: 10, color: c.text.muted }}>
-            <Typography sx={{ fontSize: '1.1rem', mb: 1 }}>
+            <Typography sx={{ fontFamily: font.heading, fontSize: '1.1rem', mb: 1 }}>
               {search ? 'No dashboards match your search' : 'No dashboards yet'}
             </Typography>
             <Typography sx={{ fontSize: '0.85rem', color: c.text.tertiary }}>

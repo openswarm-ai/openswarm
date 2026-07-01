@@ -1,3 +1,5 @@
+import { FONT_SANS, FONT_SERIF, FONT_MONO } from './typography';
+
 export interface ClaudeTokens {
   bg: { page: string; surface: string; elevated: string; secondary: string; inverse: string };
   text: { primary: string; secondary: string; tertiary: string; muted: string; inverse: string; ghost: string };
@@ -7,7 +9,7 @@ export interface ClaudeTokens {
   radius: { xs: number; sm: number; md: number; lg: number; xl: number; full: number };
   status: { success: string; successBg: string; warning: string; warningBg: string; error: string; errorBg: string; info: string; infoBg: string };
   user: { bubble: string };
-  font: { sans: string; mono: string };
+  font: { sans: string; serif: string; mono: string };
   transition: string;
 }
 
@@ -56,8 +58,9 @@ export const lightTokens: ClaudeTokens = {
   },
   user: { bubble: '#DDD9CE' },
   font: {
-    sans: '"Anthropic Sans", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
-    mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+    sans: FONT_SANS,
+    serif: FONT_SERIF,
+    mono: FONT_MONO,
   },
   transition: 'all 150ms cubic-bezier(0.165, 0.85, 0.45, 1)',
 };
@@ -107,8 +110,9 @@ export const darkTokens: ClaudeTokens = {
   },
   user: { bubble: '#393937' },
   font: {
-    sans: '"Anthropic Sans", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
-    mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+    sans: FONT_SANS,
+    serif: FONT_SERIF,
+    mono: FONT_MONO,
   },
   transition: 'all 150ms cubic-bezier(0.165, 0.85, 0.45, 1)',
 };

@@ -100,12 +100,13 @@ function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
     },
     typography: {
       fontFamily: c.font.sans,
-      h1: { fontWeight: 600 },
-      h2: { fontWeight: 600 },
-      h3: { fontWeight: 600 },
-      h5: { fontWeight: 600 },
-      h6: { fontWeight: 600 },
-      button: { textTransform: 'none' as const, fontWeight: 500 },
+      h1: { fontFamily: c.font.sans, fontWeight: 700 },
+      h2: { fontFamily: c.font.sans, fontWeight: 700 },
+      h3: { fontFamily: c.font.sans, fontWeight: 600 },
+      h4: { fontFamily: c.font.sans, fontWeight: 600 },
+      h5: { fontFamily: c.font.sans, fontWeight: 600 },
+      h6: { fontFamily: c.font.sans, fontWeight: 600 },
+      button: { textTransform: 'none' as const, fontWeight: 600 },
     },
     shape: {
       borderRadius: c.radius.xl,
@@ -113,11 +114,21 @@ function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
     components: {
       MuiCssBaseline: {
         styleOverrides: {
+          html: {
+            fontFamily: c.font.sans,
+          },
           body: {
             backgroundColor: c.bg.page,
             color: c.text.primary,
+            fontFamily: c.font.sans,
             scrollbarWidth: 'thin',
             scrollbarColor: `${c.border.strong} transparent`,
+          },
+          '#root': {
+            fontFamily: c.font.sans,
+          },
+          'button, input, textarea, select': {
+            fontFamily: c.font.sans,
           },
           '*': {
             scrollbarWidth: 'thin',

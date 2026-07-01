@@ -3,7 +3,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { runMissedRuns, dismissMissedRuns } from '@/shared/state/missedRunsSlice';
 import { openWorkflowMonitor } from '@/shared/state/dashboardLayoutSlice';
 import { useCalendarOccurrences } from './useCalendarOccurrences';
-import { colorForWorkflow, useWC, statusChip, statusDot } from './uiKit';
+import { colorForWorkflow, useWC, statusChip, statusDot, FONT_SERIF } from './uiKit';
 import { clockOf, whenText } from './model';
 import WorkflowTitle from './WorkflowTitle';
 import type { AppNav } from './types';
@@ -98,7 +98,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
         {ongoing.length > 0 && (
           <div style={{ marginTop: 22 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
-              <span style={{ fontFamily: "'Newsreader',serif", fontSize: 18, fontWeight: 500, color: WC.ink }}>Ongoing runs</span>
+              <span style={{ fontFamily: FONT_SERIF, fontSize: 18, fontWeight: 500, color: WC.ink }}>Ongoing runs</span>
               <div style={{ width: 7, height: 7, borderRadius: '50%', background: WC.accent, animation: 'os-pulse 1.1s ease-in-out infinite' }} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -131,7 +131,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
         {missed.length > 0 && (
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
-              <span style={{ fontFamily: "'Newsreader',serif", fontSize: 18, fontWeight: 500, color: WC.ink }}>Missed</span>
+              <span style={{ fontFamily: FONT_SERIF, fontSize: 18, fontWeight: 500, color: WC.ink }}>Missed</span>
               <span style={{ fontSize: 11, fontWeight: 600, color: WC.danger, background: WC.dangerBg, padding: '2px 8px', borderRadius: 999 }}>{missed.length}</span>
               <div style={{ flex: 1 }} />
               <button onClick={reRunAll} style={{ background: 'transparent', border: `1px solid rgba(${WC.inkRGB},0.14)`, borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600, color: WC.ink3, cursor: 'pointer' }}>Re-run all</button>
@@ -164,7 +164,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
         )}
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: "'Newsreader',serif", fontSize: 18, fontWeight: 500, color: WC.ink, marginBottom: 12 }}>Coming up</div>
+          <div style={{ fontFamily: FONT_SERIF, fontSize: 18, fontWeight: 500, color: WC.ink, marginBottom: 12 }}>Coming up</div>
           {comingGroups.length === 0 && (
             <div style={{ fontSize: 13, color: WC.muted }}>Nothing scheduled in the next 7 days.</div>
           )}
@@ -172,7 +172,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
           {comingGroups.map((g) => (
             <div key={g.key} style={{ display: 'flex', gap: 18, padding: '4px 0 16px' }}>
               <div style={{ width: 62, flex: 'none', textAlign: 'right', paddingTop: 2 }}>
-                <div style={{ fontFamily: "'Newsreader',serif", fontSize: 26, fontWeight: 500, color: WC.ink, lineHeight: 1 }}>{g.dayNum}</div>
+                <div style={{ fontFamily: FONT_SERIF, fontSize: 26, fontWeight: 500, color: WC.ink, lineHeight: 1 }}>{g.dayNum}</div>
                 <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, letterSpacing: '0.04em', textTransform: 'uppercase', color: WC.muted2, marginTop: 4 }}>{g.dow}</div>
                 <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: WC.faint, marginTop: 3 }}>{g.countLabel}</div>
               </div>
@@ -201,7 +201,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
         </div>
 
         <div style={{ marginTop: 18 }}>
-          <div style={{ fontFamily: "'Newsreader',serif", fontSize: 18, fontWeight: 500, color: WC.ink, marginBottom: 12 }}>Recents</div>
+          <div style={{ fontFamily: FONT_SERIF, fontSize: 18, fontWeight: 500, color: WC.ink, marginBottom: 12 }}>Recents</div>
           {recents.length === 0 && <div style={{ fontSize: 13, color: WC.muted }}>No runs yet.</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             {recents.map((r) => (

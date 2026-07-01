@@ -10,6 +10,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloseIcon from '@mui/icons-material/Close';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { font } from '@/shared/styles/typography';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { useOnboardingProgress } from './hooks/useOnboardingProgress';
 import { hasAnyAgentCompleted } from './steps/skipPredicates';
@@ -425,7 +426,7 @@ const StepCardBody: React.FC<StepCardProps> = ({
           fontWeight: 600,
           color: c.text.primary,
           mb: 0.4,
-          fontFamily: '"Charter", Georgia, serif',
+          fontFamily: font.heading,
         }}
       >
         {step.title}
@@ -669,7 +670,7 @@ const CelebrationView: React.FC<CelebrationProps> = ({ step, accent }) => {
             fontSize: 16,
             fontWeight: 600,
             color: c.text.primary,
-            fontFamily: '"Charter", Georgia, serif',
+            fontFamily: font.heading,
             position: 'relative',
             display: 'inline-block',
           }}
@@ -723,7 +724,7 @@ const AllDoneView: React.FC<{ accent: string; tokens: ReturnType<typeof useClaud
         fontSize: 16,
         fontWeight: 600,
         color: c.text.primary,
-        fontFamily: '"Charter", Georgia, serif',
+        fontFamily: font.heading,
       }}
     >
       You're all set up

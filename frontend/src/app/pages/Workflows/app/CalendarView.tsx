@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react';
 import { useAppSelector } from '@/shared/hooks';
 import { startOfWeek, startOfMonthGrid, addDays, sameDay } from '@/app/pages/Workflows/scheduleUtils';
 import { useCalendarOccurrences } from './useCalendarOccurrences';
-import { colorForWorkflow, useWC, type WCPalette } from './uiKit';
+import { colorForWorkflow, useWC, FONT_SERIF, type WCPalette } from './uiKit';
 import type { AppNav } from './types';
 
 interface Occ { wfId: string; title: string; at: Date; color: string; }
@@ -102,7 +102,7 @@ const CalendarView: React.FC<{ nav: AppNav }> = ({ nav }) => {
           <button onClick={() => step(-1)} style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid rgba(${WC.inkRGB},0.12)`, background: WC.paper, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: WC.ink3 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 6l-6 6 6 6" /></svg></button>
           <button onClick={() => step(1)} style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid rgba(${WC.inkRGB},0.12)`, background: WC.paper, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: WC.ink3 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg></button>
         </div>
-        <h1 style={{ margin: 0, fontFamily: "'Newsreader',serif", fontSize: 22, fontWeight: 600, color: WC.ink, letterSpacing: '-0.01em' }}>{title}</h1>
+        <h1 style={{ margin: 0, fontFamily: FONT_SERIF, fontSize: 22, fontWeight: 600, color: WC.ink, letterSpacing: '-0.01em' }}>{title}</h1>
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', background: WC.inset, border: `1px solid ${WC.line}`, borderRadius: 9, padding: 3, gap: 2 }}>
           <button onClick={() => nav.setCalView('week')} style={tabBtn(nav.calView === 'week', WC)}>Week</button>
@@ -117,7 +117,7 @@ const CalendarView: React.FC<{ nav: AppNav }> = ({ nav }) => {
       {dayPop && createPortal(
         <div onClick={() => setDayPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 2147483600 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', left: dayPop.x, top: dayPop.y, width: POP_W, maxHeight: 320, overflowY: 'auto', background: WC.paper, border: `1px solid ${WC.line2}`, borderRadius: WC.radius.lg, boxShadow: WC.shadow.lg, padding: 12 }}>
-            <div style={{ fontFamily: "'Newsreader',serif", fontSize: 15, fontWeight: 500, color: WC.ink, marginBottom: 10, padding: '0 2px' }}>{dayPop.title}</div>
+            <div style={{ fontFamily: FONT_SERIF, fontSize: 15, fontWeight: 500, color: WC.ink, marginBottom: 10, padding: '0 2px' }}>{dayPop.title}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {dayPop.runs.map((r, i) => (
                 <div key={i} onClick={() => selectFromPop(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 7px', borderRadius: 8, cursor: 'pointer' }}>
@@ -259,7 +259,7 @@ const WeekGrid: React.FC<GridProps> = ({ ref0, now, occByDay, dayKey, onSelect, 
             <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 0 7px', borderLeft: `1px solid rgba(${WC.inkRGB},0.06)` }}>
               <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '0.04em', color: WC.muted2 }}>{DOW[d.getDay()]}</span>
               <div style={{ width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 3, flex: 'none', background: isToday ? WC.accent : 'transparent' }}>
-                <span style={{ fontFamily: "'Newsreader',serif", fontSize: 18, fontWeight: 500, lineHeight: 1, color: isToday ? '#fff' : WC.ink }}>{d.getDate()}</span>
+                <span style={{ fontFamily: FONT_SERIF, fontSize: 18, fontWeight: 500, lineHeight: 1, color: isToday ? '#fff' : WC.ink }}>{d.getDate()}</span>
               </div>
             </div>
           );

@@ -104,9 +104,7 @@ export function useWC(): WCPalette {
   };
 }
 
-export const FONT_SERIF = "'Newsreader', Georgia, serif";
-export const FONT_SANS = "'Hanken Grotesk', system-ui, sans-serif";
-export const FONT_MONO = "'JetBrains Mono', ui-monospace, monospace";
+export { FONT_SERIF, FONT_SANS, FONT_MONO } from '@/shared/styles/typography';
 
 // Stable per-workflow color: the backend has no color field, so derive a vivid-but-deterministic swatch from the id. Same id always lands the same hue, so dots/bars stay consistent across panes without persistence.
 export const WORKFLOW_PALETTE = [

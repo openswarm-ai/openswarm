@@ -8,6 +8,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import LockIcon from '@mui/icons-material/Lock';
 import CloseIcon from '@mui/icons-material/Close';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { font } from '@/shared/styles/typography';
 import { useOnboardingProgress } from './hooks/useOnboardingProgress';
 import { STAGE_GROUPS, STEPS, findStepById } from './steps';
 import { useUnlockedStepIds, unlockHintFor } from './steps/stepUnlock';
@@ -101,7 +102,7 @@ const OnboardingRoadmapModal: React.FC = () => {
               sx={{
                 fontSize: 16,
                 fontWeight: 600,
-                fontFamily: '"Charter", Georgia, serif',
+                fontFamily: font.heading,
               }}
             >
               Your roadmap

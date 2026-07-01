@@ -47,6 +47,7 @@ import { setInstalling } from '@/shared/state/updateSlice';
 import { findBrowserByWebContentsId } from '@/shared/browserRegistry';
 import { byPreviewRecency } from '@/shared/previewOrder';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { font } from '@/shared/styles/typography';
 import { ErrorSlime } from '@/app/components/feedback/ErrorSlime';
 
 const SIDEBAR_MIN = 160;
@@ -584,9 +585,10 @@ const AppShell: React.FC = () => {
           <Typography
             sx={{
               color: c.text.secondary,
+              fontFamily: font.detail,
               fontSize: '0.9rem',
               fontWeight: 600,
-              letterSpacing: 0.2,
+              letterSpacing: 0,
               lineHeight: 1,
             }}
           >

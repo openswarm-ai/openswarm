@@ -18,7 +18,7 @@ export const AgentResponseBody: React.FC<{ open: boolean; markdown: string }> = 
           overflowY: 'auto',
           overflowX: 'hidden',
           color: c.text.secondary,
-          fontFamily: c.font.sans,
+          fontFamily: c.font.serif,
           fontSize: '0.78rem',
           lineHeight: 1.65,
           overflowWrap: 'anywhere',

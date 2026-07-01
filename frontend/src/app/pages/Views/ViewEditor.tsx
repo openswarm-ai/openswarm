@@ -4,6 +4,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import PixelBlast from '@/app/components/feedback/PixelBlast';
+import { font } from '@/shared/styles/typography';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
@@ -70,7 +71,7 @@ const InstallPlaceholder: React.FC = () => {
       >
         <Typography
           sx={{
-            fontFamily: 'Charter, Georgia, serif',
+            fontFamily: font.heading,
             fontSize: '2rem',
             fontWeight: 500,
             color: '#f5f5f5',

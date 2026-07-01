@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchDeletedWorkflows, restoreWorkflow, purgeWorkflow } from '@/shared/state/workflowsSlice';
-import { colorForWorkflow, useWC } from './uiKit';
+import { colorForWorkflow, useWC, FONT_SERIF } from './uiKit';
 import { whenText } from './model';
 
 const TrashView: React.FC = () => {
@@ -23,7 +23,7 @@ const TrashView: React.FC = () => {
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: WC.paper }}>
       <div style={{ flex: 'none', padding: '22px 30px 14px', borderBottom: `1px solid ${WC.line}` }}>
         <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: WC.muted2, marginBottom: 5 }}>Deleted workflows</div>
-        <h1 style={{ margin: 0, fontFamily: "'Newsreader',serif", fontSize: 29, fontWeight: 500, color: WC.ink, letterSpacing: '-0.015em' }}>Trash</h1>
+        <h1 style={{ margin: 0, fontFamily: FONT_SERIF, fontSize: 29, fontWeight: 500, color: WC.ink, letterSpacing: '-0.015em' }}>Trash</h1>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '18px 30px 32px' }}>
@@ -47,7 +47,7 @@ const TrashView: React.FC = () => {
               <div style={{ width: 46, height: 46, borderRadius: 12, background: WC.inset, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={WC.faint} strokeWidth="1.7"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" /></svg>
               </div>
-              <div style={{ fontFamily: "'Newsreader',serif", fontSize: 18, color: WC.ink, marginBottom: 4 }}>Trash is empty</div>
+              <div style={{ fontFamily: FONT_SERIF, fontSize: 18, color: WC.ink, marginBottom: 4 }}>Trash is empty</div>
               <div style={{ fontSize: 13, color: WC.muted, maxWidth: 300, lineHeight: 1.5 }}>Deleted workflows appear here. Restore them or remove them permanently.</div>
             </div>
           )

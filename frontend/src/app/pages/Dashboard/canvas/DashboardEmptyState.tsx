@@ -4,6 +4,7 @@ import Typography from '@mui/material/Typography';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
+import { font } from '@/shared/styles/typography';
 import { useAppSelector } from '@/shared/hooks';
 import {
   hasModelConnected,
@@ -54,7 +55,7 @@ const DashboardEmptyState: React.FC<{
         pointerEvents: 'none',
       }}
     >
-      <Typography sx={{ color: c.text.secondary, fontSize: '1.3rem', fontWeight: 500, mb: 2.2, textAlign: 'center' }}>
+      <Typography sx={{ color: c.text.primary, fontFamily: font.display, fontSize: '1.5rem', fontWeight: 500, lineHeight: 1.1, letterSpacing: 0, mb: 2.5, textAlign: 'center' }}>
         What do you want done?
       </Typography>
 
@@ -70,9 +71,6 @@ const DashboardEmptyState: React.FC<{
                 transition={{ duration: 0.2 }}
                 style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
               >
-                <Typography sx={{ color: c.text.ghost, fontSize: '0.9rem', mb: 1.4 }}>
-                  pick one, or just tell me below
-                </Typography>
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.2, width: '100%', maxWidth: 460 }}>
                   {STARTER_CATEGORIES.map((cat) => (
                     <Box
@@ -85,9 +83,9 @@ const DashboardEmptyState: React.FC<{
                         borderRadius: 2.5,
                         border: `1px solid ${c.border.medium}`,
                         background: c.bg.surface,
-                        color: c.text.secondary,
-                        fontSize: '0.98rem', fontWeight: 500,
-                        cursor: 'pointer', fontFamily: 'inherit',
+                        color: c.text.primary,
+                        fontSize: '1.05rem', fontWeight: 400, lineHeight: 1.25,
+                        cursor: 'pointer', fontFamily: font.paragraph,
                         transition: 'background 150ms, border-color 150ms',
                         '&:hover': { background: c.bg.elevated, borderColor: c.border.strong },
                       }}
@@ -134,11 +132,13 @@ const DashboardEmptyState: React.FC<{
                         borderRadius: 2,
                         border: `1px solid ${c.border.medium}`,
                         background: c.bg.surface,
-                        color: c.text.secondary,
-                        fontSize: '0.95rem',
+                        color: c.text.primary,
+                        fontSize: '1.02rem',
+                        fontWeight: 400,
+                        lineHeight: 1.35,
                         cursor: launching ? 'default' : 'pointer',
                         opacity: launching ? 0.5 : 1,
-                        fontFamily: 'inherit',
+                        fontFamily: font.paragraph,
                         transition: 'background 150ms, border-color 150ms',
                         '&:hover': launching ? {} : { background: c.bg.elevated, borderColor: c.border.strong },
                       }}

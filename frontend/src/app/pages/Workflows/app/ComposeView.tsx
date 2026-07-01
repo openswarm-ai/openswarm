@@ -90,7 +90,7 @@ const ComposeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: WC.page }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid rgba(${WC.inkRGB},0.15)`, borderTopColor: WC.accent, animation: 'os-spin 0.7s linear infinite' }} />
-          <span style={{ fontFamily: "'Newsreader',serif", fontStyle: 'italic', fontSize: 14, color: WC.ink4 }}>Setting up your workflow…</span>
+          <span style={{ fontFamily: FONT_SERIF, fontStyle: 'italic', fontSize: 14, color: WC.ink4 }}>Setting up your workflow…</span>
         </div>
       </div>
     );
@@ -105,11 +105,11 @@ const ComposeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
             value={workflow.title || ''}
             onCommit={(t) => patch(workflow, { title: t, auto_named: false })}
             placeholder="Untitled workflow"
-            sx={{ flex: 1, minWidth: 0, fontFamily: "'Newsreader',serif", fontSize: 21, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}
+            sx={{ flex: 1, minWidth: 0, fontFamily: FONT_SERIF, fontSize: 21, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}
           >
             <Typewriter value={workflow.title || 'Untitled workflow'} enabled={workflow.auto_named !== false}>
               {(t) => (
-                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: "'Newsreader',serif", fontSize: 21, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}>{t}</span>
+                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: FONT_SERIF, fontSize: 21, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em' }}>{t}</span>
               )}
             </Typewriter>
           </InlineEditableTitle>
