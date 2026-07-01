@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenSwarm cinematic intro (motion preview)</title>
+<!--
+  Standalone motion preview for the cinematic first-launch intro.
+  Faithful to cinematicIntro/MOTION_SPEC.md: exact warm colors, phase timings, easings.
+  This is a design reference (pure HTML/CSS/JS, zero deps), NOT the production component.
+  Real font is "Anthropic Sans"; this preview falls back to system sans.
+-->
+<style>
+  :root {
+    --warm-black: #0F0D0B;
+    --warm-white: #FAF9F5;
+    --orb-core: #F0B070;
+    --orb-glow: #C4633A;
+    --accent: #AE5630;
+    --accent-hover: #C4633A;
+    --ember-deep: #2B1509;
+    --ember-mid: #3A1C0E;
+    --bloom: #D47548;
+    --gold: #E0925A;
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-bloom: cubic-bezier(0.33, 0, 0.2, 1);
+    --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: var(--warm-black); overflow: hidden; }
+  body {
+    font-family: "Anthropic Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #stage { position: fixed; inset: 0; background: var(--warm-black); }
+
+  /* Cinematic layer */
+  #cinematic { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+
+  #mesh {
+    position: absolute; inset: 0; opacity: 0;
+    background:
+      radial-gradient(60% 70% at 72% 18%, var(--gold) 0%, transparent 60%),
+      radial-gradient(70% 80% at 28% 88%, var(--bloom) 0%, transparent 62%),
+      radial-gradient(90% 90% at 50% 50%, var(--accent) 0%, transparent 70%),
+      linear-gradient(140deg, var(--ember-deep) 0%, var(--ember-mid) 100%);
+    animation: drift 8s var(--ease-inout) infinite alternate;
+    will-change: transform, opacity;
+  }
+  @keyframes drift {
+    0%   { transform: translate3d(-1.5%, -1.5%, 0) scale(1.06); }
+    100% { transform: translate3d(1.5%, 1.5%, 0) scale(1.06); }
+  }
+
+  #orb {
+    position: absolute; width: 42vmin; height: 42vmin; border-radius: 50%;
+    opacity: 0; transform: scale(0.18);
+    background: radial-gradient(circle at 50% 46%,
+      var(--orb-core) 0%, var(--orb-glow) 42%, rgba(196,99,58,0.25) 66%, transparent 78%);
+    filter: blur(6px);
+    box-shadow: 0 0 18vmin 4vmin rgba(224,146,90,0.28);
+    will-change: transform, opacity, filter;
+  }
+
+  #headline {
+    position: relative; z-index: 2; text-align: center; color: var(--warm-white);
+    font-weight: 700; font-size: 6.4vmin; line-height: 1.05; letter-spacing: -0.02em;
+    text-shadow: 0 2px 40px rgba(0,0,0,0.25);
+  }
+  #headline .line { display: block; }
+  #headline .w { display: inline-block; opacity: 0; filter: blur(12px); transform: translate(-6px, 10px); will-change: transform, opacity, filter; }
+
+  /* Tile handoff screen */
+  #tiles {
+    position: absolute; inset: 0; opacity: 0; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: var(--warm-black); color: var(--warm-white); gap: 3.2vmin;
+  }
+  #tiles h2 { font-weight: 600; font-size: 3.4vmin; letter-spacing: -0.01em; opacity: 0.96; }
+  #tileGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.6vmin; width: min(760px, 74vmin); }
+  .tile {
+    display: flex; align-items: center; gap: 1.4vmin; padding: 2.4vmin 2.6vmin;
+    border-radius: 14px; cursor: pointer; font-size: 2.2vmin; font-weight: 500;
+    background: rgba(250,249,245,0.045);
+    border: 1px solid rgba(250,249,245,0.09);
+    transition: background 160ms var(--ease-out), border-color 160ms var(--ease-out), transform 160ms var(--ease-out);
+  }
+  .tile .ic { font-size: 2.8vmin; }
+  .tile:hover {
+    background: rgba(196,99,58,0.14);
+    border-color: rgba(196,99,58,0.55);
+    transform: translateY(-2px);
+  }
+  #surprise { font-size: 2vmin; color: rgba(250,249,245,0.55); cursor: pointer; transition: color 160ms var(--ease-out); }
+  #surprise:hover { color: var(--warm-white); }
+
+  /* Preview chrome (not part of the product) */
+  #controls { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 10px; }
+  #controls button {
+    font: inherit; font-size: 13px; color: var(--warm-white); background: rgba(250,249,245,0.08);
+    border: 1px solid rgba(250,249,245,0.18); border-radius: 999px; padding: 7px 16px; cursor: pointer;
+  }
+  #controls button:hover { background: rgba(250,249,245,0.16); }
+  #hint { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 10; color: rgba(250,249,245,0.4); font-size: 12px; letter-spacing: 0.02em; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <div id="cinematic">
+      <div id="mesh"></div>
+      <div id="orb"></div>
+      <h1 id="headline">
+        <span class="line"><span class="w">Meet</span> <span class="w">your</span></span>
+        <span class="line"><span class="w">AI</span> <span class="w">team.</span></span>
+      </h1>
+    </div>
+
+    <div id="tiles">
+      <h2>Tap one and watch.</h2>
+      <div id="tileGrid">
+        <div class="tile"><span class="ic">🔎</span> Find something</div>
+        <div class="tile"><span class="ic">🧩</span> Build something</div>
+        <div class="tile"><span class="ic">🗂️</span> Handle busywork</div>
+        <div class="tile"><span class="ic">🌐</span> Do something online</div>
+      </div>
+      <div id="surprise">✨ surprise me</div>
+    </div>
+  </div>
+
+  <div id="hint">click or press Esc to skip</div>
+  <div id="controls"><button id="replay">Replay</button></div>
+
+<script>
+(() => {
+  const T = 5200; // master duration (ms), per spec
+  const orb = document.getElementById('orb');
+  const mesh = document.getElementById('mesh');
+  const words = [...document.querySelectorAll('#headline .w')];
+  const cinematic = document.getElementById('cinematic');
+  const tiles = document.getElementById('tiles');
+  let anims = [];
+
+  const track = (a) => { anims.push(a); return a; };
+
+  function reset() {
+    anims.forEach(a => { try { a.cancel(); } catch (e) {} });
+    anims = [];
+    tiles.style.pointerEvents = 'none';
+  }
+
+  function play() {
+    reset();
+
+    // Orb: birth (200ms hold) -> gentle bloom (to 2400) -> dissolve into mesh (to 3400)
+    track(orb.animate([
+      { offset: 0,     opacity: 0,    transform: 'scale(0.18)', filter: 'blur(6px)',  easing: 'var(--ease-out)' },
+      { offset: 0.038, opacity: 0,    transform: 'scale(0.18)', filter: 'blur(6px)',  easing: 'cubic-bezier(0.33,0,0.2,1)' },
+      { offset: 0.115, opacity: 1,    transform: 'scale(0.30)', filter: 'blur(4px)',  easing: 'cubic-bezier(0.33,0,0.2,1)' },
+      { offset: 0.462, opacity: 1,    transform: 'scale(1)',    filter: 'blur(2px)',  easing: 'ease-out' },
+      { offset: 0.654, opacity: 0.32, transform: 'scale(2.4)',  filter: 'blur(9px)',  easing: 'ease-out' },
+      { offset: 1,     opacity: 0,    transform: 'scale(2.7)',  filter: 'blur(11px)' },
+    ], { duration: T, fill: 'both' }));
+
+    // Mesh: fades in as the orb blooms past its edge (2400 -> 3400)
+    track(mesh.animate([
+      { offset: 0,     opacity: 0 },
+      { offset: 0.40,  opacity: 0,   easing: 'cubic-bezier(0.16,1,0.3,1)' },
+      { offset: 0.654, opacity: 1 },
+      { offset: 1,     opacity: 1 },
+    ], { duration: T, fill: 'both' }));
+
+    // Headline: per-word cascade, stagger 90ms, starts at 3200ms, micro-spring settle
+    words.forEach((w, i) => {
+      track(w.animate([
+        { opacity: 0, transform: 'translate(-6px, 10px)', filter: 'blur(12px)' },
+        { opacity: 1, transform: 'translate(0, 0)',       filter: 'blur(0px)'  },
+      ], { delay: 3200 + i * 90, duration: 480, easing: 'cubic-bezier(0.34,1.56,0.64,1)', fill: 'both' }));
+    });
+
+    // Handoff: hold ~200ms then cross-dissolve the whole layer into the tiles (4800 -> 5200)
+    track(cinematic.animate(
+      [{ opacity: 1 }, { opacity: 0 }],
+      { delay: 4800, duration: 400, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'both' }));
+    const reveal = track(tiles.animate(
+      [{ opacity: 0 }, { opacity: 1 }],
+      { delay: 4800, duration: 400, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'both' }));
+    reveal.onfinish = () => { tiles.style.pointerEvents = 'auto'; };
+  }
+
+  // Skip: jump straight to the tiles with a quick dissolve (never a hard cut)
+  function skip() {
+    reset();
+    track(cinematic.animate([{ opacity: getComputedStyle(cinematic).opacity }, { opacity: 0 }],
+      { duration: 260, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'both' }));
+    const r = track(tiles.animate([{ opacity: getComputedStyle(tiles).opacity }, { opacity: 1 }],
+      { duration: 260, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'both' }));
+    r.onfinish = () => { tiles.style.pointerEvents = 'auto'; };
+  }
+
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') skip(); });
+  document.getElementById('cinematic').addEventListener('click', skip);
+  document.getElementById('replay').addEventListener('click', play);
+
+  play();
+})();
+</script>
+</body>
+</html>
