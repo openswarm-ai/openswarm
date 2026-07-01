@@ -119,6 +119,22 @@ async def send_message(session_id: str, body: dict):
     )
     return {"ok": True}
 
+@agents.router.post("/onboarding-profile")
+async def onboarding_profile(body: dict):
+    """Onboarding payoff: skim the user's connected Google account (read-only, consent-gated) and
+    return {observation, options}. Fail-open: any miss returns an empty observation so the frontend
+    keeps its persona floor. Never blocks the payoff (the frontend fires this in the background)."""
+    from backend.apps.agents.onboarding_profile import profile_user
+
+    try:
+        result = await profile_user(str(body.get("name") or ""), bool(body.get("consent")))
+    except Exception:
+        logger.exception("onboarding-profile endpoint failed")
+        result = None
+    if result is None:
+        return {"observation": "", "options": []}
+    return result.model_dump(mode="json")
+
 @agents.router.post("/sessions/{session_id}/stop")
 async def stop_agent(session_id: str):
     await agent_manager.stop_agent(session_id)

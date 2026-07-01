@@ -12,7 +12,11 @@ import { PersonalizeConsent } from './steps/PersonalizeConsent';
 import { ConnectApps } from './steps/ConnectApps';
 import { Payoff } from './Payoff';
 import { demoPayoff } from './payoffDemoContent';
-import type { FlowStepId, PersonaId, PayoffIdea } from './onboardingFlowTypes';
+import { useOnboardingProfile } from './useOnboardingProfile';
+import type { FlowStepId, PersonaId, PayoffIdea, IconName } from './onboardingFlowTypes';
+
+// Icons for profile-generated ideas (the agent returns text, not icons); rotated for variety.
+const IDEA_ICONS: IconName[] = ['sun', 'tray', 'build', 'globe'];
 
 const DOT_INDEX: Record<FlowStepId, number | undefined> = {
   help: 0,
@@ -33,9 +37,22 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
   const [step, setStep] = useState<FlowStepId>('help');
   const [persona, setPersona] = useState<PersonaId | null>(null);
   const [name, setName] = useState('');
+  const [consent, setConsent] = useState(false);
   const [connectedIds, setConnectedIds] = useState<string[]>([]);
 
-  const payoff = useMemo(() => demoPayoff(persona), [persona]);
+  const floor = useMemo(() => demoPayoff(persona), [persona]);
+  // Background read-only profiling (only if they consented); upgrades the payoff in place when it lands.
+  const profile = useOnboardingProfile(name, consent, step === 'payoff');
+  const payoff = useMemo(() => {
+    if (profile && profile.observation.trim() && profile.options.length > 0) {
+      return {
+        insight: profile.observation,
+        prefilledPrompt: profile.options[0].prompt,
+        ideas: profile.options.map((o, i) => ({ id: `p${i}`, icon: IDEA_ICONS[i % IDEA_ICONS.length], label: o.label, prompt: o.prompt })),
+      };
+    }
+    return floor;
+  }, [profile, floor]);
 
   // The prefilled task / an idea is what actually launches the first agent. Real launch (createDraftSession
   // + prefillPrompt + launchAndSendFirstMessage) wires in a follow step; for now finishing exits the flow.
@@ -66,7 +83,7 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
           />
         );
       case 'consent':
-        return <PersonalizeConsent onConsent={(yes) => setStep(yes ? 'connect' : 'payoff')} />;
+        return <PersonalizeConsent onConsent={(yes) => { setConsent(yes); setStep(yes ? 'connect' : 'payoff'); }} />;
       case 'connect':
         return (
           <ConnectApps

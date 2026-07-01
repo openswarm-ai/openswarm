@@ -32,3 +32,9 @@ export interface PayoffIdea {
   /** The full runnable prompt this idea launches. */
   prompt: string;
 }
+
+/** Shape returned by POST /api/agents/onboarding-profile (the read-only profiling agent). */
+export interface ProfileResultDto {
+  observation: string;
+  options: { label: string; prompt: string }[];
+}
