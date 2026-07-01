@@ -1,10 +1,11 @@
 // D4: optional connect. Reuses the REAL shared connector catalog (icons + metadata), the REAL
 // connection state from toolsSlice, and the REAL create+OAuth thunks. All connectable MCPs, scrollable.
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { INTEGRATIONS, Integration } from '@/shared/integrations/catalog';
-import { fetchTools, createTool, startOAuth, startDeviceCodeLogin, ToolDefinition } from '@/shared/state/toolsSlice';
+import { useConnectIntegration } from '@/shared/integrations/useConnectIntegration';
+import { fetchTools, ToolDefinition } from '@/shared/state/toolsSlice';
 import { useOnboardingSkin } from '../onboardingSkin';
 import { Heading, Sub, PrimaryButton, GhostLink } from '../OnboardingAtoms';
 
@@ -14,30 +15,17 @@ function toolFor(integration: Integration, items: Record<string, ToolDefinition>
 
 const Row: React.FC<{ integration: Integration }> = ({ integration }) => {
   const S = useOnboardingSkin();
-  const dispatch = useAppDispatch();
+  const connectIntegration = useConnectIntegration();
   const items = useAppSelector((s) => s.tools.items);
   const tool = toolFor(integration, items);
   const connected = tool?.auth_status === 'connected';
+  const [connecting, setConnecting] = useState(false);
 
   const connect = async () => {
-    try {
-      // The tool has to exist before OAuth (fresh installs have none) -> create from the catalog first.
-      let t = tool;
-      if (!t) {
-        t = await dispatch(createTool({
-          name: integration.name,
-          description: integration.description,
-          mcp_config: integration.mcp_config,
-          auth_type: integration.authType ?? 'oauth2',
-        })).unwrap();
-      }
-      if (integration.authType === 'device_code') {
-        await dispatch(startDeviceCodeLogin(t.id));
-      } else {
-        const res = await dispatch(startOAuth(t.id)).unwrap();
-        if (res.auth_url) window.open(res.auth_url, '_blank');
-      }
-    } catch { /* connect failed; leave as-is */ }
+    if (connecting) return;
+    setConnecting(true);
+    await connectIntegration(integration, tool);
+    setConnecting(false);
   };
 
   return (
@@ -50,7 +38,7 @@ const Row: React.FC<{ integration: Integration }> = ({ integration }) => {
         </div>
       </div>
       <span
-        onClick={connected ? undefined : connect}
+        onClick={connected || connecting ? undefined : connect}
         style={{
           marginLeft: 'auto',
           flexShrink: 0,
@@ -60,11 +48,12 @@ const Row: React.FC<{ integration: Integration }> = ({ integration }) => {
           border: `1px solid ${connected ? S.border : S.borderStrong}`,
           borderRadius: 999,
           padding: '6px 15px',
-          cursor: connected ? 'default' : 'pointer',
+          cursor: connected || connecting ? 'default' : 'pointer',
           whiteSpace: 'nowrap',
+          opacity: connecting ? 0.6 : 1,
         }}
       >
-        {connected ? 'Connected' : 'Connect'}
+        {connected ? 'Connected' : connecting ? 'Connecting…' : 'Connect'}
       </span>
     </div>
   );
