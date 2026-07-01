@@ -5,6 +5,7 @@
 import React, { useMemo, useState } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
 import { updateSettingsPatch } from '@/shared/state/settingsSlice';
+import { emitOnboardingLaunch } from '@/shared/onboardingLaunch';
 import { OnboardingShell } from './OnboardingShell';
 import { WhereDoYouWantHelp } from './steps/WhereDoYouWantHelp';
 import { WhatShouldICallYou } from './steps/WhatShouldICallYou';
@@ -56,9 +57,9 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
     return floor;
   }, [profile, suggest, floor]);
 
-  // Tapping a task launches the first agent. Real launch (createDraftSession + launchAndSendFirstMessage)
-  // wires in a follow step; for now finishing exits the flow.
-  const launch = (unusedPrompt: string) => onExit();
+  // Tapping a task ends onboarding by DOING it: hand the prompt to the dashboard (it spawns the agent
+  // with its own proven path), then close the overlay so the user watches it run.
+  const launch = (prompt: string) => { emitOnboardingLaunch(prompt); onExit(); };
 
   const body = () => {
     switch (step) {

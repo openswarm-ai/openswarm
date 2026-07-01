@@ -37,7 +37,8 @@ SYSTEM_PROMPT = (
     "agent DOES (go, build, watch, chase, clean up, find), never 'ask me' or 'let's chat'; no bracketed "
     "placeholders like [framework]; never use em-dashes or en-dashes, use commas or periods.\n"
     "Return ONLY this JSON, nothing else:\n"
-    '{"insight": "<one short, warm, TRUE line about the kind of things someone like them deals with>", '
+    '{"insight": "<ONE short warm sentence, max 12 words. Specific enough to feel like you get them '
+    '(name their kind of work), but never invent exact facts you cannot know>", '
     '"task": "<the single most useful thing an agent could DO for them right now, a concrete instruction, '
     'something a chatbot cannot do>", '
     '"options": [{"label": "<3-6 word verb-first phrase>", "prompt": "<a clear runnable instruction>"}]}\n'

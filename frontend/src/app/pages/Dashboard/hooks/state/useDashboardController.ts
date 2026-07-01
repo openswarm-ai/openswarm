@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppSelector } from '@/shared/hooks';
+import { onOnboardingLaunch } from '@/shared/onboardingLaunch';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { useCanvasControls } from '../interaction/useCanvasControls';
@@ -259,6 +260,14 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     welcomeEligible,
     onWelcomeNewAgent: createWelcomeDraft,
   });
+
+  // Onboarding hands off its first task here: spawn a real agent with the chosen prompt using the
+  // same proven toolbar-send path, so onboarding ends by DOING the task instead of a blank canvas.
+  const defaultMode = useAppSelector((s) => s.settings.data.default_mode);
+  const defaultModel = useAppSelector((s) => s.settings.data.default_model);
+  useEffect(() => onOnboardingLaunch((prompt) => {
+    handleToolbarSend(prompt, defaultMode, defaultModel);
+  }), [handleToolbarSend, defaultMode, defaultModel]);
 
   const {
     handleAddView,
