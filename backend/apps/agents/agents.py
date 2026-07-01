@@ -135,6 +135,22 @@ async def onboarding_profile(body: dict):
         return {"observation": "", "options": []}
     return result.model_dump(mode="json")
 
+@agents.router.post("/onboarding-suggest")
+async def onboarding_suggest(body: dict):
+    """Onboarding payoff: generate a personalized insight + task + 4 options from the user's persona
+    (+ name) on the cheap/free-trial tier. Fail-open: any miss returns empty so the frontend keeps
+    its static fallback. No data is read here (that's onboarding-profile)."""
+    from backend.apps.agents.onboarding_suggest import suggest_payoff
+
+    try:
+        result = await suggest_payoff(str(body.get("persona") or ""), str(body.get("name") or ""))
+    except Exception:
+        logger.exception("onboarding-suggest endpoint failed")
+        result = None
+    if result is None:
+        return {"insight": "", "task": "", "options": []}
+    return result.model_dump(mode="json")
+
 @agents.router.post("/sessions/{session_id}/stop")
 async def stop_agent(session_id: str):
     await agent_manager.stop_agent(session_id)

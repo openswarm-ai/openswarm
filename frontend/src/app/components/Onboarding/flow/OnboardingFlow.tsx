@@ -13,6 +13,7 @@ import { ConnectApps } from './steps/ConnectApps';
 import { Payoff } from './Payoff';
 import { demoPayoff } from './payoffDemoContent';
 import { useOnboardingProfile } from './useOnboardingProfile';
+import { useOnboardingSuggest } from './useOnboardingSuggest';
 import type { FlowStepId, PersonaId, PayoffIdea, IconName } from './onboardingFlowTypes';
 
 // Icons for profile-generated ideas (the agent returns text, not icons); rotated for variety.
@@ -28,13 +29,17 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
   const dispatch = useAppDispatch();
   const [step, setStep] = useState<FlowStepId>('help');
   const [persona, setPersona] = useState<PersonaId | null>(null);
+  const [useCase, setUseCase] = useState('');
   const [name, setName] = useState('');
   const [consent, setConsent] = useState(false);
 
   const floor = useMemo(() => demoPayoff(persona), [persona]);
-  // Background read-only profiling (only if they consented); upgrades the payoff in place when it lands.
+  // Personalized payoff from the persona (cheap free-trial LLM); swaps in over the floor when ready.
+  const suggest = useOnboardingSuggest(useCase, name, step === 'payoff');
+  // Deeper: background read-only profiling (only if they consented); trumps the persona suggestion.
   const profile = useOnboardingProfile(name, consent, step === 'payoff');
   const payoff = useMemo(() => {
+    // Priority: real data profile > persona-generated suggestion > static floor.
     if (profile && profile.observation.trim() && profile.options.length > 0) {
       return {
         insight: profile.observation,
@@ -42,8 +47,15 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
         ideas: profile.options.map((o, i) => ({ id: `p${i}`, icon: IDEA_ICONS[i % IDEA_ICONS.length], label: o.label, prompt: o.prompt })),
       };
     }
+    if (suggest && suggest.options.length > 0) {
+      return {
+        insight: suggest.insight,
+        prefilledPrompt: suggest.task,
+        ideas: suggest.options.map((o, i) => ({ id: `s${i}`, icon: IDEA_ICONS[i % IDEA_ICONS.length], label: o.label, prompt: o.prompt })),
+      };
+    }
     return floor;
-  }, [profile, floor]);
+  }, [profile, suggest, floor]);
 
   // The prefilled task / an idea is what actually launches the first agent. Real launch (createDraftSession
   // + prefillPrompt + launchAndSendFirstMessage) wires in a follow step; for now finishing exits the flow.
@@ -57,6 +69,7 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
             onPick={(p) => {
               dispatch(updateSettingsPatch({ user_use_case: p.useCase }));
               setPersona(p.id);
+              setUseCase(p.useCase);
               setStep('name');
             }}
             onSkip={() => { setPersona(null); setStep('payoff'); }}
