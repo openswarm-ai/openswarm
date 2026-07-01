@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { useOnboardingSkin } from './onboardingSkin';
 import { LineIcon } from './OnboardingIcons';
 import { Heading } from './OnboardingAtoms';
+import { HoldToLaunch } from './HoldToLaunch';
 import type { PayoffIdea } from './onboardingFlowTypes';
 
 const IdeaRow: React.FC<{ idea: PayoffIdea; onPick: () => void }> = ({ idea, onPick }) => {
@@ -75,21 +76,8 @@ export const Payoff: React.FC<{
             paddingTop: 14,
           }}
         >
-          <span style={{ fontSize: 13, color: S.muted }}>a real agent goes and does this, live</span>
-          <span
-            onClick={onRun}
-            style={{
-              background: S.ctaBg,
-              color: S.ctaText,
-              borderRadius: 9,
-              padding: '8px 18px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Do it &rarr;
-          </span>
+          <span style={{ fontSize: 13, color: S.muted }}>hold to send a real agent on it, live</span>
+          <HoldToLaunch label="Hold to do it" onLaunch={onRun} />
         </div>
       </div>
 
