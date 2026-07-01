@@ -14,6 +14,7 @@ import { ConnectApps } from './steps/ConnectApps';
 import { PayoffHello } from './steps/PayoffHello';
 import { PayoffTask } from './steps/PayoffTask';
 import { PayoffMore } from './steps/PayoffMore';
+import { PayoffDiscovering } from './steps/PayoffDiscovering';
 import { demoPayoff } from './payoffDemoContent';
 import { useOnboardingProfile } from './useOnboardingProfile';
 import { useOnboardingSuggest } from './useOnboardingSuggest';
@@ -36,7 +37,7 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
   const [name, setName] = useState('');
   const [consent, setConsent] = useState(false);
 
-  const onPayoff = step === 'greet' || step === 'task' || step === 'more';
+  const onPayoff = step === 'discovering' || step === 'greet' || step === 'task' || step === 'more';
   const floor = useMemo(() => demoPayoff(persona), [persona]);
   // Personalized payoff from the persona (cheap LLM); status drives the thinking -> stream feel.
   const { result: suggest, status: suggestStatus } = useOnboardingSuggest(useCase, name, onPayoff);
@@ -76,7 +77,13 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
               setUseCase(p.useCase);
               setStep('name');
             }}
-            onSkip={() => { setPersona(null); setStep('greet'); }}
+            onSkip={() => {
+              // "just show me": no persona, but seed a broad use-case so generation still fires, then
+              // run the honest discovering transition while it works.
+              setPersona(null);
+              setUseCase('someone new who wants to see the most impressive, genuinely useful things an AI agent can do for them');
+              setStep('discovering');
+            }}
           />
         );
       case 'name':
@@ -94,6 +101,13 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
         return <PersonalizeConsent onConsent={(yes) => { setConsent(yes); setStep(yes ? 'connect' : 'greet'); }} />;
       case 'connect':
         return <ConnectApps onContinue={() => setStep('greet')} onSkip={() => setStep('greet')} />;
+      case 'discovering':
+        return (
+          <PayoffDiscovering
+            ready={profileReady || suggestStatus === 'ready' || suggestStatus === 'failed'}
+            onDone={() => setStep('task')}
+          />
+        );
       case 'greet':
         return (
           <PayoffHello
