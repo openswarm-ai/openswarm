@@ -39,9 +39,10 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
 
   const onPayoff = step === 'discovering' || step === 'greet' || step === 'task' || step === 'more';
   const floor = useMemo(() => demoPayoff(persona), [persona]);
-  // Personalized payoff from the persona (cheap LLM); status drives the thinking -> stream feel.
-  const { result: suggest, status: suggestStatus } = useOnboardingSuggest(useCase, name, onPayoff);
-  // Deeper: background read-only profiling (only if they consented); trumps the persona suggestion.
+  // Persona generation fires the MOMENT a persona is picked, so it runs in the background through
+  // name/consent/connect and is already there (instant, no wait) by the time they hit the payoff.
+  const { result: suggest, status: suggestStatus } = useOnboardingSuggest(useCase);
+  // Deeper read-only profiling needs connected data, so it can only start after connect (onPayoff).
   const profile = useOnboardingProfile(name, consent, onPayoff);
   const profileReady = !!(profile && profile.observation.trim() && profile.options.length > 0);
 
