@@ -1,63 +1,28 @@
-// D3: the personalize consent. Short question reveals word-by-word, then a small explainer + Yes.
-// "Yes" authorizes the (later) background profiling read; the sub-line says exactly what that means.
+// D3: the personalize consent. The short question streams in (shared StreamingText), then a small
+// explainer + Yes. "Yes" authorizes the (later) background profiling read; the sub-line says so.
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { useReducedMotion } from '@/shared/hooks/useReducedMotion';
+import React, { useState } from 'react';
 import { useOnboardingSkin } from '../onboardingSkin';
 import { PrimaryButton, GhostLink } from '../OnboardingAtoms';
+import { StreamingText } from '../StreamingText';
 
 const LINE = 'Want me to make this yours?';
 const SUB = "I'll take a quick look at what you connect, nothing else.";
 
-const WORD_STAGGER_S = 0.06;
-const WORD_DUR_S = 0.5;
-
 export const PersonalizeConsent: React.FC<{ onConsent: (yes: boolean) => void }> = ({ onConsent }) => {
-  const reduce = useReducedMotion();
   const S = useOnboardingSkin();
-  const words = useMemo(() => LINE.split(' '), []);
-  const [done, setDone] = useState(reduce);
-
-  useEffect(() => {
-    if (reduce) { setDone(true); return; }
-    setDone(false);
-    const totalMs = (words.length * WORD_STAGGER_S + WORD_DUR_S) * 1000;
-    const t = window.setTimeout(() => setDone(true), totalMs);
-    return () => window.clearTimeout(t);
-  }, [reduce, words.length]);
+  const [done, setDone] = useState(false);
 
   return (
     <>
-      <div style={{ fontFamily: S.serif, fontWeight: 500, fontSize: 33, lineHeight: 1.25, color: S.text }}>
-        {words.map((w, i) => (
-          <React.Fragment key={i}>
-            <span
-              style={{
-                display: 'inline-block',
-                opacity: reduce ? 1 : 0,
-                animation: reduce ? undefined : `onboardingWordIn ${WORD_DUR_S}s cubic-bezier(0.16,1,0.3,1) forwards`,
-                animationDelay: reduce ? undefined : `${i * WORD_STAGGER_S}s`,
-              }}
-            >
-              {w}
-            </span>
-            {i < words.length - 1 ? ' ' : ''}
-          </React.Fragment>
-        ))}
-      </div>
-
-      <div
-        style={{
-          marginTop: 14,
-          fontSize: 15,
-          color: S.muted,
-          opacity: done ? 1 : 0,
-          transition: 'opacity .5s ease',
-        }}
-      >
+      <StreamingText
+        text={LINE}
+        onDone={() => setDone(true)}
+        style={{ fontFamily: S.serif, fontWeight: 500, fontSize: 33, lineHeight: 1.25, color: S.text }}
+      />
+      <div style={{ marginTop: 14, fontSize: 15, color: S.muted, opacity: done ? 1 : 0, transition: 'opacity .5s ease' }}>
         {SUB}
       </div>
-
       <div
         style={{
           marginTop: 30,
@@ -73,7 +38,6 @@ export const PersonalizeConsent: React.FC<{ onConsent: (yes: boolean) => void }>
         <PrimaryButton onClick={() => onConsent(true)}>Yes, get to know me</PrimaryButton>
         <GhostLink style={{ marginTop: 2 }} onClick={() => onConsent(false)}>not now</GhostLink>
       </div>
-      <style>{'@keyframes onboardingWordIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}'}</style>
     </>
   );
 };

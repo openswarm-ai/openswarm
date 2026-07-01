@@ -38,24 +38,28 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
 
   const onPayoff = step === 'greet' || step === 'task' || step === 'more';
   const floor = useMemo(() => demoPayoff(persona), [persona]);
-  // Personalized payoff from the persona (cheap LLM); swaps in over the floor when ready.
-  const suggest = useOnboardingSuggest(useCase, name, onPayoff);
+  // Personalized payoff from the persona (cheap LLM); status drives the thinking -> stream feel.
+  const { result: suggest, status: suggestStatus } = useOnboardingSuggest(useCase, name, onPayoff);
   // Deeper: background read-only profiling (only if they consented); trumps the persona suggestion.
   const profile = useOnboardingProfile(name, consent, onPayoff);
+  const profileReady = !!(profile && profile.observation.trim() && profile.options.length > 0);
 
   // Merge into { insight, hero, more[] }. Priority: real-data profile > persona-generated > floor.
   const content = useMemo(() => {
-    if (profile && profile.observation.trim() && profile.options.length > 0) {
+    if (profile && profileReady) {
       const opts = profile.options.map((o, i) => ({ id: `p${i}`, icon: IDEA_ICONS[i % IDEA_ICONS.length], label: o.label, prompt: o.prompt }));
       return { insight: profile.observation, hero: opts[0], more: opts.slice(1) };
     }
-    if (suggest && suggest.insight.trim() && suggest.task.trim() && suggest.options.length > 0) {
+    if (suggest && suggestStatus === 'ready') {
       const opts = suggest.options.map((o, i) => ({ id: `s${i}`, icon: IDEA_ICONS[i % IDEA_ICONS.length], label: o.label, prompt: o.prompt }));
-      const hero: PayoffIdea = { id: 'hero', icon: 'sun', label: opts[0].label, prompt: suggest.task };
+      const hero: PayoffIdea = { id: 'hero', icon: opts[0].icon, label: opts[0].label, prompt: suggest.task };
       return { insight: suggest.insight, hero, more: opts };
     }
     return floor;
-  }, [profile, suggest, floor]);
+  }, [profile, profileReady, suggest, suggestStatus, floor]);
+
+  // Still generating (no result yet): the task beat shows a brief "thinking" instead of the floor.
+  const generating = onPayoff && !profileReady && suggestStatus === 'loading';
 
   // Tapping a task ends onboarding by DOING it: hand the prompt to the dashboard (it spawns the agent
   // with its own proven path), then close the overlay so the user watches it run.
@@ -103,6 +107,7 @@ export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => 
           <PayoffTask
             insight={content.insight}
             hero={content.hero}
+            generating={generating}
             onRun={(prompt: string) => launch(prompt)}
             onMore={() => setStep('more')}
           />

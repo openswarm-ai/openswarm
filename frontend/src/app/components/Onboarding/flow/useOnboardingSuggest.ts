@@ -1,6 +1,6 @@
 // Generates the payoff content (insight + task + 4 options) from the user's persona via the cheap
-// free-trial LLM. Progressive: returns null until it lands, so the payoff shows its static floor
-// first and swaps to the personalized version when ready. Fail-open on any miss.
+// LLM. Exposes status so the payoff can show a brief "thinking" state, then stream the result in.
+// Fail-open: on any miss the status goes 'failed' and the caller shows its static floor.
 
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/shared/config';
@@ -11,12 +11,16 @@ export interface SuggestDto {
   options: { label: string; prompt: string }[];
 }
 
-export function useOnboardingSuggest(persona: string, name: string, active: boolean): SuggestDto | null {
+export type SuggestStatus = 'idle' | 'loading' | 'ready' | 'failed';
+
+export function useOnboardingSuggest(persona: string, name: string, active: boolean): { result: SuggestDto | null; status: SuggestStatus } {
   const [result, setResult] = useState<SuggestDto | null>(null);
+  const [status, setStatus] = useState<SuggestStatus>('idle');
 
   useEffect(() => {
     if (!active || !persona) return;
     let cancelled = false;
+    setStatus('loading');
     fetch(`${API_BASE}/agents/onboarding-suggest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -24,13 +28,17 @@ export function useOnboardingSuggest(persona: string, name: string, active: bool
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data: SuggestDto | null) => {
-        if (!cancelled && data && data.insight?.trim() && data.task?.trim() && Array.isArray(data.options) && data.options.length > 0) {
+        if (cancelled) return;
+        if (data && data.insight?.trim() && data.task?.trim() && Array.isArray(data.options) && data.options.length > 0) {
           setResult(data);
+          setStatus('ready');
+        } else {
+          setStatus('failed');
         }
       })
-      .catch(() => { /* fail-open: keep the floor */ });
+      .catch(() => { if (!cancelled) setStatus('failed'); });
     return () => { cancelled = true; };
   }, [active, persona, name]);
 
-  return result;
+  return { result, status };
 }
