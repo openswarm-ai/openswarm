@@ -42,6 +42,14 @@ if ! python3 -c "import castlabs_evs" 2>/dev/null; then
   exit 0
 fi
 
+# When creds are in the env (EVS reads EVS_ACCOUNT_NAME/EVS_PASSWD itself), go
+# non-interactive so CI / non-TTY runs don't hang on a prompt. Creds stay in the
+# environment, never on the argv where any `ps` on the host could read them.
+EVS_AUTH=()
+if [ -n "${EVS_ACCOUNT_NAME:-}" ] && [ -n "${EVS_PASSWD:-}" ]; then
+  EVS_AUTH=(--no-ask)
+fi
+
 VERIFY_OUTPUT=$(python3 -m castlabs_evs.vmp verify-pkg "$ELECTRON_DIR" 2>&1)
 if echo "$VERIFY_OUTPUT" | grep -q "Signature is valid" && ! echo "$VERIFY_OUTPUT" | grep -q "development only"; then
   echo "[vmp] Electron already has a valid production VMP signature"
@@ -49,7 +57,7 @@ if echo "$VERIFY_OUTPUT" | grep -q "Signature is valid" && ! echo "$VERIFY_OUTPU
 fi
 
 echo "[vmp] Signing Electron with production VMP certificate..."
-if python3 -m castlabs_evs.vmp sign-pkg "$ELECTRON_DIR" 2>&1; then
+if python3 -m castlabs_evs.vmp sign-pkg "$ELECTRON_DIR" "${EVS_AUTH[@]}" 2>&1; then
   echo "[vmp] VMP signing successful — full DRM playback enabled"
   # Re-fix symlinks in case signing modified the bundle
   fix_framework_symlinks
