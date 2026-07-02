@@ -11,6 +11,7 @@ import {
   createPasteId,
   setPasteContent,
   deletePasteContent,
+  updatePasteCardLabel,
   detectEditorTrigger,
   TriggerState,
   EMPTY_TRIGGER,
@@ -111,6 +112,15 @@ export function useEditorHandlers(p: Params) {
     updateHasContent();
     editor.focus();
   }, [updateHasContent]);
+
+  const savePasteCard = useCallback((pasteId: string, text: string) => {
+    setPasteContent(pasteId, text);
+    const editor = editorRef.current;
+    if (!editor) return;
+    const card = editor.querySelector(`[${PASTE_CARD_ATTR}="${pasteId}"]`) as HTMLElement | null;
+    if (card) updatePasteCardLabel(card, text.length);
+    scheduleDraftSave(ownerId, () => readEditorHTML(editor));
+  }, [ownerId]);
 
   const removeSkillPill = useCallback((skillId: string) => {
     const editor = editorRef.current;
@@ -349,5 +359,6 @@ export function useEditorHandlers(p: Params) {
     updateHasContent,
     handleInput, handleEditorClick, handlePickerSelect, handleKeyDown, handlePaste,
     handleDragOver, handleDragLeave, handleDrop,
+    removePasteCard, savePasteCard,
   };
 }

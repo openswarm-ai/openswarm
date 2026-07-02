@@ -1,5 +1,5 @@
 import { useEffect, RefObject } from 'react';
-import { PASTE_CARD_ATTR, getPasteContent } from '@/app/components/editor/richEditorUtils';
+import { PASTE_CARD_ATTR, getPasteContent, createPasteCardElement } from '@/app/components/editor/richEditorUtils';
 
 // Module-level draft store keyed by sessionId; survives unmount/remount and preserves skill pills via innerHTML.
 const _draftStore = new Map<string, string>();
@@ -26,7 +26,14 @@ export function deleteDraft(ownerId: string) {
   _draftStore.delete(ownerId);
 }
 
-export function useDraftLoad(editorRef: RefObject<HTMLDivElement>, ownerId: string) {
+export function useDraftLoad(
+  editorRef: RefObject<HTMLDivElement>,
+  ownerId: string,
+  onPasteExpand: (id: string) => void,
+  onPasteRemove: (id: string) => void,
+  monoFont: string,
+  errorColor: string,
+) {
   useEffect(() => {
     const saved = _draftStore.get(ownerId);
     const editor = editorRef.current;
@@ -41,10 +48,17 @@ export function useDraftLoad(editorRef: RefObject<HTMLDivElement>, ownerId: stri
     }
     if (!editor.textContent?.trim()) {
       editor.innerHTML = saved;
+      // innerHTML restore drops JS listeners, so stale paste cards are rebuilt fresh below instead of just kept.
       const staleCards = editor.querySelectorAll(`[${PASTE_CARD_ATTR}]`);
       staleCards.forEach((el) => {
         const pid = el.getAttribute(PASTE_CARD_ATTR);
-        if (!pid || !getPasteContent(pid)) el.remove();
+        const content = pid ? getPasteContent(pid) : undefined;
+        if (!pid || content === undefined) {
+          el.remove();
+          return;
+        }
+        const fresh = createPasteCardElement(pid, content.length, onPasteExpand, onPasteRemove, monoFont, errorColor);
+        el.replaceWith(fresh);
       });
       const range = document.createRange();
       range.selectNodeContents(editor);

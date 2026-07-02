@@ -107,8 +107,6 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     };
   }, [prefillPrompt]);
 
-  useDraftLoad(editorRef, ownerId);
-
   const [hasContent, setHasContent] = useState(() => !!loadDraft(ownerId));
   const [attachedSkills, setAttachedSkills] = useState<Record<string, AttachedSkill>>({});
   const [previewPasteId, setPreviewPasteId] = useState<string | null>(null);
@@ -292,12 +290,15 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     isDragOver,
     handleInput, handleEditorClick, handlePickerSelect, handleKeyDown, handlePaste,
     handleDragOver, handleDragLeave, handleDrop,
+    removePasteCard, savePasteCard,
   } = useEditorHandlers({
     editorRef, generalFileInputRef, ownerId, sessionId, autoRunMode, c, skills,
     elementSelection, setHasContent, setAttachedSkills, setForcedTools, onModeChange,
     addImageFiles, uploadAndAttachFiles, handleSend,
     onPasteExpand: setPreviewPasteId,
   });
+
+  useDraftLoad(editorRef, ownerId, setPreviewPasteId, removePasteCard, c.font.mono, c.status.error);
 
   const currentMode = modesMap[mode];
   const FALLBACK_MODE = { ...FALLBACK_MODE_BASE, color: c.accent.primary };
@@ -310,7 +311,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
 
   return (
     <>
-    <PastePreviewDialog pasteId={previewPasteId} onClose={() => setPreviewPasteId(null)} />
+    <PastePreviewDialog pasteId={previewPasteId} onClose={() => setPreviewPasteId(null)} onSave={savePasteCard} />
     <ChatInputView
       c={c}
       containerRef={containerRef}
