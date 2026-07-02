@@ -1165,7 +1165,8 @@ const AgentCard: React.FC<Props> = ({
                     startIcon={<CheckIcon sx={{ fontSize: '14px !important' }} />}
                     onClick={() => {
                       for (const req of session.pending_approvals) {
-                        if (req.tool_name !== 'AskUserQuestion') dispatch(handleApproval({ requestId: req.id, behavior: 'allow' }));
+                        // setAlwaysAllow so the SAME command mid-run stops re-prompting: the backend writes the policy into the live in-run snapshot, a plain allow only clears the pending request.
+                        if (req.tool_name !== 'AskUserQuestion') dispatch(handleApproval({ requestId: req.id, behavior: 'allow', setAlwaysAllow: true }));
                       }
                     }}
                     sx={{
