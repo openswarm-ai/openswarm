@@ -74,6 +74,15 @@ P_GROUNDED_ATTEMPT_TIMEOUT = 48.0  # just above the providers' own 45s httpx tim
 # Local httpx + trafilatura fetch of a real page; the fast path for /fetch (normal pages return in <2s). Set just above WebFetchTool's own 30s httpx ceiling so a valid-but-slow page still completes locally instead of being clipped down to a grounded summary; only a truly hung server gets cut.
 P_LOCAL_FETCH_TIMEOUT = 32.0
 
+# When every search backend fails, point the model at the in-product browser (always-on CreateBrowserAgent tool) instead of telling it to "wait and retry", which it can't do and just relays as a dead end. The real Chromium renders pages and isn't subject to the DDG scrape throttle.
+def p_browser_fallback_nudge(query: str) -> str:
+    return (
+        "Don't stop here: fall back to the in-product browser, which renders real pages and "
+        "isn't subject to this rate limit. Call CreateBrowserAgent with a task like: "
+        f'"Search the web for: {query}. Report the top results with their titles and URLs, '
+        'plus a direct answer if you find one."'
+    )
+
 
 async def p_gemini_grounded_call(api_key: str, prompt: str, *, use_url_context: bool) -> dict:
     """Call Gemini with googleSearch (+ optionally urlContext) grounding.
@@ -470,11 +479,12 @@ async def search(body: SearchBody) -> dict:
     else:
         tail = (
             "DuckDuckGo is rate-limiting this network and every configured provider "
-            "errored (see details below). Wait a moment and retry."
+            "errored (see details below)."
         )
+    nudge = p_browser_fallback_nudge(body.query)
     return {
         "query": body.query,
-        "results": f"No results for: {body.query}\n\n{tail}",
+        "results": f"No results for: {body.query}\n\n{tail}\n\n{nudge}",
         "backend": "none",
         "cascade_errors": errors,
     }
