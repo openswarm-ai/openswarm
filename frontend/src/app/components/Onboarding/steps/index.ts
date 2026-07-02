@@ -1,11 +1,9 @@
 import type { OnboardingStep, StepStage } from './types';
 import { step01 } from './step01_connectModel';
-import { step02 } from './step02_enableActions';
 import { step03 } from './step03_launchAgent';
 import { step04 } from './step04_useBrowser';
 import { step05 } from './step05_agentUseBrowser';
 import { step06 } from './step06_agentControlAgents';
-import { step07 } from './step07_installSkill';
 import { step08 } from './step08_makeApp';
 import { welcomeOpenStep } from './step00_welcomeNudge';
 
@@ -13,11 +11,9 @@ import { welcomeOpenStep } from './step00_welcomeNudge';
 export const STEPS: OnboardingStep[] = [
   step03,
   step01,
-  step02,
   step04,
   step05,
   step06,
-  step07,
   step08,
 ];
 

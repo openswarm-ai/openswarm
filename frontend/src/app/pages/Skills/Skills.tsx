@@ -128,7 +128,7 @@ const Skills: React.FC = () => {
 
   const regGrouped = useMemo(() => {
     const groups: Record<string, RegistrySkill[]> = {};
-    const q = searchFilter.toLowerCase();
+    const q = searchFilter.trim().toLowerCase();
     for (const sk of regSkills) {
       if (q && !sk.name.toLowerCase().includes(q) && !sk.description.toLowerCase().includes(q)) continue;
       const cat = sk.category || 'General';
@@ -139,7 +139,7 @@ const Skills: React.FC = () => {
   }, [regSkills, searchFilter]);
 
   const filteredLocal = useMemo(() => {
-    const q = searchFilter.toLowerCase();
+    const q = searchFilter.trim().toLowerCase();
     if (!q) return localSkills;
     return localSkills.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
   }, [localSkills, searchFilter]);

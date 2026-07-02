@@ -56,12 +56,12 @@ export function useToolsActions({ items, allTools, regServersRaw, closeMenu }: T
       } else if (existing && existing.enabled === false) {
         await dispatch(updateTool({ id: existing.id, enabled: true }));
         if (integration.authType === 'oauth2' && existing.auth_status !== 'connected') {
-          setSnackbar({ open: true, message: `Enabled ${integration.name}, connect your account to discover actions` });
+          setSnackbar({ open: true, message: `Enabled ${integration.name}, connect your account to discover tools` });
         } else {
-          setSnackbar({ open: true, message: `Enabled ${integration.name}, re-discovering actions…` });
+          setSnackbar({ open: true, message: `Enabled ${integration.name}, re-discovering tools…` });
           const discoverResult = await dispatch(discoverTools(existing.id));
           if (discoverTools.fulfilled.match(discoverResult)) {
-            setSnackbar({ open: true, message: `${integration.name} ready, actions discovered` });
+            setSnackbar({ open: true, message: `${integration.name} ready, tools discovered` });
           } else {
             const detail = (discoverResult as any).error?.message || 'discovery failed';
             setSnackbar({ open: true, message: `${integration.name}: ${detail}`, severity: 'error' });
@@ -80,12 +80,12 @@ export function useToolsActions({ items, allTools, regServersRaw, closeMenu }: T
         if (createTool.fulfilled.match(result)) {
           const newTool = result.payload;
           if (integration.authType === 'oauth2' || integration.authType === 'device_code') {
-            setSnackbar({ open: true, message: `Enabled ${integration.name}, connect your account to discover actions` });
+            setSnackbar({ open: true, message: `Enabled ${integration.name}, connect your account to discover tools` });
           } else {
-            setSnackbar({ open: true, message: `Enabled ${integration.name}, discovering actions…` });
+            setSnackbar({ open: true, message: `Enabled ${integration.name}, discovering tools…` });
             const discoverResult = await dispatch(discoverTools(newTool.id));
             if (discoverTools.fulfilled.match(discoverResult)) {
-              setSnackbar({ open: true, message: `${integration.name} ready, actions discovered` });
+              setSnackbar({ open: true, message: `${integration.name} ready, tools discovered` });
             } else {
               const detail = (discoverResult as any).error?.message
                 || `discovery failed; is ${integration.mcp_config.command || 'the server'} installed?`;
@@ -104,7 +104,7 @@ export function useToolsActions({ items, allTools, regServersRaw, closeMenu }: T
     try {
       const result = await dispatch(discoverTools(toolId));
       if (discoverTools.fulfilled.match(result)) {
-        setSnackbar({ open: true, message: 'Actions discovered successfully' });
+        setSnackbar({ open: true, message: 'Tools discovered successfully' });
       } else {
         const detail = (result as any).error?.message || 'Discovery failed; is the MCP server running?';
         setSnackbar({ open: true, message: detail, severity: 'error' });

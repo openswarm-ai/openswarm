@@ -140,10 +140,10 @@ export function useRegistryBrowser({ regServersRaw, setSnackbar, setEditingId, s
       }));
       if (createTool.fulfilled.match(result)) {
         const newTool = result.payload;
-        setSnackbar({ open: true, message: `Installed "${f.name}", discovering actions…` });
+        setSnackbar({ open: true, message: `Installed "${f.name}", discovering tools…` });
         const discoverResult = await dispatch(discoverTools(newTool.id));
         if (discoverTools.fulfilled.match(discoverResult)) {
-          setSnackbar({ open: true, message: `${f.name} ready, actions discovered` });
+          setSnackbar({ open: true, message: `${f.name} ready, tools discovered` });
         } else {
           const detail = (discoverResult as any).error?.message
             || 'discovery failed; the MCP server may need setup first';

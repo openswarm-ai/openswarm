@@ -76,18 +76,6 @@ export function hasAnySkillInstalled(s: RootState): boolean {
   return Object.keys(items).length > 0;
 }
 
-/** True if PDF skill installed (id/name/command); step 7 uses this so other skills don't auto-skip. */
-export function hasPdfSkillInstalled(s: RootState): boolean {
-  const items = s.skills?.items as any;
-  const list: any[] = Array.isArray(items) ? items : Object.values(items ?? {});
-  return list.some((sk: any) => {
-    const id = (sk?.id ?? '').toString().toLowerCase();
-    const name = (sk?.name ?? '').toString().toLowerCase();
-    const cmd = (sk?.command ?? '').toString().toLowerCase();
-    return id.includes('pdf') || name.includes('pdf') || cmd.includes('pdf');
-  });
-}
-
 /** True if a browser card exists; step 4 auto-skips the open-a-browser walkthrough. */
 export function hasAnyBrowserSpawned(s: RootState): boolean {
   const cards = (s as any).dashboardLayout?.browserCards ?? {};

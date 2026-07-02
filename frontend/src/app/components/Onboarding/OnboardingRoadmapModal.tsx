@@ -32,7 +32,8 @@ const OnboardingRoadmapModal: React.FC = () => {
     return STEPS.find((s) => !progress.completedSteps.includes(s.id) && unlockedIds.has(s.id));
   })();
 
-  const totalDone = progress.completedSteps.length;
+  // Filter to live steps so a user who finished a since-removed step can't read e.g. 8/6.
+  const totalDone = progress.completedSteps.filter((id) => findStepById(id)).length;
   const total = STEPS.length;
 
   const jumpToCurrent = () => {

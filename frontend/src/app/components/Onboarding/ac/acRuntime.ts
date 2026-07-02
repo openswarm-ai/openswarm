@@ -311,14 +311,10 @@ async function runOp(op: ACOp, ctx: RunContext): Promise<void> {
 
   switch (op.kind) {
     case 'move_to': {
-      // Order matters: open the whole sidebar first (sub-section markers must exist in DOM), THEN expand Customization, THEN target.
+      // Open the whole sidebar first so its markers exist in the DOM before we target one.
       const expandSidebarOps = maybeBuildExpandSidebarOps(op.target);
       if (expandSidebarOps) {
         await runOps(expandSidebarOps, ctx);
-      }
-      const expandOps = maybeBuildExpandCustomizationOps(op.target);
-      if (expandOps) {
-        await runOps(expandOps, ctx);
       }
       const el = await waitForSelector(op.target);
       const scrolled = scrollIntoViewIfNeeded(el);
@@ -755,25 +751,15 @@ function buildOpenDashboardOps(): ACOp[] {
   return ops;
 }
 
-const CUSTOMIZATION_AREA_TARGETS = new Set<string>([
-  'sidebar-actions',
-  'sidebar-skills',
-  'sidebar-modes',
-]);
-
 // `sidebar-toggle` excluded: it lives in the top bar (we click it to expand). Recursing would loop.
 const SIDEBAR_AREA_TARGETS = new Set<string>([
   'sidebar-settings-button',
   'sidebar-dashboards',
-  'sidebar-customization',
-  'sidebar-skills',
-  'sidebar-actions',
-  'sidebar-modes',
   'sidebar-apps',
   'dashboard-row-first',
 ]);
 
-/** MUST run before maybeBuildExpandCustomizationOps: Customization header is inside the collapsible panel, so expand-check on hidden panel queues an impossible click. */
+/** Expands the collapsed sidebar so its row markers exist before a move_to targets one. */
 function maybeBuildExpandSidebarOps(target: string): ACOp[] | null {
   if (!SIDEBAR_AREA_TARGETS.has(target)) return null;
   const toggle = document.querySelector<HTMLElement>(
@@ -786,26 +772,6 @@ function maybeBuildExpandSidebarOps(target: string): ACOp[] | null {
   return [
     { kind: 'click', target: 'sidebar-toggle', simulate: true },
     { kind: 'delay', ms: 260 },
-  ];
-}
-
-function maybeBuildExpandCustomizationOps(target: string): ACOp[] | null {
-  if (!CUSTOMIZATION_AREA_TARGETS.has(target)) return null;
-  const header = document.querySelector<HTMLElement>(
-    '[data-onboarding="sidebar-customization"]',
-  );
-  const expanded =
-    header?.dataset.expanded === 'true' ||
-    header?.getAttribute('aria-expanded') === 'true';
-  if (expanded) return null;
-  return [
-    { kind: 'move_to', target: 'sidebar-customization' },
-    { kind: 'popup', text: 'Open Customization.' },
-    {
-      kind: 'wait_user',
-      condition: { kind: 'click_target', target: 'sidebar-customization' },
-      timeoutMs: 60000,
-    },
   ];
 }
 
