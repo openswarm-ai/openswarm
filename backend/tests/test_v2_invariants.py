@@ -663,16 +663,16 @@ def test_dashboard_get_strips_only_orphan_session_cards():
 
 
 def test_banned_models_not_offered():
-    """Claude Fable (banned) and Gemini 3.1 Pro (no working lane: AG can't serve
-    it, AI Studio key 429s pro-preview) were pulled from the picker. Guard so a
-    refactor can't silently re-list a model that can't run."""
+    """Gemini 3.1 Pro (no working lane: AG can't serve it, AI Studio key 429s
+    pro-preview) stays pulled from the picker. Guard so a refactor can't
+    silently re-list a model that can't run. (Fable 5 was re-listed 2026-07-02
+    after its ban lifted, so it left this list.)"""
     from backend.apps.agents.providers.registry import BUILTIN_MODELS
     all_values = {m["value"] for models in BUILTIN_MODELS.values() for m in models}
-    for dead in ("fable-5-cc", "fable-5-api", "gemini-3.1-pro", "gemini-3.1-pro-api"):
+    for dead in ("gemini-3.1-pro", "gemini-3.1-pro-api"):
         assert dead not in all_values, f"{dead} is back in the picker"
-    # No 'fable' or '3.1 pro' label survives in any provider group either.
+    # No '3.1 pro' label survives in any provider group either.
     all_labels = " | ".join(m["label"].lower() for models in BUILTIN_MODELS.values() for m in models)
-    assert "fable" not in all_labels
     assert "3.1 pro" not in all_labels
 
 
