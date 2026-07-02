@@ -70,6 +70,10 @@ if ($Sign) {
         Write-Host "Copy .env.windows.example to .env.windows and fill in values."
         exit 1
     }
+    # A signed build is one users actually run, so its Widevine VMP signature is
+    # mandatory: the afterPack hook hard-fails on a missing/failed signature rather
+    # than ship an installer whose Spotify/Netflix audio is silently dead.
+    $env:VMP_REQUIRE_SIGN = '1'
 }
 
 # --- Step 0: Bundled uv + uvx for Windows ---
