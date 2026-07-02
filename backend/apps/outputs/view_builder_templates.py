@@ -596,7 +596,7 @@ def seed_webapp_template_workspace(workspace_dir: str, frontend_port: int) -> No
     patch_env_port(env_path, "OPENSWARM_BACKEND_VENV_CACHE", warm_venv_dir())
 
     # Make the shipped scripts executable. tarball/git extracts may strip the +x bit depending on how the snapshot was vendored.
-    for script in ("run.sh", "backend_init.sh", "frontend/run.sh"):
+    for script in ("run.sh", "backend_init.sh", "restart.sh", "frontend/run.sh"):
         p = os.path.join(workspace_dir, script)
         if os.path.exists(p):
             os.chmod(p, 0o755)

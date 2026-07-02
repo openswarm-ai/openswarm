@@ -49,6 +49,12 @@ logger = logging.getLogger(__name__)
 # Module-level lock so only ONE vite optimizeDeps runs at a time; must be acquired before manager.p_lock to avoid deadlock with manager.attach.
 p_vite_boot_lock = asyncio.Lock()
 
+# How often the manager stats each attached workspace for a restart sentinel; one stat/sec/runtime is noise.
+RESTART_SENTINEL_POLL_SECONDS = 1.0
+
+# The agent-facing restart handshake: the workspace's restart.sh touches this and the manager restarts the runtime, so agents never need an API token to bounce their own app.
+RESTART_SENTINEL_NAME = "restart-requested"
+
 
 @dataclass
 class LogLine:
@@ -470,6 +476,10 @@ class AppRuntime:
             except Exception:
                 pass
 
+    def announce(self, text: str) -> None:
+        """Emit a [runtime]-stream status line; the public door for the manager (p_broadcast is class-private)."""
+        self.p_broadcast(LogLine("runtime", text))
+
     def record_frontend_log(self, level: str, text: str) -> None:
         """Fold a webview console line into the terminal stream (ring buffer, WS subscribers, terminal.log). Called by the console-log beacon endpoint."""
         stream = {"warn": "frontend-warn", "error": "frontend-error"}.get(level, "frontend")
@@ -556,8 +566,45 @@ class AppRuntimeManager:
         # workspace_id → AppRuntime with no subscribers but still alive. OrderedDict gives O(1) move_to_end + popitem(last=False) for LRU semantics.
         self.idle_lru: "OrderedDict[str, AppRuntime]" = OrderedDict()
         self.p_lock = asyncio.Lock()
+        # Public: tests cancel it during teardown.
+        self.restart_watch_task: Optional[asyncio.Task] = None
+
+    def p_ensure_restart_watcher(self) -> None:
+        """Lazy-start the sentinel watcher on first attach; __init__ runs at import time, before any event loop exists."""
+        if self.restart_watch_task is None or self.restart_watch_task.done():
+            self.restart_watch_task = asyncio.create_task(self.p_watch_restart_sentinels())
+
+    async def p_watch_restart_sentinels(self) -> None:
+        """The agent-side restart path: a workspace's restart.sh (or a bare `touch
+        .openswarm/restart-requested`) asks the harness to bounce the app runtime,
+        which the agent cannot do itself (no API token, and uvicorn runs without
+        --reload). Consume the sentinel FIRST so restart.sh's wait loop unblocks,
+        then restart every attached instance of that workspace."""
+        while True:
+            await asyncio.sleep(RESTART_SENTINEL_POLL_SECONDS)
+            try:
+                seen_paths: set[str] = set()
+                for rt in list(self.runtimes.values()):
+                    ws_path = rt.workspace_path
+                    if ws_path in seen_paths or rt.p_suspended or not rt.running:
+                        continue
+                    sentinel = os.path.join(ws_path, ".openswarm", RESTART_SENTINEL_NAME)
+                    if not os.path.exists(sentinel):
+                        continue
+                    seen_paths.add(ws_path)
+                    try:
+                        os.remove(sentinel)
+                    except OSError:
+                        continue
+                    for peer in list(self.runtimes.values()):
+                        if peer.workspace_path == ws_path and peer.running and not peer.p_suspended:
+                            peer.announce("[runtime] restart requested from the workspace (restart.sh); restarting...")
+                            asyncio.create_task(peer.restart())
+            except Exception:
+                logger.exception("restart-sentinel watcher tick failed")
 
     async def attach(self, workspace_id: str, workspace_path: str, instance: int = 1) -> AppRuntime:
+        self.p_ensure_restart_watcher()
         key = runtime_key(workspace_id, instance)
         revived = False
         # Defined here so every code path below leaves it bound; the revive-idle branch used to skip the assignment, leaving the post-lock `if dead is not None:` check throwing UnboundLocalError.
