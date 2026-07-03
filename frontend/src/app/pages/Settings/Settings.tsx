@@ -4,6 +4,7 @@ import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
 import DialogContent from '@mui/material/DialogContent';
+import CircularProgress from '@mui/material/CircularProgress';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { updateSettingsPatch, closeSettingsModal, AppSettings } from '@/shared/state/settingsSlice';
 import { onboardingBus } from '@/app/components/Onboarding/eventBus';
@@ -17,6 +18,10 @@ import ModelsTab from './sections/models/ModelsTab';
 import UsageStats from './sections/usage/UsageStats';
 import SettingsHeader from './sections/SettingsHeader';
 import { makeSettingsStyles } from './sections/settingsStyles';
+
+// Skills/Tools moved here from the old sidebar Customization section; lazy since both pull heavy deps and Settings opens nearly every session.
+const SkillsTab = React.lazy(() => import('@/app/pages/Skills/Skills'));
+const ToolsTab = React.lazy(() => import('@/app/pages/Tools/Tools'));
 
 // Brand colors for provider group headers; mirrors ChatInput picker.
 const PROVIDER_COLORS: Record<string, string> = {
@@ -85,7 +90,7 @@ const Settings: React.FC = () => {
   }, [modelsByProvider, modelsLoaded, settings.connection_mode, settings.default_model]);
 
   const initialTab = useAppSelector((s) => s.settings.initialTab);
-  const TAB_VALUES = ['general', 'models', 'usage', 'commands'] as const;
+  const TAB_VALUES = ['general', 'models', 'skills', 'tools', 'commands', 'usage'] as const;
   type SettingsTab = typeof TAB_VALUES[number];
   const isValidTab = (t: string | null | undefined): t is SettingsTab =>
     !!t && (TAB_VALUES as readonly string[]).includes(t);
@@ -219,6 +224,8 @@ const Settings: React.FC = () => {
         sx: {
           width: 780,
           height: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
           bgcolor: c.bg.page,
           borderRadius: 2,
           border: `1px solid ${c.border.subtle}`,
@@ -236,6 +243,8 @@ const Settings: React.FC = () => {
       <DialogContent sx={{
         px: 3,
         py: 0,
+        flex: 1,
+        minHeight: 0,
         '&::-webkit-scrollbar': { width: 6 },
         '&::-webkit-scrollbar-track': { background: 'transparent' },
         '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 3, '&:hover': { background: c.border.strong } },
@@ -264,6 +273,18 @@ const Settings: React.FC = () => {
       ) : activeTab === 'usage' ? (
       <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
         <UsageStats />
+      </Box>
+      ) : activeTab === 'skills' ? (
+      <Box sx={{ height: '100%', mx: -3, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
+        <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress size={24} /></Box>}>
+          <SkillsTab />
+        </React.Suspense>
+      </Box>
+      ) : activeTab === 'tools' ? (
+      <Box sx={{ height: '100%', mx: -3, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
+        <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress size={24} /></Box>}>
+          <ToolsTab />
+        </React.Suspense>
       </Box>
       ) : (
       <Box sx={{ pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>

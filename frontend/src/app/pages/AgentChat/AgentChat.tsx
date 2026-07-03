@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
@@ -279,7 +279,6 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     );
   });
   const testState = useAppSelector((s) => (id ? s.agents.sessions[id]?.workflow_test_state : null) ?? null);
-  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const session = useAppSelector((state) => (id ? state.agents.sessions[id] : undefined));
   const modesMap = useAppSelector((state) => state.modes.items);
@@ -1721,7 +1720,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                             setActivateError(`Activation failed (${r.status})`);
                           } else if (body?.status === 'unknown_server') {
                             // Not yet connected; jump to Actions so the user can finish OAuth.
-                            navigate('/actions');
+                            dispatch(openSettingsModal('tools'));
                           } else if (id) {
                             dispatch(clearMcpSuggestions({ sessionId: id }));
                           }
@@ -2198,7 +2197,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                                     setActivateError(`Activation failed (${r.status})`);
                                   } else if (body?.status === 'unknown_server') {
                                     // Not yet connected; jump straight to Actions so the user can finish OAuth. Nothing here can do it on their behalf.
-                                    navigate('/actions');
+                                    dispatch(openSettingsModal('tools'));
                                   } else if (id) {
                                     // Activation succeeded; clear the banner so the user gets visual confirmation the click did something.
                                     dispatch(clearMcpSuggestions({ sessionId: id }));

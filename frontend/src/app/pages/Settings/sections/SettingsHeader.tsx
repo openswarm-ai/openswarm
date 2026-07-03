@@ -54,8 +54,10 @@ const SettingsHeader: React.FC<{
       >
         <Tab label="General" value="general" disableRipple />
         <Tab label="Models" value="models" disableRipple data-onboarding="settings-models-tab" />
-        <Tab label="Usage" value="usage" disableRipple />
+        <Tab label="Skills" value="skills" disableRipple />
+        <Tab label="Tools" value="tools" disableRipple />
         <Tab label="Commands" value="commands" disableRipple />
+        <Tab label="Usage" value="usage" disableRipple />
       </Tabs>
     </DialogTitle>
   );

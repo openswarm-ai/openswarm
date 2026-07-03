@@ -129,7 +129,7 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                               <Chip icon={<SettingsIcon sx={{ fontSize: 12 }} />} label="Configured" size="small" sx={{ bgcolor: c.status.warningBg, color: c.status.warning, fontSize: '0.7rem', height: 20, '& .MuiChip-icon': { color: c.status.warning } }} />
                             )}
                             {ig && totalToolCount > 0 && (
-                              <Chip label={`${totalToolCount} actions`} size="small" sx={{ bgcolor: `${ig.color}15`, color: ig.color, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
+                              <Chip label={`${totalToolCount} tools`} size="small" sx={{ bgcolor: `${ig.color}15`, color: ig.color, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
                             )}
                             {ig && (
                               <Chip component="a" href={ig.website} clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
@@ -190,13 +190,13 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5, mb: 1 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               <SecurityIcon sx={{ fontSize: 14, color: c.text.muted }} />
-                              <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Action Permissions</Typography>
-                              {hasPerms && <Chip label={`${totalToolCount} actions`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />}
+                              <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tool Permissions</Typography>
+                              {hasPerms && <Chip label={`${totalToolCount} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />}
                             </Box>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               {hasPerms && (
                                 <>
-                                  <Tooltip title="Allow all read-only actions">
+                                  <Tooltip title="Allow all read-only tools">
                                     <Button size="small" onClick={() => handleBulkReadOnly(tool.id)} sx={{ color: c.status.info, textTransform: 'none', fontSize: '0.7rem', minWidth: 'auto', px: 1, py: 0.25 }}>
                                       Allow reads
                                     </Button>
@@ -208,7 +208,7 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                                   </Tooltip>
                                 </>
                               )}
-                              <Tooltip title="Discover / refresh actions from MCP server">
+                              <Tooltip title="Discover / refresh tools from MCP server">
                                 <IconButton
                                   size="small"
                                   onClick={() => handleDiscover(tool.id)}
@@ -224,7 +224,7 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                           {!hasPerms ? (
                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 3, gap: 1.5 }}>
                               <ExtensionIcon sx={{ fontSize: 28, color: c.text.ghost, opacity: 0.4 }} />
-                              <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem' }}>No actions discovered yet</Typography>
+                              <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem' }}>No tools discovered yet</Typography>
                               <Button
                                 size="small"
                                 variant="outlined"
@@ -233,10 +233,10 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                                 disabled={discovering || !canDiscover}
                                 sx={{ borderColor: c.border.medium, color: c.text.secondary, '&:hover': { borderColor: c.accent.primary, color: c.accent.primary }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5 }}
                               >
-                                Discover Actions
+                                Discover Tools
                               </Button>
                               {!canDiscover && (
-                                <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>Add an MCP configuration to enable action discovery</Typography>
+                                <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>Add an MCP configuration to enable tool discovery</Typography>
                               )}
                             </Box>
                           ) : (

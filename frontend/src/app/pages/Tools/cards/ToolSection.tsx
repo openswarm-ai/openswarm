@@ -84,8 +84,8 @@ const ToolSection: React.FC<ToolSectionProps> = ({
   const overallPolicy = getCatGroupPolicy(allSectionTools);
   const categoryCount = CATEGORY_ORDER.filter((cat) => grouped[cat]).length;
   const sectionDescription = deferred
-    ? 'On-demand actions loaded via ToolSearch for planning, scheduling, and extended operations'
-    : 'Built-in Claude Agent SDK actions for file operations, shell commands, and search';
+    ? 'On-demand tools loaded via ToolSearch for planning, scheduling, and extended operations'
+    : 'Built-in Claude Agent SDK tools for file operations, shell commands, and search';
 
   const firstSentence = (desc: string) => {
     if (!desc) return '';
@@ -110,7 +110,7 @@ const ToolSection: React.FC<ToolSectionProps> = ({
         <Box sx={{ flex: 1, minWidth: 0, opacity: enabled ? 1 : 0.4, transition: 'opacity 0.2s' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
             <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}>{label}</Typography>
-            <Chip label={`${count} actions`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
+            <Chip label={`${count} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
             {deferred && (
               <Chip label="on-demand" size="small" sx={{ bgcolor: c.status.warningBg, color: c.status.warning, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
             )}
@@ -139,8 +139,8 @@ const ToolSection: React.FC<ToolSectionProps> = ({
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5, mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <SecurityIcon sx={{ fontSize: 14, color: c.text.muted }} />
-            <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Action Permissions</Typography>
-            <Chip label={`${count} actions`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />
+            <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tool Permissions</Typography>
+            <Chip label={`${count} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />
           </Box>
         </Box>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>

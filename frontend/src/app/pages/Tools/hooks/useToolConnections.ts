@@ -45,7 +45,7 @@ export function useToolConnections({ items, setSnackbar, setExpandedToolId }: De
       const afterConnect = async () => {
         const statusResult = await dispatch(fetchToolStatus(toolId));
         if (fetchToolStatus.fulfilled.match(statusResult) && statusResult.payload.auth_status === 'connected') {
-          setSnackbar({ open: true, message: 'Account connected! Discovering actions…' });
+          setSnackbar({ open: true, message: 'Account connected! Discovering tools…' });
           setExpandedToolId(toolId);
           dispatch(discoverTools(toolId));
         } else {
@@ -97,7 +97,7 @@ export function useToolConnections({ items, setSnackbar, setExpandedToolId }: De
           if (status === 'connected') {
             clearInterval(poll);
             setDeviceCodeStatus('connected');
-            setSnackbar({ open: true, message: `Connected to Microsoft 365${email ? ` as ${email}` : ''}! Discovering actions…` });
+            setSnackbar({ open: true, message: `Connected to Microsoft 365${email ? ` as ${email}` : ''}! Discovering tools…` });
             setDeviceCodeDialogOpen(false);
             setExpandedToolId(toolId);
             await dispatch(fetchToolStatus(toolId));
@@ -148,7 +148,7 @@ export function useToolConnections({ items, setSnackbar, setExpandedToolId }: De
       }));
       if (updateTool.fulfilled.match(result)) {
         setCredDialogOpen(false);
-        setSnackbar({ open: true, message: `${credDialogIntegration.name} connected! Re-discovering actions…` });
+        setSnackbar({ open: true, message: `${credDialogIntegration.name} connected! Re-discovering tools…` });
         dispatch(discoverTools(credDialogToolId));
       } else {
         setSnackbar({ open: true, message: 'Failed to save credentials', severity: 'error' });
@@ -177,7 +177,7 @@ export function useToolConnections({ items, setSnackbar, setExpandedToolId }: De
       }));
       if (updateTool.fulfilled.match(result)) {
         setCredDialogOpen(false);
-        setSnackbar({ open: true, message: 'Slack connected! Re-discovering actions…' });
+        setSnackbar({ open: true, message: 'Slack connected! Re-discovering tools…' });
         dispatch(discoverTools(credDialogToolId));
       } else {
         setSnackbar({ open: true, message: 'Failed to save Slack credentials', severity: 'error' });

@@ -1,9 +1,6 @@
 // Central registry of data-onboarding / data-select-type selectors. Step files import S.*; never inline.
 
 export const S = {
-  sidebarSkills: 'sidebar-skills',
-  sidebarActions: 'sidebar-actions',
-  sidebarModes: 'sidebar-modes',
   sidebarApps: 'sidebar-apps',
 
   sidebarSettingsButton: 'sidebar-settings-button',
@@ -35,22 +32,9 @@ export const S = {
   chatSendButton: 'chat-send-button',
   elementSelectionToggle: 'element-selection-toggle',
 
-  actionsRedditToggle: 'actions-reddit-toggle',
-  actionsRedditChevron: 'actions-reddit-chevron',
-  actionsSubredditsChevron: 'actions-subreddits-chevron',
-  actionsPermissionToggle: 'actions-permission-toggle',
-  actionsYoutubeToggle: 'actions-youtube-toggle',
-  actionsYoutubeChevron: 'actions-youtube-chevron',
-
   canvasFitToView: 'canvas-fit-to-view',
   canvasTidyLayout: 'canvas-tidy-layout',
   canvasMinimapToggle: 'canvas-minimap-toggle',
-  /** Header for sidebar's Customization section; runtime auto-expands before targeting children. */
-  sidebarCustomization: 'sidebar-customization',
-
-  skillItemPdf: 'skill-item-pdf',
-  skillInstallButton: 'skill-install-button',
-  skillBuilderFab: 'skill-builder-fab',
 
   appsNewButton: 'apps-new-button',
   appCardLatest: 'app-card-latest',

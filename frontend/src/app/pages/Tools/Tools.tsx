@@ -106,8 +106,8 @@ const Tools: React.FC = () => {
     <Box sx={{ p: 3, height: '100%', overflow: 'auto' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box>
-          <Typography variant="h5" sx={{ color: c.text.primary, fontWeight: 700, mb: 0.5 }}>Action Library</Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.9rem' }}>Define and manage custom actions for your Claude Code agents.</Typography>
+          <Typography variant="h5" sx={{ color: c.text.primary, fontWeight: 700, mb: 0.5 }}>Tool Library</Typography>
+          <Typography sx={{ color: c.text.tertiary, fontSize: '0.9rem' }}>Define and manage custom tools for your Claude Code agents.</Typography>
         </Box>
         <Box>
           <Button
@@ -117,7 +117,7 @@ const Tools: React.FC = () => {
             onClick={handleMenuOpen}
             sx={{ bgcolor: c.accent.primary, '&:hover': { bgcolor: c.accent.pressed }, textTransform: 'none', borderRadius: 2 }}
           >
-            New Action
+            New Tool
           </Button>
           <Menu
             anchorEl={menuAnchor}
@@ -144,18 +144,18 @@ const Tools: React.FC = () => {
         >
           {builtinSectionOpen ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} />}
           <LockIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
-          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Built-in Action Sets</Typography>
+          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Built-in</Typography>
           <Chip label={coreTools.length + deferredTools.length + browserTools.length} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
         </Box>
         <Collapse in={builtinSectionOpen} timeout={0} unmountOnExit>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1 }}>
 
       {coreTools.length > 0 && (
-        <ToolSection label="Core Actions" icon={<LockIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={coreTools.length} open={coreSectionOpen} onToggle={() => setCoreSectionOpen((v) => !v)} grouped={groupedCore} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} builtinPermissions={builtinPermissions} onPermissionChange={a.handleBuiltinPermissionChange} onCategoryPermissionChange={a.handleBuiltinCategoryPermissionChange} enabled={coreSectionEnabled} onEnabledChange={(v) => a.handleSectionEnabledChange(coreTools, v)} />
+        <ToolSection label="Core Tools" icon={<LockIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={coreTools.length} open={coreSectionOpen} onToggle={() => setCoreSectionOpen((v) => !v)} grouped={groupedCore} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} builtinPermissions={builtinPermissions} onPermissionChange={a.handleBuiltinPermissionChange} onCategoryPermissionChange={a.handleBuiltinCategoryPermissionChange} enabled={coreSectionEnabled} onEnabledChange={(v) => a.handleSectionEnabledChange(coreTools, v)} />
       )}
 
       {deferredTools.length > 0 && (
-        <ToolSection label="Extended Actions" icon={<HourglassEmptyIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={deferredTools.length} open={deferredSectionOpen} onToggle={() => setDeferredSectionOpen((v) => !v)} grouped={groupedDeferred} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} deferred builtinPermissions={builtinPermissions} onPermissionChange={a.handleBuiltinPermissionChange} onCategoryPermissionChange={a.handleBuiltinCategoryPermissionChange} enabled={deferredSectionEnabled} onEnabledChange={(v) => a.handleSectionEnabledChange(deferredTools, v)} />
+        <ToolSection label="Extended Tools" icon={<HourglassEmptyIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={deferredTools.length} open={deferredSectionOpen} onToggle={() => setDeferredSectionOpen((v) => !v)} grouped={groupedDeferred} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} deferred builtinPermissions={builtinPermissions} onPermissionChange={a.handleBuiltinPermissionChange} onCategoryPermissionChange={a.handleBuiltinCategoryPermissionChange} enabled={deferredSectionEnabled} onEnabledChange={(v) => a.handleSectionEnabledChange(deferredTools, v)} />
       )}
 
       {browserTools.length > 0 && (
@@ -183,7 +183,7 @@ const Tools: React.FC = () => {
         <Box onClick={() => setCustomSectionOpen((v) => !v)} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, cursor: 'pointer', userSelect: 'none', '&:hover .section-arrow': { color: c.text.secondary } }}>
           {customSectionOpen ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} />}
           <BuildIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
-          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Custom Action Sets</Typography>
+          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Connections</Typography>
           <Chip label={tools.length + uninstalledIntegrations.length} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
         </Box>
         <Collapse in={customSectionOpen} timeout={0} unmountOnExit>
@@ -196,7 +196,7 @@ const Tools: React.FC = () => {
           ) : (tools.length === 0 && uninstalledIntegrations.length === 0) ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 6, color: c.text.ghost, gap: 1.5 }}>
               <BuildIcon sx={{ fontSize: 40, opacity: 0.3 }} />
-              <Typography sx={{ fontSize: '0.9rem' }}>No custom actions defined yet. Create one to get started.</Typography>
+              <Typography sx={{ fontSize: '0.9rem' }}>No custom tools defined yet. Create one to get started.</Typography>
             </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1 }}>
