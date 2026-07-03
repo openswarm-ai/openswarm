@@ -29,6 +29,9 @@ async def agents_lifespan():
     for session_id in list(agent_manager.tasks.keys()):
         await agent_manager.stop_agent(session_id)
     await agent_manager.persist_all_sessions()
+    # Persistent CLI clients outlive turns; without this a uvicorn reload/quit orphans one subprocess per live session.
+    from backend.apps.agents.manager.run.client_pool import dispose_all_clients
+    await dispose_all_clients(agent_manager.client_pool)
 
 agents = SubApp("agents", agents_lifespan)
 

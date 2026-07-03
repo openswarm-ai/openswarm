@@ -50,14 +50,27 @@ class RunOptions(AgentManagerProtocol):
         from claude_agent_sdk import ClaudeAgentOptions
         from claude_agent_sdk.types import HookMatcher
 
-        hook_ctx = HookContext(
-            session=session,
-            session_id=session_id,
-            prompt=prompt,
-            builtin_perms=builtin_perms,
-            policy_defaults={},
-            sessions=self.sessions,
-        )
+        # Per-SESSION hook context, updated in place each turn: with a persistent client the hooks the
+        # CLI holds were bound at connect, so they must read this stable object, not a per-turn rebuild.
+        hook_ctx = self.hook_ctxs.get(session_id)
+        if hook_ctx is None:
+            hook_ctx = HookContext(
+                session=session,
+                session_id=session_id,
+                prompt=prompt,
+                builtin_perms=builtin_perms,
+                policy_defaults={},
+                sessions=self.sessions,
+            )
+            self.hook_ctxs[session_id] = hook_ctx
+        else:
+            hook_ctx.session = session
+            hook_ctx.prompt = prompt
+            hook_ctx.builtin_perms = builtin_perms
+            # Per-RUN counters reset each turn (same semantics a fresh ctx used to give).
+            hook_ctx.tool_start_times = {}
+            hook_ctx.ts_loop_count = 0
+            hook_ctx.mcp_offer_sent = False
 
         async def can_use_tool(tool_name, input_data, context):
             return await gate_hooks.can_use_tool(hook_ctx, tool_name, input_data, context)
@@ -143,7 +156,9 @@ class RunOptions(AgentManagerProtocol):
         session.provider = api_type
 
         # Capture the Claude CLI's stderr into a buffer so the retry classifier can see the real cause of a process crash (e.g. "No pool capacity available" from the OpenSwarm proxy, or the Anthropic SDK's 429/overloaded error body). Without this the SDK's ProcessError only stringifies to "Command failed with exit code 1 / Check stderr output for details", which masks transient capacity issues.
-        p_stderr_buffer: List[str] = []
+        # Per-SESSION buffer cleared in place each turn: a persistent client's stderr callback was bound at connect and must keep pointing at this exact list.
+        p_stderr_buffer = self.stderr_buffers.setdefault(session_id, [])
+        p_stderr_buffer.clear()
 
         def p_stderr_cb(line: str) -> None:
             p_stderr_buffer.append(line)

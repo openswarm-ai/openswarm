@@ -44,6 +44,11 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         self.live_partial: Dict[str, PartialReply] = {}
         # Per-session cancel signal: the loop stashes its asyncio.Event here so a stop/close can set it. Lives on the manager, not the AgentSession model, so it stays out of serialization (an Event can't be model_dump'd).
         self.cancel_events: Dict[str, asyncio.Event] = {}
+        # Persistent-client pool (lever A, flag-gated): one live CLI per session, reused across turns.
+        self.client_pool: Dict[str, object] = {}
+        # Per-SESSION hook context + stderr buffer, updated in place each turn: a persistent client's hooks/stderr callback were bound at connect, so they must read stable objects, not per-turn rebuilds.
+        self.hook_ctxs: Dict[str, object] = {}
+        self.stderr_buffers: Dict[str, List[str]] = {}
 
 
     @typechecked
@@ -85,6 +90,8 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         # Builtins default to always_allow (frictionless); path_gate still force-prompts on catastrophic patterns (rm -rf), OS-scheduling, and sensitive paths, so poisoned-email -> destructive-command is still caught. Flip Bash to "ask" in the UI for a prompt on every command. Bind turn + stderr first: build_agent_options can raise early (no provider) and the except hands both to handle_run_error.
         turn = TurnState()
         p_stderr_buffer: List[str] = []
+        # Read BEFORE build_agent_options consumes these flags: a fresh-session/fork request must force the persistent client to respawn (same branch id would otherwise fingerprint-match a client still holding the old transcript).
+        p_force_respawn = bool(session.needs_fresh_session or session.needs_fork or fork_session)
         try:
             (options, options_kwargs, prompt_content, p_stderr_buffer,
              global_settings) = await self.build_agent_options(
@@ -99,6 +106,7 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
             await self.run_turn_with_retry(
                 session, session_id, prompt_content, options, options_kwargs,
                 turn, thinking, p_stderr_buffer, resolved_model, api_type, global_settings,
+                force_respawn=p_force_respawn,
             )
             session.status = "completed"
 
