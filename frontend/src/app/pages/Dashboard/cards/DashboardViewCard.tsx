@@ -13,8 +13,10 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
 import TerminalRoundedIcon from '@mui/icons-material/TerminalRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import AddIcon from '@mui/icons-material/Add';
+import KeyboardArrowUpRounded from '@mui/icons-material/KeyboardArrowUpRounded';
 import { Output, SERVE_BASE } from '@/shared/state/outputsSlice';
-import { setViewCardPosition, setViewCardSize, setActiveViewCardId, recordClosedCard } from '@/shared/state/dashboardLayoutSlice';
+import { setViewCardPosition, setViewCardSize, setActiveViewCardId, recordClosedCard, addViewCard } from '@/shared/state/dashboardLayoutSlice';
 import { removeViewCardCleanly } from '@/shared/viewTeardown';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { API_BASE, getAuthToken } from '@/shared/config';
@@ -155,6 +157,10 @@ const DashboardViewCard: React.FC<Props> = ({
   // Preview/Code/Terminal switcher; only new-mode (workspace-backed) apps have code + terminal to show.
   const [activeView, setActiveView] = useState<AppCardView>('preview');
   const hasWorkspace = !!output.workspace_id;
+  // Chevron rolls the whole header away so an immersive app fills the card; hovering the top edge peeks it back.
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const [headerPeek, setHeaderPeek] = useState(false);
+  const showControls = !headerCollapsed || headerPeek;
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([]);
   const terminalLineIdRef = useRef(0);
   // Fed by the runtime logs WS (which replays its ring buffer on connect); frontend console lines arrive on the same socket via the console-log beacon echo.
@@ -341,6 +347,12 @@ const DashboardViewCard: React.FC<Props> = ({
     void removeViewCardCleanly(cardKey, dispatch);
   };
 
+  // Spawn ANOTHER independent instance of this app (own runtime + ports); the reducer picks the next #N and the lifecycle hook fits + highlights it.
+  const handleOpenAnother = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    dispatch(addViewCard({ outputId: output.id, newInstance: true }));
+  };
+
   const [reloadMenuRect, setReloadMenuRect] = useState<DOMRect | null>(null);
   const handleHardReload = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -449,13 +461,28 @@ const DashboardViewCard: React.FC<Props> = ({
         sx={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}
       />
 
+      {/* When collapsed, a thin invisible strip at the very top peeks the header back on hover (fullscreen-video pattern). */}
+      {headerCollapsed && (
+        <Box
+          onPointerEnter={() => setHeaderPeek(true)}
+          sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 16, zIndex: 15 }}
+        />
+      )}
+
       {/* Header */}
       <Box
         onPointerDown={handleDragPointerDown}
         onPointerMove={handleDragPointerMove}
         onPointerUp={handleDragPointerUp}
+        onPointerEnter={() => { if (headerCollapsed) setHeaderPeek(true); }}
+        onPointerLeave={() => setHeaderPeek(false)}
         sx={{
-          position: 'relative',
+          position: headerCollapsed ? 'absolute' : 'relative',
+          top: headerCollapsed ? 0 : undefined,
+          left: headerCollapsed ? 0 : undefined,
+          right: headerCollapsed ? 0 : undefined,
+          transform: headerCollapsed && !headerPeek ? 'translateY(-110%)' : 'translateY(0)',
+          transition: 'transform 0.18s ease',
           zIndex: 16,
           display: 'flex',
           alignItems: 'center',
@@ -490,65 +517,93 @@ const DashboardViewCard: React.FC<Props> = ({
           </Typography>
         )}
 
-        {hasWorkspace && (
-          <Box
-            onPointerDown={(e) => e.stopPropagation()}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.25,
-              bgcolor: c.bg.page,
-              borderRadius: 999,
-              p: 0.25,
-              flexShrink: 0,
-            }}
-          >
-            {([
-              { view: 'preview' as const, label: 'Preview', Icon: VisibilityRoundedIcon },
-              { view: 'code' as const, label: 'Code', Icon: CodeRoundedIcon },
-              { view: 'terminal' as const, label: 'Terminal', Icon: TerminalRoundedIcon },
-              { view: 'history' as const, label: 'History', Icon: HistoryRoundedIcon },
-            ]).map(({ view, label, Icon }) => (
-              <Tooltip key={view} title={label} placement="top">
+        {showControls && (
+          <>
+            {hasWorkspace && (
+              <Box
+                onPointerDown={(e) => e.stopPropagation()}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.25,
+                  bgcolor: c.bg.page,
+                  borderRadius: 999,
+                  p: 0.25,
+                  flexShrink: 0,
+                }}
+              >
+                {([
+                  { view: 'preview' as const, label: 'Preview', Icon: VisibilityRoundedIcon },
+                  { view: 'code' as const, label: 'Code', Icon: CodeRoundedIcon },
+                  { view: 'terminal' as const, label: 'Terminal', Icon: TerminalRoundedIcon },
+                  { view: 'history' as const, label: 'History', Icon: HistoryRoundedIcon },
+                ]).map(({ view, label, Icon }) => (
+                  <Tooltip key={view} title={label} placement="top">
+                    <IconButton
+                      size="small"
+                      onClick={(e) => { e.stopPropagation(); setActiveView(view); }}
+                      sx={{
+                        p: 0.5,
+                        borderRadius: 999,
+                        color: activeView === view ? c.text.primary : c.text.ghost,
+                        bgcolor: activeView === view ? c.bg.elevated : 'transparent',
+                        '&:hover': { color: c.text.primary, bgcolor: activeView === view ? c.bg.elevated : `${c.text.primary}0a` },
+                      }}
+                    >
+                      <Icon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  </Tooltip>
+                ))}
+              </Box>
+            )}
+
+            <Box onPointerDown={(e) => e.stopPropagation()} sx={{ display: 'flex', flexShrink: 0 }}>
+              <ShareButton target={{ kind: 'app', id: output.id, name: output.name }} size="small" iconFontSize={15} />
+            </Box>
+
+            <Tooltip
+              title={activeView === 'terminal' ? 'Hard reload (restart runtime + reload app)' : 'Reload preview; right-click for Hard Reload'}
+              placement="top"
+            >
+              <IconButton
+                size="small"
+                onClick={handleRefresh}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!output.workspace_id) return;
+                  setReloadMenuRect((e.currentTarget as HTMLElement).getBoundingClientRect());
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                sx={{ color: c.text.muted, p: 0.5, '&:hover': { color: c.text.primary } }}
+              >
+                <RefreshIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+
+            {hasWorkspace && (
+              <Tooltip title="Open another window" placement="top">
                 <IconButton
                   size="small"
-                  onClick={(e) => { e.stopPropagation(); setActiveView(view); }}
-                  sx={{
-                    p: 0.5,
-                    borderRadius: 999,
-                    color: activeView === view ? c.text.primary : c.text.ghost,
-                    bgcolor: activeView === view ? c.bg.elevated : 'transparent',
-                    '&:hover': { color: c.text.primary, bgcolor: activeView === view ? c.bg.elevated : `${c.text.primary}0a` },
-                  }}
+                  onClick={handleOpenAnother}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  sx={{ color: c.text.ghost, p: 0.5, '&:hover': { color: c.text.primary } }}
                 >
-                  <Icon sx={{ fontSize: 14 }} />
+                  <AddIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Tooltip>
-            ))}
-          </Box>
+            )}
+          </>
         )}
 
-        <Box onPointerDown={(e) => e.stopPropagation()} sx={{ display: 'flex', flexShrink: 0 }}>
-          <ShareButton target={{ kind: 'app', id: output.id, name: output.name }} size="small" iconFontSize={15} />
-        </Box>
-
-        <Tooltip
-          title={activeView === 'terminal' ? 'Hard reload (restart runtime + reload app)' : 'Reload preview; right-click for Hard Reload'}
-          placement="top"
-        >
+        <Tooltip title={headerCollapsed ? 'Show toolbar' : 'Hide toolbar'} placement="top">
           <IconButton
             size="small"
-            onClick={handleRefresh}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (!output.workspace_id) return;
-              setReloadMenuRect((e.currentTarget as HTMLElement).getBoundingClientRect());
-            }}
+            onClick={(e) => { e.stopPropagation(); setHeaderPeek(false); setHeaderCollapsed((v) => !v); }}
             onPointerDown={(e) => e.stopPropagation()}
-            sx={{ color: c.text.muted, p: 0.5, '&:hover': { color: c.text.primary } }}
+            sx={{ color: c.text.ghost, p: 0.5, '&:hover': { color: c.text.primary } }}
           >
-            <RefreshIcon sx={{ fontSize: 16 }} />
+            <KeyboardArrowUpRounded sx={{ fontSize: 18, transition: 'transform 0.15s', transform: headerCollapsed ? 'rotate(180deg)' : 'none' }} />
           </IconButton>
         </Tooltip>
 
