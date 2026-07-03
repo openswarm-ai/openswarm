@@ -28,7 +28,8 @@ P_NON_BOOT_KEYS = frozenset({"can_use_tool", "stderr", "hooks", "resume", "fork_
 
 
 def persistent_client_enabled() -> bool:
-    return os.environ.get("OSW_TTFT_PERSISTENT_CLIENT") == "1"
+    """Default ON (soak-proven: warm turns 535ms -> 6ms). Kill switch: OPENSWARM_PERSISTENT_CLIENT=0."""
+    return os.environ.get("OPENSWARM_PERSISTENT_CLIENT", "1") != "0"
 
 
 # Per-session field-level digests from the last fingerprint call; lets a mismatch log WHICH boot field drifted (probe-gated diagnostics only).
