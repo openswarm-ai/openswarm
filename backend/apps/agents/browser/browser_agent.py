@@ -1178,14 +1178,18 @@ async def run_browser_agent(
             browser_history.prune_stale_page_state(messages)
             browser_history.place_cache_marker(messages)
             p_llm_t0 = time.monotonic()
-            response = await p_cancellable(client.messages.create(
-                model=api_model,
-                max_tokens=4096,
-                # Cache the ~4k-token fixed prefix (system + tool schema) so it's reprocessed once, not on every turn: big TTFT + cost win on the first run, which is dominated by turns x per-turn prefill. The trailing cache_control marker is what Anthropic keys on; on non-Anthropic routes (9router) the marker is harmlessly ignored.
-                system=p_cached_system,
-                tools=p_cached_tools,
-                messages=messages,
-            ))
+
+            # STREAM, don't .create(): 9Router returns non-Anthropic lanes (Gemini/OpenRouter/Antigravity) as a REAL multi-event SSE stream that the non-streaming client parses to empty content, silently breaking tool-use on every non-Claude provider (measured: only cc/ emitted tool_use before this). The streaming parser reconstructs tool_use identically for ALL providers, so this is the model-independence fix, not a UX tweak. Cache marker still rides p_cached_system (Anthropic keys on it; other routes ignore it harmlessly).
+            async def p_stream_turn():
+                async with client.messages.stream(
+                    model=api_model,
+                    max_tokens=4096,
+                    system=p_cached_system,
+                    tools=p_cached_tools,
+                    messages=messages,
+                ) as p_s:
+                    return await p_s.get_final_message()
+            response = await p_cancellable(p_stream_turn())
             if response is None:
                 break
             p_llm_ms = int((time.monotonic() - p_llm_t0) * 1000)

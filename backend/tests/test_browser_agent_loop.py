@@ -30,16 +30,31 @@ class Resp:
         self.usage = type("U", (), {"input_tokens": 1, "output_tokens": 1})()
 
 
+class FakeStream:
+    # mirrors anthropic's messages.stream(): async CM whose get_final_message() returns the turn
+    def __init__(self, resp): self.resp = resp
+    async def __aenter__(self): return self
+    async def __aexit__(self, *a): return False
+    async def get_final_message(self): return self.resp
+
+
 class FakeLLM:
     def __init__(self, scripted):
         self.scripted = scripted; self.turn = 0; self.calls = []
         self.messages = self
 
-    async def create(self, **kw):
+    def p_next(self, kw):
         self.calls.append(kw)
         i = min(self.turn, len(self.scripted) - 1)
         self.turn += 1
         return self.scripted[i]
+
+    async def create(self, **kw):
+        return self.p_next(kw)
+
+    def stream(self, **kw):
+        # the loop now streams; return an async-CM yielding the scripted turn
+        return FakeStream(self.p_next(kw))
 
 
 class FakeAux:
