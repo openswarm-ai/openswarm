@@ -353,6 +353,66 @@ async def ensure_running():
         p_start_lock = asyncio.Lock()
     async with p_start_lock:
         await p_ensure_running_impl()
+    # Arm the watchdog the moment the router becomes a live dependency; users who never route through it never spawn it.
+    if is_running():
+        start_watchdog()
+
+
+def has_persisted_connections() -> bool:
+    """True when 9Router's on-disk db shows an active provider connection. Readable while the
+    router is DOWN, so revival logic can tell a sub-only user (revive!) from a zero-config one
+    (don't boot a router that has nothing to route). Fail-closed on any read problem."""
+    try:
+        import json as p_json
+        with open(os.path.join(p_nine_router_data_dir(), "db.json"), encoding="utf-8") as f:
+            db = p_json.load(f)
+        return any(
+            isinstance(c, dict) and c.get("isActive")
+            for c in (db.get("providerConnections") or [])
+        )
+    except Exception:
+        return False
+
+
+# 20s pulse while healthy; after 3 straight failed revives (no node, broken install) back way off so a dead-end setup logs once per 5min instead of crash-looping.
+P_WATCHDOG_INTERVAL_SECONDS = 20.0
+P_WATCHDOG_BACKOFF_SECONDS = 300.0
+p_watchdog_task: "asyncio.Task | None" = None
+
+
+async def p_watchdog_loop() -> None:
+    """Revive 9Router whenever it dies mid-session (OOM, crash, orphaned by a hard kill) so a
+    running app never sits on a dead router; only quitting OpenSwarm (stop()) ends it."""
+    failures = 0
+    while True:
+        await asyncio.sleep(P_WATCHDOG_BACKOFF_SECONDS if failures >= 3 else P_WATCHDOG_INTERVAL_SECONDS)
+        try:
+            if is_running():
+                failures = 0
+                continue
+            logger.warning("9Router watchdog: router is down; reviving")
+            await ensure_running()
+            if is_running():
+                failures = 0
+                logger.info("9Router watchdog: revived")
+            else:
+                failures += 1
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            failures += 1
+            logger.exception("9Router watchdog iteration failed")
+
+
+def start_watchdog() -> None:
+    """Idempotent; armed by ensure_running() on success, cancelled by stop()."""
+    global p_watchdog_task
+    if p_watchdog_task is not None and not p_watchdog_task.done():
+        return
+    try:
+        p_watchdog_task = asyncio.get_running_loop().create_task(p_watchdog_loop())
+    except RuntimeError:
+        logger.warning("9Router watchdog: no running loop; not armed")
 
 
 async def p_ensure_running_impl():
@@ -481,7 +541,11 @@ async def p_ensure_running_impl():
 
 def stop():
     """Stop the 9Router subprocess."""
-    global p_process
+    global p_process, p_watchdog_task
+    # Cancel the watchdog FIRST or it would revive the router we're about to kill (shutdown = the one sanctioned "down").
+    if p_watchdog_task is not None:
+        p_watchdog_task.cancel()
+        p_watchdog_task = None
     if p_process:
         try:
             p_process.terminate()
