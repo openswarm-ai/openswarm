@@ -20,6 +20,9 @@ from types import SimpleNamespace
 
 import pytest
 
+# Tests mock claude_agent_sdk.query, not ClaudeSDKClient; an inherited persistent-client flag would route mocked turns onto a REAL CLI spawn and wedge the suite. Pin it off; the persistent path has its own tests (test_client_pool.py + live gates).
+os.environ.pop("OSW_TTFT_PERSISTENT_CLIENT", None)
+
 
 @pytest.fixture(autouse=True)
 def _isolate_browser_state(monkeypatch):
