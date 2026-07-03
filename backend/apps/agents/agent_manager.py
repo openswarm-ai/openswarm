@@ -28,6 +28,7 @@ from backend.apps.agents.manager.RunSupport import RunSupport
 from backend.apps.agents.manager.run.handle_run_error import handle_run_error
 from backend.apps.agents.manager.run.TurnRunner import TurnRunner
 from backend.apps.agents.manager.run.RunOptions import RunOptions
+from backend.apps.agents.manager.ttft_probe import ttft_probe
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +52,15 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         session = self.sessions.get(session_id)
         if not session:
             return
-        
+        ttft_probe(session_id, "loop_start", fork=fork_session, model=session.model, msgs=len(session.messages))
+
         from backend.apps.agents.providers.registry import get_api_type as p_get_api_type
         p_api = p_get_api_type(session.model)
         prompt_content = self.build_prompt_content(
             prompt, images, context_paths, forced_tools, attached_skills,
             api_type=p_api, model=session.model,
         )
+        ttft_probe(session_id, "prompt_built")
 
         try:
             # SDK presence check: fall to mock mode here, before the options build, so a missing SDK is a clean mock run, not an error card. The real use is in run_options / turn_runner (lazy-imported there).
@@ -88,6 +91,7 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                 session, session_id, prompt, prompt_content, builtin_perms,
                 selected_browser_ids, selected_app_output_ids, selected_setting_ids,
                 fork_session, p_router_model_id, p_api_type_for_session)
+            ttft_probe(session_id, "options_built")
             resolved_model = p_router_model_id
             api_type = p_api_type_for_session
 
