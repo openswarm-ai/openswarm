@@ -66,6 +66,10 @@ if $SIGN_MODE; then
         echo "See script header for details."
         exit 1
     fi
+    # A signed build is a build users actually run, so its Widevine VMP signature
+    # is mandatory: the afterPack hook hard-fails on a missing/failed signature
+    # instead of shipping a DMG whose Spotify/Netflix audio is silently dead.
+    export VMP_REQUIRE_SIGN=1
 fi
 
 # Step 0: Ensure bundled uv + uvx binaries exist.
