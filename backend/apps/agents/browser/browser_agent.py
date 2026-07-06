@@ -427,6 +427,31 @@ def is_composer_fill(tool_name: str, tool_input: dict) -> bool:
     return False
 
 
+def fill_text_of(tool_name: str, tool_input: dict) -> str:
+    """The text a composer-fill action typed, '' when it isn't one."""
+    ti = tool_input or {}
+    if tool_name in ("BrowserClickIndex", "BrowserType"):
+        return str(ti.get("text") or "").strip()
+    if tool_name == "BrowserBatch":
+        for a in (ti.get("actions") or []):
+            p = a.get("params") or {}
+            if a.get("type") in ("type", "click_index") and str(p.get("text") or "").strip():
+                return str(p.get("text")).strip()
+    return ""
+
+
+def payload_in_textbox(state_text: str, payload: str) -> bool:
+    """True if any listed textbox VALUE carries the typed payload (fill committed).
+    Matches on a prefix because long payloads truncate in the list."""
+    probe = (payload or "")[:24]
+    if not probe:
+        return False
+    for line in (state_text or "").splitlines():
+        if "<textbox" in line and probe in line:
+            return True
+    return False
+
+
 async def post_action_state(
     tool_name: str, tool_input: dict, result: dict,
     browser_id: str, tab_id: str, wait_exec, goal: str,
@@ -1167,6 +1192,8 @@ async def run_browser_agent(
     # Completion detection: once an irreversible SEND has confirmed, the goal is met. The model otherwise stalls re-verifying what the confirm already proved (measured: send done at turn ~11, then ~12 wasted perception turns). We drive it to the OUTCOME and, if it keeps re-perceiving, end the run. A genuine multi-send task issues its NEXT send (an action) which resets the stall, so only true spinning ends here. This whole shortcut is meaningless for a gather/read task (no send to confirm), and arming it there let a cookie 'Accept all' click masquerade as the task's send, so we gate it on intent.
     task_is_send = not deliverable_is_informational("", task)
     send_confirmed = False
+    # Two-sided receipt evidence: the fill must have VISIBLY committed its text to a textbox before a send-class click may end the run in code. r228 clicked a send-labeled control after an uncommitted fill and the old click-name-only receipt claimed a send that never happened.
+    composer_committed_payload = ""
     perception_stall = 0           # consecutive turns the model only LOOKED (no action)
     P_POST_SEND_STALL_LIMIT = 2     # once the send registered, finish fast
     P_PERCEPTION_STALL_LIMIT = 6    # backstop when we couldn't detect the send (e.g. Enter): bound the spin
@@ -1758,17 +1785,33 @@ async def run_browser_agent(
                         for r in (result.get("results") or []))
                     if p_send_click:
                         send_confirmed = True
-                        if os.environ.get("OSW_RECEIPT_DONE", "1") != "0":
-                            # Deterministic receipt: the clean send click IS the proof, so the run ends here in code instead of paying one more model turn for a Done. Same honesty bar (the click + composer-clear is the evidence the gate reads), ~3s less wall per send.
-                            done_called = True
-                            done_success = True
-                            p_payload = browser_batch_replay.send_payload_from_log(action_log, task)
-                            done_message = (
-                                f'Sent "{p_payload}", the send registered and the composer cleared.'
-                                if p_payload else
-                                "Sent it, the send registered and the composer cleared."
-                            )
-                            logger.info(f"[browser-receipt {session_id}] send receipt passed; run ends in code (no Done turn)")
+                        if os.environ.get("OSW_RECEIPT_DONE", "1") != "0" and composer_committed_payload:
+                            # Deterministic receipt, two-sided: the fill was SEEN committed to a textbox earlier, and the box must now be SEEN empty of it. Click-name alone is not proof (r228: send-labeled click after an uncommitted fill = false success); missing evidence falls through to the old model-verified path, so the failure mode costs turns, never a lie.
+                            p_receipt_ok = False
+                            try:
+                                for p_rw in (0.4, 1.0):
+                                    await asyncio.sleep(p_rw)
+                                    p_rl2 = await asyncio.wait_for(
+                                        p_wait_exec("BrowserListInteractives", {}, browser_id, tab_id),
+                                        timeout=5.0)
+                                    if isinstance(p_rl2, dict) and "error" not in p_rl2 and p_rl2.get("text"):
+                                        if not payload_in_textbox(str(p_rl2["text"]), composer_committed_payload):
+                                            p_receipt_ok = True
+                                        break
+                            except Exception:
+                                p_receipt_ok = False
+                            if p_receipt_ok:
+                                done_called = True
+                                done_success = True
+                                p_payload = browser_batch_replay.send_payload_from_log(action_log, task)
+                                done_message = (
+                                    f'Sent "{p_payload}", the send registered and the composer cleared.'
+                                    if p_payload else
+                                    "Sent it, the send registered and the composer cleared."
+                                )
+                                logger.info(f"[browser-receipt {session_id}] two-sided receipt passed (fill committed + composer cleared); run ends in code")
+                            else:
+                                logger.info(f"[browser-receipt {session_id}] receipt WITHHELD (composer state unverified); model verifies")
                         result["text"] = (f"{result.get('text') or ''}\n\n[task complete] The send "
                             "went through (the composer cleared). Don't re-check it. Finish now by "
                             "calling Done with your reply to the user.")
@@ -1828,6 +1871,9 @@ async def run_browser_agent(
                     result["text"] = f"{result.get('text') or ''}{p_auto_state}"
                     # a mutation attached fresh state; it stays "available" through intervening reads (Wait/Extract don't invalidate it), so a later solo re-list is still caught as redundant.
                     fresh_state_pending = True
+                p_fill_text = fill_text_of(tu.name, tool_input)
+                if p_fill_text and payload_in_textbox(p_auto_state or "", p_fill_text):
+                    composer_committed_payload = p_fill_text
 
                 # One gentle nudge per violating turn, folded onto the action that ran, so the model self-corrects next turn without us costing it one.
                 if rp_reminder_pending and tu.name in ACTION_TOOLS_REQUIRING_REPORT:
