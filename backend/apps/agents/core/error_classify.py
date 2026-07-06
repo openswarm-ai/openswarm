@@ -233,6 +233,29 @@ def is_out_of_tokens(exc: BaseException, extra_text: str = "") -> bool:
 
 
 @typechecked
+def is_context_pressure_death(exc: BaseException, compact_boundaries: int, extra_text: str = "") -> bool:
+    """The CLI autocompact-thrash class: the process compacted during this turn and then
+    died with a bare exit-1 ProcessError (its thrash detector gives up after 3 refill
+    cycles, which can straddle turns on a persistent client, so one boundary in the dying
+    turn is the reliable tell). Only claims deaths no other classifier owns, so auth/
+    capacity/credit errors keep their specific handling; a misfire costs one bounded
+    silent retry, a miss just means today's error card.
+    """
+    if compact_boundaries < 1:
+        return False
+    # Type-name check, not isinstance: the SDK is lazy-imported (mock mode must work without it), mirroring the client-pool dead-client idiom.
+    if "ProcessError" not in type(exc).__name__:
+        return False
+    for p_claimed_by in (
+        is_long_context_error, is_transient_capacity_error, is_free_trial_exhausted,
+        is_out_of_tokens, is_auth_error, is_unknown_model_error,
+    ):
+        if p_claimed_by(exc, extra_text=extra_text):
+            return False
+    return True
+
+
+@typechecked
 def extract_reset_hint(text: str) -> str:
     """Pull a human reset phrase ('at 7:42 AM', 'in 2h 30m', 'after 1m 59s') out of
     a provider usage error so we can tell the user when their limit comes back.

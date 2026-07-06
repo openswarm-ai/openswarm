@@ -99,6 +99,8 @@ class TurnRunner(AgentManagerProtocol):
                 if isinstance(message, SystemMessage):
                     raw = message.__dict__ if hasattr(message, '__dict__') else str(message)
                     logger.info(f"[MCP-DEBUG] SystemMessage: {raw}")
+                    if getattr(message, "subtype", "") == "compact_boundary":
+                        turn.compact_boundaries += 1
 
                 if isinstance(message, StreamEvent):
                     await handle_stream_event(

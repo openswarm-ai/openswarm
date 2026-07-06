@@ -54,3 +54,5 @@ class TurnState(BaseModel):
     baseline_children_in: int = 0
     baseline_children_out: int = 0
     baseline_captured: bool = False
+    # CLI compact_boundary events seen this turn; one plus a ProcessError = the autocompact-thrash death the context-pressure valve retries.
+    compact_boundaries: int = 0

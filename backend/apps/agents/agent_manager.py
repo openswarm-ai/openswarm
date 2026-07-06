@@ -51,7 +51,7 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
 
 
     @typechecked
-    async def run_agent_loop(self, session_id: str, prompt: str, images: Optional[List] = None, context_paths: Optional[List] = None, forced_tools: Optional[List[str]] = None, attached_skills: Optional[List] = None, fork_session: bool = False, selected_browser_ids: Optional[List[str]] = None, selected_app_output_ids: Optional[List[str]] = None, selected_setting_ids: Optional[List[str]] = None):
+    async def run_agent_loop(self, session_id: str, prompt: str, images: Optional[List] = None, context_paths: Optional[List] = None, forced_tools: Optional[List[str]] = None, attached_skills: Optional[List] = None, fork_session: bool = False, selected_browser_ids: Optional[List[str]] = None, selected_app_output_ids: Optional[List[str]] = None, selected_setting_ids: Optional[List[str]] = None, context_valve_retry: bool = False):
         """Run the Claude Agent SDK query loop for a session."""
         session = self.sessions.get(session_id)
         if not session:
@@ -131,6 +131,45 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
             turn.stream_text_msg_id = None
             turn.stream_text_accum = ""
         except Exception as e:
+            from backend.apps.agents.core.error_classify import is_context_pressure_death
+            p_stderr_tail = "\n".join(p_stderr_buffer[-50:])
+            if not context_valve_retry and is_context_pressure_death(e, turn.compact_boundaries, extra_text=p_stderr_tail):
+                # Pressure-release valve: the CLI compacted this turn and still died (its "autocompact is thrashing" giving-up class). Its resume transcript is beyond saving, but ours isn't: rebuild from the local mirror via the proven fresh-session recap path and transparently re-run the turn ONCE.
+                logger.warning(
+                    f"Agent {session_id}: context-pressure death after "
+                    f"{turn.compact_boundaries} compact boundaries; one fresh-session recap retry"
+                )
+                session.needs_fresh_session = True
+                if turn.stream_text_msg_id:
+                    await ws_manager.send_to_session(session_id, "agent:stream_end", {
+                        "session_id": session_id,
+                        "message_id": turn.stream_text_msg_id,
+                    })
+                for p_tool_msg_id in turn.stream_tool_msg_ids_ordered:
+                    await ws_manager.send_to_session(session_id, "agent:stream_end", {
+                        "session_id": session_id,
+                        "message_id": p_tool_msg_id,
+                    })
+                self.live_partial.pop(session_id, None)
+                try:
+                    from backend.apps.service.client import submit_diagnostic
+                    from backend.apps.agents.core.error_classify import redact_for_telemetry
+                    submit_diagnostic({
+                        "kind": "context_pressure_valve",
+                        "session_id": session_id,
+                        "model": session.model,
+                        "compact_boundaries": turn.compact_boundaries,
+                        "error_preview": redact_for_telemetry(str(e), limit=300),
+                    })
+                except Exception:
+                    logger.debug("submit_diagnostic context_pressure_valve failed", exc_info=True)
+                await self.run_agent_loop(
+                    session_id, prompt, images, context_paths, forced_tools,
+                    attached_skills, fork_session, selected_browser_ids,
+                    selected_app_output_ids, selected_setting_ids,
+                    context_valve_retry=True,
+                )
+                return
             await handle_run_error(e, session, session_id, turn, p_stderr_buffer)
         except BaseException as e:
             # Catch BaseExceptionGroup from anyio task groups (e.g. concurrent CLI crash + pending approval cancellation) so it doesn't escape and kill the uvicorn process.
