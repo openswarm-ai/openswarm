@@ -18,7 +18,7 @@ on:
 
 jobs:
   verify:
-    runs-on: ${{ inputs.runner || 'macos-15-large' }}
+    runs-on: ${{ inputs.runner || 'macos-15-intel' }}
     timeout-minutes: 25
     steps:
       - name: prove this runner is real Intel silicon
