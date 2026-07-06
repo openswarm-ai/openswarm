@@ -75,7 +75,8 @@ jobs:
           # a real invocation exercises the JIT/network paths; a clean auth
           # error (not a SIGILL/crash) is the pass condition
           set +e
-          ANTHROPIC_API_KEY=sk-ant-invalid timeout 90 "$CLI" -p "hi" --model claude-haiku-4-5-20251001 > /tmp/cli-run.out 2>&1
+          # macOS has no `timeout`; perl alarm is the portable equivalent
+          ANTHROPIC_API_KEY=sk-ant-invalid perl -e 'alarm 90; exec @ARGV' -- "$CLI" -p "hi" --model claude-haiku-4-5-20251001 > /tmp/cli-run.out 2>&1
           CODE=$?
           set -e
           cat /tmp/cli-run.out
