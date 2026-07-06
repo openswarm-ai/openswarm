@@ -98,3 +98,55 @@ jobs:
           kill $APP_PID 2>/dev/null || true
           tail -30 /tmp/boot.log || true
           test "$CODE" = "200"
+
+  verify-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: download published Setup.exe
+        shell: pwsh
+        run: |
+          curl.exe -sSL -o $env:TEMP\OpenSwarm-Setup-x64.exe "https://github.com/${{ github.repository }}/releases/latest/download/OpenSwarm-Setup-x64.exe"
+          Get-Item $env:TEMP\OpenSwarm-Setup-x64.exe | Select-Object Name,Length
+
+      - name: silent install (Squirrel)
+        shell: pwsh
+        run: |
+          Start-Process -FilePath "$env:TEMP\OpenSwarm-Setup-x64.exe" -ArgumentList "--silent"
+          $deadline = (Get-Date).AddMinutes(8)
+          do {
+            Start-Sleep -Seconds 5
+            $exe = Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Depth 2 -Filter "OpenSwarm.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          } until ($exe -or (Get-Date) -gt $deadline)
+          if (-not $exe) { Get-ChildItem "$env:LOCALAPPDATA" -Depth 1 | Select-Object FullName; throw "installed OpenSwarm.exe not found" }
+          echo "APP_EXE=$($exe.FullName)" >> $env:GITHUB_ENV
+          echo "APP_DIR=$($exe.DirectoryName)" >> $env:GITHUB_ENV
+          echo "installed at $($exe.FullName)"
+
+      - name: bundled python + claude CLI run on real Windows x64
+        shell: pwsh
+        run: |
+          $py = Join-Path $env:APP_DIR "resources\python-env\python.exe"
+          & $py --version
+          if ($LASTEXITCODE -ne 0) { throw "python --version failed" }
+          & $py -c "import fastapi, anthropic, pydantic, httpx, jsonschema, claude_agent_sdk; print('deps ok')"
+          if ($LASTEXITCODE -ne 0) { throw "import smoke failed" }
+          $cli = Get-ChildItem (Join-Path $env:APP_DIR "resources\python-env") -Recurse -Filter "claude*" -ErrorAction SilentlyContinue | Where-Object { $_.Directory.Name -eq "_bundled" } | Select-Object -First 1
+          if (-not $cli) { throw "bundled claude CLI not found" }
+          & $cli.FullName --version
+          if ($LASTEXITCODE -ne 0) { throw "claude --version failed" }
+
+      - name: boot the installed app, poll backend health
+        shell: pwsh
+        run: |
+          $env:OPENSWARM_E2E = "1"
+          Start-Process -FilePath $env:APP_EXE
+          $code = 0
+          foreach ($i in 1..60) {
+            Start-Sleep -Seconds 3
+            try { $code = (Invoke-WebRequest -Uri "http://127.0.0.1:8324/api/health/check" -UseBasicParsing -TimeoutSec 2).StatusCode } catch { $code = 0 }
+            if ($code -eq 200) { break }
+          }
+          echo "health=$code"
+          Stop-Process -Name "OpenSwarm" -Force -ErrorAction SilentlyContinue
+          if ($code -ne 200) { throw "backend never became healthy" }
