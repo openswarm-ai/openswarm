@@ -190,6 +190,18 @@ def call_backend(tasks: list[dict]) -> dict:
 
 
 MAX_IMAGE_B64_BYTES = 400_000
+MAX_SUMMARY_CHARS = 16_000
+MAX_ACTION_LOG_ENTRIES = 40
+
+
+def p_cap_summary(text: str) -> str:
+    """Head+tail split: the CLI hard-rejects tool results past ~25K tokens, and a vanished report is worse than a trimmed one."""
+    if len(text) <= MAX_SUMMARY_CHARS:
+        return text
+    head = text[: MAX_SUMMARY_CHARS - 4_000]
+    tail = text[-3_500:]
+    omitted = len(text) - len(head) - len(tail)
+    return f"{head}\n\n[... {omitted} chars of the report omitted ...]\n\n{tail}"
 
 
 def p_sniff_image_mime(b64: str) -> str:
@@ -233,12 +245,16 @@ def format_result(result: dict) -> dict:
     action_log = result.get("action_log", [])
 
     lines = [f"**Browser Agent Result** (browser: {browser_id}, session: {session_id})", ""]
-    lines.append(f"**Summary:** {summary}")
+    lines.append(f"**Summary:** {p_cap_summary(summary)}")
 
     if action_log:
         lines.append("")
         lines.append("**Actions taken:**")
-        for i, entry in enumerate(action_log, 1):
+        entries = action_log[-MAX_ACTION_LOG_ENTRIES:]
+        omitted = len(action_log) - len(entries)
+        if omitted > 0:
+            lines.append(f"  (... {omitted} earlier actions omitted ...)")
+        for i, entry in enumerate(entries, omitted + 1):
             tool = entry.get("tool", "?")
             inp = entry.get("input", {})
             ms = entry.get("elapsed_ms", 0)
