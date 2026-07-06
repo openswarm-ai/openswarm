@@ -26,6 +26,22 @@ elif [[ "${1:-}" == "--sign" ]]; then
     SIGN_MODE=true
 fi
 
+# Arch targets for this run. Publish always builds both DMGs; otherwise
+# OSW_BUILD_ARCH (arm64|x64|both) overrides, defaulting to the host. Node,
+# python-env, and the electron-builder flags below all derive from this ONE
+# list, so a staged-arch vs packed-arch mismatch can't happen (the class of
+# bug that shipped arm64 python inside the x64 DMG).
+if $PUBLISH_MODE; then
+    BUILD_ARCHS=(arm64 x64)
+else
+    case "${OSW_BUILD_ARCH:-host}" in
+        both)  BUILD_ARCHS=(arm64 x64) ;;
+        x64)   BUILD_ARCHS=(x64) ;;
+        arm64) BUILD_ARCHS=(arm64) ;;
+        *)     if [[ "$(uname -m)" == "x86_64" ]]; then BUILD_ARCHS=(x64); else BUILD_ARCHS=(arm64); fi ;;
+    esac
+fi
+
 # Defensive: detach any leftover OpenSwarm DMG volumes from prior failed builds.
 # hdiutil's "Resource busy" / volume-name-collision errors almost always trace
 # back to a stale mount in /Volumes (e.g. after a build crash or a still-open
@@ -265,17 +281,6 @@ fi
 echo "Frontend build complete."
 echo ""
 
-# Step 2: Build Python environment
-echo "[2/4] Building Python environment..."
-bash "$SCRIPT_DIR/build-python-env.sh"
-
-if [[ ! -d "$PROJECT_ROOT/electron/python-env" ]]; then
-    echo "ERROR: Python environment not found at electron/python-env/"
-    exit 1
-fi
-echo "Python environment ready."
-echo ""
-
 # Step 3: Fetch Router from npm
 # The 9router Next.js server is published as an npm package with a pre-built
 # standalone output. We install it into a scratch dir and stage it directly
@@ -291,6 +296,19 @@ if [[ ! -f "$STAGING_DIR/router/server.js" ]]; then
     exit 1
 fi
 echo "Router staged."
+echo ""
+
+# Step 3a: Bundled Python env, one per target arch (must run AFTER the
+# build-staging reset above or the freshly staged envs get wiped).
+echo "[3a] Building bundled Python env(s): ${BUILD_ARCHS[*]}"
+for A in "${BUILD_ARCHS[@]}"; do
+    bash "$SCRIPT_DIR/build-python-env.sh" "$A"
+    if [[ ! -f "$STAGING_DIR/python-env/$A/bin/python3.13" ]]; then
+        echo "ERROR: python-env ($A) missing at $STAGING_DIR/python-env/$A"
+        exit 1
+    fi
+done
+echo "Python environment(s) ready."
 echo ""
 
 # Step 3b: Bundle a real Node.js binary so 9Router and MCP servers don't
@@ -351,21 +369,10 @@ NPMSH
     echo "[3b] Node $NODE_VERSION ($arch) staged ($(du -h "$out_dir/bin/node" | cut -f1))"
 }
 
-# Publish mode builds both DMGs from one invocation, so always stage both.
-# Single-arch local/sign builds only need the host arch.
-if $PUBLISH_MODE; then
-    download_node_for_arch arm64
-    download_node_for_arch x64
-else
-    HOST_ARCH=$(uname -m)
-    if [[ "$HOST_ARCH" == "arm64" ]]; then
-        download_node_for_arch arm64
-    elif [[ "$HOST_ARCH" == "x86_64" ]]; then
-        download_node_for_arch x64
-    else
-        echo "WARNING: unknown host arch $HOST_ARCH — skipping node bundle (will fall back to ELECTRON_RUN_AS_NODE)"
-    fi
-fi
+# Stage node for every arch this run packs (BUILD_ARCHS decides, top of file).
+for A in "${BUILD_ARCHS[@]}"; do
+    download_node_for_arch "$A"
+done
 echo ""
 
 # Step 3c: Pre-build the webapp-template node_modules archive so first-app
@@ -488,27 +495,19 @@ fi
 # Caller's NODE_OPTIONS is respected if already set.
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=12288}"
 
+# Pack exactly the arches we staged for (BUILD_ARCHS, top of file).
+EB_ARCH_FLAGS=()
+for A in "${BUILD_ARCHS[@]}"; do
+    EB_ARCH_FLAGS+=("--$A")
+done
+
 if $PUBLISH_MODE; then
-    npx electron-builder --mac --arm64 --x64 --publish always
+    npx electron-builder --mac "${EB_ARCH_FLAGS[@]}" --publish always
 elif $SIGN_MODE; then
-    ARCH=$(uname -m)
-    if [[ "$ARCH" == "arm64" ]]; then
-        npx electron-builder --mac --arm64 --publish never
-    elif [[ "$ARCH" == "x86_64" ]]; then
-        npx electron-builder --mac --x64 --publish never
-    else
-        npx electron-builder --mac --publish never
-    fi
+    npx electron-builder --mac "${EB_ARCH_FLAGS[@]}" --publish never
 else
     export CSC_IDENTITY_AUTO_DISCOVERY=false
-    ARCH=$(uname -m)
-    if [[ "$ARCH" == "arm64" ]]; then
-        npx electron-builder --mac --arm64 --publish never
-    elif [[ "$ARCH" == "x86_64" ]]; then
-        npx electron-builder --mac --x64 --publish never
-    else
-        npx electron-builder --mac --publish never
-    fi
+    npx electron-builder --mac "${EB_ARCH_FLAGS[@]}" --publish never
 fi
 
 rm -rf "$PROJECT_ROOT/electron/build-staging"
