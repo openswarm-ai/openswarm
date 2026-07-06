@@ -84,16 +84,24 @@ def perception_block(li_text: str, gt_text: str, stage_note: str = "") -> str:
     )
 
 
-def stage_note_for(start_url: str, done: list[str], current_url: str) -> str:
+def stage_note_for(start_url: str, done: list[str], current_url: str, complete: bool) -> str:
     """Without this the main model re-verifies the route from scratch (observed:
-    it navigated straight back to the start page), erasing the staging win."""
+    it navigated straight back to the start page), erasing the staging win. The
+    note must never overclaim: a partial stage saying 'navigation DONE' sent the
+    main loop on a 27-turn walkabout (observed live)."""
     if not done:
         return ""
+    if complete:
+        return (
+            f"[Pre-staged for you and VERIFIED: starting from {start_url or 'the entry page'}, "
+            f"already performed: {'; '.join(done)}. You are NOW on {current_url}. The "
+            "navigation part of the task is DONE, do not go back or re-verify it; "
+            "perform only the remaining final action(s).]"
+        )
     return (
-        f"[Pre-staged for you and VERIFIED: starting from {start_url or 'the entry page'}, "
-        f"already performed: {'; '.join(done)}. You are NOW on {current_url}. The "
-        "navigation part of the task is DONE, do not go back or re-verify it; "
-        "perform only the remaining final action(s).]"
+        f"[Partial pre-staging: already performed {'; '.join(done)}. You are NOW on "
+        f"{current_url}. Continue from HERE (do not restart from the beginning); "
+        "finish the remaining navigation and the task yourself.]"
     )
 
 
@@ -136,15 +144,17 @@ async def run_prestage(
         steps = 0
         done_desc: list[str] = []
         seen_steps: set[tuple[str, str]] = set()
+        staged_complete = False
 
-        async def settle(pre_url: str, pre_text: str) -> None:
-            # A click returns before the page swaps; perceiving too early reads the OLD page and the aux re-issues the same click (observed 4x loop). Wait for the page to actually change, capped.
+        async def settle(pre_url: str, pre_text: str) -> bool:
+            # A click returns before the page swaps; perceiving too early reads the OLD page and the aux re-issues the same click (observed 4x loop). Wait for the page to actually change, capped. False = the action verifiably did NOT take.
             t_s = time.monotonic()
             while time.monotonic() - t_s < 3.0:
                 await asyncio.sleep(0.35)
                 li2, gt2, u2 = await perceive()
                 if (u2 and u2 != pre_url) or (gt2 and gt2[:400] != pre_text[:400]):
-                    return
+                    return True
+            return False
         while steps < MAX_STEPS and (time.monotonic() - t0) < TOTAL_TIMEOUT_S:
             li_text, gt_text, seen_url = await perceive()
             current_url = seen_url or current_url
@@ -161,6 +171,7 @@ async def run_prestage(
             )).strip()
             verb, arg = parse_step(reply)
             if verb == "ready" or not arg:
+                staged_complete = True
                 logger.info(f"[browser-prestage] READY after {steps} step(s): {arg[:80]}")
                 break
             # Any revisit (not just consecutive) is a loop signal: an A/B nav flap slipped past the consecutive-only check.
@@ -179,8 +190,10 @@ async def run_prestage(
                 logger.info(f"[browser-prestage] step {steps + 1}: nav {arg} ok={ok}")
                 if not ok:
                     break
+                if not await settle(current_url, gt_text):
+                    logger.info(f"[browser-prestage] nav {arg} did not settle; stopping unstaged")
+                    break
                 done_desc.append(f"navigated to {arg}")
-                await settle(current_url, gt_text)
             else:
                 try:
                     idx = int(re.sub(r"\D", "", arg) or "-1")
@@ -197,14 +210,17 @@ async def run_prestage(
                 logger.info(f"[browser-prestage] step {steps + 1}: click [{idx}] {entry[:60]!r} ok={ok}")
                 if not ok:
                     break
+                if not await settle(current_url, gt_text):
+                    # The click ran but the page never changed (occluded element, overlay, stale index). Recording it would make the handoff note LIE ("navigation done") and send the main loop on a walkabout; observed live as 27-turn/112s regressions.
+                    logger.info(f"[browser-prestage] click [{idx}] did not settle; stopping unstaged")
+                    break
                 done_desc.append(f"clicked {entry[:70]}")
-                await settle(current_url, gt_text)
             steps += 1
 
         if steps:
             li_text, gt_text, seen_url = await perceive()
             current_url = seen_url or current_url
-        block = perception_block(li_text, gt_text, stage_note_for(start_url, done_desc, current_url))
+        block = perception_block(li_text, gt_text, stage_note_for(start_url, done_desc, current_url, staged_complete))
         for tool_name, text in (("BrowserListInteractives", li_text), ("BrowserGetText", gt_text)):
             if text:
                 recs.append({"tool": tool_name, "input": {}, "ok": True,
