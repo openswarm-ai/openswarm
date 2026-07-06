@@ -6,6 +6,9 @@ name: intel-x64-verify
 # every binary's arch, runs the bundled python + CLI, then boots the whole app
 # and polls backend health.
 on:
+  push:
+    branches: [eric/intel-x64-fix]
+    paths: ['.github/workflows/intel-x64-verify.yml']
   workflow_dispatch:
     inputs:
       runner:
@@ -15,7 +18,7 @@ on:
 
 jobs:
   verify:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || 'macos-15-large' }}
     timeout-minutes: 25
     steps:
       - name: prove this runner is real Intel silicon
