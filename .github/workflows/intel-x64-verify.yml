@@ -1,0 +1,96 @@
+name: intel-x64-verify
+
+# One-off, manually dispatched: prove the published x64 DMG on REAL Intel mac
+# hardware (the arm64 build host can't; Rosetta lacks AVX so the bundled Bun
+# claude CLI is untestable there). Downloads the live release asset, checks
+# every binary's arch, runs the bundled python + CLI, then boots the whole app
+# and polls backend health.
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'runner label (must be an Intel x64 mac)'
+        default: 'macos-15-large'
+        required: true
+
+jobs:
+  verify:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 25
+    steps:
+      - name: prove this runner is real Intel silicon
+        run: |
+          set -x
+          uname -m
+          sysctl -n machdep.cpu.brand_string
+          sysctl hw.optional.avx1_0 hw.optional.avx2_0
+          test "$(uname -m)" = "x86_64"
+          test "$(sysctl -n hw.optional.avx1_0)" = "1"
+
+      - name: download published x64 DMG
+        run: |
+          curl -sSL -o /tmp/x64.dmg "https://github.com/${{ github.repository }}/releases/latest/download/OpenSwarm-x64.dmg"
+          ls -la /tmp/x64.dmg
+          hdiutil attach -nobrowse -readonly -mountpoint /tmp/oswmnt /tmp/x64.dmg
+          mkdir -p /tmp/oswapp
+          ditto /tmp/oswmnt/OpenSwarm.app /tmp/oswapp/OpenSwarm.app
+          hdiutil detach /tmp/oswmnt
+
+      - name: gatekeeper + signature
+        run: |
+          codesign --verify --deep --strict /tmp/oswapp/OpenSwarm.app
+          spctl -a -t exec -vv /tmp/oswapp/OpenSwarm.app
+          xcrun stapler validate /tmp/oswapp/OpenSwarm.app
+
+      - name: binary arch census
+        run: |
+          R=/tmp/oswapp/OpenSwarm.app/Contents/Resources
+          for b in \
+            /tmp/oswapp/OpenSwarm.app/Contents/MacOS/OpenSwarm \
+            "$R/python-env/bin/python3.13" \
+            "$R/python-env/lib/python3.13/site-packages/claude_agent_sdk/_bundled/claude" \
+            "$R/node/x64/bin/node" \
+            "$R/backend/uv-bin/uv"; do
+            A=$(lipo -archs "$b")
+            echo "$A  $b"
+            case "$A" in *x86_64*) ;; *) echo "WRONG ARCH"; exit 1;; esac
+          done
+
+      - name: bundled python runs natively + backend deps import
+        run: |
+          R=/tmp/oswapp/OpenSwarm.app/Contents/Resources
+          "$R/python-env/bin/python3" --version
+          "$R/python-env/bin/python3" -c "import fastapi, anthropic, pydantic, httpx, jsonschema, claude_agent_sdk; print('deps ok')"
+
+      - name: bundled claude CLI runs natively (the AVX gate Rosetta could not test)
+        run: |
+          CLI=/tmp/oswapp/OpenSwarm.app/Contents/Resources/python-env/lib/python3.13/site-packages/claude_agent_sdk/_bundled/claude
+          OUT=$("$CLI" --version 2>&1); echo "$OUT"
+          echo "$OUT" | grep -q "Claude Code"
+          if echo "$OUT" | grep -qi "lacks AVX"; then echo "AVX warning on real Intel = fail"; exit 1; fi
+          "$CLI" --help > /dev/null
+          # a real invocation exercises the JIT/network paths; a clean auth
+          # error (not a SIGILL/crash) is the pass condition
+          set +e
+          ANTHROPIC_API_KEY=sk-ant-invalid timeout 90 "$CLI" -p "hi" --model claude-haiku-4-5-20251001 > /tmp/cli-run.out 2>&1
+          CODE=$?
+          set -e
+          cat /tmp/cli-run.out
+          echo "exit=$CODE"
+          # 132=SIGILL 139=SIGSEGV 134=SIGABRT: any of those = AVX/crash class
+          if [ $CODE -eq 132 ] || [ $CODE -eq 139 ] || [ $CODE -eq 134 ]; then exit 1; fi
+
+      - name: boot the full app, poll backend health
+        run: |
+          cd /tmp/oswapp
+          OPENSWARM_E2E=1 ./OpenSwarm.app/Contents/MacOS/OpenSwarm > /tmp/boot.log 2>&1 &
+          APP_PID=$!
+          for i in $(seq 1 60); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:8324/api/health/check || true)
+            [ "$CODE" = "200" ] && break
+            sleep 2
+          done
+          echo "health=$CODE after ~$((i*2))s"
+          kill $APP_PID 2>/dev/null || true
+          tail -30 /tmp/boot.log || true
+          test "$CODE" = "200"
