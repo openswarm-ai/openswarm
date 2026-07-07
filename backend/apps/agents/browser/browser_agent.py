@@ -565,6 +565,7 @@ async def run_browser_agent(
     initial_url: str | None = None,
     parent_session_id: str | None = None,
     app_mode: bool = False,
+    user_prompt: str = "",
 ) -> dict:
     """Run a browser sub-agent loop for a single browser card.
 
@@ -1221,6 +1222,7 @@ async def run_browser_agent(
             p_script = await asyncio.wait_for(browser_send_script.run_send_script(
                 task, browser_id, tab_id, preloaded_perception,
                 execute_browser_tool, send_index_in_state, payload_in_textbox,
+                payload_source=user_prompt,
             ), timeout=30.0)
         except Exception as p_se:
             logger.info(f"[browser-sendscript] outer skip ({p_se})")
@@ -2536,6 +2538,7 @@ async def run_browser_agents(
                 initial_url=None if app_mode else (p_nav_url if p_nav_url and (url or browser_id not in pre_selected) else None),
                 parent_session_id=parent_session_id,
                 app_mode=app_mode,
+                user_prompt=str(task_def.get("user_prompt") or ""),
             )
         finally:
             if not app_mode:

@@ -48,6 +48,13 @@ def quoted_payload(task: str) -> str:
 
 P_OPENER_ROW_RE = re.compile(r"\[(\d+)\]\*?<\s*(?:link|button)\s+\"(Message|Reply|Compose|New message)\"", re.I)
 
+# A verification probe quotes the very payload it's checking for, which is exactly the trap this gate exists for: quoted payload + composer = fire. Caught live (r243): the read-only send-probe delivered a REAL message. Read-only directives decline in code, fail-safe (a false match just means the model path).
+P_READONLY_RE = re.compile(
+    r"read.?only|do\s+not\s+(?:send|type|click|post|submit)|don'?t\s+(?:send|post|submit)|"
+    r"verify\s+whether|check\s+whether|verification",
+    re.I,
+)
+
 
 def opener_index_in_state(state_text: str):
     """(index, name) of the single exact-named composer OPENER, or None. Exact
@@ -72,13 +79,19 @@ async def run_send_script(
     execute_tool: ToolRunner,
     send_index_in_state,
     payload_in_textbox,
+    payload_source: str = "",
 ) -> dict | None:
     """None = stage not script-ready or aborted pre-click (model path, stage
     untouched except a possibly committed fill, which the model sees). A dict
     means the irreversible click RAN: {'sent': bool_receipt_verified,
-    'payload': str, 'log': [...], 'note': str}."""
+    'payload': str, 'log': [...], 'note': str}. payload_source is the RAW user
+    prompt; the composed task carries the routing brief whose own quoted strings
+    made every real payload look ambiguous (r242/r243)."""
     t0 = time.monotonic()
-    payload = quoted_payload(task)
+    if P_READONLY_RE.search(task) or P_READONLY_RE.search(payload_source or ""):
+        logger.info("[browser-sendscript] decline: read-only directive in task")
+        return None
+    payload = quoted_payload(payload_source or task)
     if not payload:
         logger.info("[browser-sendscript] decline: no unambiguous quoted payload")
         return None

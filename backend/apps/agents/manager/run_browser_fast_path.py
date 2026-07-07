@@ -60,9 +60,10 @@ async def run_browser_fast_path(
 
         @typechecked
         async def p_dispatch(task_text: str) -> Dict[str, object]:
+            # user_prompt rides along RAW: the composed task's routing brief carries its own quoted strings, which made every real send payload look ambiguous to the send-script (r242/r243)
             results = await run_browser_agents(
                 tasks=[{"task": task_text, "browser_id": selected[0] if selected else "",
-                        "url": "", "entry_url": p_entry}],
+                        "url": "", "entry_url": p_entry, "user_prompt": prompt}],
                 model=session.model,
                 dashboard_id=session.dashboard_id,
                 pre_selected_browser_ids=selected,

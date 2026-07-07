@@ -96,3 +96,40 @@ async def test_ambiguous_opener_aborts():
     two = '[50]*<link "Message">\n[70]*<link "Message">'
     r, _ = await run(TASK, two, [COMPOSER_EMPTY])
     assert r is None
+
+
+COMPOSED = (
+    f"{TASK}\n\n"
+    "[routing brief from a fast pre-pass; follow it unless the live page disagrees]\n"
+    'ENTRY: https://www.linkedin.com/search/results/people/\nSTEPS: click the "Tyler Chen" result, '
+    'then the "Message" button, type the text, click "Send"'
+)
+
+
+@pytest.mark.asyncio
+async def test_composed_task_brief_quotes_fire_via_payload_source():
+    """The routing brief's own quoted strings made the payload ambiguous on every
+    real dispatch (r242/r243 declined live); the raw user prompt rides separately."""
+    ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
+    r = await ss.run_send_script(COMPOSED, "b1", "", COMPOSER_EMPTY, ex,
+                                 send_index_in_state, payload_in_textbox,
+                                 payload_source=TASK)
+    assert r is not None and r["sent"] is True
+    assert r["payload"] == "[test] hello world r9-os"
+
+
+@pytest.mark.asyncio
+async def test_readonly_probe_never_fires():
+    """The send-probe quotes the very payload it checks for; without this wall the
+    script DELIVERED a real message from a read-only probe (r243 live)."""
+    probe = (
+        "READ-ONLY verification, do NOT send, type, click any send/submit control. "
+        'Check the thread for this exact text:\n"[test] hello world r9-os"\n'
+        "End with OUTCOME: PAYLOAD-FOUND or PAYLOAD-NOT-FOUND."
+    )
+    ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
+    r = await ss.run_send_script(probe, "b1", "", COMPOSER_EMPTY, ex,
+                                 send_index_in_state, payload_in_textbox,
+                                 payload_source=TASK)
+    assert r is None
+    assert not calls["clicks"]
