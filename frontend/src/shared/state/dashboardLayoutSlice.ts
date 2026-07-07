@@ -545,11 +545,12 @@ const dashboardLayoutSlice = createSlice({
         height: number;
         // Optional: which existing sessions are currently expanded (showing their full chat history). Without this, the collision check uses each card's STORED height, which is the collapsed value, even when the card is currently rendering at the expanded ~620px. Result: new sub-agent cards spawn into the collapsed footprint but overlap the visually expanded one. Caller (Dashboard.tsx) passes the current expanded set so the collision math matches what the user actually sees.
         expandedSessionIds?: string[];
+        // Honor the given x/y verbatim (dead-center "in front of you", overlap allowed) instead of collision-dodging to a free grid cell. Set when the caller already resolved the spot (viewport center / beside a selected card) and dodging would defeat that; tidyLayout cleans up any overlap on demand.
+        exact?: boolean;
       }>
     ) {
-      const { sessionId, x, y, width, height, expandedSessionIds } = action.payload;
-      const rects = collectOccupiedRects(state, expandedSessionIds);
-      const pos = findOpenSpotNear(x, y, rects, width, height);
+      const { sessionId, x, y, width, height, expandedSessionIds, exact } = action.payload;
+      const pos = exact ? { x, y } : findOpenSpotNear(x, y, collectOccupiedRects(state, expandedSessionIds), width, height);
       state.cards[sessionId] = {
         session_id: sessionId,
         x: pos.x,

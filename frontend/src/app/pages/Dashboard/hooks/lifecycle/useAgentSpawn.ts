@@ -13,7 +13,6 @@ import {
 import {
   placeCard,
   removeCard,
-  setCardPosition,
   setGlowingAgentCard,
   setGlowingBrowserCards,
   clearGlowingBrowserCards,
@@ -176,9 +175,8 @@ export function useAgentSpawn({
       const cardHeight = expandNewChats ? EXPANDED_CARD_MIN_H : DEFAULT_CARD_H;
       const anchorX = browserAnchor ? browserAnchor.x - DEFAULT_CARD_W - GRID_GAP * 12 : spawnPos.x;
       const anchorY = browserAnchor ? browserAnchor.y : spawnPos.y;
-      dispatch(placeCard({ sessionId: draftId, x: anchorX, y: anchorY, width: DEFAULT_CARD_W, height: cardHeight, expandedSessionIds }));
-      // placeCard grid-snaps + collision-dodges, drifting the card off the resolved spawn point. Pin it back for the viewport-center / beside-card cases so it lands dead-center as intended; the single-browser dock keeps the dodge so it cascades off an occupied slot.
-      if (!browserAnchor) dispatch(setCardPosition({ sessionId: draftId, x: anchorX, y: anchorY }));
+      // exact pins the resolved spawn point for the viewport-center / beside-card cases (dead-center, overlap allowed); the single-browser dock omits it so placeCard's collision-dodge cascades the chat off an occupied slot.
+      dispatch(placeCard({ sessionId: draftId, x: anchorX, y: anchorY, width: DEFAULT_CARD_W, height: cardHeight, expandedSessionIds, exact: !browserAnchor }));
       if (expandNewChats) {
         dispatch(expandSession(draftId));
         setAutoFocusSessionId(draftId);
