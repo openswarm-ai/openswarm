@@ -32,16 +32,37 @@ def make_exec(list_script):
     return execute, calls
 
 
-async def run(task, state0, list_script):
+# A full-page messaging composer: the only surface the script fires on (the live
+# A/B proved firing on the profile /in/ overlay is net-negative). Tests that exercise
+# the fill/send mechanism pass this; the surface-gate test passes the overlay URL.
+THREAD_URL = "https://www.linkedin.com/messaging/thread/2-abc/"
+PROFILE_URL = "https://www.linkedin.com/in/tylerchen1200/"
+
+
+async def run(task, state0, list_script, url=THREAD_URL):
     ex, calls = make_exec(list_script)
-    r = await ss.run_send_script(task, "b1", "", state0, ex, send_index_in_state, payload_in_textbox)
+    r = await ss.run_send_script(task, "b1", "", state0, ex, send_index_in_state,
+                                 payload_in_textbox, current_url=url)
     return r, calls
 
 
 @pytest.mark.asyncio
+async def test_surface_gate_declines_profile_overlay():
+    """The live A/B (r246-r251) proved firing on the profile /in/ docked-overlay is
+    net-negative: fill commits, overlay Send never lists, abort, and the half-staged
+    handoff ran 4x slower than a clean model run. So a profile URL declines UNTOUCHED."""
+    ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
+    r = await ss.run_send_script(TASK, "b1", "", COMPOSER_EMPTY, ex, send_index_in_state,
+                                 payload_in_textbox, payload_source=TASK, current_url=PROFILE_URL)
+    assert r is None
+    assert not calls["clicks"]  # nothing touched, model gets a clean composer
+
+
+@pytest.mark.asyncio
 async def test_opener_hop_full_success():
-    """Prestage stopped on the profile: script opens the composer, fills,
-    sees it commit, finds the late Send, clicks, sees it clear -> receipt passes."""
+    """On a messaging THREAD-LIST page (full-page surface): script opens the
+    conversation composer, fills, sees it commit, finds the late Send, clicks,
+    sees it clear -> receipt passes."""
     r, calls = await run(TASK, PROFILE, [COMPOSER_EMPTY, COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
     assert r is not None and r["sent"] is True
     assert r["payload"] == "[test] hello world r9-os"
@@ -113,7 +134,7 @@ async def test_composed_task_brief_quotes_fire_via_payload_source():
     ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
     r = await ss.run_send_script(COMPOSED, "b1", "", COMPOSER_EMPTY, ex,
                                  send_index_in_state, payload_in_textbox,
-                                 payload_source=TASK)
+                                 payload_source=TASK, current_url=THREAD_URL)
     assert r is not None and r["sent"] is True
     assert r["payload"] == "[test] hello world r9-os"
 
@@ -130,6 +151,6 @@ async def test_readonly_probe_never_fires():
     ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
     r = await ss.run_send_script(probe, "b1", "", COMPOSER_EMPTY, ex,
                                  send_index_in_state, payload_in_textbox,
-                                 payload_source=TASK)
+                                 payload_source=TASK, current_url=THREAD_URL)
     assert r is None
     assert not calls["clicks"]

@@ -71,6 +71,22 @@ def composer_index_in_state(state_text: str):
     return hits[0] if len(hits) == 1 else None
 
 
+# Surfaces where a filled composer reliably exposes a detectable Send button. The
+# live A/B (r246-r251) proved the profile docked-overlay composer is the opposite:
+# the script fills it, LinkedIn's overlay Send never lands in the interactives list,
+# the script aborts, and the half-staged handoff + recovery path ran 4x SLOWER and
+# less reliable than a clean model run. So the script fires ONLY on a full-page
+# composer surface; anywhere else it declines UNTOUCHED (no fill) and the model owns it.
+P_COMPOSER_PAGE_RE = re.compile(r"/messaging/(thread|compose)/", re.I)
+
+
+def surface_supports_script(current_url: str) -> bool:
+    """A full-page messaging composer (Send renders as a real listed button), not
+    the profile /in/ docked overlay (Send is a lazy, unlisted control). Empty URL
+    is unknown -> decline, since firing on the wrong surface is net-negative."""
+    return bool(current_url and P_COMPOSER_PAGE_RE.search(current_url))
+
+
 async def run_send_script(
     task: str,
     browser_id: str,
@@ -80,6 +96,7 @@ async def run_send_script(
     send_index_in_state,
     payload_in_textbox,
     payload_source: str = "",
+    current_url: str = "",
 ) -> dict | None:
     """None = stage not script-ready or aborted pre-click (model path, stage
     untouched except a possibly committed fill, which the model sees). A dict
@@ -88,6 +105,9 @@ async def run_send_script(
     prompt; the composed task carries the routing brief whose own quoted strings
     made every real payload look ambiguous (r242/r243)."""
     t0 = time.monotonic()
+    if not surface_supports_script(current_url):
+        logger.info(f"[browser-sendscript] decline: surface {current_url[:60]!r} not a full-page composer (overlay firing is net-negative)")
+        return None
     if P_READONLY_RE.search(task) or P_READONLY_RE.search(payload_source or ""):
         logger.info("[browser-sendscript] decline: read-only directive in task")
         return None

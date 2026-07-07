@@ -1222,7 +1222,7 @@ async def run_browser_agent(
             p_script = await asyncio.wait_for(browser_send_script.run_send_script(
                 task, browser_id, tab_id, preloaded_perception,
                 execute_browser_tool, send_index_in_state, payload_in_textbox,
-                payload_source=user_prompt,
+                payload_source=user_prompt, current_url=current_url,
             ), timeout=30.0)
         except Exception as p_se:
             logger.info(f"[browser-sendscript] outer skip ({p_se})")
