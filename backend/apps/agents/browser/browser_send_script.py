@@ -63,8 +63,8 @@ async def run_send_script(
     t0 = time.monotonic()
     payload = quoted_payload(task)
     composer = composer_index_in_state(state_text)
-    send_btn = send_index_in_state(state_text)
-    if not (payload and composer and send_btn):
+    # No Send-button precondition: composer sites (LinkedIn) lazy-render Send only AFTER text commits, so it's resolved post-fill; never appearing = clean pre-click abort.
+    if not (payload and composer):
         return None
     log: list[dict] = []
 
