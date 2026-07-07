@@ -745,7 +745,9 @@ async function clickBackendNode(
   const ly = (content[1] + content[5]) / 2;
 
   // Hit-test before dispatching: a sticky banner or header twin can cover the element's center, and a blind coordinate click lands on the overlay instead (the "Reactivate Premium" misfire). If covered, click the chosen node itself.
+  // This is also the ground-truth "did my hand land where I aimed" signal: when the element at the click point is NOT the intended node, a naive coordinate click hits the WRONG element (the failure a page-change metric can't see, because the wrong element also changes the page). We surface what was actually hit so the wrong-target RATE is measurable.
   let covered = false;
+  let hitDesc = '';
   let targetObjectId: string | undefined;
   try {
     const t = await sendCdp(wv, 'DOM.resolveNode', { backendNodeId }, sessionId);
@@ -754,13 +756,20 @@ async function clickBackendNode(
       const rel = await sendCdp(wv, 'Runtime.callFunctionOn', {
         objectId: targetObjectId,
         functionDeclaration:
-          'function(x, y) { const r = this.getRootNode(); const h = (r.elementFromPoint ? r : document).elementFromPoint(x, y); return h ? (this === h || this.contains(h)) : true; }',
+          'function(x, y) { const r = this.getRootNode(); const h = (r.elementFromPoint ? r : document).elementFromPoint(x, y);'
+          + ' const landed = h ? (this === h || this.contains(h) || h.contains(this)) : true;'
+          + ' const d = h ? (h.tagName.toLowerCase() + (h.getAttribute("aria-label") ? "[" + h.getAttribute("aria-label").slice(0,30) + "]" : (h.textContent ? "[" + h.textContent.trim().slice(0,30) + "]" : ""))) : "none";'
+          + ' return { landed: landed, hit: d }; }',
         arguments: [{ value: lx }, { value: ly }],
         returnByValue: true,
       }, sessionId);
-      covered = rel?.result?.value === false;
+      const hv = rel?.result?.value as { landed?: boolean; hit?: string } | undefined;
+      covered = hv?.landed === false;
+      hitDesc = hv?.hit || '';
     }
   } catch { /* hit-test is best-effort; fall through to the coordinate click */ }
+  // Attach the aim signal to every click result (near-zero cost, already computed): landed=false means the intended element was not under the click point (occluded / stale box / moved), i.e. a wrong-target click.
+  const p_aim = { clickLanded: !covered, clickHit: hitDesc };
 
   let rx = lx, ry = ly;
   if (sessionId) {
@@ -779,7 +788,7 @@ async function clickBackendNode(
         functionDeclaration:
           'function() { if (this.click) { this.click(); } else { this.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })); } }',
       }, sessionId);
-      return { text: `Clicked ${label} via its element (another element covers its screen position).`, ...ripple };
+      return { text: `Clicked ${label} via its element (another element covers its screen position).`, ...ripple, ...p_aim };
     } catch (err: any) {
       return { error: `${label} is covered by another element and could not be clicked (${err?.message || String(err)}). Scroll, or pick a different element.` };
     }
@@ -794,6 +803,7 @@ async function clickBackendNode(
   return {
     text: `Clicked ${label} at (${Math.round(rx)}, ${Math.round(ry)})`,
     ...ripple,
+    ...p_aim,
   };
 }
 

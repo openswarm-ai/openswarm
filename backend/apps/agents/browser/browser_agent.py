@@ -306,11 +306,15 @@ async def execute_browser_tool(
     p_click_parts = [result] if isinstance(result, dict) else []
     if isinstance(result, dict) and isinstance(result.get("results"), list):
         p_click_parts += [r for r in result["results"] if isinstance(r, dict)]
+    p_target_probe = os.environ.get("OSW_CLICK_EFFECT_PROBE") == "1"
     for p_cr in p_click_parts:
         if p_cr.get("selfHealed"):
             logger.info(f"[browser-selfheal] recovered a stale-index click via {p_cr['selfHealed']} -> {browser_id}")
         if p_cr.get("clickEffect"):
             logger.info(f"[click-effect] {p_cr['clickEffect']} -> {browser_id}")
+        # The wrong-target signal a page-change metric misses: landed=False means the click point was NOT on the intended element (occluded/stale/moved).
+        if p_target_probe and "clickLanded" in p_cr:
+            logger.info(f"[click-target] landed={p_cr['clickLanded']} hit={str(p_cr.get('clickHit'))[:40]!r} -> {browser_id}")
     return result
 
 
