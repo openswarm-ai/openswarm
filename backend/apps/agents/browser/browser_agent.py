@@ -296,12 +296,17 @@ async def execute_browser_tool(
     # Self-healing click toggle (renderer escalates a stale-index failure to a fresh by-name click). Default on; OSW_SELFHEAL_CLICK=0 disables it for the A/B off-arm.
     if action == "click_index":
         params["selfheal"] = os.environ.get("OSW_SELFHEAL_CLICK", "1") != "0"
+        # Metric only: measure how often a "successful" click changed nothing (wrong/dead element). Off by default = zero cost.
+        if os.environ.get("OSW_CLICK_EFFECT_PROBE") == "1":
+            params["effectProbe"] = True
     request_id = uuid4().hex
     result = await ws_manager.send_browser_command(
         request_id, action, browser_id, params, tab_id=tab_id,
     )
     if isinstance(result, dict) and result.get("selfHealed"):
         logger.info(f"[browser-selfheal] recovered a stale-index click via {result['selfHealed']} -> {browser_id}")
+    if isinstance(result, dict) and result.get("clickEffect"):
+        logger.info(f"[click-effect] {result['clickEffect']}  ({p_action or action}) -> {browser_id}")
     return result
 
 
