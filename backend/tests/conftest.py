@@ -38,6 +38,7 @@ def _isolate_browser_state(monkeypatch):
     monkeypatch.setenv("OSW_PRELUDE_TRIM", "0")
     monkeypatch.setenv("OSW_DEADCARD_EVICT", "0")
     monkeypatch.setenv("OSW_RECEIPT_DONE", "0")
+    monkeypatch.setenv("OSW_SEND_SCRIPT", "0")
 
     def _reset():
         for mod in ("browser_skills", "browser_playbook"):

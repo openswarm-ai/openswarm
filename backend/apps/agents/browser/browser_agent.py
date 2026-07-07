@@ -1212,9 +1212,33 @@ async def run_browser_agent(
     multi_action_turns = 0
     batch_calls = 0
     batch_guard_blocks = 0
+
+    # Staged-send script: prestage left a ready composer + the task quotes its payload -> code runs the fill/verify/send/verify tail the model spends 4-5 turns on. Success skips the loop entirely (turns=0); any pre-click ambiguity falls through untouched.
+    from backend.apps.agents.browser import browser_send_script
+    if (browser_send_script.script_enabled() and task_is_send and not app_mode
+            and preloaded_perception and not cancel_event.is_set()):
+        try:
+            p_script = await asyncio.wait_for(browser_send_script.run_send_script(
+                task, browser_id, tab_id, preloaded_perception,
+                execute_browser_tool, send_index_in_state, payload_in_textbox,
+            ), timeout=30.0)
+        except Exception as p_se:
+            logger.info(f"[browser-sendscript] outer skip ({p_se})")
+            p_script = None
+        if isinstance(p_script, dict):
+            action_log.extend(p_script["log"])
+            send_confirmed = True
+            if p_script["sent"]:
+                done_called = True
+                done_success = True
+                done_message = f'Sent "{p_script["payload"]}", the send registered and the composer cleared.'
+            else:
+                # clicked but unverified: the model gets ONE truthful verify pass, never a blind resend
+                task = f"{task}\n\n[{p_script['note']}]"
+
     try:
         for turn in range(MAX_TURNS):
-            if cancel_event.is_set():
+            if done_called or cancel_event.is_set():
                 break
 
             # Drop stale screenshots before each call: keep first + previous + current, stub the rest. Images are ~1.3-2k tokens each and get re-read every turn, so this is the biggest per-turn context win on any visual task (measured ~2.9x fewer image tokens, ~5x less upload).
