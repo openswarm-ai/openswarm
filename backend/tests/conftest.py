@@ -20,6 +20,9 @@ from types import SimpleNamespace
 
 import pytest
 
+# Tests mock claude_agent_sdk.query, not ClaudeSDKClient; the now-default-ON persistent client would route mocked turns onto a REAL CLI spawn and wedge the suite. Pin it OFF explicitly; the persistent path has its own tests (test_client_pool.py + live gates).
+os.environ["OPENSWARM_PERSISTENT_CLIENT"] = "0"
+
 
 @pytest.fixture(autouse=True)
 def _isolate_browser_state(monkeypatch):

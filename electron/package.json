@@ -1,6 +1,6 @@
 {
   "name": "openswarm",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "description": "OpenSwarm — AI Agent Orchestrator",
   "author": "openswarm-ai",
   "main": "main.js",
@@ -72,6 +72,13 @@
           "filter": [
             "**/*"
           ]
+        },
+        {
+          "from": "build-staging/python-env/${arch}",
+          "to": "python-env",
+          "filter": [
+            "**/*"
+          ]
         }
       ]
     },
@@ -94,6 +101,15 @@
     },
     "win": {
       "icon": "build/icon.ico",
+      "extraResources": [
+        {
+          "from": "python-env",
+          "to": "python-env",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
       "target": [
         {
           "target": "squirrel",
@@ -144,13 +160,6 @@
       {
         "from": "build-staging/debugger",
         "to": "debugger",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "python-env",
-        "to": "python-env",
         "filter": [
           "**/*"
         ]

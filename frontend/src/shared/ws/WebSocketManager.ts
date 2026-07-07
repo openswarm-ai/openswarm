@@ -13,6 +13,7 @@ import {
   updateSessionContext,
   setContextOverflow,
   setRateLimited,
+  setContextRecovered,
   setMcpSuggestions,
   addBranch,
   setActiveBranch,
@@ -551,6 +552,13 @@ class WebSocketManager {
             sessionId: session_id,
             retryAfterS: typeof data.retry_after_s === 'number' ? data.retry_after_s : null,
           }));
+        }
+        break;
+
+      case 'agent:context_recovered':
+        // The backend hit a context-overflow crash mid-turn, rebuilt from its local copy, and retried on its own. Transient muted pill so the recovery is visible without reading like an error.
+        if (session_id) {
+          store.dispatch(setContextRecovered({ sessionId: session_id }));
         }
         break;
 

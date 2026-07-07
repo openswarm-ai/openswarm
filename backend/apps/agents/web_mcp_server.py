@@ -14,6 +14,8 @@ FETCH_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/web/fetch"
 
 # Primary-provider hint from agent_manager; backend picks the native search tool (googleSearch/web_search_preview) so searches use the user's existing budget.
 PRIMARY_HINT = os.environ.get("OPENSWARM_PRIMARY_API", "") or None
+# Whether this session actually has browser-delegation tools; gates the backend's "fall back to the browser" nudge.
+BROWSER_OK = os.environ.get("OPENSWARM_BROWSER_OK", "0") == "1"
 
 TOOLS = [
     {
@@ -104,7 +106,7 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
             return {"content": [{"type": "text", "text": "Error: query is required"}], "isError": True}
         num = int(arguments.get("num_results", 5))
         num = max(1, min(num, 10))
-        body = {"query": query, "num_results": num}
+        body = {"query": query, "num_results": num, "browser_ok": BROWSER_OK}
         if PRIMARY_HINT:
             body["primary"] = PRIMARY_HINT
         r = p_post(SEARCH_URL, body, timeout=45.0)

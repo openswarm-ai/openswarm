@@ -863,61 +863,6 @@ async def settings_meta(action: str, request: Request):
     return JSONResponse({"error": f"unknown action: {action}"}, status_code=400)
 
 
-@app.post("/api/agents/sessions/{session_id}/compact")
-async def session_compact(session_id: str):
-    """Force a compaction pass on a session (Phase 2 /compact slash cmd).
-
-    User explicitly clicked compact, so we accept the prompt-cache loss in exchange
-    for a real visible trim: needs_fresh_session drops the SDK convo so the next turn
-    rebuilds from history with compacted_through_msg_id actually applied (auto-compact
-    only sets the marker; the button is the user opting into the cost).
-    """
-    from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.agents.core.ws_manager import ws_manager as p_ws
-    session = agent_manager.sessions.get(session_id)
-    if not session:
-        return JSONResponse({"error": "session not found"}, status_code=404)
-    did_compact = agent_manager.maybe_compact(session, force=True)
-    if did_compact:
-        session.needs_fresh_session = True
-    await p_ws.send_to_session(session_id, "agent:context_status", {
-        "session_id": session_id,
-        "reason": "compacted_manual" if did_compact else "noop",
-        "compacted_through_msg_id": session.compacted_through_msg_id,
-    })
-    return JSONResponse({"compacted": did_compact, "compacted_through_msg_id": session.compacted_through_msg_id})
-
-
-@app.post("/api/agents/sessions/{session_id}/clear")
-async def session_clear(session_id: str):
-    """Wipe the session's UI history AND its SDK convo state (/clear slash cmd, Reset history button)."""
-    from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.agents.core.ws_manager import ws_manager as p_ws
-    from backend.apps.agents.core.models import MessageBranch
-    session = agent_manager.sessions.get(session_id)
-    if not session:
-        return JSONResponse({"error": "session not found"}, status_code=404)
-    session.sdk_session_id = None
-    session.active_mcps = []
-    session.compacted_through_msg_id = None
-    session.tokens = {"input": 0, "output": 0}
-    session.cost_usd = 0.0
-    session.needs_fork = False
-    session.messages = []
-    session.pending_approvals = []
-    session.branches = {"main": MessageBranch(id="main")}
-    session.active_branch_id = "main"
-    session.tool_group_meta = {}
-    await p_ws.send_to_session(session_id, "agent:status", {
-        "session_id": session_id,
-        "status": session.status,
-        "session": session.model_dump(mode="json"),
-    })
-    await p_ws.send_to_session(session_id, "agent:context_status", {
-        "session_id": session_id,
-        "reason": "cleared",
-    })
-    return JSONResponse({"cleared": True})
 
 
 @app.post("/api/invoke-agent/run")

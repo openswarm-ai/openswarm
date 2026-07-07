@@ -253,7 +253,8 @@ async def sync_custom_providers(providers: list) -> None:
 
     # Drop managed nodes no longer in settings; DELETE cascades to connections.
     for prefix, node in managed_by_prefix.items():
-        if prefix in seen_prefixes:
+        # cp-openai wears the same managed suffix but belongs to sync_openai_compat_node; reaping it here killed every gpt-*-api request with "No credentials".
+        if prefix in seen_prefixes or prefix == NINE_ROUTER_OPENAI_KEYED_PREFIX:
             continue
         try:
             async with nr().httpx.AsyncClient(timeout=5.0, headers=cli_auth_headers()) as client:

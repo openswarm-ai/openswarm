@@ -1,4 +1,4 @@
-"""Agent run entry points for AgentManager: launch a new top-level run and the staticmethod
+"""Agent run entry points for AgentManager: launch a new top-level run and the
 invoke_agent helper (fork-and-send a sub-agent). The no-SDK mock fallback lives in MockAgent.
 Split into a mixin to keep the manager file under the size ceiling; self.run_agent_loop /
 self.sessions resolve across the MRO exactly as before."""
@@ -137,7 +137,6 @@ class AgentLaunch(AgentManagerProtocol):
 
         return session
 
-    @staticmethod
     @typechecked
     async def invoke_agent(
         self,

@@ -3,6 +3,7 @@ import Box from '@mui/material/Box';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { ContextRing } from './ContextRing';
+import { ModelControl } from './ModelControl';
 import { ModelPickerMenu } from '../model-picker/ModelPickerMenu';
 import { ThinkingLevelControl } from './ThinkingLevelControl';
 import { ToolbarActions } from './ToolbarActions';
@@ -93,6 +94,13 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
         pt: 0,
       }}
     >
+      <ModelControl
+        c={c}
+        setModelAnchor={setModelAnchor}
+        allModelFlat={allModelFlat}
+        model={model}
+      />
+
       <ModelPickerMenu
         c={c}
         menuPaperProps={menuPaperProps}

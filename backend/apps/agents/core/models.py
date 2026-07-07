@@ -132,7 +132,12 @@ class AgentSession(BaseModel):
     framework_overhead_tokens: int = 0
     # Live ctx_used ratio triggering _maybe_compact at the next turn boundary; turn-based thresholds break under uneven workloads. Ratio of context_window, so 0.65 means 650K on a 1M-window model and 130K on a 200K-window model.
     compact_threshold_pct: float = 0.65
+    # Absolute token ceiling so big-window models don't sit at 650K before marking; the marker fires at the TIGHTER of the pct or this cap, so it's never "just 65%".
+    compact_abs_ceiling_tokens: int = 180_000
     compacted_through_msg_id: Optional[str] = None
+    # Aux-LLM distilled summary of the turns dropped by compaction, cached against the cutoff id it was built for; keeps the gist of old history on a rebuild instead of a hard drop.
+    compacted_summary: Optional[str] = None
+    compacted_summary_through: Optional[str] = None
     # Hard pre-send guard at 0.90; past compaction we LRU-trim active_mcps, then surface the overflow card.
     context_soft_cap_pct: float = 0.90
     # Conservative default. Always overwritten at session creation, restore, and model-switch via apply_context_window in agent_manager so the real model cap is used instead. Don't bump this without re-checking the trim/guard logic.

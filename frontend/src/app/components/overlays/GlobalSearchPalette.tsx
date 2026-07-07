@@ -53,7 +53,6 @@ const ACTIONS: ActionResult[] = [
   { kind: 'action', id: 'settings-models', name: 'Connect a model', keywords: 'settings models api key provider subscription' },
   { kind: 'action', id: 'go-skills', name: 'Go to Skills', keywords: 'customize skills' },
   { kind: 'action', id: 'go-actions', name: 'Go to Actions', keywords: 'customize tools actions mcp' },
-  { kind: 'action', id: 'go-modes', name: 'Go to Modes', keywords: 'customize modes' },
   { kind: 'action', id: 'all-dashboards', name: 'All dashboards', keywords: 'overview picker browse boards' },
 ];
 
@@ -149,9 +148,9 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
         break;
       case 'settings': dispatch(openSettingsModal()); break;
       case 'settings-models': dispatch(openSettingsModal('models')); break;
-      case 'go-skills': navigate('/skills'); break;
-      case 'go-actions': navigate('/actions'); break;
-      case 'go-modes': navigate('/modes'); break;
+      // Skills/Actions live in Settings now (the sidebar Customization section moved there).
+      case 'go-skills': dispatch(openSettingsModal('skills')); break;
+      case 'go-actions': dispatch(openSettingsModal('tools')); break;
       case 'all-dashboards': navigate('/'); break;
     }
   }, [dispatch, navigate]);

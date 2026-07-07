@@ -27,10 +27,6 @@ import DashboardSelection from './pages/DashboardSelection/DashboardSelection';
 import ErrorBoundary from './components/feedback/ErrorBoundary';
 import { setPanelMode, disableOnboardingAfterCrash } from '@/shared/state/onboardingProgressSlice';
 
-const Skills = React.lazy(() => import('./pages/Skills/Skills'));
-const Tools = React.lazy(() => import('./pages/Tools/Tools'));
-const Modes = React.lazy(() => import('./pages/Modes/Modes'));
-const Customization = React.lazy(() => import('./pages/Customization/Customization'));
 const Analytics = React.lazy(() => import('./pages/Analytics/Analytics'));
 const OnboardingRoot = React.lazy(() =>
   import('./components/Onboarding').then((m) => ({ default: m.OnboardingRoot })),
@@ -54,20 +50,11 @@ if (typeof window !== 'undefined') {
 
   (window as any).__openswarmPrefetchRoute = (path: string) => {
     switch (path) {
-      case '/skills': void import('./pages/Skills/Skills'); return;
-      case '/actions':
-      case '/tools': void import('./pages/Tools/Tools'); return;
-      case '/modes': void import('./pages/Modes/Modes'); return;
       case '/views':
-      case '/customization': void import('./pages/Customization/Customization'); return;
       case '/analytics': void import('./pages/Analytics/Analytics'); return;
     }
   };
   const prefetchAll = () => {
-    void import('./pages/Skills/Skills');
-    void import('./pages/Tools/Tools');
-    void import('./pages/Modes/Modes');
-    void import('./pages/Customization/Customization');
     void import('./pages/Analytics/Analytics');
   };
   const ric = (window as any).requestIdleCallback as
@@ -528,10 +515,6 @@ const ThemedApp: React.FC = () => {
                         <Route path="/" element={<DashboardSelection />} />
                         {/* Dashboard renders persistently in AppShell so webviews survive nav. */}
                         <Route path="/dashboard/:id" element={null} />
-                        <Route path="/customization" element={<Customization />} />
-                        <Route path="/skills" element={<Skills />} />
-                        <Route path="/actions" element={<Tools />} />
-                        <Route path="/modes" element={<Modes />} />
                         <Route path="/analytics" element={<Analytics />} />
                       </Route>
                     </Routes>

@@ -18,12 +18,9 @@ import Alert from '@mui/material/Alert';
 import InputBase from '@mui/material/InputBase';
 // One outlined icon language for the sidebar: thin monoline glyphs (not the filled Material clip-art) so the rail reads as designed, not assembled.
 import { LayoutDashboard } from 'lucide-react';
-import PsychologyIcon from '@mui/icons-material/PsychologyOutlined';
-import BuildIcon from '@mui/icons-material/BuildOutlined';
 import { LayoutGrid } from 'lucide-react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Settings as LucideSettings } from 'lucide-react';
-import { Palette } from 'lucide-react';
 import { ArrowLeft, ArrowRight, Plus, Clock } from 'lucide-react';
 import { AnimatedPanelLeft } from './animatedIcons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -59,13 +56,6 @@ const SIDEBAR_DEFAULT = 260;
 const SIDEBAR_WIDTH_KEY = 'openswarm-sidebar-width';
 const UPDATE_DISMISS_KEY = 'openswarm-update-dismissed';
 
-const CUSTOMIZATION_ITEMS = [
-  { label: 'Skills', path: '/skills', icon: <PsychologyIcon />, onboarding: 'sidebar-skills' },
-  { label: 'Actions', path: '/actions', icon: <BuildIcon />, onboarding: 'sidebar-actions' },
-];
-
-const CUSTOMIZATION_PATHS = new Set(CUSTOMIZATION_ITEMS.map((i) => i.path));
-
 const AppShell: React.FC = () => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -88,8 +78,6 @@ const AppShell: React.FC = () => {
   const canGoForward = historyIdx < maxHistoryIdx.current;
   const [dashboardsExpanded, setDashboardsExpanded] = useState(true);
   const [appsExpanded, setAppsExpanded] = useState(true);
-  // Collapsed by default: config rows are progressive disclosure, not daily nav. Onboarding reads data-expanded and clicks to open when it needs them.
-  const [customizationExpanded, setCustomizationExpanded] = useState(false);
   // Starts collapsed so a fresh boot lands on a clean canvas; the toggle brings it back.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [renamingDashboardId, setRenamingDashboardId] = useState<string | null>(null);
@@ -433,7 +421,6 @@ const AppShell: React.FC = () => {
   const isDashboardRoute = location.pathname === '/' || location.pathname.startsWith('/dashboard/');
   const isDashboardViewActive = location.pathname.startsWith('/dashboard/');
   const isAppsRoute = false;  // /apps route removed; app cards live on the dashboard now.
-  const isCustomizationRoute = location.pathname === '/customization' || CUSTOMIZATION_PATHS.has(location.pathname);
   const activeDashboardId = location.pathname.startsWith('/dashboard/')
     ? location.pathname.split('/dashboard/')[1]
     : null;
@@ -819,9 +806,6 @@ const AppShell: React.FC = () => {
           '& [data-onboarding="sidebar-dashboards"]:hover .MuiListItemIcon-root svg': {
             transform: 'scale(1.14)',
           },
-          '& [data-onboarding="sidebar-customization"]:hover .MuiListItemIcon-root svg': {
-            transform: 'rotate(-14deg) scale(1.06)',
-          },
           '& [data-onboarding="sidebar-apps"]:hover .MuiListItemIcon-root svg': {
             transform: 'rotate(8deg) scale(1.08)',
           },
@@ -972,106 +956,6 @@ const AppShell: React.FC = () => {
                           {entry.name}
                         </Typography>
                       )}
-                    </Box>
-                  );
-                })}
-              </Box>
-            </Collapse>
-          </Box>
-
-          {/* Sections separate with air, not lines. */}
-          <Box sx={{ my: 0.75 }} />
-
-          <Box sx={{ px: 1, mb: 0.25 }}>
-            <ListItemButton
-              onClick={() => {
-                if (isCustomizationRoute) {
-                  setCustomizationExpanded((prev) => !prev);
-                } else {
-                  navigate('/customization');
-                  setCustomizationExpanded(true);
-                }
-              }}
-              data-onboarding="sidebar-customization"
-              data-expanded={customizationExpanded ? 'true' : 'false'}
-              aria-expanded={customizationExpanded}
-              sx={{
-                borderRadius: 1.5,
-                py: 0.6,
-                px: 1.25,
-                bgcolor: isCustomizationRoute ? `${c.accent.primary}12` : 'transparent',
-                '&:hover': { bgcolor: isCustomizationRoute ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
-                transition: 'background-color 0.15s',
-              }}
-            >
-              <ListItemIcon sx={{ color: isCustomizationRoute ? c.accent.primary : c.text.tertiary, minWidth: 28 }}>
-                <Palette size={18} />
-              </ListItemIcon>
-              <ListItemText
-                primary="Customization"
-                sx={{
-                  '& .MuiListItemText-primary': {
-                    color: isCustomizationRoute ? c.text.primary : c.text.muted,
-                    fontSize: '0.9rem',
-                    fontWeight: isCustomizationRoute ? 600 : 400,
-                  },
-                }}
-              />
-              <ExpandMoreIcon
-                sx={{
-                  color: c.text.ghost,
-                  fontSize: 16,
-                  transition: 'transform 0.2s',
-                  transform: customizationExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                }}
-              />
-            </ListItemButton>
-
-            <Collapse in={customizationExpanded} timeout={200}>
-              <Box sx={{ ml: 2, mt: 0.25, mb: 0.5 }}>
-                {CUSTOMIZATION_ITEMS.map((item) => {
-                  // Manual click handler instead of NavLink: NavLink's internal navigate bypasses our startTransition wrapper.
-                  const isActive = location.pathname === item.path;
-                  return (
-                    <Box
-                      key={item.path}
-                      data-onboarding={item.onboarding}
-                      onClick={() => navigate(item.path)}
-                      onMouseEnter={() => {
-                        // Hover-prefetch lazy chunk so click is ~0ms (see Main.tsx for path -> import map).
-                        const fn = (window as any).__openswarmPrefetchRoute;
-                        if (typeof fn === 'function') fn(item.path);
-                      }}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        pl: 1.25,
-                        pr: 1,
-                        py: 0.5,
-                        mx: 0.5,
-                        cursor: 'pointer',
-                        // 25% accent alpha needed for readable contrast on dark-mode bg.secondary; 10% muddied to grey.
-                        borderRadius: `${c.radius.md}px`,
-                        bgcolor: isActive ? `${c.accent.primary}40` : 'transparent',
-                        '&:hover': { bgcolor: isActive ? `${c.accent.primary}55` : `${c.text.tertiary}0A` },
-                        transition: 'background-color 0.12s',
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          color: isActive ? c.text.secondary : c.text.ghost,
-                          fontSize: '0.86rem',
-                          fontWeight: isActive ? 500 : 400,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          flex: 1,
-                          minWidth: 0,
-                        }}
-                      >
-                        {item.label}
-                      </Typography>
                     </Box>
                   );
                 })}

@@ -29,6 +29,9 @@ async def agents_lifespan():
     for session_id in list(agent_manager.tasks.keys()):
         await agent_manager.stop_agent(session_id)
     await agent_manager.persist_all_sessions()
+    # Persistent CLI clients outlive turns; without this a uvicorn reload/quit orphans one subprocess per live session.
+    from backend.apps.agents.manager.run.client_pool import dispose_all_clients
+    await dispose_all_clients(agent_manager.client_pool)
 
 agents = SubApp("agents", agents_lifespan)
 
@@ -305,16 +308,19 @@ async def warm_session_cache(session_id: str):
 async def compact_session(session_id: str):
     """Run the summarizer over older turns to free up context.
 
-    Wired to the 'Compact memory' button in the pre-send overflow banner
-    and the /compact slash command. Sets compacted_through_msg_id so the
-    next turn's history-builder uses the summary in place of the
-    original messages.
+    Wired to the 'Compact memory' button in the pre-send overflow banner and the
+    /compact slash command. Marks compacted_through_msg_id AND sets
+    needs_fresh_session: the user explicitly opted into the prompt-cache loss for a
+    real visible trim, so the next turn drops the SDK convo and rebuilds from history
+    with the cutoff (and distilled summary) actually applied. Auto-compact only marks;
+    the button is the user paying for the rebuild.
     """
     session = agent_manager.sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
     fired = agent_manager.maybe_compact(session, force=True)
     if fired:
+        session.needs_fresh_session = True
         from backend.apps.agents.core.ws_manager import ws_manager
         try:
             await ws_manager.send_to_session(session_id, "agent:context_status", {
@@ -344,6 +350,8 @@ async def clear_session(session_id: str):
         raise HTTPException(status_code=404, detail="session not found")
     session.messages = []
     session.compacted_through_msg_id = None
+    session.compacted_summary = None
+    session.compacted_summary_through = None
     session.tokens = {"input": 0, "output": 0}
     session.needs_fresh_session = True
     from backend.apps.agents.core.ws_manager import ws_manager
