@@ -300,6 +300,8 @@ async def execute_browser_tool(
     result = await ws_manager.send_browser_command(
         request_id, action, browser_id, params, tab_id=tab_id,
     )
+    if isinstance(result, dict) and result.get("selfHealed"):
+        logger.info(f"[browser-selfheal] recovered a stale-index click via {result['selfHealed']} -> {browser_id}")
     return result
 
 
