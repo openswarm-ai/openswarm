@@ -149,13 +149,14 @@ async def run_prestage(
         seen_steps: set[tuple[str, str]] = set()
         staged_complete = False
 
-        async def settle(pre_url: str, pre_text: str) -> bool:
-            # A click returns before the page swaps; perceiving too early reads the OLD page and the aux re-issues the same click (observed 4x loop). Wait for the page to actually change, capped. False = the action verifiably did NOT take.
+        async def settle(pre_url: str, pre_text: str, pre_li: str) -> bool:
+            # A click returns before the page swaps; perceiving too early reads the OLD page and the aux re-issues the same click (observed 4x loop). Wait for the page to actually change, capped. False = the action verifiably did NOT take. An overlay (message composer) changes the INTERACTIVES but not the URL and often not the first 400 chars of text, so the element list counts as change too.
             t_s = time.monotonic()
             while time.monotonic() - t_s < 3.0:
                 await asyncio.sleep(0.35)
                 li2, gt2, u2 = await perceive()
-                if (u2 and u2 != pre_url) or (gt2 and gt2[:400] != pre_text[:400]):
+                if ((u2 and u2 != pre_url) or (gt2 and gt2[:400] != pre_text[:400])
+                        or (li2 and pre_li and li2 != pre_li)):
                     return True
             return False
         while steps < MAX_STEPS and (time.monotonic() - t0) < TOTAL_TIMEOUT_S:
@@ -193,7 +194,7 @@ async def run_prestage(
                 logger.info(f"[browser-prestage] step {steps + 1}: nav {arg} ok={ok}")
                 if not ok:
                     break
-                if not await settle(current_url, gt_text):
+                if not await settle(current_url, gt_text, li_text):
                     logger.info(f"[browser-prestage] nav {arg} did not settle; stopping unstaged")
                     break
                 done_desc.append(f"navigated to {arg}")
@@ -213,7 +214,7 @@ async def run_prestage(
                 logger.info(f"[browser-prestage] step {steps + 1}: click [{idx}] {entry[:60]!r} ok={ok}")
                 if not ok:
                     break
-                if not await settle(current_url, gt_text):
+                if not await settle(current_url, gt_text, li_text):
                     # The click ran but the page never changed (occluded element, overlay, stale index). Recording it would make the handoff note LIE ("navigation done") and send the main loop on a walkabout; observed live as 27-turn/112s regressions.
                     logger.info(f"[browser-prestage] click [{idx}] did not settle; stopping unstaged")
                     break

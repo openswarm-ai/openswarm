@@ -80,6 +80,7 @@ async def run_send_script(
     t0 = time.monotonic()
     payload = quoted_payload(task)
     if not payload:
+        logger.info("[browser-sendscript] decline: no unambiguous quoted payload")
         return None
     log: list[dict] = []
 
@@ -96,7 +97,9 @@ async def run_send_script(
         # Reversible-opener hop: prestage often stops on the profile with the "Message" opener visible (its settle raced the overlay). Opening a composer is the allowed opener class; the irreversible bar is unchanged.
         opener = opener_index_in_state(state_text)
         if not opener:
+            logger.info("[browser-sendscript] decline: no composer and no single exact-named opener in staged state")
             return None
+        logger.info(f"[browser-sendscript] firing via opener {opener[1]!r} [{opener[0]}]")
         r_open = await execute_tool("BrowserClickIndex", {"index": opener[0]}, browser_id, tab_id)
         if not (isinstance(r_open, dict) and "error" not in r_open):
             return None
@@ -112,6 +115,7 @@ async def run_send_script(
             logger.info("[browser-sendscript] opener clicked but no composer appeared; handing to model")
             return None
     # No Send-button precondition: composer sites (LinkedIn) lazy-render Send only AFTER text commits, so it's resolved post-fill; never appearing = clean pre-click abort.
+    logger.info(f"[browser-sendscript] fill target {composer[1]!r} [{composer[0]}]")
 
     # 1. fill (focused by node, the composer overlay path coordinate clicks miss)
     r_fill = await execute_tool("BrowserClickIndex", {"index": composer[0], "text": payload}, browser_id, tab_id)
