@@ -1,4 +1,4 @@
-import { getWebview, findWebviewByDomain, type BrowserWebview } from './browserRegistry';
+import { getWebview, findWebviewByDomain, hasDomReady, markDomReady, type BrowserWebview } from './browserRegistry';
 import { store } from './state/store';
 import { resumeBrowserCard } from './state/dashboardLayoutSlice';
 import { dashboardWs } from './ws/WebSocketManager';
@@ -189,8 +189,40 @@ async function countSafeRoutes(wv: BrowserWebview): Promise<number> {
   } catch { return 0; }
 }
 
+// Electron queues executeJavaScript until the page "stops loading", and pages with straggler subresources (recaptcha/tracker iframes) can stay isLoading for minutes, starving EVERY command into its backend timeout (the wedged-webview tail). Once the document itself is ready, wv.stop() cancels only the stragglers and fires did-stop-loading, which flushes the queue; a genuinely-still-loading document (no dom-ready yet) is left alone.
+const STUCK_EVAL_GRACE_MS = 2500;
+const STUCK_EVAL_LIMIT_MS = 9000;
+
+async function evalInPage(wv: BrowserWebview, code: string): Promise<any> {
+  const run = wv.executeJavaScript(code).then((v) => {
+    markDomReady(wv);
+    return { done: true as const, value: v };
+  });
+  const grace = new Promise<{ done: false }>((r) => setTimeout(() => r({ done: false }), STUCK_EVAL_GRACE_MS));
+  let first = await Promise.race([run, grace]);
+  if (!first.done) {
+    let stopped = false;
+    try {
+      if (wv.isLoading() && hasDomReady(wv)) {
+        wv.stop();
+        stopped = true;
+      }
+    } catch {
+      // torn-down webview; the limit below surfaces it
+    }
+    const limit = new Promise<{ done: false }>((r) => setTimeout(() => r({ done: false }), STUCK_EVAL_LIMIT_MS));
+    first = await Promise.race([run, limit]);
+    if (!first.done) {
+      throw new Error(stopped
+        ? 'page never finished loading even after cancelling stragglers'
+        : 'page is still loading; retry shortly');
+    }
+  }
+  return first.value;
+}
+
 async function handleGetText(wv: BrowserWebview): Promise<Record<string, any>> {
-  const text: string = await wv.executeJavaScript(
+  const text: string = await evalInPage(wv,
     'document.body.innerText.substring(0, 15000)'
   );
   // Sampled HERE (on a read), not on navigate: by the time the agent reads the page, the SPA's XHR/fetch have fired, so routes are actually captured.
@@ -272,7 +304,7 @@ async function handleClick(wv: BrowserWebview, params: Record<string, any>): Pro
       clickY: window.innerHeight > 0 ? y / window.innerHeight : 0.5,
     };
   })()`;
-  const result = await wv.executeJavaScript(code);
+  const result = await evalInPage(wv, code);
   return result;
 }
 
@@ -300,7 +332,7 @@ async function handleType(wv: BrowserWebview, params: Record<string, any>): Prom
       text: 'Typed into: ' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
     };
   })()`;
-  const result = await wv.executeJavaScript(code);
+  const result = await evalInPage(wv, code);
   return result;
 }
 
@@ -320,7 +352,7 @@ async function handlePressKey(wv: BrowserWebview, params: Record<string, any>): 
   const rawKey = (params.key as string) || '';
   if (!rawKey) return { error: 'key parameter is required' };
   const keyCode = KEY_NAME_MAP[rawKey] || rawKey;
-  await wv.executeJavaScript('document.body && document.body.focus && document.body.focus(); true');
+  await evalInPage(wv, 'document.body && document.body.focus && document.body.focus(); true');
   // Native OS-level key events have isTrusted=true, so hostile sites' keyboard handlers respect them.
   wv.sendInputEvent({ type: 'keyDown', keyCode });
   wv.sendInputEvent({ type: 'char', keyCode });
@@ -348,7 +380,7 @@ async function handleClickPoint(wv: BrowserWebview, params: Record<string, any>)
   // host element's box. One cheap round-trip; falls back to the element box.
   let vw = wv.clientWidth, vh = wv.clientHeight;
   try {
-    const d = await wv.executeJavaScript('({w: window.innerWidth, h: window.innerHeight})');
+    const d = await evalInPage(wv, '({w: window.innerWidth, h: window.innerHeight})');
     if (d && d.w > 0 && d.h > 0) { vw = d.w; vh = d.h; }
   } catch { /* use the element box as a fallback */ }
   const x = (cx / 100) * vw;
@@ -1122,7 +1154,7 @@ async function handleScroll(wv: BrowserWebview, params: Record<string, any>): Pr
     };
   })()`;
   try {
-    const result = await wv.executeJavaScript(code);
+    const result = await evalInPage(wv, code);
     const status = result.atBottom ? ' (reached bottom)' : result.atTop ? ' (reached top)' : '';
     return {
       text: `Scrolled ${direction} by ${result.scrolled}px${status}. Position: ${result.scrollTop}/${result.scrollHeight - result.clientHeight}px`,
@@ -1150,7 +1182,7 @@ async function handleWait(wv: BrowserWebview, params: Record<string, any>): Prom
     const elapsed = Date.now() - start;
     if (elapsed >= ms) break;
     try {
-      const probe = JSON.parse(await wv.executeJavaScript(probeJs));
+      const probe = JSON.parse(await evalInPage(wv, probeJs));
       probeErrors = 0;
       if (probe.elems !== lastElems) { lastElems = probe.elems; elemsChangedAt = Date.now(); }
       const domStable = Date.now() - elemsChangedAt;
@@ -1238,7 +1270,7 @@ async function handleGetElements(wv: BrowserWebview, params: Record<string, any>
     return { elements: results, total: interactive.length, url: location.href, title: document.title };
   })()`;
   try {
-    const result = await wv.executeJavaScript(code);
+    const result = await evalInPage(wv, code);
     return { text: JSON.stringify(result, null, 2), url: wv.getURL() };
   } catch (err: any) {
     return { error: `Failed to get elements: ${err?.message || String(err)}` };
@@ -1263,7 +1295,7 @@ async function handleDetectWebMCP(wv: BrowserWebview): Promise<Record<string, an
     return { present: true, tools };
   })()`;
   try {
-    const r = await wv.executeJavaScript(code);
+    const r = await evalInPage(wv, code);
     if (!r || !r.present) {
       return { text: 'No WebMCP on this page (navigator.modelContext not present). Use the normal browser tools.', url: wv.getURL() };
     }
@@ -1328,7 +1360,7 @@ async function handleReplayRoute(wv: BrowserWebview, params: Record<string, any>
     } catch (e) { return { error: String((e && e.message) || e) }; }
   })()`;
   try {
-    const res = await wv.executeJavaScript(code);
+    const res = await evalInPage(wv, code);
     if (res.error) return { error: `Replay failed: ${res.error}` };
     return { text: `${method} ${absUrl} -> HTTP ${res.status}\n${res.body}`, status: res.status, url: wv.getURL() };
   } catch (err: any) {
@@ -1340,7 +1372,7 @@ async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): 
   const expression = params.expression as string;
   if (!expression) return { error: 'expression parameter is required' };
   try {
-    const result = await wv.executeJavaScript(expression);
+    const result = await evalInPage(wv, expression);
     const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
     // evaluate is the agent's main read path; sample routes here too (XHRs have fired by now) so the backend can surface the fast network tier once.
     const routes_available = await countSafeRoutes(wv);

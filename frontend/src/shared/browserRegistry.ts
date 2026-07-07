@@ -20,6 +20,7 @@ export interface BrowserWebview extends HTMLElement {
   reload: () => void;
   canGoBack: () => boolean;
   canGoForward: () => boolean;
+  stop: () => void;
   getURL: () => string;
   getTitle: () => string;
   isLoading: () => boolean;
@@ -44,8 +45,29 @@ function makeKey(browserId: string, tabId: string): string {
   return `${browserId}:${tabId}`;
 }
 
+// Electron suspends webContents.executeJavaScript until the page "stops loading", and pages with straggler iframes (LinkedIn's recaptcha/trackers) can stay isLoading for minutes; the guarded eval in browserCommandHandler needs to know the document itself is usable before it dares wv.stop().
+const domReadyDocs = new WeakSet<BrowserWebview>();
+const loadTrackingArmed = new WeakSet<BrowserWebview>();
+
+function armLoadStateTracking(wv: BrowserWebview): void {
+  if (loadTrackingArmed.has(wv)) return;
+  loadTrackingArmed.add(wv);
+  wv.addEventListener('dom-ready', () => domReadyDocs.add(wv));
+  // a real main-frame navigation starts a new document; in-page (SPA pushState) ones don't
+  wv.addEventListener('did-navigate', () => domReadyDocs.delete(wv));
+}
+
+export function hasDomReady(wv: BrowserWebview): boolean {
+  return domReadyDocs.has(wv);
+}
+
+export function markDomReady(wv: BrowserWebview): void {
+  domReadyDocs.add(wv);
+}
+
 export function registerWebview(browserId: string, tabId: string, wv: BrowserWebview): void {
   registry.set(makeKey(browserId, tabId), wv);
+  armLoadStateTracking(wv);
 }
 
 export function unregisterWebview(browserId: string, tabId: string): void {
