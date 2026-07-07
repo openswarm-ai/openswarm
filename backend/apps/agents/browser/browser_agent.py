@@ -1229,13 +1229,14 @@ async def run_browser_agent(
             p_script = None
         if isinstance(p_script, dict):
             action_log.extend(p_script["log"])
-            send_confirmed = True
             if p_script["sent"]:
+                # receipt verified (composer cleared): the send is DONE, end the run
+                send_confirmed = True
                 done_called = True
                 done_success = True
                 done_message = f'Sent "{p_script["payload"]}", the send registered and the composer cleared.'
             else:
-                # clicked but unverified: the model gets ONE truthful verify pass, never a blind resend
+                # Clicked but the composer did NOT clear: the send is UNVERIFIED. Leave send_confirmed False so the loop can't shortcut to a "done" it never earned (r264 set it True here and the model then FALSELY claimed delivery). The model gets ONE truthful verify pass, never a blind resend.
                 task = f"{task}\n\n[{p_script['note']}]"
 
     try:
