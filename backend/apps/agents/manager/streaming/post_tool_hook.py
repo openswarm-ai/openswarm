@@ -103,6 +103,14 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
             outputs_runtime_manager.reset_render_state_for_workspace(session.id)
         except Exception:
             pass
+        if installed_pkg:
+            # Tell the app card this turn changed deps so its turn-finish reload restarts Vite; a soft webview reload can't pick up newly installed packages.
+            try:
+                await ws_manager.send_to_session(session.id, "agent:app_deps_changed", {
+                    "session_id": session.id,
+                })
+            except Exception:
+                pass
     elif wrote_files:
         if file_path:
             try:

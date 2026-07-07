@@ -179,10 +179,30 @@ const DashboardViewCard: React.FC<Props> = ({
   const [finishing, setFinishing] = useState(false);
   const wasBuildingRef = useRef(false);
   const finishTimerRef = useRef<number | null>(null);
+  // Whether this turn changed deps (needs a Vite restart, not just a soft reload). Held in a ref so the reload effect stays keyed on the status transition alone.
+  const depsChanged = useAppSelector(
+    (s) => (output.session_id ? !!s.agents.sessions[output.session_id]?.app_deps_changed : false),
+  );
+  const depsChangedRef = useRef(false);
+  useEffect(() => { depsChangedRef.current = depsChanged; }, [depsChanged]);
   useEffect(() => {
     const building = linkedStatus === 'running' || linkedStatus === 'waiting_approval';
     if (wasBuildingRef.current && !building) {
-      previewRef.current?.reload();
+      const wsId = output.workspace_id;
+      if (depsChangedRef.current && wsId) {
+        // Deps changed this turn: a soft reload can't pick up new packages, so restart the Vite runtime first, then reload.
+        void (async () => {
+          try {
+            const tok = getAuthToken();
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (tok) headers.Authorization = `Bearer ${tok}`;
+            await fetch(`${API_BASE}/outputs/workspace/${wsId}/runtime/restart?instance=${instance}`, { method: 'POST', headers });
+          } catch { /* failures surface via the runtime log WS */ }
+          previewRef.current?.reload();
+        })();
+      } else {
+        previewRef.current?.reload();
+      }
       setFinishing(true);
       if (finishTimerRef.current) clearTimeout(finishTimerRef.current);
       finishTimerRef.current = window.setTimeout(() => setFinishing(false), 1200);

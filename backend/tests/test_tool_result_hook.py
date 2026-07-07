@@ -65,3 +65,35 @@ async def test_agent_tool_spawns_subsession_into_live_registry():
     assert child.parent_session_id == parent_id
     assert child.active_mcps == []  # context-isolation invariant: no inherited activations
     assert "sub-agent did the work" in str(child.messages[-1].content)
+
+
+@pytest.mark.asyncio
+async def test_view_builder_dep_install_broadcasts_app_deps_changed():
+    """An npm install in a view-builder session must tell the app card this turn
+    changed deps (agent:app_deps_changed), so its turn-finish reload restarts Vite
+    instead of soft-reloading a preview that can't see the new packages."""
+    registry: dict = {}
+    ctx = p_ctx(registry)
+    ctx.session.mode = "view-builder"
+    with patch.object(tool_result_hook.ws_manager, "send_to_session", new=AsyncMock()) as send:
+        await tool_result_hook.post_tool_hook(
+            ctx, {"tool_name": "Bash", "tool_response": "added 3 packages",
+                  "tool_input": {"command": "npm install recharts"}}, "tu1", None
+        )
+    events = [c.args[1] for c in send.await_args_list]
+    assert "agent:app_deps_changed" in events
+
+
+@pytest.mark.asyncio
+async def test_view_builder_plain_write_does_not_flag_deps_changed():
+    """A plain file edit must NOT escalate the reload; only dep changes do."""
+    registry: dict = {}
+    ctx = p_ctx(registry)
+    ctx.session.mode = "view-builder"
+    with patch.object(tool_result_hook.ws_manager, "send_to_session", new=AsyncMock()) as send:
+        await tool_result_hook.post_tool_hook(
+            ctx, {"tool_name": "Write", "tool_response": "ok",
+                  "tool_input": {"file_path": "/ws/frontend/src/App.tsx", "content": "x"}}, "tu1", None
+        )
+    events = [c.args[1] for c in send.await_args_list]
+    assert "agent:app_deps_changed" not in events

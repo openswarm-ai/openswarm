@@ -14,6 +14,7 @@ import {
   setContextOverflow,
   setRateLimited,
   setContextRecovered,
+  setAppDepsChanged,
   setMcpSuggestions,
   addBranch,
   setActiveBranch,
@@ -559,6 +560,13 @@ class WebSocketManager {
         // The backend hit a context-overflow crash mid-turn, rebuilt from its local copy, and retried on its own. Transient muted pill so the recovery is visible without reading like an error.
         if (session_id) {
           store.dispatch(setContextRecovered({ sessionId: session_id }));
+        }
+        break;
+
+      case 'agent:app_deps_changed':
+        // A view-builder agent installed/changed deps this turn; the app card escalates its turn-finish reload from soft to a Vite restart so new deps actually load.
+        if (session_id) {
+          store.dispatch(setAppDepsChanged({ sessionId: session_id }));
         }
         break;
 
