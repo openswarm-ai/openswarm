@@ -656,7 +656,7 @@ async function enumerateCandidates(wv: BrowserWebview): Promise<RankItem[]> {
 // Resolve + click a specific backend node (revalidate, frame-local box model, OS-level dispatch in the element's own frame, cosmetic top-level ripple). Shared by click_index (cache lookup) and click_by_name (fresh resolution).
 async function clickBackendNode(
   wv: BrowserWebview, backendNodeId: number, sessionId: string | undefined, label: string,
-  opts: { role?: string; text?: string; effectProbe?: boolean } = {},
+  opts: { role?: string; text?: string } = {},
 ): Promise<Record<string, any>> {
   let resolvedObjectId: string | undefined;
   try {
@@ -785,24 +785,34 @@ async function clickBackendNode(
     }
   }
 
-  // Metric only (flag-gated): fingerprint the page just before the click so we can
-  // tell afterwards whether it actually did anything. Off by default = zero cost.
-  let fpBefore = '';
-  if (opts.effectProbe) { try { fpBefore = String(await wv.executeJavaScript(FP_EXPR)); } catch { /* ignore */ } }
   try {
     await sendCdp(wv, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: lx, y: ly, button: 'left', clickCount: 1 }, sessionId);
     await sendCdp(wv, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: lx, y: ly, button: 'left', clickCount: 1 }, sessionId);
   } catch (err: any) {
     return { error: `Click failed: ${err.message || String(err)}` };
   }
-  const out: Record<string, any> = { text: `Clicked ${label} at (${Math.round(rx)}, ${Math.round(ry)})`, ...ripple };
-  if (opts.effectProbe) {
+  return {
+    text: `Clicked ${label} at (${Math.round(rx)}, ${Math.round(ry)})`,
+    ...ripple,
+  };
+}
+
+// Wrap a click so we can measure whether it actually did anything, covering EVERY
+// exit of clickBackendNode (coordinate, covered-element JS click, ...), which is why
+// it lives out here and not in the one coordinate branch. Metric only, flag-gated.
+async function measureClickEffect(
+  wv: BrowserWebview, run: () => Promise<Record<string, any>>,
+): Promise<Record<string, any>> {
+  let before = '';
+  try { before = String(await wv.executeJavaScript(FP_EXPR)); } catch { /* unreadable */ }
+  const result = await run();
+  if (!result.error) {
     await new Promise((r) => setTimeout(r, 400));
-    let fpAfter = '';
-    try { fpAfter = String(await wv.executeJavaScript(FP_EXPR)); } catch { /* ignore */ }
-    out.clickEffect = clickEffect(fpBefore, fpAfter);
+    let after = '';
+    try { after = String(await wv.executeJavaScript(FP_EXPR)); } catch { /* unreadable */ }
+    result.clickEffect = clickEffect(before, after);
   }
-  return out;
+  return result;
 }
 
 // Drop list rows the user literally cannot click: zero-size nodes and ones whose center hits a DIFFERENT element (modal backdrop, sticky header, cookie banner). Ground truth via elementFromPoint, the same predicate the click path trusts. Offscreen-but-scrollable elements are kept; the page-wide list is deliberately wider than the viewport. Chunked with a hard budget so a heavy page degrades to an unfiltered list, never a stall.
@@ -982,8 +992,12 @@ async function handleClickIndex(wv: BrowserWebview, params: Record<string, any>)
   }
 
   const wantsText = typeof params.text === 'string' && params.text.length > 0;
-  const result = await clickBackendNode(wv, backendNodeId, sessionId, `index ${idx}`,
-    { role, text: wantsText ? params.text : undefined, effectProbe: params.effectProbe === true });
+  const doClick = () => clickBackendNode(wv, backendNodeId as number, sessionId, `index ${idx}`,
+    { role, text: wantsText ? params.text : undefined });
+  // Effect metric on plain clicks only (a fill verifies via readback); covers every clickBackendNode exit.
+  const result = (params.effectProbe === true && !wantsText)
+    ? await measureClickEffect(wv, doClick)
+    : await doClick();
   // Self-healing escalation: a cached index goes stale the instant the page mutates, which is HALF of all runs' tool-errors. An explicit clickBackendNode error PROVES the click never landed (so re-trying the same target can't double-act), so before we hand a ~3s re-strategize turn back to the model, resolve the SAME element fresh from the full DOM by its name+role, the exact rung the model would have climbed to itself. Plain clicks only (a text-fill has its own readback path); gated so an A/B can turn it off.
   if (shouldSelfHealClick(!!result.error, wantsText, name, params.selfheal)) {
     const healed = await handleClickByName(wv, { name: name as string, role: role || '' });
