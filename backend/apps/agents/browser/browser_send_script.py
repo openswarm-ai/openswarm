@@ -138,19 +138,22 @@ async def run_send_script(
     if not fill_ok:
         logger.info("[browser-sendscript] fill errored; handing to model untouched")
         return None
-    # 2. verify committed + re-resolve Send from the same fresh state
+    # 2. verify committed + re-resolve Send from the same fresh state. LinkedIn enables Send only after its own JS digests the input, sometimes beats after the text is visibly committed (r244 aborted at ~1s with the payload in the box and Send still absent), so the scan keeps going a little longer than feels necessary.
     state2 = ""
-    for wait_s in (0.4, 1.0):
+    committed = False
+    send_btn2 = None
+    for wait_s in (0.4, 0.8, 1.2, 1.6):
         await asyncio.sleep(wait_s)
         state2 = await fresh_list()
-        if state2 and payload_in_textbox(state2, payload):
+        committed = bool(state2 and payload_in_textbox(state2, payload))
+        send_btn2 = send_index_in_state(state2) if committed else None
+        if committed and send_btn2:
             break
-    if not (state2 and payload_in_textbox(state2, payload)):
+    if not committed:
         logger.info("[browser-sendscript] fill not seen committed; aborting pre-click")
         return None
-    send_btn2 = send_index_in_state(state2)
     if not send_btn2:
-        logger.info("[browser-sendscript] Send button gone from fresh state; aborting pre-click")
+        logger.info("[browser-sendscript] Send button never enabled after committed fill; aborting pre-click")
         return None
     # 3. the one irreversible click, solo
     r_send = await execute_tool("BrowserClickIndex", {"index": send_btn2[0]}, browser_id, tab_id)
