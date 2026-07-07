@@ -293,6 +293,9 @@ async def execute_browser_tool(
         return {"error": f"Unknown browser tool: {tool_name}"}
 
     params = {k: v for k, v in tool_input.items()}
+    # Self-healing click toggle (renderer escalates a stale-index failure to a fresh by-name click). Default on; OSW_SELFHEAL_CLICK=0 disables it for the A/B off-arm.
+    if action == "click_index":
+        params["selfheal"] = os.environ.get("OSW_SELFHEAL_CLICK", "1") != "0"
     request_id = uuid4().hex
     result = await ws_manager.send_browser_command(
         request_id, action, browser_id, params, tab_id=tab_id,

@@ -1,4 +1,5 @@
 import { getWebview, findWebviewByDomain, hasDomReady, markDomReady, type BrowserWebview } from './browserRegistry';
+import { shouldSelfHealClick } from './selfHealClick';
 import { store } from './state/store';
 import { resumeBrowserCard } from './state/dashboardLayoutSlice';
 import { dashboardWs } from './ws/WebSocketManager';
@@ -971,8 +972,20 @@ async function handleClickIndex(wv: BrowserWebview, params: Record<string, any>)
     };
   }
 
+  const wantsText = typeof params.text === 'string' && params.text.length > 0;
   const result = await clickBackendNode(wv, backendNodeId, sessionId, `index ${idx}`,
-    { role, text: typeof params.text === 'string' ? params.text : undefined });
+    { role, text: wantsText ? params.text : undefined });
+  // Self-healing escalation: a cached index goes stale the instant the page mutates, which is HALF of all runs' tool-errors. An explicit clickBackendNode error PROVES the click never landed (so re-trying the same target can't double-act), so before we hand a ~3s re-strategize turn back to the model, resolve the SAME element fresh from the full DOM by its name+role, the exact rung the model would have climbed to itself. Plain clicks only (a text-fill has its own readback path); gated so an A/B can turn it off.
+  if (shouldSelfHealClick(!!result.error, wantsText, name, params.selfheal)) {
+    const healed = await handleClickByName(wv, { name: name as string, role: role || '' });
+    if (!healed.error) {
+      console.log(`[selfheal] index ${idx} stale -> recovered via name "${String(name).slice(0, 40)}"`);
+      healed.clickedRole = role || '';
+      healed.clickedName = name || '';
+      healed.selfHealed = 'by-name';
+      return healed;
+    }
+  }
   // Surface what was clicked so the agent loop can record a stable, replayable click-by-name step (indices are ephemeral; names aren't).
   if (!result.error) {
     result.clickedRole = role || '';
