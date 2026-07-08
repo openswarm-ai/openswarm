@@ -1602,6 +1602,65 @@ async def run_browser_agent(
                     continue
 
                 # Intra-run batch replay: run a learned mechanical flow for many inputs at machine speed, verify every step, gate sends, never ghost. Reads/searches loop freely; irreversible steps refuse.
+                if tu.name == "BrowserActVerified":
+                    from backend.apps.agents.browser import browser_verified_step
+                    from backend.apps.agents.browser.browser_prestage import P_BLOCKED_CLICK_RE
+                    p_steps_in = tu.input.get("steps") or []
+                    p_step_lines: list[str] = []
+                    p_all_ok = True
+                    if not p_steps_in:
+                        p_va_text = "No steps given; nothing to do."
+                    else:
+                        for p_si, p_raw in enumerate(p_steps_in[:4], start=1):
+                            p_tgt = str((p_raw or {}).get("target") or "")
+                            # the solo-send rule holds here in CODE: an irreversible-smelling target is refused, exactly like a batch
+                            if P_BLOCKED_CLICK_RE.search(p_tgt):
+                                p_step_lines.append(f"{p_si}. REFUSED: {p_tgt!r} looks irreversible; do it as a SOLO click with an `expect` proof.")
+                                p_all_ok = False
+                                break
+                            p_vstep = browser_verified_step.VerifiedStep(
+                                kind=str(p_raw.get("action") or "click"), target=p_tgt,
+                                role=str(p_raw.get("role") or ""), text=str(p_raw.get("text") or ""),
+                                expect=str(p_raw.get("expect") or ""))
+                            p_st = time.time()
+                            p_vr = await p_cancellable(browser_verified_step.run_verified_step(
+                                p_vstep, browser_id, tab_id, execute_browser_tool))
+                            if p_vr is None:
+                                p_step_lines.append(f"{p_si}. cancelled"); p_all_ok = False; break
+                            p_el = int((time.time() - p_st) * 1000)
+                            action_log.append({
+                                "tool": "BrowserActVerified", "input": p_raw, "ok": p_vr["ok"],
+                                "result_summary": (f"{p_vstep.kind} {p_tgt!r} verified" if p_vr["ok"]
+                                                   else str(p_vr["note"]))[:200],
+                                "elapsed_ms": p_el,
+                            })
+                            browser_metrics.record_tool(
+                                session_id, browser_id, turn, "BrowserActVerified", p_el, ok=p_vr["ok"],
+                                error="" if p_vr["ok"] else str(p_vr["note"]), is_loop=False,
+                                stagnation_streak=0, result_len=0)
+                            if p_vr["ok"]:
+                                p_step_lines.append(f"{p_si}. {p_vstep.kind} {p_tgt!r}: OK (verified)")
+                            else:
+                                p_step_lines.append(f"{p_si}. {p_vstep.kind} {p_tgt!r}: FAILED ({p_vr['note']}); remaining steps skipped")
+                                p_all_ok = False
+                                break
+                        p_va_text = ("All steps verified:\n" if p_all_ok else "Stopped early:\n") + "\n".join(p_step_lines)
+                        # fold the post-plan page state in so the model's next turn already sees the result
+                        p_va_state = await post_action_state(
+                            "BrowserBatch", {}, {"ok": True}, browser_id, tab_id,
+                            wait_exec=execute_browser_tool, goal=current_next_goal or "",
+                            seen_lines=attached_state_seen)
+                        if p_va_state:
+                            p_va_text += p_va_state
+                            fresh_state_pending = True
+                    tool_results.append({"type": "tool_result", "tool_use_id": tu.id, "content": [{"type": "text", "text": p_va_text}]})
+                    result_msg = Message(role="tool_result", content={"text": p_va_text, "tool_name": tu.name, "elapsed_ms": 0})
+                    session.messages.append(result_msg)
+                    await ws_manager.send_to_session(session_id, "agent:message", {
+                        "session_id": session_id, "message": result_msg.model_dump(mode="json"),
+                    })
+                    continue
+
                 if tu.name == "BrowserRepeatFlow":
                     steps_tmpl = tu.input.get("steps") or []
                     values = [str(v) for v in (tu.input.get("values") or [])]

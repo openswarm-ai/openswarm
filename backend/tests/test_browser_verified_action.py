@@ -43,3 +43,30 @@ def test_generic_verifier_agrees_with_the_proven_inline_check():
 
 def test_unknown_expectation_fails_safe():
     assert not va.expectation_met("teleported:X", EMPTY, FILLED)  # typo/unknown = not met
+
+
+PROFILE = '[22]*<link "Tyler Chen Premium 1st">\n[50]*<link "Message">\n[51]<button "Follow">\n[52]<link "Message a friend">'
+
+
+def test_resolve_exact_name_over_partial():
+    # exact "Message" link wins over the partial "Message a friend"
+    hit = va.resolve_target(PROFILE, "Message", "link")
+    assert hit == (50, "link", "Message")
+
+
+def test_resolve_role_disambiguates():
+    two = '[1]<link "Send">\n[2]<button "Send">'
+    assert va.resolve_target(two, "Send", "button") == (2, "button", "Send")
+    # no role given + two exact matches = ambiguous = None (never guess)
+    assert va.resolve_target(two, "Send") is None
+
+
+def test_resolve_prefix_when_suffix_mutates():
+    row = '[7]<link "Ada Lovelace Premium 1st Mathematician and writer at Analytical">'
+    assert va.resolve_target(row, "Ada Lovelace Premium 1st Mathematician and writer at Analytical Engine Co") == (7, "link", 'Ada Lovelace Premium 1st Mathematician and writer at Analytical')
+
+
+def test_resolve_absent_or_empty_is_none():
+    assert va.resolve_target(PROFILE, "Checkout") is None
+    assert va.resolve_target(PROFILE, "") is None
+    assert va.resolve_target("", "Message") is None

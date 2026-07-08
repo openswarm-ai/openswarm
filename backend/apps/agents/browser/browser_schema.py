@@ -388,6 +388,47 @@ BROWSER_TOOLS_SCHEMA = [
         },
     },
     {
+        "name": "BrowserActVerified",
+        "description": (
+            "Run a short SEQUENCE of dependent UI steps (2-4) in one call, where each "
+            "step must take effect before the next: open a menu then pick an item, "
+            "fill a field then the next one, expand a section then click inside it. "
+            "Each step names its target ELEMENT BY NAME (resolved fresh against the "
+            "live page at act time, so a stale index can't bite) and is VERIFIED in "
+            "code (did the expected change actually happen), with one automatic "
+            "re-aim on a miss. Steps:\n"
+            "- { action: 'click', target: '<element name>', role?: 'button'|'link'|..., "
+            "expect?: 'appeared:<text>'|'gone:<text>'|'url_changed'|'changed' }\n"
+            "- { action: 'fill', target: '<field name>', text: '<text to type>' } "
+            "(auto-verifies the text committed)\n"
+            "Execution stops at the first step that can't be verified and you get "
+            "per-step results plus what went wrong. NEVER put an irreversible action "
+            "(send/submit/post/pay/delete/confirm) here; those stay SOLO clicks with "
+            "an `expect` proof, as always."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "action": {"type": "string", "enum": ["click", "fill"]},
+                            "target": {"type": "string"},
+                            "role": {"type": "string"},
+                            "text": {"type": "string"},
+                            "expect": {"type": "string"},
+                        },
+                        "required": ["action", "target"],
+                    },
+                },
+            },
+            "required": ["steps"],
+        },
+    },
+    {
         "name": "BrowserBatch",
         "description": (
             "Your standard way to ACT on the page. Every mutation (navigate, "
@@ -1119,5 +1160,6 @@ ACTION_TOOLS_REQUIRING_REPORT = {
     "BrowserClickIndex",  # Phase 3
     "BrowserClickPoint",  # app mode: tap a canvas/game at a screen point
     "BrowserBatch",  # Phase 4
+    "BrowserActVerified",  # verified-step sequence (mutates state like a batch)
     "AppInvoke",  # app mode: invoking an app action mutates state
 }

@@ -219,7 +219,7 @@ def stagnation_exhausted(streak: int) -> bool:
 # State-changing tools: a task that needed to DO something must land one of these.
 P_PRODUCTIVE_TOOLS = {
     "BrowserClick", "BrowserClickIndex", "BrowserType", "BrowserNavigate",
-    "BrowserPressKey", "BrowserScroll", "BrowserBatch",
+    "BrowserPressKey", "BrowserScroll", "BrowserBatch", "BrowserActVerified",
 }
 # Read/extract tools: a look-only task's evidence is that a read returned content.
 P_READ_TOOLS = {
@@ -263,7 +263,7 @@ def recoverable_tool_error(err: str) -> bool:
 # Actions that DIRTY the page so replay-from-here is no longer equivalent to a clean dispatch. Navigation and reads don't dirty anything (they just get us to the page), so the deferred replay re-check is allowed after only those.
 P_REPLAY_DIRTYING_TOOLS = {
     "BrowserType", "BrowserClick", "BrowserClickIndex",
-    "BrowserPressKey", "BrowserScroll", "BrowserBatch",
+    "BrowserPressKey", "BrowserScroll", "BrowserBatch", "BrowserActVerified",
 }
 
 

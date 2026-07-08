@@ -18,11 +18,46 @@ Expectations (kind, or "kind:arg"):
 """
 
 import re
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 # Match payload_in_textbox: long values truncate in the list, so compare on a prefix.
 P_VALUE_PREFIX_LEN = 24
 P_TEXTBOX_LINE = "<textbox"
+
+# One interactives row: [<index>]<*>?<<role> "<name>"...>, the format every list uses.
+P_ROW_RE = re.compile(r'\[(\d+)\]\*?<\s*([a-z]+)\s+"([^"]*)"', re.I)
+P_NAME_PREFIX_LEN = 40  # long card-blob names mutate their suffix between visits
+
+
+def parse_rows(state_text: str) -> List[Tuple[int, str, str]]:
+    """(index, role, name) for each interactive row. Site-agnostic: it reads the
+    universal list shape, not any particular page's elements."""
+    return [(int(m.group(1)), m.group(2).lower(), m.group(3))
+            for m in P_ROW_RE.finditer(state_text or "")]
+
+
+def resolve_target(state_text: str, name: str, role: str = "") -> Optional[Tuple[int, str, str]]:
+    """Resolve a semantic target against the LIVE list, late, the moment before acting,
+    so a stale index can't bite. Strictest UNAMBIGUOUS tier wins: exact (role,name) ->
+    exact name -> name-prefix. Two matches at a tier = ambiguous = None (hand back
+    rather than click the wrong thing). Mirrors the renderer's click-by-name tiers."""
+    want = (name or "").strip().lower()
+    if not want:
+        return None
+    wrole = (role or "").strip().lower()
+    rows = parse_rows(state_text)
+
+    def uniq(cands: List[Tuple[int, str, str]]) -> Optional[Tuple[int, str, str]]:
+        return cands[0] if len(cands) == 1 else None
+
+    hit = uniq([r for r in rows if r[2].strip().lower() == want and (not wrole or r[1] == wrole)])
+    if hit:
+        return hit
+    hit = uniq([r for r in rows if r[2].strip().lower() == want])
+    if hit:
+        return hit
+    pre = want[:P_NAME_PREFIX_LEN]
+    return uniq([r for r in rows if r[2].strip().lower().startswith(pre) and (not wrole or r[1] == wrole)])
 
 
 def parse_expectation(expect: str) -> Tuple[str, str]:

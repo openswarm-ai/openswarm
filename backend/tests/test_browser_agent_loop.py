@@ -1574,3 +1574,29 @@ def test_loop_tier_pin_flag_overrides_model_failsafe(monkeypatch):
     primary.turn = 0
     asyncio.run(BA.run_browser_agent(task="t", browser_id="b3", model="opus", initial_url=None))
     assert primary.calls[-1]["model"] == "primary-x"
+
+
+def test_act_verified_refuses_irreversible_and_runs_reversible(monkeypatch):
+    # BrowserActVerified: an irreversible-smelling target is REFUSED in code (the
+    # solo-send rule holds), and a reversible step actually executes through the
+    # verified path (resolve-late -> click_index) with an honest per-step verdict.
+    BH.BROWSER_HISTORY.clear(); BH.DOMAIN_NOTES.clear()
+    primary = FakeLLM([
+        Resp([p_rp("send it via the plan tool"),
+              p_tu("BrowserActVerified", steps=[{"action": "click", "target": "Send message"}])]),
+        Resp([p_rp("ok, do a reversible step"),
+              p_tu("BrowserActVerified", steps=[{"action": "click", "target": "Search", "role": "button"}])]),
+        Resp([Blk("text", "done exploring")], stop_reason="end_turn"),
+    ])
+    aux = FakeAux()
+    sent = p_install(monkeypatch, primary, aux)
+
+    asyncio.run(BA.run_browser_agent(task="use the search", browser_id="b1", model="sonnet"))
+
+    all_msgs = json.dumps([c["messages"] for c in primary.calls])
+    # 1) the irreversible target never executed; the model got the refusal + guidance
+    assert "REFUSED" in all_msgs and "SOLO click" in all_msgs
+    # 2) the reversible step resolved "Search" against the live list and clicked index 1
+    assert any(c["action"] == "click_index" and c["params"].get("index") == 1 for c in sent)
+    # 3) honest verdict fed back (static fake page = no observable change; never a fake OK)
+    assert "FAILED" in all_msgs or "OK (verified)" in all_msgs
