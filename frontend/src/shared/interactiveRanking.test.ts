@@ -37,14 +37,26 @@ test('non-consecutive same name is preserved (real list items)', () => {
   assert.equal(carts.length, 3);
 });
 
-test('ranks by role priority: input > button/link > toggle > option', () => {
+test('display order is DOCUMENT order, not rank order (so ordinals can be counted)', () => {
   const { shown } = rankAndCapInteractives([
     mk('option', 'opt', 1),
     mk('checkbox', 'agree', 2),
     mk('button', 'Go', 3),
     mk('textbox', 'email', 4),
   ]);
-  assert.deepEqual(shown.map((x) => x.role), ['textbox', 'button', 'checkbox', 'option']);
+  // all survive the cap; they render top-to-bottom as they appear on the page,
+  // NOT re-sorted by role (which would scramble "the 4th thing")
+  assert.deepEqual(shown.map((x) => x.backendNodeId), [1, 2, 3, 4]);
+});
+
+test('rank still decides cap SURVIVAL: a high-priority input buried in options is kept', () => {
+  const items = [
+    ...Array.from({ length: 40 }, (_, i) => mk('option', `opt${i}`, i)),
+    mk('textbox', 'email', 900),
+    ...Array.from({ length: 40 }, (_, i) => mk('option', `optb${i}`, 100 + i)),
+  ];
+  const { shown } = rankAndCapInteractives(items, { cap: 30 });
+  assert.ok(shown.some((x) => x.backendNodeId === 900), 'the input survives the cap by rank');
 });
 
 test('preserves document order within the same priority tier', () => {
@@ -71,31 +83,23 @@ test('cap of 0 means no cap', () => {
   assert.equal(truncated, 0);
 });
 
-test('goal-matched elements float to the top, above role priority', () => {
-  const { shown } = rankAndCapInteractives([
-    mk('textbox', 'Search', 1),
-    mk('link', 'Account settings', 2),
-    mk('button', 'Save', 3),
-  ], { goal: 'open the settings page' });
-  // "Account settings" matches "settings" and jumps ahead of the textbox
-  assert.equal(shown[0].backendNodeId, 2);
-});
-
-test('goal match survives the cap even when buried deep', () => {
+test('goal-matched element survives the cap and displays IN PLACE (document order)', () => {
   const items = Array.from({ length: 100 }, (_, i) => mk('link', `Item ${i}`, i));
-  items.push(mk('button', 'Checkout now', 999));
+  items.push(mk('button', 'Checkout now', 999));  // last on the page
   const { shown } = rankAndCapInteractives(items, { cap: 30, goal: 'click checkout' });
+  // it survives the cap (rank kept it)...
   assert.ok(shown.some((x) => x.backendNodeId === 999), 'checkout should be retained');
-  assert.equal(shown[0].backendNodeId, 999);
+  // ...and renders at its real position (last), not floated to [0]
+  assert.equal(shown[shown.length - 1].backendNodeId, 999);
 });
 
-test('no goal leaves pure role-priority ordering', () => {
+test('display order stays document order with no goal', () => {
   const { shown } = rankAndCapInteractives([
     mk('option', 'opt', 1),
     mk('button', 'Go', 2),
     mk('textbox', 'email', 3),
   ]);
-  assert.deepEqual(shown.map((x) => x.role), ['textbox', 'button', 'option']);
+  assert.deepEqual(shown.map((x) => x.backendNodeId), [1, 2, 3]);
 });
 
 test('goalKeywords strips stopwords, action verbs, and short tokens', () => {
@@ -110,11 +114,12 @@ test('empty input yields empty result', () => {
   assert.equal(truncated, 0);
 });
 
-test('unknown role falls into the middle tier, not dropped', () => {
+test('unknown role is not dropped (survives the cap), displayed in document order', () => {
   const { shown } = rankAndCapInteractives([
     mk('option', 'opt', 1),
     mk('weirdrole', 'mystery', 2),
     mk('textbox', 'field', 3),
   ]);
-  assert.deepEqual(shown.map((x) => x.role), ['textbox', 'weirdrole', 'option']);
+  assert.deepEqual(shown.map((x) => x.backendNodeId), [1, 2, 3]);
+  assert.ok(shown.some((x) => x.role === 'weirdrole'));
 });

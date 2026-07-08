@@ -77,17 +77,22 @@ export function rankAndCapInteractives(
   const cap = opts.cap ?? DEFAULT_INTERACTIVE_CAP;
   const keywords = opts.goal ? goalKeywords(opts.goal) : [];
   const deduped = dedupeConsecutive(items);
-  // Sort: goal-matched first, then role priority, tiebroken on original document order so the result is deterministic regardless of engine sort.
-  const ranked = deduped
-    .map((it, i) => ({ it, i, m: matchesGoal(it.name, keywords) ? 0 : 1 }))
-    .sort((a, b) => {
-      if (a.m !== b.m) return a.m - b.m;
-      const pa = rolePriority(a.it.role);
-      const pb = rolePriority(b.it.role);
-      if (pa !== pb) return pa - pb;
-      return a.i - b.i;
-    })
-    .map((x) => x.it);
-  const shown = cap > 0 ? ranked.slice(0, cap) : ranked;
+  const scored = deduped.map((it, i) => ({ it, i, m: matchesGoal(it.name, keywords) ? 0 : 1 }));
+  // Rank picks WHICH items survive the cap (goal-matched first, then role priority),
+  // so the thing the model wants is never truncated away.
+  const ranked = [...scored].sort((a, b) => {
+    if (a.m !== b.m) return a.m - b.m;
+    const pa = rolePriority(a.it.role);
+    const pb = rolePriority(b.it.role);
+    if (pa !== pb) return pa - pb;
+    return a.i - b.i;
+  });
+  const selected = cap > 0 ? ranked.slice(0, cap) : ranked;
+  // But the DISPLAY order is document order (by original index), so the numbered
+  // list reads top-to-bottom the way the page looks. A rank-sorted list scrambled
+  // ordinals ("the 4th story" landed at [48], out of order), forcing the model to
+  // burn a turn reading page text just to recover position; document order lets it
+  // count directly. The high-signal-subset win (from the cap) is untouched.
+  const shown = selected.sort((a, b) => a.i - b.i).map((x) => x.it);
   return { shown, truncated: Math.max(0, ranked.length - shown.length) };
 }
