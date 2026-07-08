@@ -32,10 +32,12 @@ P_SYSTEM = (
     '{"action":"click"|"fill","target":"<element name EXACTLY as listed>",'
     '"role":"button"|"link"|"textbox"|"","text":"<for fill>",'
     '"expect":"appeared:<text>"|"gone:<text>"|"url_changed"|"changed"|""}\n'
-    "Rules: target must be copied verbatim from a listed element name. STOP before "
-    "anything irreversible (send/submit/post/pay/delete/confirm/apply), before any "
-    "ambiguous choice, and before steps whose elements are not yet on the page. "
-    "0-4 steps; [] when nothing is safely mechanical."
+    "Rules: target must be copied verbatim from a listed element name. ORDINALS map "
+    "to rows: 'the 4th story's comments' = copy the name of the 4th row matching that "
+    "shape (e.g. the 4th 'N comments' link, counting from the top of the list); you "
+    "may and should count. STOP before anything irreversible (send/submit/post/pay/"
+    "delete/confirm/apply), before any ambiguous choice, and before steps whose "
+    "elements are not yet on the page. 0-4 steps; [] when nothing is safely mechanical."
 )
 
 
