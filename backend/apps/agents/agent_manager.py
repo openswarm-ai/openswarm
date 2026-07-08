@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import os
-from typing import Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Dict, List, Optional
 from typeguard import typechecked
 
 from backend.apps.agents.core.models import (
@@ -33,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 
+# Cap concurrent ROOT agent turns so firing 30 agents at once doesn't spawn 30 CLIs in the same instant; the overflow queues (agents are model/IO-bound, so they're waiting anyway). Env-tunable, 0/blank disables the gate.
+MAX_CONCURRENT_TURNS = int(os.environ.get("OSW_MAX_CONCURRENT_TURNS", "8") or "0")
+
 
 class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionControl, AgentLaunch, MockAgent, TurnRunner, RunOptions, RunSupport):
     @typechecked
@@ -48,7 +52,46 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         # Per-SESSION hook context + stderr buffer, updated in place each turn: a persistent client's hooks/stderr callback were bound at connect, so they must read stable objects, not per-turn rebuilds.
         self.hook_ctxs: Dict[str, object] = {}
         self.stderr_buffers: Dict[str, List[str]] = {}
+        # Admission gate: one shared semaphore caps concurrent ROOT turns (children bypass). (Re)created per running loop by get_turn_admission so it never binds to a dead loop across a uvicorn reload or a test's asyncio.run.
+        self.p_turn_admission_sema: Optional[asyncio.Semaphore] = None
+        self.p_turn_admission_loop: Optional[asyncio.AbstractEventLoop] = None
 
+
+    @typechecked
+    def get_turn_admission(self) -> asyncio.Semaphore:
+        """The shared admission semaphore for the CURRENT loop; rebuilt if the loop changed so a
+        reload/test-run can never await a semaphore bound to a dead loop."""
+        loop = asyncio.get_running_loop()
+        if self.p_turn_admission_sema is None or self.p_turn_admission_loop is not loop:
+            self.p_turn_admission_sema = asyncio.Semaphore(MAX_CONCURRENT_TURNS)
+            self.p_turn_admission_loop = loop
+        return self.p_turn_admission_sema
+
+    @asynccontextmanager
+    async def turn_admission_slot(self, session: AgentSession, session_id: str) -> AsyncIterator[None]:
+        """Hold one concurrency slot for the duration of a ROOT turn. Overflow turns queue on the
+        semaphore (emitting agent:queued, then agent:admitted when they start). Two bypasses, both
+        load-bearing: (1) MAX_CONCURRENT_TURNS<=0 disables the gate entirely (kill switch); (2) a
+        CHILD turn (parent_session_id set) is NEVER gated, because a parent holds its own slot while
+        awaiting a delegated child, so gating children would deadlock the pool. `async with` release
+        is cancellation-safe: a stop while queued never acquired, so it can't over-release."""
+        if MAX_CONCURRENT_TURNS <= 0 or session.parent_session_id is not None:
+            yield
+            return
+        sema = self.get_turn_admission()
+        was_queued = sema.locked()
+        if was_queued:
+            try:
+                await ws_manager.send_to_session(session_id, "agent:queued", {"session_id": session_id})
+            except Exception:
+                pass
+        async with sema:
+            if was_queued:
+                try:
+                    await ws_manager.send_to_session(session_id, "agent:admitted", {"session_id": session_id})
+                except Exception:
+                    pass
+            yield
 
     @typechecked
     async def run_agent_loop(self, session_id: str, prompt: str, images: Optional[List] = None, context_paths: Optional[List] = None, forced_tools: Optional[List[str]] = None, attached_skills: Optional[List] = None, fork_session: bool = False, selected_browser_ids: Optional[List[str]] = None, selected_app_output_ids: Optional[List[str]] = None, selected_setting_ids: Optional[List[str]] = None, context_valve_retry: bool = False):
@@ -99,11 +142,13 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
             api_type = p_api_type_for_session
 
             thinking = ThinkingState()
-            await self.run_turn_with_retry(
-                session, session_id, prompt_content, options, options_kwargs,
-                turn, thinking, p_stderr_buffer, resolved_model, api_type, global_settings,
-                force_respawn=p_force_respawn,
-            )
+            # Gate the CLI turn (spawn + stream) behind the admission slot so a burst can't run every turn at once; the slot is held ONLY for run_turn_with_retry, so the context-valve retry below re-acquires cleanly instead of nesting.
+            async with self.turn_admission_slot(session, session_id):
+                await self.run_turn_with_retry(
+                    session, session_id, prompt_content, options, options_kwargs,
+                    turn, thinking, p_stderr_buffer, resolved_model, api_type, global_settings,
+                    force_respawn=p_force_respawn,
+                )
             session.status = "completed"
 
             # Auto-continuation hook (Phase 3). If MCPActivate (or any analogous flow) flagged pending_continuation during this turn, kick off a follow-up turn immediately with the captured prompt. We dispatch as a fire-and-forget task so the current run_agent_loop frame can unwind cleanly before the next turn's options + history rebuild kicks in. The follow-up is `hidden=True` so it doesn't add a user bubble to the visible chat; the model sees it as a synthetic prompt to keep working.

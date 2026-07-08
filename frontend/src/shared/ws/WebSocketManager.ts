@@ -24,6 +24,7 @@ import {
   fetchSession,
   recordCompaction,
   setTurnLabel,
+  setQueued,
   clearTurnLabel,
 } from '../state/agentsSlice';
 import { streamStart, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
@@ -589,6 +590,16 @@ class WebSocketManager {
             label: data.label,
           }));
         }
+        break;
+
+      case 'agent:queued':
+        // Admission gate: this turn is waiting for a concurrency slot; shows a "queued" chip so it doesn't read as a hung "working".
+        if (session_id) store.dispatch(setQueued({ sessionId: session_id, queued: true }));
+        break;
+
+      case 'agent:admitted':
+        // Slot acquired; the turn is about to stream. Clears the queued chip.
+        if (session_id) store.dispatch(setQueued({ sessionId: session_id, queued: false }));
         break;
 
       case 'agent:auth_error':

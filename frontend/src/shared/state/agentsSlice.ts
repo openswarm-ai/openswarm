@@ -100,6 +100,8 @@ export interface AgentSession {
   /** Browser memory signals that drive the subtle "Remembered"/"Learned" card chip. */
   memory_recalled?: boolean;
   memory_learned?: boolean;
+  /** Client-only: turn is waiting on the admission gate (agent:queued -> agent:admitted). Transient; self-clears on the next full-session status update. */
+  queued?: boolean;
   thinking_level?: 'off' | 'low' | 'medium' | 'high' | 'auto';
   active_mcps?: string[];
   ctx_used_pct?: number;
@@ -727,6 +729,8 @@ const agentsSlice = createSlice({
         if (action.payload.status === 'running' && session.status !== 'running') {
           session.app_deps_changed = false;
         }
+        // Leaving the running state ends any admission-queue wait (the partial-payload path; the full-session path drops it by replacing the object).
+        if (action.payload.status !== 'running') session.queued = false;
         session.status = action.payload.status;
       }
       if (action.payload.status === 'running' && !state.trackedNotificationIds.includes(action.payload.sessionId)) {
@@ -853,6 +857,12 @@ const agentsSlice = createSlice({
       const session = state.sessions[action.payload];
       if (!session) return;
       session.turn_label = null;
+    },
+
+    setQueued(state, action: PayloadAction<{ sessionId: string; queued: boolean }>) {
+      const session = state.sessions[action.payload.sessionId];
+      if (!session) return;
+      session.queued = action.payload.queued;
     },
 
     // streamStart/Delta/End live in streamingSlice; keeps sessions dict stable during streaming.
@@ -1455,6 +1465,7 @@ export const {
   recordCompaction,
   setTurnLabel,
   clearTurnLabel,
+  setQueued,
   addApprovalRequest,
   removeApprovalRequest,
   updateSessionCost,

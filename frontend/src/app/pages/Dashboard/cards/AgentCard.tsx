@@ -924,7 +924,7 @@ const AgentCard: React.FC<Props> = ({
             {session.status !== 'completed' && session.status !== 'stopped' && !session.is_welcome_draft && (
               <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                 <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: c.text.tertiary, whiteSpace: 'nowrap' }}>
-                  {friendlyStatusLabel(session.status)}
+                  {session.queued && session.status === 'running' ? 'queued' : friendlyStatusLabel(session.status)}
                 </Typography>
               </Box>
             )}
