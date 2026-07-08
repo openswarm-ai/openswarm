@@ -39,19 +39,21 @@ function cardIntersectsViewport(card: BrowserCardPosition, vp: Viewport, marginP
   return card.x < vx + vw && card.x + card.width > vx && card.y < vy + vh && card.y + card.height > vy;
 }
 
+function sessionIsWorking(s: { status?: string } | undefined): boolean {
+  return !!s && (s.status === 'running' || s.status === 'waiting_approval');
+}
+
 function agentNeedsLive(browserId: string, card: BrowserCardPosition): boolean {
   if (getActivity(browserId)) return true;
   const state = store.getState();
-  const glow = state.dashboardLayout.glowingBrowserCards[browserId];
-  if (glow && !glow.fading) return true;
   const sessions = state.agents.sessions as Record<string, any>;
+  // A glow holds the card live only while its SOURCE session is still working: a stuck glow (chat unmounted at finish never fades it) must not pin a renderer forever.
+  const glow = state.dashboardLayout.glowingBrowserCards[browserId];
+  if (glow && !glow.fading && sessionIsWorking(sessions[glow.sourceId])) return true;
   for (const s of Object.values(sessions)) {
-    if (s.browser_id === browserId && (s.status === 'running' || s.status === 'waiting_approval')) return true;
+    if (s.browser_id === browserId && sessionIsWorking(s)) return true;
   }
-  if (card.spawned_by) {
-    const parent = sessions[card.spawned_by];
-    if (parent && (parent.status === 'running' || parent.status === 'waiting_approval')) return true;
-  }
+  if (card.spawned_by && sessionIsWorking(sessions[card.spawned_by])) return true;
   return false;
 }
 
@@ -128,9 +130,10 @@ export function useWebviewSuspend(
         if (isSuspended(id)) continue;
         if (cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX)) continue;
         if (mustStayLive(id, card)) continue;
+        // An empty dataUrl still suspends (placeholder renders): a card whose capture hangs/fails must not keep its renderer alive forever.
         const dataUrl = await captureCard(id, card);
         // The capture await yielded; conditions may have changed under us.
-        if (!dataUrl || cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX) || mustStayLive(id, card)) continue;
+        if (cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX) || mustStayLive(id, card)) continue;
         dispatch(suspendBrowserCard({ browserId: id, dataUrl }));
       }
 
@@ -142,7 +145,7 @@ export function useWebviewSuspend(
         for (const [id, card] of candidates) {
           if (countLive() <= MAX_LIVE_WEBVIEWS) break;
           const dataUrl = await captureCard(id, card);
-          if (!dataUrl || mustStayLive(id, card)) continue;
+          if (mustStayLive(id, card)) continue;
           dispatch(suspendBrowserCard({ browserId: id, dataUrl }));
         }
       }
@@ -160,19 +163,25 @@ function distFromCenter(card: BrowserCardPosition, vp: Viewport): number {
   return dx * dx + dy * dy;
 }
 
-async function captureCard(id: string, card: BrowserCardPosition): Promise<string | null> {
+// capturePage on an already-off-screen webview can HANG forever (Electron 42/Viz stops producing frames for unpainted guests), and one hung await used to wedge the whole suspend pass, silently disabling suspension for every card. Bound it hard.
+const CAPTURE_TIMEOUT_MS = 1500;
+
+async function captureCard(id: string, card: BrowserCardPosition): Promise<string> {
   const wv = getWebview(id, card.activeTabId);
-  if (!wv) return null;
+  if (!wv) return '';
   try {
-    if (wv.isLoading()) return null;
+    if (wv.isLoading()) return '';
     const url = wv.getURL();
-    if (!url || url === 'about:blank') return null;
-    const image = await wv.capturePage();
-    if (image.isEmpty()) return null;
+    if (!url || url === 'about:blank') return '';
+    const image = await Promise.race([
+      wv.capturePage(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), CAPTURE_TIMEOUT_MS)),
+    ]);
+    if (!image || image.isEmpty()) return '';
     return image.getSize().width > SNAPSHOT_MAX_W
       ? image.resize({ width: SNAPSHOT_MAX_W, quality: 'good' }).toDataURL()
       : image.toDataURL();
   } catch {
-    return null;
+    return '';
   }
 }

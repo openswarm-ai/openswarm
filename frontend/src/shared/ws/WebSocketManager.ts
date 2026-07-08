@@ -28,7 +28,7 @@ import {
   clearTurnLabel,
 } from '../state/agentsSlice';
 import { streamStart, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
-import { addBrowserCardFromBackend, markBrowserCardEnding, keepBrowserCardOpen, placeBesideCard, placeBelowCard, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP, WORKFLOW_CARD_GAP, openWorkflowsApp, openWorkflowMonitor } from '../state/dashboardLayoutSlice';
+import { addBrowserCardFromBackend, markBrowserCardEnding, keepBrowserCardOpen, placeBesideCard, placeBelowCard, setBrowserCardPosition, setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards, GRID_GAP, WORKFLOW_CARD_GAP, openWorkflowsApp, openWorkflowMonitor } from '../state/dashboardLayoutSlice';
 import { upsertOutput } from '../state/outputsSlice';
 import { fetchSettings } from '../state/settingsSlice';
 import { displaySessionName } from '../state/sessionDisplay';
@@ -382,6 +382,14 @@ class WebSocketManager {
           }
           if (data.status === 'running' && session_id) {
             store.dispatch(trackAgentNotification(session_id));
+          }
+
+          // Fade this session's browser glows on the terminal transition HERE, not only in AgentChat's effect: a collapsed chat is unmounted at finish, and a never-faded glow pins the browser's renderer (exempt from suspend + the webview cap) forever.
+          const newStatus = data.status ?? data.session?.status;
+          const wasWorking = prevStatus === 'running' || prevStatus === 'waiting_approval';
+          if (session_id && wasWorking && (newStatus === 'completed' || newStatus === 'stopped' || newStatus === 'error')) {
+            store.dispatch(fadeGlowingBrowserCards(session_id));
+            setTimeout(() => store.dispatch(clearGlowingBrowserCards(session_id)), 600);
           }
 
           // Fire a native notification when an agent terminates while the window is hidden. Skips sub-agents and browser-agents (the parent's own completion is what the user cares about) and only fires on a real transition from a non-terminal state.
