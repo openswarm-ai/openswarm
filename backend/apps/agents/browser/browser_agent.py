@@ -2500,8 +2500,19 @@ async def p_evict_dead_card(dashboard_id: str | None, browser_id: str) -> None:
     """Free a wedged card's webview so the recovery card isn't its heavy neighbor:
     tell the renderer to unmount it (frees the renderer process), drop it from the
     persisted layout, and WAIT for the teardown to land before the caller spawns the
-    recovery card. Fail-open, never raises into the abort path."""
+    recovery card. Fail-open, never raises into the abort path.
+    ONLY agent-spawned cards are ever evicted: a user's own card (they selected it
+    for the agent) must never be deleted out from under them, wedged or not; for
+    those the DEAD_CARDS reuse-skip is the whole remedy."""
     ACTIVE_AGENT_CARDS.discard(browser_id)
+    try:
+        from backend.apps.dashboards.dashboards import load as p_dash_load
+        p_card = p_dash_load(dashboard_id).layout.browser_cards.get(browser_id) if dashboard_id else None
+        if p_card is None or not getattr(p_card, "spawned_by", None):
+            logger.info(f"[browser-agent] {browser_id} is not an agent-spawned card; skipping evict (reuse-skip only)")
+            return
+    except Exception:
+        return
     try:
         await ws_manager.broadcast_global("dashboard:browser_card_evict", {
             "dashboard_id": dashboard_id or "", "browser_id": browser_id})

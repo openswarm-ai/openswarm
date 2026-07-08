@@ -34,7 +34,7 @@ def p_patch(monkeypatch, cards):
 
 
 def test_evict_broadcasts_unmount_and_removes_from_layout(monkeypatch):
-    broadcasts, saved, dash = p_patch(monkeypatch, {"browser-dead": object(), "browser-keep": object()})
+    broadcasts, saved, dash = p_patch(monkeypatch, {"browser-dead": FakeCard("sess-1"), "browser-keep": FakeCard("sess-1")})
     ba.ACTIVE_AGENT_CARDS.add("browser-dead")
     asyncio.run(ba.p_evict_dead_card("dash-1", "browser-dead"))
     # the renderer is told to unmount exactly the dead card
@@ -46,9 +46,23 @@ def test_evict_broadcasts_unmount_and_removes_from_layout(monkeypatch):
     assert "browser-dead" not in ba.ACTIVE_AGENT_CARDS
 
 
-def test_evict_is_fail_open_without_a_dashboard(monkeypatch):
+def test_evict_without_a_dashboard_deletes_nothing(monkeypatch):
+    # No dashboard = ownership unverifiable = fail SAFE: never unmount or delete
+    # what might be the user's card; the reuse-skip alone handles it.
     broadcasts, saved, _ = p_patch(monkeypatch, {})
-    # no dashboard id: still tells the renderer to unmount (best-effort), never raises
     asyncio.run(ba.p_evict_dead_card("", "browser-x"))
-    assert broadcasts and broadcasts[0][0] == "dashboard:browser_card_evict"
-    assert not saved  # nothing to persist without a dashboard
+    assert not broadcasts and not saved
+
+
+class FakeCard:
+    def __init__(self, spawned_by=None):
+        self.spawned_by = spawned_by
+
+
+def test_user_card_is_never_evicted(monkeypatch):
+    """A wedged USER card (no spawned_by) must never be deleted out from under the
+    user; reuse-skip is the whole remedy. Only agent-spawned cards evict."""
+    broadcasts, saved, dash = p_patch(monkeypatch, {"browser-user": FakeCard(None)})
+    asyncio.run(ba.p_evict_dead_card("dash-1", "browser-user"))
+    assert not broadcasts and not saved
+    assert "browser-user" in dash.layout.browser_cards
