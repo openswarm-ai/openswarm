@@ -10,6 +10,23 @@
 // this webview. Surfaces via main.js's console-message listener.
 try { console.warn('[openswarm:webview-preload] loaded for', window.location.href); } catch (_) {}
 
+// Chrome-style suspend/resume: sync-take a pending sessionStorage capsule (staged by the host right before this load) at document-start, so page scripts wake to their old state and logins survive suspension. Origin-matched in main; null for every ordinary navigation.
+(function restoreSessionCapsule() {
+  try {
+    const { ipcRenderer } = require('electron');
+    const cap = ipcRenderer.sendSync('browser-capsule-take', window.location.origin);
+    if (!cap || !cap.ss) return;
+    for (const k of Object.keys(cap.ss)) {
+      try { sessionStorage.setItem(k, cap.ss[k]); } catch (_) {}
+    }
+    if (cap.sx || cap.sy) {
+      window.addEventListener('load', () => {
+        setTimeout(() => { try { window.scrollTo(cap.sx, cap.sy); } catch (_) {} }, 80);
+      });
+    }
+  } catch (_) {}
+})();
+
 // Hide webdriver flag
 Object.defineProperty(navigator, 'webdriver', {
   get: () => false,

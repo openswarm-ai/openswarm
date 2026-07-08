@@ -51,6 +51,7 @@ import {
   type BrowserWebview,
 } from '@/shared/browserRegistry';
 import { setLastInteractedBrowser } from '@/shared/browserFocus';
+import { registerCapsuleForRestore } from '@/shared/browserStateCapsule';
 import BrowserFindBar from './BrowserFindBar';
 import { useBrowserActivity } from '@/shared/useBrowserActivity';
 import { getActionLabel } from '@/shared/browserCommandHandler';
@@ -313,6 +314,8 @@ const BrowserCard: React.FC<Props> = ({
         const doLoad = () => {
           // Reaching dom-ready proves the webview survived Chromium's commit phase (the historical Windows mount segfault). Clear the crash-safety marker.
           if (isWindows) markWindowsWebviewSurvived();
+          // Registered BEFORE loadURL so the guest preload can sync-take it at document-start: a resumed tab gets its sessionStorage back Chrome-style instead of a logged-out reload. No-op when no capsule exists.
+          registerCapsuleForRestore(wv, tabId);
           wv.loadURL(targetUrl).catch(() => {});
           try {
             (wv as any).setVisualZoomLevelLimits?.(1, 1);

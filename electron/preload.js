@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld('openswarm', {
   connectSlack: () => ipcRenderer.invoke('connect-slack'),
   // Hands a vetted social platform's partition cookies to its session-backed MCP shim (allowlisted domains only, gated again in the main process).
   getPartitionCookies: (domain) => ipcRenderer.invoke('get-partition-cookies', domain),
+  // Suspend/resume state capsule: stages a resumed webview's sessionStorage snapshot in main (keyed by webContents id, short TTL) so the guest preload can sync-take it at document-start. Fire-and-forget; main validates the sender.
+  setSessionCapsule: (wcId, capsule) => ipcRenderer.send('browser-capsule-set', wcId, capsule),
   sendCdpCommand: (wcId, method, params, sessionId) => ipcRenderer.invoke('send-cdp-command', wcId, method, params, sessionId),
   cdpDetachClean: (wcId) => ipcRenderer.invoke('cdp-detach-clean', wcId),
   cdpCacheSet: (wcId, indexMap) => ipcRenderer.invoke('cdp-cache-set', wcId, indexMap),

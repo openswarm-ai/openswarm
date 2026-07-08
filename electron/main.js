@@ -2799,6 +2799,31 @@ async function readPartitionCookies(domain) {
 }
 ipcMain.handle('get-partition-cookies', (_e, domain) => readPartitionCookies(domain));
 
+// Suspend/resume state capsules: the app renderer stages a resumed webview's sessionStorage snapshot here (keyed by that guest's webContents id) right before loadURL; the guest preload sync-takes it at document-start with an origin match, so page scripts see restored state and logins survive suspension. In-memory only, single-shot, short TTL; a guest can only ever take its OWN capsule.
+const pendingSessionCapsules = new Map();
+const SESSION_CAPSULE_TTL_MS = 2 * 60 * 1000;
+ipcMain.on('browser-capsule-set', (event, wcId, capsule) => {
+  // Only the app window may stage capsules; a compromised guest must not be able to seed storage into another guest.
+  if (!mainWindow || event.sender !== mainWindow.webContents) return;
+  if (typeof wcId !== 'number' || !capsule || typeof capsule.origin !== 'string' || typeof capsule.ss !== 'object') return;
+  pendingSessionCapsules.set(wcId, { capsule, expiresAt: Date.now() + SESSION_CAPSULE_TTL_MS });
+});
+ipcMain.on('browser-capsule-take', (event, origin) => {
+  const entry = pendingSessionCapsules.get(event.sender.id);
+  if (!entry || entry.expiresAt < Date.now()) {
+    if (entry) pendingSessionCapsules.delete(event.sender.id);
+    event.returnValue = null;
+    return;
+  }
+  // Origin-gated take: about:blank and cross-origin redirects leave the capsule staged for the real page (until TTL).
+  if (entry.capsule.origin !== origin) {
+    event.returnValue = null;
+    return;
+  }
+  pendingSessionCapsules.delete(event.sender.id);
+  event.returnValue = entry.capsule;
+});
+
 // The renderer relays cookie reads for the session-borrow bridge, but macOS throttles it when the
 // window is backgrounded, so those reads intermittently time out. Main never throttles: hold our own
 // socket to the backend and answer get_session_cookies here. Cookie reads only; the renderer still
