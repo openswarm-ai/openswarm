@@ -1257,6 +1257,21 @@ async def run_browser_agent(
                 # Clicked but the composer did NOT clear: the send is UNVERIFIED. Leave send_confirmed False so the loop can't shortcut to a "done" it never earned (r264 set it True here and the model then FALSELY claimed delivery). The model gets ONE truthful verify pass, never a blind resend.
                 task = f"{task}\n\n[{p_script['note']}]"
 
+    # Code-side plan dispatch (the turn-collapser that doesn't wait for the model to adopt a tool): one aux call compiles the task's mechanical prefix into verified steps, code executes them, and the big model starts with that work DONE. Fail-open: no plan/steps = today's loop untouched.
+    from backend.apps.agents.browser import browser_plan_dispatch
+    if (browser_plan_dispatch.plan_dispatch_enabled() and not app_mode and not done_called
+            and preloaded_perception and not cancel_event.is_set()):
+        try:
+            p_plan_note = await asyncio.wait_for(browser_plan_dispatch.run_plan_dispatch(
+                task, preloaded_perception, browser_id, tab_id,
+                load_settings(), get_api_type(model), execute_browser_tool,
+            ), timeout=45.0)
+        except Exception as p_pe:
+            logger.info(f"[plan-dispatch] outer skip ({p_pe})")
+            p_plan_note = ""
+        if p_plan_note:
+            task = f"{task}\n\n{p_plan_note}"
+
     try:
         for turn in range(MAX_TURNS):
             if done_called or cancel_event.is_set():
