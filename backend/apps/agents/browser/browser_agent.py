@@ -2428,27 +2428,38 @@ def find_reusable_card(dashboard_id: str, url: str, parent_session_id: str | Non
     return own or orphan
 
 
+# The renderer needs a beat to unmount the <webview> and let Electron free its
+# renderer process. Recovery spawns its fresh card the instant this returns, so we
+# hold here until the teardown has almost certainly landed, else the new card mounts
+# next to a still-freeing dead one and eats the same 15s starvation cap (observed
+# live: recovery card f47d8bdd still capped once even with evict firing). This wait
+# is on the FAILURE path only, so its cost is invisible next to the cap it prevents.
+P_EVICT_SETTLE_S = 1.5
+
+
 async def p_evict_dead_card(dashboard_id: str | None, browser_id: str) -> None:
     """Free a wedged card's webview so the recovery card isn't its heavy neighbor:
-    tell the renderer to unmount it (frees the renderer process), and drop it from
-    the persisted layout so it doesn't reappear. Fail-open, never blocks the abort."""
+    tell the renderer to unmount it (frees the renderer process), drop it from the
+    persisted layout, and WAIT for the teardown to land before the caller spawns the
+    recovery card. Fail-open, never raises into the abort path."""
     ACTIVE_AGENT_CARDS.discard(browser_id)
     try:
         await ws_manager.broadcast_global("dashboard:browser_card_evict", {
             "dashboard_id": dashboard_id or "", "browser_id": browser_id})
     except Exception:
         pass
-    if not dashboard_id:
-        return
-    try:
-        from backend.apps.dashboards.dashboards import load, save
-        dash = load(dashboard_id)
-        if browser_id in dash.layout.browser_cards:
-            del dash.layout.browser_cards[browser_id]
-            dash.updated_at = datetime.now()
-            save(dash)
-    except Exception:
-        pass
+    if dashboard_id:
+        try:
+            from backend.apps.dashboards.dashboards import load, save
+            dash = load(dashboard_id)
+            if browser_id in dash.layout.browser_cards:
+                del dash.layout.browser_cards[browser_id]
+                dash.updated_at = datetime.now()
+                save(dash)
+        except Exception:
+            pass
+    # Let the renderer finish unmounting BEFORE recovery mounts its replacement.
+    await asyncio.sleep(P_EVICT_SETTLE_S)
 
 
 async def p_create_browser_card(dashboard_id: str, url: str, parent_session_id: str | None = None) -> str:

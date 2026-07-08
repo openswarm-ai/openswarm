@@ -25,6 +25,7 @@ def p_patch(monkeypatch, cards):
         broadcasts.append((event, data))
 
     dash = FakeDash(cards)
+    monkeypatch.setattr(ba, "P_EVICT_SETTLE_S", 0, raising=True)  # don't pay the renderer-settle wait in a unit test
     monkeypatch.setattr(ba.ws_manager, "broadcast_global", fake_broadcast, raising=True)
     import backend.apps.dashboards.dashboards as dmod
     monkeypatch.setattr(dmod, "load", lambda did: dash, raising=True)
