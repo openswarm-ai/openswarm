@@ -19,6 +19,8 @@ import re
 import time
 from typing import Awaitable, Callable
 
+from backend.apps.agents.browser import browser_verified_action
+
 logger = logging.getLogger(__name__)
 
 # Double quotes are unambiguous. Single quotes only delimit when the opener is at a word boundary (start/space/colon), so an in-word apostrophe like "chen's" is never mistaken for a payload quote, that mispairing was silently corrupting the canonical "text him '...'" errand.
@@ -196,12 +198,15 @@ async def run_send_script(
     if not send_ok:
         logger.info(f"[browser-sendscript] send click errored ({send_name}); handing to model (fill committed, NOT sent)")
         return None
-    # 4. two-sided receipt: composer seen cleared of the payload
+    # 4. two-sided receipt via the GENERIC verifier: the send is confirmed only when
+    # the composer clears the payload ("cleared:<payload>"). Same verdict as the old
+    # inline check, now expressed as the site-agnostic expectation a verified-action
+    # executor uses everywhere, so this proven flow IS the executor's verification core.
     cleared = False
     for wait_s in (0.4, 1.0, 1.6):
         await asyncio.sleep(wait_s)
         state3 = await fresh_list()
-        if state3 and not payload_in_textbox(state3, payload):
+        if state3 and browser_verified_action.expectation_met(f"cleared:{payload}", state2, state3):
             cleared = True
             break
     note = ("" if cleared else
