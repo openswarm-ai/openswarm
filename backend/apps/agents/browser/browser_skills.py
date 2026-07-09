@@ -330,6 +330,23 @@ def replay_settle_target(step: dict) -> str | None:
     return name if 0 < len(name) <= 60 else None
 
 
+P_COMPOSER_STEP_RE = re.compile(r"write a message|compose|message body|comment|reply|tweet|post text|type here|editor", re.I)
+
+
+def step_touches_composer(step: dict) -> bool:
+    """True if this step interacts with the compose box itself (focusing/typing),
+    as opposed to navigation or the opener click. The send-script owns the composer
+    (it polls for the lazy overlay), so the marriage replays only the nav+opener and
+    hands the composer->send tail to the script."""
+    tool = step.get("tool", "")
+    p = step.get("params", {}) or {}
+    if tool == "BrowserType":
+        return True
+    if tool in ("BrowserClickByName", "BrowserClick"):
+        return bool(P_COMPOSER_STEP_RE.search(str(p.get("name") or p.get("selector") or "")))
+    return False
+
+
 def first_unsafe_step(steps: list[dict]) -> tuple[int, str]:
     """Index of the first GENUINELY irreversible step (click Send/Submit/Pay, type
     into a composer), -1 if none. This is the prefix-replay/batch boundary, so a

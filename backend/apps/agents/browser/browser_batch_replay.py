@@ -111,17 +111,24 @@ P_LIVE_IRREVERSIBLE_RE = re.compile(
     r"confirm|apply|accept|decline|delete|remove|unsend|withdraw|endorse)\b",
     re.I,
 )
+# Composer OPENERS phrased with a send-word: LinkedIn's profile button is literally
+# named "Send a message to <person>", which opens the compose box (reversible), not
+# a real Send. A true Send control is short and exact ("Send", "Send now"); these
+# describe opening a conversation, so they must NOT trip the irreversible boundary.
+P_SEND_OPENER_RE = re.compile(r"send (a |an |the )?(message|note|inmail|dm) to\b", re.I)
 
 
 def is_replay_boundary(step: dict) -> bool:
     """The genuinely irreversible step where a learned skill's mechanical replay
     must STOP and hand to the live agent. Same as is_send_step EXCEPT a composer
-    OPENER ('Message'/'DM' click) is reversible and NOT a boundary: the prefix can
-    mechanically open the composer, and only the real Send (and composer typing)
-    crosses to the live model. Uses the same opener-excluded wordlist the live
-    send-guard already trusts, so a recorded Send still stops the prefix."""
+    OPENER ('Message'/'DM' click, incl. 'Send a message to X') is reversible and NOT
+    a boundary: the prefix can mechanically open the composer, and only the real Send
+    (and composer typing) crosses to the live model."""
     action = step.get("action")
-    if action == "click" and P_LIVE_IRREVERSIBLE_RE.search(str(step.get("name") or "")):
+    name = str(step.get("name") or "")
+    if action == "click" and P_SEND_OPENER_RE.search(name):
+        return False  # opener phrasing, not a real send
+    if action == "click" and P_LIVE_IRREVERSIBLE_RE.search(name):
         return True
     if action == "type" and P_COMPOSE_SEL_RE.search(str(step.get("selector") or "")):
         return True

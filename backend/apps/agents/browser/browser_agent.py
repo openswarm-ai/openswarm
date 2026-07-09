@@ -1059,6 +1059,11 @@ async def run_browser_agent(
                 logger.info(f"[browser-skills] skill on {host} not replayed: {why}; running the full agent so the send is confirmed")
                 return None
             prefix = steps[:unsafe_i]
+            # Marriage mode: the send-script owns the composer (it polls for the lazy overlay + fills + sends). Replaying a recorded composer-textbox click races that render and misses (v903/v906), so truncate the prefix to NAV + opener only and let the script take it from the navigated page. Keep >=1 step or there's nothing to replay.
+            if os.environ.get("OSW_REPLAY_SENDTAIL", "0") == "1":
+                p_nav_prefix = [s for s in prefix if not browser_skills.step_touches_composer(s)]
+                if p_nav_prefix:
+                    prefix = p_nav_prefix
             logger.info(
                 f"[browser-skills] PREFIX replay: {len(prefix)}/{len(steps)} steps on {host}, "
                 f"live agent confirms the tail ({why})"

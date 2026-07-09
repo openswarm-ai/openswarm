@@ -717,3 +717,24 @@ def test_replay_settle_target_for_click_by_name():
         {"tool": "BrowserClickByName", "params": {"name": "x" * 80}}) is None
     assert sk.replay_settle_target(
         {"tool": "BrowserClickByName", "params": {"name": ""}}) is None
+
+
+def test_send_opener_is_not_a_replay_boundary():
+    # The LinkedIn profile opener is literally "Send a message to Tyler Chen":
+    # it OPENS the composer (reversible), so it must NOT trip the send boundary
+    # (v902 bug: it did, killing the prefix replay).
+    from backend.apps.agents.browser import browser_batch_replay as BR
+    assert BR.is_replay_boundary({"action": "click", "name": "Send a message to Tyler Chen"}) is False
+    assert BR.is_replay_boundary({"action": "click", "name": "Send a note to Ada"}) is False
+    # a REAL send still stops the prefix
+    assert BR.is_replay_boundary({"action": "click", "name": "Send"}) is True
+    assert BR.is_replay_boundary({"action": "click", "name": "Send now"}) is True
+
+
+def test_step_touches_composer():
+    from backend.apps.agents.browser import browser_skills as SK
+    assert SK.step_touches_composer({"tool": "BrowserType", "params": {"text": "hi"}}) is True
+    assert SK.step_touches_composer({"tool": "BrowserClickByName", "params": {"name": "Write a message…"}}) is True
+    # nav + opener are NOT composer steps (they stay in the marriage prefix)
+    assert SK.step_touches_composer({"tool": "BrowserNavigate", "params": {"url": "https://x"}}) is False
+    assert SK.step_touches_composer({"tool": "BrowserClickByName", "params": {"name": "Send a message to Tyler Chen"}}) is False
