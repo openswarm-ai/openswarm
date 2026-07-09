@@ -369,8 +369,9 @@ const BrowserCard: React.FC<Props> = ({
             }),
           );
         } else if (e?.channel === 'app-clicked') {
-          // First in-guest mousedown: a page click never reaches the host document, so this IPC is how a webview-content click marks this browser as last-interacted (drives Ctrl+R/zoom/tab targeting).
+          // In-guest mousedown: a page click never reaches the host document, so this IPC is how a webview-content click marks this browser as last-interacted (drives Ctrl+R/zoom/tab targeting) and selected (spawn-beside anchor).
           setLastInteractedBrowser(browserId);
+          window.dispatchEvent(new CustomEvent('openswarm:browser-guest-select', { detail: { browserId } }));
         }
       };
 
