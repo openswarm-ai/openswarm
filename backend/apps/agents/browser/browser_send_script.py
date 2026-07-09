@@ -27,7 +27,14 @@ logger = logging.getLogger(__name__)
 P_QUOTED_DQ_RE = re.compile(r'"([^"]{4,300})"')
 P_QUOTED_SQ_RE = re.compile(r"(?:^|[\s:>])'([^']{4,300})'")
 P_COMPOSER_ROW_RE = re.compile(r"\[(\d+)\]\*?<\s*textbox\s+\"([^\"]*)\"", re.I)
-P_COMPOSER_NAME_RE = re.compile(r"write|message|compose|reply", re.I)
+# A compose-shaped textbox name, generalized across messaging sites: LinkedIn "Write a
+# message", X/Slack "Message", Discord "Message @user", Gmail "Message Body", "Post your
+# reply", "What's happening", "Add a comment". Not per-site: one structural shape.
+P_COMPOSER_NAME_RE = re.compile(
+    r"write|messag|compose|reply|comment|post your|what.?s happening|"
+    r"tweet|caption|say something|start a|new message|body|your (message|note)",
+    re.I,
+)
 
 ToolRunner = Callable[[str, dict, str, str], Awaitable[dict]]
 
@@ -48,7 +55,9 @@ def quoted_payload(task: str) -> str:
     return sq.pop() if len(sq) == 1 else ""
 
 
-P_OPENER_ROW_RE = re.compile(r"\[(\d+)\]\*?<\s*(?:link|button)\s+\"(Message|Reply|Compose|New message)\"", re.I)
+P_OPENER_ROW_RE = re.compile(
+    r"\[(\d+)\]\*?<\s*(?:link|button)\s+\"(Message|Reply|Compose|New message|"
+    r"Direct message|DM|Send message|Write|New chat|Comment|Post)\"", re.I)
 
 # A verification probe quotes the very payload it's checking for, which is exactly the trap this gate exists for: quoted payload + composer = fire. Caught live (r243): the read-only send-probe delivered a REAL message. Read-only directives decline in code, fail-safe (a false match just means the model path).
 P_READONLY_RE = re.compile(
@@ -73,22 +82,17 @@ def composer_index_in_state(state_text: str):
     return hits[0] if len(hits) == 1 else None
 
 
-# Surfaces that carry a real person-composer: the full-page messaging thread AND
-# the profile page (whose docked-overlay composer is reached by the Message opener).
-# History: the overlay was first BANNED here because its Send ranks out of the capped
-# interactives list, so the script aborted and the handoff ran 4x slower (live A/B
-# r246-r251). Ground truth (probe r-dump) then showed the Send IS a real button the
-# model clicks by name; the click-by-name fallback now completes it (validated live,
-# receipt-cleared in 1.4s on /in/), so the overlay is winnable and back in scope.
-# Empty/unknown URLs still decline: firing on a non-composer page is net-negative.
-P_COMPOSER_PAGE_RE = re.compile(r"linkedin\.com/(messaging/|in/)", re.I)
-
-
-def surface_supports_script(current_url: str) -> bool:
-    """True on a LinkedIn messaging thread or profile (both carry a person-composer
-    whose Send resolves via the ranked list or the click-by-name fallback). Empty or
-    off-surface URLs decline, since firing where there's no composer is net-negative."""
-    return bool(current_url and P_COMPOSER_PAGE_RE.search(current_url))
+def surface_supports_script(current_url: str, state_text: str = "") -> bool:
+    """STRUCTURAL, not per-site: fire wherever the live perception actually carries a
+    person-composer (a compose-shaped textbox) OR a single messaging opener to reach
+    one, on ANY host. This is what generalizes the LinkedIn ~14s send to X/Slack/
+    Discord/Instagram/Gmail/etc without per-site URL gates. A page with neither
+    declines (net-negative to fire where there's no composer). All the downstream
+    safety gates (quoted payload, fill-seen-committed before the one send, two-sided
+    receipt) are already site-agnostic, so widening the surface can't loosen safety."""
+    if not state_text:
+        return False
+    return bool(composer_index_in_state(state_text) or opener_index_in_state(state_text))
 
 
 async def run_send_script(
@@ -109,8 +113,8 @@ async def run_send_script(
     prompt; the composed task carries the routing brief whose own quoted strings
     made every real payload look ambiguous (r242/r243)."""
     t0 = time.monotonic()
-    if not surface_supports_script(current_url):
-        logger.info(f"[browser-sendscript] decline: surface {current_url[:60]!r} carries no person-composer")
+    if not surface_supports_script(current_url, state_text):
+        logger.info(f"[browser-sendscript] decline: no composer or opener in the perception ({current_url[:50]!r})")
         return None
     if P_READONLY_RE.search(task) or P_READONLY_RE.search(payload_source or ""):
         logger.info("[browser-sendscript] decline: read-only directive in task")

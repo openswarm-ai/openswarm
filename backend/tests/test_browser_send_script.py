@@ -51,17 +51,33 @@ async def run(task, state0, list_script, url=THREAD_URL):
 
 
 FEED_URL = "https://www.linkedin.com/feed/"
+NO_COMPOSER = '[1]<link "Home">\n[2]<button "Search">\n[3]<link "Jobs">'
+X_COMPOSER = '[3]<textbox "Post your reply">\n[8]<button "Reply">'  # X, not LinkedIn
 
 
 @pytest.mark.asyncio
-async def test_surface_gate_declines_off_surface():
-    """A page with no person-composer (the feed, an unknown URL) declines UNTOUCHED,
-    so the script never fires where a fill would land nowhere useful."""
+async def test_surface_gate_declines_when_no_composer_in_perception():
+    """STRUCTURAL gate: a page whose perception has no compose-shaped textbox and no
+    messaging opener declines UNTOUCHED, regardless of URL, so the script never fires
+    where a fill would land nowhere useful."""
     ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
-    r = await ss.run_send_script(TASK, "b1", "", COMPOSER_EMPTY, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", NO_COMPOSER, ex, send_index_in_state,
                                  payload_in_textbox, payload_source=TASK, current_url=FEED_URL)
     assert r is None
     assert not calls["clicks"]
+
+
+@pytest.mark.asyncio
+async def test_surface_gate_fires_on_a_NON_linkedin_composer():
+    """The whole generalization: the same send-script fires on ANY site whose
+    perception carries a composer (here X's 'Post your reply'), no per-site URL gate."""
+    X_FILLED = '[3]<textbox "Post your reply" value="[test] hello world r9-os">\n[8]<button "Reply">'
+    X_SENT = '[3]<textbox "Post your reply">\n[1]<link "Home">'
+    ex, calls = make_exec([X_FILLED, X_FILLED, X_SENT])
+    r = await ss.run_send_script(TASK, "b1", "", X_COMPOSER, ex, send_index_in_state,
+                                 payload_in_textbox, payload_source=TASK,
+                                 current_url="https://x.com/messages/123")
+    assert r is not None and r["sent"] is True
 
 
 @pytest.mark.asyncio
