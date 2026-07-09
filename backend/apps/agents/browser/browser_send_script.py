@@ -31,8 +31,9 @@ P_COMPOSER_ROW_RE = re.compile(r"\[(\d+)\]\*?<\s*textbox\s+\"([^\"]*)\"", re.I)
 # message", X/Slack "Message", Discord "Message @user", Gmail "Message Body", "Post your
 # reply", "What's happening", "Add a comment". Not per-site: one structural shape.
 P_COMPOSER_NAME_RE = re.compile(
-    r"write|messag|compose|reply|comment|post your|what.?s happening|"
-    r"tweet|caption|say something|start a|new message|body|your (message|note)",
+    r"write|messag|compose|reply|comment|post your|post text|what.?s happening|"
+    r"tweet|caption|say something|start a|new message|body|your (message|note)|"
+    r"add a comment|write something",
     re.I,
 )
 
