@@ -23,12 +23,71 @@ logger = logging.getLogger(__name__)
 MAX_STEPS = 4
 STEP_TIMEOUT_S = 8.0
 TOTAL_TIMEOUT_S = 25.0
+# Opener mode reaches one hop deeper (a post/comment surface is often nav -> open item -> reveal box).
+OPENER_MAX_STEPS = 6
+OPENER_TOTAL_TIMEOUT_S = 32.0
 
 P_STEP_RE = re.compile(r"^\s*(NAVIGATE|CLICK|READY)\b[:\s]*(.*)$", re.I)
 P_BLOCKED_CLICK_RE = re.compile(
     r"\b(send|submit|post|pay|buy|order|delete|confirm|apply|accept|invite|"
     r"connect|purchase|checkout|subscribe|unfollow|sign\s?out|log\s?out)\b",
     re.I,
+)
+# Genuinely irreversible / costly: NEVER a composer-opener, refused in every mode.
+P_HARD_BLOCK_RE = re.compile(
+    r"\b(send|submit|pay|buy|order|delete|confirm|apply|accept|invite|"
+    r"connect|purchase|checkout|subscribe|unfollow|sign\s?out|log\s?out)\b",
+    re.I,
+)
+# Compose-ENTRY words: on a composer-ABSENT page these OPEN a box (X/Threads "Post",
+# Reddit "Create Post", "Add a comment", "Reply", "New thread"); the SAME word is the
+# submit once a box exists. So allowed only while no composer is in perception.
+P_COMPOSE_ENTRY_RE = re.compile(r"\b(post|comment|reply|tweet|write|thread|note|caption)\b", re.I)
+
+
+def opener_mode() -> bool:
+    """Treatment flag: lets prestage OPEN a composer (post/comment/reply surfaces),
+    not just navigate to an already-open one. Off = today's byte-identical behavior."""
+    return os.environ.get("OSW_PRESTAGE_OPENER", "0") != "0"
+
+
+def click_refused(entry: str, li_text: str) -> bool:
+    """Whether prestage must refuse this click. Opener-mode-off = the legacy blanket
+    gate (Phase A byte-identical). Opener-mode-on = structural: hard-irreversible
+    words refused always; a compose-entry word (post/comment/reply/...) refused ONLY
+    when a composer textbox is ALREADY in the current perception (then it's the real
+    submit), allowed when none is present (then the click REVEALS the composer).
+    Prestage never types, so even a worst-case mis-click submits empty content."""
+    if not opener_mode():
+        return bool(P_BLOCKED_CLICK_RE.search(entry))
+    if P_HARD_BLOCK_RE.search(entry):
+        return True
+    if P_COMPOSE_ENTRY_RE.search(entry):
+        from backend.apps.agents.browser.browser_send_script import composer_index_in_state
+        return bool(composer_index_in_state(li_text or ""))
+    return False
+
+
+P_SYSTEM_OPENER = (
+    "You pre-stage a browser for a main agent. Using ONLY navigation and clicks "
+    "that OPEN or REVEAL a composer, get the page to where a text box is visible "
+    "and the main agent only has to type the content and submit.\n"
+    "OPENING a composer IS your job: click 'Start a post' / 'Create post' / 'New "
+    "thread' / the compose 'Post' or 'Tweet' button / 'Add a comment' / 'Reply' / "
+    "a person's 'Message' button so the text box appears.\n"
+    "The MOMENT a compose text box is visible in the elements, reply READY, the "
+    "stage is set.\n"
+    "NEVER submit: do not click Send, Submit, Pay, Buy, Order, Delete, Confirm, "
+    "Subscribe, or Connect. If the only next step is typing or the final submit, "
+    "reply READY.\n"
+    "For a task that messages a PERSON: go to that person (search result, "
+    "profile), then open their Message surface. For a comment/reply on a thread "
+    "or video: open the item, then reveal the comment box.\n"
+    "Reply with exactly ONE line:\n"
+    "NAVIGATE <absolute url>\n"
+    "CLICK <index>\n"
+    "READY <short reason>\n"
+    "If unsure, reply READY."
 )
 
 P_SYSTEM = (
@@ -162,12 +221,15 @@ async def run_prestage(
                         or (li2 and pre_li and li2 != pre_li)):
                     return True
             return False
-        while steps < MAX_STEPS and (time.monotonic() - t0) < TOTAL_TIMEOUT_S:
+        p_max_steps = OPENER_MAX_STEPS if opener_mode() else MAX_STEPS
+        p_total_timeout = OPENER_TOTAL_TIMEOUT_S if opener_mode() else TOTAL_TIMEOUT_S
+        p_system = P_SYSTEM_OPENER if opener_mode() else P_SYSTEM
+        while steps < p_max_steps and (time.monotonic() - t0) < p_total_timeout:
             li_text, gt_text, seen_url = await perceive()
             current_url = seen_url or current_url
             reply = safe_resp_text(await asyncio.wait_for(
                 client.messages.create(
-                    model=aux_model, max_tokens=60, temperature=0, system=P_SYSTEM,
+                    model=aux_model, max_tokens=60, temperature=0, system=p_system,
                     messages=[{"role": "user", "content": (
                         f"Task: {task[:1500]}\n\nCurrent URL: {current_url}\n\n"
                         f"Interactive elements:\n{li_text[:4000]}\n\n"
@@ -207,7 +269,7 @@ async def run_prestage(
                 except ValueError:
                     break
                 entry = list_entry_for(li_text, idx)
-                if idx < 0 or not entry or P_BLOCKED_CLICK_RE.search(entry):
+                if idx < 0 or not entry or click_refused(entry, li_text):
                     logger.info(f"[browser-prestage] refusing click {idx} ({entry[:80]!r}); handing to main loop")
                     break
                 r = await execute_tool("BrowserClickIndex", {"index": idx}, browser_id, tab_id)
