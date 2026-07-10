@@ -111,22 +111,27 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
                 })
             except Exception:
                 pass
-    elif wrote_files:
-        if file_path:
-            try:
-                await asyncio.sleep(0.4)
-                from backend.apps.outputs.runtime import (
-                    manager as outputs_runtime_manager,
-                )
-                errs = outputs_runtime_manager.drain_errors_for_path(file_path)
-            except Exception:
-                errs = []
-            if errs:
-                joined = "\n".join(errs[-20:])
-                content = (
-                    f"{content}\n\n"
-                    + wrap_platform_note(f"Build server reported (after this write):\n{joined}")
-                )
+    # Every write drains, App Builder included. This was an `elif` on the branch above, so a view-builder frontend write took that branch and skipped the drain: the one agent whose whole job is the app never saw its own vite/babel/tsc errors.
+    if wrote_files and file_path:
+        errs: list[str] = []
+        console_errs: list[str] = []
+        try:
+            # Give vite/uvicorn a beat to actually emit whatever this write broke.
+            await asyncio.sleep(0.4)
+            from backend.apps.outputs.runtime import (
+                manager as outputs_runtime_manager,
+            )
+            errs = outputs_runtime_manager.drain_errors_for_path(file_path)
+            console_errs = outputs_runtime_manager.drain_frontend_errors_for_path(file_path)
+        except Exception:
+            pass
+        notes = []
+        if errs:
+            notes.append("Build server reported (after this write):\n" + "\n".join(errs[-20:]))
+        if console_errs:
+            notes.append("The app's console logged (after this write):\n" + "\n".join(console_errs[-10:]))
+        if notes:
+            content = f"{content}\n\n" + wrap_platform_note("\n\n".join(notes))
 
     result_payload = {"text": content}
     hook_tool_name = input_data.get("tool_name", "")
