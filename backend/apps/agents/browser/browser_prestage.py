@@ -221,6 +221,24 @@ async def run_prestage(
                         or (li2 and pre_li and li2 != pre_li)):
                     return True
             return False
+        # A cold heavy SPA (Gmail, LinkedIn) isn't perceivable the instant its card opens;
+        # perceiving once and giving up reads an empty page and the aux says READY on nothing.
+        # The real model loop waits and re-perceives, so this bounded warmup restores a fair
+        # "page loaded" starting point. A page that NEVER settles (recaptcha wedge) still times
+        # out here, so the warmup separates cold-load from a true wedge instead of hiding either.
+        if os.environ.get("OSW_PRESTAGE_WARMUP") == "1":
+            # Bound by WALL-CLOCK, not iterations: a slow/wedged card makes each perceive
+            # take seconds, so an iteration-capped loop can overrun the outer prestage
+            # timeout and get the whole stage skipped. A hard 8s ceiling means a page that
+            # settles gets perceived and one that never does still fails fast (honest wedge).
+            p_warm_t0 = time.monotonic()
+            while time.monotonic() - p_warm_t0 < 8.0:
+                li_text, gt_text, seen_url = await perceive()
+                if seen_url or li_text:
+                    current_url = seen_url or current_url
+                    break
+                await asyncio.sleep(1.0)
+
         p_max_steps = OPENER_MAX_STEPS if opener_mode() else MAX_STEPS
         p_total_timeout = OPENER_TOTAL_TIMEOUT_S if opener_mode() else TOTAL_TIMEOUT_S
         p_system = P_SYSTEM_OPENER if opener_mode() else P_SYSTEM
