@@ -19,6 +19,8 @@ import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import WindowedMarkdown from './WindowedMarkdown';
+import WindowedPlainText from './WindowedPlainText';
+import { renderUserTextWithPills } from './renderUserTextWithPills';
 import { estimateRenderedTextHeight, oversizedCharThreshold, RECHECK_VISIBILITY_EVENT } from './markdownMeasure';
 import { THINKING_LABELS } from '../thinkingLabels';
 import { extractPlatformNote } from '../parsing/toolResultParsing';
@@ -278,44 +280,6 @@ function parseElementContext(text: string): { userMessage: string; elements: Par
   }
 
   return { userMessage, elements };
-}
-
-const SKILL_PILL_RE = /\{\{skill:([^}]+)\}\}/g;
-
-function renderUserTextWithPills(text: string, c: ReturnType<typeof useClaudeTokens>): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  const re = new RegExp(SKILL_PILL_RE.source, 'g');
-  while ((match = re.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-    const skillName = match[1];
-    parts.push(
-      <Chip
-        key={`skill-${match.index}`}
-        icon={<PsychologyOutlinedIcon sx={{ fontSize: 12 }} />}
-        label={skillName}
-        size="small"
-        sx={{
-          bgcolor: `${SKILL_COLOR}18`,
-          color: SKILL_COLOR,
-          fontSize: '0.72rem',
-          fontFamily: c.font.mono,
-          height: 20,
-          mx: 0.25,
-          verticalAlign: 'baseline',
-          '& .MuiChip-icon': { color: SKILL_COLOR },
-        }}
-      />,
-    );
-    lastIndex = re.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-  return parts;
 }
 
 interface ContextGroup {
@@ -937,10 +901,10 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
     ? parseElementContext(rawText)
     : { userMessage: rawText, elements: [] };
   // A message longer than ~2 screens of text gets the placeholder + block virtualization treatment (full render in view, reserved-height placeholder off).
-  const isOversizedAssistant = !isUser && !isStreaming
-    && rawText.length > oversizedCharThreshold(viewportHeight, viewportWidth);
+  const isOversized = !isStreaming
+    && displayText.length > oversizedCharThreshold(viewportHeight, viewportWidth);
   const [isOversizedInViewport, setIsOversizedInViewport] = useState(false);
-  const shouldRenderMarkdown = !isOversizedAssistant || isOversizedInViewport;
+  const shouldRenderMarkdown = !isOversized || isOversizedInViewport;
   const markdownWindow = useMemo(() => {
     if (!shouldRenderMarkdown) {
       return { text: '', start: rawText.length, end: rawText.length, windowed: true };
@@ -961,8 +925,8 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
 
   // Height to reserve for this message's off-screen placeholder before it has ever been measured. Estimated from the FULL text length (we render in full when in view) with the same model as AgentChat's spacer estimate, so the placeholder and the spacer reserve the same space. Once rendered, oversizedContentHeights wins over this.
   const placeholderFallbackHeight = useMemo(
-    () => estimateRenderedTextHeight(rawText, viewportWidth),
-    [rawText, viewportWidth],
+    () => estimateRenderedTextHeight(displayText, viewportWidth),
+    [displayText, viewportWidth],
   );
 
   const overflowCtx = useAppSelector((state) => {
@@ -985,7 +949,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
 
   // Reports asynchronously, bc without this an oversized message that mounts in view (e.g. scrolling up into the agent's reply) would paint the blank placeholder box for a frame and then pop in the real markdown.
   React.useLayoutEffect(() => {
-    if (!isOversizedAssistant) {
+    if (!isOversized) {
       setIsOversizedInViewport(false);
       return;
     }
@@ -1021,16 +985,16 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
       observer.disconnect();
       scrollRoot?.removeEventListener(RECHECK_VISIBILITY_EVENT, evaluate);
     };
-  }, [isOversizedAssistant, message.id, scrollRoot, viewportHeight]);
+  }, [isOversized, message.id, scrollRoot, viewportHeight]);
 
   // Remember the full-render height of an oversized message while it is on-screen, so its off-screen placeholder can reserve exactly that height (see the module-level oversizedContentHeights cache). Measured on the content box only, which excludes the action bar (rendered by the parent) to avoid a feedback loop.
   React.useLayoutEffect(() => {
-    if (!isOversizedAssistant || !shouldRenderMarkdown) return;
+    if (!isOversized || !shouldRenderMarkdown) return;
     const node = contentRef.current;
     if (!node) return;
     const h = node.offsetHeight;
     if (h > 0) oversizedContentHeights.set(message.id, h);
-  }, [isOversizedAssistant, shouldRenderMarkdown, message.id, markdownWindow.text]);
+  }, [isOversized, shouldRenderMarkdown, message.id, markdownWindow.text]);
 
   // (message.id, kind) keys so cap card analytics fire once, not on edits.
   React.useEffect(() => {
@@ -1091,7 +1055,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
           maxWidth: '85%',
           minWidth: 0,
           // Oversized messages are block-virtualized, so the set of rendered blocks (and thus the widest visible content) changes as you scroll. Pin them to a stable width so the bubble doesn't shrink-to-fit and resize horizontally frame to frame. Normal messages keep shrink-to-fit.
-          ...(isOversizedAssistant ? { width: '85%' } : {}),
+          ...(isOversized ? { width: '85%' } : {}),
           bgcolor: isUser ? c.user.bubble : c.bg.surface,
           border: isUser ? (isFailed ? `1px solid ${c.status.error}` : 'none') : `1px solid ${c.border.subtle}`,
           borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
@@ -1167,9 +1131,34 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
               {message.images && message.images.length > 0 && (
                 <MessageImageThumbnails images={message.images} c={c} />
               )}
-              <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', lineHeight: 1.6, overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-                {renderUserTextWithPills(displayText, c)}
-              </Typography>
+              <Box ref={contentRef}>
+                {isOversized && !isOversizedInViewport ? (
+                  <Box
+                    sx={{
+                      // Reserve the height this message had when last rendered full (cached across unmount) so the box doesn't collapse and the scrollbar stays put. Falls back to a content-aware estimate until it's been measured.
+                      minHeight: oversizedContentHeights.get(message.id)
+                        || placeholderFallbackHeight
+                        || Math.min(420, Math.max(180, viewportHeight || 240)),
+                      opacity: 0,
+                      pointerEvents: 'none',
+                    }}
+                    aria-hidden="true"
+                  />
+                ) : isOversized ? (
+                  // In view, but virtualize WITHIN the message: only blocks near the viewport render, the rest are reserved-height placeholders, so a huge pasted message never mounts more than the on-screen portion plus a buffer.
+                  <WindowedPlainText
+                    messageId={message.id}
+                    text={displayText}
+                    scrollRoot={scrollRoot}
+                    viewportHeight={viewportHeight}
+                    viewportWidth={viewportWidth}
+                  />
+                ) : (
+                  <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', lineHeight: 1.6, overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                    {renderUserTextWithPills(displayText, c)}
+                  </Typography>
+                )}
+              </Box>
               <AttachedContextSection elements={selectedElements} message={message} c={c} />
             </Box>
           )
@@ -1311,7 +1300,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                     Re-parse is memoized on the (smoothed) text and cheap at chat sizes.
                     While streaming, useSmoothText appends pending chars into the reveal
                     subtree between parses, so the re-parse runs per commit, not per frame. */}
-                {isOversizedAssistant && !isOversizedInViewport ? (
+                {isOversized && !isOversizedInViewport ? (
                   <Box
                     sx={{
                       // Reserve the height this message had when last rendered full (cached across unmount) so the box doesn't collapse and the scrollbar stays put. Falls back to a content-aware estimate (matched to the spacer estimate) until it's been measured.
@@ -1323,7 +1312,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                     }}
                     aria-hidden="true"
                   />
-                ) : isOversizedAssistant ? (
+                ) : isOversized ? (
                   // In view, but virtualize WITHIN the message: only blocks near the viewport render their markdown, the rest are reserved-height placeholders, so an extremely long message never parses/mounts more than the on-screen portion plus a buffer.
                   <WindowedMarkdown
                     messageId={message.id}
