@@ -312,6 +312,85 @@ test("download scan refuses ambiguous stamped installers", () => {
   assert.equal(hash, null);
 });
 
+test("resolveInstallId: reuses install.json app_install_id", () => {
+  const userDataDir = makeTempUserDataDir();
+  affiliateTracking._writeState(userDataDir, { app_install_id: "existing-id-12345" });
+  const id = affiliateTracking.resolveInstallId({
+    userDataDir, isPackaged: true, projectRoot: userDataDir, homeDir: userDataDir,
+  });
+  assert.equal(id, "existing-id-12345");
+});
+
+test("resolveInstallId: adopts python settings installation_id and persists it", () => {
+  const userDataDir = makeTempUserDataDir();
+  const settingsDir = path.join(userDataDir, "backend", "data", "settings");
+  fs.mkdirSync(settingsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(settingsDir, "settings.json"),
+    JSON.stringify({ installation_id: "python-analytics-id-1" }),
+  );
+
+  const id = affiliateTracking.resolveInstallId({
+    userDataDir,
+    isPackaged: false,
+    projectRoot: userDataDir,
+  });
+  assert.equal(id, "python-analytics-id-1");
+  const state = readJson(path.join(userDataDir, "install.json"));
+  assert.equal(state.app_install_id, "python-analytics-id-1");
+});
+
+test("resolveInstallId: generates once and returns the same id on repeat calls", () => {
+  const userDataDir = makeTempUserDataDir();
+  const first = affiliateTracking.resolveInstallId({
+    userDataDir, isPackaged: true, projectRoot: userDataDir, homeDir: userDataDir,
+  });
+  const second = affiliateTracking.resolveInstallId({
+    userDataDir, isPackaged: true, projectRoot: userDataDir, homeDir: userDataDir,
+  });
+  assert.ok(first && first.length >= 8);
+  assert.equal(second, first);
+  const state = readJson(path.join(userDataDir, "install.json"));
+  assert.equal(state.app_install_id, first);
+});
+
+test("first launch handshake reuses the pre-resolved install id", async () => {
+  const cloud = await makeMockCloud();
+  try {
+    const userDataDir = makeTempUserDataDir();
+    const shell = makeFakeShell();
+    const hash = "abcDEF1234567890_hash";
+    cloud.filenameHashes.set(hash, "unified-affiliate");
+
+    process.env.OPENSWARM_AFFILIATE_LANDING_URL = "https://landing.test";
+    process.env.OPENSWARM_AFFILIATE_CLOUD_URL = cloud.url;
+
+    const resolved = affiliateTracking.resolveInstallId({
+      userDataDir,
+      isPackaged: true,
+      projectRoot: userDataDir,
+      homeDir: userDataDir,
+    });
+
+    await affiliateTracking.maybeRunFirstLaunchHandshake({
+      shell,
+      userDataDir,
+      isDev: false,
+      isPackaged: true,
+      platform: "linux",
+      env: { APPIMAGE: `/tmp/OpenSwarm-x64-${hash}.AppImage` },
+    });
+
+    const state = readJson(path.join(userDataDir, "install.json"));
+    assert.equal(state.app_install_id, resolved, "handshake must keep the unified id");
+    assert.equal(state.ref, "unified-affiliate");
+    const bound = [...cloud.tokens.values()].find((t) => t.ref === "unified-affiliate");
+    assert.equal(bound.app_install_id, resolved, "cloud bind must carry the unified id");
+  } finally {
+    await cloud.close();
+  }
+});
+
 test("returning launch: no-op when ref already bound", async () => {
   const cloud = await makeMockCloud();
   try {

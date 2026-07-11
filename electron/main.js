@@ -944,6 +944,22 @@ async function startBackend() {
     PYTHONUTF8: '1',
   };
 
+  // Unified install identity: resolve the affiliate app_install_id (adopting
+  // the backend's existing settings.installation_id on upgrades) BEFORE the
+  // backend spawns, and hand it down so the analytics install_id and the
+  // affiliate id are the same value. One id means affiliate refs join
+  // directly to telemetry without requiring a sign-in. See
+  // affiliateTracking.resolveInstallId().
+  try {
+    env.OPENSWARM_INSTALLATION_ID = affiliateTracking.resolveInstallId({
+      userDataDir: app.getPath('userData'),
+      isPackaged,
+      projectRoot,
+    });
+  } catch (err) {
+    console.warn('[affiliate] resolveInstallId failed:', err && err.message);
+  }
+
   // Tell the backend where to find a real Node binary for 9Router and
   // bundled MCP servers. Preferring this over ELECTRON_RUN_AS_NODE avoids
   // (a) the second OpenSwarm-as-Node process briefly registering in the

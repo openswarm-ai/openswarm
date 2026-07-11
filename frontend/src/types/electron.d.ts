@@ -48,7 +48,6 @@ declare global {
     onUpdateError: (cb: (message: string) => void) => () => void;
     onWebviewNewWindow: (cb: (url: string, webContentsId: number) => void) => () => void;
     openExternal: (url: string) => Promise<void>;
-    getInstallState?: () => Promise<{ app_install_id?: string; ref?: string | null; ref_bind_method?: string | null }>;
     hardReset?: () => Promise<void>;
     onAuthUrl?: (cb: (url: string) => void) => () => void;
     onOauthClaim?: (cb: (url: string) => void) => () => void;

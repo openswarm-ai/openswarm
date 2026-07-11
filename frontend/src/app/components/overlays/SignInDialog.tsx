@@ -19,7 +19,6 @@ import { activateSignin, fetchSettings } from '@/shared/state/settingsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { OPENSWARM_DEFAULT_PROXY_URL } from '@/shared/config';
 import { report } from '@/shared/serviceClient';
-import { getAffiliateAppInstallId } from '@/shared/affiliateInstall';
 
 type Stage = 'choose' | 'email_form' | 'code_form';
 
@@ -47,15 +46,13 @@ export default function SignInDialog({ onClose }: { onClose: () => void }): JSX.
 
   const cloudBase = proxyUrl.replace(/\/$/, '');
 
-  const onGoogle = async () => {
+  const onGoogle = () => {
     report('signin', 'google_clicked');
     const localPort = (window as any).__OPENSWARM_PORT__ || 8324;
     const params = new URLSearchParams({
       install_id: installId,
       local_port: String(localPort),
     });
-    const appInstallId = await getAffiliateAppInstallId();
-    if (appInstallId) params.set('app_install_id', appInstallId);
     const startUrl = `${cloudBase}/api/auth/google/start?${params.toString()}`;
     const api = (window as any).openswarm;
     if (api?.openExternal) {
@@ -118,7 +115,6 @@ export default function SignInDialog({ onClose }: { onClose: () => void }): JSX.
     try {
       report('signin', 'email_verify_submitted');
       const localPort = (window as any).__OPENSWARM_PORT__ || 8324;
-      const appInstallId = await getAffiliateAppInstallId();
       const res = await fetch(`${cloudBase}/api/auth/email/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -126,7 +122,6 @@ export default function SignInDialog({ onClose }: { onClose: () => void }): JSX.
           email: email.trim(),
           code,
           install_id: installId,
-          ...(appInstallId ? { app_install_id: appInstallId } : {}),
           local_port: localPort,
         }),
       });
@@ -142,7 +137,6 @@ export default function SignInDialog({ onClose }: { onClose: () => void }): JSX.
           token: data.bearer,
           email: data.user_email,
           signin_method: 'email',
-          ...(appInstallId ? { app_install_id: appInstallId } : {}),
         }),
       ).unwrap();
     } catch (err) {

@@ -9,7 +9,7 @@
 //
 // State lives in `<userData>/install.json`. The shape:
 //   {
-//     app_install_id: "uuid",          // generated once per install
+//     app_install_id: "uuid",          // unified install id, see resolveInstallId()
 //     first_launch_at: 1700000000000,  // unix ms; presence = "this isn't first launch"
 //     ref: "haik" | null,              // populated once lookup succeeds
 //     ref_bound_at: 1700000000000 | null,
@@ -69,6 +69,73 @@ function writeState(userDataDir, state) {
   } catch (err) {
     console.warn("[affiliate] failed to write install.json:", err && err.message);
   }
+}
+
+// --------------------------------------------------------------------------
+// Unified install identity.
+//
+// The desktop historically had TWO per-install ids that never met: this
+// module's app_install_id (install.json, affiliate handshake) and the Python
+// backend's settings.installation_id (analytics envelope). Affiliate data
+// could therefore only join to analytics through a signed-in user — and
+// sign-in is optional. resolveInstallId collapses them into one value:
+// main.js calls it BEFORE spawning the backend and exports the result as
+// OPENSWARM_INSTALLATION_ID, so install_tokens.app_install_id in the cloud
+// and the analytics install_id carry the same id and affiliate refs join
+// directly to telemetry with no sign-in required.
+//
+// Resolution order (first hit wins):
+//   1. install.json app_install_id — continuity for installs that already
+//      ran the affiliate handshake
+//   2. python settings.json installation_id — upgrades adopt the existing
+//      analytics identity instead of minting a second one
+//   3. fresh crypto.randomUUID(), persisted to install.json immediately so
+//      every later reader (handshake, renderer, next boot) agrees on it
+
+const INSTALL_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
+
+// Mirrors backend/config/paths.py: packaged data root is per-OS app support;
+// dev is <projectRoot>/backend/data.
+function pythonSettingsFile({ isPackaged, projectRoot, platform, env, homeDir }) {
+  if (!isPackaged) {
+    return path.join(projectRoot, "backend", "data", "settings", "settings.json");
+  }
+  let appSupport;
+  if (platform === "darwin") {
+    appSupport = path.join(homeDir, "Library", "Application Support", "OpenSwarm");
+  } else if (platform === "win32") {
+    appSupport = path.join(env.APPDATA || homeDir, "OpenSwarm");
+  } else {
+    appSupport = path.join(env.XDG_DATA_HOME || path.join(homeDir, ".local", "share"), "OpenSwarm");
+  }
+  return path.join(appSupport, "data", "settings", "settings.json");
+}
+
+function resolveInstallId({
+  userDataDir,
+  isPackaged,
+  projectRoot,
+  platform = process.platform,
+  env = process.env,
+  homeDir = os.homedir(),
+}) {
+  const state = readState(userDataDir);
+  if (typeof state.app_install_id === "string" && INSTALL_ID_RE.test(state.app_install_id)) {
+    return state.app_install_id;
+  }
+
+  try {
+    const settingsPath = pythonSettingsFile({ isPackaged, projectRoot, platform, env, homeDir });
+    const iid = JSON.parse(fs.readFileSync(settingsPath, "utf8")).installation_id;
+    if (typeof iid === "string" && INSTALL_ID_RE.test(iid)) {
+      writeState(userDataDir, { ...state, app_install_id: iid });
+      return iid;
+    }
+  } catch (_) {}
+
+  const freshId = crypto.randomUUID();
+  writeState(userDataDir, { ...state, app_install_id: freshId });
+  return freshId;
 }
 
 function urlsFromEnv() {
@@ -246,8 +313,13 @@ async function maybeRunFirstLaunchHandshake({
     return;
   }
 
-  // First launch.
-  const appInstallId = crypto.randomUUID();
+  // First launch. Reuse the id resolveInstallId persisted before the backend
+  // spawned (the unified install id); only generate here if main.js never
+  // resolved one (e.g. direct module use in tests).
+  const appInstallId =
+    typeof state.app_install_id === "string" && INSTALL_ID_RE.test(state.app_install_id)
+      ? state.app_install_id
+      : crypto.randomUUID();
   const now = Date.now();
   const fresh = {
     app_install_id: appInstallId,
@@ -296,6 +368,7 @@ async function maybeRunFirstLaunchHandshake({
 
 module.exports = {
   maybeRunFirstLaunchHandshake,
+  resolveInstallId,
   // Exported for tests + IPC handlers.
   _readState: readState,
   _writeState: writeState,

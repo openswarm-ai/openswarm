@@ -90,7 +90,6 @@ class SigninActivateRequest(BaseModel):
     token: str
     signin_method: Literal["google", "email"]
     email: Optional[str] = None
-    app_install_id: Optional[str] = None
 
 
 @auth.router.post("/signin-activate")
@@ -107,16 +106,23 @@ async def signin_activate(body: SigninActivateRequest):
         raise HTTPException(status_code=400, detail="Invalid token")
 
     proxy = p_proxy_url()
+    # settings.installation_id doubles as the affiliate app_install_id (one
+    # unified id, resolved by Electron before the backend spawns). Forwarding
+    # it lets the cloud record affiliate attribution the moment sign-in
+    # identifies the user, instead of waiting for a Stripe checkout.
+    payload = {
+        "token": body.token,
+        "signin_method": body.signin_method,
+        "email": body.email,
+    }
+    p_install_id = getattr(load_settings(), "installation_id", None)
+    if p_install_id:
+        payload["install_id"] = p_install_id
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.post(
                 f"{proxy}/api/auth/signin-activate",
-                json={
-                    "token": body.token,
-                    "signin_method": body.signin_method,
-                    "email": body.email,
-                    "app_install_id": body.app_install_id,
-                },
+                json=payload,
             )
     except httpx.HTTPError as e:
         raise HTTPException(

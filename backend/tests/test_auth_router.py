@@ -39,6 +39,14 @@ def reset_settings():
 # --------------------------------------------------------------------------- /api/auth/signin-activate ---------------------------------------------------------------------------
 
 def test_signin_activate_persists_user_id(client, reset_settings):
+    # Give settings a known installation_id so we can assert the router
+    # forwards it as install_id (the unified id the cloud uses for both
+    # identity stitching and affiliate attribution).
+    from backend.apps.settings.settings import load_settings, save_settings
+    s = load_settings()
+    s.installation_id = "unified-install-id-123"
+    save_settings(s)
+
     fake_response = AsyncMock()
     fake_response.status_code = 200
     fake_response.json = lambda: {
@@ -58,12 +66,11 @@ def test_signin_activate_persists_user_id(client, reset_settings):
                 "token": "fake-bearer-1234567890abcdef",
                 "signin_method": "google",
                 "email": "smoke@example.com",
-                "app_install_id": "app-install-affiliate-123",
             },
         )
     assert r.status_code == 200
     assert any(
-        call.kwargs.get("json", {}).get("app_install_id") == "app-install-affiliate-123"
+        call.kwargs.get("json", {}).get("install_id") == "unified-install-id-123"
         for call in instance.post.call_args_list
     )
     body = r.json()

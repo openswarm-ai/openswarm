@@ -87,7 +87,6 @@ export interface ActivateSigninPayload {
   token: string;
   signin_method: 'google' | 'email';
   email?: string | null;
-  app_install_id?: string | null;
 }
 
 export interface BrowseResult {
