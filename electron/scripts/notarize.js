@@ -29,12 +29,13 @@ exports.default = async function notarizing(context) {
   const appName = context.packager.appInfo.productFilename;
   const appPath = `${appOutDir}/${appName}.app`;
 
-  if (keychainProfile) {
-    console.log(`Notarizing ${appPath} via keychain profile "${keychainProfile}"...`);
-    await notarize({ tool: 'notarytool', appPath, keychainProfile });
-  } else {
+  const runNotarize = () => {
+    if (keychainProfile) {
+      console.log(`Notarizing ${appPath} via keychain profile "${keychainProfile}"...`);
+      return notarize({ tool: 'notarytool', appPath, keychainProfile });
+    }
     console.log(`Notarizing ${appPath} via Apple ID env credentials...`);
-    await notarize({
+    return notarize({
       tool: 'notarytool',
       appBundleId: 'com.clusterlabs.openswarm',
       appPath,
@@ -42,6 +43,20 @@ exports.default = async function notarizing(context) {
       appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
       teamId: process.env.APPLE_TEAM_ID,
     });
+  };
+
+  // Apple's wait-poll flakes after a successful upload; one hiccup shouldn't kill a 40-minute build.
+  const ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    try {
+      await runNotarize();
+      break;
+    } catch (err) {
+      if (attempt === ATTEMPTS) throw err;
+      const firstLine = String((err && err.message) || err).split('\n')[0];
+      console.log(`Notarization attempt ${attempt}/${ATTEMPTS} failed (${firstLine}); retrying in 30s...`);
+      await new Promise((resolve) => setTimeout(resolve, 30000));
+    }
   }
 
   console.log('Notarization complete.');
