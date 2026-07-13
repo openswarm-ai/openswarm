@@ -38,6 +38,7 @@ const affiliateTracking = require("./affiliateTracking");
 function makeMockCloud() {
   // Mirrors the install_tokens table.
   const tokens = new Map();
+  const filenameHashes = new Map();
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -77,8 +78,23 @@ function makeMockCloud() {
 
       if (req.method === "POST" && url.pathname === "/api/install/bind") {
         const body = await readBody();
-        if (!body || typeof body.install_token !== "string" || typeof body.app_install_id !== "string") {
-          return send(400, { error: "install_token + app_install_id required" });
+        if (!body || typeof body.app_install_id !== "string") {
+          return send(400, { error: "app_install_id required" });
+        }
+        if (typeof body.affiliate_hash === "string" && !body.install_token) {
+          const ref = filenameHashes.get(body.affiliate_hash);
+          if (!ref) return send(404, { error: "affiliate_hash not found" });
+          const token = `filename_${crypto.randomBytes(24).toString("base64url")}`;
+          tokens.set(token, {
+            ref,
+            app_install_id: body.app_install_id,
+            bound_at: Date.now(),
+            expires_at: Date.now() + 24 * 60 * 60 * 1000,
+          });
+          return send(200, { ok: true, ref });
+        }
+        if (typeof body.install_token !== "string") {
+          return send(400, { error: "install_token required" });
         }
         const row = tokens.get(body.install_token);
         if (!row) return send(404, { error: "not found" });
@@ -114,6 +130,7 @@ function makeMockCloud() {
       resolve({
         url: `http://127.0.0.1:${addr.port}`,
         tokens,
+        filenameHashes,
         close: () => new Promise((r) => server.close(r)),
       });
     });
@@ -231,6 +248,193 @@ test("first launch: opens welcome URL and binds ref via poll loop", async () => 
     }
     assert.equal(final.ref, "haik-test", "ref should have been written by poll loop");
     assert.ok(final.ref_bound_at > 0, "ref_bound_at populated");
+  } finally {
+    await cloud.close();
+  }
+});
+
+test("first launch: stamped AppImage hash binds before opening welcome URL", async () => {
+  const cloud = await makeMockCloud();
+  try {
+    const userDataDir = makeTempUserDataDir();
+    const shell = makeFakeShell();
+    const hash = "abcDEF1234567890_hash";
+    cloud.filenameHashes.set(hash, "filename-affiliate");
+
+    process.env.OPENSWARM_AFFILIATE_LANDING_URL = "https://landing.test";
+    process.env.OPENSWARM_AFFILIATE_CLOUD_URL = cloud.url;
+
+    await affiliateTracking.maybeRunFirstLaunchHandshake({
+      shell,
+      userDataDir,
+      isDev: false,
+      isPackaged: true,
+      platform: "linux",
+      env: { APPIMAGE: `/tmp/OpenSwarm-x64-${hash}.AppImage` },
+    });
+
+    assert.equal(shell.opened.length, 0, "filename hash bind skips welcome URL");
+    const state = readJson(path.join(userDataDir, "install.json"));
+    assert.equal(state.ref, "filename-affiliate");
+    assert.equal(state.ref_bind_method, "affiliate_filename_hash");
+    assert.ok(state.ref_bound_at > 0);
+  } finally {
+    await cloud.close();
+  }
+});
+
+test("filename parser accepts browser duplicate suffix", () => {
+  assert.equal(
+    affiliateTracking.p_hashFromInstallerBasename("OpenSwarm-arm64-abcDEF1234567890_hash (1).dmg"),
+    "abcDEF1234567890_hash",
+  );
+});
+
+test("filename parser keeps hyphens inside base64url affiliate hash", () => {
+  assert.equal(
+    affiliateTracking.p_hashFromInstallerBasename("OpenSwarm-arm64-abcDEF1234567890-hash.dmg"),
+    "abcDEF1234567890-hash",
+  );
+});
+
+test("filename parser covers every stamped artifact shape (mac/win/linux)", () => {
+  const h = "abcDEF1234567890_hash";
+  for (const name of [
+    `OpenSwarm-arm64-${h}.dmg`,
+    `OpenSwarm-x64-${h}.dmg`,
+    `OpenSwarm-Setup-x64-${h}.exe`,
+    `OpenSwarm-x64-${h}.AppImage`,
+    `OpenSwarm-arm64-${h}.AppImage`,
+  ]) {
+    assert.equal(affiliateTracking.p_hashFromInstallerBasename(name), h, name);
+  }
+  for (const name of ["OpenSwarm-arm64.dmg", "OpenSwarm-Setup-x64.exe", "OpenSwarm-x64.AppImage"]) {
+    assert.equal(affiliateTracking.p_hashFromInstallerBasename(name), null, name);
+  }
+});
+
+test("first launch (win32): stamped setup exe in Downloads binds before welcome URL", async () => {
+  const cloud = await makeMockCloud();
+  try {
+    const userDataDir = makeTempUserDataDir();
+    const shell = makeFakeShell();
+    const hash = "abcDEF1234567890_hash";
+    cloud.filenameHashes.set(hash, "windows-affiliate");
+
+    const downloads = path.join(userDataDir, "Downloads");
+    fs.mkdirSync(downloads, { recursive: true });
+    fs.writeFileSync(path.join(downloads, `OpenSwarm-Setup-x64-${hash}.exe`), "");
+
+    process.env.OPENSWARM_AFFILIATE_LANDING_URL = "https://landing.test";
+    process.env.OPENSWARM_AFFILIATE_CLOUD_URL = cloud.url;
+
+    await affiliateTracking.maybeRunFirstLaunchHandshake({
+      shell,
+      userDataDir,
+      isDev: false,
+      isPackaged: true,
+      platform: "win32",
+      homeDir: userDataDir,
+    });
+
+    assert.equal(shell.opened.length, 0, "filename hash bind skips welcome URL");
+    const state = readJson(path.join(userDataDir, "install.json"));
+    assert.equal(state.ref, "windows-affiliate");
+    assert.equal(state.ref_bind_method, "affiliate_filename_hash");
+  } finally {
+    await cloud.close();
+  }
+});
+
+test("download scan refuses ambiguous stamped installers", () => {
+  const userDataDir = makeTempUserDataDir();
+  const downloads = path.join(userDataDir, "Downloads");
+  fs.mkdirSync(downloads, { recursive: true });
+  fs.writeFileSync(path.join(downloads, "OpenSwarm-arm64-abcDEF1234567890_a.dmg"), "");
+  fs.writeFileSync(path.join(downloads, "OpenSwarm-arm64-abcDEF1234567890_b.dmg"), "");
+
+  const hash = affiliateTracking.p_findAffiliateHashFromInstaller({
+    platform: "darwin",
+    homeDir: userDataDir,
+    nowMs: Date.now(),
+  });
+  assert.equal(hash, null);
+});
+
+test("resolveInstallId: reuses install.json app_install_id", () => {
+  const userDataDir = makeTempUserDataDir();
+  affiliateTracking.p_writeState(userDataDir, { app_install_id: "existing-id-12345" });
+  const id = affiliateTracking.resolveInstallId({
+    userDataDir, isPackaged: true, projectRoot: userDataDir, homeDir: userDataDir,
+  });
+  assert.equal(id, "existing-id-12345");
+});
+
+test("resolveInstallId: adopts python settings installation_id and persists it", () => {
+  const userDataDir = makeTempUserDataDir();
+  const settingsDir = path.join(userDataDir, "backend", "data", "settings");
+  fs.mkdirSync(settingsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(settingsDir, "settings.json"),
+    JSON.stringify({ installation_id: "python-analytics-id-1" }),
+  );
+
+  const id = affiliateTracking.resolveInstallId({
+    userDataDir,
+    isPackaged: false,
+    projectRoot: userDataDir,
+  });
+  assert.equal(id, "python-analytics-id-1");
+  const state = readJson(path.join(userDataDir, "install.json"));
+  assert.equal(state.app_install_id, "python-analytics-id-1");
+});
+
+test("resolveInstallId: generates once and returns the same id on repeat calls", () => {
+  const userDataDir = makeTempUserDataDir();
+  const first = affiliateTracking.resolveInstallId({
+    userDataDir, isPackaged: true, projectRoot: userDataDir, homeDir: userDataDir,
+  });
+  const second = affiliateTracking.resolveInstallId({
+    userDataDir, isPackaged: true, projectRoot: userDataDir, homeDir: userDataDir,
+  });
+  assert.ok(first && first.length >= 8);
+  assert.equal(second, first);
+  const state = readJson(path.join(userDataDir, "install.json"));
+  assert.equal(state.app_install_id, first);
+});
+
+test("first launch handshake reuses the pre-resolved install id", async () => {
+  const cloud = await makeMockCloud();
+  try {
+    const userDataDir = makeTempUserDataDir();
+    const shell = makeFakeShell();
+    const hash = "abcDEF1234567890_hash";
+    cloud.filenameHashes.set(hash, "unified-affiliate");
+
+    process.env.OPENSWARM_AFFILIATE_LANDING_URL = "https://landing.test";
+    process.env.OPENSWARM_AFFILIATE_CLOUD_URL = cloud.url;
+
+    const resolved = affiliateTracking.resolveInstallId({
+      userDataDir,
+      isPackaged: true,
+      projectRoot: userDataDir,
+      homeDir: userDataDir,
+    });
+
+    await affiliateTracking.maybeRunFirstLaunchHandshake({
+      shell,
+      userDataDir,
+      isDev: false,
+      isPackaged: true,
+      platform: "linux",
+      env: { APPIMAGE: `/tmp/OpenSwarm-x64-${hash}.AppImage` },
+    });
+
+    const state = readJson(path.join(userDataDir, "install.json"));
+    assert.equal(state.app_install_id, resolved, "handshake must keep the unified id");
+    assert.equal(state.ref, "unified-affiliate");
+    const bound = [...cloud.tokens.values()].find((t) => t.ref === "unified-affiliate");
+    assert.equal(bound.app_install_id, resolved, "cloud bind must carry the unified id");
   } finally {
     await cloud.close();
   }
@@ -391,7 +595,7 @@ test("dev mode: skipped unless OPENSWARM_AFFILIATE_FORCE=1", async () => {
 
 test("install.json write is atomic-ish (temp + rename)", async () => {
   const userDataDir = makeTempUserDataDir();
-  affiliateTracking._writeState(userDataDir, { app_install_id: "atomic-test-1234567890", ref: "x" });
+  affiliateTracking.p_writeState(userDataDir, { app_install_id: "atomic-test-1234567890", ref: "x" });
   // After write, the temp file shouldn't be left behind.
   const files = fs.readdirSync(userDataDir);
   assert.ok(files.includes("install.json"));
@@ -400,14 +604,14 @@ test("install.json write is atomic-ish (temp + rename)", async () => {
 
 test("readState returns {} when no install.json exists", () => {
   const userDataDir = makeTempUserDataDir();
-  const state = affiliateTracking._readState(userDataDir);
+  const state = affiliateTracking.p_readState(userDataDir);
   assert.deepEqual(state, {});
 });
 
 test("readState returns {} when install.json is corrupt", () => {
   const userDataDir = makeTempUserDataDir();
   fs.writeFileSync(path.join(userDataDir, "install.json"), "{ not json");
-  const state = affiliateTracking._readState(userDataDir);
+  const state = affiliateTracking.p_readState(userDataDir);
   assert.deepEqual(state, {});
 });
 

@@ -948,6 +948,16 @@ async function startBackend() {
     PYTHONUTF8: '1',
   };
 
+  try {
+    env.OPENSWARM_INSTALLATION_ID = affiliateTracking.resolveInstallId({
+      userDataDir: app.getPath('userData'),
+      isPackaged,
+      projectRoot,
+    });
+  } catch (err) {
+    console.warn('[affiliate] resolveInstallId failed:', err && err.message);
+  }
+
   // Tell the backend where to find a real Node binary for 9Router and
   // bundled MCP servers. Preferring this over ELECTRON_RUN_AS_NODE avoids
   // (a) the second OpenSwarm-as-Node process briefly registering in the
@@ -978,8 +988,8 @@ async function startBackend() {
   // so a user-submitted backend.log instantly says what shipped. Emitted here
   // (not in whenReady) because openBackendLog() above just installed the console
   // tee; logging earlier would miss the persistent file.
-  const _bi = getBuildInfo();
-  console.log(`[provenance] OpenSwarm ${app.getVersion()} sha=${_bi.shortSha} channel=${_bi.channel} builtAt=${_bi.builtAt || 'n/a'}`);
+  const p_buildInfo = getBuildInfo();
+  console.log(`[provenance] OpenSwarm ${app.getVersion()} sha=${p_buildInfo.shortSha} channel=${p_buildInfo.channel} builtAt=${p_buildInfo.builtAt || 'n/a'}`);
   logPreflight(backendPort);
   runComprehensivePreflight();
   // Record what we're about to launch and whether the interpreter is even
@@ -3010,7 +3020,7 @@ ipcMain.handle('open-external', (_event, url) => {
 // (Stripe checkout, sign-in events) for downstream attribution.
 ipcMain.handle('get-install-state', () => {
   try {
-    return affiliateTracking._readState(app.getPath('userData'));
+    return affiliateTracking.p_readState(app.getPath('userData'));
   } catch (_) {
     return {};
   }
