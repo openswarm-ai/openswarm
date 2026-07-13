@@ -9,6 +9,10 @@ const MAX_ZOOM = 3.0;
 const ZOOM_IN_FACTOR = 1.1;
 const ZOOM_OUT_FACTOR = 1 / ZOOM_IN_FACTOR;
 const FIT_PADDING = 200;
+// Framing a card (spawn, click-to-focus, arrow-nav) glides longer than a zoom button press so the camera reads as gliding rather than snapping.
+const FIT_DURATION = 560;
+// Must outlast FIT_DURATION, else the settle snap lands mid-glide and stutters.
+const FIT_SETTLE_DELAY = FIT_DURATION + 60;
 
 // Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.004).
 function sensitivityToMultiplier(setting: number): number {
@@ -156,7 +160,8 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
 
     const step = (now: number) => {
       const t = Math.min((now - startTime) / duration, 1);
-      const ease = 1 - Math.pow(1 - t, 3); // cubic ease-out
+      // Cubic ease-in-out: ease-out alone starts at full speed, which reads as a jerk on long camera moves.
+      const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
       setState({
         panX: start.panX + (target.panX - start.panX) * ease,
         panY: start.panY + (target.panY - start.panY) * ease,
@@ -651,7 +656,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         const dPan = Math.abs(cur.panX - target.panX) + Math.abs(cur.panY - target.panY);
         const dZoom = Math.abs(cur.zoom - target.zoom);
         if (dPan < 5 && dZoom < 0.01) return;
-        animateTo(target);
+        animateTo(target, FIT_DURATION);
         // Settle pass: cancelAnimation() must be able to cancel it, else back-to-back fitToCards races and the first settle overwrites the second target.
         settleTimerRef.current = window.setTimeout(() => {
           settleTimerRef.current = null;
@@ -663,7 +668,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
             Math.abs(cur2.panY - fresh.panY) +
             Math.abs(cur2.zoom - fresh.zoom) * 1000;
           if (drift > 8) setState(fresh);
-        }, 370);
+        }, FIT_SETTLE_DELAY);
       } else {
         setState(target);
       }
