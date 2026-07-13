@@ -402,7 +402,7 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
     const SUBMIT = /\\b(send|post|reply|comment|tweet|publish|share|message)\\b/i;
     const SEARCH = /search|find\\b|filter|query|lookup|explore|jump to/i;
     // Reversible compose openers: reveal a writing surface, never commit one.
-    const OPENER = /\\b(start a post|create( a)? post|new post|add a comment|write a comment|leave a comment|post a comment|write a review|create a review|new message|new chat|send a message|compose|reply|comment|tweet|write)\\b/i;
+    const OPENER = /\\b(start a post|start a thread|create( a)?( new)? (post|thread)|new post|new thread|add a comment|write a comment|leave a comment|post a comment|write a review|create a review|new message|new chat|send a message|compose|reply|comment|tweet|create|write)\\b/i;
     // Never clickable by reveal, even if the label also looks like an opener.
     const HARDBLOCK = /\\b(send|submit|pay|buy|purchase|checkout|order|delete|remove|unfollow|unsubscribe|log ?out|sign ?out|report|block|confirm|deactivate|save)\\b/i;
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
