@@ -1,29 +1,27 @@
 import React, { useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import Typography from '@mui/material/Typography';
 import { estimateRenderedTextHeight, RECHECK_VISIBILITY_EVENT } from './markdownMeasure';
+import { renderUserTextWithPills } from './renderUserTextWithPills';
+import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { BLOCK_TARGET_CHARS } from './WindowedMarkdown';
 
-// Intra-message virtualization for very long assistant messages. The text is split into FIXED blocks (each block always covers the same character range), so unlike the old growing-tail chunking nothing shifts as you scroll, and no scroll correction is needed. Only blocks within a screen of the viewport actually render their markdown; the rest are height-reserved placeholders, so an extremely long message never parses or mounts more than the on-screen portion plus a buffer.
+// Intra-message virtualization for very long user (plain-text) messages, mirroring WindowedMarkdown's approach minus fence-awareness (plain text has no code fences to protect).
 
-export const BLOCK_TARGET_CHARS = 4_000;
-// Remembered measured height per block (`${messageId}#${index}`). Module-scoped so it survives the block unmounting/remounting as you scroll, keeping the reserved placeholder heights (and thus scroll position) stable.
-const blockHeights = new Map<string, number>();
+const plainBlockHeights = new Map<string, number>();
 
-// Split markdown at blank lines that sit OUTSIDE fenced code blocks, so each block is a self-contained markdown fragment we can parse on its own. A fence (``` or ~~~) toggles "inside code" so we never cut a code block in half. Blocks grow to ~targetChars then break at the next safe boundary.
-function splitMarkdownIntoBlocks(text: string, targetChars: number): string[] {
+// Split at blank lines so each block is a self-contained chunk of lines. Blocks grow to ~targetChars then break at the next blank-line boundary.
+// Plain-text pastes (logs, book/PDF-extracted text) often have no blank lines at all, so a hard ceiling force-cuts at 2x target to guarantee progress.
+function splitPlainTextIntoBlocks(text: string, targetChars: number): string[] {
   if (text.length <= targetChars) return [text];
   const lines = text.split('\n');
   const blocks: string[] = [];
   let cur: string[] = [];
   let curLen = 0;
-  let inFence = false;
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) inFence = !inFence;
     cur.push(line);
     curLen += line.length + 1;
-    if (curLen >= targetChars && !inFence && trimmed === '') {
+    if (curLen >= targetChars && (line.trim() === '' || curLen >= targetChars * 2)) {
       blocks.push(cur.join('\n'));
       cur = [];
       curLen = 0;
@@ -33,23 +31,14 @@ function splitMarkdownIntoBlocks(text: string, targetChars: number): string[] {
   return blocks.length ? blocks : [text];
 }
 
-const MD_COMPONENTS = {
-  a: ({ children, ...props }: any) => (
-    <a {...props} style={{ cursor: 'pointer' }}>{children}</a>
-  ),
-};
-
-const renderBlock = (text: string) => (
-  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text}</ReactMarkdown>
-);
-
-const MarkdownBlock: React.FC<{
+const PlainTextBlock: React.FC<{
   blockId: string;
   text: string;
   scrollRoot: Element | null;
   viewportHeight: number;
   viewportWidth: number;
 }> = React.memo(({ blockId, text, scrollRoot, viewportHeight, viewportWidth }) => {
+  const c = useClaudeTokens();
   const ref = useRef<HTMLDivElement | null>(null);
   const [inView, setInView] = useState(false);
 
@@ -57,7 +46,7 @@ const MarkdownBlock: React.FC<{
     const node = ref.current;
     if (!node) return;
     const bufferPx = Math.max(180, Math.round(viewportHeight || 240));
-    // Resolve visibility synchronously (on mount and on demand) so an on-screen block paints its markdown without waiting on the observer's async callback.
+    // Resolve visibility synchronously (on mount and on demand) so an on-screen block paints its text without waiting on the observer's async callback.
     const rootEl: Element = (scrollRoot as Element) ?? document.scrollingElement ?? document.documentElement;
     const evaluate = () => {
       const rootRect = rootEl.getBoundingClientRect();
@@ -89,35 +78,46 @@ const MarkdownBlock: React.FC<{
     const node = ref.current;
     if (!node) return;
     const h = node.offsetHeight;
-    if (h > 0) blockHeights.set(blockId, h);
+    if (h > 0) plainBlockHeights.set(blockId, h);
   }, [inView, blockId, text]);
 
   // chrome=8: block wrappers have minimal padding vs a full bubble.
-  const reserved = blockHeights.get(blockId) ?? estimateRenderedTextHeight(text, viewportWidth, 8);
+  const reserved = plainBlockHeights.get(blockId) ?? estimateRenderedTextHeight(text, viewportWidth, 8);
 
   return (
     <Box ref={ref}>
-      {inView ? renderBlock(text) : <Box aria-hidden sx={{ height: reserved }} />}
+      {inView ? (
+        <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', lineHeight: 1.6, overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+          {renderUserTextWithPills(text, c)}
+        </Typography>
+      ) : (
+        <Box aria-hidden sx={{ height: reserved }} />
+      )}
     </Box>
   );
 });
 
-const WindowedMarkdown: React.FC<{
+const WindowedPlainText: React.FC<{
   messageId: string;
   text: string;
   scrollRoot: Element | null;
   viewportHeight: number;
   viewportWidth: number;
 }> = ({ messageId, text, scrollRoot, viewportHeight, viewportWidth }) => {
-  const blocks = useMemo(() => splitMarkdownIntoBlocks(text, BLOCK_TARGET_CHARS), [text]);
+  const c = useClaudeTokens();
+  const blocks = useMemo(() => splitPlainTextIntoBlocks(text, BLOCK_TARGET_CHARS), [text]);
   if (blocks.length === 1) {
     // Short enough that virtualizing would only add overhead.
-    return renderBlock(text);
+    return (
+      <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', lineHeight: 1.6, overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+        {renderUserTextWithPills(text, c)}
+      </Typography>
+    );
   }
   return (
     <>
       {blocks.map((block, i) => (
-        <MarkdownBlock
+        <PlainTextBlock
           key={i}
           blockId={`${messageId}#${i}`}
           text={block}
@@ -130,4 +130,4 @@ const WindowedMarkdown: React.FC<{
   );
 };
 
-export default WindowedMarkdown;
+export default WindowedPlainText;
