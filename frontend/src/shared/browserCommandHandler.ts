@@ -510,7 +510,41 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
       role: best.isContentEditable ? 'contenteditable' : (best.getAttribute('role') || best.tagName.toLowerCase()),
       score: Math.round(hit.score * 10) / 10, nearSubmit: hit.near, filled, reveals: acts };
   })()`;
-  return await evalInPage(wv, code);
+  const result = await evalInPage(wv, code);
+  // Real-keystroke fill fallback: some editors (Reddit's Lexical, strict React contenteditables)
+  // manage their own state through beforeinput and ignore execCommand insertText, so the in-page
+  // fill reads back empty. Retype the SAME text as OS-level key events (isTrusted, the way a human
+  // types), which those editors DO honor, then re-read to confirm. Only fires when the cheap
+  // in-page fill already failed, so the fast path is untouched.
+  if (fill != null && result && result.found && !result.filled && result.selector) {
+    const ok = await keystrokeFill(wv, String(result.selector), fill);
+    result.filled = ok;
+    result.fillMode = ok ? 'keystroke' : 'keystroke-failed';
+  }
+  return result;
+}
+
+// Type `text` into the element at `selector` as real OS-level key events (Electron
+// sendInputEvent 'char'), for editors that reject synthetic execCommand insertText. Focuses +
+// clears in-page first, types each char natively, then reads the value back in-page to verify.
+async function keystrokeFill(wv: BrowserWebview, selector: string, text: string): Promise<boolean> {
+  const safeSel = JSON.stringify(selector);
+  await evalInPage(wv, `(() => { const el = document.querySelector(${safeSel});
+    if (!el) return false; el.scrollIntoView({ block: 'center', behavior: 'instant' }); el.focus();
+    if (el.select) el.select(); document.execCommand('selectAll', false); document.execCommand('delete', false);
+    return true; })()`);
+  for (const ch of text) {
+    wv.sendInputEvent({ type: 'char', keyCode: ch });
+  }
+  // Read back from the marked element OR the active element: editors like Reddit's swap the
+  // node on activation, so the original selector can go stale even though the keystrokes landed
+  // in whatever now holds focus. Checking both survives that re-render.
+  const readBack = `(() => {
+    const check = (el) => { if (!el) return false;
+      el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+      const now = (el.value != null ? el.value : (el.textContent || '')); return now.includes(${JSON.stringify(text)}); };
+    return check(document.querySelector(${safeSel})) || check(document.activeElement); })()`;
+  return Boolean(await evalInPage(wv, readBack));
 }
 
 // Electron sendInputEvent expects names like 'Up', 'Enter', 'Space', not 'ArrowUp'/' '/'Esc'.

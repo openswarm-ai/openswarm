@@ -17,7 +17,7 @@ import logging
 import os
 import re
 import time
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Dict
 
 from backend.apps.agents.browser import browser_verified_action
 
@@ -184,12 +184,29 @@ async def run_send_script(
             # compose surface: a modal trigger, the first conversation, or a scroll) when the
             # composer isn't painted yet. It never commits a send, only opens a surface.
             p_reveal = os.environ.get("OSW_COMPOSER_REVEAL") == "1"
-            fc = await execute_tool("BrowserFindComposer", {"fill": payload, "reveal": p_reveal}, browser_id, tab_id)
+            # A reveal that OPENS the first list item (a Reddit thread, a TikTok video, a GitHub
+            # issue) is a full-page NAVIGATION: it kills the finder's own JS context, so that one
+            # call can't reach the composer that only exists on the destination. When the finder
+            # reports it fired `open-first` but found nothing, the page is now loading the item;
+            # give it a beat and run the finder ONCE more on the destination. Bounded to 2 tries so
+            # a feed-of-feeds can't walk forever.
+            fc: Dict[str, object] = {}
+            for attempt in range(2):
+                fc = await execute_tool("BrowserFindComposer", {"fill": payload, "reveal": p_reveal}, browser_id, tab_id)
+                if isinstance(fc, dict) and fc.get("found") and fc.get("filled"):
+                    break
+                revs = fc.get("reveals") if isinstance(fc, dict) else None
+                navigated = p_reveal and isinstance(revs, list) and "open-first" in revs
+                if not navigated:
+                    break
+                logger.info("[browser-sendscript] reveal navigated (open-first); re-perceiving the destination")
+                await asyncio.sleep(1.5)
+                await fresh_list()
             if isinstance(fc, dict) and fc.get("found") and fc.get("filled"):
                 p_struct_selector = str(fc.get("selector") or "")
                 logger.info(f"[browser-sendscript] structural composer role={fc.get('role')!r} "
                             f"score={fc.get('score')} nearSubmit={fc.get('nearSubmit')} "
-                            f"reveals={fc.get('reveals')} filled+verified")
+                            f"reveals={fc.get('reveals')} fillMode={fc.get('fillMode')} filled+verified")
                 log.append({"tool": "BrowserFindComposer", "input": {"fill": "<payload>"}, "ok": True,
                             "result_summary": f"structural composer {fc.get('role')!r} filled+verified"[:200], "elapsed_ms": 0})
                 composer = (-1, str(fc.get("role") or "composer"))
