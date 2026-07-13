@@ -1,8 +1,26 @@
-// @electron/notarize 3.x is ESM-only, so a top-level require() throws
-// ERR_REQUIRE_ESM the moment electron-builder loads this afterSign hook — which
-// it does for EVERY platform/build, breaking even unsigned Windows packaging.
-// Import it lazily, after the skip checks, so it's only loaded when we actually
-// notarize (signed macOS). Dynamic import() works from CommonJS.
+// Hand-rolled notarization: `notarytool submit --wait` SIGBUSes on this macOS (its progress
+// printer dies ~30s after upload, crash dumps 2026-07-13), so we submit WITHOUT --wait and poll
+// `notarytool info` with short-lived calls that never reach the crashing code path. We staple
+// here too because @electron/notarize (which normally staples) is out of the loop.
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+
+const execFileAsync = promisify(execFile);
+const POLL_INTERVAL_MS = 30 * 1000;
+const POLL_DEADLINE_MS = 90 * 60 * 1000;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function xcrun(args) {
+  const { stdout } = await execFileAsync('xcrun', args, { maxBuffer: 32 * 1024 * 1024 });
+  return stdout;
+}
+
 exports.default = async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
   if (electronPlatformName !== 'darwin') return;
@@ -13,8 +31,7 @@ exports.default = async function notarizing(context) {
   }
 
   // Prefer a stored notarytool keychain profile: an app-specific password in env
-  // silently 401s the day Apple rotates it, taking a release down with it; the
-  // keychain profile is durable and is the canonical local-publish credential.
+  // silently 401s the day Apple rotates it; the keychain profile is durable.
   const keychainProfile = process.env.APPLE_KEYCHAIN_PROFILE;
   const hasEnvCreds =
     process.env.APPLE_ID && process.env.APPLE_APP_SPECIFIC_PASSWORD && process.env.APPLE_TEAM_ID;
@@ -24,40 +41,60 @@ exports.default = async function notarizing(context) {
     return;
   }
 
-  const { notarize } = await import('@electron/notarize');
+  const authArgs = keychainProfile
+    ? ['--keychain-profile', keychainProfile]
+    : [
+        '--apple-id',
+        process.env.APPLE_ID,
+        '--password',
+        process.env.APPLE_APP_SPECIFIC_PASSWORD,
+        '--team-id',
+        process.env.APPLE_TEAM_ID,
+      ];
 
   const appName = context.packager.appInfo.productFilename;
   const appPath = `${appOutDir}/${appName}.app`;
+  const zipPath = path.join(os.tmpdir(), `openswarm-notarize-${Date.now()}.zip`);
 
-  const runNotarize = () => {
-    if (keychainProfile) {
-      console.log(`Notarizing ${appPath} via keychain profile "${keychainProfile}"...`);
-      return notarize({ tool: 'notarytool', appPath, keychainProfile });
+  console.log(`Notarizing ${appPath} (submit, then poll)...`);
+  try {
+    await execFileAsync('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', appPath, zipPath]);
+
+    const submitted = JSON.parse(
+      await xcrun(['notarytool', 'submit', zipPath, ...authArgs, '--output-format', 'json'])
+    );
+    if (!submitted.id) {
+      throw new Error(`notarytool submit returned no id: ${JSON.stringify(submitted)}`);
     }
-    console.log(`Notarizing ${appPath} via Apple ID env credentials...`);
-    return notarize({
-      tool: 'notarytool',
-      appBundleId: 'com.clusterlabs.openswarm',
-      appPath,
-      appleId: process.env.APPLE_ID,
-      appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
-      teamId: process.env.APPLE_TEAM_ID,
-    });
-  };
+    console.log(`Notarization submitted (id ${submitted.id}); polling until Apple decides...`);
 
-  // Apple's wait-poll flakes after a successful upload; one hiccup shouldn't kill a 40-minute build.
-  const ATTEMPTS = 3;
-  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    const deadline = Date.now() + POLL_DEADLINE_MS;
+    let status = 'In Progress';
+    while (status === 'In Progress' && Date.now() < deadline) {
+      await delay(POLL_INTERVAL_MS);
+      try {
+        const info = JSON.parse(
+          await xcrun(['notarytool', 'info', submitted.id, ...authArgs, '--output-format', 'json'])
+        );
+        status = info.status;
+      } catch {
+        // One flaky poll is fine; the next tick asks again.
+      }
+    }
+
+    if (status !== 'Accepted') {
+      let notaryLog = '';
+      try {
+        notaryLog = await xcrun(['notarytool', 'log', submitted.id, ...authArgs]);
+      } catch {}
+      throw new Error(`Notarization ended ${status} (id ${submitted.id})\n${notaryLog}`);
+    }
+
+    await xcrun(['stapler', 'staple', appPath]);
+    console.log('Notarization complete (Accepted + stapled).');
+  } finally {
     try {
-      await runNotarize();
-      break;
-    } catch (err) {
-      if (attempt === ATTEMPTS) throw err;
-      const firstLine = String((err && err.message) || err).split('\n')[0];
-      console.log(`Notarization attempt ${attempt}/${ATTEMPTS} failed (${firstLine}); retrying in 30s...`);
-      await new Promise((resolve) => setTimeout(resolve, 30000));
-    }
+      fs.unlinkSync(zipPath);
+    } catch {}
   }
-
-  console.log('Notarization complete.');
 };
