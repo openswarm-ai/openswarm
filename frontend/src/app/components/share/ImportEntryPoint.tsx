@@ -9,6 +9,8 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import { useNavigate } from 'react-router-dom';
 
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { fetchWorkflows } from '@/shared/state/workflowsSlice';
 
 import ImportDigest, { DigestHandle } from './ImportDigest';
 import ImportModal from './ImportModal';
@@ -43,6 +45,8 @@ const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const ImportEntryPoint: React.FC = () => {
   const c = useClaudeTokens();
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
+  const dashboardId = useAppSelector((s) => s.tempState.lastDashboardId) || undefined;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const digestRef = useRef<DigestHandle | null>(null);
   const depth = useRef(0);
@@ -56,10 +60,12 @@ const ImportEntryPoint: React.FC = () => {
     (rootType: string, rootId: string, name: string) => {
       const msg = rootType === 'app' ? `Added ${name} to your Apps` : `Added ${name}`;
       setToast({ msg, sev: 'success' });
+      // A workflow has no route of its own, so nothing would pull it in: an open Workflows hub only fetches on mount and would keep showing a stale list. Import drops dashboard_id, and /list keeps unassigned workflows for every dashboard, so this surfaces it wherever the user is.
+      if (rootType === 'workflow') dispatch(fetchWorkflows(dashboardId));
       const to = DEST[rootType]?.(rootId);
       if (to) navigate(to);
     },
-    [navigate],
+    [navigate, dispatch, dashboardId],
   );
 
   const commitAndFinish = useCallback(
