@@ -1,4 +1,5 @@
 import os
+import hashlib
 import json
 import logging
 import re
@@ -106,34 +107,63 @@ def p_built_in_skill_registry() -> list[dict]:
     ]
 
 
-def p_seed_built_in_skills() -> None:
-    """Copy each built-in skill into SKILLS_DIR if not already present, and
-    ensure the index has the `built_in: true` flag so the UI and DELETE
-    endpoint know to treat it specially. Idempotent; safe to call on
-    every boot. Doesn't overwrite the file once it exists (so user edits
-    are preserved across restarts and upgrades)."""
+def p_content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def seed_built_in_skills() -> None:
+    """Copy each built-in skill into SKILLS_DIR and keep an *unedited* copy in sync
+    with the bundled source across upgrades. Idempotent; safe on every boot.
+
+    `seeded_hash` in the index records the bytes we last wrote. A file still hashing
+    to it was never edited, so a newer bundle replaces it; a file that diverges is a
+    user edit and is left alone. Installs predating `seeded_hash` can't be told apart
+    from an edit, so we only claim provenance when the bytes already match the bundle
+    -- otherwise they stay untracked and frozen, since silently clobbering a real edit
+    is the worse failure. Before this, seeding was create-if-absent, so every install
+    was pinned forever to whatever shipped the day it first booted."""
     index = load_index()
     dirty = False
     for entry in p_built_in_skill_registry():
         skill_id = entry["id"]
         fpath = os.path.join(SKILLS_DIR, f"{skill_id}.md")
-        if not os.path.exists(fpath):
+        try:
+            with open(entry["source_path"], encoding="utf-8") as src:
+                bundled = src.read()
+        except OSError:
+            logger.warning("built-in skill source missing: %s", entry["source_path"])
+            continue
+        current = None
+        if os.path.exists(fpath):
             try:
-                with open(entry["source_path"], encoding="utf-8") as src:
-                    content = src.read()
-                with open(fpath, "w", encoding="utf-8") as dst:
-                    dst.write(content)
-            except FileNotFoundError:
-                logger.warning("built-in skill source missing: %s", entry["source_path"])
+                with open(fpath, encoding="utf-8") as f:
+                    current = f.read()
+            except OSError:
+                logger.warning("built-in skill unreadable, leaving as-is: %s", fpath, exc_info=True)
                 continue
-        # Refresh index metadata. Existing user-changed name/description in the index stays, but built_in always gets re-asserted in case the index was created before this mechanism existed.
         meta = dict(index.get(skill_id, {}))
+        seeded_hash = meta.get("seeded_hash")
+        if current is None or (seeded_hash and p_content_hash(current) == seeded_hash):
+            # Absent, or byte-identical to what we last seeded: no user edit to lose.
+            if current != bundled:
+                try:
+                    os.makedirs(SKILLS_DIR, exist_ok=True)
+                    with open(fpath, "w", encoding="utf-8") as dst:
+                        dst.write(bundled)
+                except OSError:
+                    logger.warning("built-in skill write failed: %s", fpath, exc_info=True)
+                    continue
+            meta["seeded_hash"] = p_content_hash(bundled)
+        elif not seeded_hash and current == bundled:
+            # Untracked but already in sync; safe to adopt so the NEXT upgrade can move it.
+            meta["seeded_hash"] = p_content_hash(bundled)
+        # Anything else is a user edit, or an untracked install indistinguishable from one: leave both the file and its (absent) provenance alone so we never overwrite it.
+        # Refresh index metadata. Existing user-changed name/description in the index stays, but built_in always gets re-asserted in case the index was created before this mechanism existed.
         meta.setdefault("name", entry["name"])
         meta.setdefault("description", entry["description"])
         meta.setdefault("command", entry["command"])
         if not meta.get("built_in"):
             meta["built_in"] = True
-            dirty = True
         if index.get(skill_id) != meta:
             index[skill_id] = meta
             dirty = True
@@ -156,7 +186,7 @@ async def skills_lifespan():
     os.makedirs(SKILLS_DIR, exist_ok=True)
     os.makedirs(SKILLS_WORKSPACE_DIR, exist_ok=True)
     try:
-        p_seed_built_in_skills()
+        seed_built_in_skills()
         p_prune_orphan_index()
     except Exception:
         # Don't block app startup on a skill-seed failure; the worst case is the user has to manually paste the skill in once.

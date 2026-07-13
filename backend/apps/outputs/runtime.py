@@ -118,6 +118,8 @@ class AppRuntime:
         self.p_subscribers: set[LogSubscriber] = set()
         # Recent build/runtime errors scraped from stderr; drained by the agent's post-tool hook after Write/Edit so the agent sees vite/babel/uvicorn errors in its next turn and can self-fix instead of leaving the user with a red iframe overlay.
         self.recent_errors: deque[str] = deque(maxlen=RECENT_ERRORS_MAX)
+        # Webview console.error lines, drained alongside recent_errors: a clean build still leaves runtime TypeErrors that only the browser sees.
+        self.p_frontend_errors: deque[str] = deque(maxlen=RECENT_ERRORS_MAX)
         self.render_state: Optional[str] = None
         self.render_error_text: str = ""
         self.p_stdout_task: Optional[asyncio.Task] = None
@@ -132,6 +134,12 @@ class AppRuntime:
         into the agent's context immediately after a file write."""
         out = list(self.recent_errors)
         self.recent_errors.clear()
+        return out
+
+    def drain_frontend_errors(self) -> list[str]:
+        """Pop the app's console.error lines, for the same post-write note as drain_errors()."""
+        out = list(self.p_frontend_errors)
+        self.p_frontend_errors.clear()
         return out
 
     def set_render_ok(self) -> None:
@@ -486,6 +494,9 @@ class AppRuntime:
     def record_frontend_log(self, level: str, text: str) -> None:
         """Fold a webview console line into the terminal stream (ring buffer, WS subscribers, terminal.log). Called by the console-log beacon endpoint."""
         stream = {"warn": "frontend-warn", "error": "frontend-error"}.get(level, "frontend")
+        # The app-ready/app-error beacons ride this same console channel but already drive render_state via the report-* endpoints; re-capturing them would duplicate render_error_text into the agent's note.
+        if stream == "frontend-error" and "[openswarm:app-" not in text:
+            self.p_frontend_errors.append(text.rstrip())
         self.p_broadcast(LogLine(stream, text))
 
     def p_reset_terminal_log(self) -> None:
@@ -690,13 +701,8 @@ class AppRuntimeManager:
             return rt
         return self.idle_lru.get(key)
 
-    def drain_errors_for_path(self, file_path: str) -> list[str]:
-        """If `file_path` falls under one of the live workspace
-        runtimes' workspace_path, drain that workspace's recent
-        build/runtime errors. Returns [] if no workspace owns the path
-        or no errors are queued; caller can treat empty as 'all clear'.
-        Used by agent_manager's post-tool hook so the agent sees vite /
-        babel / uvicorn errors right after a Write/Edit completes."""
+    def p_runtimes_owning(self, file_path: str) -> list[AppRuntime]:
+        """Every runtime whose workspace contains `file_path`, or [] if none does."""
         if not file_path:
             return []
         try:
@@ -704,14 +710,33 @@ class AppRuntimeManager:
         except Exception:
             return []
         # Walk both active and idle runtimes; the user might have navigated away from the workspace mid-build, but the agent could still be editing files; the LRU keeps the runtime alive for ~3 idle slots. Aggregate across instances: with two cards of the same app open, either instance's build errors matter to the agent.
-        drained: list[str] = []
+        owning: list[AppRuntime] = []
         for rt in (*self.runtimes.values(), *self.idle_lru.values()):
             try:
                 ws_root = os.path.abspath(rt.workspace_path)
             except Exception:
                 continue
             if abs_path == ws_root or abs_path.startswith(ws_root + os.sep):
-                drained.extend(rt.drain_errors())
+                owning.append(rt)
+        return owning
+
+    def drain_errors_for_path(self, file_path: str) -> list[str]:
+        """If `file_path` falls under one of the live workspace
+        runtimes' workspace_path, drain that workspace's recent
+        build/runtime errors. Returns [] if no workspace owns the path
+        or no errors are queued; caller can treat empty as 'all clear'.
+        Used by agent_manager's post-tool hook so the agent sees vite /
+        babel / uvicorn errors right after a Write/Edit completes."""
+        drained: list[str] = []
+        for rt in self.p_runtimes_owning(file_path):
+            drained.extend(rt.drain_errors())
+        return drained
+
+    def drain_frontend_errors_for_path(self, file_path: str) -> list[str]:
+        """The app's console.error lines, for the same post-write note as drain_errors_for_path."""
+        drained: list[str] = []
+        for rt in self.p_runtimes_owning(file_path):
+            drained.extend(rt.drain_frontend_errors())
         return drained
 
     def get_render_state_for_workspace(self, workspace_id: str) -> tuple[Optional[str], str]:

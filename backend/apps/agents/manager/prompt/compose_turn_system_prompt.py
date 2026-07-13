@@ -12,6 +12,7 @@ from typeguard import typechecked
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.prompt.tool_catalog import get_all_tool_names
 from backend.apps.agents.manager.prompt.prompt_context import (
+    build_app_runtime_contract,
     build_browser_context,
     build_installed_skills_catalog,
     build_mcp_registry_summary,
@@ -73,6 +74,9 @@ def compose_turn_system_prompt(
         from backend.apps.outputs.view_builder_templates import load_app_builder_skill
         skill_block = f"<app_builder_reference>\n{load_app_builder_skill()}\n</app_builder_reference>"
         composed_prompt = f"{composed_prompt}\n\n{skill_block}" if composed_prompt else skill_block
+        # Appended AFTER the reference, and never sourced from it: the skill is a user-editable file seeded once per install, so a stale or edited copy silently drops whatever it omits. Platform mechanics have to reach the agent regardless of what that file says.
+        contract_block = build_app_runtime_contract(session.cwd)
+        composed_prompt = f"{composed_prompt}\n\n{contract_block}"
     else:
         # Every other mode gets one line of discovery instead of the whole reference: CreateApp's result carries the reference when actually used, so the base prompt stays cheap.
         apps_note = (
