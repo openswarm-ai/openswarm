@@ -180,11 +180,16 @@ async def run_send_script(
         # commit-check for a React contenteditable, whose text never reaches the AX value).
         # Flag-gated so the proven name path stays the default.
         if not composer and p_struct:
-            fc = await execute_tool("BrowserFindComposer", {"fill": payload}, browser_id, tab_id)
+            # OSW_COMPOSER_REVEAL: let the finder take one reversible reveal action (open the
+            # compose surface: a modal trigger, the first conversation, or a scroll) when the
+            # composer isn't painted yet. It never commits a send, only opens a surface.
+            p_reveal = os.environ.get("OSW_COMPOSER_REVEAL") == "1"
+            fc = await execute_tool("BrowserFindComposer", {"fill": payload, "reveal": p_reveal}, browser_id, tab_id)
             if isinstance(fc, dict) and fc.get("found") and fc.get("filled"):
                 p_struct_selector = str(fc.get("selector") or "")
                 logger.info(f"[browser-sendscript] structural composer role={fc.get('role')!r} "
-                            f"score={fc.get('score')} nearSubmit={fc.get('nearSubmit')} filled+verified")
+                            f"score={fc.get('score')} nearSubmit={fc.get('nearSubmit')} "
+                            f"reveals={fc.get('reveals')} filled+verified")
                 log.append({"tool": "BrowserFindComposer", "input": {"fill": "<payload>"}, "ok": True,
                             "result_summary": f"structural composer {fc.get('role')!r} filled+verified"[:200], "elapsed_ms": 0})
                 composer = (-1, str(fc.get("role") or "composer"))

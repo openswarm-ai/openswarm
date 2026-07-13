@@ -345,12 +345,24 @@ async function handleType(wv: BrowserWebview, params: Record<string, any>): Prom
 // with data-osw-composer so a follow-up type/click can target it by a stable selector.
 // With {fill}, it also types + reads back in the SAME in-page context (the only reliable
 // commit-check for a React-controlled contenteditable, whose value never reaches the AX tree).
+// With {reveal:true}, when no composer is painted yet it takes ONE reversible reveal action
+// (click a compose-trigger, open the first list item, or scroll) and rescans, up to a small
+// bound. Reveal actions are same-document only: SPA route changes (pushState) keep this JS
+// context alive, so X/LinkedIn/Reddit/YouTube stay drivable in one call; a full navigation
+// just cuts the await short and the backend re-perceives. Reveal NEVER clicks an irreversible
+// control (send/submit/pay/delete...): it only opens a surface, it never commits one.
 async function handleFindComposer(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
   const fill = params.fill != null ? String(params.fill) : null;
   const safeFill = JSON.stringify(fill);
-  const code = `(() => {
+  const reveal = params.reveal === true ? 'true' : 'false';
+  const code = `(async () => {
     const SUBMIT = /\\b(send|post|reply|comment|tweet|publish|share|message)\\b/i;
     const SEARCH = /search|find\\b|filter|query|lookup|explore|jump to/i;
+    // Reversible compose openers: reveal a writing surface, never commit one.
+    const OPENER = /\\b(start a post|create( a)? post|new post|add a comment|write a comment|leave a comment|post a comment|write a review|create a review|new message|new chat|send a message|compose|reply|comment|tweet|write)\\b/i;
+    // Never clickable by reveal, even if the label also looks like an opener.
+    const HARDBLOCK = /\\b(send|submit|pay|buy|purchase|checkout|order|delete|remove|unfollow|unsubscribe|log ?out|sign ?out|report|block|confirm|deactivate|save)\\b/i;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const vis = (el) => {
       const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
       return r.width >= 80 && r.height >= 16 && s.visibility !== 'hidden'
@@ -358,38 +370,106 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
     };
     // Pierce shadow DOM: Reddit (shreddit), Telegram, WhatsApp, Slack build their composer
     // inside web-component shadow roots that a light-DOM querySelectorAll can't see.
-    const SEL = 'textarea, [contenteditable="true"], [role="textbox"], input[type="text"]';
-    const deep = (root, out, depth) => {
-      if (depth > 8 || out.length > 400) return out;
+    const deepAll = (root, out, depth) => {
+      if (depth > 8 || out.length > 4000) return out;
       let kids; try { kids = root.querySelectorAll('*'); } catch (e) { return out; }
-      for (const el of kids) {
-        if (el.matches && el.matches(SEL)) out.push(el);
-        if (el.shadowRoot) deep(el.shadowRoot, out, depth + 1);
-      }
+      for (const el of kids) { out.push(el); if (el.shadowRoot) deepAll(el.shadowRoot, out, depth + 1); }
       return out;
     };
-    const cands = deep(document, [], 0);
-    let best = null, bestScore = 0, bestNear = false;
-    for (const el of cands) {
-      if (!vis(el) || el.readOnly || el.disabled) continue;
-      const label = ((el.getAttribute('aria-label')||'') + ' ' + (el.getAttribute('placeholder')||'')
-        + ' ' + (el.getAttribute('data-placeholder')||'') + ' ' + (el.getAttribute('name')||'')).trim();
-      if (el.type === 'search' || SEARCH.test(label)) continue;
-      const rich = el.tagName === 'TEXTAREA' || el.isContentEditable || el.getAttribute('role') === 'textbox';
-      const area = el.closest('form, [role="dialog"], [role="group"], section, main, [role="main"]') || document.body;
-      let near = false;
-      const btns = area.querySelectorAll('button, [role="button"], input[type="submit"]');
-      for (const b of btns) {
-        const bt = ((b.textContent||'') + ' ' + (b.getAttribute('aria-label')||'')).trim();
-        if (bt.length < 40 && SUBMIT.test(bt)) { near = true; break; }
+    const EDIT = 'textarea, [contenteditable="true"], [role="textbox"], input[type="text"]';
+    const labelOf = (el) => ((el.getAttribute('aria-label')||'') + ' ' + (el.getAttribute('placeholder')||'')
+      + ' ' + (el.getAttribute('data-placeholder')||'') + ' ' + (el.getAttribute('name')||'')).trim();
+
+    const findBest = () => {
+      const all = deepAll(document, [], 0);
+      let best = null, bestScore = 0, bestNear = false;
+      for (const el of all) {
+        if (!el.matches || !el.matches(EDIT)) continue;
+        if (!vis(el) || el.readOnly || el.disabled) continue;
+        const label = labelOf(el);
+        if (el.type === 'search' || SEARCH.test(label)) continue;
+        const rich = el.tagName === 'TEXTAREA' || el.isContentEditable || el.getAttribute('role') === 'textbox';
+        const area = el.closest('form, [role="dialog"], [role="group"], section, main, [role="main"]') || document.body;
+        let near = false;
+        for (const b of area.querySelectorAll('button, [role="button"], input[type="submit"]')) {
+          const bt = ((b.textContent||'') + ' ' + (b.getAttribute('aria-label')||'')).trim();
+          if (bt.length < 40 && SUBMIT.test(bt)) { near = true; break; }
+        }
+        if (!rich && !near) continue;                     // a bare form input near nothing is not a composer
+        const r = el.getBoundingClientRect();
+        const score = (el.isContentEditable ? 2 : 0) + (el.tagName === 'TEXTAREA' ? 2 : 0)
+          + (near ? 3 : 0) + Math.min((r.width * r.height) / 40000, 3) + (SUBMIT.test(label) ? 1 : 0);
+        if (score > bestScore) { bestScore = score; best = el; bestNear = near; }
       }
-      if (!rich && !near) continue;                       // a bare form input near nothing is not a composer
-      const r = el.getBoundingClientRect();
-      const score = (el.isContentEditable ? 2 : 0) + (el.tagName === 'TEXTAREA' ? 2 : 0)
-        + (near ? 3 : 0) + Math.min((r.width * r.height) / 40000, 3) + (SUBMIT.test(label) ? 1 : 0);
-      if (score > bestScore) { bestScore = score; best = el; bestNear = near; }
+      return (best && bestScore >= 2) ? { el: best, score: bestScore, near: bestNear } : null;
+    };
+
+    const pollFind = async (ms) => {
+      const t0 = Date.now(); let h = findBest();
+      while (!h && Date.now() - t0 < ms) { await sleep(140); h = findBest(); }
+      return h;
+    };
+
+    // The reveal actions, tried in yield order. Each returns true if it clicked/scrolled.
+    const clickTrigger = () => {
+      const all = deepAll(document, [], 0);
+      let best = null, bestScore = -1;
+      for (const el of all) {
+        const clickable = el.matches && el.matches('button, [role="button"], a[href], summary, [tabindex], [contenteditable="false"], div[class*="placeholder" i], span[class*="placeholder" i]');
+        if (!clickable || !vis(el)) continue;
+        const txt = ((el.textContent||'') + ' ' + (el.getAttribute('aria-label')||'') + ' ' + (el.getAttribute('placeholder')||'')).trim();
+        if (txt.length > 60 || !OPENER.test(txt) || HARDBLOCK.test(txt)) continue;
+        const r = el.getBoundingClientRect();
+        // Prefer short-labelled, higher-on-page triggers (a real "Start a post" pill beats a
+        // long paragraph that happens to contain "reply").
+        const score = (60 - txt.length) + Math.max(0, 600 - r.top) / 100;
+        if (score > bestScore) { bestScore = score; best = el; }
+      }
+      if (!best) return false;
+      best.scrollIntoView({ block: 'center', behavior: 'instant' });
+      best.click();
+      return true;
+    };
+    const openFirstItem = () => {
+      const container = document.querySelector('[role="list"], [role="grid"], [role="feed"], main, [role="main"]') || document.body;
+      const items = container.querySelectorAll('[role="listitem"], [role="row"], [role="article"], article, li a[href], a[role="link"]');
+      for (const it of items) {
+        if (!vis(it)) continue;
+        const r = it.getBoundingClientRect();
+        if (r.top < 40 || r.top > window.innerHeight) continue;   // skip sticky headers / offscreen
+        const target = it.matches('a[href], [role="link"]') ? it : (it.querySelector('a[href], [role="link"], [role="button"]') || it);
+        target.scrollIntoView({ block: 'center', behavior: 'instant' });
+        target.click();
+        return true;
+      }
+      return false;
+    };
+    const scrollMain = () => {
+      const sc = document.scrollingElement || document.documentElement;
+      const before = sc.scrollTop;
+      sc.scrollBy(0, Math.round(window.innerHeight * 1.1));
+      return sc.scrollTop !== before || true;
+    };
+
+    let hit = findBest();
+    const acts = [];
+    if (!hit && ${reveal}) {
+      const reveals = [
+        ['trigger', clickTrigger, 2000],
+        ['open-first', openFirstItem, 2000],
+        ['scroll', scrollMain, 1200],
+      ];
+      for (const [name, act, waitMs] of reveals) {
+        let did = false; try { did = act(); } catch (e) { did = false; }
+        acts.push(name + (did ? '' : ':noop'));
+        if (!did) continue;
+        hit = await pollFind(waitMs);
+        if (hit) break;
+      }
     }
-    if (!best || bestScore < 2) return { found: false };
+    if (!hit) return { found: false, reveals: acts };
+
+    const best = hit.el;
     best.setAttribute('data-osw-composer', '1');
     let filled = false;
     if (${safeFill} != null) {
@@ -404,7 +484,7 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
     }
     return { found: true, selector: '[data-osw-composer="1"]', tag: best.tagName.toLowerCase(),
       role: best.isContentEditable ? 'contenteditable' : (best.getAttribute('role') || best.tagName.toLowerCase()),
-      score: Math.round(bestScore * 10) / 10, nearSubmit: bestNear, filled };
+      score: Math.round(hit.score * 10) / 10, nearSubmit: hit.near, filled, reveals: acts };
   })()`;
   return await evalInPage(wv, code);
 }

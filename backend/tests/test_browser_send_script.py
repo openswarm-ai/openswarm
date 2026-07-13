@@ -251,6 +251,37 @@ async def test_structural_off_by_default_never_calls_finder(monkeypatch):
     assert calls["find"] == 0
 
 
+@pytest.mark.asyncio
+async def test_reveal_flag_passed_to_finder_when_enabled(monkeypatch):
+    """OSW_COMPOSER_REVEAL=1 lets the finder take a reversible reveal action: the send-script
+    must forward reveal=True to BrowserFindComposer (the composer isn't painted yet)."""
+    monkeypatch.setenv("OSW_COMPOSER_STRUCT", "1")
+    monkeypatch.setenv("OSW_COMPOSER_REVEAL", "1")
+    monkeypatch.setenv("OSW_SENDSCRIPT_DRYRUN", "1")
+    ex, calls = make_struct_exec({"found": True, "filled": True, "role": "contenteditable",
+                                  "selector": '[data-osw-composer="1"]', "score": 6.0,
+                                  "nearSubmit": True, "reveals": ["trigger"]})
+    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_index_in_state,
+                                 payload_in_textbox, payload_source=TASK,
+                                 current_url="https://www.linkedin.com/feed/")
+    assert r is not None and r["sent"] is False
+    find_call = next(c for c in calls["clicks"] if c[0] == "BrowserFindComposer")
+    assert find_call[1].get("reveal") is True
+
+
+@pytest.mark.asyncio
+async def test_reveal_flag_off_by_default(monkeypatch):
+    """Struct on but reveal unset: the finder is still called, but reveal=False, so it only
+    scans what's painted and never clicks a trigger (the safe default)."""
+    monkeypatch.setenv("OSW_COMPOSER_STRUCT", "1")
+    monkeypatch.delenv("OSW_COMPOSER_REVEAL", raising=False)
+    ex, calls = make_struct_exec({"found": False})
+    await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_index_in_state,
+                             payload_in_textbox, payload_source=TASK, current_url="https://example.com/")
+    find_call = next(c for c in calls["clicks"] if c[0] == "BrowserFindComposer")
+    assert find_call[1].get("reveal") is False
+
+
 def test_dryrun_report_encodes_the_gate_funnel():
     """The coverage harness greps this one line for gate attribution: a staged composer
     reports composer=1, a bare page reports zeros, and armed/filled ride the booleans."""
