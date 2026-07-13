@@ -317,6 +317,9 @@ async function handleType(wv: BrowserWebview, params: Record<string, any>): Prom
   if (text == null) return { error: 'text parameter is required' };
   const safeSelector = JSON.stringify(selector);
   const safeText = JSON.stringify(text);
+  // Try the cheap in-page fill first, and read it back: an editor that rejects synthetic
+  // execCommand insertText (Reddit's Lexical, strict React contenteditables) leaves the box
+  // empty, and we only learn that by checking the value, not by assuming the call worked.
   const code = `(async ()=>{
     const el = document.querySelector(${safeSelector});
     if (!el) return { error: 'Element not found: ' + ${safeSelector} };
@@ -330,11 +333,17 @@ async function handleType(wv: BrowserWebview, params: Record<string, any>): Prom
       bubbles: true, cancelable: true, inputType: 'insertText', data: ${safeText},
     }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    return {
-      text: 'Typed into: ' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
-    };
+    const now = (el.value != null ? el.value : (el.textContent || ''));
+    return { text: 'Typed into: ' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
+             committed: now.includes(${safeText}) };
   })()`;
   const result = await evalInPage(wv, code);
+  // Real-keystroke fallback when the synthetic fill did not commit (same lever the finder uses).
+  if (result && !result.error && result.committed === false) {
+    const ok = await keystrokeFill(wv, selector, text);
+    result.text = ok ? `Typed into ${selector} via keystrokes` : `Type may not have committed into ${selector}`;
+    result.committed = ok;
+  }
   return result;
 }
 
