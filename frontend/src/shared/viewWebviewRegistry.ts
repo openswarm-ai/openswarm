@@ -1,6 +1,8 @@
 // Live app-card preview webviews keyed by output id. The delete path looks a card's <webview> up here to quiesce its GPU surface BEFORE React rips the element out; without it, deleting a couple of large app cards at once tears down several live SharedImage surfaces in one frame, which piles up "non-existent mailbox" errors and kills the GPU process (taking the whole app down with no dump). Mirror of browserRegistry, for the non-CDP preview webviews.
 export interface ViewWebview extends HTMLElement {
   loadURL: (url: string) => Promise<void>;
+  // Optional: present on real Electron webviews, absent on any non-Electron stand-in, so callers must ?.() it.
+  executeJavaScript?: (code: string) => Promise<unknown>;
 }
 
 const registry = new Map<string, ViewWebview>();

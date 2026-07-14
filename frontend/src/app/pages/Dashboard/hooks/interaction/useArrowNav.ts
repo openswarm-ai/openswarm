@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { report } from '@/shared/serviceClient';
+import { scrollCardContentX } from '@/shared/cardContentScroll';
 import { useAppDispatch } from '@/shared/hooks';
 import { expandSession } from '@/shared/state/agentsSlice';
 import { bringToFront, viewCardKey } from '@/shared/state/dashboardLayoutSlice';
@@ -108,6 +109,8 @@ export function useArrowNav({
   focusedCardIdRef.current = focusedCardId;
   const canvasZoomRef = useRef(zoom);
   canvasZoomRef.current = zoom;
+  // Set while we're waiting to hear whether the focused card's content absorbed a Left/Right; see the handler for why a held key must not stack these.
+  const scrollProbeRef = useRef(false);
 
   useEffect(() => {
     // Helper: is the currently-focused element a text-entry field the user is actively editing? We only want to suppress dashboard navigation when the user is genuinely typing, not just because an input somewhere happens to have focus from a click long ago.
@@ -122,6 +125,35 @@ export function useArrowNav({
       if (typeof val === 'string' && val.length === 0) return false;
       if (editable && (el.textContent ?? '').length === 0) return false;
       return true;
+    };
+
+    const navigateToNeighbor = (fromCardId: string, direction: Direction) => {
+      const target = findNearestCard(fromCardId, direction);
+
+      if (!target) {
+        // No card in that direction, shake
+        if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+        setShakeDirection(direction);
+        shakeTimerRef.current = setTimeout(() => {
+          setShakeDirection(null);
+          shakeTimerRef.current = null;
+        }, 400);
+        return;
+      }
+
+      // Expand + navigate to target + bring to front
+      report('dashboard', 'arrow_navigated', { direction, from_card: fromCardId, to_card: target.id });
+      if (target.type === 'agent') {
+        dispatch(expandSession(target.id));
+      }
+      dispatch(bringToFront({ id: target.id, type: target.type }));
+      setFocusedCardId(target.id);
+
+      setTimeout(() => {
+        const rect = getCardRect(target.id, target.type);
+        if (rect) canvasActions.fitToCards([rect], 1.15, true);
+        setTimeout(() => (document.activeElement as HTMLElement)?.blur?.(), 150);
+      }, 100);
     };
 
     const handleKey = (e: KeyboardEvent) => {
@@ -162,32 +194,22 @@ export function useArrowNav({
       }
 
       e.preventDefault();
-      const target = findNearestCard(currentFocused, direction);
 
-      if (!target) {
-        // No card in that direction, shake
-        if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
-        setShakeDirection(direction);
-        shakeTimerRef.current = setTimeout(() => {
-          setShakeDirection(null);
-          shakeTimerRef.current = null;
-        }, 400);
+      // Left/Right belong to the focused card's own content first: while it can still scroll that way it eats the key, and only once it's at its horizontal boundary (or has nothing to scroll sideways) does the arrow go back to meaning card-to-card navigation. Same hand-off the wheel already does in useCanvasControls, so a Sheets card behaves the same under the trackpad and under the keyboard. Up/Down are untouched: most cards scroll vertically, so applying this rule to them would quietly take away vertical nav across the whole canvas.
+      const fromCardId = currentFocused;
+      if (direction === 'left' || direction === 'right') {
+        // A webview card's content lives in another renderer, so the answer can't arrive before this handler returns. Drop repeats while a probe is in flight instead of stacking round-trips: a held key would otherwise queue several, and the ones that land after the card hits its boundary would all navigate.
+        if (scrollProbeRef.current) return;
+        scrollProbeRef.current = true;
+        scrollCardContentX(fromCardId, direction)
+          .then((scrolled) => {
+            if (!scrolled) navigateToNeighbor(fromCardId, direction);
+          })
+          .finally(() => { scrollProbeRef.current = false; });
         return;
       }
 
-      // Expand + navigate to target + bring to front
-      report('dashboard', 'arrow_navigated', { direction, from_card: currentFocused, to_card: target.id });
-      if (target.type === 'agent') {
-        dispatch(expandSession(target.id));
-      }
-      dispatch(bringToFront({ id: target.id, type: target.type }));
-      setFocusedCardId(target.id);
-
-      setTimeout(() => {
-        const rect = getCardRect(target.id, target.type);
-        if (rect) canvasActions.fitToCards([rect], 1.15, true);
-        setTimeout(() => (document.activeElement as HTMLElement)?.blur?.(), 150);
-      }, 100);
+      navigateToNeighbor(fromCardId, direction);
     };
 
     // Capture phase so we beat MUI Menus/Selects that also listen for arrows. We still bail early on isActivelyEditing, so this doesn't interfere with typing.
