@@ -30,10 +30,15 @@ CLOUD_INTERNAL_URL = os.environ.get(
     "OPENSWARM_CLOUD_INTERNAL_URL", "http://openswarm-cloud.internal:8080"
 ).rstrip("/")
 EDGE_AUTH_TOKEN = os.environ.get("EDGE_AUTH_TOKEN", "")
+EDGE_PUBLIC_HOST = os.environ.get(
+    "EDGE_PUBLIC_HOST", f"{os.environ.get('FLY_APP_NAME', 'openswarm-edge')}.fly.dev"
+).lower()
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+_DOWNLOAD_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,180}$")
 _llm_limiter = RateLimiter(limit=30, window_seconds=60)
 _compute_limiter = RateLimiter(limit=60, window_seconds=60)
+_download_limiter = RateLimiter(limit=30, window_seconds=60)
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -144,6 +149,102 @@ async def edge_llm(request: Request) -> Response:
         relay(),
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type", "application/json"),
+    )
+
+
+@app.get("/download/{platform}/{arch}")
+async def edge_download(platform: str, arch: str, request: Request) -> Response:
+    # This is an edge-app route, not an app-bundle route. Keeping the exact host
+    # check prevents it from leaking onto every {slug}.openswarm.host domain.
+    request_host = request.headers.get("host", "").split(":", 1)[0].lower()
+    if request_host != EDGE_PUBLIC_HOST:
+        return HTMLResponse(not_found_page(), status_code=404)
+    if not _download_limiter.allow(client_ip(request)):
+        return JSONResponse({"error": "Too many download requests, slow down."}, status_code=429)
+
+    ref = (request.query_params.get("ref") or "").strip()
+    authorize_body = {
+        "platform": platform,
+        "arch": arch,
+        **({"ref": ref} if ref else {}),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            authorization = await client.post(
+                f"{CLOUD_INTERNAL_URL}/api/install/authorize-download",
+                headers={"x-edge-auth": EDGE_AUTH_TOKEN},
+                json=authorize_body,
+            )
+    except httpx.HTTPError:
+        return JSONResponse({"error": "Download authorization is unavailable."}, status_code=502)
+
+    if authorization.status_code != 200:
+        # Public validation errors are safe and useful to preserve. Internal
+        # authentication/configuration failures are exposed only as a 502.
+        if authorization.status_code in (400, 404, 429):
+            try:
+                detail = authorization.json()
+                message = detail.get("message") or detail.get("error")
+            except (ValueError, AttributeError):
+                message = None
+            return JSONResponse(
+                {"error": message or "Download request was rejected."},
+                status_code=authorization.status_code,
+            )
+        return JSONResponse({"error": "Download authorization failed."}, status_code=502)
+
+    try:
+        download = authorization.json()
+    except ValueError:
+        return JSONResponse({"error": "Download authorization returned invalid data."}, status_code=502)
+    asset_url = download.get("assetUrl") if isinstance(download, dict) else None
+    filename = download.get("filename") if isinstance(download, dict) else None
+    if (
+        not isinstance(asset_url, str)
+        or not asset_url.startswith(("https://", "http://"))
+        or not isinstance(filename, str)
+        or not _DOWNLOAD_FILENAME_RE.fullmatch(filename)
+    ):
+        return JSONResponse({"error": "Download authorization returned invalid data."}, status_code=502)
+
+    client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=None), follow_redirects=True)
+    upstream_req = client.build_request(
+        "GET", asset_url, headers={"User-Agent": "openswarm-edge-download"}
+    )
+    try:
+        upstream = await client.send(upstream_req, stream=True)
+    except httpx.HTTPError:
+        await client.aclose()
+        return JSONResponse({"error": "Release artifact is unavailable."}, status_code=502)
+    if not upstream.is_success:
+        status = upstream.status_code
+        await upstream.aclose()
+        await client.aclose()
+        return JSONResponse(
+            {"error": f"Release artifact is unavailable ({status})."}, status_code=502
+        )
+
+    async def relay():
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "private, no-store" if ref else "public, max-age=300",
+    }
+    content_length = upstream.headers.get("content-length")
+    if content_length:
+        headers["Content-Length"] = content_length
+
+    return StreamingResponse(
+        relay(),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "application/octet-stream"),
+        headers=headers,
     )
 
 
