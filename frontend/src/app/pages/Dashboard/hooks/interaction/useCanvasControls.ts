@@ -173,7 +173,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
 
   animateToRef.current = animateTo;
 
-  // Wheel zoom centered on cursor
+  // Plain wheel zooms at the viewport center; cmd/ctrl+wheel and trackpad pinch zoom at the cursor.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el || !enabled) return;  // Skip wheel listener when canvas is hidden
@@ -199,9 +199,10 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
           const factor = Math.pow(2, -zDy * sensitivityToMultiplier(sensitivityRef.current));
           const newZoom = clamp(prev.zoom * factor, MIN_ZOOM, MAX_ZOOM);
           const ratio = newZoom / prev.zoom;
+          // Apply any pan accumulated in the same frame too: a zoom and a pan can now land together (vertical zoom + horizontal pan across a RAF boundary, or a forwarded pan), and dropping it would swallow the gesture.
           return {
-            panX: zCenter.cx - (zCenter.cx - prev.panX) * ratio,
-            panY: zCenter.cy - (zCenter.cy - prev.panY) * ratio,
+            panX: zCenter.cx - (zCenter.cx - prev.panX) * ratio - dx,
+            panY: zCenter.cy - (zCenter.cy - prev.panY) * ratio - dy,
             zoom: newZoom,
           };
         });
@@ -290,15 +291,20 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       }
 
       if (isPinchZoom) {
-        // Pinch gesture → accumulate zoom deltas + last cursor position. factor = 2^(-Σdy·s) which equals the product of per-event factors, so accumulating dy is mathematically identical to applying each event one at a time.
+        // Pinch / cmd+wheel → accumulate zoom deltas + last cursor position. factor = 2^(-Σdy·s) which equals the product of per-event factors, so accumulating dy is mathematically identical to applying each event one at a time.
         const rect = el.getBoundingClientRect();
         pendingZoomDy += dy;
         pendingZoomCenter = { cx: e.clientX - rect.left, cy: e.clientY - rect.top };
         scheduleWheelFlush();
-      } else {
-        // Two-finger scroll → accumulate pan deltas.
+      } else if (Math.abs(dx) > Math.abs(dy)) {
+        // Horizontal-dominant scroll → pan X; it's the only horizontal-pan gesture. Dominant-axis, so the vertical jitter in a sideways swipe doesn't also zoom.
         pendingPanDx += dx;
-        pendingPanDy += dy;
+        scheduleWheelFlush();
+      } else {
+        // Plain vertical scroll → zoom, anchored at the viewport center (same anchor as zoomIn/zoomOut), not the cursor.
+        const rect = el.getBoundingClientRect();
+        pendingZoomDy += dy;
+        pendingZoomCenter = { cx: rect.width / 2, cy: rect.height / 2 };
         scheduleWheelFlush();
       }
     };
