@@ -36,8 +36,13 @@ export function displayChatTitle(session: AgentSession | null | undefined): stri
     return session.name;
   }
   const firstUserMsg = session.messages?.find((m) => m.role === 'user');
-  if (firstUserMsg && typeof firstUserMsg.content === 'string') {
-    const truncated = truncateForTitle(firstUserMsg.content);
+  const firstUserContent = firstUserMsg && typeof firstUserMsg.content === 'string'
+    ? firstUserMsg.content
+    : session.messages.length === 0
+      ? session.first_user_message
+      : undefined;
+  if (firstUserContent) {
+    const truncated = truncateForTitle(firstUserContent);
     if (truncated) return truncated;
   }
   return session.mode === 'view-builder' ? 'Untitled App' : SESSION_NAME_PLACEHOLDER;

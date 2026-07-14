@@ -366,7 +366,10 @@ export function useDashboardLifecycle({
     if (!dash) return;
     if (!dash.auto_named && dash.name !== 'Untitled Dashboard') return;
     const hasUserMessage = Object.values(sessions).some(
-      (s) => s.dashboard_id === dashboardId && s.messages?.some((m) => m.role === 'user'),
+      (s) => s.dashboard_id === dashboardId && (
+        s.messages?.some((m) => m.role === 'user') ||
+        (s.messages.length === 0 && !!s.first_user_message)
+      ),
     );
     if (!hasUserMessage) return;
     namedOnFirstMessageRef.current = dashboardId;

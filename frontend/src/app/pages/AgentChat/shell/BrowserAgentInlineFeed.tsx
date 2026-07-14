@@ -206,20 +206,24 @@ const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId })
     }
   }, [browserSessions.length, parentSessionId, dispatch]);
 
-  const sessionsWithEntries = useMemo(() => {
+  const sessionsWithHistoricalEntries = useMemo(() => {
     return browserSessions.map((session) => {
       const entries: FeedEntry[] = [];
       for (const msg of session.messages) {
         const entry = formatMessage(msg);
         if (entry) entries.push(entry);
       }
-      const stream: StreamingMessage | undefined = streamingBySession[session.id];
-      if (stream?.role === 'assistant' && stream.content) {
-        entries.push({ type: 'thought', text: stream.content });
-      }
       return { session, entries };
     });
-  }, [browserSessions, streamingBySession]);
+  }, [browserSessions]);
+
+  const sessionsWithEntries = sessionsWithHistoricalEntries.map(({ session, entries }) => {
+    const stream: StreamingMessage | undefined = streamingBySession[session.id];
+    if (stream?.role === 'assistant' && stream.content) {
+      return { session, entries: [...entries, { type: 'thought' as const, text: stream.content }] };
+    }
+    return { session, entries };
+  });
 
   const totalMessages = browserSessions.reduce(
     (n, s) => n + s.messages.length + (streamingBySession[s.id] ? 1 : 0),

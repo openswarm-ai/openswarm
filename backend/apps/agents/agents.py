@@ -1,15 +1,16 @@
-from backend.config.Apps import SubApp
-from backend.apps.agents.agent_manager import agent_manager
-from backend.apps.agents.core.ws_manager import ws_manager
-from backend.apps.agents.core.models import AgentConfig, ApprovalResponse
-from backend.apps.agents.manager.session.history_compaction import estimate_post_compact_input
-from contextlib import asynccontextmanager
-from fastapi import WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import JSONResponse
 import asyncio
-import json
 import logging
 import time
+from contextlib import asynccontextmanager
+from typing import Any, Dict
+
+from fastapi import HTTPException
+from typeguard import typechecked
+
+from backend.apps.agents.agent_manager import agent_manager
+from backend.apps.agents.core.models import AgentConfig, AgentSession, ApprovalResponse
+from backend.apps.agents.manager.session.history_compaction import estimate_post_compact_input
+from backend.config.Apps import SubApp
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +40,31 @@ async def agents_lifespan():
 agents = SubApp("agents", agents_lifespan)
 
 
+@typechecked
+def p_session_list_item(session: AgentSession) -> Dict[str, Any]:
+    """Serialize dashboard metadata without retaining the full chat history."""
+    data = session.model_dump(mode="json", exclude={"messages"})
+    messages = session.messages
+    last_content = messages[-1].content if messages else ""
+    first_user_content = next(
+        (message.content for message in messages if message.role == "user"),
+        "",
+    )
+    data.update(
+        messages=[],
+        last_message_preview=last_content[:120] if isinstance(last_content, str) else "",
+        first_user_message=(
+            first_user_content[:200] if isinstance(first_user_content, str) else ""
+        ),
+        message_count=len(messages),
+    )
+    return data
+
+
 @agents.router.get("/sessions")
 async def list_sessions(dashboard_id: str = ""):
     sessions = agent_manager.get_all_sessions(dashboard_id=dashboard_id or None)
-    return {"sessions": [s.model_dump(mode="json") for s in sessions]}
+    return {"sessions": [p_session_list_item(s) for s in sessions]}
 
 @agents.router.get("/activity")
 async def agent_activity():

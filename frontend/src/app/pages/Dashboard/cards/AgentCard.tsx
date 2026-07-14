@@ -339,15 +339,20 @@ const AgentCard: React.FC<Props> = ({
     return Boolean(sourceWorkflow);
   }, [workflowRunsMap, sourceWorkflow, session.id, session.workflow_test_state]);
   const hasUserPrompt = useMemo(
-    () => (session.messages || []).some((m) => m.role === 'user' && !m.hidden),
-    [session.messages],
+    () => session.messages.length > 0
+      ? session.messages.some((m) => m.role === 'user' && !m.hidden)
+      : !!session.first_user_message,
+    [session.messages, session.first_user_message],
   );
+  const messageCount = session.messages.length > 0
+    ? session.messages.length
+    : session.message_count ?? 0;
   const isConvertBlockedByTurn = session.status !== 'completed' && session.status !== 'stopped';
   const showConvertToWorkflow =
     !session.is_welcome_draft &&
     !isWorkflowRunnerSession &&
     hasUserPrompt &&
-    (session.messages.length >= 2 || isConvertBlockedByTurn || !!workflowSuggestion);
+    (messageCount >= 2 || isConvertBlockedByTurn || !!workflowSuggestion);
   const canConvertToWorkflow = showConvertToWorkflow && !isConvertBlockedByTurn;
   // Curated picker label with a tidy fallback for unknowns.
   const friendlyModelLabel = useMemo(() => {
@@ -653,7 +658,7 @@ const AgentCard: React.FC<Props> = ({
       ).slice(0, 120)
     : lastMessage && typeof lastMessage.content === 'string'
       ? lastMessage.content.slice(0, 120)
-      : '';
+      : session.last_message_preview ?? '';
   const hasPending = session.pending_approvals.length > 0;
   const pendingReq = session.pending_approvals[0];
 

@@ -84,6 +84,10 @@ export interface AgentSession {
   cost_usd: number;
   tokens: { input: number; output: number };
   messages: AgentMessage[];
+  /** Compact dashboard-list metadata; full messages are fetched when a chat opens. */
+  last_message_preview?: string;
+  first_user_message?: string;
+  message_count?: number;
   pending_approvals: ApprovalRequest[];
   branches: Record<string, MessageBranch>;
   active_branch_id: string;
