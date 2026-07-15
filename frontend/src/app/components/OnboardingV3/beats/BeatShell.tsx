@@ -44,7 +44,8 @@ const BeatShell: React.FC<{
     <div style={{ display: 'flex', width: '100%', height: '100%', background: c.bg.secondary }}>
       <div
         style={{
-          position: 'relative', width: 'min(400px, 36%)', flexShrink: 0, display: 'flex', flexDirection: 'column',
+          // vw (not %, which resolves oddly in the flex child) keeps the copy panel ~36% instead of a thin strip on ultra-wide screens, so the stage never balloons into a beige void.
+          position: 'relative', width: 'clamp(360px, 36vw, 600px)', flexShrink: 0, display: 'flex', flexDirection: 'column',
           justifyContent: 'center', padding: '48px 46px 48px 44px', boxSizing: 'border-box',
           background: c.bg.inverse, color: c.text.inverse, clipPath: ZIGZAG_CLIP,
         }}

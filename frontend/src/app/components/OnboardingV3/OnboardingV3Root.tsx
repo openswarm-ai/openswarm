@@ -152,8 +152,9 @@ const OnboardingV3Root: React.FC = () => {
   const windowed = WINDOWED_BEATS.includes(beat);
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const stageW = windowed ? Math.min(900, Math.round(vw * 0.72)) : vw;
-  const stageH = windowed ? Math.min(560, Math.round(vh * 0.74)) : vh;
+  // Expanded beats cap at a large centered card (not edge-to-edge) so on very wide displays the stage never balloons into a beige void around the sparse content.
+  const stageW = windowed ? Math.min(900, Math.round(vw * 0.72)) : Math.min(1680, Math.round(vw * 0.94));
+  const stageH = windowed ? Math.min(560, Math.round(vh * 0.74)) : Math.min(1000, Math.round(vh * 0.92));
 
   // AnimatePresence stays mounted so the overlay's exit fade (the curtain lift) actually plays when active flips false.
   return (
@@ -171,11 +172,11 @@ const OnboardingV3Root: React.FC = () => {
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.72, filter: 'blur(18px)' }}
-          animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', width: stageW, height: stageH, borderRadius: windowed ? 14 : 0 }}
+          animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', width: stageW, height: stageH, borderRadius: 16 }}
           transition={{ type: 'spring', stiffness: 170, damping: 24, mass: 0.9 }}
           style={{
             position: 'relative', overflow: 'hidden',
-            boxShadow: windowed ? '0 30px 90px rgba(0,0,0,0.5)' : 'none',
+            boxShadow: '0 30px 90px rgba(0,0,0,0.5)',
             background: c.bg.page,
           }}
         >
