@@ -6,7 +6,8 @@ import LinkIcon from '@mui/icons-material/Link';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { ToolDefinition } from '@/shared/state/toolsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { Integration } from '@/shared/integrations/catalog';
+import { Integration } from '../integrations';
+import BrowserLoginConnect from './BrowserLoginConnect';
 
 interface CustomToolConnectProps {
   tool: ToolDefinition;
@@ -30,6 +31,9 @@ const CustomToolConnect: React.FC<CustomToolConnectProps> = ({
   const c = useClaudeTokens();
   return (
     <>
+                        {ig?.authType === 'browser_login' && (
+                          <BrowserLoginConnect ig={ig} isDisabled={isDisabled} />
+                        )}
                         {!isDisabled && (tool.auth_type === 'oauth2' || ig?.authType === 'oauth2') && (tool.auth_status !== 'connected' || ig?.id === 'discord') && (
                           <Button
                             size="small"
@@ -63,7 +67,7 @@ const CustomToolConnect: React.FC<CustomToolConnectProps> = ({
                             {ig.connectLabel || 'Connect'}
                           </Button>
                         )}
-                        {!isDisabled && ig && tool.auth_status === 'connected' && (
+                        {!isDisabled && ig && ig.authType !== 'browser_login' && tool.auth_status === 'connected' && (
                           <Tooltip title={ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code' ? 'Disconnect' : ''}>
                             <Chip
                               icon={<CheckCircleIcon sx={{ fontSize: 12 }} />}

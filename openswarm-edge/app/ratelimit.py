@@ -1,7 +1,7 @@
-"""Tiny in-memory per-key fixed-window rate limiter. Guards /__compute and /__llm
-so one visitor or scraper can't burn a creator's budget or our CPU. Best-effort
-and single-process: the cloud's budget ledger is the hard backstop, this just
-keeps the obvious abuse out cheaply."""
+"""Tiny in-memory per-key fixed-window rate limiter. Guards /__compute, /__llm,
+and installer downloads so one visitor or scraper can't burn a creator's budget,
+our CPU, or artifact egress. Best-effort and single-process: the cloud's budget
+ledger is the hard backstop for metered calls."""
 from __future__ import annotations
 
 import time

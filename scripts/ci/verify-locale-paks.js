@@ -1,12 +1,17 @@
 #!/usr/bin/env node
-// Guards the empty-locale renderer crash. A packaged build MUST ship Chromium's
-// locale .pak files (locales/en-US.pak + the full ~50). If they are missing,
-// Electron launches the renderer with an EMPTY --lang, and Blink's
-// LCIDFromLocaleInternal (third_party/blink/.../text/locale_win.cc) null-derefs
-// (STATUS_ACCESS_VIOLATION 0xC0000005, read of 0x8) the instant a text/agent/
-// webview surface mounts - a hard crash on the first real interaction, with no
-// JS error to localize it. electron-builder has been observed to drop these on a
-// --dir repack, so we assert them explicitly rather than trust the packager.
+// Guards the empty-locale crashes on BOTH platforms. A packaged build MUST ship
+// Chromium's locale .pak files.
+// Windows: missing locales/en-US.pak launches the renderer with an EMPTY --lang
+// and Blink's LCIDFromLocaleInternal null-derefs (STATUS_ACCESS_VIOLATION
+// 0xC0000005) the instant a text/agent/webview surface mounts.
+// macOS: missing en.lproj/locale.pak makes EVERY l10n_util string come back
+// empty; the WebAuthn Touch ID path then passes that empty string as
+// localizedReason to -[LAContext evaluateAccessControl:...], which raises an
+// uncaught NSException and kills the whole app on any passkey prompt (the
+// 1.5.3 "OS suicide"). electronLanguages naming is per-platform ("en" for mac
+// .lproj dirs, "en-US" for win .pak files) and electron-builder silently
+// deletes EVERYTHING when the name doesn't match, so we assert the artifact
+// explicitly rather than trust the packager.
 
 'use strict';
 const fs = require('fs');
@@ -41,22 +46,25 @@ function checkWinLinux(exe) {
 }
 
 function checkMac(exe) {
-  // mac stores locale paks inside the Electron Framework; layout varies by version,
-  // and this crash is Windows-specific, so be informational rather than blocking.
+  // mac stores locale paks as <lang>.lproj/locale.pak inside the Electron
+  // Framework; chrome_100_percent/resources.pak do NOT count (they survive the
+  // language strip that causes the crash), so require a real locale.pak.
   const appRoot = exe.slice(0, exe.indexOf('.app') + 4);
   const found = [];
   (function walk(d, depth) {
-    if (depth > 6) return;
+    if (depth > 8) return;
     let ents = [];
     try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
       const full = path.join(d, e.name);
       if (e.isDirectory()) walk(full, depth + 1);
-      else if (e.isFile() && e.name.toLowerCase().endsWith('.pak')) found.push(full);
+      else if (e.isFile() && e.name.toLowerCase() === 'locale.pak') found.push(full);
     }
   })(appRoot, 0);
-  process.stdout.write(`  mac: found ${found.length} .pak file(s) under the app bundle\n`);
-  return { ok: found.length > 0, msg: `${found.length} paks (mac is informational)` , soft: true };
+  const hasEn = found.some((p) => path.basename(path.dirname(p)).toLowerCase() === 'en.lproj');
+  process.stdout.write(`  mac: ${found.length} locale.pak file(s), en.lproj=${hasEn}\n`);
+  if (!hasEn) return { ok: false, msg: `en.lproj/locale.pak missing (${found.length} locale paks under the bundle)` };
+  return { ok: true, msg: `${found.length} locale paks incl en.lproj` };
 }
 
 function main() {
@@ -64,13 +72,14 @@ function main() {
   const exe = h.packagedAppPath(args.app);
   const res = process.platform === 'darwin' ? checkMac(exe) : checkWinLinux(exe);
   if (res.ok) { process.stdout.write(`PASS  locale paks present (${res.msg})\n`); process.exit(0); }
-  if (res.soft) { process.stdout.write(`WARN  ${res.msg} - could not confirm mac paks; not blocking\n`); process.exit(0); }
   process.stderr.write(
     `FAIL  packaged build is MISSING Chromium locale paks: ${res.msg}\n` +
-    `      The renderer would launch with an empty --lang and crash in Blink's\n` +
+    `      Windows: renderer launches with an empty --lang and crashes in Blink's\n` +
     `      LCIDFromLocaleInternal (0xC0000005) on the first text/agent/webview mount.\n` +
-    `      Fix: ensure electron-builder copies node_modules/electron/dist/locales/*.pak\n` +
-    `      into the packaged output (this regressed on --dir repacks of the v42 build).\n`);
+    `      macOS: every l10n string is empty and the WebAuthn Touch ID prompt kills\n` +
+    `      the whole app with an uncaught NSException (empty localizedReason).\n` +
+    `      Fix: electronLanguages must list BOTH "en" (mac .lproj) and "en-US"\n` +
+    `      (win locales/*.pak); a name miss makes electron-builder delete them all.\n`);
   process.exit(1);
 }
 

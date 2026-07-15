@@ -435,7 +435,8 @@ const DynamicIsland: React.FC = () => {
     for (const g of groups) {
       for (const req of g.approvals) {
         if (req.tool_name !== 'AskUserQuestion') {
-          dispatch(handleApproval({ requestId: req.id, behavior: 'allow' }));
+          // setAlwaysAllow so the SAME command mid-run stops re-prompting: the backend writes the policy into the live in-run snapshot, a plain allow only clears the pending request.
+          dispatch(handleApproval({ requestId: req.id, behavior: 'allow', setAlwaysAllow: true }));
         }
       }
     }
@@ -792,7 +793,7 @@ const CompactActionablePill: React.FC<{
           </IconButton>
         </Tooltip>
         {remainingCount > 1 && !isIntervention && (
-          <Tooltip title={`Approve all ${remainingCount}`} arrow>
+          <Tooltip title={`Approve all ${remainingCount} (stops re-asking for these tools)`} arrow>
             <Box
               component="button"
               onClick={(e: React.MouseEvent) => { e.stopPropagation(); onApproveAll(); }}

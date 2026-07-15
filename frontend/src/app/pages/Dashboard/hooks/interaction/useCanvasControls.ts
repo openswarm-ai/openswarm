@@ -584,6 +584,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       cardRects: Array<{ x: number; y: number; width: number; height: number }>,
       maxZoom?: number,
       minZoom?: number,
+      centered?: boolean,
     ): { panX: number; panY: number; zoom: number } | null => {
       const viewport = viewportRef.current;
       if (!viewport || cardRects.length === 0) return null;
@@ -615,7 +616,8 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       );
       const targetPanX =
         (vRect.width - contentWidth * targetZoom) / 2 - minX * targetZoom;
-      const topBiased = cardRects.length === 1;
+      // A single card normally top-biases (header up top, no dead space below). On creation we want the opposite: the new card dead-centered "in front of you", so `centered` forces true vertical centering.
+      const topBiased = cardRects.length === 1 && !centered;
       const targetPanY = topBiased
         ? FIT_PADDING * 0.4 - minY * targetZoom
         : (vRect.height - contentHeight * targetZoom) / 2 -
@@ -631,10 +633,11 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       maxZoom?: number,
       animate?: boolean,
       minZoom?: number,
+      centered?: boolean,
     ) => {
       cancelAnimation();
 
-      const target = computeFitTarget(cardRects, maxZoom, minZoom);
+      const target = computeFitTarget(cardRects, maxZoom, minZoom, centered);
       if (!target) {
         // Keep current camera; snapping to (0,0,1) used to desync the minimap.
         if (cardRects.length === 0 || !viewportRef.current) {
@@ -652,7 +655,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         // Settle pass: cancelAnimation() must be able to cancel it, else back-to-back fitToCards races and the first settle overwrites the second target.
         settleTimerRef.current = window.setTimeout(() => {
           settleTimerRef.current = null;
-          const fresh = computeFitTarget(cardRects, maxZoom, minZoom);
+          const fresh = computeFitTarget(cardRects, maxZoom, minZoom, centered);
           if (!fresh) return;
           const cur2 = stateRef.current;
           const drift =

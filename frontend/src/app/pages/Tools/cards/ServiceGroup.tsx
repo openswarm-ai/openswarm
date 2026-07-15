@@ -13,7 +13,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import PanToolIcon from '@mui/icons-material/PanTool';
 import { ToolDefinition } from '@/shared/state/toolsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { Integration } from '@/shared/integrations/catalog';
+import { Integration } from '../integrations';
 
 const toDisplayName = (name: string, serviceName?: string) => {
   let display = name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());

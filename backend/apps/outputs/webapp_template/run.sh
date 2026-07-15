@@ -8,6 +8,14 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
     set +a
 fi
 
+# Per-instance port overrides: OpenSwarm passes these when the user opens a SECOND instance of the app, so it boots on fresh ports instead of colliding with the primary's .env-pinned ones.
+if [[ -n "${OPENSWARM_FORCE_FRONTEND_PORT:-}" ]]; then
+    export FRONTEND_PORT="$OPENSWARM_FORCE_FRONTEND_PORT"
+fi
+if [[ -n "${OPENSWARM_FORCE_BACKEND_PORT:-}" ]]; then
+    export BACKEND_PORT="$OPENSWARM_FORCE_BACKEND_PORT"
+fi
+
 # Recursively SIGTERM a pid + all of its descendants. We track FRONTEND_PID
 # and BACKEND_PID below, but each of those is a `bash` wrapper that has its
 # own grandchildren (vite, uvicorn, npm). A flat `kill $FRONTEND_PID` leaves

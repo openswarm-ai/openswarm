@@ -353,6 +353,122 @@ async def ensure_running():
         p_start_lock = asyncio.Lock()
     async with p_start_lock:
         await p_ensure_running_impl()
+    # Arm both healers the moment the router becomes a live dependency; users who never route through it never spawn them.
+    if is_running():
+        start_watchdog()
+        start_death_watcher()
+
+
+def read_persisted_connections() -> list[dict]:
+    """Raw providerConnections from 9Router's on-disk db. Readable while the router is DOWN,
+    and carries fields (idToken, email) the router's HTTP /providers response strips.
+    Empty list on any read problem."""
+    try:
+        import json as p_json
+        with open(os.path.join(p_nine_router_data_dir(), "db.json"), encoding="utf-8") as f:
+            db = p_json.load(f)
+        return [c for c in (db.get("providerConnections") or []) if isinstance(c, dict)]
+    except Exception:
+        return []
+
+
+def has_persisted_connections() -> bool:
+    """True when 9Router's on-disk db shows an active provider connection, so revival logic can
+    tell a sub-only user (revive!) from a zero-config one (don't boot a router that has nothing
+    to route). Fail-closed on any read problem."""
+    return any(c.get("isActive") for c in read_persisted_connections())
+
+
+# 20s pulse while healthy; after 3 straight failed revives (no node, broken install) back way off so a dead-end setup logs once per 5min instead of crash-looping.
+WATCHDOG_INTERVAL_SECONDS = 20.0
+WATCHDOG_BACKOFF_SECONDS = 300.0
+watchdog_task: "asyncio.Task | None" = None
+
+
+async def watchdog_loop() -> None:
+    """Backstop healer for routers we DIDN'T spawn (adopted port-holders have no handle for the
+    death-watcher). Two-strike confirmation before reviving: the sync is_running probe can
+    false-negative while a busy router streams, and acting on one bad probe would rotate a LIVE
+    router's request log and burn a duplicate spawn attempt."""
+    failures = 0
+    p_loop = asyncio.get_running_loop()
+    while True:
+        await asyncio.sleep(WATCHDOG_BACKOFF_SECONDS if failures >= 3 else WATCHDOG_INTERVAL_SECONDS)
+        try:
+            # is_running()'s HTTP confirm is SYNC and can stall 2s while the router is busy streaming; a periodic pulse must never block the event loop, so probe from a thread.
+            if await p_loop.run_in_executor(None, is_running):
+                failures = 0
+                continue
+            await asyncio.sleep(2)
+            if await p_loop.run_in_executor(None, is_running):
+                failures = 0
+                continue
+            logger.warning("9Router watchdog: router is down (confirmed twice); reviving")
+            await ensure_running()
+            if is_running():
+                failures = 0
+                logger.info("9Router watchdog: revived")
+            else:
+                failures += 1
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            failures += 1
+            logger.exception("9Router watchdog iteration failed")
+
+
+# Instant healer for the process WE spawned: its exit wakes us the moment it happens (no polling,
+# no false positives), so total heal time = just the respawn. Crash-loop guard: 3 deaths inside
+# 60s defers to the backed-off watchdog instead of hot-spinning a broken install.
+p_death_watcher_task: "asyncio.Task | None" = None
+recent_death_monos: "list[float]" = []
+
+
+async def death_watch(proc_handle: "subprocess.Popen[Any]") -> None:
+    global p_is_running_last_ok
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(None, proc_handle.wait)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return
+    # stop() nulls p_process before this continuation can run (it blocks the loop through wait), so a deliberate quit or a superseded handle never triggers a revive.
+    if proc_handle is not p_process:
+        return
+    now = time.monotonic()
+    recent_death_monos.append(now)
+    del recent_death_monos[:-3]
+    if len(recent_death_monos) == 3 and now - recent_death_monos[0] < 60:
+        logger.warning("9Router died 3x in 60s; leaving revival to the backed-off watchdog")
+        return
+    logger.warning("9Router process died; instant revive")
+    p_is_running_last_ok = 0.0
+    await ensure_running()
+
+
+def start_death_watcher() -> None:
+    """Idempotent per spawned handle; no-op for adopted routers (no handle to wait on)."""
+    global p_death_watcher_task
+    if p_process is None or p_process.poll() is not None:
+        return
+    if p_death_watcher_task is not None and not p_death_watcher_task.done():
+        return
+    try:
+        p_death_watcher_task = asyncio.get_running_loop().create_task(death_watch(p_process))
+    except RuntimeError:
+        logger.warning("9Router death-watcher: no running loop; not armed")
+
+
+def start_watchdog() -> None:
+    """Idempotent; armed by ensure_running() on success, cancelled by stop()."""
+    global watchdog_task
+    if watchdog_task is not None and not watchdog_task.done():
+        return
+    try:
+        watchdog_task = asyncio.get_running_loop().create_task(watchdog_loop())
+    except RuntimeError:
+        logger.warning("9Router watchdog: no running loop; not armed")
 
 
 async def p_ensure_running_impl():
@@ -481,7 +597,14 @@ async def p_ensure_running_impl():
 
 def stop():
     """Stop the 9Router subprocess."""
-    global p_process
+    global p_process, watchdog_task, p_death_watcher_task
+    # Cancel the healers FIRST or they would revive the router we're about to kill (shutdown = the one sanctioned "down").
+    if watchdog_task is not None:
+        watchdog_task.cancel()
+        watchdog_task = None
+    if p_death_watcher_task is not None:
+        p_death_watcher_task.cancel()
+        p_death_watcher_task = None
     if p_process:
         try:
             p_process.terminate()

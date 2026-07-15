@@ -55,7 +55,7 @@ def test_no_file_returns_defaults(settings_file):
     s = store.load_settings()
     assert isinstance(s, AppSettings)
     assert s.default_system_prompt == DEFAULT_SYSTEM_PROMPT
-    assert s.theme == "dark"
+    assert s.theme == "light"
 
 
 def test_minimal_old_file_fills_missing_with_defaults(settings_file):
@@ -130,7 +130,7 @@ def test_corrupt_json_returns_defaults_and_preserves_file(settings_file):
     with open(settings_file, "w", encoding="utf-8") as fh:
         fh.write("{ this is : not json ,,, ")
     s = store.load_settings()
-    assert s.theme == "dark"  # defaults
+    assert s.theme == "light"  # defaults
     # Original is moved aside (recoverable), not silently destroyed.
     assert os.path.exists(settings_file + ".corrupt")
     assert not os.path.exists(settings_file)
@@ -139,7 +139,7 @@ def test_corrupt_json_returns_defaults_and_preserves_file(settings_file):
 def test_non_dict_top_level_returns_defaults(settings_file):
     p_write(settings_file, ["not", "an", "object"])
     s = store.load_settings()
-    assert s.theme == "dark"
+    assert s.theme == "light"
     assert os.path.exists(settings_file + ".corrupt")
 
 

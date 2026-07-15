@@ -53,6 +53,7 @@ const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const os = require('os');
 const fs = require('fs');
+const hiddenBrowser = require('./hiddenBrowser');
 const getPort = require('get-port');
 const http = require('http');
 const affiliateTracking = require('./affiliateTracking');
@@ -947,6 +948,16 @@ async function startBackend() {
     PYTHONUTF8: '1',
   };
 
+  try {
+    env.OPENSWARM_INSTALLATION_ID = affiliateTracking.resolveInstallId({
+      userDataDir: app.getPath('userData'),
+      isPackaged,
+      projectRoot,
+    });
+  } catch (err) {
+    console.warn('[affiliate] resolveInstallId failed:', err && err.message);
+  }
+
   // Tell the backend where to find a real Node binary for 9Router and
   // bundled MCP servers. Preferring this over ELECTRON_RUN_AS_NODE avoids
   // (a) the second OpenSwarm-as-Node process briefly registering in the
@@ -977,8 +988,8 @@ async function startBackend() {
   // so a user-submitted backend.log instantly says what shipped. Emitted here
   // (not in whenReady) because openBackendLog() above just installed the console
   // tee; logging earlier would miss the persistent file.
-  const _bi = getBuildInfo();
-  console.log(`[provenance] OpenSwarm ${app.getVersion()} sha=${_bi.shortSha} channel=${_bi.channel} builtAt=${_bi.builtAt || 'n/a'}`);
+  const p_buildInfo = getBuildInfo();
+  console.log(`[provenance] OpenSwarm ${app.getVersion()} sha=${p_buildInfo.shortSha} channel=${p_buildInfo.channel} builtAt=${p_buildInfo.builtAt || 'n/a'}`);
   logPreflight(backendPort);
   runComprehensivePreflight();
   // Record what we're about to launch and whether the interpreter is even
@@ -1078,6 +1089,7 @@ function markBackendReady() {
     workflowsLifecycle.setBackend({ port: backendPort, token: authToken });
     workflowsLifecycle.startPolling();
   } catch (_) {}
+  try { connectMainBridge(); } catch (_) {}
 }
 
 function getAuthTokenFilePath() {
@@ -2147,6 +2159,7 @@ app.on('web-contents-created', (_event, contents) => {
   if (
     contents.getType() === 'window' &&
     !isCreatingMainWindow &&
+    !global.__osHiddenBrowserCreating &&
     mainWindow &&
     contents !== mainWindow.webContents
   ) {
@@ -2443,16 +2456,50 @@ app.on('web-contents-created', (_event, contents) => {
         })();
       `).catch(() => {});
 
-      // Agent bridge (window.OPENSWARM_APP). Injected into EVERY app's main world
-      // from the shell so it exists regardless of frontend/src; the lightweight
-      // App Builder mode deletes frontend/src (and with it the template's own
-      // agentBridge.ts), so this is the only entry point a trimmed app can't lose.
-      // Idempotent + guarded: a workspace app that imports its own bridge installs
-      // first and this no-ops, so we never clobber a registered bridge. An app
-      // becomes agent-operable by calling OPENSWARM_APP.register({rules, controls,
-      // getState, invoke}); until it does, describe()/getState() report __ready:false
-      // (the agent then falls back to native keyboard/mouse). Keep this in sync with
-      // backend/apps/outputs/webapp_template/frontend/src/agentBridge.ts.
+      const url = contents.getURL();
+      if (url.includes('spotify')) {
+        contents.executeJavaScript(`
+          (function() {
+            const origFetch = window.fetch;
+            window.fetch = async function(...args) {
+              const resp = await origFetch.apply(this, args);
+              const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+              if (url.includes('widevine-license') && !resp.ok) {
+                const clone = resp.clone();
+                try {
+                  const text = await clone.text();
+                  console.log('[drm-diag] License response ' + resp.status + ': ' + text.substring(0, 500));
+                } catch(e) {}
+              }
+              return resp;
+            };
+
+            // Check EME availability
+            if (navigator.requestMediaKeySystemAccess) {
+              navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
+                initDataTypes: ['cenc'],
+                audioCapabilities: [{contentType: 'audio/mp4; codecs="mp4a.40.2"'}],
+              }]).then(function(access) {
+                console.log('[drm-diag] Widevine EME access: ' + access.keySystem);
+              }).catch(function(err) {
+                console.log('[drm-diag] Widevine EME FAILED: ' + err.message);
+              });
+            } else {
+              console.log('[drm-diag] EME API not available');
+            }
+          })();
+        `).catch(() => {});
+      }
+    });
+
+    // Agent bridge (window.OPENSWARM_APP): app webviews ONLY, all platforms. Gated
+    // off the browser partition so a normal browser card / agent web automation
+    // never carries this global, since a unique window.OPENSWARM_APP is a one-line
+    // bot tell on the open web. Shell-injected so a trimmed App-Builder app (its
+    // frontend/src + the template's agentBridge.ts deleted) still gets a bridge;
+    // idempotent, so a full app that self-installs its own bridge no-ops here. Keep
+    // in sync with backend/apps/outputs/webapp_template/frontend/src/agentBridge.ts.
+    if (contents.session !== session.fromPartition(BROWSER_PARTITION)) contents.on('dom-ready', () => {
       contents.executeJavaScript(`
         (function() {
           if (window.OPENSWARM_APP) return;
@@ -2520,44 +2567,8 @@ app.on('web-contents-created', (_event, contents) => {
             },
           };
           window.OPENSWARM_APP = bridge;
-          try { console.warn('[openswarm:bridge] shell-injected window.OPENSWARM_APP at', location.href); } catch (_) {}
         })();
       `).catch(() => {});
-
-      const url = contents.getURL();
-      if (url.includes('spotify')) {
-        contents.executeJavaScript(`
-          (function() {
-            const origFetch = window.fetch;
-            window.fetch = async function(...args) {
-              const resp = await origFetch.apply(this, args);
-              const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
-              if (url.includes('widevine-license') && !resp.ok) {
-                const clone = resp.clone();
-                try {
-                  const text = await clone.text();
-                  console.log('[drm-diag] License response ' + resp.status + ': ' + text.substring(0, 500));
-                } catch(e) {}
-              }
-              return resp;
-            };
-
-            // Check EME availability
-            if (navigator.requestMediaKeySystemAccess) {
-              navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
-                initDataTypes: ['cenc'],
-                audioCapabilities: [{contentType: 'audio/mp4; codecs="mp4a.40.2"'}],
-              }]).then(function(access) {
-                console.log('[drm-diag] Widevine EME access: ' + access.keySystem);
-              }).catch(function(err) {
-                console.log('[drm-diag] Widevine EME FAILED: ' + err.message);
-              });
-            } else {
-              console.log('[drm-diag] EME API not available');
-            }
-          })();
-        `).catch(() => {});
-      }
     });
   }
 });
@@ -2778,7 +2789,7 @@ ipcMain.handle('browser:clear-data', async () => {
 
 // Hand the user's own logged-in cookies for a vetted social platform to its session-backed MCP shim (Reddit/X/TikTok). Reads from the browser partition's main-process cookie store, so httpOnly auth cookies (e.g. reddit_session) are included, which document.cookie can't see. Allowlisted domains ONLY, so this can never become a general cookie-theft surface; the backend re-checks the same allowlist before it ever calls this.
 const SESSION_COOKIE_DOMAINS = ['reddit.com', 'x.com', 'twitter.com', 'tiktok.com'];
-ipcMain.handle('get-partition-cookies', async (_e, domain) => {
+async function readPartitionCookies(domain) {
   const d = String(domain || '').toLowerCase().trim().replace(/^\./, '');
   if (!SESSION_COOKIE_DOMAINS.includes(d)) {
     return { cookies: [], userAgent: '', error: `domain not allowed: ${d || '(empty)'}` };
@@ -2795,7 +2806,72 @@ ipcMain.handle('get-partition-cookies', async (_e, domain) => {
   } catch (err) {
     return { cookies: [], userAgent: '', error: `cookie read failed: ${err && err.message}` };
   }
+}
+ipcMain.handle('get-partition-cookies', (_e, domain) => readPartitionCookies(domain));
+
+// Suspend/resume state capsules: the app renderer stages a resumed webview's sessionStorage snapshot here (keyed by that guest's webContents id) right before loadURL; the guest preload sync-takes it at document-start with an origin match, so page scripts see restored state and logins survive suspension. In-memory only, single-shot, short TTL; a guest can only ever take its OWN capsule.
+const pendingSessionCapsules = new Map();
+const SESSION_CAPSULE_TTL_MS = 2 * 60 * 1000;
+ipcMain.on('browser-capsule-set', (event, wcId, capsule) => {
+  // Only the app window may stage capsules; a compromised guest must not be able to seed storage into another guest.
+  if (!mainWindow || event.sender !== mainWindow.webContents) return;
+  if (typeof wcId !== 'number' || !capsule || typeof capsule.origin !== 'string' || typeof capsule.ss !== 'object') return;
+  pendingSessionCapsules.set(wcId, { capsule, expiresAt: Date.now() + SESSION_CAPSULE_TTL_MS });
 });
+ipcMain.on('browser-capsule-take', (event, origin) => {
+  const entry = pendingSessionCapsules.get(event.sender.id);
+  if (!entry || entry.expiresAt < Date.now()) {
+    if (entry) pendingSessionCapsules.delete(event.sender.id);
+    event.returnValue = null;
+    return;
+  }
+  // Origin-gated take: about:blank and cross-origin redirects leave the capsule staged for the real page (until TTL).
+  if (entry.capsule.origin !== origin) {
+    event.returnValue = null;
+    return;
+  }
+  pendingSessionCapsules.delete(event.sender.id);
+  event.returnValue = entry.capsule;
+});
+
+// The renderer relays cookie reads for the session-borrow bridge, but macOS throttles it when the
+// window is backgrounded, so those reads intermittently time out. Main never throttles: hold our own
+// socket to the backend and answer get_session_cookies here. Cookie reads only; the renderer still
+// owns everything that needs a live webview (navigate/click/perform_action).
+let p_mainBridgeWs = null;
+let p_mainBridgeStopped = false;
+function connectMainBridge() {
+  if (p_mainBridgeStopped || !backendPort || !authToken || p_mainBridgeWs) return;
+  let ws;
+  try {
+    ws = new WebSocket(`ws://127.0.0.1:${backendPort}/ws/electron-main?token=${encodeURIComponent(authToken)}`);
+  } catch (_) {
+    setTimeout(connectMainBridge, 3000);
+    return;
+  }
+  p_mainBridgeWs = ws;
+  ws.addEventListener('message', async (ev) => {
+    let msg;
+    try { msg = JSON.parse(typeof ev.data === 'string' ? ev.data : ''); } catch (_) { return; }
+    if (!msg || msg.event !== 'browser:command') return;
+    const cmd = msg.data || {};
+    const p = cmd.params || {};
+    let result;
+    if (cmd.action === 'get_session_cookies') {
+      result = await readPartitionCookies(p.domain || '');
+    } else if (cmd.action === 'browser_fetch') {
+      result = await hiddenBrowser.hiddenFetch(BROWSER_PARTITION, p.url || '').catch((e) => ({ error: String(e).slice(0, 200) }));
+    } else if (cmd.action === 'browser_search') {
+      result = await hiddenBrowser.hiddenSearch(BROWSER_PARTITION, p.query || '', p.num_results || 5).catch((e) => ({ error: String(e).slice(0, 200) }));
+    } else {
+      return;
+    }
+    try { ws.send(JSON.stringify({ event: 'browser:result', data: { request_id: cmd.request_id, ...result } })); } catch (_) {}
+  });
+  const retry = () => { p_mainBridgeWs = null; if (!p_mainBridgeStopped) setTimeout(connectMainBridge, 3000); };
+  ws.addEventListener('close', retry);
+  ws.addEventListener('error', () => { try { ws.close(); } catch (_) { retry(); } });
+}
 
 ipcMain.handle('get-update-status', () => cachedUpdateStatus);
 
@@ -2944,7 +3020,7 @@ ipcMain.handle('open-external', (_event, url) => {
 // (Stripe checkout, sign-in events) for downstream attribution.
 ipcMain.handle('get-install-state', () => {
   try {
-    return affiliateTracking._readState(app.getPath('userData'));
+    return affiliateTracking.readState(app.getPath('userData'));
   } catch (_) {
     return {};
   }

@@ -23,6 +23,7 @@ from backend.apps.agents.manager.view_builder_state import (
     view_builder_render_retry_counts,
     view_builder_dirty_sessions,
 )
+from backend.apps.agents.manager.run.client_pool import dispose_client_soon
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,9 @@ class SessionLifecycle(AgentManagerProtocol):
         self.cancel_events.pop(session_id, None)
         view_builder_render_retry_counts.pop(session_id, None)
         view_builder_dirty_sessions.discard(session_id)
+        dispose_client_soon(self.client_pool, session_id)
+        self.hook_ctxs.pop(session_id, None)
+        self.stderr_buffers.pop(session_id, None)
 
     @typechecked
     async def delete_session(self, session_id: str) -> None:

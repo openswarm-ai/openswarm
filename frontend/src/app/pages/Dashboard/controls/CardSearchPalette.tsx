@@ -44,10 +44,10 @@ const CardSearchPalette: React.FC<Props> = ({
         rect: { x: card.x, y: card.y, width: card.width, height: card.height },
       });
     }
-    for (const vc of Object.values(viewCards)) {
+    for (const [key, vc] of Object.entries(viewCards)) {
       result.push({
-        id: vc.output_id,
-        label: `View: ${vc.output_id.slice(0, 12)}`,
+        id: key,
+        label: `View: ${vc.output_id.slice(0, 12)}${(vc.instance ?? 1) > 1 ? ` (#${vc.instance})` : ''}`,
         type: 'view',
         rect: { x: vc.x, y: vc.y, width: vc.width, height: vc.height },
       });

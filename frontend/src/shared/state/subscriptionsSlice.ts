@@ -17,8 +17,15 @@ export interface SubscriptionStatus {
   [key: string]: any;
 }
 
+export interface DeadProvider {
+  provider: string;
+  label: string;
+}
+
 export interface SubscriptionsState {
   status: SubscriptionStatus | null;
+  healthDead: DeadProvider[];
+  healthToastOpen: boolean;
 }
 
 // Minimal slice shape for selectors; avoids circular type import from store.ts.
@@ -26,6 +33,8 @@ type WithSubscriptions = { subscriptions: SubscriptionsState };
 
 const initialState: SubscriptionsState = {
   status: null,
+  healthDead: [],
+  healthToastOpen: false,
 };
 
 /** Mirror /agents/subscriptions/status into Redux; preserveTransient debounces is_running() false negatives. */
@@ -41,6 +50,15 @@ export const fetchSubscriptionStatus = createAsyncThunk(
     } catch {
       return prev ?? ({ running: false, providers: [], models: [] } as SubscriptionStatus);
     }
+  },
+);
+
+/** Boot-time login-health check; `skipped` means the router wasn't up yet, caller may retry once. */
+export const fetchProviderHealth = createAsyncThunk(
+  'subscriptions/fetchHealth',
+  async (): Promise<{ dead: DeadProvider[]; skipped: boolean }> => {
+    const r = await fetch(`${API_BASE}/agents/subscriptions/health`);
+    return (await r.json()) as { dead: DeadProvider[]; skipped: boolean };
   },
 );
 
@@ -72,15 +90,23 @@ const subscriptionsSlice = createSlice({
         state.status.providers = { connections: conns };
       }
     },
+    hideProviderHealthToast(state) {
+      state.healthToastOpen = false;
+    },
   },
   extraReducers: (builder) => {
     builder.addCase(fetchSubscriptionStatus.fulfilled, (state, action) => {
       state.status = action.payload;
     });
+    builder.addCase(fetchProviderHealth.fulfilled, (state, action) => {
+      if (action.payload.skipped) return;
+      state.healthDead = action.payload.dead ?? [];
+      state.healthToastOpen = state.healthDead.length > 0;
+    });
   },
 });
 
-export const { setSubscriptionStatus, markSubscriptionConnected } = subscriptionsSlice.actions;
+export const { setSubscriptionStatus, markSubscriptionConnected, hideProviderHealthToast } = subscriptionsSlice.actions;
 
 // Stable empty ref so the selector doesn't hand back a fresh [] each call (forces needless rerenders).
 const EMPTY_CONNECTIONS: SubscriptionConnection[] = [];

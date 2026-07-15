@@ -924,7 +924,7 @@ const AgentCard: React.FC<Props> = ({
             {session.status !== 'completed' && session.status !== 'stopped' && !session.is_welcome_draft && (
               <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                 <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: c.text.tertiary, whiteSpace: 'nowrap' }}>
-                  {friendlyStatusLabel(session.status)}
+                  {session.queued && session.status === 'running' ? 'queued' : friendlyStatusLabel(session.status)}
                 </Typography>
               </Box>
             )}
@@ -1165,7 +1165,8 @@ const AgentCard: React.FC<Props> = ({
                     startIcon={<CheckIcon sx={{ fontSize: '14px !important' }} />}
                     onClick={() => {
                       for (const req of session.pending_approvals) {
-                        if (req.tool_name !== 'AskUserQuestion') dispatch(handleApproval({ requestId: req.id, behavior: 'allow' }));
+                        // setAlwaysAllow so the SAME command mid-run stops re-prompting: the backend writes the policy into the live in-run snapshot, a plain allow only clears the pending request.
+                        if (req.tool_name !== 'AskUserQuestion') dispatch(handleApproval({ requestId: req.id, behavior: 'allow', setAlwaysAllow: true }));
                       }
                     }}
                     sx={{

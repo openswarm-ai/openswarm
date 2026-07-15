@@ -6,6 +6,7 @@ the gate hooks resolve across the MRO unchanged."""
 
 import json
 import logging
+import os
 from typing import Dict, List, Optional, Union
 from typeguard import typechecked
 
@@ -49,14 +50,27 @@ class RunOptions(AgentManagerProtocol):
         from claude_agent_sdk import ClaudeAgentOptions
         from claude_agent_sdk.types import HookMatcher
 
-        hook_ctx = HookContext(
-            session=session,
-            session_id=session_id,
-            prompt=prompt,
-            builtin_perms=builtin_perms,
-            policy_defaults={},
-            sessions=self.sessions,
-        )
+        # Per-SESSION hook context, updated in place each turn: with a persistent client the hooks the
+        # CLI holds were bound at connect, so they must read this stable object, not a per-turn rebuild.
+        hook_ctx = self.hook_ctxs.get(session_id)
+        if hook_ctx is None:
+            hook_ctx = HookContext(
+                session=session,
+                session_id=session_id,
+                prompt=prompt,
+                builtin_perms=builtin_perms,
+                policy_defaults={},
+                sessions=self.sessions,
+            )
+            self.hook_ctxs[session_id] = hook_ctx
+        else:
+            hook_ctx.session = session
+            hook_ctx.prompt = prompt
+            hook_ctx.builtin_perms = builtin_perms
+            # Per-RUN counters reset each turn (same semantics a fresh ctx used to give).
+            hook_ctx.tool_start_times = {}
+            hook_ctx.ts_loop_count = 0
+            hook_ctx.mcp_offer_sent = False
 
         async def can_use_tool(tool_name, input_data, context):
             return await gate_hooks.can_use_tool(hook_ctx, tool_name, input_data, context)
@@ -118,7 +132,8 @@ class RunOptions(AgentManagerProtocol):
             connection_mode=getattr(global_settings, "connection_mode", "own_key"),
         )
         if need_web_mcp:
-            register_web_mcp_server(mcp_servers, p_m)
+            # browser_ok gates the search-dead fallback nudge: never tell the model to call CreateBrowserAgent in a session where browser delegation is denied.
+            register_web_mcp_server(mcp_servers, p_m, browser_ok=bool(browser_delegation_tools))
 
         effective_allowed, effective_disallowed = build_effective_tool_lists(
             session, mcp_servers, builtin_perms, need_web_mcp,
@@ -142,7 +157,9 @@ class RunOptions(AgentManagerProtocol):
         session.provider = api_type
 
         # Capture the Claude CLI's stderr into a buffer so the retry classifier can see the real cause of a process crash (e.g. "No pool capacity available" from the OpenSwarm proxy, or the Anthropic SDK's 429/overloaded error body). Without this the SDK's ProcessError only stringifies to "Command failed with exit code 1 / Check stderr output for details", which masks transient capacity issues.
-        p_stderr_buffer: List[str] = []
+        # Per-SESSION buffer cleared in place each turn: a persistent client's stderr callback was bound at connect and must keep pointing at this exact list.
+        p_stderr_buffer = self.stderr_buffers.setdefault(session_id, [])
+        p_stderr_buffer.clear()
 
         def p_stderr_cb(line: str) -> None:
             p_stderr_buffer.append(line)
@@ -199,6 +216,16 @@ class RunOptions(AgentManagerProtocol):
         if session.max_turns:
             options_kwargs["max_turns"] = session.max_turns
 
+        # --strict-mcp-config makes the CLI use ONLY the mcp_servers we pass, ignoring the account's
+        # claude.ai partner MCPs (Notion/Google/Gmail). We already hard-block their tools just below,
+        # but the CLI still spawned+connected them every turn (~1.5s of pure dead-weight TTFT, measured).
+        # Our builtins + any MCPActivate'd server go through mcp_servers, so they're unaffected; this
+        # only stops the already-blocked account MCPs from booting. Kill switch: OPENSWARM_STRICT_MCP=0.
+        if os.environ.get("OPENSWARM_STRICT_MCP", "1") != "0":
+            p_ea = dict(options_kwargs.get("extra_args") or {})
+            p_ea["strict-mcp-config"] = None
+            options_kwargs["extra_args"] = p_ea
+
         # The claude_code preset auto-attaches the user's claude.ai- connected partner MCPs (`mcp__claude_ai_*`). Those bypass our MCPActivate gate, don't share OAuth state with the OpenSwarm Gmail/Calendar/Drive connectors the user actually configured here, and confuse the model into picking the partner shim instead of our vetted server. Hard-block them at the SDK layer so the model can't even attempt the call.
         options_kwargs["disallowed_tools"] = [
             "mcp__claude_ai_*",
@@ -233,6 +260,13 @@ class RunOptions(AgentManagerProtocol):
                 get_branch_messages(session),
                 cutoff_msg_id=session.compacted_through_msg_id,
             )
+            # Distill the dropped span into a cached aux summary so a rebuild keeps the gist of old turns instead of hard-dropping them. Fail-open: "" -> the plain recap above, exactly today's behavior.
+            from backend.apps.agents.manager.session.distill_history import distilled_history_summary
+            from backend.apps.agents.manager.session.history_compaction import wrap_platform_note
+            distilled = await distilled_history_summary(session, global_settings)
+            if distilled:
+                fenced = wrap_platform_note(f"Summary of earlier conversation (older turns compacted):\n{distilled}")
+                history = f"{fenced}\n\n{history}" if history else fenced
             if history:
                 if isinstance(prompt_content, str):
                     prompt_content = history + "\n\n" + prompt_content

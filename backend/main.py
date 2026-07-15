@@ -42,6 +42,7 @@ from backend.apps.service.service import service
 from backend.apps.subscription.router import subscription
 from backend.apps.auth.router import auth
 from backend.apps.web.web import web
+from backend.apps.onboarding.onboarding import onboarding
 from backend.apps.agents.proxy.anthropic_proxy import anthropic_proxy
 from backend.apps.agents.core.openai_passthrough import openai_passthrough
 from backend.apps.workflows.workflows import workflows
@@ -49,7 +50,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 import json
 
-main_app = MainApp([health, agents, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, output_versions, dashboards, swarm, service, subscription, auth, web, anthropic_proxy, workflows, openai_passthrough])
+main_app = MainApp([health, agents, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, output_versions, dashboards, swarm, service, subscription, auth, web, onboarding, anthropic_proxy, workflows, openai_passthrough])
 app = main_app.app
 
 # Generate per-install auth token BEFORE we bind the HTTP port. By the time any request lands, the token file exists. See backend/auth.py.
@@ -66,11 +67,16 @@ install_token_scrubber()
 
 # Generate the per-install id (installation_id) at the same pre-bind moment as the auth token. It is otherwise created lazily on the first analytics submission, so on a clean install the sign-in window can render and build its Google/email OAuth URL (which embeds install_id) before that submission fires, producing an empty install_id that the cloud rejects. Generating here guarantees the very first GET /api/settings already carries it. Platform-agnostic; wrapped so a settings hiccup never blocks startup, and the lazy path stays as a fallback.
 try:
+    import re as p_re
     import uuid as p_uuid
     from backend.apps.settings.store import load_settings as p_load_boot_settings, save_settings as p_save_boot_settings
     p_boot_settings = p_load_boot_settings()
     if not getattr(p_boot_settings, "installation_id", None):
-        p_boot_settings.installation_id = p_uuid.uuid4().hex
+        # Electron resolves this before startup so analytics and affiliate attribution share one install id.
+        p_env_iid = os.environ.get("OPENSWARM_INSTALLATION_ID", "")
+        p_boot_settings.installation_id = (
+            p_env_iid if p_re.fullmatch(r"[A-Za-z0-9_-]{8,128}", p_env_iid) else p_uuid.uuid4().hex
+        )
         p_save_boot_settings(p_boot_settings)
 except Exception:
     pass
@@ -253,16 +259,17 @@ def p_ws_auth_ok(websocket: WebSocket) -> bool:
 
 
 @app.websocket("/ws/outputs/runtime/{workspace_id}/logs")
-async def websocket_runtime_logs(websocket: WebSocket, workspace_id: str):
+async def websocket_runtime_logs(websocket: WebSocket, workspace_id: str, instance: int = 1):
     """Stream the persistent app-backend's stdout/stderr to the Terminal
     pane. On connect we replay the runtime's ring buffer so a Terminal
     tab opened mid-session sees the context it missed, then we tail
-    every subsequent line until disconnect."""
+    every subsequent line until disconnect. `instance` targets a specific
+    dashboard card's runtime when the same app is open more than once."""
     if not p_ws_auth_ok(websocket):
         return
     await websocket.accept()
     from backend.apps.outputs.runtime import manager as runtime_manager
-    rt = runtime_manager.get(workspace_id)
+    rt = runtime_manager.get(workspace_id, instance)
     if rt is None:
         # No active runtime, surface that to the client and close. The frontend will call /runtime/start and reconnect. Also emit a status frame with is_new_mode (computed from disk) so the preview pane shows the "starting preview…" placeholder for webapp_template workspaces instead of falling back to the legacy /serve/index.html URL (which 404s in new-mode).
         try:
@@ -361,6 +368,23 @@ async def websocket_dashboard(websocket: WebSocket):
                     ws_manager.set_active_dashboard(websocket, dash_id)
     except WebSocketDisconnect:
         ws_manager.disconnect_global(websocket)
+
+
+@app.websocket("/ws/electron-main")
+async def websocket_electron_main(websocket: WebSocket):
+    """The Electron MAIN process (not the renderer) attaches here to serve partition-cookie
+    reads for the session-borrow bridge. Main doesn't throttle when the window is backgrounded,
+    so cookie reads over this socket don't hit the renderer's intermittent-timeout problem."""
+    if not p_ws_auth_ok(websocket):
+        return
+    await ws_manager.connect_main(websocket)
+    try:
+        while True:
+            msg = json.loads(await websocket.receive_text())
+            if msg.get("event") == "browser:result":
+                ws_manager.resolve_browser_command(msg.get("data", {}).get("request_id", ""), msg.get("data", {}))
+    except WebSocketDisconnect:
+        ws_manager.disconnect_main(websocket)
 
 
 @app.get("/api/dev/token")
@@ -498,23 +522,82 @@ async def browser_agent_run(request: Request):
 # Allowlisted social platforms whose own-session MCP shims may borrow partition cookies. The allowlist is the real scope: even an authenticated localhost caller can only ever read these sites' cookies, never an arbitrary domain, so this can't become a general cookie-theft oracle.
 P_SESSION_COOKIE_DOMAINS = {"reddit.com", "x.com", "twitter.com", "tiktok.com"}
 
+# Per-domain "you're actually logged in" cookie(s). Presence of any = signed in; we check the
+# real session cookie, not just any cookie, so a logged-out visit doesn't read as connected.
+P_SESSION_AUTH_COOKIES = {
+    "reddit.com": ("reddit_session", "token_v2"),
+    "x.com": ("auth_token",),
+    "twitter.com": ("auth_token",),
+    "tiktok.com": ("sessionid", "sessionid_ss"),
+}
+
+
+async def p_read_session_cookies(domain: str) -> dict:
+    """Read a vetted platform's live partition cookies. Prefers the Electron MAIN bridge
+    (throttle-free) and falls back to the renderer when main hasn't attached or can't answer."""
+    if ws_manager.main_connection is not None:
+        result = await ws_manager.send_main_command(uuid4().hex, "get_session_cookies", {"domain": domain})
+        if not result.get("error"):
+            return result
+    return await ws_manager.send_browser_command(uuid4().hex, "get_session_cookies", "", {"domain": domain})
+
 
 @app.get("/api/browser-session/cookies")
 async def browser_session_cookies(domain: str = ""):
     """Hand a vetted platform's live partition cookies + UA to its own-session MCP shim.
 
     Auth is the standard localhost token (middleware). Cookies are read live from
-    Electron's persist:openswarm-browser partition via the dashboard bridge and are
-    never persisted server-side; the shim talks to the site as the user's browser.
+    Electron's persist:openswarm-browser partition and are never persisted server-side;
+    the shim talks to the site as the user's browser.
     """
     d = (domain or "").lower().strip().lstrip(".")
     if d not in P_SESSION_COOKIE_DOMAINS:
         return JSONResponse({"error": f"domain not allowed: {d or '(empty)'}", "cookies": []}, status_code=400)
-    rid = uuid4().hex
-    result = await ws_manager.send_browser_command(rid, "get_session_cookies", "", {"domain": d})
+    result = await p_read_session_cookies(d)
     if result.get("error"):
         return JSONResponse({"error": result["error"], "cookies": []})
     return JSONResponse({"cookies": result.get("cookies", []), "userAgent": result.get("userAgent", "")})
+
+
+@app.get("/api/browser-session/status")
+async def browser_session_status(domain: str = ""):
+    """Report whether the user is signed in to a vetted platform (has its real session cookie).
+
+    Drives the Actions-page 'Signed in / Not signed in' indicator for the session-borrow MCPs.
+    Same walls as the cookie bridge (auth middleware + allowlist); returns only a boolean, never
+    the cookies themselves.
+    """
+    d = (domain or "").lower().strip().lstrip(".")
+    if d not in P_SESSION_COOKIE_DOMAINS:
+        return JSONResponse({"error": f"domain not allowed: {d or '(empty)'}", "connected": False}, status_code=400)
+    result = await p_read_session_cookies(d)
+    if result.get("error"):
+        return JSONResponse({"connected": False, "error": result["error"]})
+    wanted = P_SESSION_AUTH_COOKIES.get(d, ())
+    names = {c.get("name") for c in result.get("cookies", []) if c.get("value")}
+    return JSONResponse({"connected": any(n in names for n in wanted), "domain": d})
+
+
+@app.post("/api/browser-session/action")
+async def browser_session_action(request: Request):
+    """Drive a vetted platform's own live browser card (navigate + JS) for its MCP shim's writes.
+
+    Same trust posture as the cookie bridge: localhost-token-gated (middleware) + the same
+    domain allowlist, and the renderer only ever runs the steps against a card the user
+    already has open on that domain (resolved by the webview's live URL; no such card, no
+    action). So an authenticated localhost caller can only drive these vetted sites' own
+    logged-in tabs, never an arbitrary origin.
+    """
+    body = await request.json()
+    d = (body.get("domain") or "").lower().strip().lstrip(".")
+    if d not in P_SESSION_COOKIE_DOMAINS:
+        return JSONResponse({"error": f"domain not allowed: {d or '(empty)'}"}, status_code=400)
+    steps = body.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return JSONResponse({"error": "steps (a non-empty list) is required"}, status_code=400)
+    rid = uuid4().hex
+    result = await ws_manager.send_browser_command(rid, "perform_action", "", {"domain": d, "steps": steps})
+    return JSONResponse(result)
 
 
 @app.post("/api/mcp-meta/{action}")
@@ -786,61 +869,6 @@ async def settings_meta(action: str, request: Request):
     return JSONResponse({"error": f"unknown action: {action}"}, status_code=400)
 
 
-@app.post("/api/agents/sessions/{session_id}/compact")
-async def session_compact(session_id: str):
-    """Force a compaction pass on a session (Phase 2 /compact slash cmd).
-
-    User explicitly clicked compact, so we accept the prompt-cache loss in exchange
-    for a real visible trim: needs_fresh_session drops the SDK convo so the next turn
-    rebuilds from history with compacted_through_msg_id actually applied (auto-compact
-    only sets the marker; the button is the user opting into the cost).
-    """
-    from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.agents.core.ws_manager import ws_manager as p_ws
-    session = agent_manager.sessions.get(session_id)
-    if not session:
-        return JSONResponse({"error": "session not found"}, status_code=404)
-    did_compact = agent_manager.maybe_compact(session, force=True)
-    if did_compact:
-        session.needs_fresh_session = True
-    await p_ws.send_to_session(session_id, "agent:context_status", {
-        "session_id": session_id,
-        "reason": "compacted_manual" if did_compact else "noop",
-        "compacted_through_msg_id": session.compacted_through_msg_id,
-    })
-    return JSONResponse({"compacted": did_compact, "compacted_through_msg_id": session.compacted_through_msg_id})
-
-
-@app.post("/api/agents/sessions/{session_id}/clear")
-async def session_clear(session_id: str):
-    """Wipe the session's UI history AND its SDK convo state (/clear slash cmd, Reset history button)."""
-    from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.agents.core.ws_manager import ws_manager as p_ws
-    from backend.apps.agents.core.models import MessageBranch
-    session = agent_manager.sessions.get(session_id)
-    if not session:
-        return JSONResponse({"error": "session not found"}, status_code=404)
-    session.sdk_session_id = None
-    session.active_mcps = []
-    session.compacted_through_msg_id = None
-    session.tokens = {"input": 0, "output": 0}
-    session.cost_usd = 0.0
-    session.needs_fork = False
-    session.messages = []
-    session.pending_approvals = []
-    session.branches = {"main": MessageBranch(id="main")}
-    session.active_branch_id = "main"
-    session.tool_group_meta = {}
-    await p_ws.send_to_session(session_id, "agent:status", {
-        "session_id": session_id,
-        "status": session.status,
-        "session": session.model_dump(mode="json"),
-    })
-    await p_ws.send_to_session(session_id, "agent:context_status", {
-        "session_id": session_id,
-        "reason": "cleared",
-    })
-    return JSONResponse({"cleared": True})
 
 
 @app.post("/api/invoke-agent/run")

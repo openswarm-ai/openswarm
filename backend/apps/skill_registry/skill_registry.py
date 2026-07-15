@@ -165,21 +165,42 @@ class p_CuratedInstallRequest(BaseModel):
     folder: str
 
 
+def p_cached_curated_fallback(folder: str) -> Optional[dict]:
+    """Offline/rate-limited curated-install fallback: rebuild a single-SKILL.md install
+    payload from the warmed catalog (it already holds the SKILL.md body) so a curated
+    install still works when GitHub is unreachable, minus the folder's extra files.
+    Empty version means it's skipped by update checks until re-installed online."""
+    cached = next((s for s in p_cache.values() if s.get("folder") == folder), None)
+    if cached is None:
+        return None
+    name, description, body = cached.get("name", ""), cached.get("description", ""), cached.get("content", "")
+    return {
+        "skill_id": folder.rsplit("/", 1)[-1], "name": name, "description": description,
+        "files": {"SKILL.md": f"---\nname: {name}\ndescription: {description}\n---\n\n{body}"},
+        "scripts": [], "source": sources.REPO, "folder": folder, "version": "",
+    }
+
+
 @skill_registry.router.post("/install-curated")
 async def registry_install_curated(req: p_CuratedInstallRequest):
     """Install a curated (anthropics/skills) skill with its FULL folder, not just
     SKILL.md, so scripts/assets land too (the old path wrote only SKILL.md, which
     left multi-file skills like pdf/docx with dead script references). Curated is
     the vetted source, so this is one-click; files are still written inert, never
-    executed. Needs network at install time (the catalog only caches SKILL.md)."""
+    executed. When GitHub is unreachable (offline / rate-limited) it falls back to the
+    catalog's cached SKILL.md, so the install still works (single file, no folder
+    extras), restoring the old offline behavior."""
     try:
         resolved = await sources.resolve_curated_skill(req.folder)
-    except RegistryRateLimited:
-        raise HTTPException(status_code=429, detail="GitHub rate limit hit fetching this skill; try again in a few minutes.")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"could not fetch skill: {e}")
+        resolved = p_cached_curated_fallback(req.folder)
+        if resolved is None:
+            if isinstance(e, RegistryRateLimited):
+                raise HTTPException(status_code=429, detail="GitHub rate limit hit and no cached copy of this skill; try again in a few minutes.")
+            raise HTTPException(status_code=502, detail=f"GitHub unreachable and no cached copy: {e}")
+        logger.info(f"curated install: GitHub unreachable ({type(e).__name__}); installing '{req.folder}' from cached SKILL.md (single file, no folder extras)")
 
     from backend.apps.skills.skills import write_folder_skill, unique_skill_slug
     slug = unique_skill_slug(resolved["skill_id"])

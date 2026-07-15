@@ -37,6 +37,10 @@ platform. See `RELEASE_RUNBOOK.md` for the how; this is the gate.
 - [ ] macOS Intel (x64), macOS 12+: same.
 - [ ] Auto-update: previous stable installed → this release detected, downloads,
       installs on quit, relaunches on the new version. Verify on both platforms.
+- [ ] Widevine DRM: in a Browser card open a Spotify playlist (or any DRM title)
+      and confirm a track plays PAST the ~10s encrypted boundary and auto-advances,
+      with no `[drm-diag] License response 500` in the logs. A signed-but-not-VMP
+      build boots fine and only fails here, so this box catches it. Both platforms.
 
 ## Promote
 - [ ] All boxes above ticked.

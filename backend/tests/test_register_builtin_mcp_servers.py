@@ -19,13 +19,14 @@ def test_registers_always_on_and_delegation_servers():
     # always-on
     assert "openswarm-mcp-meta" in mcp_servers
     assert "openswarm-settings-meta" in mcp_servers
+    assert "openswarm-apps" in mcp_servers
     # delegation (not denied)
     assert "openswarm-browser-agent" in mcp_servers
     assert "openswarm-invoke-agent" in mcp_servers
     assert browser_tools == ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents", "AppAgent"]
     assert invoke_tools == ["InvokeAgent"]
     # Every registered server's script path must resolve to a file that ACTUALLY EXISTS. This is the assertion that catches a moved-caller resolving the wrong agents dir.
-    for name in ("openswarm-mcp-meta", "openswarm-settings-meta",
+    for name in ("openswarm-mcp-meta", "openswarm-settings-meta", "openswarm-apps",
                  "openswarm-browser-agent", "openswarm-invoke-agent"):
         script = mcp_servers[name]["args"][0]
         assert os.path.isfile(script), f"{name} script does not exist on disk: {script}"
@@ -38,3 +39,4 @@ def test_fully_denied_delegation_servers_are_not_registered():
     assert "openswarm-browser-agent" not in mcp_servers   # all browser tools denied -> skip
     assert "openswarm-invoke-agent" not in mcp_servers
     assert "openswarm-mcp-meta" in mcp_servers             # always-on regardless
+    assert "openswarm-apps" in mcp_servers                 # always-on regardless

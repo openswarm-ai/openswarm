@@ -27,17 +27,10 @@ import DashboardSelection from './pages/DashboardSelection/DashboardSelection';
 import ErrorBoundary from './components/feedback/ErrorBoundary';
 import { setPanelMode, disableOnboardingAfterCrash } from '@/shared/state/onboardingProgressSlice';
 
-const Skills = React.lazy(() => import('./pages/Skills/Skills'));
-const Tools = React.lazy(() => import('./pages/Tools/Tools'));
-const Modes = React.lazy(() => import('./pages/Modes/Modes'));
-const Views = React.lazy(() => import('./pages/Views/Views'));
-const Customization = React.lazy(() => import('./pages/Customization/Customization'));
 const Analytics = React.lazy(() => import('./pages/Analytics/Analytics'));
+const OnboardingV3Root = React.lazy(() => import('./components/OnboardingV3/OnboardingV3Root'));
 const OnboardingRoot = React.lazy(() =>
   import('./components/Onboarding').then((m) => ({ default: m.OnboardingRoot })),
-);
-const OnboardingFlowPreview = React.lazy(() =>
-  import('./components/Onboarding/flow/OnboardingFlowPreview').then((m) => ({ default: m.OnboardingFlowPreview })),
 );
 
 if (typeof window !== 'undefined') {
@@ -58,22 +51,11 @@ if (typeof window !== 'undefined') {
 
   (window as any).__openswarmPrefetchRoute = (path: string) => {
     switch (path) {
-      case '/skills': void import('./pages/Skills/Skills'); return;
-      case '/actions':
-      case '/tools': void import('./pages/Tools/Tools'); return;
-      case '/modes': void import('./pages/Modes/Modes'); return;
       case '/views':
-      case '/apps': void import('./pages/Views/Views'); return;
-      case '/customization': void import('./pages/Customization/Customization'); return;
       case '/analytics': void import('./pages/Analytics/Analytics'); return;
     }
   };
   const prefetchAll = () => {
-    void import('./pages/Views/Views');
-    void import('./pages/Skills/Skills');
-    void import('./pages/Tools/Tools');
-    void import('./pages/Modes/Modes');
-    void import('./pages/Customization/Customization');
     void import('./pages/Analytics/Analytics');
   };
   const ric = (window as any).requestIdleCallback as
@@ -87,7 +69,7 @@ import { useRouteTracker } from '@/shared/hooks/useRouteTracker';
 import { useDeepLink } from '@/shared/hooks/useDeepLink';
 import { useWindowFocus } from '@/shared/hooks/useWindowFocus';
 import { useInteractionHeartbeat } from '@/shared/hooks/useInteractionHeartbeat';
-import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { ThemeProvider, useThemeMode, useThemeAccent, useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 
 function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
@@ -221,7 +203,9 @@ const DeepLinkListener: React.FC<{ children: React.ReactNode }> = ({ children })
 const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const dispatch = useAppDispatch();
   const { setMode: setThemeMode } = useThemeMode();
+  const { setAccent } = useThemeAccent();
   const theme = useAppSelector((s) => s.settings.data.theme);
+  const accentColor = useAppSelector((s) => s.settings.data.accent_color);
   const loaded = useAppSelector((s) => s.settings.loaded);
   const allowExperimentalUpdates = useAppSelector((s) => s.settings.data.allow_experimental_updates);
   useEffect(() => {
@@ -273,6 +257,11 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
   useEffect(() => {
     if (loaded) setThemeMode(theme as 'light' | 'dark');
   }, [loaded, theme, setThemeMode]);
+
+  // Effect re-fires only when the persisted value changes, so live pad drags (context-only until finish() patches) never get snapped back by a mid-drag settings refetch.
+  useEffect(() => {
+    if (loaded) setAccent(accentColor ?? null);
+  }, [loaded, accentColor, setAccent]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -534,12 +523,6 @@ const ThemedApp: React.FC = () => {
                         <Route path="/" element={<DashboardSelection />} />
                         {/* Dashboard renders persistently in AppShell so webviews survive nav. */}
                         <Route path="/dashboard/:id" element={null} />
-                        <Route path="/customization" element={<Customization />} />
-                        <Route path="/skills" element={<Skills />} />
-                        <Route path="/actions" element={<Tools />} />
-                        <Route path="/modes" element={<Modes />} />
-                        <Route path="/apps" element={<Views />} />
-                        <Route path="/apps/:id" element={<Views />} />
                         <Route path="/analytics" element={<Analytics />} />
                       </Route>
                     </Routes>
@@ -550,9 +533,11 @@ const ThemedApp: React.FC = () => {
                     <OnboardingRoot />
                   </Suspense>
                 </OnboardingErrorGuard>
-                <Suspense fallback={null}>
-                  <OnboardingFlowPreview />
-                </Suspense>
+                <OnboardingErrorGuard>
+                  <Suspense fallback={null}>
+                    <OnboardingV3Root />
+                  </Suspense>
+                </OnboardingErrorGuard>
               </DeepLinkListener>
             </UpdateListener>
             </DefaultModelGuard>

@@ -350,6 +350,55 @@ def test_curated_install_writes_full_folder(skills_dir, monkeypatch):
     assert slug in listed and listed[slug]["has_supporting_files"] is True
 
 
+def test_curated_install_falls_back_to_cached_skill_md_when_offline(skills_dir, monkeypatch):
+    """Regression: when GitHub is unreachable (rate-limited/offline), /install-curated
+    falls back to the catalog's cached SKILL.md so the install still works (single file,
+    no folder extras) instead of erroring, restoring the old offline behavior."""
+    import secrets as p_secrets
+    from fastapi.testclient import TestClient
+    from backend.main import app
+    import backend.auth as auth_mod
+    import backend.apps.skill_registry.skill_registry as sr_routes
+    from backend.apps.skill_registry.skill_registry_github import RegistryRateLimited
+    if not auth_mod.TOKEN:
+        auth_mod.TOKEN = p_secrets.token_urlsafe(32)
+    client = TestClient(app, headers={"Authorization": f"Bearer {auth_mod.TOKEN}"})
+
+    async def boom(folder):
+        raise RegistryRateLimited()
+    monkeypatch.setattr("backend.apps.skill_registry.skill_registry_sources.resolve_curated_skill", boom)
+    monkeypatch.setattr(sr_routes, "p_cache", {"PDF": {
+        "name": "PDF", "description": "work with pdfs", "content": "Do PDF things.", "folder": "skills/pdf",
+    }})
+
+    r = client.post("/api/skill-registry/install-curated", json={"folder": "skills/pdf"})
+    assert r.status_code == 200 and r.json()["installed"] is True
+    assert r.json()["files"] == ["SKILL.md"] and r.json()["scripts"] == []
+    slug = r.json()["skill"]["id"]
+    md = (skills_dir / slug / "SKILL.md").read_text()
+    assert "Do PDF things." in md and "name: PDF" in md
+
+
+def test_curated_install_no_cache_no_network_errors_honestly(skills_dir, monkeypatch):
+    """If GitHub is unreachable AND nothing's cached, surface an honest error, not a
+    silent half-install."""
+    import secrets as p_secrets
+    from fastapi.testclient import TestClient
+    from backend.main import app
+    import backend.auth as auth_mod
+    import backend.apps.skill_registry.skill_registry as sr_routes
+    if not auth_mod.TOKEN:
+        auth_mod.TOKEN = p_secrets.token_urlsafe(32)
+    client = TestClient(app, headers={"Authorization": f"Bearer {auth_mod.TOKEN}"})
+
+    async def boom(folder):
+        raise RuntimeError("connection refused")
+    monkeypatch.setattr("backend.apps.skill_registry.skill_registry_sources.resolve_curated_skill", boom)
+    monkeypatch.setattr(sr_routes, "p_cache", {})
+    r = client.post("/api/skill-registry/install-curated", json={"folder": "skills/pdf"})
+    assert r.status_code == 502
+
+
 def test_manual_rm_leaves_no_ghost_blocking_slug(skills_dir):
     """A folder deleted out-of-band (manual rm) must not keep squatting its slug via
     a leftover index entry: existence is by files on disk, and a prune cleans the index."""

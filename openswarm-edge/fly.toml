@@ -13,6 +13,7 @@ kill_timeout = '30s'
 [env]
   PORT = '8080'
   APPS_BASE_DOMAIN = 'openswarm.host'
+  EDGE_PUBLIC_HOST = 'openswarm-edge.fly.dev'
   # Private 6PN address of the cloud app (same org). Not public.
   OPENSWARM_CLOUD_INTERNAL_URL = 'http://openswarm-cloud.internal:8080'
   TIGRIS_ENDPOINT = 'https://fly.storage.tigris.dev'

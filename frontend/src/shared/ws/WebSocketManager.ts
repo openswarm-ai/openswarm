@@ -13,6 +13,8 @@ import {
   updateSessionContext,
   setContextOverflow,
   setRateLimited,
+  setContextRecovered,
+  setAppDepsChanged,
   setMcpSuggestions,
   addBranch,
   setActiveBranch,
@@ -22,10 +24,11 @@ import {
   fetchSession,
   recordCompaction,
   setTurnLabel,
+  setQueued,
   clearTurnLabel,
 } from '../state/agentsSlice';
 import { streamStart, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
-import { addBrowserCardFromBackend, markBrowserCardEnding, keepBrowserCardOpen, placeBesideCard, placeBelowCard, setBrowserCardPosition, setGlowingBrowserCards, GRID_GAP, WORKFLOW_CARD_GAP, openWorkflowsApp, openWorkflowMonitor } from '../state/dashboardLayoutSlice';
+import { addBrowserCardFromBackend, markBrowserCardEnding, keepBrowserCardOpen, placeBesideCard, placeBelowCard, placeBrowserBesideChat, setBrowserCardPosition, setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards, GRID_GAP, WORKFLOW_CARD_GAP, openWorkflowsApp, openWorkflowMonitor } from '../state/dashboardLayoutSlice';
 import { upsertOutput } from '../state/outputsSlice';
 import { fetchSettings } from '../state/settingsSlice';
 import { displaySessionName } from '../state/sessionDisplay';
@@ -381,6 +384,14 @@ class WebSocketManager {
             store.dispatch(trackAgentNotification(session_id));
           }
 
+          // Fade this session's browser glows on the terminal transition HERE, not only in AgentChat's effect: a collapsed chat is unmounted at finish, and a never-faded glow pins the browser's renderer (exempt from suspend + the webview cap) forever.
+          const newStatus = data.status ?? data.session?.status;
+          const wasWorking = prevStatus === 'running' || prevStatus === 'waiting_approval';
+          if (session_id && wasWorking && (newStatus === 'completed' || newStatus === 'stopped' || newStatus === 'error')) {
+            store.dispatch(fadeGlowingBrowserCards(session_id));
+            setTimeout(() => store.dispatch(clearGlowingBrowserCards(session_id)), 600);
+          }
+
           // Fire a native notification when an agent terminates while the window is hidden. Skips sub-agents and browser-agents (the parent's own completion is what the user cares about) and only fires on a real transition from a non-terminal state.
           const TERMINAL = new Set(['completed', 'error']);
           const NON_TERMINAL = new Set(['running', 'waiting_approval', undefined, null, '']);
@@ -554,6 +565,20 @@ class WebSocketManager {
         }
         break;
 
+      case 'agent:context_recovered':
+        // The backend hit a context-overflow crash mid-turn, rebuilt from its local copy, and retried on its own. Transient muted pill so the recovery is visible without reading like an error.
+        if (session_id) {
+          store.dispatch(setContextRecovered({ sessionId: session_id }));
+        }
+        break;
+
+      case 'agent:app_deps_changed':
+        // A view-builder agent installed/changed deps this turn; the app card escalates its turn-finish reload from soft to a Vite restart so new deps actually load.
+        if (session_id) {
+          store.dispatch(setAppDepsChanged({ sessionId: session_id }));
+        }
+        break;
+
       case 'agent:context_status':
         // Auto-compaction collapsed older turns into a summary. Mirror compacted_through_msg_id locally so the renderer can drop a visible "N earlier turns summarized" chip into the transcript. Other reasons (cleared, etc.) flow through this same event but don't currently need a chip, ignore them for now.
         if (session_id && data.reason === 'compacted') {
@@ -573,6 +598,16 @@ class WebSocketManager {
             label: data.label,
           }));
         }
+        break;
+
+      case 'agent:queued':
+        // Admission gate: this turn is waiting for a concurrency slot; shows a "queued" chip so it doesn't read as a hung "working".
+        if (session_id) store.dispatch(setQueued({ sessionId: session_id, queued: true }));
+        break;
+
+      case 'agent:admitted':
+        // Slot acquired; the turn is about to stream. Clears the queued chip.
+        if (session_id) store.dispatch(setQueued({ sessionId: session_id, queued: false }));
         break;
 
       case 'agent:auth_error':
@@ -775,7 +810,7 @@ class WebSocketManager {
               let pos: { x: number; y: number } | null = null;
               let glowLabel = 'Use Browser';
               if (parentCard) {
-                pos = placeBesideCard(layoutState, parentCard, browserCard.width, browserCard.height, undefined, exclude);
+                pos = placeBrowserBesideChat(layoutState, parentCard, parentId, browserCard.width, browserCard.height, browserCard.browser_id);
               } else if (sess?.workflow_run_id && layoutState.workflowsMonitorCard) {
                 pos = placeBesideCard(layoutState, layoutState.workflowsMonitorCard, browserCard.width, browserCard.height, undefined, exclude, WORKFLOW_CARD_GAP, true);
               } else if (sess?.workflow_edit_id && layoutState.workflowsHub) {

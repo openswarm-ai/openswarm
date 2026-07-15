@@ -61,6 +61,12 @@ class AppSettings(BaseModel):
     user_email: Optional[str] = None
     user_use_case: Optional[str] = None
     user_referral_source: Optional[str] = None
+    # Onboarding v3 lifecycle: None = never seen, "done"/"skipped" once resolved.
+    onboarding_v3: Optional[str] = None
+    # User-picked accent hex from the onboarding theme pad; None = stock accent.
+    accent_color: Optional[str] = None
+    personalized_greeting: Optional[str] = None
+    personalized_starters: list["PersonalizedStarter"] = Field(default_factory=list)
     # Suppresses preflight suggestion modal entries the user dismissed; keyed by ToolDefinition.name, value ISO timestamp.
     dismissed_mcp_suggestions: dict[str, str] = Field(default_factory=dict)
     analytics_opt_in: bool = True
@@ -97,3 +103,8 @@ class CustomProvider(BaseModel):
     base_url: str
     api_key: str = ""
     models: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PersonalizedStarter(BaseModel):
+    title: str
+    prompt: str

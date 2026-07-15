@@ -1,7 +1,7 @@
 import { Search, Hammer, Globe, Plug } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-// Two-level starters shared by the empty-state and the first-run welcome chat: pick a category, then a concrete prompt. Chosen to SHOWCASE what only OpenSwarm can do, and to feel PERSONAL: the agents can see the user's own computer/files, drive the browser, plug into their apps (MCPs), build real apps, and run agents in parallel, none of which a plain chatbot can do out of the box. Many prompts deliberately touch the user's own stuff so it matters to them. One-click-runnable (no [placeholders]); reads plainly for a non-dev. target 'app-builder' opens the App Builder (live preview); the rest run as an agent.
+// Two-level starters shared by the empty-state and the first-run welcome chat: pick a category, then a concrete prompt. Chosen to SHOWCASE what only OpenSwarm can do, and to feel PERSONAL: the agents can see the user's own computer/files, drive the browser, plug into their apps (MCPs), build real apps, and run agents in parallel, none of which a plain chatbot can do out of the box. Many prompts deliberately touch the user's own stuff so it matters to them. One-click-runnable (no [placeholders]); reads plainly for a non-dev. All run as a normal agent; the 'build' category (target 'app-builder') just prefills the composer in the welcome chat instead of auto-sending, since the agent builds the app in-place (it calls CreateApp and the live card drops on the canvas).
 export type StarterCategory = {
   id: string;
   label: string;

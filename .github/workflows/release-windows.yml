@@ -17,6 +17,8 @@ name: Release (Windows)
 #   AZURE_SIGNING_ENDPOINT          e.g. https://wus2.codesigning.azure.net/
 #   AZURE_SIGNING_ACCOUNT           mist-code-signing
 #   AZURE_SIGNING_CERT_PROFILE      Mist-Windows-Signing
+#   EVS_ACCOUNT_NAME                castlabs EVS account name (Widevine VMP signing; free signup)
+#   EVS_PASSWD                      password for that EVS account
 #   GOOGLE_OAUTH_CLIENT_ID          shipped in production .env (Google OAuth)
 #   GOOGLE_OAUTH_CLIENT_SECRET      shipped in production .env (Google OAuth)
 #                                   v1.0.29 cloud-proxied the OAuth flow itself,
@@ -77,6 +79,8 @@ jobs:
       AZURE_SIGNING_ENDPOINT:     ${{ secrets.AZURE_SIGNING_ENDPOINT }}
       AZURE_SIGNING_ACCOUNT:      ${{ secrets.AZURE_SIGNING_ACCOUNT }}
       AZURE_SIGNING_CERT_PROFILE: ${{ secrets.AZURE_SIGNING_CERT_PROFILE }}
+      EVS_ACCOUNT_NAME:           ${{ secrets.EVS_ACCOUNT_NAME }}
+      EVS_PASSWD:                 ${{ secrets.EVS_PASSWD }}
       PUBLISH_INPUT:              ${{ github.event.inputs.publish }}
 
     steps:
@@ -95,6 +99,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+
+      # Widevine VMP signing tool. The afterPack hook invokes `castlabs_evs.vmp
+      # sign-pkg` with the EVS_* secrets; the -Sign path sets VMP_REQUIRE_SIGN=1 so
+      # a missing/failed signature aborts the build rather than ship an installer
+      # whose Spotify/Netflix audio is silently dead.
+      - name: Install castlabs-evs (Widevine VMP signing)
+        shell: pwsh
+        run: python -m pip install --upgrade castlabs-evs
 
       # The signing hook calls `signtool.exe` directly. signtool ships in the
       # Windows 10 SDK, preinstalled on windows-latest runners — we just need

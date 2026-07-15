@@ -1,92 +1,76 @@
 """Low-level authed Reddit transport.
 
-Borrow the user's session, harvest the bearer token their own logged-in web
-client already uses (no API key, no app registration), and call the documented
-oauth.reddit.com surface. Rate-limited and self-refreshing on token expiry.
-stdlib-only to match the sibling shims and start fast.
+Talks to Reddit as the user's own logged-in browser: borrow the session cookies and
+call the classic www.reddit.com JSON API (reads take a .json suffix, writes carry the
+account's modhash), no OAuth app and no API key. Modern Reddit ("shreddit") stopped
+embedding a bearer token in its page HTML, so the cookie + modhash path is the durable
+one. Rate-limited and self-healing on a 401/403 by re-borrowing the session. stdlib-only.
 """
 
 import json
-import re
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import Any, Dict, Optional
 
 from backend.apps.reddit_mcp_shim import rate_limit
-from backend.apps.reddit_mcp_shim.session_source import get_session, invalidate
+from backend.apps.social_shims.session_source import get_session, invalidate
 
 DOMAIN = "reddit.com"
 WWW = "https://www.reddit.com"
-OAUTH = "https://oauth.reddit.com"
-TOKEN_RE = re.compile(r'"accessToken":\s*"([^"]+)"')
-EXPIRES_RE = re.compile(r'"(?:expiresIn|expires)":\s*"?(\d+)')
+MODHASH_TTL_S = 300.0
 
-p_token = ""
-p_token_exp = 0.0
+p_modhash = ""
+p_modhash_exp = 0.0
 
 
 class RedditError(Exception):
     """A Reddit request failed in a way worth surfacing to the agent."""
 
 
-def bearer(force: bool = False) -> str:
-    """Return a valid bearer token, harvesting a fresh one from authed HTML when stale."""
-    global p_token, p_token_exp
+def modhash(force: bool = False) -> str:
+    """Return the logged-in account's modhash (Reddit's per-session write token), cached briefly."""
+    global p_modhash, p_modhash_exp
     now = time.time()
-    if not force and p_token and now < p_token_exp - 60:
-        return p_token
-
-    cookie, ua = get_session(DOMAIN)
-    req = urllib.request.Request(
-        f"{WWW}/",
-        headers={"Cookie": cookie, "User-Agent": ua, "Accept": "text/html"},
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=20.0) as resp:
-            text = resp.read().decode("utf-8", errors="replace")
-    except urllib.error.URLError as e:
-        raise RedditError(f"Reddit unreachable: {getattr(e, 'reason', e)}")
-
-    m = TOKEN_RE.search(text)
-    if not m:
+    if not force and p_modhash and now < p_modhash_exp:
+        return p_modhash
+    me = p_send("GET", "/api/me.json", params=None, form=None, action="read", retried=False)
+    mh = (me or {}).get("data", {}).get("modhash") or ""
+    if not mh:
         invalidate(DOMAIN)
         raise RedditError(
-            "Could not read a Reddit session token. Open reddit.com in the OpenSwarm browser, sign in, then retry."
+            "Not logged in to Reddit. Open reddit.com in the OpenSwarm browser, sign in, then retry."
         )
-    p_token = m.group(1)
-    exp = EXPIRES_RE.search(text)
-    ttl = float(exp.group(1)) if exp else 3600.0
-    # The web client reports expiry in ms; fold that down and clamp to a sane window.
-    if ttl > 86400:
-        ttl = ttl / 1000.0
-    p_token_exp = now + min(max(ttl, 300.0), 86400.0)
-    return p_token
+    p_modhash, p_modhash_exp = mh, now + MODHASH_TTL_S
+    return mh
 
 
-def api(
-    method: str,
-    path: str,
-    *,
-    params: dict | None = None,
-    form: dict | None = None,
-    action: str = "read",
-) -> dict:
-    """Authenticated oauth.reddit.com call with rate-limiting + one auto token refresh."""
-    return p_api(method, path, params=params, form=form, action=action, retried=False)
+def api(method: str, path: str, *, params: Optional[Dict[str, Any]] = None,
+        form: Optional[Dict[str, Any]] = None, action: str = "read") -> Any:
+    """Authenticated www.reddit.com call: reads get a .json suffix, writes carry the modhash."""
+    return p_send(method, path, params=params, form=form, action=action, retried=False)
 
 
-def p_api(method, path, *, params, form, action, retried) -> dict:
+def p_send(method: str, path: str, *, params: Optional[Dict[str, Any]],
+           form: Optional[Dict[str, Any]], action: str, retried: bool) -> Any:
     rate_limit.acquire(action)
-    _, ua = get_session(DOMAIN)
-    token = bearer()
-    qs = dict(params or {})
-    qs.setdefault("raw_json", 1)
-    url = f"{OAUTH}{path}?" + urllib.parse.urlencode({k: v for k, v in qs.items() if v is not None})
-    data = urllib.parse.urlencode({k: v for k, v in form.items() if v is not None}).encode() if form is not None else None
-    headers = {"Authorization": f"Bearer {token}", "User-Agent": ua, "Accept": "application/json"}
-    if data is not None:
+    cookie, ua = get_session(DOMAIN)
+    headers = {"Cookie": cookie, "User-Agent": ua, "Accept": "application/json"}
+    data = None
+    if method == "GET":
+        p = path if path.endswith(".json") else path + ".json"
+        qs = dict(params or {})
+        qs.setdefault("raw_json", 1)
+        url = f"{WWW}{p}?" + urllib.parse.urlencode({k: v for k, v in qs.items() if v is not None})
+    else:
+        url = f"{WWW}{path}"
+        if params:
+            url += "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
+        body = dict(form or {})
+        body.setdefault("api_type", "json")
+        body["uh"] = modhash()
+        data = urllib.parse.urlencode({k: v for k, v in body.items() if v is not None}).encode()
         headers["Content-Type"] = "application/x-www-form-urlencoded"
 
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -99,10 +83,10 @@ def p_api(method, path, *, params, form, action, retried) -> dict:
         raise RedditError(f"Reddit unreachable: {getattr(e, 'reason', e)}")
 
     rate_limit.note_response(status, {k.lower(): v for k, v in rhdr.items()})
-
-    if status == 401 and not retried:
-        bearer(force=True)
-        return p_api(method, path, params=params, form=form, action=action, retried=True)
+    if status in (401, 403) and not retried:
+        invalidate(DOMAIN)
+        p_reset_modhash()
+        return p_send(method, path, params=params, form=form, action=action, retried=True)
     if status == 429:
         raise RedditError("Reddit is rate-limiting this account; slow down and retry shortly.")
     if status >= 400:
@@ -111,3 +95,8 @@ def p_api(method, path, *, params, form, action, retried) -> dict:
         return json.loads(raw.decode("utf-8", errors="replace") or "{}")
     except json.JSONDecodeError:
         return {"raw": raw.decode("utf-8", errors="replace")}
+
+
+def p_reset_modhash() -> None:
+    global p_modhash_exp
+    p_modhash_exp = 0.0

@@ -8,7 +8,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Switch from '@mui/material/Switch';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { Integration } from '@/shared/integrations/catalog';
+import { Integration } from '../integrations';
 
 interface IntegrationGalleryCardProps {
   integration: Integration;

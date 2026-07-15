@@ -1,9 +1,9 @@
 # swarm-debug — OpenSwarm's logger for App backends
 
-`swarm_debug` (also importable as `debug` for legacy reasons) is OpenSwarm's
-opinionated `print()` replacement for the App Builder's backend code. It
-prints colored, indented, frame-aware log lines that read at a glance and
-land in the App Builder's **Terminal** tab under the `[BACKEND]` prefix.
+`swarm_debug` (the `swarm-debug` package on PyPI) is OpenSwarm's opinionated
+`print()` replacement for the App Builder's backend code. It prints colored,
+indented, frame-aware log lines that read at a glance and land in the App
+Builder's **Terminal** tab under the `[BACKEND]` prefix.
 
 It's pre-installed in every App Builder workspace that has a backend (i.e.
 after `bash backend_init.sh`). Use it instead of `print()`.
@@ -100,13 +100,46 @@ debug(huge_payload, override_max_chars=True)
 
 ## Modes (custom log levels)
 
-`debug` accepts a `mode` kwarg that maps to a configurable log channel.
-Default is `'debug'`. The Terminal pane shows all modes; if you want to
-hide a category, configure it in `Debugleton` (see `debugger_backend/`).
+`debug` accepts a `mode` kwarg that maps to a log channel. Valid values are
+`'all'` (always shown), `'debug'` (the default), and `'test'` (high
+priority). Anything else raises.
 
 ```python
-debug(payload, mode='info')
-debug(suspicious_input, mode='warning')
+debug(payload, mode='all')
+debug(flaky_result, mode='test')
+```
+
+---
+
+## More tools (pretty-print, tables, diffs, timing)
+
+```python
+debug(my_dict)                      # structured values pretty-print by default
+debug(my_dict, pretty=False)        # force flat single-line output
+debug(sql_query, lang="sql")        # syntax-highlight a string (sql, json, html, ...)
+debug(x, y, z)                      # 2+ data args auto-render as a Name|Type|Value table
+debug(x, y, z, table=False)         # force per-line instead
+debug("a", "b", sep=", ")           # join args into one line, like print(sep=...)
+debug("about to retry", error=True) # force red error styling on a non-exception
+
+debug.diff(old_value, new_value)    # unified diff of two values
+with debug.time("fetch users"):     # times the block, prints the duration
+    rows = fetch_users()
+```
+
+---
+
+## Visibility (why output might not show)
+
+Output is gated per-file: only files toggled ON print. OpenSwarm re-toggles
+every file ON at each backend boot, and new code needs a backend restart to
+load anyway (no auto-reload), so in practice your `debug()` lines are always
+visible after the restart that loads them. If you ever need to manage this
+yourself, the CLI lives in the workspace venv:
+
+```bash
+.venv/bin/swarm-debug status              # what's toggled where
+.venv/bin/swarm-debug toggle on --all     # everything visible (run from the workspace root)
 ```
 
 ---
@@ -149,6 +182,10 @@ pane in real time. Frontend `console.log` calls in the running app land in
 the same Terminal pane prefixed `[FRONTEND]`. Use this to correlate cause
 and effect across the two halves of your stack.
 
+The same stream is tee'd to **`.openswarm/terminal.log`** at the workspace
+root (reset on every app start), so you can read your own `debug()` output
+directly: `tail -100 .openswarm/terminal.log`.
+
 ---
 
 ## Quick reference
@@ -159,5 +196,8 @@ and effect across the two halves of your stack.
 | Log several values in one call | `debug(a, b, c)` |
 | Log an exception with red coloring | `debug(err)` (variable name must contain "err" or "error", or pass an `Exception` instance) |
 | Avoid truncation | `debug(value, override_max_chars=True)` |
-| Use a different log channel | `debug(value, mode='info')` |
-| Same thing, legacy import | `import debug; debug(value)` (function and module share the name — see swarm_debug.py shim) |
+| Always-shown log channel | `debug(value, mode='all')` |
+| Diff two values | `debug.diff(old, new)` |
+| Time a block | `with debug.time("label"): ...` |
+| Flat instead of pretty-printed | `debug(value, pretty=False)` |
+| Syntax-highlight a string | `debug(query, lang="sql")` |

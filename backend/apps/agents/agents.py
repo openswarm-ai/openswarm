@@ -24,11 +24,17 @@ async def agents_lifespan():
     logger.info("Agents sub-app starting")
     await agent_manager.reconcile_on_startup()
     await agent_manager.restore_all_sessions()
+    from backend.apps.agents.manager.run.client_pool import start_pool_sweeper, stop_pool_sweeper, dispose_all_clients
+    pool_sweeper = start_pool_sweeper(agent_manager.client_pool)
     yield
     logger.info("Agents sub-app shutting down")
     for session_id in list(agent_manager.tasks.keys()):
         await agent_manager.stop_agent(session_id)
     await agent_manager.persist_all_sessions()
+    # Cancel the sweeper before disposing so a background sweep can't race the shutdown teardown.
+    await stop_pool_sweeper(pool_sweeper)
+    # Persistent CLI clients outlive turns; without this a uvicorn reload/quit orphans one subprocess per live session.
+    await dispose_all_clients(agent_manager.client_pool)
 
 agents = SubApp("agents", agents_lifespan)
 
@@ -118,38 +124,6 @@ async def send_message(session_id: str, body: dict):
         client_message_id=body.get("client_message_id"),
     )
     return {"ok": True}
-
-@agents.router.post("/onboarding-profile")
-async def onboarding_profile(body: dict):
-    """Onboarding payoff: skim the user's connected Google account (read-only, consent-gated) and
-    return {observation, options}. Fail-open: any miss returns an empty observation so the frontend
-    keeps its persona floor. Never blocks the payoff (the frontend fires this in the background)."""
-    from backend.apps.agents.onboarding_profile import profile_user
-
-    try:
-        result = await profile_user(str(body.get("name") or ""), bool(body.get("consent")))
-    except Exception:
-        logger.exception("onboarding-profile endpoint failed")
-        result = None
-    if result is None:
-        return {"observation": "", "options": []}
-    return result.model_dump(mode="json")
-
-@agents.router.post("/onboarding-suggest")
-async def onboarding_suggest(body: dict):
-    """Onboarding payoff: generate a personalized insight + task + 4 options from the user's persona
-    (+ name) on the cheap/free-trial tier. Fail-open: any miss returns empty so the frontend keeps
-    its static fallback. No data is read here (that's onboarding-profile)."""
-    from backend.apps.agents.onboarding_suggest import suggest_payoff
-
-    try:
-        result = await suggest_payoff(str(body.get("persona") or ""), str(body.get("name") or ""))
-    except Exception:
-        logger.exception("onboarding-suggest endpoint failed")
-        result = None
-    if result is None:
-        return {"insight": "", "task": "", "options": []}
-    return result.model_dump(mode="json")
 
 @agents.router.post("/sessions/{session_id}/stop")
 async def stop_agent(session_id: str):
@@ -337,16 +311,19 @@ async def warm_session_cache(session_id: str):
 async def compact_session(session_id: str):
     """Run the summarizer over older turns to free up context.
 
-    Wired to the 'Compact memory' button in the pre-send overflow banner
-    and the /compact slash command. Sets compacted_through_msg_id so the
-    next turn's history-builder uses the summary in place of the
-    original messages.
+    Wired to the 'Compact memory' button in the pre-send overflow banner and the
+    /compact slash command. Marks compacted_through_msg_id AND sets
+    needs_fresh_session: the user explicitly opted into the prompt-cache loss for a
+    real visible trim, so the next turn drops the SDK convo and rebuilds from history
+    with the cutoff (and distilled summary) actually applied. Auto-compact only marks;
+    the button is the user paying for the rebuild.
     """
     session = agent_manager.sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
     fired = agent_manager.maybe_compact(session, force=True)
     if fired:
+        session.needs_fresh_session = True
         from backend.apps.agents.core.ws_manager import ws_manager
         try:
             await ws_manager.send_to_session(session_id, "agent:context_status", {
@@ -376,6 +353,8 @@ async def clear_session(session_id: str):
         raise HTTPException(status_code=404, detail="session not found")
     session.messages = []
     session.compacted_through_msg_id = None
+    session.compacted_summary = None
+    session.compacted_summary_through = None
     session.tokens = {"input": 0, "output": 0}
     session.needs_fresh_session = True
     from backend.apps.agents.core.ws_manager import ws_manager
@@ -507,6 +486,24 @@ async def subscriptions_exchange(body: dict):
         if state and state in completed_oauth:
             return {"success": True, "deduped": True}
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@agents.router.get("/subscriptions/health")
+async def subscriptions_health():
+    """Boot-time login-health check: 1-token probe per ACTIVE subscription lane, reporting only
+    definitive auth-death (the silent credential-rot class). `skipped` when the router isn't up yet
+    so the frontend can retry once instead of reading 'all healthy' off a cold boot."""
+    from backend.apps.nine_router import is_running, get_providers
+    from backend.apps.nine_router.subscription_health import probe_subscription_health
+    if not is_running():
+        return {"dead": [], "skipped": True}
+    try:
+        connections = await get_providers()
+        dead = await probe_subscription_health(connections)
+        return {"dead": dead, "skipped": False}
+    except Exception as e:
+        logger.debug(f"subscription health probe failed: {e}")
+        return {"dead": [], "skipped": True}
 
 
 @agents.router.get("/subscriptions/models")

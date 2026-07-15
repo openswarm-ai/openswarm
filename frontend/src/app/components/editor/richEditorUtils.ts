@@ -91,6 +91,11 @@ function formatPasteLabel(charCount: number): string {
   return `Pasted text (${charCount.toLocaleString()} chars)`;
 }
 
+export function updatePasteCardLabel(card: HTMLElement, charCount: number): void {
+  const label = card.firstElementChild as HTMLElement | null;
+  if (label) label.textContent = formatPasteLabel(charCount);
+}
+
 export function createPasteCardElement(
   pasteId: string,
   charCount: number,
@@ -122,7 +127,13 @@ export function createPasteCardElement(
 
   const label = document.createElement('span');
   label.textContent = formatPasteLabel(charCount);
-  Object.assign(label.style, { maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis' });
+  Object.assign(label.style, {
+    maxWidth: '240px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    opacity: '0.85',
+    transition: 'transform 0.15s ease, opacity 0.15s ease',
+  });
   label.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); onExpand(pasteId); });
 
   const closeBtn = document.createElement('span');
@@ -144,6 +155,9 @@ export function createPasteCardElement(
   closeBtn.addEventListener('mouseover', () => { closeBtn.style.opacity = '1'; closeBtn.style.color = errorColor; });
   closeBtn.addEventListener('mouseout', () => { closeBtn.style.opacity = '0.6'; closeBtn.style.color = 'inherit'; });
   closeBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); onRemove(pasteId); });
+
+  card.addEventListener('mouseenter', () => { label.style.transform = 'translateX(2px)'; label.style.opacity = '1'; });
+  card.addEventListener('mouseleave', () => { label.style.transform = 'translateX(0)'; label.style.opacity = '0.85'; });
 
   card.appendChild(label);
   card.appendChild(closeBtn);

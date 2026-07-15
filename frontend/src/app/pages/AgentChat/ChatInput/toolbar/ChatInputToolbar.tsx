@@ -3,7 +3,7 @@ import Box from '@mui/material/Box';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { ContextRing } from './ContextRing';
-import { ModeControl } from './ModeControl';
+import { ModelControl } from './ModelControl';
 import { ModelPickerMenu } from '../model-picker/ModelPickerMenu';
 import { ThinkingLevelControl } from './ThinkingLevelControl';
 import { ToolbarActions } from './ToolbarActions';
@@ -54,8 +54,7 @@ interface Props {
 
 export const ChatInputToolbar: React.FC<Props> = (p) => {
   const {
-    c, modeConf, modesArr, mode, onModeChange, iconMap,
-    modeAnchor, setModeAnchor, modelAnchor, setModelAnchor, thinkingAnchor, setThinkingAnchor,
+    c, modelAnchor, setModelAnchor, thinkingAnchor, setThinkingAnchor,
     allModelFlat, model, onModelChange, onProviderChange, picker, pendingKinds, pendingPayloadEstimate,
     thinkingLevel, onThinkingLevelChange, contextEstimate, elementSelection, autoRunMode,
     ownerId, sessionId, generalFileInputRef, addImageFiles, uploadAndAttachFiles,
@@ -95,16 +94,8 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
         pt: 0,
       }}
     >
-      <ModeControl
+      <ModelControl
         c={c}
-        menuPaperProps={menuPaperProps}
-        modeConf={modeConf}
-        modesArr={modesArr}
-        mode={mode}
-        onModeChange={onModeChange}
-        iconMap={iconMap}
-        modeAnchor={modeAnchor}
-        setModeAnchor={setModeAnchor}
         setModelAnchor={setModelAnchor}
         allModelFlat={allModelFlat}
         model={model}

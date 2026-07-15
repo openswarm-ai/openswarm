@@ -1,3 +1,4 @@
+import os
 from typing import Callable, Dict, List, Optional, Tuple
 
 from typeguard import typechecked
@@ -193,6 +194,37 @@ def build_selected_app_context(selected_app_output_ids: Optional[List[str]]) -> 
         "dedicated agent drives the live app through its own actions, no editing.\n\n"
         + "\n\n".join(entries)
         + "\n</selected_app_context>"
+    )
+
+
+@typechecked
+def build_app_runtime_contract(workspace_path: Optional[str]) -> str:
+    """The non-negotiable runtime mechanics for an App Builder turn: where the app's
+    terminal lives, how to restart it, and the requirement to read it before claiming
+    a change works. Deliberately NOT sourced from the App Builder skill file, which is
+    seeded once per install and never overwritten, so an install that predates a skill
+    update (or a user who edits the guidance out) would otherwise never see any of this."""
+    root = workspace_path or "."
+    log = os.path.join(root, ".openswarm", "terminal.log")
+    return (
+        "<app_runtime_contract>\n"
+        "Your app is already running. Its terminal (backend stdout/stderr, runtime events, and the\n"
+        "browser console) is tee'd to a file you can read directly. This is the ONLY way you can see\n"
+        "what the app actually does; editing files tells you nothing about whether it runs.\n\n"
+        "Read it with exactly this, every time:\n\n"
+        f'    tail -50 {log} 2>/dev/null || echo "Terminal log not yet available"\n\n'
+        "Lines are prefixed [BACKEND], [BACKEND:stderr], [RUNTIME], [FRONTEND], [FRONTEND:warn],\n"
+        "[FRONTEND:error]. Grep it for `error` when it is long. If this app is open in more than one\n"
+        "dashboard card, the extra cards log to terminal-2.log, terminal-3.log, and so on.\n\n"
+        "Rules, not suggestions:\n"
+        "- Read the terminal after every batch of writes. Fix what it reports before moving on.\n"
+        f"- Read it again before you tell the user anything is done. `bash {os.path.join(root, 'restart.sh')}` restarts the\n"
+        "  runtime; do that after installing packages or changing backend startup, then read the log to\n"
+        "  confirm a clean boot. The file resets on every start.\n"
+        "- \"Terminal log not yet available\" means the runtime never started. That is a problem to fix,\n"
+        "  not a reason to skip the check.\n"
+        "- Never claim the app works when you have not read the terminal. If you did not check, say so.\n"
+        "</app_runtime_contract>"
     )
 
 

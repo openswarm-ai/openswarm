@@ -56,7 +56,7 @@ def p_listing(resp: dict) -> dict:
 
 
 def whoami() -> dict:
-    me = api("GET", "/api/v1/me")
+    me = api("GET", "/api/me.json").get("data", {})
     return {
         "name": me.get("name"),
         "id": me.get("id"),

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
@@ -34,6 +35,7 @@ import {
   updateBrowserTabTitle,
   updateBrowserTabFavicon,
   reorderBrowserTab,
+  moveBrowserTab,
   recordClosedCard,
   type BrowserTab,
 } from '@/shared/state/dashboardLayoutSlice';
@@ -49,6 +51,7 @@ import {
   type BrowserWebview,
 } from '@/shared/browserRegistry';
 import { setLastInteractedBrowser } from '@/shared/browserFocus';
+import { registerCapsuleForRestore } from '@/shared/browserStateCapsule';
 import BrowserFindBar from './BrowserFindBar';
 import { useBrowserActivity } from '@/shared/useBrowserActivity';
 import { getActionLabel } from '@/shared/browserCommandHandler';
@@ -311,6 +314,8 @@ const BrowserCard: React.FC<Props> = ({
         const doLoad = () => {
           // Reaching dom-ready proves the webview survived Chromium's commit phase (the historical Windows mount segfault). Clear the crash-safety marker.
           if (isWindows) markWindowsWebviewSurvived();
+          // Registered BEFORE loadURL so the guest preload can sync-take it at document-start: a resumed tab gets its sessionStorage back Chrome-style instead of a logged-out reload. No-op when no capsule exists.
+          registerCapsuleForRestore(wv, tabId);
           wv.loadURL(targetUrl).catch(() => {});
           try {
             (wv as any).setVisualZoomLevelLimits?.(1, 1);
@@ -364,8 +369,9 @@ const BrowserCard: React.FC<Props> = ({
             }),
           );
         } else if (e?.channel === 'app-clicked') {
-          // First in-guest mousedown: a page click never reaches the host document, so this IPC is how a webview-content click marks this browser as last-interacted (drives Ctrl+R/zoom/tab targeting).
+          // In-guest mousedown: a page click never reaches the host document, so this IPC is how a webview-content click marks this browser as last-interacted (drives Ctrl+R/zoom/tab targeting) and selected (spawn-beside anchor).
           setLastInteractedBrowser(browserId);
+          window.dispatchEvent(new CustomEvent('openswarm:browser-guest-select', { detail: { browserId } }));
         }
       };
 
@@ -505,17 +511,22 @@ const BrowserCard: React.FC<Props> = ({
   const tabDragRef = useRef<{
     tabId: string;
     startX: number;
+    startY: number;
     isDragging: boolean;
+    detached: boolean;
   } | null>(null);
   const swapCooldown = useRef(false);
   const [dragTabId, setDragTabId] = useState<string | null>(null);
   const [dragTabOffset, setDragTabOffset] = useState(0);
+  // Ghost pill following the cursor while a tab is dragged OUT of the strip (Push 6: drop on another card = absorbed, drop on canvas = new browser card).
+  const [detachGhost, setDetachGhost] = useState<{ x: number; y: number } | null>(null);
+  const DETACH_PX = 48;
 
   const handleTabPointerDown = useCallback((e: React.PointerEvent) => {
     e.stopPropagation();
     const tabId = (e.currentTarget as HTMLElement).getAttribute('data-tab-id');
     if (!tabId) return;
-    tabDragRef.current = { tabId, startX: e.clientX, isDragging: false };
+    tabDragRef.current = { tabId, startX: e.clientX, startY: e.clientY, isDragging: false, detached: false };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }, []);
 
@@ -523,9 +534,27 @@ const BrowserCard: React.FC<Props> = ({
     const drag = tabDragRef.current;
     if (!drag) return;
     const dx = e.clientX - drag.startX;
-    if (!drag.isDragging && Math.abs(dx) < 5) return;
+    const dy = e.clientY - drag.startY;
+    if (!drag.isDragging && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
     drag.isDragging = true;
     setDragTabId(drag.tabId);
+
+    // Pulling clear of the strip detaches the tab; hovering back over the strip re-attaches (Chrome behavior).
+    const barRect = tabBarRef.current?.getBoundingClientRect();
+    if (barRect) {
+      const outside = e.clientY < barRect.top - DETACH_PX || e.clientY > barRect.bottom + DETACH_PX
+        || e.clientX < barRect.left - DETACH_PX || e.clientX > barRect.right + DETACH_PX;
+      const backInside = e.clientY >= barRect.top && e.clientY <= barRect.bottom
+        && e.clientX >= barRect.left && e.clientX <= barRect.right;
+      if (!drag.detached && outside) drag.detached = true;
+      else if (drag.detached && backInside) drag.detached = false;
+    }
+    if (drag.detached) {
+      setDetachGhost({ x: e.clientX, y: e.clientY });
+      setDragTabOffset(0);
+      return;
+    }
+    setDetachGhost(null);
     setDragTabOffset(dx);
 
     if (swapCooldown.current) return;
@@ -574,12 +603,30 @@ const BrowserCard: React.FC<Props> = ({
     if (!drag) return;
     if (!drag.isDragging) {
       handleSwitchTab(drag.tabId);
+    } else if (drag.detached) {
+      // Hit-test the drop point: another browser card absorbs the tab; empty canvas spins off a new card there.
+      const hit = document.elementsFromPoint(e.clientX, e.clientY)
+        .map((el) => (el as HTMLElement).closest?.('[data-select-type="browser-card"]') as HTMLElement | null)
+        .find((el) => el && el.getAttribute('data-select-id') !== browserId);
+      const targetId = hit?.getAttribute('data-select-id') || null;
+      if (targetId) {
+        dispatch(moveBrowserTab({ fromBrowserId: browserId, tabId: drag.tabId, toBrowserId: targetId }));
+      } else {
+        // Screen -> canvas: derive the transform origin from this card's own strip (screenX = originX + canvasX * zoom).
+        const barRect = tabBarRef.current?.getBoundingClientRect();
+        if (barRect) {
+          const dropX = (e.clientX - (barRect.left - cardX * zoomRef.current)) / zoomRef.current - 40;
+          const dropY = (e.clientY - (barRect.top - cardY * zoomRef.current)) / zoomRef.current - 16;
+          dispatch(moveBrowserTab({ fromBrowserId: browserId, tabId: drag.tabId, x: dropX, y: dropY }));
+        }
+      }
     }
     tabDragRef.current = null;
     setDragTabId(null);
     setDragTabOffset(0);
+    setDetachGhost(null);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [handleSwitchTab]);
+  }, [handleSwitchTab, dispatch, browserId, cardX, cardY]);
 
   const DRAG_THRESHOLD = 3;
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; startPanX: number; startPanY: number } | null>(null);
@@ -777,7 +824,11 @@ const BrowserCard: React.FC<Props> = ({
       data-select-meta={JSON.stringify({ name: activeTitle || 'Browser', url: activeUrl })}
       // Marks a kept-alive card parked off-screen (it belongs to another dashboard); fit-to-view must skip it or it pans the canvas to chase it and the card bleeds onto the dashboard you're viewing.
       data-keepalive-hidden={keepAliveHidden ? '1' : undefined}
-      onPointerDownCapture={() => onBringToFront?.(browserId, 'browser')}
+      onPointerDownCapture={(e: React.PointerEvent) => {
+        onBringToFront?.(browserId, 'browser');
+        // Capture-phase so chrome clicks (tab strip, URL bar) the children swallow still select the card; clicks inside the guest page never reach the host at all. Shift keeps the bubbled toggle path.
+        if (e.button === 0 && !e.shiftKey) onCardSelect?.(browserId, 'browser', false);
+      }}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
         onCardSelect?.(browserId, 'browser', e.shiftKey);
@@ -1536,6 +1587,44 @@ const BrowserCard: React.FC<Props> = ({
           }}
         />
       ))}
+
+      {/* Detached-tab ghost: fixed-position pill under the cursor while a tab is dragged out of the strip. pointerEvents none so the drop hit-test sees the cards underneath it. */}
+      {detachGhost && dragTabId && createPortal(
+        (() => {
+          const ghostTab = tabs.find((t) => t.id === dragTabId);
+          return (
+            <Box
+              sx={{
+                position: 'fixed',
+                left: detachGhost.x + 10,
+                top: detachGhost.y + 10,
+                zIndex: 2147483647,
+                pointerEvents: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                px: 1.25,
+                py: 0.5,
+                maxWidth: 240,
+                bgcolor: c.bg.elevated,
+                border: `1px solid ${c.border.medium}`,
+                borderRadius: `${c.radius.md}px`,
+                boxShadow: c.shadow.lg,
+              }}
+            >
+              {ghostTab?.favicon ? (
+                <Box component="img" src={ghostTab.favicon} sx={{ width: 14, height: 14, flexShrink: 0 }} />
+              ) : (
+                <LanguageIcon sx={{ fontSize: 14, color: c.text.muted, flexShrink: 0 }} />
+              )}
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {ghostTab?.title || ghostTab?.url || 'Tab'}
+              </Typography>
+            </Box>
+          );
+        })(),
+        document.body,
+      )}
 
     </Box>
   );

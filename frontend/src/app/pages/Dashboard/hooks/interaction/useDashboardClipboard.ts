@@ -14,6 +14,7 @@ import {
   type BrowserCardPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import type { Output } from '@/shared/state/outputsSlice';
+import { store } from '@/shared/state/store';
 import { setClipboardCards, getClipboardCards, type ClipboardCard } from '@/shared/dashboardClipboard';
 import type { CardType, useDashboardSelection } from '../state/useDashboardSelection';
 
@@ -134,8 +135,15 @@ export function useDashboardClipboard({
             newSelection.set(newId, 'agent');
           }
         } else if (card.type === 'view') {
-          dispatch(addViewCard({ outputId: card.id, expandedSessionIds, x: px, y: py, width: card.width, height: card.height }));
-          newSelection.set(card.id, 'view');
+          // Pasting an app whose card is already open creates a NEW independent instance (own runtime + ports) instead of no-op'ing.
+          const outputId = card.id.split('#')[0];
+          dispatch(addViewCard({ outputId, expandedSessionIds, x: px, y: py, width: card.width, height: card.height, newInstance: true }));
+          const viewCards = store.getState().dashboardLayout.viewCards;
+          let pastedKey = outputId;
+          for (const [key, vc] of Object.entries(viewCards)) {
+            if (vc.output_id === outputId && (vc.instance ?? 1) >= (viewCards[pastedKey]?.instance ?? 1)) pastedKey = key;
+          }
+          newSelection.set(pastedKey, 'view');
         } else if (card.type === 'browser') {
           const browserId = `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
           dispatch(pasteBrowserCard({

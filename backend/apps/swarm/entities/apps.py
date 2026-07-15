@@ -137,7 +137,7 @@ def p_free_port() -> int:
 
 def p_localize_env(folder: str) -> None:
     """Regenerate the workspace .env on the importer's machine: a fresh port plus
-    this install's absolute template/debugger paths (the source's were dropped)."""
+    this install's absolute template path (the source's was dropped)."""
     env_path = os.path.join(folder, ".env")
     example = os.path.join(folder, ".env.example")
     if not os.path.exists(env_path):
@@ -147,7 +147,6 @@ def p_localize_env(folder: str) -> None:
             return  # flat app: no run.sh, no env needed
     try:
         from backend.apps.outputs.view_builder_templates import (
-            DEBUGGER_PATH,
             TEMPLATE_BACKEND_PATH,
             link_node_modules,
             patch_env_port,
@@ -157,7 +156,6 @@ def p_localize_env(folder: str) -> None:
         return
     patch_env_port(env_path, "FRONTEND_PORT", str(p_free_port()))
     patch_env_port(env_path, "OPENSWARM_TEMPLATE_BACKEND_PATH", TEMPLATE_BACKEND_PATH)
-    patch_env_port(env_path, "OPENSWARM_DEBUGGER_PATH", DEBUGGER_PATH)
     try:
         patch_env_port(env_path, "OPENSWARM_BACKEND_VENV_CACHE", warm_venv_dir())
     except Exception:

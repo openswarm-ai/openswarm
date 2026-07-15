@@ -832,6 +832,19 @@ async def update_workflow(
     return enriched
 
 
+async def _stop_in_flight_run(workflow_id: str) -> None:
+    """Halt a workflow's live run now. The executor's per-step recheck is the backstop;
+    this stops the current agent turn without waiting a long step out. Works even after
+    trash (reads executor's workflow-keyed maps, not the deleted-filtered run list)."""
+    session_id = executor.stop_active_run(workflow_id)
+    if session_id:
+        try:
+            from backend.apps.agents.agent_manager import agent_manager
+            await agent_manager.stop_agent(session_id)
+        except Exception:
+            logger.exception("_stop_in_flight_run: stop_agent failed for %s", session_id)
+
+
 @workflows.router.delete("/{workflow_id}")
 async def delete_workflow(workflow_id: str):
     """Soft-delete: move to Trash. The record stays on disk with deleted_at
@@ -844,6 +857,8 @@ async def delete_workflow(workflow_id: str):
     wf.schedule.enabled = False
     wf.next_run_at = None
     storage.save_workflow(wf)
+    # A trashed workflow's in-flight run was previously un-stoppable even by hand (the manual Stop path filters deleted); halt it now, with the executor's per-step deleted-recheck as backstop.
+    await _stop_in_flight_run(workflow_id)
     # Drop any pending missed fires so a trashed workflow can't haunt the card.
     stale = [m.id for m in storage.list_missed() if m.workflow_id == workflow_id]
     if stale:

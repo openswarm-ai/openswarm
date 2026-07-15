@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -176,3 +177,61 @@ def test_resolved_config_uses_workflow_model_and_tools(make_wf, fake_agent_manag
     config = fake_agent_manager.launched_configs[0]
     assert config.model == "opus"
     assert config.allowed_tools == ["Read", "Grep"]
+
+
+# --- idle-based step timeout ---------------------------------------------------
+
+def test_silent_running_session_times_out(fake_agent_manager):
+    """A session stuck in 'running' with no message or stream activity must
+    still die after idle_timeout_s, keeping the hung-step protection."""
+    from backend.apps.workflows import executor
+    fake_agent_manager.sessions["s1"] = SimpleNamespace(id="s1", status="running", messages=[])
+    with pytest.raises(TimeoutError, match="No agent activity"):
+        _run(executor._await_session_idle("s1", idle_timeout_s=0.3))
+
+
+def test_message_activity_defers_idle_timeout(fake_agent_manager):
+    """A busy step outliving idle_timeout_s must NOT be killed as long as new
+    messages keep landing; the deadline is idle-based, not a wall-clock cap."""
+    from backend.apps.workflows import executor
+    sess = SimpleNamespace(id="s1", status="running", messages=[])
+    fake_agent_manager.sessions["s1"] = sess
+
+    async def p_drive():
+        async def p_appender():
+            # 10 ticks x 0.1s = 1.0s of activity, >3x the 0.3s idle window.
+            for i in range(10):
+                await asyncio.sleep(0.1)
+                sess.messages.append(SimpleNamespace(id=f"m{i}", timestamp=datetime.now()))
+            sess.status = "completed"
+        task = asyncio.ensure_future(p_appender())
+        try:
+            return await executor._await_session_idle("s1", idle_timeout_s=0.3)
+        finally:
+            task.cancel()
+
+    assert _run(p_drive()) == "idle"
+
+
+def test_stream_partial_activity_defers_idle_timeout(fake_agent_manager):
+    """Mid-stream text growth (live_partial) counts as activity even when no
+    message has committed yet, so a long single response doesn't trip it."""
+    from backend.apps.workflows import executor
+    sess = SimpleNamespace(id="s1", status="running", messages=[])
+    fake_agent_manager.sessions["s1"] = sess
+
+    async def p_drive():
+        async def p_streamer():
+            text = ""
+            for _ in range(10):
+                await asyncio.sleep(0.1)
+                text += "chunk "
+                fake_agent_manager.live_partial["s1"] = SimpleNamespace(text=text)
+            sess.status = "completed"
+        task = asyncio.ensure_future(p_streamer())
+        try:
+            return await executor._await_session_idle("s1", idle_timeout_s=0.3)
+        finally:
+            task.cancel()
+
+    assert _run(p_drive()) == "idle"

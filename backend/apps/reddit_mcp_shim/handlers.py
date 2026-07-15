@@ -5,7 +5,7 @@ import json
 from backend.apps.reddit_mcp_shim import reddit_reads as reads
 from backend.apps.reddit_mcp_shim import reddit_writes as writes
 from backend.apps.reddit_mcp_shim.reddit_http import RedditError
-from backend.apps.reddit_mcp_shim.session_source import SessionUnavailable
+from backend.apps.social_shims.session_source import SessionUnavailable
 
 
 def mcp_ok(payload) -> dict:

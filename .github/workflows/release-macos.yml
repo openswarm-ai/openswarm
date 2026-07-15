@@ -13,6 +13,8 @@ name: Release (macOS)
 #   APPLE_TEAM_ID                 Apple Developer Team ID
 #   CSC_LINK                      base64-encoded Developer ID Application .p12
 #   CSC_KEY_PASSWORD              password for that .p12
+#   EVS_ACCOUNT_NAME              castlabs EVS account name (Widevine VMP signing; free signup)
+#   EVS_PASSWD                    password for that EVS account
 #   GOOGLE_OAUTH_CLIENT_ID        shipped in production .env (Google OAuth)
 #   GOOGLE_OAUTH_CLIENT_SECRET    shipped in production .env (Google OAuth)
 #
@@ -70,6 +72,8 @@ jobs:
       APPLE_TEAM_ID:              ${{ secrets.APPLE_TEAM_ID }}
       CSC_LINK:                   ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD:           ${{ secrets.CSC_KEY_PASSWORD }}
+      EVS_ACCOUNT_NAME:           ${{ secrets.EVS_ACCOUNT_NAME }}
+      EVS_PASSWD:                 ${{ secrets.EVS_PASSWD }}
       PUBLISH_INPUT:              ${{ github.event.inputs.publish }}
 
     steps:
@@ -86,6 +90,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+
+      # Widevine VMP signing tool. The afterPack hook invokes `castlabs_evs.vmp
+      # sign-pkg` with the EVS_* secrets; without this the build aborts (publish
+      # path sets VMP_REQUIRE_SIGN=1) rather than ship a DMG with dead Spotify DRM.
+      - name: Install castlabs-evs (Widevine VMP signing)
+        if: ${{ env.APPLE_ID != '' }}
+        shell: bash
+        run: python3 -m pip install --upgrade castlabs-evs
 
       - name: Build app
         # Skip (green) when Apple signing secrets aren't in CI: Mac ships via local

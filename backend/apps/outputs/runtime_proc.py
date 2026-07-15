@@ -210,6 +210,56 @@ def write_env_value(env_path: str, key: str, value: str) -> None:
         logger.exception("failed writing %s=%s to %s", key, value, env_path)
 
 
+def ensure_force_port_shim(workspace_path: str) -> None:
+    """Retrofit the per-instance port override into a legacy workspace's `run.sh`.
+
+    Apps scaffolded before the multi-instance patch have a run.sh that sources
+    `.env` and then pins every instance to the same FRONTEND_PORT/BACKEND_PORT,
+    so opening a SECOND instance collides on the primary's ports and its preview
+    never binds ("Starting preview" forever). This injects the exact override
+    block the current template ships (inert unless OPENSWARM_FORCE_*_PORT is set,
+    i.e. only for secondary instances), leaving the primary untouched. Idempotent;
+    mirrors Patch 1a in scripts/fetch-webapp-template.sh."""
+    run_sh = os.path.join(workspace_path, "run.sh")
+    if not os.path.isfile(run_sh):
+        return
+    try:
+        with open(run_sh, encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return
+    if any("OPENSWARM_FORCE_FRONTEND_PORT" in ln for ln in lines):
+        return
+    block = [
+        "\n",
+        "# Per-instance port overrides: OpenSwarm passes these when the user opens a SECOND instance of the app, so it boots on fresh ports instead of colliding with the primary's .env-pinned ones.\n",
+        'if [[ -n "${OPENSWARM_FORCE_FRONTEND_PORT:-}" ]]; then\n',
+        '    export FRONTEND_PORT="$OPENSWARM_FORCE_FRONTEND_PORT"\n',
+        "fi\n",
+        'if [[ -n "${OPENSWARM_FORCE_BACKEND_PORT:-}" ]]; then\n',
+        '    export BACKEND_PORT="$OPENSWARM_FORCE_BACKEND_PORT"\n',
+        "fi\n",
+    ]
+    out: list[str] = []
+    sourced = False
+    inserted = False
+    for ln in lines:
+        out.append(ln)
+        if 'source "$ROOT_DIR/.env"' in ln:
+            sourced = True
+        elif sourced and not inserted and ln.strip() == "fi":
+            out.extend(block)
+            inserted = True
+    if not inserted:
+        logger.warning("run.sh in %s lacks a recognizable `source .env` block; secondary instances may collide on ports", workspace_path)
+        return
+    try:
+        with open(run_sh, "w", encoding="utf-8") as f:
+            f.writelines(out)
+    except Exception:
+        logger.exception("failed injecting per-instance port shim into %s", run_sh)
+
+
 def is_new_mode(workspace_path: str) -> bool:
     """A workspace is "new-mode" (webapp-template scaffold) if it has a
     `run.sh` at its root. Old-mode workspaces are flat `index.html`-only

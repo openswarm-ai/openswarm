@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, type Dispatch, type SetStateAction } from 'react';
+import React, { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { report } from '@/shared/serviceClient';
 import { useAppDispatch } from '@/shared/hooks';
 import { collapseSession, expandSession } from '@/shared/state/agentsSlice';
@@ -88,6 +88,18 @@ export function useDashboardInteractions({
   const handleBringToFront = useCallback((id: string, type: CardType) => {
     dispatch(bringToFront({ id, type }));
   }, [dispatch]);
+
+  // A click INSIDE a webview's page never reaches the host DOM; BrowserCard forwards the guest's app-clicked IPC as this event. Select + raise only, no camera fit: you're clicking around inside the page, re-framing the canvas every tap would be hostile (same carve-out as the Workflows window).
+  useEffect(() => {
+    const onGuestSelect = (e: Event) => {
+      const browserId = (e as CustomEvent).detail?.browserId;
+      if (typeof browserId !== 'string' || !browserId) return;
+      selection.selectCard(browserId, 'browser', false);
+      dispatch(bringToFront({ id: browserId, type: 'browser' }));
+    };
+    window.addEventListener('openswarm:browser-guest-select', onGuestSelect);
+    return () => window.removeEventListener('openswarm:browser-guest-select', onGuestSelect);
+  }, [selection, dispatch]);
 
   // ---- Viewport event handlers (compose pan + marquee) ----
   const handleViewportMouseDown = useCallback((e: React.MouseEvent) => {

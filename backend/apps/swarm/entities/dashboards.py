@@ -36,12 +36,15 @@ class DashboardExportable:
             if bid:
                 cards[bid] = {**card, "session_id": bid}
         view_cards = {}
-        for oid, card in (layout.get("view_cards") or {}).items():
+        for key, card in (layout.get("view_cards") or {}).items():
+            # Keys are output_id for the primary card, `output_id#N` for extra instances of the same app; resolve the bundle id off the bare output id and rebuild the suffix.
+            oid = str(card.get("output_id") or key).split("#")[0]
             bid = ctx.bundle_id_for(EntityType.app, oid)
             if bid:
+                inst = int(card.get("instance") or 1)
                 # parent_session_id tethers the app card to the agent that built it; it's a session id, so it remaps like spawned_by on browser cards.
                 parent = card.get("parent_session_id")
-                view_cards[bid] = {
+                view_cards[bid if inst <= 1 else f"{bid}#{inst}"] = {
                     **card, "output_id": bid,
                     "parent_session_id": ctx.bundle_id_for(EntityType.session, parent) if parent else None,
                 }
@@ -64,7 +67,8 @@ class DashboardExportable:
     def dependencies(self) -> list[DepRef]:
         layout = self.p_data.get("layout") or {}
         deps = [DepRef(EntityType.session, sid, "has_agent") for sid in (layout.get("cards") or {})]
-        deps += [DepRef(EntityType.app, oid, "has_app") for oid in (layout.get("view_cards") or {})]
+        p_view_oids = {str(card.get("output_id") or key).split("#")[0] for key, card in (layout.get("view_cards") or {}).items()}
+        deps += [DepRef(EntityType.app, oid, "has_app") for oid in sorted(p_view_oids)]
         return deps
 
     def requirements(self) -> list[Requirement]:
@@ -80,11 +84,13 @@ class DashboardExportable:
             if nsid:
                 cards[nsid] = {**card, "session_id": nsid}
         view_cards = {}
-        for bid, card in (layout.get("view_cards") or {}).items():
+        for key, card in (layout.get("view_cards") or {}).items():
+            bid = str(card.get("output_id") or key).split("#")[0]
             noid = remap.local(bid)
             if noid:
+                inst = int(card.get("instance") or 1)
                 parent = card.get("parent_session_id")
-                view_cards[noid] = {
+                view_cards[noid if inst <= 1 else f"{noid}#{inst}"] = {
                     **card, "output_id": noid,
                     "parent_session_id": remap.local(parent) if parent else None,
                 }

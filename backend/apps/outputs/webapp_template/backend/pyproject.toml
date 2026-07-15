@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "fastapi[standard]",
     "typeguard==4.4.2",
+    "swarm-debug",
 ]
 
 [tool.setuptools]

@@ -67,6 +67,16 @@ CURATED_SHORTLIST: list[CuratedEntry] = [
         "description": "Browse, search, post, comment, vote, save, subscribe, and DM on Reddit from the user's own logged-in session; for reading or acting on Reddit.",
     },
     {
+        "id": "X",
+        "title": "X (Twitter)",
+        "description": "Read the timeline, search, post/reply/quote, like, retweet, bookmark, follow, and DM on X (Twitter) from the user's own logged-in session; for reading or acting on X.",
+    },
+    {
+        "id": "TikTok",
+        "title": "TikTok",
+        "description": "Browse the feed, search, read videos/comments, like, comment, follow, and favorite on TikTok from the user's own logged-in session; for reading or acting on TikTok.",
+    },
+    {
         "id": "YouTube",
         "title": "YouTube",
         "description": "Video transcripts, details, comments, channel stats, search; when the task involves YouTube content.",

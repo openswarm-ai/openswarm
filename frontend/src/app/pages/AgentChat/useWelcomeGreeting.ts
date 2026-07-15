@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useAppDispatch } from '@/shared/hooks';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { streamStart, streamDelta } from '@/shared/state/streamingSlice';
 import { addMessage, type AgentSession } from '@/shared/state/agentsSlice';
 
@@ -23,6 +23,11 @@ export function useWelcomeGreeting(
   const eligible = isDraft && !!session?.is_welcome_draft && (session?.messages?.length ?? 0) === 0;
   const sessionId = session?.id;
   const branchId = session?.active_branch_id || 'main';
+  // Onboarding v3's prep wrote a greeting about THIS machine; when present it replaces the stock opener.
+  const personalized = useAppSelector((s) => s.settings.data.personalized_greeting);
+  const greetingText = personalized?.trim()
+    ? `${personalized.trim()}\n\nWhere do you want to start?`
+    : WELCOME_GREETING;
 
   useEffect(() => {
     if (!eligible || !sessionId || startedRef.current) return;
@@ -30,8 +35,9 @@ export function useWelcomeGreeting(
 
     dispatch(streamStart({ sessionId, messageId: GREETING_MSG_ID, role: 'assistant' }));
 
-    // Feed word-by-word at a real-reply cadence; useSmoothText trails it for the typed look.
-    const tokens = WELCOME_GREETING.split(/(\s+)/);
+    // Snapshot the text at stream start: greetingText stays OUT of the deps because a mid-stream settings refetch changing it would tear down the interval and the one-shot ref blocks a restart (greeting freezes after two words).
+    const streamText = greetingText;
+    const tokens = streamText.split(/(\s+)/);
     let i = 0;
     const timer = window.setInterval(() => {
       const chunk = (tokens[i] ?? '') + (tokens[i + 1] ?? '');
@@ -45,7 +51,7 @@ export function useWelcomeGreeting(
           message: {
             id: GREETING_MSG_ID,
             role: 'assistant',
-            content: WELCOME_GREETING,
+            content: streamText,
             timestamp: new Date().toISOString(),
             branch_id: branchId,
             parent_id: null,
@@ -56,6 +62,7 @@ export function useWelcomeGreeting(
     }, 50);
 
     return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eligible, sessionId, branchId, dispatch]);
 
   return { greetingDone };

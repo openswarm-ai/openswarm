@@ -191,12 +191,14 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
         );
       })}
       </AnimatePresence>
-      {Object.values(viewCards).map((vc) => {
+      {Object.entries(viewCards).map(([cardKey, vc]) => {
         const output = outputs[vc.output_id];
         if (!output) return null;
         return (
           <DashboardViewCard
-            key={`view-${vc.output_id}`}
+            key={`view-${cardKey}`}
+            cardKey={cardKey}
+            instance={vc.instance ?? 1}
             output={output}
             cardX={vc.x}
             cardY={vc.y}
@@ -207,8 +209,8 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
             panX={panX}
             panY={panY}
             cmdHeld={cmdHeld}
-            isSelected={selection.isSelected(vc.output_id)}
-            isHighlighted={highlightedCardId === vc.output_id}
+            isSelected={selection.isSelected(cardKey)}
+            isHighlighted={highlightedCardId === cardKey}
             multiDragDelta={multiDragDelta}
             onCardSelect={onCardSelect}
             onDragStart={onDragStart}

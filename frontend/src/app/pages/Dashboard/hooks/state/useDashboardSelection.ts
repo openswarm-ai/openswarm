@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
 import type { CardPosition, ViewCardPosition, BrowserCardPosition, NotePosition, WorkflowCardPosition, WorkflowsHubPosition } from '@/shared/state/dashboardLayoutSlice';
+import { viewCardKey } from '@/shared/state/dashboardLayoutSlice';
 
 export type { CardType } from '@/shared/state/dashboardLayoutSlice';
 import type { CardType } from '@/shared/state/dashboardLayoutSlice';
@@ -75,7 +76,7 @@ export function useDashboardSelection(
   const selectAll = useCallback(() => {
     const next = new Map<string, CardType>();
     for (const card of Object.values(cards)) next.set(card.session_id, 'agent');
-    for (const vc of Object.values(viewCards)) next.set(vc.output_id, 'view');
+    for (const vc of Object.values(viewCards)) next.set(viewCardKey(vc.output_id, vc.instance), 'view');
     for (const bc of Object.values(browserCards)) next.set(bc.browser_id, 'browser');
     for (const n of Object.values(notes)) next.set(n.note_id, 'note');
     for (const wc of Object.values(workflowCards)) next.set(wc.workflow_id, 'workflow');
@@ -95,10 +96,15 @@ export function useDashboardSelection(
           }
           return next;
         }
+        // Plain click/press selects the clicked card so spawn-beside-selection actually fires; deselect = empty-canvas click or Esc. An already-selected member keeps the whole selection (a press also starts multi-drag; collapsing would break it) but moves to last so the clicked card is the spawn anchor.
         if (prev.has(id)) {
-          return new Map();
+          if (Array.from(prev.keys()).pop() === id) return prev;
+          const next = new Map(prev);
+          next.delete(id);
+          next.set(id, type);
+          return next;
         }
-        return prev;
+        return new Map([[id, type]]);
       });
     },
     [],
@@ -134,7 +140,7 @@ export function useDashboardSelection(
             height: vc.height,
           })
         ) {
-          intersecting.set(vc.output_id, 'view');
+          intersecting.set(viewCardKey(vc.output_id, vc.instance), 'view');
         }
       }
 
@@ -210,6 +216,8 @@ export function useDashboardSelection(
   const handleCanvasMouseDown = useCallback(
     (e: MouseEvent) => {
       if (e.button !== 0 && e.button !== 2) return;
+      // A press starting on a card is a card interaction (select/drag), not a marquee; arming here would make the mouseup deselect the card that was just clicked.
+      if ((e.target as HTMLElement)?.closest?.('[data-select-id]')) return;
 
       marqueeOriginRef.current = { screenX: e.clientX, screenY: e.clientY };
       isDraggingMarqueeRef.current = false;

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppSelector } from '@/shared/hooks';
-import { onOnboardingLaunch } from '@/shared/onboardingLaunch';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { useCanvasControls } from '../interaction/useCanvasControls';
@@ -18,6 +17,7 @@ import { useCardDrag } from '../interaction/useCardDrag';
 import { useSubAgentLifecycle } from '../lifecycle/useSubAgentLifecycle';
 import { useDashboardLifecycle } from '../lifecycle/useDashboardLifecycle';
 import { useWelcomeDraft } from '../lifecycle/useWelcomeDraft';
+import { useOnboardingRevealSeed } from '../lifecycle/useOnboardingRevealSeed';
 import { useDashboardThumbnail } from './useDashboardThumbnail';
 import { useSiblingRestack } from '../lifecycle/useSiblingRestack';
 import { useAgentSpawn } from '../lifecycle/useAgentSpawn';
@@ -164,6 +164,15 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     spawnOriginsRef,
   });
 
+  // Onboarding v3 reveal: seeds the personalized note + welcome chat the instant the flow's curtain lifts.
+  useOnboardingRevealSeed({
+    isActive,
+    canvasEmpty,
+    viewportRef: canvas.viewportRef,
+    canvasStateRef,
+    createWelcomeDraft,
+  });
+
   // ---- Auto-reveal / collapse / unreveal sub-agent cards ----
   useSubAgentLifecycle({
     isActive,
@@ -248,6 +257,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     expandedSessionIds,
     dashboardId,
     expandNewChats,
+    selection,
     canvasActions: canvas.actions,
     viewportRef: canvas.viewportRef,
     toolbarRef,
@@ -260,14 +270,6 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     welcomeEligible,
     onWelcomeNewAgent: createWelcomeDraft,
   });
-
-  // Onboarding hands off its first task here: spawn a real agent with the chosen prompt using the
-  // same proven toolbar-send path, so onboarding ends by DOING the task instead of a blank canvas.
-  const defaultMode = useAppSelector((s) => s.settings.data.default_mode);
-  const defaultModel = useAppSelector((s) => s.settings.data.default_model);
-  useEffect(() => onOnboardingLaunch((prompt) => {
-    handleToolbarSend(prompt, defaultMode, defaultModel);
-  }), [handleToolbarSend, defaultMode, defaultModel]);
 
   const {
     handleAddView,
@@ -283,6 +285,8 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     selection,
     canvasActions: canvas.actions,
     getCardRect,
+    viewportRef: canvas.viewportRef,
+    canvasStateRef,
     handleHighlightCard,
     setAutoFocusSessionId,
   });

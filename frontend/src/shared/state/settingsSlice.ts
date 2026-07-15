@@ -73,11 +73,19 @@ export interface AppSettings {
   user_id?: string | null;
   user_email?: string | null;
   signin_method?: 'google' | 'email' | 'stripe' | null;
-  /** Self-reported onboarding persona + name (backend model already carries these); drive payoff personalization. */
-  user_name?: string | null;
-  user_use_case?: string | null;
   /** Anonymous device id (first-run generated); stitches anon to authed PostHog Persons. */
   installation_id?: string | null;
+  /** Onboarding v3 lifecycle: absent = never seen, 'done'/'skipped' once resolved. */
+  onboarding_v3?: string | null;
+  /** User-picked accent hex from the onboarding theme pad; null = stock accent. */
+  accent_color?: string | null;
+  personalized_greeting?: string | null;
+  personalized_starters?: PersonalizedStarter[];
+}
+
+export interface PersonalizedStarter {
+  title: string;
+  prompt: string;
 }
 
 export interface ActivateSubscriptionPayload {

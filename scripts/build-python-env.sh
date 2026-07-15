@@ -1,28 +1,42 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build an embedded Python environment for the Electron app.
+# Build an embedded Python environment for the Electron app (macOS).
 #
 # Downloads a standalone Python build from python-build-standalone,
 # creates a venv, and installs all backend dependencies.
-# The resulting python-env/ directory is bundled into the Electron app.
+#
+# Usage: build-python-env.sh [arm64|x64]   (default: host arch)
+#
+# The env stages under electron/build-staging/python-env/<arch> so
+# electron-builder's ${arch} macro bundles the MATCHING env per pack, same
+# pattern as node/${arch}. Never bundle one host-arch env into both DMGs:
+# that shipped arm64 python inside the x64 app and killed every Intel Mac.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 ELECTRON_DIR="$PROJECT_ROOT/electron"
-PYTHON_ENV_DIR="$ELECTRON_DIR/python-env"
 
 PYTHON_VERSION="3.13"
 PYTHON_FULL_VERSION="3.13.2"
-ARCH="$(uname -m)"
+ARCH="${1:-$(uname -m)}"
 
-if [[ "$ARCH" == "arm64" ]]; then
-    PLATFORM_TAG="aarch64-apple-darwin"
-elif [[ "$ARCH" == "x86_64" ]]; then
-    PLATFORM_TAG="x86_64-apple-darwin"
-else
-    echo "Unsupported architecture: $ARCH"
-    exit 1
+case "$ARCH" in
+    arm64|aarch64) ARCH="arm64"; PLATFORM_TAG="aarch64-apple-darwin" ;;
+    x64|x86_64)    ARCH="x64";   PLATFORM_TAG="x86_64-apple-darwin" ;;
+    *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+esac
+
+PYTHON_ENV_DIR="$ELECTRON_DIR/build-staging/python-env/$ARCH"
+
+# Cross-building x64 on Apple Silicon runs the x64 python under Rosetta
+# (pip then resolves x86_64 wheels, including the SDK's bundled claude CLI).
+if [[ "$ARCH" == "x64" && "$(uname -m)" == "arm64" ]]; then
+    if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+        echo "ERROR: building the x64 python-env on Apple Silicon requires Rosetta 2."
+        echo "  Install it with: softwareupdate --install-rosetta --agree-to-license"
+        exit 1
+    fi
 fi
 
 RELEASE_TAG="20250212"
@@ -44,6 +58,7 @@ if [[ -d "$PYTHON_ENV_DIR" ]]; then
     echo "Removing old python-env..."
     rm -rf "$PYTHON_ENV_DIR"
 fi
+mkdir -p "$(dirname "$PYTHON_ENV_DIR")"
 
 # Download standalone Python
 echo "Downloading standalone Python from python-build-standalone..."
@@ -88,10 +103,6 @@ fi
 echo "Installing backend dependencies (from requirements.lock)..."
 "$PYTHON_BIN" -m pip install --upgrade pip
 "$PYTHON_BIN" -m pip install -r "$PROJECT_ROOT/backend/requirements.lock"
-
-# Install the debugger module
-echo "Installing debugger module..."
-"$PYTHON_BIN" -m pip install "$PROJECT_ROOT/debugger"
 
 # Verify claude-agent-sdk and its bundled binary
 echo "Verifying claude-agent-sdk..."
@@ -305,7 +316,7 @@ PLIST
     # python-env/ via realpath, and libpython loads via the rewritten
     # @executable_path path.
     if ! "$PY_APP/Contents/MacOS/python3" -c \
-            "import sys; assert sys.prefix.endswith('python-env'), sys.prefix" 2>/dev/null; then
+            "import sys, os; assert os.path.realpath(sys.prefix) == os.path.realpath('$PYTHON_ENV_DIR'), sys.prefix" 2>/dev/null; then
         echo "ERROR: Python.app wrapper failed self-test (libpython or stdlib not findable)" >&2
         echo "  Try: $PY_APP/Contents/MacOS/python3 -c 'import sys; print(sys.prefix)'" >&2
         exit 1

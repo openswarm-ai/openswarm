@@ -59,8 +59,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed" }
     & $VenvPy -m pip install --quiet -r (Join-Path $ScriptDir 'backend\requirements.txt')
     if ($LASTEXITCODE -ne 0) { throw "pip install backend reqs failed" }
-    & $VenvPy -m pip install --quiet -e (Join-Path $ScriptDir 'debugger')
-    if ($LASTEXITCODE -ne 0) { throw "pip install debugger failed" }
 } finally {
     $ErrorActionPreference = $prevEAP
 }

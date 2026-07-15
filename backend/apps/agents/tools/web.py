@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import html
 import re
 from typing import Any, Optional
 
@@ -10,24 +9,17 @@ import httpx
 from typeguard import typechecked
 
 from backend.apps.agents.tools.base import BaseTool, ToolContext
+from backend.apps.agents.tools.search_ddg import (
+    DDGRateLimited,
+    HTTP_TIMEOUT,
+    USER_AGENT,
+    strip_html,
+)
+from backend.apps.agents.tools.search_ddg import search_ddg as run_ddg_search
 from backend.apps.agents.tools.ssrf_guard import SSRFBlocked, safe_fetch
 
-P_HTTP_TIMEOUT = 30
 P_MAX_OUTPUT_BYTES = 250 * 1024  # ~250 KB covers ~95% of articles/wikis/docs.
-P_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
 
-
-class DDGRateLimited(Exception):
-    """DuckDuckGo answered with its throttle challenge (HTTP 202), not results.
-
-    Distinct from 'genuinely zero hits' so the caller can fail over to another
-    backend instead of reporting an empty search to the user. The throttle is
-    per-IP and burst-triggered; a quick retry on the same or the `lite` endpoint
-    does NOT clear it (both share the limiter), so the only cure is a different
-    backend or waiting it out."""
 
 def anthropic_web_search_is_reliable(*, uses_direct_anthropic_api: bool,
                                      is_pro: bool) -> bool:
@@ -99,16 +91,6 @@ def p_truncate(text: str, limit: int = P_MAX_OUTPUT_BYTES) -> str:
     return text
 
 
-def p_strip_html(raw_html: str) -> str:
-    """Naive but effective HTML to plain-text conversion."""
-    text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", raw_html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = html.unescape(text)
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
 class WebSearchTool(BaseTool):
     name = "WebSearch"
     description = (
@@ -153,78 +135,7 @@ class WebSearchTool(BaseTool):
 
     @staticmethod
     async def search_ddg(query: str, num_results: int) -> str:
-        """Query DuckDuckGo HTML endpoint and parse results."""
-        async with httpx.AsyncClient(
-            timeout=P_HTTP_TIMEOUT,
-            follow_redirects=True,
-            headers={"User-Agent": P_USER_AGENT},
-        ) as client:
-            resp = await client.post(
-                "https://html.duckduckgo.com/html/",
-                data={"q": query},
-            )
-            # DDG serves its throttle challenge as 202 (a ~14KB no-results page), which is a 2xx so raise_for_status() sails right past it. Catch it explicitly so we report "rate-limited" instead of a bogus "no hits".
-            if resp.status_code == 202:
-                raise DDGRateLimited(query)
-            resp.raise_for_status()
-
-        body = resp.text
-
-        result_blocks = re.findall(
-            r'<div[^>]*class="[^"]*result[^"]*"[^>]*>(.*?)</div>\s*(?=<div[^>]*class="[^"]*result|$)',
-            body,
-            flags=re.DOTALL,
-        )
-
-        entries: list[str] = []
-        for block in result_blocks:
-            if len(entries) >= num_results:
-                break
-
-            # Handle both class-before-href and href-before-class attribute orders.
-            link_match = re.search(
-                r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
-                block,
-                flags=re.DOTALL,
-            )
-            if not link_match:
-                link_match = re.search(
-                    r'<a[^>]*href="([^"]*)"[^>]*class="[^"]*result__a[^"]*"[^>]*>(.*?)</a>',
-                    block,
-                    flags=re.DOTALL,
-                )
-            if not link_match:
-                continue
-
-            raw_url = html.unescape(link_match.group(1))
-
-            # Drop sponsored rows: DDG ads point at its own y.js click-tracker (ad_domain/ad_provider) instead of a real uddg= redirect, so they'd otherwise show up as junk "duckduckgo.com/y.js?ad_..." results.
-            if "/y.js?" in raw_url or "ad_provider=" in raw_url or "ad_domain=" in raw_url:
-                continue
-
-            title = p_strip_html(link_match.group(2)).strip()
-
-            snippet_match = re.search(
-                r'<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>',
-                block,
-                flags=re.DOTALL,
-            )
-            snippet = p_strip_html(snippet_match.group(1)).strip() if snippet_match else ""
-
-            # DDG wraps URLs in a redirect; extract the real one.
-            real_url_match = re.search(r"uddg=([^&]+)", raw_url)
-            if real_url_match:
-                from urllib.parse import unquote
-                url = unquote(real_url_match.group(1))
-            else:
-                url = raw_url
-
-            entry = f"[{len(entries) + 1}] {title}\n    {url}"
-            if snippet:
-                entry += f"\n    {snippet}"
-            entries.append(entry)
-
-        return "\n\n".join(entries)
+        return await run_ddg_search(query, num_results)
 
 
 class WebFetchTool(BaseTool):
@@ -259,8 +170,8 @@ class WebFetchTool(BaseTool):
             resp = await safe_fetch(
                 url,
                 method="GET",
-                headers={"User-Agent": P_USER_AGENT},
-                timeout=P_HTTP_TIMEOUT,
+                headers={"User-Agent": USER_AGENT},
+                timeout=HTTP_TIMEOUT,
             )
             resp.raise_for_status()
         except SSRFBlocked as exc:
@@ -287,7 +198,7 @@ class WebFetchTool(BaseTool):
             except Exception:
                 text = None
             if not text:
-                text = p_strip_html(resp.text)
+                text = strip_html(resp.text)
         else:
             text = resp.text
 

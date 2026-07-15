@@ -1,17 +1,22 @@
-"""Unit tests for the edge's pure logic: Host->slug parsing, path-safe file
-resolution, the rate limiter, and the vendored sandbox. The Tigris fetch + cloud
-proxy need live services and are exercised in the staging E2E, not here.
+"""Unit tests for edge routing, path-safe bundle resolution, rate limiting,
+installer streaming with mocked upstreams, and the vendored sandbox. Tigris and
+the LLM proxy still require live services and are exercised in staging E2E.
 
 Run with:  .venv/bin/python -m pytest tests/test_edge.py
 """
 import asyncio
 import io
+import json
 import os
 import sys
 import tarfile
 
+import httpx
+from fastapi.testclient import TestClient
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from app import main as edge_main
 from app.main import slug_from_host
 from app.bundles import unpack, resolve_file
 from app.inject import inject_runtime
@@ -65,6 +70,104 @@ def test_rate_limiter():
     assert all(rl.allow("ip1") for _ in range(3))
     assert rl.allow("ip1") is False  # 4th over the limit
     assert rl.allow("ip2") is True   # a different key is independent
+
+
+def _mock_download_clients(monkeypatch, *, reject_unknown=False):
+    calls = []
+
+    class InstallerStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b"installer-bytes"
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.path == "/api/install/authorize-download":
+            payload = json.loads(request.content)
+            assert request.headers["x-edge-auth"] == edge_main.EDGE_AUTH_TOKEN
+            if reject_unknown and payload["platform"] == "plan9":
+                return httpx.Response(404, json={"message": "unknown download target"})
+            return httpx.Response(
+                200,
+                json={
+                    "assetUrl": "https://github.test/OpenSwarm-arm64.dmg",
+                    "filename": "OpenSwarm-arm64-affiliate_hash_123.dmg",
+                },
+            )
+        if request.url.host == "github.test":
+            return httpx.Response(
+                200,
+                stream=InstallerStream(),
+                headers={
+                    "Content-Type": "application/x-apple-diskimage",
+                    "Content-Length": "15",
+                },
+            )
+        raise AssertionError(f"unexpected upstream request: {request.url}")
+
+    transport = httpx.MockTransport(handle)
+    real_async_client = httpx.AsyncClient
+
+    def mocked_async_client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(edge_main.httpx, "AsyncClient", mocked_async_client)
+    return calls
+
+
+def test_download_streams_bytes_with_cloud_filename(monkeypatch):
+    calls = _mock_download_clients(monkeypatch)
+    client = TestClient(edge_main.app)
+    response = client.get(
+        "/download/mac/arm64?ref=alice",
+        headers={"host": edge_main.EDGE_PUBLIC_HOST, "fly-client-ip": "198.51.100.11"},
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"installer-bytes"
+    assert response.headers["content-type"] == "application/x-apple-diskimage"
+    assert response.headers["content-length"] == "15"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="OpenSwarm-arm64-affiliate_hash_123.dmg"'
+    )
+    assert response.headers["cache-control"] == "private, no-store"
+    assert json.loads(calls[0].content) == {"platform": "mac", "arch": "arm64", "ref": "alice"}
+    assert calls[1].url.host == "github.test"
+
+
+def test_download_rejects_app_subdomains_without_upstream_call(monkeypatch):
+    calls = _mock_download_clients(monkeypatch)
+    client = TestClient(edge_main.app)
+    response = client.get(
+        "/download/mac/arm64",
+        headers={"host": "notes.openswarm.host", "fly-client-ip": "198.51.100.12"},
+    )
+
+    assert response.status_code == 404
+    assert calls == []
+
+
+def test_download_maps_unknown_target_to_404(monkeypatch):
+    _mock_download_clients(monkeypatch, reject_unknown=True)
+    client = TestClient(edge_main.app)
+    response = client.get(
+        "/download/plan9/x64",
+        headers={"host": edge_main.EDGE_PUBLIC_HOST, "fly-client-ip": "198.51.100.13"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"error": "unknown download target"}
+
+
+def test_download_rate_limits_per_client_ip(monkeypatch):
+    calls = _mock_download_clients(monkeypatch)
+    monkeypatch.setattr(edge_main, "_download_limiter", RateLimiter(limit=1, window_seconds=60))
+    client = TestClient(edge_main.app)
+    headers = {"host": edge_main.EDGE_PUBLIC_HOST, "fly-client-ip": "198.51.100.14"}
+
+    assert client.get("/download/mac/arm64", headers=headers).status_code == 200
+    assert client.get("/download/mac/arm64", headers=headers).status_code == 429
+    assert len(calls) == 2  # authorize + artifact only for the allowed request
 
 
 def test_sandbox_rejects_unsafe_and_allows_safe():

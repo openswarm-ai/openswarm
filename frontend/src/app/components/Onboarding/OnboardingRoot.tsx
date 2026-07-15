@@ -13,6 +13,7 @@ import {
   persistToStorage,
   markStepCompleted,
   setPanelMode,
+  setCurrentStep,
   markRevealedAfterWin,
 } from '@/shared/state/onboardingProgressSlice';
 import AgenticCursor, { type AgenticCursorHandle } from './ac/AgenticCursor';
@@ -64,10 +65,12 @@ const OnboardingRoot: React.FC = () => {
       !(s.onboardingProgress.completedSteps ?? []).includes('launch_agent') &&
       Object.keys(s.agents?.sessions ?? {}).length === 0,
   );
+  // Onboarding v3 owns the window on a fresh install; the v2 cursor tour stays dormant until the flow resolves.
+  const v3Owns = useAppSelector((s) => s.onboardingV3.flowActive);
   const welcomeFiredRef = useRef(false);
   const welcomeTimerRef = useRef<number | null>(null);
   useEffect(() => {
-    if (welcomeFiredRef.current || !progress.initialized || !welcomeOpenReady) return;
+    if (v3Owns || welcomeFiredRef.current || !progress.initialized || !welcomeOpenReady) return;
     if (!window.location.hash.includes('/dashboard/') || onboardingDirector.isRunning()) return;
     welcomeFiredRef.current = true;
     welcomeTimerRef.current = window.setTimeout(() => {
@@ -76,7 +79,7 @@ const OnboardingRoot: React.FC = () => {
       onboardingDirector.startStep('welcome_open', { x: window.innerWidth / 2, y: window.innerHeight / 2 });
     }, 600);
     return () => { if (welcomeTimerRef.current) window.clearTimeout(welcomeTimerRef.current); };
-  }, [progress.initialized, welcomeOpenReady]);
+  }, [progress.initialized, welcomeOpenReady, v3Owns]);
 
   useEffect(() => {
     if (progress.initialized) return;
@@ -97,6 +100,13 @@ const OnboardingRoot: React.FC = () => {
       }),
     );
   }, [progress.initialized, settingsLoaded, dispatch, store]);
+
+  useEffect(() => {
+    if (!progress.initialized || !progress.currentStepId) return;
+    if (STEPS.some((step) => step.id === progress.currentStepId)) return;
+    const nextStep = STEPS.find((step) => !(progress.completedSteps ?? []).includes(step.id));
+    dispatch(setCurrentStep(nextStep?.id ?? null));
+  }, [progress.initialized, progress.currentStepId, progress.completedSteps, dispatch]);
 
   // Bridge Redux signals to bus + auto-mark on skipIf. Coalesces microtask-bursts of dispatches.
   useEffect(() => {
@@ -256,6 +266,7 @@ const OnboardingRoot: React.FC = () => {
     return () => onboardingDirector.detach();
   }, [store, tokens.accent.primary]);
 
+  if (v3Owns) return null;
   if (!settingsLoaded) return null;
   if (!progress.initialized) return null;
 

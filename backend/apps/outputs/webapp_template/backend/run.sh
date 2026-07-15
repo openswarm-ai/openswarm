@@ -92,10 +92,6 @@ else
     # --- Install Python dependencies ---
     echo "Installing dependencies..."
     cd "$BACKEND_DIR_ABSPATH"
-    if [[ -n "${OPENSWARM_DEBUGGER_PATH:-}" && -d "$OPENSWARM_DEBUGGER_PATH" ]]; then
-        echo "Installing OpenSwarm debugger (swarm_debug) from $OPENSWARM_DEBUGGER_PATH"
-        "$VENV_PY" -m pip install -e "$OPENSWARM_DEBUGGER_PATH"
-    fi
     "$VENV_PY" -m pip install -e .
     if [[ $? -ne 0 ]]; then
         echo "Error: Failed to install Python dependencies."
@@ -112,6 +108,10 @@ fi
 # the backend to pick up new code it can hit OpenSwarm's
 # /api/outputs/workspace/{ws}/runtime/restart endpoint, which sends a
 # clean SIGTERM and restarts via this same script.
+# swarm-debug gates output on per-file toggles that default OFF; force all ON each boot so agent-added files show in the Terminal.
+if [[ "$IS_WIN" == "1" ]]; then SWARM_DEBUG_BIN="$VENV_DIR/Scripts/swarm-debug.exe"; else SWARM_DEBUG_BIN="$VENV_DIR/bin/swarm-debug"; fi
+( cd "$BACKEND_DIR_ABSPATH/.." && "$SWARM_DEBUG_BIN" toggle on --all >/dev/null 2>&1 ) || true
+
 echo "Starting backend server on http://0.0.0.0:${BACKEND_PORT:-8324} ..."
 cd "$BACKEND_DIR_ABSPATH/.."
 "$VENV_PY" -m uvicorn backend.main:app --host 0.0.0.0 --port "${BACKEND_PORT:-8324}"

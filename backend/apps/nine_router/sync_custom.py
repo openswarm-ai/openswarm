@@ -252,8 +252,15 @@ async def sync_custom_providers(providers: list) -> None:
             logger.warning(f"9Router custom connection {prefix} sync failed: {e}")
 
     # Drop managed nodes no longer in settings; DELETE cascades to connections.
+    # NEVER sweep on an EMPTY list: a corrupt/defaulted settings load at boot would hand us [] and mass-reap every custom connection (the accidental-disconnect class). Cost of the guard: deleting your LAST custom provider leaves one stale node in 9Router, invisible to the picker (models come from settings) and overwritten on the next add.
+    if not seen_prefixes:
+        remaining = [p for p in managed_by_prefix if p != NINE_ROUTER_OPENAI_KEYED_PREFIX]
+        if remaining:
+            logger.info(f"9Router: skipping orphan sweep (empty provider list, {len(remaining)} managed nodes kept)")
+        return
     for prefix, node in managed_by_prefix.items():
-        if prefix in seen_prefixes:
+        # cp-openai wears the same managed suffix but belongs to sync_openai_compat_node; reaping it here killed every gpt-*-api request with "No credentials".
+        if prefix in seen_prefixes or prefix == NINE_ROUTER_OPENAI_KEYED_PREFIX:
             continue
         try:
             async with nr().httpx.AsyncClient(timeout=5.0, headers=cli_auth_headers()) as client:

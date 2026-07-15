@@ -169,6 +169,13 @@ class OutputExecuteResult(BaseModel):
     code_preview: Optional[str] = None
 
 
+class AgentCreateAppRequest(BaseModel):
+    name: str
+    description: str = ""
+    # The calling agent session (injected by the apps MCP server); persisted on the Output so the dashboard drops the card next to that agent and the Building overlay tracks its turns.
+    parent_session_id: str = ""
+
+
 class WorkspaceSeedRequest(BaseModel):
     workspace_id: str
     files: Optional[dict[str, str]] = None

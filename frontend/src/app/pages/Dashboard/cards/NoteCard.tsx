@@ -255,7 +255,11 @@ const NoteCard: React.FC<Props> = ({
       data-select-type="note-card"
       data-select-id={noteId}
       data-select-meta={JSON.stringify({ name: 'Note', content: content.slice(0, 60) })}
-      onPointerDownCapture={() => onBringToFront?.(noteId, 'note')}
+      onPointerDownCapture={(e: React.PointerEvent) => {
+        onBringToFront?.(noteId, 'note');
+        // Capture-phase so a click the textarea swallows still selects the note; shift keeps the bubbled toggle path.
+        if (e.button === 0 && !e.shiftKey) onCardSelect?.(noteId, 'note', false);
+      }}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
         onCardSelect?.(noteId, 'note', e.shiftKey);

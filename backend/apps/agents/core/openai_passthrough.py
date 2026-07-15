@@ -91,6 +91,9 @@ def scrub_gpt5_params(body: bytes) -> bytes:
     for k in P_GPT5_UNSUPPORTED_PARAMS:
         if parsed.pop(k, None) is not None:
             mutated = True
+    # OpenAI started rejecting reasoning_effort + function tools together on /chat/completions (live-confirmed 2026-07-08, all gpt-5.x); dropping effort loses thinking but the turn completes. Real fix = /v1/responses migration.
+    if "tools" in parsed and parsed.pop("reasoning_effort", None) is not None:
+        mutated = True
     return json.dumps(parsed).encode("utf-8") if mutated else body
 
 

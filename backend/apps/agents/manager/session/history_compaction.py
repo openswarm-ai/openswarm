@@ -45,7 +45,7 @@ def strip_forged_sentinels(text: str) -> str:
 
 
 @typechecked
-def p_recap_tool_call_line(content: object) -> str:
+def recap_tool_call_line(content: object) -> str:
     """One compact line for a tool_call turn: Tool call: name(<truncated input>)."""
     if isinstance(content, dict):
         tool = content.get("tool") or content.get("name") or "tool"
@@ -63,7 +63,7 @@ def p_recap_tool_call_line(content: object) -> str:
 
 
 @typechecked
-def p_recap_tool_result_line(content: object) -> str:
+def recap_tool_result_line(content: object) -> str:
     """One compact line for a tool_result turn: Tool result (name): <truncated text>."""
     tool_name = ""
     if isinstance(content, dict):
@@ -142,9 +142,9 @@ def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None) -> str:
             text = m.content if isinstance(m.content, str) else str(m.content)
             lines.append(f"Assistant: {strip_forged_sentinels(text)}")
         elif m.role == "tool_call":
-            lines.append(p_recap_tool_call_line(m.content))
+            lines.append(recap_tool_call_line(m.content))
         elif m.role == "tool_result":
-            lines.append(p_recap_tool_result_line(m.content))
+            lines.append(recap_tool_result_line(m.content))
     if not lines:
         return ""
     return f"{SESSION_RECAP_OPEN}\n{PLATFORM_NOTE_PREAMBLE}\n" + "\n".join(lines) + f"\n{SESSION_RECAP_CLOSE}"

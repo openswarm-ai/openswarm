@@ -55,7 +55,7 @@ interface Props {
     selectedBrowserIds?: string[],
     selectedAppIds?: string[],
   ) => void;
-  onAddView: (outputId: string) => void;
+  onAddView: (outputId: string, opts?: { newInstance?: boolean }) => void;
   onHistoryResume: (sessionId: string) => void;
   onAddBrowser: () => void;
   onAddNote: () => void;
@@ -240,8 +240,9 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
       }
     }, [historyOpen, viewPickerOpen, onCancel, handleCloseHistory]);
 
-    const handleSelectView = useCallback((output: Output) => {
-      onAddView(output.id);
+    // Alt/Option-click opens ANOTHER independent instance of an already-open app (its own runtime + ports); plain click focuses the existing card.
+    const handleSelectView = useCallback((output: Output, newInstance?: boolean) => {
+      onAddView(output.id, { newInstance });
       setViewPickerOpen(false);
       setViewSearch('');
     }, [onAddView]);
@@ -533,7 +534,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 filteredOutputs.map((output) => (
                   <Box
                     key={output.id}
-                    onClick={() => handleSelectView(output)}
+                    onClick={(e) => handleSelectView(output, e.altKey)}
                     sx={{
                       display: 'flex',
                       alignItems: 'center',

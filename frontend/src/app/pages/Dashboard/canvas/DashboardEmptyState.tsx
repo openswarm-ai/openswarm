@@ -26,14 +26,10 @@ const DashboardEmptyState: React.FC<{
   const currentPrompts = currentCategory?.prompts ?? [];
 
   const showChips = !!onLaunch && canRun;
-  const isAppBuilder = currentCategory?.target === 'app-builder';
 
+  // "Build an app" launches a normal agent like every other starter; the agent calls CreateApp and its live card drops on the canvas. No separate App Builder mode/page anymore.
   const launch = (prompt: string) => {
     if (launching) return;
-    if (isAppBuilder) {
-      if (onStarter) onStarter(prompt, 'view-builder');
-      return;
-    }
     if (onLaunch) {
       setLaunching(true);
       onLaunch(prompt, mode, model);

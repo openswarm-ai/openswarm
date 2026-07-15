@@ -44,12 +44,19 @@ export interface CardPosition {
 
 export interface ViewCardPosition {
   output_id: string;
+  // Which instance of the app this card is (1 = primary, absent on pre-instance layouts). Each instance is a fully independent runtime on its own ports.
+  instance?: number;
   x: number;
   y: number;
   width: number;
   height: number;
   zOrder: number;
   parent_session_id?: string | null;
+}
+
+// Record key + card identity for a view card. The primary keeps the bare output_id so persisted layouts and every existing by-output lookup stay valid; secondaries append #N.
+export function viewCardKey(outputId: string, instance?: number): string {
+  return (instance ?? 1) > 1 ? `${outputId}#${instance}` : outputId;
 }
 
 export interface BrowserTab {
@@ -143,6 +150,8 @@ export interface DashboardLayoutState {
   initialized: boolean;
   /** Transient: new browser card id; Dashboard pans/zooms to it then clears via clearPendingFocusBrowserId. */
   pendingFocusBrowserId: string | null;
+  // Set when a view card is opened from outside the canvas (sidebar app click / toolbar picker) so the dashboard fits+highlights it on arrival; holds the card key.
+  pendingFocusViewCardId: string | null;
   pendingFocusNoteId: string | null;
   /** Transient: snapshot stand-ins for off-screen webviews; never rides the layout PUT. */
   suspendedBrowserCards: Record<string, { dataUrl: string; capturedAt: number }>;
@@ -189,6 +198,7 @@ const initialState: DashboardLayoutState = {
   loading: false,
   initialized: false,
   pendingFocusBrowserId: null,
+  pendingFocusViewCardId: null,
   pendingFocusNoteId: null,
   suspendedBrowserCards: {},
   endingBrowserCards: {},
@@ -431,6 +441,25 @@ export function placeBesideCard(
   return findOpenSpotNear(targetX, targetY, rects, newW, newH);
 }
 
+// Dock a chat-spawned browser to the right of its chat card. Unlike placeBesideCard, this ALWAYS lands beside the chat (overlap is fine, the new card sits on top via zOrder) so an occupied spot can never fling the browser to a far grid cell or stack it under an unrelated card. Only this chat's OWN browsers (same spawned_by, still in the column) stack under each other so siblings don't fully cover one another; every other card is ignored.
+export function placeBrowserBesideChat(
+  state: DashboardLayoutState,
+  chat: { x: number; y: number; width: number; height: number },
+  parentSessionId: string,
+  newW: number,
+  newH: number,
+  excludeBrowserId?: string,
+): { x: number; y: number } {
+  const targetX = chat.x + chat.width + GRID_GAP * 12;
+  const siblings = Object.values(state.browserCards).filter(
+    (c) => c.browser_id !== excludeBrowserId && c.spawned_by === parentSessionId && Math.abs(c.x - targetX) < 50,
+  );
+  const targetY = siblings.length > 0
+    ? Math.max(...siblings.map((c) => c.y + c.height)) + GRID_GAP
+    : chat.y;
+  return { x: targetX, y: targetY };
+}
+
 // Dock a new card directly below an anchor card (left edges aligned). Used for a browser spawned by a Workflows-hub chat, which has no agent card to sit beside.
 export function placeBelowCard(
   state: DashboardLayoutState,
@@ -457,6 +486,29 @@ export function placeInParentColumn(
     return findOpenGridCell(collectOccupiedRects(state, expandedSessionIds, exclude), newW, newH);
   }
   return placeBesideCard(state, parentCard, newW, newH, expandedSessionIds, exclude);
+}
+
+// Where a user-created card (chat/app/browser/note) should land. Resolved in the UI layer where selection + viewport are known, then handed to the add reducers as an explicit x/y. `beside` (the currently selected card) docks the new card to its right, stacking under that column (collision-aware); `viewportCenter` (canvas-space center of what the user is looking at) drops it dead-center "in front of you", overlapping whatever's there. With neither, falls back to the legacy top-left grid scan.
+export interface SpawnAnchor {
+  beside?: { x: number; y: number; width: number; height: number };
+  viewportCenter?: { x: number; y: number };
+}
+
+export function computeSpawnPosition(
+  state: DashboardLayoutState,
+  newW: number,
+  newH: number,
+  anchor: SpawnAnchor,
+  expandedSessionIds?: string[],
+): { x: number; y: number } {
+  if (anchor.beside) {
+    return placeBesideCard(state, anchor.beside, newW, newH, expandedSessionIds);
+  }
+  if (anchor.viewportCenter) {
+    // Land dead-center, "in front of you", even if a card is already there. Overlap is intentional (new card sits on top via its higher zOrder); dodging to free space is exactly the "spawned off to the side" behavior we're removing.
+    return { x: anchor.viewportCenter.x - newW / 2, y: anchor.viewportCenter.y - newH / 2 };
+  }
+  return findOpenGridCell(collectOccupiedRects(state, expandedSessionIds), newW, newH);
 }
 
 // Reconnect-refetch merge: ADD only the cards the snapshot carries that the client is missing (e.g. a spawned browser whose broadcast was lost in a socket gap), collision-resolving each against the live layout so a recovered card can't land on a card already on canvas, and NEVER touch a card the client already has (that's exactly what preserves its live, collision-placed position). The shared `occupied` list carries placements forward so two recovered cards in the same pass also avoid each other.
@@ -512,11 +564,12 @@ const dashboardLayoutSlice = createSlice({
         height: number;
         // Optional: which existing sessions are currently expanded (showing their full chat history). Without this, the collision check uses each card's STORED height, which is the collapsed value, even when the card is currently rendering at the expanded ~620px. Result: new sub-agent cards spawn into the collapsed footprint but overlap the visually expanded one. Caller (Dashboard.tsx) passes the current expanded set so the collision math matches what the user actually sees.
         expandedSessionIds?: string[];
+        // Honor the given x/y verbatim (dead-center "in front of you", overlap allowed) instead of collision-dodging to a free grid cell. Set when the caller already resolved the spot (viewport center / beside a selected card) and dodging would defeat that; tidyLayout cleans up any overlap on demand.
+        exact?: boolean;
       }>
     ) {
-      const { sessionId, x, y, width, height, expandedSessionIds } = action.payload;
-      const rects = collectOccupiedRects(state, expandedSessionIds);
-      const pos = findOpenSpotNear(x, y, rects, width, height);
+      const { sessionId, x, y, width, height, expandedSessionIds, exact } = action.payload;
+      const pos = exact ? { x, y } : findOpenSpotNear(x, y, collectOccupiedRects(state, expandedSessionIds), width, height);
       state.cards[sessionId] = {
         session_id: sessionId,
         x: pos.x,
@@ -632,7 +685,7 @@ const dashboardLayoutSlice = createSlice({
 
       const allItems = [
         ...agentCards.map((c) => ({ kind: 'agent' as const, id: c.session_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
-        ...viewCards.map((c) => ({ kind: 'view' as const, id: c.output_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
+        ...viewCards.map((c) => ({ kind: 'view' as const, id: viewCardKey(c.output_id, c.instance), x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
         ...bCards.map((c) => ({ kind: 'browser' as const, id: c.browser_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
         ...wCards.map((c) => ({ kind: 'workflow' as const, id: c.workflow_id, x: c.x, y: c.y, storedW: c.width, storedH: c.height })),
         ...(hub ? [{ kind: 'workflows-hub' as const, id: 'workflows-hub', x: hub.x, y: hub.y, storedW: hub.width, storedH: hub.height }] : []),
@@ -679,9 +732,16 @@ const dashboardLayoutSlice = createSlice({
       outputId: string; expandedSessionIds?: string[];
       parentSessionId?: string | null;
       x?: number; y?: number; width?: number; height?: number;
+      // Open ANOTHER independent instance of an already-open app instead of no-op'ing.
+      newInstance?: boolean;
     }>) {
-      const { outputId, expandedSessionIds, parentSessionId, x, y, width, height } = action.payload;
-      if (state.viewCards[outputId]) return;
+      const { outputId, expandedSessionIds, parentSessionId, x, y, width, height, newInstance } = action.payload;
+      let instance = 1;
+      if (state.viewCards[outputId]) {
+        if (!newInstance) return;
+        instance = 2;
+        while (state.viewCards[viewCardKey(outputId, instance)]) instance++;
+      }
       const w = width || DEFAULT_VIEW_CARD_W;
       const h = height || DEFAULT_VIEW_CARD_H;
       let posX: number, posY: number;
@@ -701,8 +761,10 @@ const dashboardLayoutSlice = createSlice({
           posY = pos.y;
         }
       }
-      state.viewCards[outputId] = {
+      const cardKey = viewCardKey(outputId, instance);
+      state.viewCards[cardKey] = {
         output_id: outputId,
+        instance,
         x: posX,
         y: posY,
         width: w,
@@ -710,6 +772,11 @@ const dashboardLayoutSlice = createSlice({
         zOrder: state.nextZOrder++,
         parent_session_id: parentSessionId || null,
       };
+      state.pendingFocusViewCardId = cardKey;
+    },
+
+    clearPendingFocusViewCardId(state) {
+      state.pendingFocusViewCardId = null;
     },
 
     setViewCardPosition(
@@ -742,11 +809,13 @@ const dashboardLayoutSlice = createSlice({
       state.activeViewCardId = action.payload;
     },
 
-    addBrowserCard(state, action: PayloadAction<{ url: string; expandedSessionIds?: string[] }>) {
+    addBrowserCard(state, action: PayloadAction<{ url: string; expandedSessionIds?: string[]; x?: number; y?: number }>) {
       const id = `browser-${Date.now().toString(36)}`;
       const tabId = generateTabId();
-      const rects = collectOccupiedRects(state, action.payload.expandedSessionIds);
-      const pos = findOpenGridCell(rects, DEFAULT_BROWSER_CARD_W, DEFAULT_BROWSER_CARD_H);
+      // Caller may pre-resolve the spawn position (beside the selected card, or in front of the viewport); otherwise fall back to the top-left grid scan.
+      const pos = action.payload.x != null && action.payload.y != null
+        ? { x: action.payload.x, y: action.payload.y }
+        : findOpenGridCell(collectOccupiedRects(state, action.payload.expandedSessionIds), DEFAULT_BROWSER_CARD_W, DEFAULT_BROWSER_CARD_H);
       state.browserCards[id] = {
         browser_id: id,
         url: action.payload.url,
@@ -1204,6 +1273,51 @@ const dashboardLayoutSlice = createSlice({
       card.tabs.splice(Math.max(0, Math.min(action.payload.toIndex, card.tabs.length)), 0, tab);
     },
 
+    // Drag a tab OUT of a browser card: into another card (absorbed, appended + activated) or onto empty canvas (spins off a new card at the drop point). Moving the last tab dissolves the source card, Chrome-style.
+    moveBrowserTab(
+      state,
+      action: PayloadAction<{ fromBrowserId: string; tabId: string; toBrowserId?: string; x?: number; y?: number }>
+    ) {
+      const { fromBrowserId, tabId, toBrowserId, x, y } = action.payload;
+      if (toBrowserId === fromBrowserId) return;
+      const source = state.browserCards[fromBrowserId];
+      if (!source) return;
+      const idx = source.tabs.findIndex((t) => t.id === tabId);
+      if (idx === -1) return;
+      const target = toBrowserId ? state.browserCards[toBrowserId] : undefined;
+      if (toBrowserId && !target) return;
+      const [moved] = source.tabs.splice(idx, 1);
+      // Fresh id: reusing the old one makes the receiving BrowserCard think the tab is already initialized, so its webview never loads the URL and sits at about:blank.
+      const tab = { ...moved, id: generateTabId() };
+      if (source.tabs.length === 0) {
+        delete state.browserCards[fromBrowserId];
+      } else if (source.activeTabId === tabId) {
+        const nextActive = source.tabs[Math.min(idx, source.tabs.length - 1)];
+        source.activeTabId = nextActive.id;
+        source.url = nextActive.url;
+      }
+      if (target) {
+        target.tabs.push(tab);
+        target.activeTabId = tab.id;
+        target.url = tab.url;
+        target.zOrder = state.nextZOrder++;
+      } else {
+        const id = `browser-${Date.now().toString(36)}`;
+        state.browserCards[id] = {
+          browser_id: id,
+          url: tab.url,
+          tabs: [tab],
+          activeTabId: tab.id,
+          x: x ?? source.x + 60,
+          y: y ?? source.y + 60,
+          width: source.width,
+          height: source.height,
+          zOrder: state.nextZOrder++,
+          dashboard_id: source.dashboard_id,
+        };
+      }
+    },
+
     moveCards(
       state,
       action: PayloadAction<{
@@ -1255,7 +1369,7 @@ const dashboardLayoutSlice = createSlice({
 
     addNote(
       state,
-      action: PayloadAction<{ x?: number; y?: number; expandedSessionIds?: string[]; color?: NoteColor }>,
+      action: PayloadAction<{ x?: number; y?: number; expandedSessionIds?: string[]; color?: NoteColor; content?: string }>,
     ) {
       const id = `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       let posX: number, posY: number;
@@ -1274,7 +1388,7 @@ const dashboardLayoutSlice = createSlice({
         y: posY,
         width: DEFAULT_NOTE_W,
         height: DEFAULT_NOTE_H,
-        content: '',
+        content: action.payload.content ?? '',
         color: action.payload.color || 'yellow',
         zOrder: state.nextZOrder++,
       };
@@ -1352,7 +1466,7 @@ const dashboardLayoutSlice = createSlice({
       if (entry.kind === 'browser') {
         state.browserCards[entry.card.browser_id] = { ...entry.card, zOrder, dashboard_id: dashboardId ?? entry.card.dashboard_id };
       } else if (entry.kind === 'view') {
-        state.viewCards[entry.card.output_id] = { ...entry.card, zOrder };
+        state.viewCards[viewCardKey(entry.card.output_id, entry.card.instance)] = { ...entry.card, zOrder };
       } else if (entry.kind === 'workflow') {
         state.workflowCards[entry.card.workflow_id] = { ...entry.card, zOrder };
       } else if (entry.kind === 'note') {
@@ -1557,6 +1671,17 @@ const dashboardLayoutSlice = createSlice({
         for (const entry of Object.values(state.glowingBrowserCards)) {
           if (entry.sourceId === draftId) entry.sourceId = session.id;
         }
+        // First-turn browser race: a browser the first message spawns carries parent_session_id = the real id, so its browser_card_added can land BEFORE this re-key, find no parent card, and fall back to the grid. Now that the chat card exists under the real id, dock each such browser beside it (freshly spawned, so not user-moved yet) and restore the tether the racing path skipped.
+        const parentCard = state.cards[session.id];
+        if (parentCard) {
+          for (const bc of Object.values(state.browserCards)) {
+            if (bc.spawned_by !== session.id) continue;
+            const pos = placeBrowserBesideChat(state, parentCard, session.id, bc.width, bc.height, bc.browser_id);
+            bc.x = pos.x;
+            bc.y = pos.y;
+            state.glowingBrowserCards[bc.browser_id] = { sourceId: session.id, fading: false, label: 'Use Browser' };
+          }
+        }
       });
   },
 });
@@ -1595,6 +1720,7 @@ export const {
   updateBrowserTabTitle,
   updateBrowserTabFavicon,
   reorderBrowserTab,
+  moveBrowserTab,
   moveCards,
   setGlowingBrowserCards,
   fadeGlowingBrowserCards,
@@ -1604,6 +1730,7 @@ export const {
   fadeGlowingAgentCard,
   clearGlowingAgentCard,
   clearPendingFocusBrowserId,
+  clearPendingFocusViewCardId,
   addWorkflowCard,
   setWorkflowCardPosition,
   setWorkflowCardSize,

@@ -5,6 +5,7 @@ import base64
 import json
 import sys
 import os
+import time
 import urllib.request
 import urllib.error
 from io import BytesIO
@@ -190,6 +191,45 @@ def call_backend(tasks: list[dict]) -> dict:
 
 
 MAX_IMAGE_B64_BYTES = 400_000
+MAX_SUMMARY_CHARS = 16_000
+MAX_ACTION_LOG_ENTRIES = 40
+REPORT_DIR = os.environ.get(
+    "OPENSWARM_TOOL_REPORT_DIR",
+    os.path.join(os.path.expanduser("~"), ".openswarm", "tool-reports"),
+)
+
+
+def spill_full_report(text: str, prefix: str) -> str:
+    """Write the unabridged report to disk so trimming is lossless: the agent can Read
+    the file (with offset/limit) whenever the capped version isn't enough. Empty string
+    when the write fails; callers degrade to cap-only."""
+    try:
+        os.makedirs(REPORT_DIR, exist_ok=True)
+        # Reports are point-in-time working files, not archives; prune week-old ones so the folder can't grow forever.
+        cutoff = time.time() - 7 * 86400
+        for old in os.listdir(REPORT_DIR):
+            p = os.path.join(REPORT_DIR, old)
+            try:
+                if os.path.getmtime(p) < cutoff:
+                    os.remove(p)
+            except OSError:
+                pass
+        path = os.path.join(REPORT_DIR, f"{prefix}-{os.getpid()}-{int(time.time()*1000)}.md")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+    except Exception:
+        return ""
+
+
+def p_cap_summary(text: str) -> tuple[str, bool]:
+    """Head+tail split, plus a truncated? flag so the caller can spill the full text: the CLI hard-rejects tool results past ~25K tokens, and a vanished report is worse than a trimmed one."""
+    if len(text) <= MAX_SUMMARY_CHARS:
+        return text, False
+    head = text[: MAX_SUMMARY_CHARS - 4_000]
+    tail = text[-3_500:]
+    omitted = len(text) - len(head) - len(tail)
+    return f"{head}\n\n[... {omitted} chars of the report omitted ...]\n\n{tail}", True
 
 
 def p_sniff_image_mime(b64: str) -> str:
@@ -232,18 +272,35 @@ def format_result(result: dict) -> dict:
     browser_id = result.get("browser_id", "")
     action_log = result.get("action_log", [])
 
+    capped_summary, summary_truncated = p_cap_summary(summary)
     lines = [f"**Browser Agent Result** (browser: {browser_id}, session: {session_id})", ""]
-    lines.append(f"**Summary:** {summary}")
+    lines.append(f"**Summary:** {capped_summary}")
 
+    actions_omitted = 0
     if action_log:
         lines.append("")
         lines.append("**Actions taken:**")
-        for i, entry in enumerate(action_log, 1):
+        entries = action_log[-MAX_ACTION_LOG_ENTRIES:]
+        actions_omitted = len(action_log) - len(entries)
+        if actions_omitted > 0:
+            lines.append(f"  (... {actions_omitted} earlier actions omitted ...)")
+        for i, entry in enumerate(entries, actions_omitted + 1):
             tool = entry.get("tool", "?")
             inp = entry.get("input", {})
             ms = entry.get("elapsed_ms", 0)
             brief = json.dumps(inp)[:120]
             lines.append(f"  {i}. {tool}({brief}) [{ms}ms]")
+
+    if summary_truncated or actions_omitted > 0:
+        full_lines = [f"# Browser Agent Full Report (browser: {browser_id}, session: {session_id})", "", summary, ""]
+        if action_log:
+            full_lines.append("## Actions")
+            for i, entry in enumerate(action_log, 1):
+                full_lines.append(f"{i}. {entry.get('tool', '?')}({json.dumps(entry.get('input', {}))}) [{entry.get('elapsed_ms', 0)}ms]")
+        report_path = spill_full_report("\n".join(full_lines), "browser-report")
+        if report_path:
+            lines.append("")
+            lines.append(f"Full unabridged report saved to: {report_path} (use Read with offset/limit for the omitted parts)")
 
     content.append({"type": "text", "text": "\n".join(lines)})
 

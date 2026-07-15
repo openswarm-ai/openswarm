@@ -555,15 +555,15 @@ def test_resolve_sdk_gemini_prefers_antigravity_over_api_key():
     s = AppSettings()
     s.google_api_key = "ai-studio-key"
     with patch.object(registry, "p_antigravity_connected", return_value=True):
-        # flash IS AG-serveable -> AG wins over the key
-        assert registry.resolve_model_id_for_sdk("gemini-3-flash", s) == "ag/gemini-3-flash"
+        # flash-lite IS AG-serveable -> AG wins over the key (probe retargeted after gemini-3-flash was removed)
+        assert registry.resolve_model_id_for_sdk("gemini-3.1-flash-lite", s) == "ag/gemini-3-flash"
     with patch.object(registry, "p_antigravity_connected", return_value=False):
         # AG not connected -> key
-        assert registry.resolve_model_id_for_sdk("gemini-3-flash", s) == "gemini/gemini-3-flash-preview"
+        assert registry.resolve_model_id_for_sdk("gemini-3.1-flash-lite", s) == "gemini/gemini-3.1-flash-lite-preview"
     # No key, no AG -> gc/ subscription lane untouched
     s2 = AppSettings()
     with patch.object(registry, "p_antigravity_connected", return_value=False):
-        assert registry.resolve_model_id_for_sdk("gemini-3-flash", s2) == "gc/gemini-3-flash-preview"
+        assert registry.resolve_model_id_for_sdk("gemini-3.1-flash-lite", s2) == "gc/gemini-3.1-flash-lite-preview"
 
 
 def test_error_classify_schema_translation_400_is_not_auth():
@@ -663,16 +663,22 @@ def test_dashboard_get_strips_only_orphan_session_cards():
 
 
 def test_banned_models_not_offered():
-    """Claude Fable (banned) and Gemini 3.1 Pro (no working lane: AG can't serve
-    it, AI Studio key 429s pro-preview) were pulled from the picker. Guard so a
-    refactor can't silently re-list a model that can't run."""
+    """Models with no working lane stay pulled from the picker. Guard so a
+    refactor can't silently re-list a model that can't run. Gemini 3.1 Pro: AG
+    can't serve it, AI Studio key 429s pro-preview. gpt-5.5 (subscription):
+    cx/gpt-5.5 404s on the pinned 9Router 0.3.60, so picking it broke codex
+    entirely; gpt-5.5-api stays (that lane works). (Fable 5 was re-listed
+    2026-07-02 after its ban lifted, so it left this list.)"""
     from backend.apps.agents.providers.registry import BUILTIN_MODELS
     all_values = {m["value"] for models in BUILTIN_MODELS.values() for m in models}
-    for dead in ("fable-5-cc", "fable-5-api", "gemini-3.1-pro", "gemini-3.1-pro-api"):
+    for dead in ("gemini-3.1-pro", "gemini-3.1-pro-api", "gpt-5.5"):
         assert dead not in all_values, f"{dead} is back in the picker"
-    # No 'fable' or '3.1 pro' label survives in any provider group either.
+    assert "gpt-5.5-api" in all_values  # the working API-key lane must survive the pull
+    # No dead cx/gpt-5.5 router id survives either (a renamed entry would dodge the value check).
+    all_router_ids = {m.get("router_model_id") for models in BUILTIN_MODELS.values() for m in models}
+    assert "cx/gpt-5.5" not in all_router_ids
+    # No '3.1 pro' label survives in any provider group either.
     all_labels = " | ".join(m["label"].lower() for models in BUILTIN_MODELS.values() for m in models)
-    assert "fable" not in all_labels
     assert "3.1 pro" not in all_labels
 
 
@@ -1710,6 +1716,15 @@ def test_gpt5_param_scrub_drops_unsupported_sampling_knobs():
     assert json.loads(scrub_gpt5_params(json.dumps(
         {"model": "gpt-4o", "temperature": 0, "top_p": 0.5}).encode())) == \
         {"model": "gpt-4o", "temperature": 0, "top_p": 0.5}
+    # reasoning_effort + function tools together 400 on /chat/completions (live-confirmed 2026-07-08 on gpt-5.5/5.4/5.4-mini); with tools present effort must go, without tools it must stay.
+    combo = json.dumps({"model": "gpt-5.4-mini", "messages": [], "max_tokens": 200,
+                        "reasoning_effort": "low", "tools": [{"type": "function", "function": {"name": "t"}}]}).encode()
+    solo = json.dumps({"model": "gpt-5.4-mini", "messages": [], "max_tokens": 200,
+                       "reasoning_effort": "low"}).encode()
+    for fn in (scrub_request_for_openai_gpt5, scrub_gpt5_params):
+        assert "reasoning_effort" not in json.loads(fn(combo)), fn.__name__
+        assert json.loads(fn(combo))["tools"], fn.__name__
+        assert json.loads(fn(solo)).get("reasoning_effort") == "low", fn.__name__
 
 
 def test_openrouter_plugin_array_matches_docs():
@@ -2795,9 +2810,10 @@ def test_sync_custom_providers_updates_existing_node_in_place():
 
 
 def test_sync_custom_providers_deletes_orphaned_managed_nodes():
-    """When a user removes a custom provider in Settings, the next sync
-    should delete the corresponding 9Router node (and its connection
-    cascades). Other unmanaged nodes must NOT be touched."""
+    """When a user removes a custom provider in Settings (list still NON-empty), the next
+    sync should delete the corresponding 9Router node (its connection cascades). Unmanaged
+    nodes must NOT be touched. An EMPTY list never sweeps (corrupt/defaulted settings at
+    boot must not mass-reap live connections; see test_router_sync_guards.py)."""
     import asyncio
     from unittest.mock import patch as upatch
     from backend.apps.nine_router import sync_custom_providers
@@ -2821,7 +2837,9 @@ def test_sync_custom_providers_deletes_orphaned_managed_nodes():
     with upatch("backend.apps.nine_router.is_running", return_value=True), \
          upatch("backend.apps.nine_router.httpx.AsyncClient", MockClient), \
          upatch("backend.apps.nine_router.get_providers", new=lambda: p_async_return([])):
-        asyncio.run(sync_custom_providers([]))  # empty list → delete all managed
+        asyncio.run(sync_custom_providers(
+            [{"name": "KeptProvider", "base_url": "http://localhost:9999/v1", "api_key": "k"}]
+        ))
 
     deletes = [c for c in state["calls"] if c[0] == "DELETE"]
     deleted_urls = [c[1] for c in deletes]

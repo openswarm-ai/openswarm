@@ -237,7 +237,7 @@ export const ChatInputView: React.FC<Props> = (p) => {
         autoRunMode={p.autoRunMode}
         isRunning={p.isRunning}
         queueLength={p.queueLength}
-        placeholderLabel={p.placeholderOverride ?? `${p.modeConf.label}, @ for context, / for commands`}
+        placeholderLabel={p.placeholderOverride ?? 'Ask anything, @ for context, / for commands'}
         onInput={p.handleInput}
         onClick={p.handleEditorClick}
         onKeyDown={p.handleKeyDown}

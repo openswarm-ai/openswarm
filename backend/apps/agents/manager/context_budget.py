@@ -22,8 +22,12 @@ def maybe_compact(session: AgentSession, force: bool = False) -> bool:
     Returns True if a NEW summary boundary was set. Summarizes everything up to (but not
     including) the last 6 messages so recent intent stays visible to the model. Never
     touches session.messages."""
-    ctx_used = session.tokens.get("input", 0) / max(1, session.context_window)
-    if not force and ctx_used < session.compact_threshold_pct:
+    window = max(1, session.context_window)
+    # Fire at the TIGHTER of the pct or the absolute ceiling: on a 200K window the pct wins (130K), on a 1M window the ceiling wins (180K, not 650K). Not "just 65%".
+    abs_pct = min(1.0, session.compact_abs_ceiling_tokens / window)
+    trigger = min(session.compact_threshold_pct, abs_pct)
+    ctx_used = session.tokens.get("input", 0) / window
+    if not force and ctx_used < trigger:
         return False
     msgs = get_branch_messages(session)
     if len(msgs) < 4:

@@ -54,6 +54,33 @@ function main() {
   }
   process.stdout.write(`  ok python ${versionLine}\n`);
 
+  // 1b) macOS: the bundled python's arch slices must cover the app's. An arm64
+  // python inside the x64 app RUNS on an arm64 build host (native, not Rosetta),
+  // so --version alone can never catch the cross-arch bundle bug that bricked
+  // every Intel Mac. lipo compares what the file IS, not what the host can run.
+  if (process.platform === 'darwin') {
+    const i = appExe.indexOf('.app');
+    const appRoot = i === -1 ? appExe : appExe.slice(0, i + 4);
+    const mainBin = path.join(appRoot, 'Contents', 'MacOS', path.basename(appRoot, '.app'));
+    const archsOf = (bin) => {
+      const r = spawnSync('lipo', ['-archs', bin], { encoding: 'utf8', timeout: 15000 });
+      if (r.status !== 0) return null;
+      return (r.stdout || '').trim().split(/\s+/).filter(Boolean);
+    };
+    const appArchs = archsOf(mainBin);
+    const pyArchs = archsOf(fs.realpathSync(py));
+    if (!appArchs || !pyArchs) {
+      process.stderr.write(`\nPYTHON-HEALTH FAIL: lipo could not read archs (app=${appArchs}, python=${pyArchs})\n`);
+      process.exit(1);
+    }
+    const missing = appArchs.filter((a) => !pyArchs.includes(a));
+    if (missing.length > 0) {
+      process.stderr.write(`\nPYTHON-HEALTH FAIL: app is [${appArchs}] but bundled python is [${pyArchs}] (missing ${missing}). This build would brick ${missing.join('/')} Macs.\n`);
+      process.exit(1);
+    }
+    process.stdout.write(`  ok arch match (app [${appArchs}] / python [${pyArchs}])\n`);
+  }
+
   // 2) Import smoke: load the heaviest deps to catch a half-extracted site-packages tree (rare but lethal).
   const smoke = spawnSync(py, ['-c', 'import sys, fastapi, anthropic, pydantic, httpx, jsonschema; print(sys.version_info[:3])'], { encoding: 'utf8', timeout: 30000 });
   if (smoke.status !== 0) {

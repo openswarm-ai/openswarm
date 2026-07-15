@@ -115,3 +115,64 @@ export const darkTokens: ClaudeTokens = {
 
 /** @deprecated Use useClaudeTokens() hook instead for dark mode support */
 export const claude = lightTokens;
+
+// Onboarding's color pad hands us one hex; the full accent triad (primary/hover/pressed) is derived here so every consumer of tokens.accent re-themes from a single stored value.
+
+export interface Hsl { h: number; s: number; l: number }
+
+export function hexToHsl(hex: string): Hsl | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l };
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h: number;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return { h, s, l };
+}
+
+export function hslToHex({ h, s, l }: Hsl): string {
+  const hue2rgb = (p: number, q: number, t: number): number => {
+    let tt = t;
+    if (tt < 0) tt += 1;
+    if (tt > 1) tt -= 1;
+    if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+    if (tt < 1 / 2) return q;
+    if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+    return p;
+  };
+  let r: number, g: number, b: number;
+  if (s === 0) { r = g = b = l; } else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1 / 3);
+  }
+  const toHex = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+
+export function withAccent(base: ClaudeTokens, accentHex: string | null, mode: 'light' | 'dark'): ClaudeTokens {
+  if (!accentHex) return base;
+  const hsl = hexToHsl(accentHex);
+  if (!hsl) return base;
+  // Clamp lightness per mode so a near-white or near-black pick still reads as a usable accent against its ground.
+  const l = mode === 'dark' ? clamp(hsl.l, 0.45, 0.68) : clamp(hsl.l, 0.28, 0.55);
+  const s = clamp(hsl.s, 0.25, 0.95);
+  const primary = hslToHex({ h: hsl.h, s, l });
+  const hover = hslToHex({ h: hsl.h, s, l: clamp(l + 0.07, 0, 0.8) });
+  const pressed = hslToHex({ h: hsl.h, s, l: clamp(l - 0.07, 0.15, 1) });
+  return { ...base, accent: { primary, hover, pressed } };
+}

@@ -83,6 +83,7 @@ workspace/
 │                          #   when you change either)
 ├── run.sh                 # OpenSwarm's runtime spawns this; you don't
 ├── backend_init.sh        # Run this when you need a backend (see below)
+├── restart.sh             # Run this to restart the app runtime (see below)
 ├── SKILL.md               # This document
 └── frontend/
     ├── package.json       # React 18, MUI v7, Redux Toolkit, Framer
@@ -258,9 +259,8 @@ bash backend_init.sh
 
 This script COPIES the canonical backend scaffold (FastAPI + SubApp pattern
 + swarm-debug pre-installed) into your workspace, allocates a free port,
-and flips `BACKEND_PORT` in both `.env` and `.env.example`. Then **hard-
-reload the preview** (right-click the reload button) so the runtime
-restarts and brings the backend up.
+and flips `BACKEND_PORT` in both `.env` and `.env.example`. Then run
+**`bash restart.sh`** so the runtime restarts and brings the backend up.
 
 **You MUST NOT roll your own backend.** Do not:
 - Hand-write a `backend/main.py` from scratch.
@@ -447,7 +447,7 @@ Spotify-style player) don't need this: their actions are already at agent cadenc
 ## Debugging — use `swarm_debug`, not `print()`
 
 The backend has `swarm_debug` pre-installed. It's a colored frame-aware
-logger that lands in the App Builder's **Terminal** tab under `[BACKEND]`.
+logger that lands in the app card's **Terminal** view under `[BACKEND]`.
 
 ```python
 from swarm_debug import debug
@@ -462,9 +462,17 @@ reference. `print()` works too but lacks the variable-name inference and
 colorization.
 
 Frontend `console.log/warn/error` calls land in the Terminal pane under
-`[FRONTEND]` via the App Builder's webview-preload bridge. Same chronological
+`[FRONTEND]` via the app card's webview-preload bridge. Same chronological
 stream as `[BACKEND]` lines, so you can correlate cause and effect across
 the two halves of your stack.
+
+**Read the terminal yourself: `.openswarm/terminal.log`** at the workspace
+root is a live tee of everything the Terminal pane shows — `[BACKEND]` /
+`[BACKEND:stderr]` stdout+stderr, `[RUNTIME]` events, and `[FRONTEND]` /
+`[FRONTEND:warn]` / `[FRONTEND:error]` console lines from the running app.
+It resets on every app (re)start. When something misbehaves, don't guess —
+`tail -100 .openswarm/terminal.log` (or grep it for `error`) and look at
+what actually happened.
 
 ---
 
@@ -502,8 +510,9 @@ Common deps already in the template:
 ## Workflow tips
 
 - **Edits are auto-saved**. As soon as you write a file via the Edit/Write tool, it's on disk. Vite HMR re-renders the preview within ~100ms.
-- **Hard Reload (right-click the reload button)** restarts the runtime — useful after you `bash backend_init.sh` or change `.env` values.
-- **`meta.json`** at workspace root drives the app's name + description in the OpenSwarm sidebar, App Builder header, and Apps page. Write it FIRST when starting a new app (see step 1 of the Quick start checklist), and revise it any time the app's purpose shifts.
+- **`bash restart.sh` restarts the app runtime yourself** — backend + vite, no user action needed. Use it after `bash backend_init.sh`, after editing `.env`, or whenever backend code must reload (uvicorn runs WITHOUT --reload, so backend edits do NOT hot-apply). Never ask the user to restart for you, and never try to kill/rerun run.sh — the harness owns the process. If `restart.sh` is missing (older app), `mkdir -p .openswarm && touch .openswarm/restart-requested` does the same thing.
+- After a restart, wait a few seconds and check `.openswarm/terminal.log` to confirm the boot looked clean.
+- **`meta.json`** at workspace root drives the app's name + description in the OpenSwarm sidebar and on the app's live card on the dashboard. Write it FIRST when starting a new app (see step 1 of the Quick start checklist), and revise it any time the app's purpose shifts.
 
 ---
 
@@ -514,8 +523,8 @@ runtime errors as a visible red error card AND mirrors the error into
 the Terminal pane as a `[FRONTEND]` line tagged `[openswarm:app-error]`.
 After substantial edits — especially anything that touches imports,
 hooks, or React state — **always check the most recent `[FRONTEND]`
-lines in your Terminal output before saying "done"**. If you see one,
-fix it before claiming the app is ready.
+lines before saying "done"** (`tail -50 .openswarm/terminal.log`).
+If you see one, fix it before claiming the app is ready.
 
 The three most common ways agent edits crash a React preview:
 
@@ -543,10 +552,9 @@ The three most common ways agent edits crash a React preview:
    rm -rf frontend/node_modules && rm -rf frontend/.vite-cache
    ```
 
-   Then trigger Hard Reload on the preview (right-click the reload
-   button in the toolbar). The workspace's `frontend/node_modules`
+   Then run `bash restart.sh`. The workspace's `frontend/node_modules`
    will re-symlink to the shared warm cache on next vite boot — only
-   ONE React copy exists across all App Builder apps, so the
+   ONE React copy exists across all OpenSwarm apps, so the
    duplicate is gone. The `.vite-cache` wipe is important because
    vite caches pre-bundled deps including the duplicate React.
 
@@ -580,7 +588,7 @@ When making a new app from scratch:
 
 1. **WRITE `meta.json` FIRST**, before any other tool call. Put a 1-3 word product
    name (Title Case) in `name` and a one-sentence description in `description`.
-   The Apps sidebar and the App Builder header show this name to the user; until
+   The sidebar and the app's dashboard card show this name to the user; until
    you write it, both surfaces sit at "Untitled App". Don't wait until the end of
    the turn to fill it in, pick a name from the user's prompt and ship it now.
    Example: prompt "make doodle jump" → `{"name": "Doodle Jumper", "description":

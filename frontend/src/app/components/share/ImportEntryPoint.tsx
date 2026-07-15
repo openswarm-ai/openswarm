@@ -19,8 +19,8 @@ export const IMPORT_OPEN_EVENT = 'openswarm:import-open';
 const ACCEPT = '.swarm,.md,.zip';
 const DIGEST_MS = 820; // keep in step with ImportDigest's wave so the blast reads fully
 
+// Only routes that actually exist belong here. An imported app is an Output that shows up in the Apps sidebar; it has no standalone page (the /apps route was removed), so it must not navigate, or the whole app tree unmounts to a white screen.
 const DEST: Record<string, (id: string) => string | null> = {
-  app: (id) => `/apps/${id}`,
   dashboard: (id) => `/dashboard/${id}`,
 };
 
@@ -54,7 +54,8 @@ const ImportEntryPoint: React.FC = () => {
 
   const finish = useCallback(
     (rootType: string, rootId: string, name: string) => {
-      setToast({ msg: `Added ${name}`, sev: 'success' });
+      const msg = rootType === 'app' ? `Added ${name} to your Apps` : `Added ${name}`;
+      setToast({ msg, sev: 'success' });
       const to = DEST[rootType]?.(rootId);
       if (to) navigate(to);
     },

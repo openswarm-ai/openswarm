@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import { report } from '@/shared/serviceClient';
 import { useAppDispatch } from '@/shared/hooks';
 import { expandSession } from '@/shared/state/agentsSlice';
-import { bringToFront } from '@/shared/state/dashboardLayoutSlice';
+import { bringToFront, viewCardKey } from '@/shared/state/dashboardLayoutSlice';
 import type { CardPosition, ViewCardPosition, BrowserCardPosition, WorkflowCardPosition } from '@/shared/state/dashboardLayoutSlice';
 import type { CardType } from '../state/useDashboardSelection';
 import type { CanvasActions } from './useCanvasControls';
@@ -45,7 +45,7 @@ export function useArrowNav({
       allCardEntries.push({ id: card.session_id, type: 'agent', cx: card.x + card.width / 2, cy: card.y + card.height / 2 });
     }
     for (const vc of Object.values(viewCards)) {
-      allCardEntries.push({ id: vc.output_id, type: 'view', cx: vc.x + vc.width / 2, cy: vc.y + vc.height / 2 });
+      allCardEntries.push({ id: viewCardKey(vc.output_id, vc.instance), type: 'view', cx: vc.x + vc.width / 2, cy: vc.y + vc.height / 2 });
     }
     for (const bc of Object.values(browserCards)) {
       allCardEntries.push({ id: bc.browser_id, type: 'browser', cx: bc.x + bc.width / 2, cy: bc.y + bc.height / 2 });

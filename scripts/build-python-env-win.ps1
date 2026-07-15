@@ -79,10 +79,6 @@ if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed" }
 & $PythonBin -m pip install -r (Join-Path $ProjectRoot 'backend\requirements.lock')
 if ($LASTEXITCODE -ne 0) { throw "pip install requirements failed" }
 
-Write-Host "Installing debugger module..."
-& $PythonBin -m pip install (Join-Path $ProjectRoot 'debugger')
-if ($LASTEXITCODE -ne 0) { throw "pip install debugger failed" }
-
 Write-Host "Verifying claude-agent-sdk..."
 & $PythonBin -c "import claude_agent_sdk; print('claude-agent-sdk installed')"
 if ($LASTEXITCODE -ne 0) { throw "claude-agent-sdk verification failed" }

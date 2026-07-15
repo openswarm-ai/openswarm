@@ -2,7 +2,8 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Sparkles } from 'lucide-react';
+import { useAppSelector } from '@/shared/hooks';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { STARTER_CATEGORIES } from '@/shared/starterCategories';
 
@@ -13,6 +14,9 @@ const WelcomeQuickReplies: React.FC<{
   onPickBuilder: (prompt: string) => void;
 }> = ({ c, onPick, onPickBuilder }) => {
   const [expanded, setExpanded] = React.useState<string | null>(null);
+  // Onboarding v3's prep wrote starters about THIS user's machine and apps; they lead, generic categories demote to "More ideas".
+  const personalized = useAppSelector((s) => s.settings.data.personalized_starters ?? []);
+  const [showCategories, setShowCategories] = React.useState(personalized.length === 0);
   const currentCategory = STARTER_CATEGORIES.find((cat) => cat.id === expanded);
   const isAppBuilder = currentCategory?.target === 'app-builder';
   const currentPrompts = currentCategory?.prompts ?? [];
@@ -30,8 +34,64 @@ const WelcomeQuickReplies: React.FC<{
       style={{ padding: '4px 18px 8px 18px', display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}
     >
       <AnimatePresence mode="wait" initial={false}>
-        {expanded === null ? (
+        {!showCategories && expanded === null ? (
+          <motion.div key="personal" initial={false} style={{ display: 'flex', flexDirection: 'column' }}>
+            <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem', mb: 1.1 }}>
+              made for you, or just type below
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.7 }}>
+              {personalized.map((s, i) => (
+                <motion.button
+                  key={s.title}
+                  onClick={() => onPick(s.prompt)}
+                  initial={{ opacity: 0, scale: 0.92 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 26, delay: 0.08 + i * 0.06 }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+                    padding: '10px 14px', borderRadius: 11,
+                    border: `1px solid ${c.border.medium}`, background: c.bg.surface,
+                    color: c.text.secondary, fontSize: '0.88rem', fontWeight: 500,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  <Sparkles size={14} color={c.accent.primary} style={{ flexShrink: 0 }} />
+                  {s.title}
+                </motion.button>
+              ))}
+            </Box>
+            <Box
+              component="button"
+              onClick={() => setShowCategories(true)}
+              sx={{
+                alignSelf: 'flex-start', mt: 0.9, px: 0.6, py: 0.3,
+                border: 'none', background: 'transparent',
+                color: c.text.ghost, fontSize: '0.82rem',
+                cursor: 'pointer', fontFamily: 'inherit',
+                '&:hover': { color: c.text.secondary },
+              }}
+            >
+              More ideas
+            </Box>
+          </motion.div>
+        ) : expanded === null ? (
           <motion.div key="categories" initial={false} style={{ display: 'flex', flexDirection: 'column' }}>
+            {personalized.length > 0 && (
+              <Box
+                component="button"
+                onClick={() => setShowCategories(false)}
+                sx={{
+                  display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                  alignSelf: 'flex-start', mb: 0.9, px: 0.6, py: 0.3,
+                  border: 'none', background: 'transparent',
+                  color: c.text.ghost, fontSize: '0.85rem',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  '&:hover': { color: c.text.secondary },
+                }}
+              >
+                <ArrowLeft size={14} /> your starters
+              </Box>
+            )}
             <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem', mb: 1.1 }}>
               pick one, or just type below
             </Typography>

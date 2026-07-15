@@ -6,7 +6,7 @@ import { estimateRenderedTextHeight, RECHECK_VISIBILITY_EVENT } from './markdown
 
 // Intra-message virtualization for very long assistant messages. The text is split into FIXED blocks (each block always covers the same character range), so unlike the old growing-tail chunking nothing shifts as you scroll, and no scroll correction is needed. Only blocks within a screen of the viewport actually render their markdown; the rest are height-reserved placeholders, so an extremely long message never parses or mounts more than the on-screen portion plus a buffer.
 
-const BLOCK_TARGET_CHARS = 4_000;
+export const BLOCK_TARGET_CHARS = 4_000;
 // Remembered measured height per block (`${messageId}#${index}`). Module-scoped so it survives the block unmounting/remounting as you scroll, keeping the reserved placeholder heights (and thus scroll position) stable.
 const blockHeights = new Map<string, number>();
 

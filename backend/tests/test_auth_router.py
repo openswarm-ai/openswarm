@@ -39,6 +39,11 @@ def reset_settings():
 # --------------------------------------------------------------------------- /api/auth/signin-activate ---------------------------------------------------------------------------
 
 def test_signin_activate_persists_user_id(client, reset_settings):
+    from backend.apps.settings.settings import load_settings, save_settings
+    s = load_settings()
+    s.installation_id = "unified-install-id-123"
+    save_settings(s)
+
     fake_response = AsyncMock()
     fake_response.status_code = 200
     fake_response.json = lambda: {
@@ -61,6 +66,10 @@ def test_signin_activate_persists_user_id(client, reset_settings):
             },
         )
     assert r.status_code == 200
+    assert any(
+        call.kwargs.get("json", {}).get("install_id") == "unified-install-id-123"
+        for call in instance.post.call_args_list
+    )
     body = r.json()
     assert body["user_id"] == "u-1234"
     assert body["email"] == "smoke@example.com"

@@ -68,6 +68,7 @@
       "backend/apps/agents/browser/browser_agent.py",
       "backend/apps/agents/browser_agent_mcp_server.py",
       "backend/apps/agents/browser/browser_schema.py",
+      "backend/apps/agents/core/ws_manager.py",
       "backend/apps/agents/manager/prompt/prompt_context.py",
       "backend/apps/agents/manager/prompt/attachments.py",
       "backend/apps/agents/providers/pricing.py",
@@ -143,6 +144,9 @@
     "max-folder-items": [
       "backend",
       "backend/apps",
+      "backend/apps/reddit_mcp_shim",
+      "backend/apps/x_mcp_shim",
+      "backend/apps/tiktok_mcp_shim",
       "backend/apps/agents",
       "backend/apps/agents/core",
       "backend/apps/agents/manager",

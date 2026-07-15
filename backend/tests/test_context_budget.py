@@ -72,6 +72,27 @@ def test_force_bypasses_threshold_and_idempotency():
     assert cb.maybe_compact(s, force=True) is True   # force re-marks even when unchanged
 
 
+# ---- absolute ceiling: "not just 65%" on big windows -----------------------
+
+def test_abs_ceiling_fires_earlier_than_pct_on_a_big_window():
+    # 1M window, 200K used = 0.20: below the 0.65 pct but above the 180K ceiling (0.18), so it fires.
+    s = p_session_with(messages=7, input_tokens=200_000, context_window=1_000_000)
+    assert cb.maybe_compact(s) is True
+
+
+def test_abs_ceiling_does_not_fire_below_it_on_a_big_window():
+    s = p_session_with(messages=7, input_tokens=150_000, context_window=1_000_000)  # 0.15 < 0.18
+    assert cb.maybe_compact(s) is False
+
+
+def test_small_window_still_governed_by_pct():
+    # 200K window: 130K (0.65) is tighter than the 180K ceiling, so pct still rules.
+    s = p_session_with(messages=7, input_tokens=120_000, context_window=200_000)  # 0.60 < 0.65
+    assert cb.maybe_compact(s) is False
+    s2 = p_session_with(messages=7, input_tokens=140_000, context_window=200_000)  # 0.70 >= 0.65
+    assert cb.maybe_compact(s2) is True
+
+
 # ---- emit_context_update ----------------------------------------------------
 
 def test_emit_persists_tokens_and_broadcasts(monkeypatch):

@@ -1,8 +1,8 @@
-"""Unit coverage for the Reddit MCP shim's pure logic: the session-token harvest
-regex, the rate limiter's 429 backoff, and tool dispatch + response normalizers
-with the network mocked. Writes can't be live-verified without a logged-in
-session, so the oauth.reddit.com contract is pinned here against canned Reddit
-payloads (the json.errors envelope, the comment/submit shapes) instead."""
+"""Unit coverage for the Reddit MCP shim's pure logic: the modhash write-token harvest,
+the rate limiter's 429 backoff, and tool dispatch + response normalizers with the
+network mocked. Reddit is driven via www.reddit.com's JSON API + the session cookie
+(reads get .json, writes carry the modhash); the contract is pinned here against canned
+Reddit payloads (the me.json envelope, the json.errors envelope, comment/submit shapes)."""
 
 import json
 import time
@@ -11,26 +11,21 @@ from unittest.mock import patch
 
 from backend.apps.reddit_mcp_shim import rate_limit, reddit_reads, reddit_writes
 from backend.apps.reddit_mcp_shim.handlers import handle_tool_call
-from backend.apps.reddit_mcp_shim.reddit_http import EXPIRES_RE, TOKEN_RE
-from backend.apps.reddit_mcp_shim.session_source import SessionUnavailable
+from backend.apps.social_shims.session_source import SessionUnavailable
 
 
 def p_text(result: dict) -> str:
     return result["content"][0]["text"]
 
 
-# -- session-token harvest -------------------------------------------------
+# -- whoami reads the me.json envelope (kind/data), not the old flat oauth shape ----
 
-def test_token_regex_harvests_bearer_from_html():
-    html = '<script>window.___r={"session":{"accessToken":"eyJabc.def","expiresIn":"86400000"}}</script>'
-    m = TOKEN_RE.search(html)
-    assert m and m.group(1) == "eyJabc.def"
-    e = EXPIRES_RE.search(html)
-    assert e and e.group(1) == "86400000"
-
-
-def test_token_regex_absent_when_logged_out():
-    assert TOKEN_RE.search("<html>login wall, no token here</html>") is None
+def test_whoami_reads_me_json_envelope():
+    with patch.object(reddit_reads, "api", return_value={"kind": "t2", "data": {"name": "someuser", "total_karma": 5}}):
+        out = handle_tool_call("reddit_whoami", {})
+    data = json.loads(p_text(out))
+    assert "isError" not in out
+    assert data["name"] == "someuser" and data["total_karma"] == 5
 
 
 # -- rate limiter ----------------------------------------------------------

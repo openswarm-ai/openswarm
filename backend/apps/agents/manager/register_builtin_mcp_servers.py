@@ -129,6 +129,19 @@ def register_builtin_mcp_servers(
         "type": "stdio",
     }
 
+    # Always-on apps server: CreateApp lets ANY agent spin up a live App card on the canvas. This replaced the standalone App Builder page; the tool result carries the App Builder reference so no mode switch is needed.
+    apps_server_path = os.path.join(agents_dir, "apps_mcp_server.py")
+    mcp_servers["openswarm-apps"] = {
+        "command": sys.executable,
+        "args": [apps_server_path],
+        "env": {
+            "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
+            "OPENSWARM_AUTH_TOKEN": get_auth_token(),
+            "OPENSWARM_PARENT_SESSION_ID": session.id,
+        },
+        "type": "stdio",
+    }
+
     # Always-on schedule server: ScheduleWorkflow + CRUD + AddWorkflowStep/EditWorkflowStep so the agent (and the workflow Edit Agent) can build and schedule recurring work via the native scheduler instead of cron/launchctl. The 4 scheduling tools are force-gated in path_gate; Cron* is denied in build_effective_tool_lists.
     schedule_server_path = os.path.join(
         agents_dir, "schedule_mcp_server.py"

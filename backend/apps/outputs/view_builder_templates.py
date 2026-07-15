@@ -472,12 +472,12 @@ def p_ensure_warm_python_venv() -> str | None:
                 logger.warning("warm-venv create failed: %s", r.stderr[-1500:])
                 return None
 
-            # Install the template's dependencies (fastapi[standard], typeguard, transitives); NOT the workspace's own backend, which gets editable-installed per-workspace by run.sh after the cache copy. The venv layout differs by platform: POSIX puts executables in `bin/`, Windows in `Scripts/`, and the executable name itself gets `.exe`.
+            # Install the template's dependencies (fastapi[standard], typeguard, swarm-debug, transitives); keep this list in sync with webapp_template/backend/pyproject.toml. NOT the workspace's own backend, which gets editable-installed per-workspace by run.sh after the cache copy. The venv layout differs by platform: POSIX puts executables in `bin/`, Windows in `Scripts/`, and the executable name itself gets `.exe`.
             if os.name == "nt":
                 pip = os.path.join(venv_dir, "Scripts", "pip.exe")
             else:
                 pip = os.path.join(venv_dir, "bin", "pip")
-            deps = ["fastapi[standard]", "typeguard==4.4.2"]
+            deps = ["fastapi[standard]", "typeguard==4.4.2", "swarm-debug"]
             r = subprocess.run(
                 [pip, "install", "--disable-pip-version-check", *deps],
                 capture_output=True, text=True, timeout=600,
@@ -557,14 +557,13 @@ def seed_webapp_template_workspace(workspace_dir: str, frontend_port: int) -> No
       2. Sed both `.env` and `.env.example` to set `FRONTEND_PORT=<port>`.
          BACKEND_PORT stays NONE in both (per spec; the agent flips it
          via backend_init.sh when it needs a backend).
-      3. Append two install-specific paths to `.env` ONLY (NOT
-         `.env.example`; these are absolute paths on the current
-         machine, not template defaults):
+      3. Append an install-specific path to `.env` ONLY (NOT
+         `.env.example`; it is an absolute path on the current
+         machine, not a template default):
             OPENSWARM_TEMPLATE_BACKEND_PATH=<abs path to master template's backend/>
-            OPENSWARM_DEBUGGER_PATH=<abs path to OpenSwarm's debugger/ package>
-         The first is read by `backend_init.sh`; the second is read by
-         the template's `backend/run.sh` to install our local debugger
-         before `pip install -e .`.
+         It is read by `backend_init.sh`. The debugger is no longer
+         seeded from a local path; the template's `pip install -e .`
+         resolves `swarm-debug` from PyPI.
 
     Idempotent within reason; re-running over an existing workspace
     overwrites template files and re-asserts the env values.
@@ -593,12 +592,11 @@ def seed_webapp_template_workspace(workspace_dir: str, frontend_port: int) -> No
 
     # Install-specific paths; .env only.
     patch_env_port(env_path, "OPENSWARM_TEMPLATE_BACKEND_PATH", TEMPLATE_BACKEND_PATH)
-    patch_env_port(env_path, "OPENSWARM_DEBUGGER_PATH", DEBUGGER_PATH)
     # Backend-venv warm-cache path; backend_init.sh checks this for a pre-populated `.venv/` to cp -aR into the workspace instead of paying the ~25s venv-create + pip-install cost. Written even if the cache isn't ready yet; backend_init.sh re-checks at run time.
     patch_env_port(env_path, "OPENSWARM_BACKEND_VENV_CACHE", warm_venv_dir())
 
     # Make the shipped scripts executable. tarball/git extracts may strip the +x bit depending on how the snapshot was vendored.
-    for script in ("run.sh", "backend_init.sh", "frontend/run.sh"):
+    for script in ("run.sh", "backend_init.sh", "restart.sh", "frontend/run.sh"):
         p = os.path.join(workspace_dir, script)
         if os.path.exists(p):
             os.chmod(p, 0o755)

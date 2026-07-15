@@ -100,6 +100,8 @@ export interface AgentSession {
   /** Browser memory signals that drive the subtle "Remembered"/"Learned" card chip. */
   memory_recalled?: boolean;
   memory_learned?: boolean;
+  /** Client-only: turn is waiting on the admission gate (agent:queued -> agent:admitted). Transient; self-clears on the next full-session status update. */
+  queued?: boolean;
   thinking_level?: 'off' | 'low' | 'medium' | 'high' | 'auto';
   active_mcps?: string[];
   ctx_used_pct?: number;
@@ -109,6 +111,9 @@ export interface AgentSession {
   framework_overhead_tokens?: number;
   context_overflow?: { reason: string; message: string; at: string } | null;
   rate_limited?: { retry_after_s: number | null; at: string } | null;
+  context_recovered?: { at: string } | null;
+  // Set when a view-builder turn installed/changed deps, so the app card does a HARD reload (Vite restart) at turn-finish instead of the soft one. Reset when the next turn starts.
+  app_deps_changed?: boolean;
   mcp_suggestions?: Array<{ id: string; title: string; description: string; reason?: string }>;
   mcp_suggestions_is_vague?: boolean;
   compacted_through_msg_id?: string | null;
@@ -720,6 +725,12 @@ const agentsSlice = createSlice({
         if (terminal.includes(session.status as any) && action.payload.status === 'running') {
           return;
         }
+        // A fresh turn clears last turn's deps-changed flag so the app card only hard-reloads for the turn that actually changed deps.
+        if (action.payload.status === 'running' && session.status !== 'running') {
+          session.app_deps_changed = false;
+        }
+        // Leaving the running state ends any admission-queue wait (the partial-payload path; the full-session path drops it by replacing the object).
+        if (action.payload.status !== 'running') session.queued = false;
         session.status = action.payload.status;
       }
       if (action.payload.status === 'running' && !state.trackedNotificationIds.includes(action.payload.sessionId)) {
@@ -848,6 +859,12 @@ const agentsSlice = createSlice({
       session.turn_label = null;
     },
 
+    setQueued(state, action: PayloadAction<{ sessionId: string; queued: boolean }>) {
+      const session = state.sessions[action.payload.sessionId];
+      if (!session) return;
+      session.queued = action.payload.queued;
+    },
+
     // streamStart/Delta/End live in streamingSlice; keeps sessions dict stable during streaming.
 
     addApprovalRequest(
@@ -957,6 +974,21 @@ const agentsSlice = createSlice({
     clearRateLimited(state, action: PayloadAction<{ sessionId: string }>) {
       const session = state.sessions[action.payload.sessionId];
       if (session) session.rate_limited = null;
+    },
+
+    setAppDepsChanged(state, action: PayloadAction<{ sessionId: string }>) {
+      const session = state.sessions[action.payload.sessionId];
+      if (session) session.app_deps_changed = true;
+    },
+
+    setContextRecovered(state, action: PayloadAction<{ sessionId: string }>) {
+      const session = state.sessions[action.payload.sessionId];
+      if (session) session.context_recovered = { at: new Date().toISOString() };
+    },
+
+    clearContextRecovered(state, action: PayloadAction<{ sessionId: string }>) {
+      const session = state.sessions[action.payload.sessionId];
+      if (session) session.context_recovered = null;
     },
 
     clearContextOverflow(
@@ -1433,6 +1465,7 @@ export const {
   recordCompaction,
   setTurnLabel,
   clearTurnLabel,
+  setQueued,
   addApprovalRequest,
   removeApprovalRequest,
   updateSessionCost,
@@ -1440,6 +1473,9 @@ export const {
   setContextOverflow,
   setRateLimited,
   clearRateLimited,
+  setContextRecovered,
+  clearContextRecovered,
+  setAppDepsChanged,
   clearContextOverflow,
   setMcpSuggestions,
   clearMcpSuggestions,

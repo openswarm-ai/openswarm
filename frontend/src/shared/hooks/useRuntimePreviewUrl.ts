@@ -21,10 +21,12 @@ export interface RuntimePreviewOptions {
   /** Gate the spawn so callers can defer paying runtime cost until preview is wanted. */
   enabled?: boolean;
   onLog?: (line: RuntimeLogLine) => void;
+  /** Which independent instance of the app to attach (1 = primary). Each instance is its own process on its own ports. */
+  instance?: number;
 }
 
 export function useRuntimePreviewUrl(opts: RuntimePreviewOptions): RuntimePreviewState {
-  const { workspaceId, enabled = true, onLog } = opts;
+  const { workspaceId, enabled = true, onLog, instance = 1 } = opts;
   const [frontendUrl, setFrontendUrl] = useState<string | null>(null);
   const [isNewMode, setIsNewMode] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
@@ -53,7 +55,7 @@ export function useRuntimePreviewUrl(opts: RuntimePreviewOptions): RuntimePrevie
 
     (async () => {
       try {
-        await fetch(`${API_BASE}/outputs/workspace/${workspaceId}/runtime/start`, {
+        await fetch(`${API_BASE}/outputs/workspace/${workspaceId}/runtime/start?instance=${instance}`, {
           method: 'POST',
           headers,
         });
@@ -63,7 +65,7 @@ export function useRuntimePreviewUrl(opts: RuntimePreviewOptions): RuntimePrevie
       if (cancelled) return;
       try {
         const wsBase = API_BASE.replace(/^http/, 'ws').replace(/\/api$/, '');
-        const url = `${wsBase}/ws/outputs/runtime/${workspaceId}/logs?token=${encodeURIComponent(auth || '')}`;
+        const url = `${wsBase}/ws/outputs/runtime/${workspaceId}/logs?token=${encodeURIComponent(auth || '')}&instance=${instance}`;
         ws = new WebSocket(url);
         ws.onmessage = (ev) => {
           try {
@@ -96,12 +98,12 @@ export function useRuntimePreviewUrl(opts: RuntimePreviewOptions): RuntimePrevie
       setIsNewMode(false);
       setIsHydrating(true);
       // detach is ref-counted on the backend; fire-and-forget.
-      fetch(`${API_BASE}/outputs/workspace/${workspaceId}/runtime/stop`, {
+      fetch(`${API_BASE}/outputs/workspace/${workspaceId}/runtime/stop?instance=${instance}`, {
         method: 'POST',
         headers,
       }).catch(() => {});
     };
-  }, [workspaceId, enabled]);
+  }, [workspaceId, enabled, instance]);
 
   return { frontendUrl, isNewMode, isHydrating };
 }

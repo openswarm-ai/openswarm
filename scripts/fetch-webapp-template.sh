@@ -3,13 +3,11 @@
 #
 # Idempotent — wipes the existing vendored dir and re-clones at the pinned ref.
 # Strips files we don't want shipped (LICENSE, README.md, .gitignore — we
-# author our own minimal .gitignore inside the snapshot). Applies our two
-# patches:
-#   1. backend/run.sh: pip-install $OPENSWARM_DEBUGGER_PATH if set, before
-#      the existing `pip install -e .` — resolves the `swarm-debug` dep
-#      from OpenSwarm's bundled debugger/ package instead of PyPI (where
-#      it doesn't exist).
-#   2. Add our own backend_init.sh at the snapshot root.
+# author our own minimal .gitignore inside the snapshot). Applies our
+# patches (swarm-debug toggle-on at boot, vite config pinning, .gitignore,
+# backend_init.sh). The template's `swarm-debug` dependency now resolves
+# from PyPI like any other dep; the old local-debugger injection patches
+# (editable-install of the bundled debugger/) are gone.
 #
 # Update REF to bump the pinned snapshot. CI / a future test could compare
 # `git rev-parse HEAD` of a fresh clone against REF and fail on drift.
@@ -36,38 +34,51 @@ mkdir -p "$DEST"
 ( cd "$TMP/clone" && rm -rf .git LICENSE README.md .gitignore )
 cp -R "$TMP/clone/." "$DEST/"
 
-# Patch 1: backend/run.sh installs OpenSwarm's local debugger/ before the
-# template's own `pip install -e .` so `from swarm_debug import debug` in
-# the template's backend code resolves to our bundled package (the PyPI
-# `swarm-debug` doesn't exist — our local package registers as `debug`
-# and exposes both `debug` and `swarm_debug` module names via setup.py
-# py_modules).
-RUN_SH="$DEST/backend/run.sh"
-if ! grep -q "OPENSWARM_DEBUGGER_PATH" "$RUN_SH"; then
-    # Insert the install line just before `pip install -e .`. macOS sed
-    # vs GNU sed: use a portable awk inline rewrite.
+# Patch 1a: root run.sh honors per-instance port overrides. OpenSwarm passes
+# OPENSWARM_FORCE_FRONTEND_PORT / OPENSWARM_FORCE_BACKEND_PORT when the user
+# opens a SECOND instance of an app; without this the `source .env` above
+# them pins every instance to the same ports.
+ROOT_RUN_SH="$DEST/run.sh"
+if ! grep -q "OPENSWARM_FORCE_FRONTEND_PORT" "$ROOT_RUN_SH"; then
     awk '
-        /pip install -e \./ && !inserted {
-            print "if [[ -n \"${OPENSWARM_DEBUGGER_PATH:-}\" && -d \"$OPENSWARM_DEBUGGER_PATH\" ]]; then"
-            print "    echo \"Installing OpenSwarm debugger (swarm_debug) from $OPENSWARM_DEBUGGER_PATH\""
-            print "    pip install -e \"$OPENSWARM_DEBUGGER_PATH\""
+        inserted != 1 && sourced && /^fi$/ {
+            print
+            print ""
+            print "# Per-instance port overrides: OpenSwarm passes these when the user opens a SECOND instance of the app, so it boots on fresh ports instead of colliding with the primary'\''s .env-pinned ones."
+            print "if [[ -n \"${OPENSWARM_FORCE_FRONTEND_PORT:-}\" ]]; then"
+            print "    export FRONTEND_PORT=\"$OPENSWARM_FORCE_FRONTEND_PORT\""
             print "fi"
+            print "if [[ -n \"${OPENSWARM_FORCE_BACKEND_PORT:-}\" ]]; then"
+            print "    export BACKEND_PORT=\"$OPENSWARM_FORCE_BACKEND_PORT\""
+            print "fi"
+            inserted = 1
+            next
+        }
+        /source "\$ROOT_DIR\/.env"/ { sourced = 1 }
+        { print }
+    ' "$ROOT_RUN_SH" > "$ROOT_RUN_SH.tmp" && mv "$ROOT_RUN_SH.tmp" "$ROOT_RUN_SH"
+    chmod +x "$ROOT_RUN_SH"
+fi
+
+# Patch 1: backend/run.sh forces all swarm-debug per-file toggles ON at
+# every boot (they default OFF, including files the agent creates later),
+# so `debug()` output actually lands in the App Builder Terminal. Runs
+# from the workspace root because that's uvicorn's cwd = the package's
+# per-project data-dir key.
+RUN_SH="$DEST/backend/run.sh"
+if ! grep -q "swarm-debug gates output" "$RUN_SH"; then
+    awk '
+        /^echo "Starting backend server/ && !inserted {
+            print "# swarm-debug gates output on per-file toggles that default OFF; force all ON each boot so agent-added files show in the Terminal."
+            print "if [[ \"$IS_WIN\" == \"1\" ]]; then SWARM_DEBUG_BIN=\"$VENV_DIR/Scripts/swarm-debug.exe\"; else SWARM_DEBUG_BIN=\"$VENV_DIR/bin/swarm-debug\"; fi"
+            print "( cd \"$BACKEND_DIR_ABSPATH/..\" && \"$SWARM_DEBUG_BIN\" toggle on --all >/dev/null 2>&1 ) || true"
+            print ""
             inserted = 1
         }
         { print }
     ' "$RUN_SH" > "$RUN_SH.tmp" && mv "$RUN_SH.tmp" "$RUN_SH"
     chmod +x "$RUN_SH"
 fi
-
-# Patch 1b: drop `"swarm-debug"` from the template's backend/pyproject.toml
-# dependencies. The OpenSwarm debugger gets installed separately via Patch
-# 1's `pip install -e $OPENSWARM_DEBUGGER_PATH`. Leaving the dep listed
-# would make pip 404 against PyPI (no such package).
-PYPROJECT="$DEST/backend/pyproject.toml"
-awk '
-    /^[[:space:]]*"swarm-debug",?[[:space:]]*$/ { next }
-    { print }
-' "$PYPROJECT" > "$PYPROJECT.tmp" && mv "$PYPROJECT.tmp" "$PYPROJECT"
 
 # Patch 1c: vite.config.ts — pin host to 127.0.0.1 (so our IPv4-only
 # bind poller in runtime.py:_await_frontend_bind() actually sees the
@@ -114,6 +125,7 @@ __pycache__/
 *.pyc
 dist/
 build/
+.openswarm/
 EOF
 
 # Patch 3: backend_init.sh — copied verbatim into every new workspace.
@@ -129,9 +141,8 @@ cat > "$DEST/backend_init.sh" <<'EOF'
 # code — it copies the master template's backend/ into the workspace
 # and flips BACKEND_PORT in both .env files to a free port.
 #
-# After running this, hard-reload the preview (right-click the reload
-# button in the App Builder) so the runtime restarts with the new
-# BACKEND_PORT and `bash run.sh` brings the backend up.
+# After running this, run `bash restart.sh` so the runtime restarts
+# with the new BACKEND_PORT and `bash run.sh` brings the backend up.
 
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -161,7 +172,7 @@ if [[ -d ./backend ]]; then
 fi
 
 # Resolve master template backend/ path. OPENSWARM_TEMPLATE_BACKEND_PATH
-# is written into .env at seed time; OPENSWARM_DEBUGGER_PATH the same.
+# is written into .env at seed time.
 if [[ -z "${OPENSWARM_TEMPLATE_BACKEND_PATH:-}" ]]; then
     echo "ERROR: OPENSWARM_TEMPLATE_BACKEND_PATH not set in .env. This" >&2
     echo "       workspace was seeded by an older OpenSwarm; ask the" >&2
@@ -200,10 +211,50 @@ fi
 
 echo ""
 echo "Backend enabled on port $PORT."
-echo "Hard-reload the preview (right-click the reload button in"
-echo "the App Builder) to bring it up."
+echo "Run 'bash restart.sh' to bring it up (restarts the app runtime)."
 EOF
 chmod +x "$DEST/backend_init.sh"
+
+# Patch 4: restart.sh — the agent-facing runtime restart. The runtime is
+# owned by the OpenSwarm harness, so agents can't bounce it from Bash;
+# this writes the sentinel the AppRuntimeManager watcher consumes
+# (runtime.py RESTART_SENTINEL_NAME) and waits for pickup.
+cat > "$DEST/restart.sh" <<'EOF'
+#!/usr/bin/env bash
+# Restart this app's runtime (backend + vite), managed by the OpenSwarm harness.
+#
+# The runtime is spawned and owned by OpenSwarm, so you can't just kill/rerun
+# run.sh from here. This script writes a sentinel the harness watches; the
+# harness consumes it and restarts the whole runtime. No API token needed.
+# Use after `bash backend_init.sh`, after editing `.env`, or whenever the
+# backend must reload code/schema (uvicorn runs WITHOUT --reload on purpose).
+
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mkdir -p "$HERE/.openswarm"
+SENTINEL="$HERE/.openswarm/restart-requested"
+touch "$SENTINEL"
+echo "Restart requested; waiting for the OpenSwarm harness to pick it up..."
+
+for _ in $(seq 1 30); do
+    if [[ ! -f "$SENTINEL" ]]; then
+        echo "Restart under way. The runtime takes a few seconds to come back;"
+        echo "then check .openswarm/terminal.log for boot output:"
+        sleep 6
+        tail -n 20 "$HERE/.openswarm/terminal.log" 2>/dev/null || true
+        exit 0
+    fi
+    sleep 1
+done
+
+rm -f "$SENTINEL"
+echo "ERROR: the harness didn't pick up the restart within 30s." >&2
+echo "The runtime only runs while the app is open in OpenSwarm (preview card or" >&2
+echo "App Builder). If you're running this app standalone via 'bash run.sh'," >&2
+echo "just Ctrl-C that process and rerun it instead." >&2
+exit 1
+EOF
+chmod +x "$DEST/restart.sh"
 
 echo ""
 echo "[fetch-webapp-template] vendored snapshot at $DEST"

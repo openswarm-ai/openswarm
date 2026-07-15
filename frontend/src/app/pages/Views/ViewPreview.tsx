@@ -173,6 +173,33 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
     }
   }, [windowHidden, onContentLoad]);
 
+  // srcdoc iframes swallow wheel events just like webviews, but they're same-origin so the host can forward cmd/ctrl+wheel to the canvas zoom itself (the webview path does this via the preload). Cross-origin URL iframes throw on contentWindow access; the catch leaves them as-is. Listeners die with the document on reload, so this reattaches from onLoad each time.
+  const attachIframeWheelForwarder = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    try {
+      const win = iframe.contentWindow;
+      if (!win || !win.document) return;
+      const onWheel = (e: WheelEvent) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = iframe.getBoundingClientRect();
+        const iw = win.innerWidth || 1;
+        const ih = win.innerHeight || 1;
+        window.dispatchEvent(new CustomEvent('openswarm:canvas-wheel-zoom', {
+          detail: {
+            deltaY: e.deltaY,
+            deltaMode: e.deltaMode,
+            clientX: rect.left + Math.max(0, Math.min(1, e.clientX / iw)) * rect.width,
+            clientY: rect.top + Math.max(0, Math.min(1, e.clientY / ih)) * rect.height,
+          },
+        }));
+      };
+      win.addEventListener('wheel', onWheel, { capture: true, passive: false });
+    } catch (_e) { /* cross-origin URL iframe; wheel stays with the page */ }
+  }, []);
+
   const srcdoc = useMemo(() => {
     if (serveUrl || !frontendCode) return undefined;
     return buildSrcdoc(frontendCode, inputData, backendResult);
@@ -443,7 +470,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
           // Key only changes on mode switch (URL vs srcdoc); reloadKey updates the src attribute in place to avoid blank-flash on reload.
           key={iframeSrc ? 'url-mode' : 'srcdoc'}
           src={effectiveSrc}
-          onLoad={handleNavigationLoad}
+          onLoad={() => { handleNavigationLoad(); attachIframeWheelForwarder(); }}
           sandbox="allow-scripts allow-same-origin"
           style={{
             width: '100%',

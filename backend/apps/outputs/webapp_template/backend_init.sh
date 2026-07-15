@@ -6,9 +6,8 @@
 # code; it copies the master template's backend/ into the workspace
 # and flips BACKEND_PORT in both .env files to a free port.
 #
-# After running this, hard-reload the preview (right-click the reload
-# button in the App Builder) so the runtime restarts with the new
-# BACKEND_PORT and `bash run.sh` brings the backend up.
+# After running this, run `bash restart.sh` so the runtime restarts
+# with the new BACKEND_PORT and `bash run.sh` brings the backend up.
 
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,7 +37,7 @@ if [[ -d ./backend ]]; then
 fi
 
 # Resolve master template backend/ path. OPENSWARM_TEMPLATE_BACKEND_PATH
-# is written into .env at seed time; OPENSWARM_DEBUGGER_PATH the same.
+# is written into .env at seed time.
 if [[ -z "${OPENSWARM_TEMPLATE_BACKEND_PATH:-}" ]]; then
     echo "ERROR: OPENSWARM_TEMPLATE_BACKEND_PATH not set in .env. This" >&2
     echo "       workspace was seeded by an older OpenSwarm; ask the" >&2
@@ -100,5 +99,4 @@ fi
 
 echo ""
 echo "Backend enabled on port $PORT."
-echo "Hard-reload the preview (right-click the reload button in"
-echo "the App Builder) to bring it up."
+echo "Run 'bash restart.sh' to bring it up (restarts the app runtime)."

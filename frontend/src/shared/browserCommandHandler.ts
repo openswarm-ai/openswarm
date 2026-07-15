@@ -1,4 +1,4 @@
-import { getWebview, type BrowserWebview } from './browserRegistry';
+import { getWebview, findWebviewByDomain, type BrowserWebview } from './browserRegistry';
 import { store } from './state/store';
 import { resumeBrowserCard } from './state/dashboardLayoutSlice';
 import { dashboardWs } from './ws/WebSocketManager';
@@ -1409,12 +1409,41 @@ async function handleSessionCookies(params: Record<string, any>): Promise<Record
   }
 }
 
+// Drive a session-borrow site's own already-open card: resolve the webview by its live domain
+// (no browser_id, like the cookie bridge), then run a small navigate/evaluate step sequence.
+// The shims use this for writes on sites that sign every HTTP request (TikTok).
+async function handlePerformAction(params: Record<string, any>): Promise<Record<string, any>> {
+  const domain = String(params.domain || '').toLowerCase().replace(/^\./, '');
+  const wv = findWebviewByDomain(domain);
+  if (!wv) {
+    return { error: `No ${domain} browser card is open. Open ${domain} in an OpenSwarm browser card and sign in, then retry.` };
+  }
+  const steps = Array.isArray(params.steps) ? params.steps : [];
+  const results: Record<string, any>[] = [];
+  for (const step of steps) {
+    const op = String(step?.op || '');
+    let r: Record<string, any>;
+    if (op === 'navigate') r = await handleNavigate(wv, { url: step.url });
+    else if (op === 'evaluate') r = await handleEvaluate(wv, { expression: step.expression });
+    else if (op === 'wait') { await new Promise((res) => setTimeout(res, Math.min(Number(step.ms) || 0, 8000))); r = { text: 'waited' }; }
+    else r = { error: `Unknown perform_action op: ${op}` };
+    results.push(r);
+    if (r && r.error) return { error: r.error, results };
+  }
+  return { ok: true, results };
+}
+
 async function runBrowserCommand(
   request_id: string, action: string, browser_id: string, tab_id: string | undefined,
   params: Record<string, any>,
 ) {
   if (action === 'get_session_cookies') {
     const result = await handleSessionCookies(params);
+    dashboardWs.send('browser:result', { request_id, ...result });
+    return;
+  }
+  if (action === 'perform_action') {
+    const result = await handlePerformAction(params);
     dashboardWs.send('browser:result', { request_id, ...result });
     return;
   }

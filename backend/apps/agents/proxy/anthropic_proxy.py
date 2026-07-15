@@ -32,7 +32,7 @@ P_CLAUDE_MODEL_PREFIXES = (
 
 P_GEMINI_MODEL_PREFIXES = ("gemini/", "gc/", "ag/")
 
-# Own-key Gemini ("gemini-3-flash-api" etc.) skips the gemini/ prefix; match bare names so $schema scrub still fires.
+# Own-key Gemini ("gemini-3.5-flash-api" etc.) skips the gemini/ prefix; match bare names so $schema scrub still fires.
 P_GEMINI_BARE_MODEL_PATTERNS = ("gemini-",)
 
 # Gemini's function_declarations validator accepts only a small OpenAPI subset. A denylist was whack-a-mole: every new JSON Schema construct that slipped through (union `type`, anyOf, $comment, format, ...) was a fresh prod 400 with zero tokens in. We invert it: keep ONLY the keys Gemini is known to accept, and fold the two "optional" encodings Anthropic emits (a union `type` list, and an anyOf whose other branch is `{"type":"null"}`) into the `nullable` flag Gemini actually understands. Everything dropped is advisory; the model still reads it from `description`. The win is structural: an unknown future key can't 400 us.
@@ -171,6 +171,9 @@ def scrub_request_for_openai_gpt5(body: bytes) -> bytes:
                "logprobs", "top_logprobs", "logit_bias"):
         if parsed.pop(p_k, None) is not None:
             mutated = True
+    # OpenAI started rejecting reasoning_effort + function tools together on /chat/completions (live-confirmed 2026-07-08, all gpt-5.x); dropping effort loses thinking but the turn completes.
+    if "tools" in parsed and parsed.pop("reasoning_effort", None) is not None:
+        mutated = True
     try:
         before = json.dumps(parsed.get("messages"), sort_keys=True) if "messages" in parsed else ""
         p_rewrite_document_to_openai_file(parsed)

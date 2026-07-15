@@ -12,7 +12,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import LinkIcon from '@mui/icons-material/Link';
 import { McpServer } from '@/shared/state/mcpRegistrySlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { Integration } from '@/shared/integrations/catalog';
+import { Integration } from '../integrations';
 import { ToolForm } from '../toolsHelpers';
 import McpConfigDialog from './McpConfigDialog';
 

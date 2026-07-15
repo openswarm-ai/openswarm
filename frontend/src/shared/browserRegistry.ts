@@ -23,6 +23,8 @@ export interface BrowserWebview extends HTMLElement {
   getURL: () => string;
   getTitle: () => string;
   isLoading: () => boolean;
+  // Optional: present on real Electron webviews; the iframe fallback lacks it, callers must ?.() it.
+  isCurrentlyAudible?: () => boolean;
   capturePage: (rect?: { x: number; y: number; width: number; height: number }) => Promise<ElectronNativeImage>;
   executeJavaScript: (code: string) => Promise<any>;
   sendInputEvent: (event: any) => void;
@@ -72,6 +74,22 @@ export function findBrowserByWebContentsId(wcId: number): string | undefined {
   for (const [key, wv] of registry.entries()) {
     if ((wv as any).getWebContentsId?.() === wcId) {
       return key.split(':')[0];
+    }
+  }
+  return undefined;
+}
+
+// Find the live webview currently on `domain` (e.g. tiktok.com). The session-borrow shims use
+// this to drive the user's own already-open, logged-in card for that site, resolving by the
+// LIVE url (not a stale persisted card.url) so the action lands on the real tab.
+export function findWebviewByDomain(domain: string): BrowserWebview | undefined {
+  const d = domain.toLowerCase().replace(/^\./, '');
+  for (const wv of registry.values()) {
+    try {
+      const host = new URL(wv.getURL()).hostname.toLowerCase();
+      if (host === d || host.endsWith('.' + d)) return wv;
+    } catch {
+      // about:blank or a torn-down webview has no parseable URL; skip it.
     }
   }
   return undefined;

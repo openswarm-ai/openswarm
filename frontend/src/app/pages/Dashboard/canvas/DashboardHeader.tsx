@@ -10,7 +10,7 @@ import { useAppDispatch } from '@/shared/hooks';
 import DashboardGlyph from './DashboardGlyph';
 import ShareButton from '@/app/components/share/ShareButton';
 import type { AgentSession } from '@/shared/state/agentsSlice';
-import { saveLayout } from '@/shared/state/dashboardLayoutSlice';
+import { saveLayout, viewCardKey } from '@/shared/state/dashboardLayoutSlice';
 import type { CardPosition, ViewCardPosition, BrowserCardPosition, NotePosition, WorkflowCardPosition, WorkflowsHubPosition } from '@/shared/state/dashboardLayoutSlice';
 import type { Output } from '@/shared/state/outputsSlice';
 import type { CanvasActions } from '../hooks/interaction/useCanvasControls';
@@ -73,7 +73,8 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     .map((vc) => {
       const output = outputs[vc.output_id];
       if (!output) return null;
-      return { id: vc.output_id, name: output.name, card: vc };
+      const label = (vc.instance ?? 1) > 1 ? `${output.name} #${vc.instance}` : output.name;
+      return { id: viewCardKey(vc.output_id, vc.instance), name: label, card: vc };
     })
     .filter(Boolean) as Array<{ id: string; name: string; card: ViewCardPosition }>;
 

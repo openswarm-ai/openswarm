@@ -1,6 +1,9 @@
 import type { OnboardingStep } from './types';
 import { S } from '../selectors';
 
+// App Builder is folded into normal agents now: the user just asks an agent to build
+// an app and its live card drops on the canvas. So this step points at the dashboard
+// composer instead of the old /apps page. We guide, we don't type or auto-send.
 export const step08: OnboardingStep = {
   id: 'make_app',
   stage: 'learn_features',
@@ -10,34 +13,10 @@ export const step08: OnboardingStep = {
   videoSrc: './onboarding-videos/v2/08.mp4',
   videoDurationLabel: '0:42',
   ops: [
-    { kind: 'move_to', target: S.sidebarApps },
-    { kind: 'popup', text: 'Swing by Apps.' },
-    {
-      kind: 'wait_user',
-      condition: { kind: 'click_target', target: S.sidebarApps },
-    },
-    { kind: 'move_to', target: S.appsNewButton },
-    { kind: 'popup', text: 'Spin up a fresh one.' },
-    {
-      kind: 'wait_user',
-      condition: { kind: 'click_target', target: S.appsNewButton },
-    },
-    // Wait for the SCOPED chat-input; survives cold-starts and the StrictMode mount/unmount/remount cycle.
-    {
-      kind: 'popup',
-      text: 'Loading the App Builder...',
-    },
-    {
-      kind: 'wait_for_dom',
-      css: '[data-onboarding-scope="app-builder"] [data-onboarding="chat-input"]',
-      timeoutMs: 60000,
-    },
-    { kind: 'delay', ms: 350 },
-    // Guide, don't commandeer: point at the chat input and let the user describe their OWN app. We never type a canned prompt or auto-send, so the tour doesn't spend a run building something the user didn't choose.
     { kind: 'move_to', target: S.chatInput },
     {
       kind: 'popup',
-      text: 'Describe any app you want, a tracker, a viewer, a game, type it here and send.',
+      text: 'Apps are just something you ask for. Try "build me a habit tracker" — any agent can make one.',
     },
     {
       kind: 'wait_user',
@@ -46,7 +25,7 @@ export const step08: OnboardingStep = {
     },
     {
       kind: 'popup',
-      text: "Cooking up your app! It'll pop up in a sec. Go explore while it brews.",
+      text: "Cooking up your app! It'll pop onto the canvas as a live card in a sec. Go explore while it brews.",
     },
     { kind: 'delay', ms: 4000 },
     { kind: 'outro' },

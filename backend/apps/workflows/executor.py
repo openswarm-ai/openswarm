@@ -35,10 +35,23 @@ def p_ran_late(started_at: datetime, scheduled_for: datetime) -> bool:
 # run_id -> "stop". Set by the stop endpoint so the executor loop, not the HTTP handler, owns the run's terminal write. Without this the still-running executor task could overwrite a "Stopped by user" failure with success. Pause is NOT in here: it rides the agent session's own "stopped" status, which the step loop waits out (see _await_session_idle).
 _run_control: dict[str, str] = {}
 _run_pause_override: dict[str, tuple[bool, float]] = {}
+# workflow_id -> session_id of the in-flight run, kept in step with _running so pause/trash can halt a live run even for a workflow that list_workflows() now filters out (deleted).
+_running_session: dict[str, str] = {}
 
 
 def request_stop(run_id: str) -> None:
     _run_control[run_id] = "stop"
+
+
+def stop_active_run(workflow_id: str) -> Optional[str]:
+    """Signal the in-flight run for this workflow to stop and return its session id
+    (None if nothing is running). Lets delete/pause halt a live run NOW instead of only
+    stopping future fires; reads the workflow_id-keyed maps so it still works after trash."""
+    run_id = _running.get(workflow_id)
+    if not run_id:
+        return None
+    _run_control[run_id] = "stop"
+    return _running_session.get(workflow_id)
 
 
 def set_pause_override(run_id: str, paused: bool, ttl_s: float = 5.0) -> None:
@@ -268,6 +281,7 @@ async def execute(
 
         session = await agent_manager.launch_agent(config)
         run.session_id = session.id
+        _running_session[wf.id] = session.id
         storage.record_run(run)
 
         # Reuse the user's earlier allow/deny answers so an unattended fire doesn't park on a permission prompt. Scheduled runs prompt for an unseen tool only briefly (30s) before failing; manual/test runs are attended, so keep the roomy window. Sensitive-path prompts are never remembered (handled by the gate); they keep prompting every run.
@@ -342,6 +356,14 @@ async def execute(
         for idx, step in enumerate(steps):
             if _run_control.get(run.id) == "stop":
                 step_error = "Stopped by user"
+                break
+            # Re-read live state each step so pause/trash actually halts an in-flight run at the next step boundary. The scheduler tick + routes only stop FUTURE fires; without this a run keeps stepping after the workflow is trashed (any trigger) or, for a scheduled run, paused. Manual "Run Now" of a paused workflow is deliberately left alone.
+            fresh_wf = storage.get_workflow(wf.id)
+            if fresh_wf is None or fresh_wf.deleted_at is not None:
+                step_error = "Workflow deleted"
+                break
+            if triggered_by == "schedule" and not fresh_wf.schedule.enabled:
+                step_error = "Workflow paused"
                 break
             # Broadcast the step bump before sending so RunningView flips the disc immediately, not after the agent finishes the step. Advancing means we're not paused; keep the broadcast authoritative so it never races a stale paused=True from the watcher.
             run.active_step_idx = idx
@@ -427,6 +449,7 @@ async def execute(
                 logger.exception("close_session failed for workflow run %s", run.id)
         async with _running_lock:
             _running.pop(wf.id, None)
+            _running_session.pop(wf.id, None)
 
     try:
         from backend.apps.workflows.notifier import notify_run_complete
@@ -446,7 +469,7 @@ async def execute(
     return run
 
 
-async def _await_session_idle(session_id: str, run_id: Optional[str] = None, timeout_s: float = 600.0) -> str:
+async def _await_session_idle(session_id: str, run_id: Optional[str] = None, idle_timeout_s: float = 1200.0) -> str:
     """Wait out the current step's agent turn. Returns a disposition:
       'idle'    turn finished, advance to the next step
       'error'   the agent session errored
@@ -454,17 +477,24 @@ async def _await_session_idle(session_id: str, run_id: Optional[str] = None, tim
 
     For a real run (run_id given) a user PAUSE shows up as the session going
     'stopped' WITHOUT a stop signal; that is not terminal, so we hold here
-    until Resume or Stop, keeping the step deadline fresh so a long pause
+    until Resume or Stop, keeping the idle deadline fresh so a long pause
     doesn't fail the step. The attended test-run driver passes no run_id and
     treats 'stopped' as terminal (no pause/resume there).
 
     Polls cheaply since agent_manager doesn't expose a per-session completion
-    future. Bounded by timeout_s so a stuck step can't hang the runner forever.
+    future. The deadline is idle-based, not a wall-clock cap on the step: any
+    agent activity (a committed message or a streamed text chunk growing
+    live_partial) resets it, so a legitimately long busy step never trips it
+    while a hung session still dies after idle_timeout_s of silence. A single
+    in-flight tool call commits nothing until its result lands, so
+    idle_timeout_s must stay >= the longest single-tool runtime (Bash caps at
+    600s); don't lower it without special-casing in-flight tool calls.
     """
     from backend.apps.agents.agent_manager import agent_manager
 
     hold_on_pause = run_id is not None
-    deadline = asyncio.get_event_loop().time() + timeout_s
+    last_activity: Optional[tuple] = None
+    deadline = asyncio.get_event_loop().time() + idle_timeout_s
     while True:
         if run_id is not None and _run_control.get(run_id) == "stop":
             return "stopped"
@@ -475,8 +505,8 @@ async def _await_session_idle(session_id: str, run_id: Optional[str] = None, tim
         if status == "stopped":
             if not hold_on_pause:
                 return "stopped"
-            # Paused. Hold, and reset the deadline so paused wall-time doesn't count against the step timeout.
-            deadline = asyncio.get_event_loop().time() + timeout_s
+            # Paused. Hold, and reset the deadline so paused wall-time doesn't count as idle.
+            deadline = asyncio.get_event_loop().time() + idle_timeout_s
             await asyncio.sleep(0.1)
             continue
         if status == "error":
@@ -486,6 +516,22 @@ async def _await_session_idle(session_id: str, run_id: Optional[str] = None, tim
         task = agent_manager.tasks.get(session_id)
         if task is not None and task.done() and status not in ("running", "waiting_approval"):
             return "idle"
+        if status == "waiting_approval":
+            # A pending permission prompt is bounded by the approval flow's own ask_timeout; waiting on the user isn't idleness.
+            deadline = asyncio.get_event_loop().time() + idle_timeout_s
+        else:
+            msgs = getattr(sess, "messages", []) or []
+            partial = agent_manager.live_partial.get(session_id)
+            # Timestamp catches in-place upserts (same id, fresh Message object); partial length catches mid-stream text between commits.
+            activity = (
+                len(msgs),
+                msgs[-1].id if msgs else None,
+                msgs[-1].timestamp if msgs else None,
+                len(getattr(partial, "text", "") or ""),
+            )
+            if activity != last_activity:
+                last_activity = activity
+                deadline = asyncio.get_event_loop().time() + idle_timeout_s
         if asyncio.get_event_loop().time() > deadline:
-            raise TimeoutError(f"Step exceeded {timeout_s}s on session {session_id}")
+            raise TimeoutError(f"No agent activity for {idle_timeout_s}s on session {session_id}")
         await asyncio.sleep(0.05)

@@ -19,6 +19,13 @@ interface UseCardDragArgs {
 const EDGE_ZONE = 60;
 const EDGE_MAX_SPEED = 8;
 
+// Clamped: an infinite canvas lets the cursor sit arbitrarily far outside the viewport, where an unclamped ramp would scale pan speed with distance instead of saturating.
+function axisIntensity(pos: number, lo: number, hi: number): number {
+  if (pos < lo + EDGE_ZONE) return Math.min(1, (lo + EDGE_ZONE - pos) / EDGE_ZONE);
+  if (pos > hi - EDGE_ZONE) return -Math.min(1, (pos - (hi - EDGE_ZONE)) / EDGE_ZONE);
+  return 0;
+}
+
 export function useCardDrag({
   panX,
   panY,
@@ -34,38 +41,32 @@ export function useCardDrag({
     window.dispatchEvent(new Event('openswarm:canvas-pan-changed'));
   }, [panX, panY, zoom]);
 
+  const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number } | null>(null);
+  const [liveDragInfo, setLiveDragInfo] = useState<{ cardId: string; dx: number; dy: number } | null>(null);
+  const activeDragCardRef = useRef<string | null>(null);
+  const isMultiDragRef = useRef(false);
+
   // ---- Edge panning during card drag ----
   const edgePanFrameRef = useRef<number | null>(null);
   const lastMousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  // Track pan at drag start so cards can compensate for edge-pan offset
-  const dragStartPanRef = useRef<{ panX: number; panY: number }>({ panX: 0, panY: 0 });
 
   const stopEdgePan = useCallback(() => {
-    if (edgePanFrameRef.current) {
+    if (edgePanFrameRef.current !== null) {
       cancelAnimationFrame(edgePanFrameRef.current);
       edgePanFrameRef.current = null;
     }
   }, []);
 
   const tickEdgePan = useCallback(() => {
+    edgePanFrameRef.current = null;
     const vp = viewportRef.current;
-    if (!vp) return;
+    // Re-arm only while a card is still held, so a drag that ended without a pointerup can't leave the canvas panning forever.
+    if (!vp || !activeDragCardRef.current) return;
+
     const rect = vp.getBoundingClientRect();
     const { x: mx, y: my } = lastMousePosRef.current;
-
-    let dx = 0;
-    let dy = 0;
-
-    if (mx < rect.left + EDGE_ZONE) {
-      dx = EDGE_MAX_SPEED * ((rect.left + EDGE_ZONE - mx) / EDGE_ZONE);
-    } else if (mx > rect.right - EDGE_ZONE) {
-      dx = -EDGE_MAX_SPEED * ((mx - (rect.right - EDGE_ZONE)) / EDGE_ZONE);
-    }
-    if (my < rect.top + EDGE_ZONE) {
-      dy = EDGE_MAX_SPEED * ((rect.top + EDGE_ZONE - my) / EDGE_ZONE);
-    } else if (my > rect.bottom - EDGE_ZONE) {
-      dy = -EDGE_MAX_SPEED * ((my - (rect.bottom - EDGE_ZONE)) / EDGE_ZONE);
-    }
+    const dx = EDGE_MAX_SPEED * axisIntensity(mx, rect.left, rect.right);
+    const dy = EDGE_MAX_SPEED * axisIntensity(my, rect.top, rect.bottom);
 
     if (dx !== 0 || dy !== 0) {
       canvasActions.setState((prev: { panX: number; panY: number; zoom: number }) => ({
@@ -78,17 +79,8 @@ export function useCardDrag({
     edgePanFrameRef.current = requestAnimationFrame(tickEdgePan);
   }, [viewportRef, canvasActions]);
 
-  // ---- Multi-drag coordination ----
-  const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number } | null>(null);
-  const [liveDragInfo, setLiveDragInfo] = useState<{ cardId: string; dx: number; dy: number } | null>(null);
-  const activeDragCardRef = useRef<string | null>(null);
-  const isMultiDragRef = useRef(false);
-
-  const edgePanStartedRef = useRef(false);
-
   const handleCardDragStart = useCallback((id: string, _type: CardType) => {
     activeDragCardRef.current = id;
-    edgePanStartedRef.current = false;
     if (selection.isSelected(id)) {
       isMultiDragRef.current = true;
     } else {
@@ -101,9 +93,8 @@ export function useCardDrag({
     if (mouseX !== undefined && mouseY !== undefined) {
       lastMousePosRef.current = { x: mouseX, y: mouseY };
     }
-    // Start edge panning only once actual dragging begins
-    if (!edgePanStartedRef.current) {
-      edgePanStartedRef.current = true;
+    // Start edge panning only once actual dragging begins; a live frame handle means the loop is already running.
+    if (edgePanFrameRef.current === null) {
       edgePanFrameRef.current = requestAnimationFrame(tickEdgePan);
     }
     if (isMultiDragRef.current) {
@@ -114,9 +105,16 @@ export function useCardDrag({
     }
   }, [tickEdgePan]);
 
+  const clearDrag = useCallback(() => {
+    stopEdgePan();
+    activeDragCardRef.current = null;
+    isMultiDragRef.current = false;
+    setMultiDragDelta(null);
+    setLiveDragInfo(null);
+  }, [stopEdgePan]);
+
   const handleCardDragEnd = useCallback((dx: number, dy: number, didDrag: boolean) => {
     if (didDrag) report('dashboard', 'card_dragged');
-    stopEdgePan();
     if (isMultiDragRef.current && didDrag) {
       const items = selection.selectedArray()
         .filter((s) => s.id !== activeDragCardRef.current);
@@ -124,14 +122,22 @@ export function useCardDrag({
         dispatch(moveCards({ items, dx, dy }));
       }
     }
-    activeDragCardRef.current = null;
-    isMultiDragRef.current = false;
-    setMultiDragDelta(null);
-    setLiveDragInfo(null);
-  }, [selection, dispatch, stopEdgePan]);
+    clearDrag();
+  }, [selection, dispatch, clearDrag]);
 
-  // dragStartPanRef is kept for parity with the pre-split inline code; it was wired up for a future edge-pan compensation that never landed.
-  void dragStartPanRef;
+  // Backstop: a pointercancel or a lost pointer capture never reaches the card's onDragEnd, which would otherwise strand the drag with the rAF above panning forever. A normal release runs the card's commit first, since React delegates to the root container and this fires as the event bubbles on past it.
+  useEffect(() => {
+    const abortDrag = () => {
+      if (activeDragCardRef.current) clearDrag();
+    };
+    window.addEventListener('pointerup', abortDrag);
+    window.addEventListener('pointercancel', abortDrag);
+    return () => {
+      window.removeEventListener('pointerup', abortDrag);
+      window.removeEventListener('pointercancel', abortDrag);
+      stopEdgePan();
+    };
+  }, [clearDrag, stopEdgePan]);
 
   return {
     multiDragDelta,

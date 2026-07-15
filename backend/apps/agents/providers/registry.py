@@ -42,6 +42,9 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
         # Opus 4.7: SDK currently strips plaintext thinking deltas (encrypted only) so the live "Thought for Ns" pill loses mid-turn text. Final answer + tokens fine.
         {"value": "opus-4-7", "label": "Claude Opus 4.7", "context_window": 1_000_000,
          "model_id": "claude-opus-4-7", "router_model_id": "cc/claude-opus-4-7", "api": "anthropic", "reasoning": True},
+        # Sonnet 5 (2026-06-30): cheaper near-Opus-4.8 agentic model. cc/ route assumed to pass through like opus-4-8 did; needs a live sub-route check.
+        {"value": "sonnet-5", "label": "Claude Sonnet 5", "context_window": 1_000_000,
+         "model_id": "claude-sonnet-5", "router_model_id": "cc/claude-sonnet-5", "api": "anthropic", "reasoning": True},
         {"value": "sonnet", "label": "Claude Sonnet 4.6", "context_window": 1_000_000,
          "model_id": "claude-sonnet-4-6", "router_model_id": "cc/claude-sonnet-4-6", "api": "anthropic", "reasoning": True},
         {"value": "opus", "label": "Claude Opus 4.6", "context_window": 1_000_000,
@@ -53,6 +56,8 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
          "model_id": "claude-opus-4-8", "router_model_id": "cc/claude-opus-4-8", "api": "anthropic", "reasoning": True, "route": "cc"},
         {"value": "opus-4-7-cc", "label": "Claude Opus 4.7", "context_window": 1_000_000,
          "model_id": "claude-opus-4-7", "router_model_id": "cc/claude-opus-4-7", "api": "anthropic", "reasoning": True, "route": "cc"},
+        {"value": "sonnet-5-cc", "label": "Claude Sonnet 5", "context_window": 1_000_000,
+         "model_id": "claude-sonnet-5", "router_model_id": "cc/claude-sonnet-5", "api": "anthropic", "reasoning": True, "route": "cc"},
         {"value": "sonnet-cc", "label": "Claude Sonnet 4.6", "context_window": 1_000_000,
          "model_id": "claude-sonnet-4-6", "router_model_id": "cc/claude-sonnet-4-6", "api": "anthropic", "reasoning": True, "route": "cc"},
         {"value": "opus-cc", "label": "Claude Opus 4.6", "context_window": 1_000_000,
@@ -60,11 +65,17 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
         {"value": "haiku-cc", "label": "Claude Haiku 4.5", "context_window": 200_000,
          "model_id": "claude-haiku-4-5", "router_model_id": "cc/claude-haiku-4-5-20251001", "api": "anthropic", "reasoning": True, "route": "cc"},
 
-        # Fable 5 pulled: the model got banned, so both its cc/ sub and api-key rows are gone. Don't re-add without confirming access is restored.
+        # Fable 5 re-added 2026-07-02 after the ban lifted (Eric confirmed access is back); pull both rows again if it errors live.
+        {"value": "fable-5-cc", "label": "Claude Fable 5", "context_window": 1_000_000,
+         "model_id": "claude-fable-5", "router_model_id": "cc/claude-fable-5", "api": "anthropic", "reasoning": True, "route": "cc"},
+        {"value": "fable-5-api", "label": "Claude Fable 5 (API key)", "context_window": 1_000_000,
+         "model_id": "claude-fable-5", "router_model_id": "claude-fable-5", "api": "anthropic", "reasoning": True, "route": "api"},
         {"value": "opus-4-8-api", "label": "Claude Opus 4.8 (API key)", "context_window": 1_000_000,
          "model_id": "claude-opus-4-8", "router_model_id": "claude-opus-4-8", "api": "anthropic", "reasoning": True, "route": "api"},
         {"value": "opus-4-7-api", "label": "Claude Opus 4.7 (API key)", "context_window": 1_000_000,
          "model_id": "claude-opus-4-7", "router_model_id": "claude-opus-4-7", "api": "anthropic", "reasoning": True, "route": "api"},
+        {"value": "sonnet-5-api", "label": "Claude Sonnet 5 (API key)", "context_window": 1_000_000,
+         "model_id": "claude-sonnet-5", "router_model_id": "claude-sonnet-5", "api": "anthropic", "reasoning": True, "route": "api"},
         {"value": "sonnet-api", "label": "Claude Sonnet 4.6 (API key)", "context_window": 1_000_000,
          "model_id": "claude-sonnet-4-6", "router_model_id": "claude-sonnet-4-6", "api": "anthropic", "reasoning": True, "route": "api"},
         {"value": "opus-api", "label": "Claude Opus 4.6 (API key)", "context_window": 1_000_000,
@@ -74,10 +85,7 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
     ],
 
     "OpenAI": [
-        # GPT-5.5 cx/ entry 404s on 9Router 0.3.60 (our pin); API-key route below works.
-        {"value": "gpt-5.5", "label": "GPT-5.5",
-         "context_window": 1_000_000, "router_model_id": "cx/gpt-5.5",
-         "api": "codex", "subscription_only": True, "reasoning": True},
+        # GPT-5.5 subscription entry PULLED: cx/gpt-5.5 404s on 9Router 0.3.60 (our pin), so a Codex user who picked it (the newest, top OpenAI option) 404'd every turn = "codex is broken". Same treatment as gemini-3.1-pro (no working lane = not offered). The API-key route (gpt-5.5-api below) works; restore a cx entry only after the pin moves and cx/gpt-5.5 resolves.
         {"value": "gpt-5.4", "label": "GPT-5.4",
          "context_window": 1_000_000, "router_model_id": "cx/gpt-5.4",
          "api": "codex", "subscription_only": True, "reasoning": True},
@@ -101,19 +109,13 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
         {"value": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite",
          "context_window": 1_000_000, "router_model_id": "gc/gemini-3.1-flash-lite-preview",
          "api": "gemini-cli", "subscription_only": True, "reasoning": True},
-        # gemini-3-pro removed: gemini-3-pro-preview was shut down 2026-03-09 (dead on both the direct API and the Gemini CLI backend). gemini-3-flash kept: it's superseded on the direct API but still serves on the CLI subscription route.
-        {"value": "gemini-3-flash", "label": "Gemini 3 Flash",
-         "context_window": 1_000_000, "router_model_id": "gc/gemini-3-flash-preview",
-         "api": "gemini-cli", "subscription_only": True, "reasoning": True},
+        # gemini-3-pro removed 2026-03-09 and gemini-3-flash removed 2026-07-03: gemini-3-flash-preview aged out upstream (API-key route hangs with no fail-fast; only an Antigravity sub still masked it). 3.5-flash / 3.1-flash-lite cover the slots.
         # API-key entries: bypass 9Router, call generativelanguage.googleapis.com.
         {"value": "gemini-3.5-flash-api", "label": "Gemini 3.5 Flash (API key)",
          "context_window": 1_000_000, "router_model_id": "gemini-3.5-flash", "model_id": "gemini-3.5-flash",
          "api": "gemini", "reasoning": True, "route": "api"},
         {"value": "gemini-3.1-flash-lite-api", "label": "Gemini 3.1 Flash Lite (API key)",
          "context_window": 1_000_000, "router_model_id": "gemini-3.1-flash-lite-preview", "model_id": "gemini-3.1-flash-lite-preview",
-         "api": "gemini", "reasoning": True, "route": "api"},
-        {"value": "gemini-3-flash-api", "label": "Gemini 3 Flash (API key)",
-         "context_window": 1_000_000, "router_model_id": "gemini-3-flash-preview", "model_id": "gemini-3-flash-preview",
          "api": "gemini", "reasoning": True, "route": "api"},
     ],
 }
@@ -240,8 +242,7 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
             return entry.get("model_id", short_name)
     # Gemini lane order: Antigravity OAuth (for the models it serves), then AI Studio apikey, then Gemini CLI. AG bypasses the thoughtSignature validator that breaks multi-step Gemini turns AND supports real reasoning, so a connected AG sub is preferred over the AI Studio key, which otherwise silently shadowed it. The map is AG's allowlist; pro variants 404/400 on AG and are deliberately absent, so they fall through to the key.
     P_ANTIGRAVITY_MAP = {
-        # gemini-3-pro-preview disabled: AG returns 404 even with active conn. gemini-3.1-pro-preview disabled: AG's `gemini-3.1-pro-high` variant 400s every request with "invalid argument" (the `-high` thinking- budget alias on AG requires a thinking_config the CLI doesn't emit). Falls through to the AI Studio key / gc/ instead.
-        "gemini-3-flash-preview": "gemini-3-flash",
+        # gemini-3-pro-preview disabled: AG returns 404 even with active conn. gemini-3.1-pro-preview disabled: AG's `gemini-3.1-pro-high` variant 400s every request with "invalid argument" (the `-high` thinking- budget alias on AG requires a thinking_config the CLI doesn't emit). Falls through to the AI Studio key / gc/ instead. gemini-3-flash-preview key dropped with its registry entry (aged out upstream).
         "gemini-3.1-flash-lite-preview": "gemini-3-flash",
     }
     if entry.get("api") == "gemini-cli":
@@ -360,9 +361,11 @@ def get_context_window(provider: str, model: str, settings: AppSettings | None =
 COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     # (provider, model): (input_cost_per_1M, output_cost_per_1M) NOTE: real cost numbers come from 9Router's usage stats. These entries are kept so the table matches BUILTIN_MODELS and can be used by any future native-loop path. Subscription-routed models are zero-cost to the user, but API rates are recorded here for reference where they exist. Anthropic (direct API rates).
     ("Anthropic", "sonnet"): (3.0, 15.0),
+    ("Anthropic", "sonnet-5"): (3.0, 15.0),
     ("Anthropic", "opus"): (5.0, 25.0),
     ("Anthropic", "opus-4-7"): (5.0, 25.0),
     ("Anthropic", "opus-4-8"): (5.0, 25.0),
+    ("Anthropic", "fable-5-api"): (10.0, 50.0),
     ("Anthropic", "haiku"): (1.0, 5.0),
     # OpenAI; Codex subscription path, user pays nothing per token
     ("OpenAI", "gpt-5.5"): (0.0, 0.0),

@@ -7,8 +7,9 @@ import {
   type BrowserCardPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import { getWebview } from '@/shared/browserRegistry';
-import { getActivity } from '@/shared/browserCommandHandler';
+import { getActivity, isAnyBrowserBusy } from '@/shared/browserCommandHandler';
 import { isKeepAliveBrowser } from '@/shared/browserFocus';
+import { captureTabCapsule } from '@/shared/browserStateCapsule';
 
 const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
 
@@ -39,25 +40,52 @@ function cardIntersectsViewport(card: BrowserCardPosition, vp: Viewport, marginP
   return card.x < vx + vw && card.x + card.width > vx && card.y < vy + vh && card.y + card.height > vy;
 }
 
+// Grace after terminal so an agent whose status blips completed->running between back-to-back turns can't lose its browser in the gap.
+const WORKING_GRACE_MS = 20_000;
+const lastWorkingAt = new Map<string, number>();
+
+function sessionIsWorking(s: { id?: string; status?: string } | undefined): boolean {
+  if (!s) return false;
+  if (s.status === 'running' || s.status === 'waiting_approval') {
+    if (s.id) lastWorkingAt.set(s.id, Date.now());
+    return true;
+  }
+  const t = s.id ? lastWorkingAt.get(s.id) : undefined;
+  if (lastWorkingAt.size > 300) {
+    for (const [k, v] of lastWorkingAt) if (Date.now() - v > WORKING_GRACE_MS) lastWorkingAt.delete(k);
+  }
+  return t !== undefined && Date.now() - t < WORKING_GRACE_MS;
+}
+
 function agentNeedsLive(browserId: string, card: BrowserCardPosition): boolean {
   if (getActivity(browserId)) return true;
   const state = store.getState();
-  const glow = state.dashboardLayout.glowingBrowserCards[browserId];
-  if (glow && !glow.fading) return true;
   const sessions = state.agents.sessions as Record<string, any>;
+  // A glow holds the card live only while its SOURCE session is still working: a stuck glow (chat unmounted at finish never fades it) must not pin a renderer forever.
+  const glow = state.dashboardLayout.glowingBrowserCards[browserId];
+  if (glow && !glow.fading && sessionIsWorking(sessions[glow.sourceId])) return true;
   for (const s of Object.values(sessions)) {
-    if (s.browser_id === browserId && (s.status === 'running' || s.status === 'waiting_approval')) return true;
+    if (s.browser_id === browserId && sessionIsWorking(s)) return true;
   }
-  if (card.spawned_by) {
-    const parent = sessions[card.spawned_by];
-    if (parent && (parent.status === 'running' || parent.status === 'waiting_approval')) return true;
+  if (card.spawned_by && sessionIsWorking(sessions[card.spawned_by])) return true;
+  return false;
+}
+
+// Chrome never discards an audible tab: a card playing music off-screen keeps playing instead of going silent mid-song.
+function cardIsAudible(browserId: string, card: BrowserCardPosition): boolean {
+  for (const tab of card.tabs ?? []) {
+    try {
+      if (getWebview(browserId, tab.id)?.isCurrentlyAudible?.()) return true;
+    } catch {
+      // A detached/dying webview reads as silent.
+    }
   }
   return false;
 }
 
-// A card we must never snapshot-swap: an agent is driving it, OR it's in the keep-alive set (recently used). Suspending a keep-alive card would destroy its webContents and wipe its sessionStorage (logged-in sites drop their session), the whole thing we're preventing.
+// A card we must never snapshot-swap: an agent is driving it, it's in the keep-alive set (recently used), or it's playing audio. Suspending destroys the webContents (sessionStorage, playback), the things we're preserving.
 function mustStayLive(browserId: string, card: BrowserCardPosition): boolean {
-  return agentNeedsLive(browserId, card) || isKeepAliveBrowser(browserId);
+  return agentNeedsLive(browserId, card) || isKeepAliveBrowser(browserId) || cardIsAudible(browserId, card);
 }
 
 /**
@@ -124,13 +152,15 @@ export function useWebviewSuspend(
 
     const timer = setTimeout(async () => {
       const isSuspended = (id: string) => !!store.getState().dashboardLayout.suspendedBrowserCards[id];
+      await refreshVisibleFrames(browserCards, isSuspended, vpRef.current);
       for (const [id, card] of Object.entries(browserCards)) {
         if (isSuspended(id)) continue;
         if (cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX)) continue;
         if (mustStayLive(id, card)) continue;
-        const dataUrl = await captureCard(id, card);
+        // An empty dataUrl still suspends (placeholder renders): a card whose capture hangs/fails must not keep its renderer alive forever.
+        const dataUrl = await captureForSuspend(id, card);
         // The capture await yielded; conditions may have changed under us.
-        if (!dataUrl || cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX) || mustStayLive(id, card)) continue;
+        if (cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX) || mustStayLive(id, card)) continue;
         dispatch(suspendBrowserCard({ browserId: id, dataUrl }));
       }
 
@@ -141,8 +171,8 @@ export function useWebviewSuspend(
           .sort((a, b) => distFromCenter(b[1], vpRef.current) - distFromCenter(a[1], vpRef.current));
         for (const [id, card] of candidates) {
           if (countLive() <= MAX_LIVE_WEBVIEWS) break;
-          const dataUrl = await captureCard(id, card);
-          if (!dataUrl || mustStayLive(id, card)) continue;
+          const dataUrl = await captureForSuspend(id, card);
+          if (mustStayLive(id, card)) continue;
           dispatch(suspendBrowserCard({ browserId: id, dataUrl }));
         }
       }
@@ -160,19 +190,68 @@ function distFromCenter(card: BrowserCardPosition, vp: Viewport): number {
   return dx * dx + dy * dy;
 }
 
-async function captureCard(id: string, card: BrowserCardPosition): Promise<string | null> {
+// capturePage on an already-off-screen webview can HANG forever (Electron 42/Viz stops producing frames for unpainted guests), and one hung await used to wedge the whole suspend pass, silently disabling suspension for every card. Bound it hard.
+const CAPTURE_TIMEOUT_MS = 1500;
+
+// Last frame grabbed while each card was still VISIBLE: off-screen webviews can't produce frames, so this cache is what makes suspended cards show a real screenshot instead of the bare title placeholder.
+const lastFrames = new Map<string, { dataUrl: string; at: number }>();
+const FRAME_TTL_MS = 45_000;
+const FRAME_CACHE_CAP = 30;
+
+function rememberFrame(id: string, dataUrl: string): void {
+  lastFrames.set(id, { dataUrl, at: Date.now() });
+  if (lastFrames.size > FRAME_CACHE_CAP) {
+    const oldest = [...lastFrames.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+    if (oldest) lastFrames.delete(oldest[0]);
+  }
+}
+
+async function refreshVisibleFrames(
+  cards: Record<string, BrowserCardPosition>,
+  isSuspended: (id: string) => boolean,
+  vp: Viewport,
+): Promise<void> {
+  // Capturing while an agent drives a webview is the SharedImage-mailbox crash class; skip the whole pass.
+  if (isAnyBrowserBusy()) return;
+  for (const [id, card] of Object.entries(cards)) {
+    if (isSuspended(id)) continue;
+    if (!cardIntersectsViewport(card, vp, 0)) continue;
+    const prev = lastFrames.get(id);
+    if (prev && Date.now() - prev.at < FRAME_TTL_MS) continue;
+    const dataUrl = await captureCard(id, card);
+    if (dataUrl) rememberFrame(id, dataUrl);
+  }
+}
+
+async function captureForSuspend(id: string, card: BrowserCardPosition): Promise<string> {
+  // Chrome-style state capsules first (sessionStorage + scroll per tab), so resume restores logins instead of wiping them; JS still runs off-screen even when frames don't.
+  for (const tab of card.tabs ?? []) {
+    await captureTabCapsule(getWebview(id, tab.id), tab.id);
+  }
+  const live = await captureCard(id, card);
+  if (live) {
+    rememberFrame(id, live);
+    return live;
+  }
+  return lastFrames.get(id)?.dataUrl ?? '';
+}
+
+async function captureCard(id: string, card: BrowserCardPosition): Promise<string> {
   const wv = getWebview(id, card.activeTabId);
-  if (!wv) return null;
+  if (!wv) return '';
   try {
-    if (wv.isLoading()) return null;
+    if (wv.isLoading()) return '';
     const url = wv.getURL();
-    if (!url || url === 'about:blank') return null;
-    const image = await wv.capturePage();
-    if (image.isEmpty()) return null;
+    if (!url || url === 'about:blank') return '';
+    const image = await Promise.race([
+      wv.capturePage(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), CAPTURE_TIMEOUT_MS)),
+    ]);
+    if (!image || image.isEmpty()) return '';
     return image.getSize().width > SNAPSHOT_MAX_W
       ? image.resize({ width: SNAPSHOT_MAX_W, quality: 'good' }).toDataURL()
       : image.toDataURL();
   } catch {
-    return null;
+    return '';
   }
 }

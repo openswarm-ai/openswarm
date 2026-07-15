@@ -81,7 +81,7 @@ interface DashboardCanvasProps {
   onStarter: (prompt: string, mode?: string) => void;
   toolbarPrefill?: string;
   toolbarPrefillMode?: string;
-  onAddView: (outputId: string) => void;
+  onAddView: (outputId: string, opts?: { newInstance?: boolean }) => void;
   onHistoryResume: (sessionId: string) => void;
   onAddBrowser: () => void;
   onAddNote: () => void;

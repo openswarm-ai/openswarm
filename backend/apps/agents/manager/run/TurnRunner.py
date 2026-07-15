@@ -16,6 +16,12 @@ from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming.handle_stream_event import handle_stream_event
 from backend.apps.agents.manager.streaming.handle_assistant_message import handle_assistant_message
 from backend.apps.agents.manager.streaming.handle_result_message import handle_result_message
+from backend.apps.agents.manager.run.client_pool import (
+    acquire_client,
+    boot_fingerprint,
+    dispose_client,
+    persistent_client_enabled,
+)
 from backend.apps.agents.manager.streaming import thinking as thinking_mod
 from backend.apps.settings.models import AppSettings
 
@@ -32,7 +38,7 @@ class TurnRunner(AgentManagerProtocol):
                                     prompt_content: Union[str, List], options,
                                     options_kwargs: Dict, turn: TurnState, thinking: ThinkingState,
                                     p_stderr_buffer: List[str], resolved_model: str, api_type: str,
-                                    global_settings: AppSettings) -> None:
+                                    global_settings: AppSettings, force_respawn: bool = False) -> None:
         from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
         from claude_agent_sdk.types import StreamEvent, SystemMessage
 
@@ -42,12 +48,10 @@ class TurnRunner(AgentManagerProtocol):
                 "message": {"role": "user", "content": prompt_content},
             }
 
-        async def p_run_streaming_turn():
+        async def p_run_streaming_turn(p_stream=None):
             # Per-turn thinking aggregation trackers (added for the "Thought for Ns · M tokens" persisted label). Without nonlocal, the int reassignments at AssistantMessage emission below shadow them as locals and the dict access at content_block_start crashes with UnboundLocalError.
-            async for message in query(
-                prompt=prompt_stream(),
-                options=options,
-            ):
+            # p_stream lets the persistent-client path feed receive_response() through this same consumption loop (one body, two transports).
+            async for message in (p_stream if p_stream is not None else query(prompt=prompt_stream(), options=options)):
                 if isinstance(message, ResultMessage):
                     turn.current_turn_emitted = False
                 else:
@@ -95,6 +99,8 @@ class TurnRunner(AgentManagerProtocol):
                 if isinstance(message, SystemMessage):
                     raw = message.__dict__ if hasattr(message, '__dict__') else str(message)
                     logger.info(f"[MCP-DEBUG] SystemMessage: {raw}")
+                    if getattr(message, "subtype", "") == "compact_boundary":
+                        turn.compact_boundaries += 1
 
                 if isinstance(message, StreamEvent):
                     await handle_stream_event(
@@ -111,10 +117,38 @@ class TurnRunner(AgentManagerProtocol):
                         resolved_model, api_type, global_settings,
                     )
 
+        async def p_run_streaming_turn_persistent():
+            from claude_agent_sdk import ClaudeSDKClient
+
+            async def p_connect():
+                p_client = ClaudeSDKClient(options=options)
+                await p_client.connect()
+                return p_client
+
+            fp = boot_fingerprint(options_kwargs, session)
+            handle = await acquire_client(
+                self.client_pool, session_id, fp, p_connect, force_respawn=force_respawn,
+            )
+            async with handle.lock:
+                handle.turns_served += 1
+                try:
+                    await handle.client.query(prompt_stream())
+                    await p_run_streaming_turn(p_stream=handle.client.receive_response())
+                    # LRU by turn-END so a session mid-long-turn isn't first cap-evicted the instant it finishes.
+                    handle.last_used = time.monotonic()
+                except BaseException:
+                    # Fail-safe: an error or stop mid-turn poisons the live conversation; drop the client so the next attempt/turn reconnects fresh (== today's one-shot behavior, never worse). Pool pop is sync-first, so even a cancelled disconnect can't leave a reusable stale handle.
+                    await dispose_client(self.client_pool, session_id)
+                    raise
+
+        p_use_persistent = persistent_client_enabled()
         capacity_retry_attempt = 0
         while True:
             try:
-                await p_run_streaming_turn()
+                if p_use_persistent:
+                    await p_run_streaming_turn_persistent()
+                else:
+                    await p_run_streaming_turn()
                 break
             except Exception as e:
                 # Make sure the consolidated-thinking ticker doesn't outlive the turn on error/retry. Without this, an exception mid-stream leaves a dangling task that keeps re-emitting against a stale msg id.
@@ -127,6 +161,12 @@ class TurnRunner(AgentManagerProtocol):
                 thinking.ticker_task = None
                 stderr_snapshot = "\n".join(p_stderr_buffer[-50:])
                 wait = capacity_retry_wait(e, capacity_retry_attempt, extra_text=stderr_snapshot)
+                # Persistent-client fail-safe: a dead/wedged CLI raises a connection-class error that the capacity classifier won't retry. The client is already disposed (see p_run_streaming_turn_persistent), so ONE immediate retry reconnects fresh == today's cold behavior; a second failure surfaces normally.
+                if wait is None and p_use_persistent and capacity_retry_attempt == 0 and not turn.current_turn_emitted:
+                    p_name = type(e).__name__
+                    if "CLIConnection" in p_name or "ProcessError" in p_name or "Transport" in p_name:
+                        logger.warning(f"[client-pool] {session_id}: dead client ({p_name}); one transparent respawn retry")
+                        wait = 0.0
                 if wait is not None:
                     capacity_retry_attempt += 1
                     mid_stream = turn.current_turn_emitted

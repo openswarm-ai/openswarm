@@ -11,7 +11,7 @@ from backend.auth import get_auth_token
 from backend.config.Apps import SubApp
 from backend.apps.outputs.models import (
     Output, OutputCreate, OutputUpdate, OutputExecute, OutputExecuteResult,
-    VibeCodeRequest, WorkspaceSeedRequest,
+    VibeCodeRequest, WorkspaceSeedRequest, AgentCreateAppRequest,
     PublishPreflightRequest, PublishRequest, PublishPreflightResponse,
     PublishResult, PublishReview,
 )
@@ -241,6 +241,47 @@ def ensure_webapp_workspace_seeded_and_registered(
         return None
 
 
+@outputs.router.post("/agent-create")
+async def agent_create_app(body: AgentCreateAppRequest):
+    """The CreateApp MCP tool's backend: seed a webapp-template workspace, register
+    the Output linked to the calling agent session, name it, and broadcast so the
+    dashboard drops a live card next to the agent. Any agent, any mode."""
+    from uuid import uuid4
+    workspace_id = uuid4().hex
+    folder = os.path.join(WORKSPACE_DIR, workspace_id)
+    output_id = ensure_webapp_workspace_seeded_and_registered(
+        workspace_id=workspace_id,
+        folder=folder,
+        session_id=body.parent_session_id or None,
+    )
+    if not output_id:
+        raise HTTPException(status_code=500, detail="workspace seed/registration failed")
+    output = load(output_id)
+    output.name = body.name.strip() or "Untitled App"
+    output.description = body.description.strip()
+    output.updated_at = datetime.now().isoformat()
+    save(output)
+    # Keep meta.json in agreement so the agent's own naming pass and the sidebar read the same values.
+    try:
+        with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
+            json.dump({"name": output.name, "description": output.description}, f, indent=2)
+    except OSError:
+        logger.exception("agent-create meta.json write failed for %s", workspace_id)
+    from backend.apps.agents.core.ws_manager import ws_manager
+    try:
+        await ws_manager.broadcast_global("agent:output_upserted", {
+            "output": output.model_dump(mode="json"),
+        })
+    except Exception:
+        logger.exception("agent-create output_upserted broadcast failed")
+    # The reference isn't returned here: it's written to <folder>/SKILL.md at seed time and the agent reads it on demand, keeping the ~6.5k-token blob out of both this response and the agent transcript.
+    return {
+        "ok": True,
+        "output_id": output_id,
+        "path": os.path.abspath(folder),
+    }
+
+
 @outputs.router.post("/workspace/seed")
 async def seed_workspace(body: WorkspaceSeedRequest):
     """Create a workspace folder and pre-seed it.
@@ -357,10 +398,10 @@ async def seed_workspace(body: WorkspaceSeedRequest):
 # --------------------------------------------------------------------------- Persistent app-backend runtime control. backend.py runs as a long-lived subprocess for the lifetime of the App being open; auto-allocated port, log streaming via WebSocket. See runtime.py for the manager. ---------------------------------------------------------------------------
 
 
-def runtime_status_payload(workspace_id: str) -> dict:
+def runtime_status_payload(workspace_id: str, instance: int = 1) -> dict:
     from backend.apps.outputs.runtime import manager as runtime_manager
     from backend.apps.outputs.runtime import is_new_mode
-    rt = runtime_manager.get(workspace_id)
+    rt = runtime_manager.get(workspace_id, instance)
     if not rt:
         # Even without a live runtime, the editor needs is_new_mode to decide whether the preview pane should fall back to the legacy /serve/index.html URL (old-mode flat workspaces) or show the "starting preview…" placeholder (new-mode webapp_template). Compute from disk so a failed runtime/start still gives the client the right hint instead of dumping it onto a 404.
         folder = os.path.join(WORKSPACE_DIR, workspace_id)
@@ -388,44 +429,44 @@ def runtime_status_payload(workspace_id: str) -> dict:
 
 
 @outputs.router.post("/workspace/{workspace_id}/runtime/start")
-async def runtime_start(workspace_id: str):
+async def runtime_start(workspace_id: str, instance: int = 1):
     folder = os.path.join(WORKSPACE_DIR, workspace_id)
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
     from backend.apps.outputs.runtime import manager as runtime_manager
-    await runtime_manager.attach(workspace_id, os.path.abspath(folder))
-    return runtime_status_payload(workspace_id)
+    await runtime_manager.attach(workspace_id, os.path.abspath(folder), instance)
+    return runtime_status_payload(workspace_id, instance)
 
 
 @outputs.router.post("/workspace/{workspace_id}/runtime/stop")
-async def runtime_stop(workspace_id: str):
+async def runtime_stop(workspace_id: str, instance: int = 1):
     from backend.apps.outputs.runtime import manager as runtime_manager
-    await runtime_manager.detach(workspace_id)
-    return runtime_status_payload(workspace_id)
+    await runtime_manager.detach(workspace_id, instance)
+    return runtime_status_payload(workspace_id, instance)
 
 
 @outputs.router.post("/workspace/{workspace_id}/runtime/restart")
-async def runtime_restart(workspace_id: str):
+async def runtime_restart(workspace_id: str, instance: int = 1):
     folder = os.path.join(WORKSPACE_DIR, workspace_id)
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
     from backend.apps.outputs.runtime import manager as runtime_manager
     # Restart only if something's attached; otherwise this is a no-op silently (a hard-reload click while the runtime was already torn down; we'd rather not silently respawn an orphan).
-    rt = runtime_manager.get(workspace_id)
+    rt = runtime_manager.get(workspace_id, instance)
     if rt:
-        await runtime_manager.restart(workspace_id, os.path.abspath(folder))
-    return runtime_status_payload(workspace_id)
+        await runtime_manager.restart(workspace_id, os.path.abspath(folder), instance)
+    return runtime_status_payload(workspace_id, instance)
 
 
 @outputs.router.get("/workspace/{workspace_id}/runtime/status")
-async def runtime_get_status(workspace_id: str):
-    return runtime_status_payload(workspace_id)
+async def runtime_get_status(workspace_id: str, instance: int = 1):
+    return runtime_status_payload(workspace_id, instance)
 
 
 @outputs.router.post("/workspace/{workspace_id}/runtime/report-error")
-async def runtime_report_error(workspace_id: str, body: dict):
+async def runtime_report_error(workspace_id: str, body: dict, instance: int = 1):
     from backend.apps.outputs.runtime import manager as runtime_manager
-    rt = runtime_manager.get(workspace_id)
+    rt = runtime_manager.get(workspace_id, instance)
     if rt is None:
         return {"ok": False, "recorded": 0}
     message = (body.get("message") or "").strip()
@@ -439,10 +480,28 @@ async def runtime_report_error(workspace_id: str, body: dict):
     return {"ok": True, "recorded": 1}
 
 
-@outputs.router.post("/workspace/{workspace_id}/runtime/report-ready")
-async def runtime_report_ready(workspace_id: str):
+@outputs.router.post("/workspace/{workspace_id}/runtime/console-log")
+async def runtime_console_log(workspace_id: str, body: dict, instance: int = 1):
+    """Fold webview console lines into the runtime's terminal stream so they reach the Terminal panes AND the agent-readable .openswarm/terminal.log. Renderer batches; body is {lines: [{level, text}, ...]}."""
     from backend.apps.outputs.runtime import manager as runtime_manager
-    rt = runtime_manager.get(workspace_id)
+    rt = runtime_manager.get(workspace_id, instance)
+    if rt is None:
+        return {"ok": False, "recorded": 0}
+    lines = body.get("lines") or []
+    recorded = 0
+    for entry in lines[:200]:
+        text = str(entry.get("text") or "").strip()
+        if not text:
+            continue
+        rt.record_frontend_log(str(entry.get("level") or "log"), text)
+        recorded += 1
+    return {"ok": True, "recorded": recorded}
+
+
+@outputs.router.post("/workspace/{workspace_id}/runtime/report-ready")
+async def runtime_report_ready(workspace_id: str, instance: int = 1):
+    from backend.apps.outputs.runtime import manager as runtime_manager
+    rt = runtime_manager.get(workspace_id, instance)
     if rt is None:
         return {"ok": False}
     rt.set_render_ok()
