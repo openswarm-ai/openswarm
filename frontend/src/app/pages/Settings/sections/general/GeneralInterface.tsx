@@ -12,6 +12,7 @@ import KeyboardIcon from '@mui/icons-material/Keyboard';
 import LanguageIcon from '@mui/icons-material/Language';
 import { AppSettings } from '@/shared/state/settingsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import AccentColorPad from '@/app/components/theme/AccentColorPad';
 import type { SettingsStyles } from '../settingsStyles';
 import { settingSelectAttrs } from '../settingSelect';
 
@@ -63,6 +64,19 @@ const GeneralInterface: React.FC<{
             <DarkModeIcon sx={{ fontSize: 16 }} /> Dark
           </ToggleButton>
         </ToggleButtonGroup>
+      </Box>
+
+      <Box sx={rowSx} {...settingSelectAttrs('accent_color', 'Accent color', 'Interface', 'The accent color used across the app.')}>
+        <Typography sx={labelSx}>Accent color</Typography>
+        <Typography sx={{ ...descSx, mb: 1.5 }}>
+          Pick any color; buttons, highlights, and glows follow it. Reset returns the stock accent.
+        </Typography>
+        <AccentColorPad
+          c={c}
+          accent={form.accent_color ?? null}
+          onPick={(hex) => setForm({ ...form, accent_color: hex })}
+          height={120}
+        />
       </Box>
 
       <Box sx={rowSx} {...settingSelectAttrs('zoom_sensitivity', 'Zoom sensitivity', 'Interface', 'Scroll-to-zoom responsiveness.')}>

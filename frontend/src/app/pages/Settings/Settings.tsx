@@ -10,7 +10,7 @@ import { updateSettingsPatch, closeSettingsModal, AppSettings } from '@/shared/s
 import { onboardingBus } from '@/app/components/Onboarding/eventBus';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
-import { useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useThemeMode, useThemeAccent, useClaudeTokens } from '@/shared/styles/ThemeContext';
 import DirectoryBrowser from '@/app/components/editor/DirectoryBrowser';
 import { CommandsContent } from '@/app/pages/Commands/Commands';
 import GeneralTab from './sections/general/GeneralTab';
@@ -58,6 +58,7 @@ const Settings: React.FC = () => {
   const loaded = useAppSelector((s) => s.settings.loaded);
   const modes = useAppSelector((s) => s.modes.items);
   const { setMode: setThemeMode } = useThemeMode();
+  const { setAccent } = useThemeAccent();
 
   const modesList = useMemo(() => Object.values(modes), [modes]);
 
@@ -167,6 +168,12 @@ const Settings: React.FC = () => {
     if (open && loaded) setThemeMode(form.theme);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.theme]);
+
+  // Accent applies live too, same contract as theme: instant paint, debounced persist.
+  useEffect(() => {
+    if (open && loaded) setAccent(form.accent_color ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.accent_color]);
 
   useEffect(() => {
     if (!open || !loaded) return;
