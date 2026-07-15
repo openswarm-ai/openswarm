@@ -7,6 +7,7 @@ import DirectionHints from '../controls/DirectionHints';
 import WorkflowRunningToast from '@/app/pages/Workflows/WorkflowRunningToast';
 import MissedRunsToast from '@/app/pages/Workflows/MissedRunsToast';
 import ProviderHealthToast from '@/app/components/overlays/ProviderHealthToast';
+import ScheduleOfferToast from '@/app/components/nudges/ScheduleOfferToast';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 import type {
   CardPosition,
@@ -156,6 +157,9 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
 
       {/* Launch nudge when a subscription login died while the app was closed */}
       <ProviderHealthToast />
+
+      {/* One-shot dependency beat: first completed personalized starter offers to become a weekly job */}
+      <ScheduleOfferToast dashboardId={dashboardId} />
     </>
   );
 };
