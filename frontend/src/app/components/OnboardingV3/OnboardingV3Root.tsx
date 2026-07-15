@@ -8,6 +8,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { useOnboardingV3Pipeline } from './useOnboardingV3Pipeline';
 import { GRAIN_URL } from './beats/BeatShell';
+import Starburst from './Starburst';
 import BeatConnect from './beats/BeatConnect';
 import BeatApps from './beats/BeatApps';
 import BeatTheme from './beats/BeatTheme';
@@ -63,11 +64,19 @@ const IntroBeat: React.FC<{ c: ClaudeTokens; line: string; sub?: string; onNext:
       }}
     />
     <div style={{ position: 'absolute', inset: 0, backgroundImage: GRAIN_URL, opacity: 0.14, pointerEvents: 'none', mixBlendMode: 'overlay' }} />
+    <motion.div
+      initial={{ opacity: 0, scale: 0.4, rotate: -80 }}
+      animate={{ opacity: 1, scale: 1, rotate: 0 }}
+      transition={{ type: 'spring', stiffness: 160, damping: 18, delay: 0.2 }}
+      style={{ position: 'relative', marginBottom: 22 }}
+    >
+      <Starburst size={44} from={c.accent.hover} to={c.accent.primary} />
+    </motion.div>
     <motion.h1
       initial={{ opacity: 0, y: 16, filter: 'blur(8px)' }}
       animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      transition={{ duration: 0.7, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      style={{ position: 'relative', margin: 0, fontSize: 'clamp(2.4rem, 5vw, 3.8rem)', fontWeight: 700, color: c.text.inverse, letterSpacing: '-0.02em', textAlign: 'center', padding: '0 24px' }}
+      transition={{ duration: 0.7, delay: 0.45, ease: [0.22, 1, 0.36, 1] }}
+      style={{ position: 'relative', margin: 0, fontSize: 'clamp(2.4rem, 5vw, 3.8rem)', fontWeight: 600, color: c.text.inverse, letterSpacing: '-0.01em', textAlign: 'center', padding: '0 24px' }}
     >
       {line}
     </motion.h1>
@@ -202,8 +211,15 @@ const OnboardingV3Root: React.FC = () => {
             ))}
           </motion.div>
           {finishing && (
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: c.bg.page }}>
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ fontSize: '1.05rem', color: c.text.tertiary }}>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'center', justifyContent: 'center', background: c.bg.page }}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.7 }}
+                animate={{ opacity: [0, 1, 0.55, 1], scale: [0.7, 1, 0.92, 1], rotate: [0, 0, 22, 45] }}
+                transition={{ duration: 4.5, times: [0, 0.2, 0.6, 1], repeat: 3 }}
+              >
+                <Starburst size={40} from={c.accent.hover} to={c.accent.pressed} />
+              </motion.div>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ fontSize: '1.02rem', color: c.text.tertiary }}>
                 Setting up your canvas...
               </motion.div>
             </div>

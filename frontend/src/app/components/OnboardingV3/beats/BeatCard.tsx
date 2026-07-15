@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Dices } from 'lucide-react';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import type { ProviderIdentity } from '../onboardingV3Api';
+import Starburst from '../Starburst';
 import BeatShell from './BeatShell';
 
 const EPITHETS = [
@@ -52,11 +53,9 @@ const BeatCard: React.FC<{
             display: 'flex', flexDirection: 'column', position: 'relative',
           }}
         >
-          <div style={{
-            width: 168, height: 158, alignSelf: 'flex-start',
-            borderRadius: '6% 64% 6% 64%',
-            background: `linear-gradient(135deg, ${c.accent.hover}, ${c.accent.primary} 70%, ${c.accent.pressed})`,
-          }} />
+          <div style={{ alignSelf: 'flex-start', marginLeft: -8, marginTop: -4 }}>
+            <Starburst size={158} from={c.accent.hover} to={c.accent.pressed} />
+          </div>
           <input
             value={name}
             onChange={(e) => setName(e.target.value.slice(0, 18))}
