@@ -71,6 +71,7 @@ export interface AppSettings {
   openswarm_usage_cached?: SubscriptionUsage | null;
   /** Identity populated by /api/auth/signin-activate; Stripe checkout also fills these. */
   user_id?: string | null;
+  user_name?: string | null;
   user_email?: string | null;
   signin_method?: 'google' | 'email' | 'stripe' | null;
   /** Anonymous device id (first-run generated); stitches anon to authed PostHog Persons. */

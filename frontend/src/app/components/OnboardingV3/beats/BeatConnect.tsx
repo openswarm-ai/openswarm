@@ -10,7 +10,7 @@ import { hasFreeTrialActive, hasModelConnected } from '@/app/components/Onboardi
 import { SUBSCRIPTION_PROVIDERS } from '@/app/pages/Settings/sections/subscription/subscriptionProviders';
 import { runConnectFlow } from '@/app/pages/Settings/sections/subscription/subscriptionConnect';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
-import type { ProviderIdentity } from './onboardingV3Api';
+import type { ProviderIdentity } from '../onboardingV3Api';
 import BeatShell from './BeatShell';
 
 // The single ask of the whole flow. Reuses the proven Settings connect flow verbatim; the scan disclosure lives here as one honest line with an opt-out, and the scan runs during the OAuth wait.
