@@ -81,6 +81,8 @@ export function useCardDrag({
 
   const handleCardDragStart = useCallback((id: string, _type: CardType) => {
     activeDragCardRef.current = id;
+    // Reuse the marquee's webview shield: a pointerup released over a live <webview> is eaten by the guest process, so neither the card's onDragEnd nor the window backstop ever fires and the edge-pan loop pans forever (the "card drifts on its own" bug).
+    document.body.classList.add('dashboard-marquee-active');
     if (selection.isSelected(id)) {
       isMultiDragRef.current = true;
     } else {
@@ -108,6 +110,7 @@ export function useCardDrag({
   const clearDrag = useCallback(() => {
     stopEdgePan();
     activeDragCardRef.current = null;
+    document.body.classList.remove('dashboard-marquee-active');
     isMultiDragRef.current = false;
     setMultiDragDelta(null);
     setLiveDragInfo(null);
