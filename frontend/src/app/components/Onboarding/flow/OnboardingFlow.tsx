@@ -30,6 +30,7 @@ function greetingFor(name: string): string {
 }
 
 export const OnboardingFlow: React.FC<{ onExit: () => void }> = ({ onExit }) => {
+  // Flow always starts at 'help'; editing this file Fast-Refreshes it back to the first screen.
   const dispatch = useAppDispatch();
   const [step, setStep] = useState<FlowStepId>('help');
   const [persona, setPersona] = useState<PersonaId | null>(null);

@@ -12,7 +12,9 @@ export const OnboardingFlowPreview: React.FC = () => {
   const [on, setOn] = useState(false);
 
   useEffect(() => {
-    try { setOn(window.localStorage.getItem(FLAG) === '1'); } catch { /* no localStorage */ }
+    // TEMP (live test): force-show so it appears on load. Revert to the flag read below when done.
+    setOn(true);
+    // try { setOn(window.localStorage.getItem(FLAG) === '1'); } catch { /* no localStorage */ }
   }, []);
 
   if (!on) return null;
