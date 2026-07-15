@@ -346,25 +346,42 @@ export const fetchSession = createAsyncThunk(
 
 export const launchAndSendFirstMessage = createAsyncThunk(
   'agents/launchAndSendFirstMessage',
-  async ({ draftId, config, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedAppIds, selectedSettingIds }: LaunchAndSendPayload) => {
-    const launchRes = await fetch(`${AGENTS_API}/launch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    });
-    const launchData = await launchRes.json();
-    const session = launchData.session as AgentSession;
+  async ({ draftId, config, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedAppIds, selectedSettingIds }: LaunchAndSendPayload, { dispatch }) => {
+    // Optimistic bubble on the DRAFT before the three round-trips (launch/message/refetch): without it the first message of every fresh chat rendered nothing until the network came back. The fulfilled rekey swaps in the server session, which carries the real turn by then.
+    const clientMessageId = _genOptimisticId();
+    dispatch(addOptimisticMessage({
+      sessionId: draftId,
+      clientMessageId,
+      prompt,
+      contextPaths,
+      forcedTools,
+      attachedSkills: attachedSkills?.map((s) => ({ id: s.id, name: s.name })),
+      images: images?.map((img) => ({ data: img.data, media_type: img.media_type })),
+      hidden: false,
+    }));
+    try {
+      const launchRes = await fetch(`${AGENTS_API}/launch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      const launchData = await launchRes.json();
+      const session = launchData.session as AgentSession;
 
-    await fetch(`${AGENTS_API}/sessions/${session.id}/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, selected_browser_ids: selectedBrowserIds, selected_app_output_ids: selectedAppIds, selected_setting_ids: selectedSettingIds }),
-    });
+      await fetch(`${AGENTS_API}/sessions/${session.id}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, selected_browser_ids: selectedBrowserIds, selected_app_output_ids: selectedAppIds, selected_setting_ids: selectedSettingIds, client_message_id: clientMessageId }),
+      });
 
-    const refreshRes = await fetch(`${AGENTS_API}/sessions/${session.id}`);
-    const updatedSession = await refreshRes.json() as AgentSession;
+      const refreshRes = await fetch(`${AGENTS_API}/sessions/${session.id}`);
+      const updatedSession = await refreshRes.json() as AgentSession;
 
-    return { draftId, session: updatedSession };
+      return { draftId, session: updatedSession };
+    } catch (err) {
+      dispatch(markOptimisticFailed({ sessionId: draftId, clientMessageId }));
+      throw err;
+    }
   }
 );
 
