@@ -9,6 +9,10 @@ const MAX_ZOOM = 3.0;
 const ZOOM_IN_FACTOR = 1.1;
 const ZOOM_OUT_FACTOR = 1 / ZOOM_IN_FACTOR;
 const FIT_PADDING = 200;
+// Card-framing (spawn, click-to-focus, arrow-nav) snaps as fast as the zoom buttons so a new card lands under you now, not after a lazy glide.
+const FIT_DURATION = 150;
+// Must outlast FIT_DURATION so the drift re-snap lands after the glide, never mid-flight.
+const FIT_SETTLE_DELAY = FIT_DURATION + 60;
 
 // Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.004).
 function sensitivityToMultiplier(setting: number): number {
@@ -651,7 +655,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         const dPan = Math.abs(cur.panX - target.panX) + Math.abs(cur.panY - target.panY);
         const dZoom = Math.abs(cur.zoom - target.zoom);
         if (dPan < 5 && dZoom < 0.01) return;
-        animateTo(target);
+        animateTo(target, FIT_DURATION);
         // Settle pass: cancelAnimation() must be able to cancel it, else back-to-back fitToCards races and the first settle overwrites the second target.
         settleTimerRef.current = window.setTimeout(() => {
           settleTimerRef.current = null;
@@ -663,7 +667,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
             Math.abs(cur2.panY - fresh.panY) +
             Math.abs(cur2.zoom - fresh.zoom) * 1000;
           if (drift > 8) setState(fresh);
-        }, 370);
+        }, FIT_SETTLE_DELAY);
       } else {
         setState(target);
       }
