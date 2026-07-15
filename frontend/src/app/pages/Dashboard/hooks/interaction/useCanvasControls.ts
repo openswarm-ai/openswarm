@@ -13,6 +13,8 @@ const FIT_PADDING = 200;
 const FIT_DURATION = 150;
 // Must outlast FIT_DURATION so the drift re-snap lands after the glide, never mid-flight.
 const FIT_SETTLE_DELAY = FIT_DURATION + 60;
+// A mouse notch lands as deltaY 100 where a trackpad sends ~1-10, so cap the per-event zoom delta: uncapped, one notch is a ~24% jump and macOS wheel acceleration stacks them. No-op for trackpads.
+const WHEEL_ZOOM_DELTA_CAP = 24;
 
 // Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.004).
 function sensitivityToMultiplier(setting: number): number {
@@ -177,7 +179,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
 
   animateToRef.current = animateTo;
 
-  // Wheel zoom centered on cursor
+  // Plain wheel zooms at the viewport center; cmd/ctrl+wheel pans vertically; trackpad pinch zooms at the cursor.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el || !enabled) return;  // Skip wheel listener when canvas is hidden
@@ -203,9 +205,10 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
           const factor = Math.pow(2, -zDy * sensitivityToMultiplier(sensitivityRef.current));
           const newZoom = clamp(prev.zoom * factor, MIN_ZOOM, MAX_ZOOM);
           const ratio = newZoom / prev.zoom;
+          // Apply any pan accumulated in the same frame too: a zoom and a pan can now land together (vertical zoom + horizontal pan across a RAF boundary, or a forwarded pan), and dropping it would swallow the gesture.
           return {
-            panX: zCenter.cx - (zCenter.cx - prev.panX) * ratio,
-            panY: zCenter.cy - (zCenter.cy - prev.panY) * ratio,
+            panX: zCenter.cx - (zCenter.cx - prev.panX) * ratio - dx,
+            panY: zCenter.cy - (zCenter.cy - prev.panY) * ratio - dy,
             zoom: newZoom,
           };
         });
@@ -234,8 +237,8 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     const scrollableCache: WeakMap<HTMLElement, 'scrollable' | 'not'> = new WeakMap();
 
     const onWheel = (e: WheelEvent) => {
-      // Pinch-to-zoom on trackpads sets ctrlKey; plain scroll does not
-      const isPinchZoom = e.ctrlKey || e.metaKey;
+      // ctrl/cmd wheel is a modifier gesture: a real held key (cmd/ctrl + scroll → vertical pan) or a trackpad pinch, which also sets ctrlKey (→ zoom at cursor). Either way it bypasses scrollable children and acts on the canvas.
+      const isModifierWheel = e.ctrlKey || e.metaKey;
 
       // Let scrollable children handle the event when appropriate, but fall through to canvas pan if the child is at its scroll boundary.
       const dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
@@ -260,7 +263,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
           scrollableCache.set(target, cls);
         }
 
-        if (cls === 'scrollable' && !isPinchZoom) {
+        if (cls === 'scrollable' && !isModifierWheel) {
           // Re-read scrollHeight/clientHeight; cached decision is structural, scroll position is dynamic.
           const canScrollY = target.scrollHeight > target.clientHeight;
           const canScrollX = target.scrollWidth > target.clientWidth;
@@ -293,16 +296,25 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         inertiaFrameRef.current = null;
       }
 
-      if (isPinchZoom) {
-        // Pinch gesture → accumulate zoom deltas + last cursor position. factor = 2^(-Σdy·s) which equals the product of per-event factors, so accumulating dy is mathematically identical to applying each event one at a time.
+      if (isModifierWheel && cmdRef.current) {
+        // Real cmd/ctrl physically held + scroll → vertical pan. cmdRef is set from a keydown; a trackpad pinch sets ctrlKey with no keydown, so it falls through to the zoom branch below and pinch-to-zoom survives.
+        pendingPanDy += dy;
+        scheduleWheelFlush();
+      } else if (isModifierWheel) {
+        // Trackpad pinch → accumulate zoom deltas + last cursor position. factor = 2^(-Σdy·s) which equals the product of per-event factors, so accumulating dy is mathematically identical to applying each event one at a time.
         const rect = el.getBoundingClientRect();
         pendingZoomDy += dy;
         pendingZoomCenter = { cx: e.clientX - rect.left, cy: e.clientY - rect.top };
         scheduleWheelFlush();
-      } else {
-        // Two-finger scroll → accumulate pan deltas.
+      } else if (Math.abs(dx) > Math.abs(dy)) {
+        // Horizontal-dominant scroll → pan X; it's the only horizontal-pan gesture. Dominant-axis, so the vertical jitter in a sideways swipe doesn't also zoom.
         pendingPanDx += dx;
-        pendingPanDy += dy;
+        scheduleWheelFlush();
+      } else {
+        // Plain vertical scroll → zoom at the cursor (same anchor as pinch) so the point under the pointer grows toward you, not away. Clamp the per-event delta so a discrete mouse notch is a small step, not a lurch.
+        const rect = el.getBoundingClientRect();
+        pendingZoomDy += clamp(dy, -WHEEL_ZOOM_DELTA_CAP, WHEEL_ZOOM_DELTA_CAP);
+        pendingZoomCenter = { cx: e.clientX - rect.left, cy: e.clientY - rect.top };
         scheduleWheelFlush();
       }
     };
