@@ -28,8 +28,12 @@ P_SYSTEM = (
     '{"greeting": string, "starters": [{"title": string, "prompt": string}]}. '
     "Exactly 4 starters. Each title is 2-5 words. Each prompt is a concrete, safe, immediately runnable task "
     "referencing the user's real folders, file counts, or picked apps when possible; never invent facts, never "
-    "propose deleting anything without review. The greeting is one warm sentence that names 2-3 specific things "
-    "found on the machine. No markdown, no commentary, JSON only."
+    "propose deleting anything without review. Make the FIRST starter a bigger multi-part task whose parts can "
+    "run in parallel (for example: research something on the web WHILE organizing a folder AND drafting a summary), "
+    "phrased as one natural request. Every starter must produce a tangible result the user can see (a sorted folder, "
+    "a report, a working page); never propose setup, documentation of preferences, or planning-only tasks. "
+    "The greeting is one warm sentence that names 2-3 specific things "
+    "found on the machine. Never use em-dashes or en-dashes anywhere. No markdown, no commentary, JSON only."
 )
 
 
