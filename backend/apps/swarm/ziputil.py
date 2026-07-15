@@ -37,21 +37,25 @@ def p_content_digest(entries: dict[str, bytes]) -> str:
     return h.hexdigest()
 
 
-def pack(manifest: dict, payloads: dict[str, dict], files: dict[str, bytes]) -> bytes:
+def pack(manifest: dict, payloads: dict[str, dict], files: dict[str, bytes], allow_file_secrets: bool = False) -> bytes:
     """payloads: bundle_id -> JSON payload (-> entities/<bid>/payload.json).
-    files: full zip path -> bytes (e.g. entities/<bid>/files/<rel>)."""
+    files: full zip path -> bytes (e.g. entities/<bid>/files/<rel>).
+    allow_file_secrets is a user-confirmed override for the FILE-content heuristic only
+    (workspace code trips it on look-alike strings); denied payload fields are our own
+    credential store and are never exportable, override or not."""
     for bid, payload in payloads.items():
         leaked = find_denied_keys(payload)
         if leaked:
             raise BundleError(
                 f"refusing to export: secret-shaped field(s) in {bid}: {leaked[:3]}"
             )
-    leaky_files = find_secrets_in_files(files)
-    if leaky_files:
-        raise BundleError(
-            f"refusing to export: a secret-shaped value is in {leaky_files[0]}; "
-            "remove it (use an environment variable) and try again"
-        )
+    if not allow_file_secrets:
+        leaky_files = find_secrets_in_files(files)
+        if leaky_files:
+            raise BundleError(
+                f"refusing to export: a secret-shaped value is in {leaky_files[0]}; "
+                "remove it (use an environment variable) and try again"
+            )
     entries: dict[str, bytes] = {}
     for bid, payload in payloads.items():
         entries[f"entities/{bid}/payload.json"] = json.dumps(payload, indent=2).encode("utf-8")

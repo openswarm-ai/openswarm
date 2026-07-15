@@ -71,7 +71,7 @@ async def export_preflight(body: ExportRequest) -> ExportPreflightResponse:
 @swarm.router.post("/export")
 async def export_bundle(body: ExportRequest) -> Response:
     try:
-        raw, name = closure.build_bundle(body.type, body.id)
+        raw, name = closure.build_bundle(body.type, body.id, allow_file_secrets=body.allow_secrets)
     except BundleError as e:
         raise HTTPException(status_code=400, detail=str(e))
     fname = closure.swarm_filename(name)
