@@ -131,10 +131,12 @@ const OnboardingV3Root: React.FC = () => {
     if (connectedProvider) kickUsageRead(connectedProvider, usageConsent);
   }, [kickIdentity, kickScan, kickUsageRead, scanConsent, usageConsent, connectedProvider]);
 
+  // Fire prep + the background jobs at connect-exit (scan/usage/identity are all ready by now), so they run through the apps + theme + card beats (~three beats of runway) and the reveal lands on work well underway, not just-started. kickPrep is idempotent; picks arrive a beat later and feed the reveal's connect suggestions, not the already-launched jobs.
   const leaveConnect = useCallback(() => {
     kickScan(scanConsent);
+    kickPrep(picks);
     setBeat('apps');
-  }, [kickScan, scanConsent]);
+  }, [kickScan, kickPrep, scanConsent, picks]);
 
   const leaveApps = useCallback(() => {
     kickPrep(picks);

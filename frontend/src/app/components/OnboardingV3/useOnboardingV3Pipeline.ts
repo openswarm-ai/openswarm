@@ -12,6 +12,18 @@ import {
 } from './onboardingV3Api';
 import { USAGE_READ_JS, summarizeUsage, type ProviderUsage, type UsageProvider } from '@/shared/providerUsage';
 import { findWebviewByDomain } from '@/shared/browserRegistry';
+import type { ModelOption } from '@/shared/state/modelsSlice';
+
+// The auto-launched onboarding jobs must ride the CHEAP tier, not the user's premium default; running two Sonnet/Opus agents unprompted on first launch would burn real quota. Pick the lowest-intelligence (cheapest) model in the default's provider group, so a Claude user's demo runs on Haiku, a ChatGPT user's on mini.
+function pickCheapModel(byProvider: Record<string, ModelOption[]>, def: string): string {
+  const groups = Object.values(byProvider);
+  const all = groups.flat();
+  if (!all.length) return def;
+  const defGroup = groups.find((g) => g.some((m) => m.value === def));
+  const pool = (defGroup && defGroup.length ? defGroup : all).filter((m) => Array.isArray(m.tiers));
+  if (!pool.length) return def;
+  return [...pool].sort((a, b) => (a.tiers![0]) - (b.tiers![0]))[0].value;
+}
 
 // The curtain machinery: scan kicks off during the OAuth wait, prep during the theme beat, and the moment prep resolves the audit AND the app build launch as REAL background agents, so the curtain lifts on work already in motion. Every stage fails soft; the flow never blocks on any of it.
 export function useOnboardingV3Pipeline() {
@@ -26,9 +38,9 @@ export function useOnboardingV3Pipeline() {
   const usageSummaryRef = useRef<string>('');
   const usageReadRef = useRef<Promise<void> | null>(null);
   const connected = useAppSelector((s) => hasModelConnected(s));
-  const model = useAppSelector((s) => s.settings.data.default_model);
+  const cheapModel = useAppSelector((s) => pickCheapModel(s.models.byProvider, s.settings.data.default_model));
   const launchCtxRef = useRef({ connected: false, model: 'sonnet' });
-  launchCtxRef.current = { connected, model };
+  launchCtxRef.current = { connected, model: cheapModel };
   const launchedRef = useRef(false);
 
   const kickIdentity = useCallback(() => {
