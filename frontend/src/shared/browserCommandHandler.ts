@@ -1612,8 +1612,12 @@ async function handleDetectWebMCP(wv: BrowserWebview): Promise<Record<string, an
   }
 }
 
-// Tier 2: the safe GET routes captured for the current site, so the agent can fetch data directly instead of re-scraping the UI. Only same-origin GET/HEAD routes are listed; those are all that replay_route will run.
-async function handleListRoutes(wv: BrowserWebview): Promise<Record<string, any>> {
+// Tier 2: the API routes captured for the current site, so the agent can act directly instead of
+// re-scraping/clicking the UI. Default lists the safe GET/HEAD routes (all replay_route will run).
+// With { writes: true } it lists the MUTATING routes (POST/PUT/PATCH/DELETE) the site's own UI
+// fired, for BrowserApiWrite's general 'route' path; the write itself is same-origin + captured +
+// session-borrowed + flag-gated in the backend, this only SURFACES the endpoint shape.
+async function handleListRoutes(wv: BrowserWebview, params?: Record<string, any>): Promise<Record<string, any>> {
   const bridge = (window as any).openswarm?.cdpRoutesGet as
     | ((id: number, origin?: string) => Promise<any[]>) | undefined;
   if (!bridge) return { error: 'Route capture not available, restart the app.' };
@@ -1621,6 +1625,21 @@ async function handleListRoutes(wv: BrowserWebview): Promise<Record<string, any>
   try { origin = new URL(wv.getURL()).origin; } catch {}
   let routes: any[] = [];
   try { routes = (await bridge(wv.getWebContentsId(), origin)) || []; } catch {}
+
+  if (params?.writes) {
+    const writes = routes.filter((r) => r && r.safe === false);
+    if (!writes.length) {
+      return { text: 'No write (POST/PUT/PATCH/DELETE) API routes captured for this site yet. Do the write once through the UI so it gets recorded, then the route path can replay it.', url: wv.getURL() };
+    }
+    const wlines = writes.slice(0, 40).map((r) => `${r.method} ${r.template}  body-shape: ${JSON.stringify(r.bodyShape)} (seen ${r.hits}x)`);
+    return {
+      text: `Write endpoints this site's UI uses (for BrowserApiWrite action='route'). Pass the `
+        + `method + url + a body matching the shape, with your content in the text field:\n${wlines.join('\n')}`,
+      routes: writes.slice(0, 40),
+      url: wv.getURL(),
+    };
+  }
+
   const safe = routes.filter((r) => r && r.safe);
   if (!safe.length) {
     return { text: 'No replayable (GET) API routes captured for this site yet. Use the page first so they get recorded, then try again.', url: wv.getURL() };
@@ -1870,7 +1889,7 @@ async function runBrowserCommand(
         result = await handleDetectWebMCP(wv);
         break;
       case 'list_routes':
-        result = await handleListRoutes(wv);
+        result = await handleListRoutes(wv, params);
         break;
       case 'click_by_name':
         result = await handleClickByName(wv, params);

@@ -616,20 +616,24 @@ BROWSER_TOOLS_SCHEMA = [
             "and it hands back the site's REAL receipt (the new post/comment's id and "
             "permalink) as proof it landed. Only some sites are supported so far "
             "(currently Reddit: comment, reply, post, edit, delete). If the current site "
-            "has no adapter you get a clean 'no adapter' miss, just do the write through "
-            "the UI instead. This IS a real write: call it ONCE, and the receipt is your "
-            "confirmation, do not re-check or re-fire it."
+            "has no built-in adapter, you can still do it the GENERAL way: set action='route' "
+            "with the site's own write endpoint (method + url + body) taken from BrowserListRoutes, "
+            "and it replays that request with your session. If neither works you get a clean miss, "
+            "just do the write through the UI instead. This IS a real write: call it ONCE, and the "
+            "receipt is your confirmation, do not re-check or re-fire it."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "description": "The write to perform: comment, reply, post, edit, or delete."},
+                "action": {"type": "string", "description": "comment, reply, post, edit, delete (built-in adapter), or route (general: replay a captured write endpoint)."},
                 "parent_id": {"type": "string", "description": "comment/reply: fullname of the post/comment you're replying to (e.g. t3_abc, t1_xyz)."},
                 "thing_id": {"type": "string", "description": "edit/delete: fullname of your OWN post/comment (e.g. t1_xyz)."},
                 "text": {"type": "string", "description": "The body text (comment/reply/post/edit)."},
                 "subreddit": {"type": "string", "description": "post: the subreddit name, without the r/ prefix."},
                 "title": {"type": "string", "description": "post: the post title."},
-                "url": {"type": "string", "description": "post: a URL to submit as a link post (omit for a text post)."},
+                "url": {"type": "string", "description": "post: a link URL; OR route: the write endpoint's full URL from BrowserListRoutes."},
+                "method": {"type": "string", "description": "route: the endpoint's HTTP method (POST, PUT, PATCH, DELETE)."},
+                "body": {"type": "object", "description": "route: the JSON body to send, matching the endpoint's captured shape, with YOUR content in the text field(s)."},
             },
             "required": ["action"],
         },

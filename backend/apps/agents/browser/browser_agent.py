@@ -338,28 +338,55 @@ def p_extract_domain(url: str) -> str | None:
         return None
 
 
-async def run_api_write(tool_input: dict, current_url: str) -> dict:
-    """Route a BrowserApiWrite to the API-first write tier: resolve the current site's
-    domain, call its own write API through the borrowed session, and return a truthful
-    result (a real receipt on success, a 'use the UI' miss otherwise). Never raises: a
-    missing adapter or a site-reject is a typed miss, so the model falls back to the UI
-    path, never a crash and never a false claim of success."""
-    from backend.apps.agents.browser import site_write_registry
-    action = str((tool_input or {}).get("action") or "").strip()
-    if not action:
-        return {"error": "BrowserApiWrite needs an 'action' (comment, reply, post, edit, or delete)."}
-    domain = p_extract_domain(current_url or "")
-    if not domain:
-        return {"error": "Can't tell what site you're on yet; navigate to the site first, then do the write through the UI or retry."}
-    params = {k: v for k, v in (tool_input or {}).items() if k not in ("action", "expect")}
-    res = await site_write_registry.api_write(domain, action, params)
+def p_api_write_result(res) -> dict:
+    """Shape a registry WriteResult into a loop result: a truthful receipt on success (with
+    send_confirmed set by the caller), or an `error` on a miss so the model does the write via the
+    UI and the run never distills it as a false success."""
     if res.ok:
         return {"ok": True, "text": (
             f"Done via the {res.domain} API in {res.latency_ms}ms. Receipt: {res.receipt}. "
             "The write landed, that receipt is your proof; you're finished with this step."
         )}
-    # A miss (no adapter / site-reject) surfaces as an error so the model does the write via the UI and the run never distills it as a success.
     return {"error": f"API write not used ({res.error}). Do this action through the UI instead."}
+
+
+async def run_api_write(tool_input: dict, current_url: str, browser_id: str = "", tab_id: str = "") -> dict:
+    """Route a BrowserApiWrite to the API-first write tier: a deterministic built-in adapter
+    (Reddit) when one exists, else the GENERAL capture-replay tier (action='route': replay a
+    mutating route the site's own UI fired, verified same-origin + captured, behind OSW_ROUTE_WRITE).
+    Never raises: a missing adapter / disarmed tier / site-reject is a typed miss, so the model
+    falls back to the UI path, never a crash and never a false claim of success."""
+    from urllib.parse import urlparse
+    from backend.apps.agents.browser import route_write, site_write_registry
+    action = str((tool_input or {}).get("action") or "").strip()
+    if not action:
+        return {"error": "BrowserApiWrite needs an 'action' (comment, reply, post, edit, delete, or route)."}
+    domain = p_extract_domain(current_url or "")
+    if not domain:
+        return {"error": "Can't tell what site you're on yet; navigate to the site first, then do the write through the UI or retry."}
+
+    if action == "route":
+        # General tier: replay a captured mutating route. The captured set is fetched live from the
+        # page (the safety wall: only a route the UI actually fired can be replayed), and the replay
+        # itself is same-origin + flag-gated + session-borrowed in route_write.
+        method = str(tool_input.get("method") or "POST").strip()
+        url = str(tool_input.get("url") or "").strip()
+        body = tool_input.get("body") if isinstance(tool_input.get("body"), dict) else {}
+        if not url:
+            return {"error": "BrowserApiWrite route needs the 'url' of a captured write endpoint (see BrowserListRoutes)."}
+        try:
+            origin = f"{urlparse(current_url).scheme}://{urlparse(current_url).netloc}"
+        except Exception:
+            return {"error": "Can't resolve the current site's origin; do the write through the UI."}
+        listed = await execute_browser_tool("BrowserListRoutes", {"writes": True}, browser_id, tab_id)
+        captured = [route_write.CapturedRoute(method=str(r.get("method", "")), template=str(r.get("template", "")))
+                    for r in (listed.get("routes") or []) if isinstance(r, dict) and r.get("template")]
+        res = await site_write_registry.api_route_write(origin, method, url, body, captured)
+        return p_api_write_result(res)
+
+    params = {k: v for k, v in (tool_input or {}).items() if k not in ("action", "expect")}
+    res = await site_write_registry.api_write(domain, action, params)
+    return p_api_write_result(res)
 
 
 def strip_lone_surrogates(s: str) -> str:
@@ -1920,7 +1947,7 @@ async def run_browser_agent(
                     )}
                 elif tu.name == "BrowserApiWrite":
                     # API-first write tier: the site's own write API via the borrowed session, deterministic + a real receipt. A miss is a typed "use the UI" (never a crash), so the loop falls back cleanly.
-                    result = await p_cancellable(run_api_write(tu.input, current_url))
+                    result = await p_cancellable(run_api_write(tu.input, current_url, browser_id, tab_id))
                     if result is None:
                         cancelled = True
                         break

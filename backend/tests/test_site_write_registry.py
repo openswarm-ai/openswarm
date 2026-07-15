@@ -98,3 +98,46 @@ async def test_tool_no_url_yet_is_an_error_not_a_crash():
 async def test_tool_missing_action_is_an_error():
     out = await BA.run_api_write({"text": "hi"}, "https://www.reddit.com/r/x/")
     assert "error" in out and "action" in out["error"].lower()
+
+
+# --- general capture-replay tier (action='route') ---------------------------
+@pytest.mark.asyncio
+async def test_registry_route_write_wraps_replay_outcome(monkeypatch):
+    from backend.apps.agents.browser import route_write as rw
+    monkeypatch.setattr(reg, "p_ensure_session_env", lambda: None)
+    monkeypatch.setattr(rw, "replay_write",
+                        lambda m, u, b, o, c: rw.ReplayOutcome(ok=True, receipt="t1_z", latency_ms=88))
+    res = await reg.api_route_write("https://www.reddit.com", "POST",
+                                    "https://www.reddit.com/api/comment", {"text": "hi"}, [])
+    assert res.ok is True and res.receipt == "t1_z"
+    assert res.domain == "www.reddit.com" and res.action == "route"
+
+
+@pytest.mark.asyncio
+async def test_tool_route_fetches_captured_and_replays(monkeypatch):
+    # The tool fetches the site's captured write routes (safety wall) then replays. Both boundaries
+    # (the renderer list + the replay) are stubbed; this proves the wiring shape end to end.
+    async def fake_exec(tool, params, bid, tid):
+        assert tool == "BrowserListRoutes" and params == {"writes": True}
+        return {"routes": [{"method": "POST", "template": "https://www.reddit.com/api/comment"}]}
+
+    async def fake_route_write(origin, method, url, body, captured):
+        assert origin == "https://www.reddit.com" and method == "POST"
+        assert len(captured) == 1 and captured[0].template.endswith("/api/comment")
+        return reg.WriteResult(ok=True, action="route", domain="www.reddit.com",
+                               receipt="/r/x/c/a", latency_ms=120)
+
+    monkeypatch.setattr(BA, "execute_browser_tool", fake_exec)
+    monkeypatch.setattr(reg, "api_route_write", fake_route_write)
+    out = await BA.run_api_write(
+        {"action": "route", "method": "POST", "url": "https://www.reddit.com/api/comment",
+         "body": {"thing_id": "t3_a", "text": "hi"}},
+        "https://www.reddit.com/r/x/comments/a/", "b1", "t1")
+    assert out.get("ok") is True and "/r/x/c/a" in out["text"]
+
+
+@pytest.mark.asyncio
+async def test_tool_route_needs_a_url():
+    out = await BA.run_api_write({"action": "route", "method": "POST"},
+                                 "https://www.reddit.com/r/x/", "b1", "t1")
+    assert "error" in out and "url" in out["error"].lower()

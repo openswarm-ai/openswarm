@@ -13,11 +13,13 @@ Live-validated end to end on Reddit (comment 271ms + reversible delete 246ms, ty
 import asyncio
 import os
 import time
-from typing import Any, Callable, Dict, FrozenSet, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Tuple
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict
 from typeguard import typechecked
 
+from backend.apps.agents.browser import route_write
 from backend.apps.reddit_mcp_shim import reddit_writes
 
 
@@ -98,6 +100,19 @@ def p_ensure_session_env() -> None:
             ss.AUTH_TOKEN = get_auth_token() or ""
         except Exception:
             pass
+
+
+@typechecked
+async def api_route_write(origin: str, method: str, url: str, body: Dict[str, Any],
+                         captured: List[route_write.CapturedRoute]) -> WriteResult:
+    """The GENERAL tier: replay a captured mutating route the site's own UI fired, for sites with
+    no hand-written adapter. Wraps route_write's typed outcome into the registry's WriteResult so
+    callers get one shape. Every refusal/rejection is ok=False, so the agent falls back to the UI."""
+    p_ensure_session_env()
+    d = (urlparse(origin).netloc or origin).lstrip(".")
+    out = await asyncio.to_thread(route_write.replay_write, method, url, body, origin, captured)
+    return WriteResult(ok=out.ok, action="route", domain=d, receipt=out.receipt,
+                       error=out.error, latency_ms=out.latency_ms)
 
 
 @typechecked
