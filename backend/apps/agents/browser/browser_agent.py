@@ -1036,8 +1036,8 @@ async def run_browser_agent(
         "message": user_msg.model_dump(mode="json"),
     })
 
-    # Perceived value, zero clicks: one calm line so the user FEELS the agent is picking up where it left off, not figuring the site out cold again. Only when strategy was actually seeded, so it's honest, never noise.
-    if pb_seeded and p_pb_host:
+    # Perceived value, zero clicks: one calm line so the user FEELS the agent is picking up where it left off. It claims "from a previous visit", so it must fire ONLY on a genuinely LEARNED playbook, never a shipped SEED (else a first-ever visit to any seeded popular site would lie about a visit that never happened). Seeds still inject their head-start into the prompt above; they just don't trigger this line.
+    if p_pb_host and browser_playbook.load(p_pb_host):
         session.memory_recalled = True  # drives the subtle "Remembered" card chip
         p_where = "this app" if app_mode else p_pb_host
         p_recall_msg = Message(role="assistant",

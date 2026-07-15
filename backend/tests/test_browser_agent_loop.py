@@ -1063,8 +1063,8 @@ def test_playbook_not_learned_from_a_ghost_completion(monkeypatch):
     asyncio.run(BA.run_browser_agent(
         task="do the thing", browser_id="b1", model="sonnet", initial_url=DOC_URL,
     ))
-    # the only aux call allowed here is the stuck-adjudication; the playbook distill must NOT have stored anything for a dishonest run
-    assert PB.get_playbook("docs.google.com") == []
+    # the only aux call allowed here is the stuck-adjudication; the playbook distill must NOT have LEARNED anything for a dishonest run (load = learned-only; get_playbook would also return the shipped seed for this host)
+    assert PB.load("docs.google.com") == []
 
 
 def test_batch_replay_runs_a_read_loop_for_all_values(monkeypatch):
