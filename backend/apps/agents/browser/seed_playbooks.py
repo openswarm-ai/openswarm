@@ -36,7 +36,7 @@ SEED_PLAYBOOKS: dict[str, list[str]] = {
     "medium.com": ["Articles are readable but many hit a metered paywall after a few reads; search via URL: medium.com/search?q=QUERY."],
     # --- news / weather ---
     "news.google.com": ["Google News: news.google.com/search?q=QUERY. Works logged-out."],
-    "weather.com": ["Look a location up via the search box; forecasts read fine logged-out (a location page is weather.com/weather/today/l/CITY)."],
+    "weather.com": ["Type a city into the search box (weather.com keys pages on an internal location code, so don't hand-build a URL from a city name); forecasts read fine logged-out."],
     "cnn.com": ["Readable logged-out; search via URL: cnn.com/search?q=QUERY."],
     "bbc.com": ["Readable logged-out; search via URL: bbc.co.uk/search?q=QUERY."],
     "nytimes.com": ["A metered paywall appears after a few articles; use the site's own search box, not a guessed URL."],
