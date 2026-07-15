@@ -1524,18 +1524,24 @@ def test_send_index_handoff_points_only_at_a_real_send_button():
     assert send_index_in_state("") is None
 
 
-def test_send_index_finds_the_popular_composers_submit_buttons():
-    # the generalization: the fast send-path must COMPLETE on X/IG/FB/YouTube, so the submit
-    # finder knows Post/Reply/Tweet/etc, not just LinkedIn's "Send".
-    from backend.apps.agents.browser.browser_agent import send_index_in_state
-    assert send_index_in_state('[3]<textbox "Post your reply">\n[8]<button "Reply">') == (8, "Reply")
-    assert send_index_in_state('[2]<textbox "What is happening?">\n[9]<button "Post">') == (9, "Post")
-    assert send_index_in_state('[4]<button "Tweet">') == (4, "Tweet")
-    assert send_index_in_state('[7]<button "Comment">') == (7, "Comment")
-    # exact + button-only keeps the safety: not a look-alike, not a menuitem, not an opener phrase
-    assert send_index_in_state('[5]<button "Post a job">') is None
-    assert send_index_in_state('[6]<menuitem "Share">') is None          # button-only excludes the Drive-Share false positive
-    assert send_index_in_state('[8]<button "Reply to Maya">') is None
+def test_send_submit_matcher_broad_but_hint_matcher_tight():
+    # SCOPING: the send-script's submit finder must know Post/Reply/Tweet/etc so the fast path
+    # COMPLETES on the giants; the ALWAYS-ON model hint must STAY tight so it never mislabels a
+    # stray feed 'Reply'/'Share'/'Comment' button as the Send button after an unrelated fill.
+    from backend.apps.agents.browser.browser_agent import send_index_in_state, send_submit_index_in_state
+    # broad (send-script) finds the popular composers' submit buttons
+    assert send_submit_index_in_state('[3]<textbox "Post your reply">\n[8]<button "Reply">') == (8, "Reply")
+    assert send_submit_index_in_state('[2]<textbox "What is happening?">\n[9]<button "Post">') == (9, "Post")
+    assert send_submit_index_in_state('[4]<button "Tweet">') == (4, "Tweet")
+    # exact + button-only keeps its own safety
+    assert send_submit_index_in_state('[5]<button "Post a job">') is None
+    assert send_submit_index_in_state('[6]<menuitem "Share">') is None
+    # TIGHT hint matcher: Send family only, and NOT the common feed buttons (the regression guard)
+    assert send_index_in_state('[44]<button "Send">') == (44, "Send")
+    assert send_index_in_state('[8]<button "Reply">') is None
+    assert send_index_in_state('[9]<button "Post">') is None
+    assert send_index_in_state('[7]<button "Comment">') is None
+    assert send_index_in_state('[3]<button "Share">') is None
 
 
 def test_strip_lone_surrogates():

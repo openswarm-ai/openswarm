@@ -5,7 +5,7 @@ end, including the flag gating and the safety that reveal only forwards under th
 import pytest
 
 from backend.apps.agents.browser import browser_send_script as ss
-from backend.apps.agents.browser.browser_agent import send_index_in_state, payload_in_textbox
+from backend.apps.agents.browser.browser_agent import send_submit_index_in_state, payload_in_textbox
 
 TASK = "go to tyler chen's linkedin hes in entrepreneurs first and text him '[test] hello world r9-os'"
 NAMELESS = '[1]<link "Home">\n[2]<button "Search">'  # no name-matched composer, no opener
@@ -46,7 +46,7 @@ async def test_structural_finder_fills_when_name_detector_misses(monkeypatch):
     monkeypatch.setenv("OSW_SENDSCRIPT_DRYRUN", "1")
     ex, calls = make_struct_exec({"found": True, "filled": True, "role": "contenteditable",
                                   "selector": '[data-osw-composer="1"]', "score": 6.2, "nearSubmit": True})
-    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK,
                                  current_url="https://www.reddit.com/r/test/comments/x/")
     assert r is not None and r["sent"] is False           # filled, stopped before the send
@@ -60,7 +60,7 @@ async def test_structural_finder_declines_when_no_editable(monkeypatch):
     to the model path, never a false fire."""
     monkeypatch.setenv("OSW_COMPOSER_STRUCT", "1")
     ex, calls = make_struct_exec({"found": False})
-    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK, current_url="https://example.com/")
     assert r is None
     assert calls["find"] == 1
@@ -72,7 +72,7 @@ async def test_structural_off_by_default_never_calls_finder(monkeypatch):
     is never invoked (the structural path can't perturb the default)."""
     monkeypatch.delenv("OSW_COMPOSER_STRUCT", raising=False)
     ex, calls = make_struct_exec({"found": True, "filled": True, "selector": "x", "role": "textarea"})
-    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK, current_url="https://example.com/")
     assert r is None
     assert calls["find"] == 0
@@ -88,7 +88,7 @@ async def test_reveal_flag_passed_to_finder_when_enabled(monkeypatch):
     ex, calls = make_struct_exec({"found": True, "filled": True, "role": "contenteditable",
                                   "selector": '[data-osw-composer="1"]', "score": 6.0,
                                   "nearSubmit": True, "reveals": ["trigger"]})
-    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK,
                                  current_url="https://www.linkedin.com/feed/")
     assert r is not None and r["sent"] is False
@@ -110,7 +110,7 @@ async def test_cross_nav_retry_after_open_first_navigates(monkeypatch):
          "selector": '[data-osw-composer="1"]', "score": 6.0, "reveals": ["scroll"]},
     ]
     ex, calls = make_struct_exec(seq)
-    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK,
                                  current_url="https://www.reddit.com/r/test")
     assert r is not None and r["sent"] is False
@@ -124,7 +124,7 @@ async def test_cross_nav_no_retry_when_reveal_did_not_navigate(monkeypatch):
     monkeypatch.setenv("OSW_COMPOSER_STRUCT", "1")
     monkeypatch.setenv("OSW_COMPOSER_REVEAL", "1")
     ex, calls = make_struct_exec({"found": False, "reveals": ["trigger:noop", "open-first:noop", "scroll"]})
-    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK, current_url="https://example.com/")
     assert r is None
     assert calls["find"] == 1
@@ -137,7 +137,7 @@ async def test_reveal_flag_off_by_default(monkeypatch):
     monkeypatch.setenv("OSW_COMPOSER_STRUCT", "1")
     monkeypatch.delenv("OSW_COMPOSER_REVEAL", raising=False)
     ex, calls = make_struct_exec({"found": False})
-    await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_index_in_state,
+    await ss.run_send_script(TASK, "b1", "", NAMELESS, ex, send_submit_index_in_state,
                              payload_in_textbox, payload_source=TASK, current_url="https://example.com/")
     find_call = next(c for c in calls["clicks"] if c[0] == "BrowserFindComposer")
     assert find_call[1].get("reveal") is False

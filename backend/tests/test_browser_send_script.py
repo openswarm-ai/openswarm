@@ -6,7 +6,7 @@ the correctness the live run would prove is."""
 import pytest
 
 from backend.apps.agents.browser import browser_send_script as ss
-from backend.apps.agents.browser.browser_agent import send_index_in_state, payload_in_textbox
+from backend.apps.agents.browser.browser_agent import send_submit_index_in_state, payload_in_textbox
 
 PROFILE = '[22]*<link "Tyler Chen Premium 1st">\n[50]*<link "Message">\n[51]<button "Follow">'
 COMPOSER_EMPTY = '[2]<textbox "Write a message">\n[9]<button "Attach">'
@@ -45,7 +45,7 @@ PROFILE_URL = "https://www.linkedin.com/in/tylerchen1200/"
 
 async def run(task, state0, list_script, url=THREAD_URL):
     ex, calls = make_exec(list_script)
-    r = await ss.run_send_script(task, "b1", "", state0, ex, send_index_in_state,
+    r = await ss.run_send_script(task, "b1", "", state0, ex, send_submit_index_in_state,
                                  payload_in_textbox, current_url=url)
     return r, calls
 
@@ -61,7 +61,7 @@ async def test_surface_gate_declines_when_no_composer_in_perception():
     messaging opener declines UNTOUCHED, regardless of URL, so the script never fires
     where a fill would land nowhere useful."""
     ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
-    r = await ss.run_send_script(TASK, "b1", "", NO_COMPOSER, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", NO_COMPOSER, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK, current_url=FEED_URL)
     assert r is None
     assert not calls["clicks"]
@@ -77,7 +77,7 @@ async def test_surface_gate_fires_on_a_NON_linkedin_composer():
     X_FILLED = '[3]<textbox "Post your reply" value="[test] hello world r9-os">\n[8]<button "Reply">'
     X_SENT = '[3]<textbox "Post your reply">\n[1]<link "Home">'
     ex, calls = make_exec([X_FILLED, X_FILLED, X_SENT])
-    r = await ss.run_send_script(TASK, "b1", "", X_COMPOSER, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", X_COMPOSER, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK,
                                  current_url="https://x.com/messages/123")
     assert r is not None and r["sent"] is True
@@ -91,7 +91,7 @@ async def test_surface_gate_allows_profile_overlay():
     """The profile /in/ overlay is winnable via click-by-name (ground truth: its Send
     ranks out of the list but is a real button), so it's back in scope, not declined."""
     ex, calls = make_exec([COMPOSER_FILLED_NO_SEND, COMPOSER_FILLED_NO_SEND, COMPOSER_SENT])
-    r = await ss.run_send_script(TASK, "b1", "", COMPOSER_EMPTY, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", COMPOSER_EMPTY, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK, current_url=PROFILE_URL)
     assert r is not None and r["sent"] is True
 
@@ -102,7 +102,7 @@ async def test_send_via_click_by_name_when_send_absent_from_ranked_list():
     box but NO Send in the capped numbered list. The script falls back to
     click-by-name (the model's own send path there) and the receipt still passes."""
     ex, calls = make_exec([COMPOSER_FILLED_NO_SEND, COMPOSER_FILLED_NO_SEND, COMPOSER_SENT])
-    r = await ss.run_send_script(TASK, "b1", "", COMPOSER_EMPTY, ex, send_index_in_state,
+    r = await ss.run_send_script(TASK, "b1", "", COMPOSER_EMPTY, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK, current_url=THREAD_URL)
     assert r is not None and r["sent"] is True
     # the send went through click-by-name, not an index click
@@ -186,7 +186,7 @@ async def test_composed_task_brief_quotes_fire_via_payload_source():
     real dispatch (r242/r243 declined live); the raw user prompt rides separately."""
     ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
     r = await ss.run_send_script(COMPOSED, "b1", "", COMPOSER_EMPTY, ex,
-                                 send_index_in_state, payload_in_textbox,
+                                 send_submit_index_in_state, payload_in_textbox,
                                  payload_source=TASK, current_url=THREAD_URL)
     assert r is not None and r["sent"] is True
     assert r["payload"] == "[test] hello world r9-os"
@@ -220,7 +220,7 @@ async def test_readonly_probe_never_fires():
     )
     ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
     r = await ss.run_send_script(probe, "b1", "", COMPOSER_EMPTY, ex,
-                                 send_index_in_state, payload_in_textbox,
+                                 send_submit_index_in_state, payload_in_textbox,
                                  payload_source=TASK, current_url=THREAD_URL)
     assert r is None
     assert not calls["clicks"]

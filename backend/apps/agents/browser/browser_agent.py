@@ -473,11 +473,14 @@ def delta_state(text: str, seen_lines: set[str]) -> str:
 # A button row whose name is exactly a Send control (not "Send InMail credit" or "Send a message to X"); used to hand the model the Send button after it types, so it never burns turns hunting a button that's right there.
 P_SEND_ROW_RE = re.compile(r'\[(\d+)\]\*?<\s*button\s+"([^"]*)"', re.I)
 
-# The submit-button labels across the popular composers, so the fast send-path COMPLETES on
-# X/IG/FB/Threads/YouTube, not just LinkedIn. EXACT match + button-only (P_SEND_ROW_RE) is the
-# safety: "Post" never matches "Post a job", a "Share" menuitem isn't a <button so it's excluded,
-# and every caller is post-fill (a hint, or the send-script's receipt-gated click), so a rare
-# opener-vs-submit mismatch fails safe (the composer just doesn't clear), never a false send.
+# TIGHT set for the ALWAYS-ON model hint (post_action_state). Kept to the unambiguous "Send" family
+# on purpose: this hint fires after ANY text fill, so a broad match ("Reply"/"Share"/"Comment"/
+# "Post") would mislabel a stray feed button as the Send button after an unrelated search fill.
+P_HINT_SEND_LABELS = frozenset({"send", "send now", "send message"})
+# BROAD submit vocabulary for the SEND-SCRIPT only (flag-gated + receipt-gated): lets the fast
+# send-path COMPLETE on X/IG/FB/Threads/YouTube. Safe ONLY there because the send-script re-verifies
+# the composer cleared the exact payload, so an opener-vs-submit mismatch fails safe, never a false
+# send. button-only (P_SEND_ROW_RE) + exact match keeps "Post" from matching "Post a job" etc.
 P_SEND_LABELS = frozenset({
     "send", "send now", "send message",              # LinkedIn / Gmail / DMs
     "post", "post all", "tweet", "reply",            # X / Threads compose + reply
@@ -486,8 +489,19 @@ P_SEND_LABELS = frozenset({
 
 
 def send_index_in_state(state_text: str):
-    """(index, name) of a real submit button in an interactives list, or None. Strict exact
-    match against P_SEND_LABELS so it never grabs an upsell or a profile 'Send a message' link."""
+    """(index, name) of a real Send button for the ALWAYS-ON model hint, or None. TIGHT exact match
+    (Send family only) so it never mislabels a common feed 'Reply'/'Share'/'Comment' button."""
+    for line in (state_text or "").splitlines():
+        m = P_SEND_ROW_RE.search(line)
+        if m and m.group(2).strip().lower() in P_HINT_SEND_LABELS:
+            return int(m.group(1)), m.group(2)
+    return None
+
+
+def send_submit_index_in_state(state_text: str):
+    """(index, name) of a submit button across the popular composers (Post/Reply/Tweet/...), for the
+    receipt-gated SEND-SCRIPT only. Broader than the hint matcher; safe because the send-script
+    verifies the composer cleared afterward, so a wrong match aborts, never sends."""
     for line in (state_text or "").splitlines():
         m = P_SEND_ROW_RE.search(line)
         if m and m.group(2).strip().lower() in P_SEND_LABELS:
@@ -1340,7 +1354,7 @@ async def run_browser_agent(
         try:
             p_script = await asyncio.wait_for(browser_send_script.run_send_script(
                 task, browser_id, tab_id, preloaded_perception,
-                execute_browser_tool, send_index_in_state, payload_in_textbox,
+                execute_browser_tool, send_submit_index_in_state, payload_in_textbox,
                 payload_source=user_prompt, current_url=current_url,
             ), timeout=30.0)
         except Exception as p_se:
