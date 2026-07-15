@@ -1416,13 +1416,17 @@ const agentsSlice = createSlice({
       })
       .addCase(fetchBrowserAgentChildren.fulfilled, (state, action) => {
         for (const session of action.payload) {
-          if (!state.sessions[session.id]) {
+          const existing = state.sessions[session.id];
+          if (!existing) {
             state.sessions[session.id] = {
               ...session,
               name: normalizeSessionName(session.name),
               tool_group_meta: session.tool_group_meta ?? {},
               pending_approvals: session.pending_approvals ?? [],
             };
+          } else if (existing.messages.length === 0 && session.messages.length > 0) {
+            // Hydrate a child the trimmed session-list poll left message-less; don't touch one mid-stream (already has messages).
+            existing.messages = session.messages;
           }
         }
       })

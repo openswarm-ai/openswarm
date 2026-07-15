@@ -197,14 +197,18 @@ const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId })
     shallowEqual,
   );
 
+  // A child that arrived only through the trimmed session-list poll carries its message_count but no messages; fetch the full children so its history renders instead of showing a blank feed.
+  const needsChildFetch =
+    browserSessions.length === 0 ||
+    browserSessions.some((s) => (s.message_count ?? 0) > 0 && s.messages.length === 0);
   useEffect(() => {
-    if (browserSessions.length === 0 && fetchedForSession.current !== parentSessionId) {
+    if (needsChildFetch && fetchedForSession.current !== parentSessionId) {
       fetchedForSession.current = parentSessionId;
       dispatch(fetchBrowserAgentChildren(parentSessionId))
         .unwrap()
         .catch(() => { fetchedForSession.current = null; });
     }
-  }, [browserSessions.length, parentSessionId, dispatch]);
+  }, [needsChildFetch, parentSessionId, dispatch]);
 
   const sessionsWithHistoricalEntries = useMemo(() => {
     return browserSessions.map((session) => {
