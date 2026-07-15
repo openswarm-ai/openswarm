@@ -8,15 +8,30 @@ interface ThemeContextValue {
   tokens: ClaudeTokens;
   accent: string | null;
   gradient: string[] | null;
+  washOpacity: number;
+  grain: number;
   toggleMode: () => void;
   setMode: (mode: ThemeMode) => void;
   setAccent: (hex: string | null) => void;
   setGradient: (stops: string[] | null) => void;
+  setWashOpacity: (v: number) => void;
+  setGrain: (v: number) => void;
 }
 
 const STORAGE_KEY = 'self-swarm-theme-mode';
 const ACCENT_STORAGE_KEY = 'self-swarm-theme-accent';
 const GRADIENT_STORAGE_KEY = 'self-swarm-theme-gradient';
+const WASH_OPACITY_KEY = 'self-swarm-theme-wash-opacity';
+const GRAIN_KEY = 'self-swarm-theme-grain';
+export const DEFAULT_WASH_OPACITY = 0.17;
+
+function getInitialNum(key: string, def: number): number {
+  try {
+    const v = parseFloat(localStorage.getItem(key) ?? '');
+    if (Number.isFinite(v) && v >= 0 && v <= 1) return v;
+  } catch {}
+  return def;
+}
 
 function getInitialGradient(): string[] | null {
   try {
@@ -58,16 +73,22 @@ const ThemeContext = createContext<ThemeContextValue>({
   tokens: lightTokens,
   accent: null,
   gradient: null,
+  washOpacity: DEFAULT_WASH_OPACITY,
+  grain: 0,
   toggleMode: () => {},
   setMode: () => {},
   setAccent: () => {},
   setGradient: () => {},
+  setWashOpacity: () => {},
+  setGrain: () => {},
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mode, setModeState] = useState<ThemeMode>(getInitialMode);
   const [accent, setAccentState] = useState<string | null>(getInitialAccent);
   const [gradient, setGradientState] = useState<string[] | null>(getInitialGradient);
+  const [washOpacity, setWashOpacityState] = useState<number>(() => getInitialNum(WASH_OPACITY_KEY, DEFAULT_WASH_OPACITY));
+  const [grain, setGrainState] = useState<number>(() => getInitialNum(GRAIN_KEY, 0));
   const firstMount = useRef(true);
 
   useEffect(() => {
@@ -91,6 +112,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {}
   }, [gradient]);
 
+  useEffect(() => { try { localStorage.setItem(WASH_OPACITY_KEY, String(washOpacity)); } catch {} }, [washOpacity]);
+  useEffect(() => { try { localStorage.setItem(GRAIN_KEY, String(grain)); } catch {} }, [grain]);
+
   const tokens = useMemo(() => withAccent(mode === 'dark' ? darkTokens : lightTokens, accent, mode), [mode, accent]);
 
   // Stable identities: SettingsLoader's "apply settings.theme" effect lists setMode in its deps, so a setter that changed every render made that effect re-fire on each toggle and re-assert the OLD persisted theme until the debounced save caught up: live theme snapped back for ~900ms = the switch flicker.
@@ -98,8 +122,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setMode = useCallback((m: ThemeMode) => setModeState(m), []);
   const setAccent = useCallback((hex: string | null) => setAccentState(hex), []);
   const setGradient = useCallback((stops: string[] | null) => setGradientState(stops), []);
+  const setWashOpacity = useCallback((v: number) => setWashOpacityState(Math.min(1, Math.max(0, v))), []);
+  const setGrain = useCallback((v: number) => setGrainState(Math.min(1, Math.max(0, v))), []);
 
-  const value = useMemo(() => ({ mode, tokens, accent, gradient, toggleMode, setMode, setAccent, setGradient }), [mode, tokens, accent, gradient, toggleMode, setMode, setAccent, setGradient]);
+  const value = useMemo(() => ({ mode, tokens, accent, gradient, washOpacity, grain, toggleMode, setMode, setAccent, setGradient, setWashOpacity, setGrain }), [mode, tokens, accent, gradient, washOpacity, grain, toggleMode, setMode, setAccent, setGradient, setWashOpacity, setGrain]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };
@@ -112,4 +138,8 @@ export const useThemeMode = () => {
 export const useThemeAccent = () => {
   const { accent, setAccent, gradient, setGradient } = useContext(ThemeContext);
   return { accent, setAccent, gradient, setGradient };
+};
+export const useThemeWash = () => {
+  const { washOpacity, grain, setWashOpacity, setGrain } = useContext(ThemeContext);
+  return { washOpacity, grain, setWashOpacity, setGrain };
 };

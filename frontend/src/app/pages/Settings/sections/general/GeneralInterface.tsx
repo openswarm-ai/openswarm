@@ -11,7 +11,7 @@ import DarkModeIcon from '@mui/icons-material/DarkMode';
 import KeyboardIcon from '@mui/icons-material/Keyboard';
 import LanguageIcon from '@mui/icons-material/Language';
 import { AppSettings } from '@/shared/state/settingsSlice';
-import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useClaudeTokens, useThemeWash } from '@/shared/styles/ThemeContext';
 import AccentColorPad from '@/app/components/theme/AccentColorPad';
 import type { SettingsStyles } from '../settingsStyles';
 import { settingSelectAttrs } from '../settingSelect';
@@ -22,6 +22,7 @@ const GeneralInterface: React.FC<{
   styles: SettingsStyles;
 }> = ({ form, setForm, styles }) => {
   const c = useClaudeTokens();
+  const { washOpacity, grain, setWashOpacity, setGrain } = useThemeWash();
   const [recordingShortcut, setRecordingShortcut] = useState(false);
   const { fieldSx, sectionSx, rowSx, rowLastSx, inlineRowSx, inlineRowLastSx, labelSx, descSx } = styles;
 
@@ -76,6 +77,7 @@ const GeneralInterface: React.FC<{
           stops={form.accent_gradient ?? (form.accent_color ? [form.accent_color] : [])}
           onChange={(next) => setForm({ ...form, accent_color: next?.[0] ?? null, accent_gradient: next && next.length > 1 ? next : null })}
           height={120}
+          wash={{ opacity: washOpacity, grain, onOpacity: setWashOpacity, onGrain: setGrain }}
         />
       </Box>
 

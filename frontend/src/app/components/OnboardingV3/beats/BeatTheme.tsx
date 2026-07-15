@@ -1,12 +1,12 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Moon, Sun } from 'lucide-react';
-import { useThemeAccent, useThemeMode } from '@/shared/styles/ThemeContext';
+import { Monitor, Moon, Sun } from 'lucide-react';
+import { useThemeAccent, useThemeMode, useThemeWash } from '@/shared/styles/ThemeContext';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import AccentColorPad from '@/app/components/theme/AccentColorPad';
 import BeatShell from './BeatShell';
 
-// The IKEA-effect beat, staged as a physical picker device (Arc's theme gadget): mode icons on the bezel, the shared pad as the screen. Every touch drives the REAL app theme live; persistence happens at finish().
+// The IKEA-effect beat, staged as a physical picker device (Arc/Zen theme gadget): light/dark/system on the bezel, the shared pad (color-theory stops + intensity + grain) as the screen. Every touch drives the REAL app theme live; persistence happens at finish().
 const BeatTheme: React.FC<{
   c: ClaudeTokens;
   onNext: () => void;
@@ -14,11 +14,34 @@ const BeatTheme: React.FC<{
 }> = ({ c, onNext, onBack }) => {
   const { accent, setAccent, gradient, setGradient } = useThemeAccent();
   const { mode, setMode } = useThemeMode();
+  const { washOpacity, grain, setWashOpacity, setGrain } = useThemeWash();
   const stops = gradient ?? (accent ? [accent] : []);
   const onStops = (next: string[] | null) => {
     setAccent(next?.[0] ?? null);
     setGradient(next && next.length > 1 ? next : null);
   };
+
+  // 'system' isn't a persisted mode; it applies the OS preference now and follows it while this beat is mounted.
+  const [choice, setChoice] = React.useState<'light' | 'dark' | 'system'>(mode);
+  const followSystem = useRef(false);
+  const pickSystem = useCallback(() => {
+    setChoice('system');
+    followSystem.current = true;
+    setMode(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  }, [setMode]);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => { if (followSystem.current) setMode(mq.matches ? 'dark' : 'light'); };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [setMode]);
+  const pickMode = useCallback((m: 'light' | 'dark') => { followSystem.current = false; setChoice(m); setMode(m); }, [setMode]);
+
+  const MODES = [
+    { key: 'light' as const, Icon: Sun, onPick: () => pickMode('light') },
+    { key: 'dark' as const, Icon: Moon, onPick: () => pickMode('dark') },
+    { key: 'system' as const, Icon: Monitor, onPick: pickSystem },
+  ];
 
   return (
     <BeatShell
@@ -40,24 +63,30 @@ const BeatTheme: React.FC<{
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
-          {(['light', 'dark'] as const).map((m) => (
+          {MODES.map(({ key, Icon, onPick }) => (
             <button
-              key={m}
-              onClick={() => setMode(m)}
-              title={m === 'light' ? 'Light' : 'Dark'}
+              key={key}
+              onClick={onPick}
+              title={key.charAt(0).toUpperCase() + key.slice(1)}
               style={{
                 width: 34, height: 28, borderRadius: 8, border: 'none', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: mode === m ? c.accent.primary : 'transparent',
-                color: mode === m ? '#fff' : c.text.inverse + '88',
+                background: choice === key ? c.accent.primary : 'transparent',
+                color: choice === key ? '#fff' : c.text.inverse + '88',
                 transition: 'background 140ms ease, color 140ms ease',
               }}
             >
-              {m === 'light' ? <Sun size={15} /> : <Moon size={15} />}
+              <Icon size={15} />
             </button>
           ))}
         </div>
-        <AccentColorPad c={c} stops={stops} onChange={onStops} height={210} />
+        <AccentColorPad
+          c={c}
+          stops={stops}
+          onChange={onStops}
+          height={210}
+          wash={{ opacity: washOpacity, grain, onOpacity: setWashOpacity, onGrain: setGrain }}
+        />
       </motion.div>
     </BeatShell>
   );

@@ -12,13 +12,21 @@ function stopToXY(hex: string): { x: number; y: number } | null {
   return { x: hsl.h, y: Math.min(1, Math.max(0, (0.62 - hsl.l) / 0.34)) };
 }
 
-// Arc's gradient engine, one control with two homes: 1-3 draggable stops on a hue/lightness field, + adds an analogous stop, - removes the newest. The first stop is the accent the tokens derive from; two or more stops become the canvas gradient wash. The pad reports stops and never knows who is listening.
+export interface WashControls {
+  opacity: number;
+  grain: number;
+  onOpacity: (v: number) => void;
+  onGrain: (v: number) => void;
+}
+
+// Arc/Zen gradient engine, one control with two homes: 1-3 draggable stops on a hue/lightness field, + adds a color-theory-harmonized stop (analogous, then triadic), - removes the newest. The first stop is the accent the tokens derive from; 2+ stops become the canvas gradient wash, whose intensity + grain the optional sliders tune. The pad reports stops and never knows who is listening.
 const AccentColorPad: React.FC<{
   c: ClaudeTokens;
   stops: string[];
   onChange: (stops: string[] | null) => void;
   height?: number;
-}> = ({ c, stops, onChange, height = 240 }) => {
+  wash?: WashControls;
+}> = ({ c, stops, onChange, height = 240, wash }) => {
   const padRef = useRef<HTMLDivElement | null>(null);
   const grabbedRef = useRef<number | null>(null);
   const lastApplyRef = useRef(0);
@@ -76,9 +84,11 @@ const AccentColorPad: React.FC<{
 
   const addStop = useCallback(() => {
     if (stops.length >= MAX_STOPS) return;
-    const base = hexToHsl(stops[stops.length - 1] ?? ACCENT_PRESETS[0]);
-    const hue = ((base?.h ?? 0.08) + 0.11) % 1;
-    onChange([...stops, hslToHex({ h: hue, s: 0.72, l: base?.l ?? 0.45 })]);
+    // Color-theory harmony off the FIRST stop: 2nd = analogous (+30deg), 3rd = triadic (+120deg).
+    const anchor = hexToHsl(stops[0] ?? ACCENT_PRESETS[0]);
+    const h0 = anchor?.h ?? 0.08;
+    const hue = (h0 + (stops.length === 1 ? 0.083 : 0.333)) % 1;
+    onChange([...stops, hslToHex({ h: hue, s: anchor?.s ?? 0.72, l: anchor?.l ?? 0.5 })]);
   }, [stops, onChange]);
 
   const removeStop = useCallback(() => {
@@ -162,6 +172,18 @@ const AccentColorPad: React.FC<{
           Reset
         </button>
       </div>
+      {wash && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.78rem', color: c.text.tertiary }}>
+            <span style={{ width: 52, flexShrink: 0 }}>Intensity</span>
+            <input type="range" min={0} max={1} step={0.01} value={wash.opacity} onChange={(e) => wash.onOpacity(parseFloat(e.target.value))} style={{ flex: 1, accentColor: c.accent.primary }} />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.78rem', color: c.text.tertiary }}>
+            <span style={{ width: 52, flexShrink: 0 }}>Grain</span>
+            <input type="range" min={0} max={1} step={0.01} value={wash.grain} onChange={(e) => wash.onGrain(parseFloat(e.target.value))} style={{ flex: 1, accentColor: c.accent.primary }} />
+          </label>
+        </div>
+      )}
     </div>
   );
 };

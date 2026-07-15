@@ -6,7 +6,7 @@ import DashboardCardLayer from './DashboardCardLayer';
 import DashboardOverlays from './DashboardOverlays';
 import DashboardEmptyState from './DashboardEmptyState';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
-import { useThemeAccent } from '@/shared/styles/ThemeContext';
+import { useThemeAccent, useThemeWash } from '@/shared/styles/ThemeContext';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 import type {
   CardPosition,
@@ -155,6 +155,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   onSearchPaletteClose,
 }) => {
   const { gradient } = useThemeAccent();
+  const { washOpacity, grain } = useThemeWash();
   const dotSize = Math.max(1, 1.5 * canvas.zoom);
   const dotSpacing = 24 * canvas.zoom;
 
@@ -217,14 +218,25 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
                 : 'default',
         }}
       >
-        {/* Gradient wash: the user's theme-pad stops tint the canvas, Arc-window style; sits under the dot grid. */}
+        {/* Gradient wash: the user's theme-pad stops tint the canvas, Arc-window style; intensity + grain come from the theme device; sits under the dot grid. */}
         {gradient && gradient.length > 1 && (
           <Box
             sx={{
               position: 'absolute',
               inset: 0,
               pointerEvents: 'none',
-              background: `linear-gradient(115deg, ${gradient.map((hex, i) => `${hex}2b ${(i / (gradient.length - 1)) * 100}%`).join(', ')})`,
+              background: `linear-gradient(115deg, ${gradient.map((hex, i) => `${hex}${Math.round(washOpacity * 255).toString(16).padStart(2, '0')} ${(i / (gradient.length - 1)) * 100}%`).join(', ')})`,
+            }}
+          />
+        )}
+        {gradient && gradient.length > 1 && grain > 0 && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              opacity: grain * 0.6,
+              backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")",
             }}
           />
         )}
