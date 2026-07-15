@@ -771,9 +771,9 @@ async def run_browser_agent(
     if find_builtin_model(model) is not None:
         api_model = resolve_model_id_for_sdk(model, browser_settings)
     else:
-        # Unknown model string; fall back to whatever aux model is available
+        # Unknown model string (custom provider, unrecognized id): fall back to a CAPABLE aux tier, not the cheapest. Browser work is multi-step agentic, and the cheap tier is far weaker at it (OSWorld: Haiku 4.5 50.7% vs Sonnet 4.6 72.5%), so a sonnet-class fallback is worth the cost. resolve_aux_model is provider-agnostic (picks the sonnet tier of whatever the user has connected).
         try:
-            api_model, _ = await resolve_aux_model(browser_settings, preferred_tier="haiku")
+            api_model, _ = await resolve_aux_model(browser_settings, preferred_tier="sonnet")
         except ValueError:
             # Nothing connected at all; surface a clear error so the caller (parent agent) sees it in the tool result instead of crashing on a 400 from 9Router.
             session.status = "error"
