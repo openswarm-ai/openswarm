@@ -65,8 +65,8 @@ const OnboardingRoot: React.FC = () => {
       !(s.onboardingProgress.completedSteps ?? []).includes('launch_agent') &&
       Object.keys(s.agents?.sessions ?? {}).length === 0,
   );
-  // Onboarding v3 owns the window on a fresh install; the v2 cursor tour stays dormant until the flow resolves.
-  const v3Owns = useAppSelector((s) => s.onboardingV3.flowActive);
+  // Onboarding v3 owns the window on a fresh install; the v2 cursor tour + panel stay dormant while the flow runs AND forever after it resolves (a v3'd user has already onboarded, so the v2 "connect your model / Show me" tour on top of the v3 reveal is contradictory clutter).
+  const v3Owns = useAppSelector((s) => s.onboardingV3.flowActive || !!s.settings.data.onboarding_v3);
   const welcomeFiredRef = useRef(false);
   const welcomeTimerRef = useRef<number | null>(null);
   useEffect(() => {

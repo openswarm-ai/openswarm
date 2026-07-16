@@ -34,11 +34,14 @@ export function useOnboardingRevealSeed({ isActive, dashboardId, expandedSession
         const cy = (vr.height / 2 - cs.panY) / cs.zoom;
         const audit = prepped.find((j) => j.kind === 'audit');
         const app = prepped.find((j) => j.kind === 'app');
-        const lines: string[] = ['While you were setting up, I got started.'];
-        if (scanSummary) lines.push(`Spotted on this Mac: ${scanSummary}.`);
-        if (audit) lines.push(`Already running: ${audit.title}.`);
-        if (app) lines.push(`Already building: ${app.title}.`);
-        if (starters.length > 0) lines.push(`Ready to run:\n${starters.slice(audit ? 1 : 0).map((s) => `- ${s.title}`).join('\n')}`);
+        const lines: string[] = ['Here is what I set up for you.'];
+        if (scanSummary) lines.push(`Looked around: ${scanSummary}.`);
+        const cards: string[] = [];
+        if (audit) cards.push(`- ${audit.title} (running now, on the left)`);
+        if (app) cards.push(`- ${app.title} (building now)`);
+        if (cards.length > 0) lines.push(`Working on:\n${cards.join('\n')}`);
+        if (starters.length > 0) lines.push(`Ready when you are:\n${starters.slice(audit ? 1 : 0).map((s) => `- ${s.title}`).join('\n')}`);
+        lines.push('Nothing is saved or deleted without you. Keep or discard anytime.');
         dispatch(addNote({ x: cx + DEFAULT_CARD_W / 2 + 48, y: cy - 140, color: 'yellow', content: lines.join('\n\n') }));
         prepped.forEach((job, i) => {
           dispatch(placeCard({

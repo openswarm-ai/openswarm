@@ -58,15 +58,15 @@ const PrepKeepToast: React.FC = () => {
         action={
           <>
             <Button size="small" onClick={finish} sx={{ color: c.accent.primary, fontWeight: 700 }}>
-              Keep
+              Keep them
             </Button>
             <Button size="small" onClick={discard} sx={{ color: c.text.tertiary }}>
-              Discard
+              Stop &amp; remove
             </Button>
           </>
         }
       >
-        {`I started ${names} while you set up. Keep going?`}
+        {`These are ${names}, which I started for you during setup. Keep them, or stop and remove them?`}
       </Alert>
     </Snackbar>
   );
