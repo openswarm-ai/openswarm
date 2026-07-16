@@ -34,14 +34,15 @@ export function useOnboardingRevealSeed({ isActive, dashboardId, expandedSession
         const cy = (vr.height / 2 - cs.panY) / cs.zoom;
         const audit = prepped.find((j) => j.kind === 'audit');
         const app = prepped.find((j) => j.kind === 'app');
-        const lines: string[] = ['Here is what I set up for you.'];
-        if (scanSummary) lines.push(`Looked around: ${scanSummary}.`);
+        const jobLine = (j: typeof prepped[number]) => (j.reason ? `- ${j.title}: ${j.reason}` : `- ${j.title}`);
+        const lines: string[] = ['While you were setting up, I got a head start.'];
+        if (scanSummary) lines.push(`I looked around your Mac and saw ${scanSummary}.`);
         const cards: string[] = [];
-        if (audit) cards.push(`- ${audit.title} (running now, on the left)`);
-        if (app) cards.push(`- ${app.title} (building now)`);
-        if (cards.length > 0) lines.push(`Working on:\n${cards.join('\n')}`);
-        if (starters.length > 0) lines.push(`Ready when you are:\n${starters.slice(audit ? 1 : 0).map((s) => `- ${s.title}`).join('\n')}`);
-        lines.push('Nothing is saved or deleted without you. Keep or discard anytime.');
+        if (audit) cards.push(jobLine(audit));
+        if (app) cards.push(jobLine(app));
+        if (cards.length > 0) lines.push(`So here is what I already have going (cards on your left):\n${cards.join('\n')}`);
+        if (starters.length > 0) lines.push(`Ready whenever you want:\n${starters.slice(audit ? 1 : 0).map((s) => `- ${s.title}`).join('\n')}`);
+        lines.push('Nothing is saved or deleted without you. Keep it going or clear it anytime.');
         dispatch(addNote({ x: cx + DEFAULT_CARD_W / 2 + 48, y: cy - 140, color: 'yellow', content: lines.join('\n\n') }));
         prepped.forEach((job, i) => {
           dispatch(placeCard({

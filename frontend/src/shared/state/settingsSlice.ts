@@ -90,6 +90,7 @@ export interface AppSettings {
 export interface PersonalizedStarter {
   title: string;
   prompt: string;
+  reason?: string;
 }
 
 export interface PersonalizedAutomation {

@@ -56,4 +56,5 @@ class PrepResponse(BaseModel):
     starters: List[PersonalizedStarter] = Field(default_factory=list)
     app_title: str = ""
     app_prompt: str = ""
+    app_reason: str = ""
     automations: List[PersonalizedAutomation] = Field(default_factory=list)

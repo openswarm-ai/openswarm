@@ -27,7 +27,7 @@ P_SYSTEM = (
     "You write first-run starter tasks for OpenSwarm, a desktop AI agent platform that can "
     "organize local files, browse the web in a real browser, build small apps, and run agents in parallel. "
     "Given facts about the user's machine and the apps they picked, respond with STRICT JSON only: "
-    '{"greeting": string, "starters": [{"title": string, "prompt": string}], "app_title": string, "app_prompt": string, "automations": [{"title": string, "prompt": string, "cadence": "daily"|"weekday"|"weekly"}]}. '
+    '{"greeting": string, "starters": [{"title": string, "prompt": string, "reason": string}], "app_title": string, "app_prompt": string, "app_reason": string, "automations": [{"title": string, "prompt": string, "cadence": "daily"|"weekday"|"weekly"}]}. '
     "First, silently infer a short profile of this user. If usage_summary is present it is the STRONGEST signal (it is "
     "what they actually ask their AI about and facts their AI remembers about them); weight it above everything else, "
     "then apps, folders, plan tier, email domain. Tune every task and the personal app to that profile; do not output the profile. "
@@ -38,9 +38,13 @@ P_SYSTEM = (
     "modify or delete existing files, because it may be run automatically on the user's behalf. Every starter "
     "must produce a tangible result the user can see (a sorted "
     "folder, a report, a working page); never propose setup, documentation of preferences, or planning-only tasks. "
+    "Each starter's 'reason' is ONE short standalone clause (max 12 words, no leading 'because') naming the SPECIFIC "
+    "real thing you observed (a folder, a file count, a picked app, a usage fact) that makes this task useful for THIS "
+    "user; it must be grounded in the input facts, never invented, and read like a person pointing at what they saw. "
     "Also design ONE small personal app for this user: app_title is 2-4 words, app_prompt starts with 'Build me' and "
     "describes a small, immediately useful single-page app tailored to the profile (their files, habits, or picked "
-    "apps), self-contained with no accounts or API keys. "
+    "apps), self-contained with no accounts or API keys. app_reason follows the same one-clause grounded-observation "
+    "rule as a starter reason. "
     "Also propose 2-3 automations: recurring routines worth running on a schedule for THIS user, drawn from their "
     "profile and habits (for example a daily morning brief, a weekly folder cleanup, a weekday summary of their "
     "connected apps). Each automation title is 2-4 words, prompt is one runnable instruction, cadence is exactly "
@@ -58,7 +62,7 @@ def parse_prep(text: str) -> Optional[PrepResponse]:
     try:
         data = json.loads(match.group(0))
         starters = [
-            PersonalizedStarter(title=str(s.get("title", "")).strip(), prompt=str(s.get("prompt", "")).strip())
+            PersonalizedStarter(title=str(s.get("title", "")).strip(), prompt=str(s.get("prompt", "")).strip(), reason=str(s.get("reason", "")).strip())
             for s in data.get("starters", [])
             if isinstance(s, dict) and str(s.get("title", "")).strip() and str(s.get("prompt", "")).strip()
         ]
@@ -78,6 +82,7 @@ def parse_prep(text: str) -> Optional[PrepResponse]:
             starters=starters[:4],
             app_title=str(data.get("app_title", "")).strip(),
             app_prompt=str(data.get("app_prompt", "")).strip(),
+            app_reason=str(data.get("app_reason", "")).strip(),
             automations=automations[:3],
         )
     except Exception:

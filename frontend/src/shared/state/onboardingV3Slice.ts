@@ -7,6 +7,8 @@ export interface PreppedJob {
   sessionId: string;
   title: string;
   kind: 'audit' | 'app';
+  /** The one-clause "why we started this for you", shown in the reveal note. */
+  reason?: string;
 }
 
 export interface OnboardingV3State {

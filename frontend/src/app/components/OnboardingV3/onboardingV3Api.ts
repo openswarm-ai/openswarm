@@ -27,6 +27,7 @@ export interface PrepResponse {
   starters: PersonalizedStarter[];
   app_title: string;
   app_prompt: string;
+  app_reason: string;
   automations: PersonalizedAutomation[];
 }
 

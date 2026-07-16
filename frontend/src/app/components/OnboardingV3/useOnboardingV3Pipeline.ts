@@ -71,7 +71,7 @@ export function useOnboardingV3Pipeline() {
   }, []);
 
   // Fire one real background agent; the session exists in redux without a card until the reveal composes the canvas.
-  const launchJob = useCallback((title: string, prompt: string, kind: 'audit' | 'app') => {
+  const launchJob = useCallback((title: string, prompt: string, kind: 'audit' | 'app', reason: string) => {
     const { model: liveModel } = launchCtxRef.current;
     const dashboardId = getLastDashboardId() ?? undefined;
     const config: AgentConfig = { name: title, model: liveModel, mode: 'agent', dashboard_id: dashboardId };
@@ -79,7 +79,7 @@ export function useOnboardingV3Pipeline() {
     void dispatch(launchAndSendFirstMessage({ draftId, config, prompt, mode: 'agent', model: liveModel }))
       .then((action) => {
         if (launchAndSendFirstMessage.fulfilled.match(action)) {
-          dispatch(addPreppedJob({ sessionId: action.payload.session.id, title, kind }));
+          dispatch(addPreppedJob({ sessionId: action.payload.session.id, title, kind, reason }));
         }
       })
       .catch(() => {});
@@ -96,8 +96,8 @@ export function useOnboardingV3Pipeline() {
     void prepRef.current.then((prep) => {
       if (launchedRef.current || !prep || !prep.greeting || !launchCtxRef.current.connected) return;
       launchedRef.current = true;
-      if (prep.starters.length > 0) launchJob(prep.starters[0].title, prep.starters[0].prompt, 'audit');
-      if (prep.app_title && prep.app_prompt) launchJob(prep.app_title, prep.app_prompt, 'app');
+      if (prep.starters.length > 0) launchJob(prep.starters[0].title, prep.starters[0].prompt, 'audit', prep.starters[0].reason ?? '');
+      if (prep.app_title && prep.app_prompt) launchJob(prep.app_title, prep.app_prompt, 'app', prep.app_reason ?? '');
     });
   }, [launchJob]);
 

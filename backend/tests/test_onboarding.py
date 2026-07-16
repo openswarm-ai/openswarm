@@ -84,8 +84,22 @@ def test_parse_prep_strict_and_lenient():
     assert parsed is not None
     assert parsed.greeting == "Hey!"
     assert [s.title for s in parsed.starters] == ["A", "B"]
+    # Reason is optional; missing reason defaults to empty, never drops the starter.
+    assert parsed.starters[0].reason == ""
     assert parse_prep("no json here") is None
     assert parse_prep('{"greeting": "hi", "starters": []}') is None
+
+
+def test_parse_prep_carries_reasons():
+    rich = (
+        '{"greeting": "Hey!", "app_title": "Lift Log", "app_prompt": "Build me a lifting tracker", '
+        '"app_reason": "you plan lifts with ChatGPT daily", '
+        '"starters": [{"title": "Audit Downloads", "prompt": "audit it", "reason": "1,305 files piling up there"}]}'
+    )
+    parsed = parse_prep(rich)
+    assert parsed is not None
+    assert parsed.starters[0].reason == "1,305 files piling up there"
+    assert parsed.app_reason == "you plan lifts with ChatGPT daily"
 
 
 @pytest.mark.asyncio

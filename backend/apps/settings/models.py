@@ -111,6 +111,8 @@ class CustomProvider(BaseModel):
 class PersonalizedStarter(BaseModel):
     title: str
     prompt: str
+    # One short clause tying this task to something real we saw about the user; the reveal shows it off.
+    reason: str = ""
 
 
 class PersonalizedAutomation(BaseModel):
