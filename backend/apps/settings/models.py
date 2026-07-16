@@ -70,6 +70,8 @@ class AppSettings(BaseModel):
     personalized_greeting: Optional[str] = None
     personalized_starters: list["PersonalizedStarter"] = Field(default_factory=list)
     personalized_automations: list["PersonalizedAutomation"] = Field(default_factory=list)
+    # Distilled from the user's provider chat history the first time they open ChatGPT/Claude in-app; re-feeds prep to sharpen suggestions.
+    personalized_usage_summary: Optional[str] = None
     # Suppresses preflight suggestion modal entries the user dismissed; keyed by ToolDefinition.name, value ISO timestamp.
     dismissed_mcp_suggestions: dict[str, str] = Field(default_factory=dict)
     analytics_opt_in: bool = True

@@ -85,6 +85,7 @@ export interface AppSettings {
   personalized_greeting?: string | null;
   personalized_starters?: PersonalizedStarter[];
   personalized_automations?: PersonalizedAutomation[];
+  personalized_usage_summary?: string | null;
 }
 
 export interface PersonalizedStarter {

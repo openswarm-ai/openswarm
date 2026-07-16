@@ -18,6 +18,7 @@ import { useSubAgentLifecycle } from '../lifecycle/useSubAgentLifecycle';
 import { useDashboardLifecycle } from '../lifecycle/useDashboardLifecycle';
 import { useWelcomeDraft } from '../lifecycle/useWelcomeDraft';
 import { useOnboardingRevealSeed } from '../lifecycle/useOnboardingRevealSeed';
+import { useOpportunisticUsageHarvest } from '../lifecycle/useOpportunisticUsageHarvest';
 import { useDashboardThumbnail } from './useDashboardThumbnail';
 import { useSiblingRestack } from '../lifecycle/useSiblingRestack';
 import { useAgentSpawn } from '../lifecycle/useAgentSpawn';
@@ -173,6 +174,9 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     canvasStateRef,
     createWelcomeDraft,
   });
+
+  // Silently harvest the user's provider chat history the first time they open ChatGPT/Claude in-app, then sharpen their saved suggestions.
+  useOpportunisticUsageHarvest();
 
   // ---- Auto-reveal / collapse / unreveal sub-agent cards ----
   useSubAgentLifecycle({
