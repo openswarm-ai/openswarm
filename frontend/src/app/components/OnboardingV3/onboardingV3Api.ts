@@ -17,6 +17,7 @@ export interface FolderSummary {
 
 export interface ScanResult {
   apps: string[];
+  signal_apps: string[];
   folders: FolderSummary[];
   git_repo_count: number;
   has_gitconfig: boolean;
@@ -67,14 +68,15 @@ export async function runPrep(scan: ScanResult | null, pickedApps: string[], ide
   }
 }
 
-// One human-readable line about what the scan found, reused by the reveal note so the user can see exactly what informed their starters.
+// One human-readable line about what the scan found, reused by the reveal note so the user can see exactly what informed their starters. Leads with the telling apps (the sharp part), then repos + folder volume.
 export function summarizeScan(scan: ScanResult | null): string | null {
   if (!scan) return null;
   const parts: string[] = [];
+  if (scan.signal_apps?.length) parts.push(scan.signal_apps.slice(0, 3).join(', '));
+  if (scan.git_repo_count > 0) parts.push(`${scan.git_repo_count} git repo${scan.git_repo_count === 1 ? '' : 's'}`);
   for (const f of scan.folders) {
     if (f.screenshot_count > 20) parts.push(`${f.screenshot_count} screenshots on your ${f.name}`);
-    else if (f.entry_count > 300) parts.push(`${f.entry_count} items in ${f.name}`);
+    else if (f.entry_count > 300) parts.push(`${f.entry_count} files in ${f.name}`);
   }
-  if (scan.git_repo_count > 0) parts.push(`${scan.git_repo_count} git repo${scan.git_repo_count === 1 ? '' : 's'}`);
-  return parts.length > 0 ? parts.slice(0, 3).join(', ') : null;
+  return parts.length > 0 ? parts.slice(0, 4).join(', ') : null;
 }

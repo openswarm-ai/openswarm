@@ -35,6 +35,8 @@ class ScanResult(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     apps: List[str] = Field(default_factory=list)
+    # The high-signal subset of apps (IDEs, design/creative tools); the profile leans on these.
+    signal_apps: List[str] = Field(default_factory=list)
     folders: List[FolderSummary] = Field(default_factory=list)
     git_repo_count: int = 0
     has_gitconfig: bool = False

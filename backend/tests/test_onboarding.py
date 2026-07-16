@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from backend.apps.onboarding.identity import build_identity, decode_jwt_payload
-from backend.apps.onboarding.local_scan import run_local_scan
+from backend.apps.onboarding.local_scan import detect_signal_apps, run_local_scan
 from backend.apps.onboarding.models import PrepRequest, ScanResult
 from backend.apps.onboarding.prep import FALLBACK_STARTERS, build_prep, parse_prep
 from backend.apps.settings.models import AppSettings
@@ -76,6 +76,17 @@ def test_run_local_scan_counts_names_only(tmp_path: Path):
     assert result.has_gitconfig is True
     serialized = json.dumps(result.model_dump())
     assert "[user]" not in serialized
+
+
+def test_signal_apps_picks_tools_not_noise_and_avoids_substring_traps():
+    apps = ["Calculator", "Xcode", "Visual Studio Code", "Figma", "Search", "System Settings", "Adobe Photoshop 2024", "Arc"]
+    signal = detect_signal_apps(apps)
+    assert "Xcode" in signal and "Visual Studio Code" in signal and "Figma" in signal
+    assert "Adobe Photoshop 2024" in signal  # prefix match on a versioned name
+    assert "Arc" in signal
+    # "Search" contains "arc" as a substring but must NOT be treated as the Arc browser.
+    assert "Search" not in signal
+    assert "Calculator" not in signal and "System Settings" not in signal
 
 
 def test_parse_prep_strict_and_lenient():
