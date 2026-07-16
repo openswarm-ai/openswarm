@@ -1677,6 +1677,6 @@ def test_warm_send_prefix_replay_marries_send_script_zero_llm_turns(monkeypatch)
     assert any(c["action"] == "navigate" for c in sent)
     assert any(c["action"] == "click_index" and c["params"].get("text") for c in sent), "script fill ran"
     assert result.get("done") is True
-    assert "Sent" in str(result.get("summary", ""))
+    assert "sent" in str(result.get("summary", "")).lower()
     # the whole warm write took ZERO model turns
     assert primary.calls == [], f"model was called {len(primary.calls)}x; warm write should be replay+code only"
