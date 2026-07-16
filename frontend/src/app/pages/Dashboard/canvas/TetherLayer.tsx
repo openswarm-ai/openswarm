@@ -21,7 +21,8 @@ const TetherLayer: React.FC<TetherLayerProps> = ({ tethers, c }) => {
         height: 1,
         overflow: 'visible',
         pointerEvents: 'none',
-        zIndex: 10,
+        // Behind every card (cards use zOrder 1..N as their z-index): connector lines tuck UNDER the cards like a node graph, visible only in the gaps between them. At zIndex 10 the line drew OVER any card with zOrder < 10, so it cut through the chat and the browsers.
+        zIndex: 0,
       }}
     >
       <defs>
