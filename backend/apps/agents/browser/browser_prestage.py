@@ -337,6 +337,13 @@ async def run_prestage(
         if steps or not li_text:
             li_text, gt_text, seen_url = await perceive()
             current_url = seen_url or current_url
+        # Perceive-only lost the aux asks that ACCIDENTALLY doubled as settle time, so a cold SPA hands back a half-hydrated list (measured: plan-dispatch emitted [] on a thin search page). Wait for substance, bounded.
+        if perceive_only:
+            p_sub_t0 = time.monotonic()
+            while len(li_text or "") < 800 and time.monotonic() - p_sub_t0 < 4.0:
+                await asyncio.sleep(0.8)
+                li_text, gt_text, seen_url = await perceive()
+                current_url = seen_url or current_url
         block = perception_block(li_text, gt_text, stage_note_for(start_url, done_desc, current_url, staged_complete))
         for tool_name, text in (("BrowserListInteractives", li_text), ("BrowserGetText", gt_text)):
             if text:

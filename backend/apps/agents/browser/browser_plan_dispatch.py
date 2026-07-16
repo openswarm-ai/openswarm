@@ -105,7 +105,8 @@ async def run_plan_dispatch(
             ), timeout=P_AUX_TIMEOUT_S))
         steps = parse_plan(reply)
         if not steps:
-            logger.info("[plan-dispatch] aux emitted no safe mechanical steps")
+            logger.info(f"[plan-dispatch] aux emitted no safe mechanical steps "
+                        f"(state={len(state_text)}ch, reply: {(reply or '')[:160]!r})")
             return ""
         done: list[str] = []
         for step in steps:
