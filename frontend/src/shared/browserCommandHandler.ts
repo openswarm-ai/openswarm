@@ -332,7 +332,8 @@ async function handleNavigate(wv: BrowserWebview, params: Record<string, any>): 
 // Chromium renders any JSON (or JSON-shaped text) response with its built-in viewer, so a navigate
 // to an API endpoint leaves the card showing a wall of raw data. contentType is the reliable tell;
 // re-fetch same-origin (the just-loaded GET, idempotent) to hand the agent the exact bytes.
-async function readDataDocument(wv: BrowserWebview): Promise<{ contentType: string; body: string } | null> {
+// Exported so BrowserCard can reuse the exact same detection for the card's own initial load.
+export async function readDataDocument(wv: BrowserWebview): Promise<{ contentType: string; body: string } | null> {
   const code = `(async () => {
     const ct = String(document.contentType || '').toLowerCase();
     const isJson = ct.startsWith('application/json');
@@ -356,14 +357,25 @@ async function readDataDocument(wv: BrowserWebview): Promise<{ contentType: stri
 
 // Get the card off a raw-data wall: step back to the real page the agent came from, or, if it opened
 // straight onto the data URL, fall back to the site homepage. Fire-and-forget, the agent already has
-// the data; this is purely so a human sees a page instead of JSON.
-function recoverCardOffDataWall(wv: BrowserWebview, dataUrl: string): void {
+// the data; this is purely so a human sees a page instead of JSON. Exported for BrowserCard's own-load path.
+export function recoverCardOffDataWall(wv: BrowserWebview, dataUrl: string): void {
+  let origin = '';
+  try { origin = new URL(dataUrl).origin; } catch { /* keep '' */ }
   try {
     if (wv.canGoBack()) {
       wv.goBack();
+      // A card that opened STRAIGHT onto the data URL has only the webview's blank initial entry
+      // behind it, so goBack lands on about:blank. Detect that and fall back to the site homepage
+      // so the card shows a real page rather than a blank one.
+      window.setTimeout(() => {
+        try {
+          const u = wv.getURL();
+          if ((!u || u === 'about:blank') && origin) void wv.loadURL(origin).catch(() => {});
+        } catch { /* leave as-is */ }
+      }, 400);
       return;
     }
-    void wv.loadURL(new URL(dataUrl).origin).catch(() => {});
+    if (origin) void wv.loadURL(origin).catch(() => {});
   } catch {
     /* leave the card as-is if recovery fails; the data still reached the agent */
   }
