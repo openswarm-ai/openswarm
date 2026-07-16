@@ -1431,9 +1431,11 @@ async def run_browser_agent(
                         "retried; report this outcome verbatim. " + p_dr)
 
     # Code-side plan dispatch (the turn-collapser that doesn't wait for the model to adopt a tool): one aux call compiles the task's mechanical prefix into verified steps, code executes them, and the big model starts with that work DONE. Fail-open: no plan/steps = today's loop untouched.
+    # A send task whose composer is ALREADY staged has no mechanical prefix left (the model's one fill turn + autosend own the rest), so skip the aux call instead of letting it poke the composer (measured 4.7s of nothing).
     from backend.apps.agents.browser import browser_plan_dispatch
+    p_composer_staged = bool(task_is_send and browser_send_script.composer_index_in_state(preloaded_perception or ""))
     if (browser_plan_dispatch.plan_dispatch_enabled() and not app_mode and not done_called
-            and preloaded_perception and not cancel_event.is_set()):
+            and preloaded_perception and not p_composer_staged and not cancel_event.is_set()):
         try:
             p_plan_note = await asyncio.wait_for(browser_plan_dispatch.run_plan_dispatch(
                 task, preloaded_perception, browser_id, tab_id,
