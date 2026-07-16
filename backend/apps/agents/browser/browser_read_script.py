@@ -62,26 +62,27 @@ async def run_read_script(
     t0 = time.monotonic()
     if aux_client is None or not aux_model:
         return None
-    # On a results LIST the miss is structural (the answer lives one click deeper), not hydration; the settle-retry would just re-decline ~3s later.
-    p_retries = 0 if RESULTS_URL_RE.search(current_url or "") else P_INSUFFICIENT_RETRIES
     try:
         from backend.apps.agents.core.aux_llm import safe_resp_text
 
-        async def p_page_text() -> str:
+        async def p_page_text() -> tuple:
             for attempt in range(P_THIN_RETRIES):
                 r = await asyncio.wait_for(
                     execute_tool("BrowserGetText", {}, browser_id, tab_id), timeout=P_TEXT_TIMEOUT_S)
                 text = str(r.get("text") or "") if isinstance(r, dict) and "error" not in r else ""
+                url = str(r.get("url") or "") if isinstance(r, dict) else ""
                 if len(text) >= P_MIN_PAGE_CHARS:
-                    return text
+                    return text, url
                 await asyncio.sleep(P_THIN_SETTLE_S)
-            return ""
+            return "", ""
 
-        for ask in range(1 + p_retries):
-            page = await p_page_text()
+        for ask in range(1 + P_INSUFFICIENT_RETRIES):
+            page, p_live_url = await p_page_text()
             if len(page) < P_MIN_PAGE_CHARS:
                 logger.info(f"[browser-readscript] page too thin ({len(page)} chars); loop runs")
                 return None
+            # On a results LIST the miss is structural (the answer lives one click deeper), not hydration; the settle-retry would just re-decline ~3s later. Judged on the LIVE url: the caller's is stale once plan-dispatch has clicked through (that staleness suppressed the retry on the exact page that needed it, measured).
+            p_retries = 0 if RESULTS_URL_RE.search(p_live_url or current_url or "") else P_INSUFFICIENT_RETRIES
             reply = safe_resp_text(await asyncio.wait_for(
                 aux_client.messages.create(
                     model=aux_model, max_tokens=500, temperature=0, system=P_SYSTEM,
