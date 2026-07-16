@@ -92,7 +92,7 @@ function modelFamilyKey(label: string): string {
     .trim();
 }
 
-/** Sort: intelligence desc, family asc, version desc, label asc. */
+/** Sort: intelligence desc, version desc (newest first within a tier), family asc, label asc. */
 export function sortModelsForPicker<T extends { label: string }>(models: T[]): T[] {
   const intelOf = (opt: any): number => {
     if (Array.isArray(opt.tiers) && opt.tiers.length === 3) return opt.tiers[0];
@@ -102,12 +102,13 @@ export function sortModelsForPicker<T extends { label: string }>(models: T[]): T
     const intelA = intelOf(a);
     const intelB = intelOf(b);
     if (intelA !== intelB) return intelB - intelA;
-    const famA = modelFamilyKey(a.label);
-    const famB = modelFamilyKey(b.label);
-    if (famA !== famB) return famA.localeCompare(famB);
+    // Version before family: among models of similar capability, the NEWEST goes on top (Sonnet 5 above Opus 4.6, not buried under the alphabetically-earlier "opus" family).
     const verA = modelVersion(a.label);
     const verB = modelVersion(b.label);
     if (verA !== verB) return verB - verA;
+    const famA = modelFamilyKey(a.label);
+    const famB = modelFamilyKey(b.label);
+    if (famA !== famB) return famA.localeCompare(famB);
     return a.label.localeCompare(b.label);
   });
 }

@@ -20,6 +20,8 @@ MODEL_TIERS: dict[str, tuple[int, int, int]] = {
     "claude-opus-4-5":              (5, 2, 5),
     "claude-opus-4":                (5, 2, 5),
     "anthropic/claude-opus-4":      (5, 2, 5),
+    "claude-sonnet-5":              (5, 4, 3),
+    "anthropic/claude-sonnet-5":    (5, 4, 3),
     "claude-sonnet-4-6":            (4, 4, 3),
     "claude-sonnet-4.6":            (4, 4, 3),
     "anthropic/claude-sonnet-4.6":  (4, 4, 3),
