@@ -92,33 +92,28 @@ const SCRIPT = {
     } catch (e) { return {ok:false, total:0, titles:[], memories:[]}; }
   })()`,
   // Gemini has no clean history JSON (it's the obfuscated batchexecute RPC), so we scrape the
-  // rendered rail. Robust by design: the rail's open state is sticky per account, so scrape
-  // FIRST and only expand when empty (never toggle an open rail shut); expand via a stable
-  // test-id / icon handle, not an English label, so a non-English UI still works; read titles
-  // through a fallback selector so one class rename can't zero the harvest; length-cap each so a
-  // stray long node can't pollute the profile. Bounded by the same wall-clock budget; fails open.
+  // rendered rail. Robust by design, one bounded loop that: gates on real TEXT (empty conversation
+  // shells persist even when the rail is collapsed, so container count lies); RE-tries the expand
+  // every poll (the SPA can mount the toggle after settle, and a one-shot click would miss it),
+  // via a stable test-id / icon handle (not an English label) so a non-English UI works, and a
+  // no-op once open so an open rail is never toggled shut; reads titles through a fallback
+  // selector so a .title-text rename can't zero the harvest; length-caps each; and gives up fast
+  // when no text renders (no history / broken DOM) so an empty account can't burn the budget.
   gemini: `(async () => {
-    const BUDGET_MS=14000, CAP_TITLES=200, TITLE_MAX=140; const startedAt=Date.now();
-    const nodes = () => {
-      const n = document.querySelectorAll('[data-test-id="conversation"] .title-text');
-      return n.length ? n : document.querySelectorAll('[data-test-id="conversation"] a');
-    };
-    const anyText = () => Array.from(nodes()).some(e => (e.textContent||'').trim());
+    const BUDGET_MS=14000, TEXT_DEADLINE_MS=8000, POLL_MS=500, CAP_TITLES=200, TITLE_MAX=140;
+    const startedAt=Date.now();
+    const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+    const titleNodes=()=>{const n=document.querySelectorAll('[data-test-id="conversation"] .title-text');return n.length?n:document.querySelectorAll('[data-test-id="conversation"] a');};
+    const iconIs=(b,name)=>{const i=b.querySelector('mat-icon');return !!i&&(i.getAttribute('data-mat-icon-name')===name||(i.textContent||'').trim()===name);};
+    const findExpand=()=>{const bs=Array.from(document.querySelectorAll('button,[role="button"]'));return document.querySelector('button[data-test-id="side-nav-sparkle-button"]')||bs.find(b=>iconIs(b,'side_nav_expand'))||bs.find(b=>/expand|open.*(sidebar|menu|nav)/i.test(b.getAttribute('aria-label')||''));};
     try {
-      if (!anyText()) {
-        const btns = Array.from(document.querySelectorAll('button,[role="button"]'));
-        const iconIs = (b, name) => { const i = b.querySelector('mat-icon'); return !!i && (i.getAttribute('data-mat-icon-name') === name || (i.textContent||'').trim() === name); };
-        const toggle = document.querySelector('button[data-test-id="side-nav-sparkle-button"]')
-          || btns.find(b => iconIs(b, 'side_nav_expand'))
-          || btns.find(b => /expand|open.*(sidebar|menu|nav)/i.test(b.getAttribute('aria-label')||''));
-        if (toggle) { try { toggle.click(); } catch(_){} }
-      }
-      const seen = new Set(); const titles = []; let zeroStreak = 0;
+      const seen=new Set(); const titles=[]; let stable=0;
       while (Date.now()-startedAt < BUDGET_MS && titles.length < CAP_TITLES) {
-        let fresh = 0;
-        nodes().forEach(e => { const t=(e.textContent||'').trim().slice(0, TITLE_MAX); if (t && !seen.has(t)) { seen.add(t); titles.push(t); fresh++; } });
-        if (titles.length > 0 && fresh === 0) { if (++zeroStreak >= 2) break; } else { zeroStreak = 0; }
-        await new Promise(r=>setTimeout(r, 600));
+        let fresh=0;
+        titleNodes().forEach(e=>{const t=(e.textContent||'').trim().slice(0,TITLE_MAX); if(t&&!seen.has(t)){seen.add(t);titles.push(t);fresh++;}});
+        if (titles.length>0) { if (fresh===0){ if(++stable>=2) break; } else stable=0; }
+        else { const b=findExpand(); if(b){try{b.click();}catch(_){}} if (Date.now()-startedAt > TEXT_DEADLINE_MS) break; }
+        await sleep(POLL_MS);
       }
       return { ok: titles.length>0, total: titles.length, titles: titles.slice(0, CAP_TITLES), memories: [] };
     } catch (e) { return {ok:false, total:0, titles:[], memories:[]}; }
@@ -132,8 +127,7 @@ function p_usable(res) {
     (res.total > 0 || (res.memories && res.memories.length) || (res.titles && res.titles.length));
 }
 
-async function harvest(partition, provider) {
-  if (provider !== 'codex' && provider !== 'claude' && provider !== 'gemini') return EMPTY;
+async function p_harvestOnce(partition, provider) {
   // First run: read the user's own browser session cookies, inject into a throwaway real-Chrome
   // context, and harvest there. This is the only path that beats provider Cloudflare AND works
   // before the user has opened the site in-app.
@@ -150,6 +144,20 @@ async function harvest(partition, provider) {
   // partition holds the session; read it directly (also a real Chrome context).
   const res = await hiddenBrowser.hiddenEval(partition, ORIGIN[provider], SCRIPT[provider]).catch(() => null);
   return p_usable(res) ? res : EMPTY;
+}
+
+// Hard ceiling on the WHOLE harvest (both attempts): a stale-session provider does two full
+// offscreen loads, and a hung redirect could otherwise churn a background window toward the
+// window-killer. This guarantees harvest() always resolves fast (fail-open); the offscreen
+// windows still self-destruct via withWindow. Comfortably above a healthy harvest (~6s).
+const HARVEST_HARD_CAP_MS = 30000;
+
+async function harvest(partition, provider) {
+  if (provider !== 'codex' && provider !== 'claude' && provider !== 'gemini') return EMPTY;
+  return Promise.race([
+    p_harvestOnce(partition, provider),
+    new Promise((resolve) => setTimeout(() => resolve(EMPTY), HARVEST_HARD_CAP_MS)),
+  ]);
 }
 
 module.exports = { harvest, configure };
