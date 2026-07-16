@@ -158,6 +158,11 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
 
   useWebviewSuspend(browserCards, canvas.panX, canvas.panY, canvas.zoom, canvas.viewportRef);
 
+  // Gestures write the transform imperatively (no React commit per frame), so a foreign render mid-gesture would paint the stale committed transform for a frame. Re-applying live after EVERY render seals that; do not remove.
+  React.useLayoutEffect(() => {
+    canvas.actions.syncTransform();
+  });
+
   return (
     <>
     <Box sx={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
@@ -215,8 +220,9 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
                 : 'default',
         }}
       >
-        {/* Dot grid background */}
+        {/* Dot grid background; gestures move it imperatively via gridRef (phase + scale), commits re-render it here (dot radius included) */}
         <Box
+          ref={canvas.gridRef}
           sx={{
             position: 'absolute',
             inset: 0,
@@ -252,9 +258,6 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
               outputs={outputs}
               glowingAgentCards={glowingAgentCards}
               expandedSessionIds={expandedSessionIds}
-              zoom={canvas.zoom}
-              panX={canvas.panX}
-              panY={canvas.panY}
               cmdHeld={canvas.cmdHeld}
               selection={selection}
               highlightedCardId={highlightedCardId}

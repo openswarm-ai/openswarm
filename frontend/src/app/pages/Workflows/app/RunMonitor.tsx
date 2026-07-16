@@ -34,16 +34,14 @@ interface Props {
   cardWidth: number;
   cardHeight: number;
   cardZOrder: number;
-  zoom: number;
-  panX: number;
-  panY: number;
+  getCanvasState: () => { panX: number; panY: number; zoom: number };
   onDragStart: (id: string, type: CardType) => void;
   onDragMove: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd: (dx: number, dy: number, didDrag: boolean) => void;
 }
 
 // The live run view, a real canvas card (standard claudeTokens chrome) spawned beside the Workflows window. The orange connector back to the window is drawn by the shared TetherLayer, same mechanism as an agent spinning up a browser.
-const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHeight, cardZOrder, zoom, panX, panY, onDragStart, onDragMove, onDragEnd }) => {
+const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHeight, cardZOrder, getCanvasState, onDragStart, onDragMove, onDragEnd }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const runs = useAppSelector((s) => s.workflows.runs[workflow.id]);
@@ -53,10 +51,6 @@ const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHe
 
   useEffect(() => { dispatch(fetchRuns(workflow.id)); }, [workflow.id, dispatch]);
 
-  const panRef = useRef({ panX, panY });
-  panRef.current = { panX, panY };
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
   const dragState = useRef<{ sx: number; sy: number; ox: number; oy: number; spx: number; spy: number } | null>(null);
   const didDrag = useRef(false);
   const [localPos, setLocalPos] = useState<{ x: number; y: number } | null>(null);
@@ -67,11 +61,12 @@ const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHe
     if (t.closest('button, [role="button"]')) return;
     e.preventDefault(); e.stopPropagation();
     dispatch(bringToFront({ id: 'workflows-monitor', type: 'workflows-monitor' }));
-    dragState.current = { sx: e.clientX, sy: e.clientY, ox: cardX, oy: cardY, spx: panRef.current.panX, spy: panRef.current.panY };
+    const cs = getCanvasState();
+    dragState.current = { sx: e.clientX, sy: e.clientY, ox: cardX, oy: cardY, spx: cs.panX, spy: cs.panY };
     didDrag.current = false;
     onDragStart('workflows-monitor', 'workflows-monitor');
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, [cardX, cardY, dispatch, onDragStart]);
+  }, [cardX, cardY, dispatch, onDragStart, getCanvasState]);
 
   const onHeaderMove = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
@@ -79,21 +74,23 @@ const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHe
     const rdy = e.clientY - dragState.current.sy;
     if (!didDrag.current && Math.sqrt(rdx * rdx + rdy * rdy) < DRAG_THRESHOLD) return;
     didDrag.current = true;
-    const z = zoomRef.current;
-    const pdx = (panRef.current.panX - dragState.current.spx) / z;
-    const pdy = (panRef.current.panY - dragState.current.spy) / z;
+    const cs = getCanvasState();
+    const z = cs.zoom;
+    const pdx = (cs.panX - dragState.current.spx) / z;
+    const pdy = (cs.panY - dragState.current.spy) / z;
     const dx = rdx / z - pdx;
     const dy = rdy / z - pdy;
     setLocalPos({ x: dragState.current.ox + dx, y: dragState.current.oy + dy });
     // Feed the shared drag channel so the tether tracks live, same as cards.
     onDragMove(dx, dy, e.clientX, e.clientY);
-  }, [onDragMove]);
+  }, [onDragMove, getCanvasState]);
 
   const onHeaderUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
-    const z = zoomRef.current;
-    const pdx = (panRef.current.panX - dragState.current.spx) / z;
-    const pdy = (panRef.current.panY - dragState.current.spy) / z;
+    const cs = getCanvasState();
+    const z = cs.zoom;
+    const pdx = (cs.panX - dragState.current.spx) / z;
+    const pdy = (cs.panY - dragState.current.spy) / z;
     const dx = (e.clientX - dragState.current.sx) / z - pdx;
     const dy = (e.clientY - dragState.current.sy) / z - pdy;
     if (didDrag.current) {
@@ -107,7 +104,7 @@ const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHe
     didDrag.current = false;
     setLocalPos(null);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [dispatch, onDragEnd]);
+  }, [dispatch, onDragEnd, getCanvasState]);
 
   // A pinned run id (clicked from history) wins; otherwise follow the latest run.
   const run: WorkflowRun | null =

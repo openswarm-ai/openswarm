@@ -42,6 +42,7 @@ export interface ContentBounds {
 export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: ContentBounds, enabled: boolean = true) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const [state, setState] = useState<CanvasState>({ panX: 0, panY: 0, zoom: 1 });
   const [isPanning, setIsPanning] = useState(false);
@@ -49,8 +50,9 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
   const [cmdHeld, setCmdHeld] = useState(false);
 
   const panStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  // stateRef is the LIVE camera truth (single writer: applyLive / setCanvasState below). React state is a lagging copy committed once per gesture-end, so a 120Hz pan doesn't re-render the card tree per frame. Never sync stateRef FROM state: a render mid-gesture would clobber live with stale.
   const stateRef = useRef(state);
-  stateRef.current = state;
+  const liveDirtyRef = useRef(false);
   const spaceRef = useRef(false);
   const cmdRef = useRef(false);
   const sensitivityRef = useRef(zoomSensitivity);
@@ -65,6 +67,44 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
   const velocityHistoryRef = useRef<Array<{ x: number; y: number; t: number }>>([]);
   const FRICTION = 0.93;
   const MIN_VELOCITY = 0.5;
+
+  // Paints stateRef onto the DOM: content transform (compositor-only) + dot-grid phase/scale. Also the after-render re-apply, so a foreign React render mid-gesture can't paint the stale committed transform for a frame.
+  const applyLiveToDom = useCallback(() => {
+    const { panX, panY, zoom } = stateRef.current;
+    const content = contentRef.current;
+    if (content) content.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    const grid = gridRef.current;
+    if (grid) {
+      const spacing = 24 * zoom;
+      grid.style.backgroundPosition = `${panX % spacing}px ${panY % spacing}px`;
+      // Dot RADIUS lives in the committed backgroundImage and lags to gesture-end; at 1-4px dots the mid-pinch error is invisible and skipping the per-frame gradient rebuild keeps this handler pure style writes.
+      grid.style.backgroundSize = `${spacing}px ${spacing}px`;
+    }
+  }, []);
+
+  // Per-frame camera write during a gesture: DOM + live ref only, NO React commit. Dragging cards re-pin to the cursor off the pan-changed event, same signal the old per-frame commit produced.
+  const applyLive = useCallback((next: CanvasState) => {
+    stateRef.current = next;
+    liveDirtyRef.current = true;
+    applyLiveToDom();
+    window.dispatchEvent(new Event('openswarm:canvas-pan-changed'));
+  }, [applyLiveToDom]);
+
+  // Gesture-end: reconcile React (minimap, zoom label, webview suspend) with the live camera in ONE render.
+  const commitLive = useCallback(() => {
+    if (!liveDirtyRef.current) return;
+    liveDirtyRef.current = false;
+    setState(stateRef.current);
+  }, []);
+
+  // Discrete camera set (minimap jump, fit fallbacks): live + committed in the same call. The ONLY sanctioned writers are this and applyLive; a new pan path calling raw setState reintroduces the camera-snaps-back class.
+  const setCanvasState = useCallback((updater: CanvasState | ((prev: CanvasState) => CanvasState)) => {
+    const next = typeof updater === 'function' ? updater(stateRef.current) : updater;
+    stateRef.current = next;
+    liveDirtyRef.current = false;
+    applyLiveToDom();
+    setState(next);
+  }, [applyLiveToDom]);
 
   const cancelInertia = useCallback(() => {
     if (inertiaFrameRef.current) {
@@ -84,20 +124,18 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
 
       if (Math.abs(velocityX) < MIN_VELOCITY && Math.abs(velocityY) < MIN_VELOCITY) {
         inertiaFrameRef.current = null;
+        commitLive();
         springBackIfNeeded();
         return;
       }
 
-      setState((prev) => ({
-        ...prev,
-        panX: prev.panX + velocityX,
-        panY: prev.panY + velocityY,
-      }));
+      const prev = stateRef.current;
+      applyLive({ ...prev, panX: prev.panX + velocityX, panY: prev.panY + velocityY });
 
       inertiaFrameRef.current = requestAnimationFrame(step);
     };
     inertiaFrameRef.current = requestAnimationFrame(step);
-  }, [cancelInertia]);
+  }, [cancelInertia, applyLive, commitLive]);
 
   // ---- Soft pan boundaries: spring back if viewport drifts too far from content ----
   const BOUNDARY_MARGIN = 800; // extra px beyond content bounds before spring-back
@@ -164,7 +202,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     const step = (now: number) => {
       const t = Math.min((now - startTime) / duration, 1);
       const ease = 1 - Math.pow(1 - t, 3); // cubic ease-out
-      setState({
+      applyLive({
         panX: start.panX + (target.panX - start.panX) * ease,
         panY: start.panY + (target.panY - start.panY) * ease,
         zoom: start.zoom + (target.zoom - start.zoom) * ease,
@@ -173,10 +211,11 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         animFrameRef.current = requestAnimationFrame(step);
       } else {
         animFrameRef.current = null;
+        commitLive();
       }
     };
     animFrameRef.current = requestAnimationFrame(step);
-  }, [cancelAnimation]);
+  }, [cancelAnimation, applyLive, commitLive]);
 
   animateToRef.current = animateTo;
 
@@ -201,24 +240,19 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       pendingPanDx = 0; pendingPanDy = 0;
       pendingZoomDy = 0; pendingZoomCenter = null;
 
+      const prev = stateRef.current;
       if (zCenter && zDy !== 0) {
-        setState((prev) => {
-          const factor = Math.pow(2, -zDy * sensitivityToMultiplier(sensitivityRef.current));
-          const newZoom = clamp(prev.zoom * factor, MIN_ZOOM, MAX_ZOOM);
-          const ratio = newZoom / prev.zoom;
-          // Apply any pan accumulated in the same frame too: a zoom and a pan can now land together (vertical zoom + horizontal pan across a RAF boundary, or a forwarded pan), and dropping it would swallow the gesture.
-          return {
-            panX: zCenter.cx - (zCenter.cx - prev.panX) * ratio - dx,
-            panY: zCenter.cy - (zCenter.cy - prev.panY) * ratio - dy,
-            zoom: newZoom,
-          };
+        const factor = Math.pow(2, -zDy * sensitivityToMultiplier(sensitivityRef.current));
+        const newZoom = clamp(prev.zoom * factor, MIN_ZOOM, MAX_ZOOM);
+        const ratio = newZoom / prev.zoom;
+        // Apply any pan accumulated in the same frame too: a zoom and a pan can now land together (vertical zoom + horizontal pan across a RAF boundary, or a forwarded pan), and dropping it would swallow the gesture.
+        applyLive({
+          panX: zCenter.cx - (zCenter.cx - prev.panX) * ratio - dx,
+          panY: zCenter.cy - (zCenter.cy - prev.panY) * ratio - dy,
+          zoom: newZoom,
         });
       } else if (dx !== 0 || dy !== 0) {
-        setState((prev) => ({
-          ...prev,
-          panX: prev.panX - dx,
-          panY: prev.panY - dy,
-        }));
+        applyLive({ ...prev, panX: prev.panX - dx, panY: prev.panY - dy });
       }
     };
 
@@ -229,6 +263,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       wheelIdleTimer = setTimeout(() => {
         wheelIdleTimer = null;
         setCanvasInteractionActive(false);
+        commitLive();
       }, 140);
       if (wheelRafId != null) return;
       wheelRafId = requestAnimationFrame(flushWheel);
@@ -370,7 +405,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       // Don't leave the flag stuck on if the canvas unmounts mid-gesture.
       setCanvasInteractionActive(false);
     };
-  }, [enabled]);
+  }, [enabled, applyLive, commitLive]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -395,12 +430,12 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     const start = panStartRef.current;
     const latest = latestDragRef.current;
     if (!start || !latest) return;
-    setState((prev) => ({
-      ...prev,
+    applyLive({
+      ...stateRef.current,
       panX: start.panX + latest.dx,
       panY: start.panY + latest.dy,
-    }));
-  }, []);
+    });
+  }, [applyLive]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const start = panStartRef.current;
@@ -451,11 +486,13 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     panStartRef.current = null;
     setIsPanning(false);
     setCanvasInteractionActive(false);
+    // Inertia keeps writing live and commits when it settles; otherwise this gesture ends here.
+    if (!didInertia) commitLive();
     // Only spring back if we were actually panning (not on simple clicks)
     if (wasPanning && !didInertia) {
       springBackIfNeeded();
     }
-  }, [startInertia, springBackIfNeeded]);
+  }, [startInertia, springBackIfNeeded, commitLive]);
 
   // Clean up panning if mouse leaves the window
   useEffect(() => {
@@ -464,11 +501,12 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         panStartRef.current = null;
         setIsPanning(false);
         setCanvasInteractionActive(false);
+        commitLive();
       }
     };
     window.addEventListener('mouseup', onUp);
     return () => window.removeEventListener('mouseup', onUp);
-  }, []);
+  }, [commitLive]);
 
   useEffect(() => {
     return () => { cancelAnimation(); cancelInertia(); };
@@ -665,7 +703,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       if (!target) {
         // Keep current camera; snapping to (0,0,1) used to desync the minimap.
         if (cardRects.length === 0 || !viewportRef.current) {
-          setState({ panX: 0, panY: 0, zoom: 1 });
+          setCanvasState({ panX: 0, panY: 0, zoom: 1 });
         }
         return;
       }
@@ -686,13 +724,13 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
             Math.abs(cur2.panX - fresh.panX) +
             Math.abs(cur2.panY - fresh.panY) +
             Math.abs(cur2.zoom - fresh.zoom) * 1000;
-          if (drift > 8) setState(fresh);
+          if (drift > 8) setCanvasState(fresh);
         }, FIT_SETTLE_DELAY);
       } else {
-        setState(target);
+        setCanvasState(target);
       }
     },
-    [cancelAnimation, animateTo, computeFitTarget],
+    [cancelAnimation, animateTo, computeFitTarget, setCanvasState],
   );
 
   // Figma-style spawn camera: never zoom IN, never move if the cards are already on screen; otherwise the minimal pan that reveals them, zooming out only when they cannot fit at the current zoom.
@@ -741,9 +779,18 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     onMouseUp: handleMouseUp,
   }), [handleMouseDown, handleMouseMove, handleMouseUp]);
 
+  // Per-frame pan for edge-pan-during-card-drag: live-only, the caller commits when the drag ends.
+  const panBy = useCallback((dx: number, dy: number) => {
+    const prev = stateRef.current;
+    applyLive({ ...prev, panX: prev.panX + dx, panY: prev.panY + dy });
+  }, [applyLive]);
+
+  const getLiveState = useCallback((): CanvasState => stateRef.current, []);
+
   const actions = useMemo(() => ({
-    zoomIn, zoomOut, resetZoom, fitToView, fitToCards, revealCards, animateTo, cancelAnimation, setState,
-  }), [zoomIn, zoomOut, resetZoom, fitToView, fitToCards, revealCards, animateTo, cancelAnimation]);
+    zoomIn, zoomOut, resetZoom, fitToView, fitToCards, revealCards, animateTo, cancelAnimation,
+    setState: setCanvasState, panBy, commit: commitLive, syncTransform: applyLiveToDom, getLiveState,
+  }), [zoomIn, zoomOut, resetZoom, fitToView, fitToCards, revealCards, animateTo, cancelAnimation, setCanvasState, panBy, commitLive, applyLiveToDom, getLiveState]);
 
   return {
     ...state,
@@ -752,6 +799,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     cmdHeld,
     viewportRef,
     contentRef,
+    gridRef,
     handlers,
     actions,
   } as const;

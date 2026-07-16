@@ -34,9 +34,7 @@ interface Props {
   cardWidth: number;
   cardHeight: number;
   cardZOrder?: number;
-  zoom?: number;
-  panX?: number;
-  panY?: number;
+  getCanvasState: () => { panX: number; panY: number; zoom: number };
   isSelected?: boolean;
   isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
@@ -49,17 +47,13 @@ interface Props {
 
 const WorkflowsAppCard: React.FC<Props> = ({
   cardX, cardY, cardWidth, cardHeight, cardZOrder = 0,
-  zoom = 1, panX = 0, panY = 0,
+  getCanvasState,
   isSelected = false, isHighlighted = false, multiDragDelta = null,
   onCardSelect, onDragStart, onDragMove, onDragEnd, onBringToFront,
 }) => {
   const WC = useWC();
   const dispatch = useAppDispatch();
 
-  const panRef = useRef({ panX, panY });
-  panRef.current = { panX, panY };
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
 
   // ---- Drag (title bar is the handle) ----
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; startPanX: number; startPanY: number } | null>(null);
@@ -77,12 +71,13 @@ const WorkflowsAppCard: React.FC<Props> = ({
     if (target.closest('[data-no-drag], button, [role="button"], input, textarea, select')) return;
     e.preventDefault();
     e.stopPropagation();
-    dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY, startPanX: panRef.current.panX, startPanY: panRef.current.panY };
+    const cs = getCanvasState();
+    dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY, startPanX: cs.panX, startPanY: cs.panY };
     didDrag.current = false;
     setIsDragging(true);
     onDragStart?.('workflows-hub', 'workflows-hub');
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, [cardX, cardY, onDragStart]);
+  }, [cardX, cardY, onDragStart, getCanvasState]);
 
   const onHeaderPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
@@ -90,20 +85,22 @@ const WorkflowsAppCard: React.FC<Props> = ({
     const rawDy = e.clientY - dragState.current.startY;
     if (!didDrag.current && Math.sqrt(rawDx * rawDx + rawDy * rawDy) < DRAG_THRESHOLD) return;
     didDrag.current = true;
-    const z = zoomRef.current;
-    const panDx = (panRef.current.panX - dragState.current.startPanX) / z;
-    const panDy = (panRef.current.panY - dragState.current.startPanY) / z;
+    const cs = getCanvasState();
+    const z = cs.zoom;
+    const panDx = (cs.panX - dragState.current.startPanX) / z;
+    const panDy = (cs.panY - dragState.current.startPanY) / z;
     const dx = rawDx / z - panDx;
     const dy = rawDy / z - panDy;
     setLocalDragPos({ x: dragState.current.origX + dx, y: dragState.current.origY + dy });
     onDragMove?.(dx, dy, e.clientX, e.clientY);
-  }, [onDragMove]);
+  }, [onDragMove, getCanvasState]);
 
   const onHeaderPointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
-    const z = zoomRef.current;
-    const panDx = (panRef.current.panX - dragState.current.startPanX) / z;
-    const panDy = (panRef.current.panY - dragState.current.startPanY) / z;
+    const cs = getCanvasState();
+    const z = cs.zoom;
+    const panDx = (cs.panX - dragState.current.startPanX) / z;
+    const panDy = (cs.panY - dragState.current.startPanY) / z;
     const dx = (e.clientX - dragState.current.startX) / z - panDx;
     const dy = (e.clientY - dragState.current.startY) / z - panDy;
     if (didDrag.current) {
@@ -120,7 +117,7 @@ const WorkflowsAppCard: React.FC<Props> = ({
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [dispatch, onDragEnd]);
+  }, [dispatch, onDragEnd, getCanvasState]);
 
   // ---- Resize ----
   const resizeRef = useRef<{ dir: ResizeDir; sx0: number; sy0: number; ox: number; oy: number; ow: number; oh: number } | null>(null);
@@ -139,8 +136,9 @@ const WorkflowsAppCard: React.FC<Props> = ({
   const compute = useCallback((e: React.PointerEvent) => {
     if (!resizeRef.current) return null;
     const { dir, sx0, sy0, ox, oy, ow, oh } = resizeRef.current;
-    const dx = (e.clientX - sx0) / zoomRef.current;
-    const dy = (e.clientY - sy0) / zoomRef.current;
+    const z2 = getCanvasState().zoom;
+    const dx = (e.clientX - sx0) / z2;
+    const dy = (e.clientY - sy0) / z2;
     let nx = ox, ny = oy, nw = ow, nh = oh;
     if (dir.includes('e')) nw = ow + dx;
     if (dir.includes('w')) { nw = ow - dx; nx = ox + dx; }

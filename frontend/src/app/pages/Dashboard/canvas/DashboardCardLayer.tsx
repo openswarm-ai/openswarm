@@ -39,9 +39,6 @@ interface DashboardCardLayerProps {
   outputs: Record<string, Output>;
   glowingAgentCards: Record<string, GlowingAgentCard>;
   expandedSessionIds: string[];
-  zoom: number;
-  panX: number;
-  panY: number;
   cmdHeld: boolean;
   selection: Selection;
   highlightedCardId: string | null;
@@ -76,9 +73,6 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
   outputs,
   glowingAgentCards,
   expandedSessionIds,
-  zoom,
-  panX,
-  panY,
   cmdHeld,
   selection,
   highlightedCardId,
@@ -205,9 +199,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
             cardWidth={vc.width}
             cardHeight={vc.height}
             cardZOrder={vc.zOrder ?? 0}
-            zoom={zoom}
-            panX={panX}
-            panY={panY}
+            getCanvasState={getCanvasState}
             cmdHeld={cmdHeld}
             isSelected={selection.isSelected(cardKey)}
             isHighlighted={highlightedCardId === cardKey}
@@ -234,9 +226,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
           cardWidth={bc.width}
           cardHeight={bc.height}
           cardZOrder={bc.zOrder ?? 0}
-          zoom={zoom}
-          panX={panX}
-          panY={panY}
+          getCanvasState={getCanvasState}
           cmdHeld={cmdHeld}
           isSelected={selection.isSelected(bc.browser_id)}
           isHighlighted={highlightedCardId === bc.browser_id}
@@ -258,9 +248,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
           cardWidth={n.width}
           cardHeight={n.height}
           cardZOrder={n.zOrder ?? 0}
-          zoom={zoom}
-          panX={panX}
-          panY={panY}
+          getCanvasState={getCanvasState}
           cmdHeld={cmdHeld}
           content={n.content}
           color={n.color}
@@ -282,9 +270,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
           cardWidth={workflowsHub.width}
           cardHeight={workflowsHub.height}
           cardZOrder={workflowsHub.zOrder ?? 0}
-          zoom={zoom}
-          panX={panX}
-          panY={panY}
+          getCanvasState={getCanvasState}
           isSelected={selection.isSelected('workflows-hub')}
           isHighlighted={highlightedCardId === 'workflows-hub'}
           multiDragDelta={selection.isSelected('workflows-hub') ? multiDragDelta : null}
@@ -303,9 +289,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
           cardWidth={monitorCard.width}
           cardHeight={monitorCard.height}
           cardZOrder={monitorCard.zOrder ?? 0}
-          zoom={zoom}
-          panX={panX}
-          panY={panY}
+          getCanvasState={getCanvasState}
           onDragStart={onDragStart}
           onDragMove={onDragMove}
           onDragEnd={onDragEnd}

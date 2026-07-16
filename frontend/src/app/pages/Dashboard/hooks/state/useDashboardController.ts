@@ -93,10 +93,11 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     setNewAgentBounce(canvasEmpty && !bounceDismissedRef.current);
   }, [canvasEmpty, setNewAgentBounce]);
 
-  const canvasStateRef = useRef({ panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom });
-  canvasStateRef.current = { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom };
-  // Stable getter, AgentCards read pan/zoom on demand during drag math.
-  const getCanvasState = useCallback(() => canvasStateRef.current, []);
+  // Live camera reads: gestures write the transform imperatively and only commit React state at gesture-end, so a render-synced ref would be stale mid-edge-pan (drag math) and inside the 140ms wheel-settle window (spawn placement). Both delegate to the canvas hook's live truth.
+  const getCanvasState = useCallback(() => canvas.actions.getLiveState(), [canvas.actions]);
+  const canvasStateRef = useMemo(() => ({
+    get current() { return canvas.actions.getLiveState(); },
+  }), [canvas.actions]);
 
   const {
     multiDragDelta,
@@ -105,9 +106,6 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     handleCardDragMove,
     handleCardDragEnd,
   } = useCardDrag({
-    panX: canvas.panX,
-    panY: canvas.panY,
-    zoom: canvas.zoom,
     viewportRef: canvas.viewportRef,
     canvasActions: canvas.actions,
     selection,

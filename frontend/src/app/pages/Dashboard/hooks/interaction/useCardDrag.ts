@@ -8,9 +8,6 @@ import type { CanvasActions } from './useCanvasControls';
 type Selection = ReturnType<typeof useDashboardSelection>;
 
 interface UseCardDragArgs {
-  panX: number;
-  panY: number;
-  zoom: number;
   viewportRef: RefObject<HTMLDivElement | null>;
   canvasActions: CanvasActions;
   selection: Selection;
@@ -27,19 +24,11 @@ function axisIntensity(pos: number, lo: number, hi: number): number {
 }
 
 export function useCardDrag({
-  panX,
-  panY,
-  zoom,
   viewportRef,
   canvasActions,
   selection,
 }: UseCardDragArgs) {
   const dispatch = useAppDispatch();
-
-  // Notify the currently dragging card (if any) that pan/zoom changed so it can re-pin to the cursor. useEffect rather than render-body dispatchEvent: side effects during render are a React anti-pattern and can fire twice in strict mode. Effect runs after commit, so exactly once per real pan/zoom delta. Edge-pan mutates pan via canvasActions.setState below, so the dispatch lives in the same hook.
-  useEffect(() => {
-    window.dispatchEvent(new Event('openswarm:canvas-pan-changed'));
-  }, [panX, panY, zoom]);
 
   const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number } | null>(null);
   const [liveDragInfo, setLiveDragInfo] = useState<{ cardId: string; dx: number; dy: number } | null>(null);
@@ -69,11 +58,8 @@ export function useCardDrag({
     const dy = EDGE_MAX_SPEED * axisIntensity(my, rect.top, rect.bottom);
 
     if (dx !== 0 || dy !== 0) {
-      canvasActions.setState((prev: { panX: number; panY: number; zoom: number }) => ({
-        ...prev,
-        panX: prev.panX + dx,
-        panY: prev.panY + dy,
-      }));
+      // Live-only write (no React commit per frame); clearDrag commits once when the drag ends.
+      canvasActions.panBy(dx, dy);
     }
 
     edgePanFrameRef.current = requestAnimationFrame(tickEdgePan);
@@ -110,12 +96,14 @@ export function useCardDrag({
 
   const clearDrag = useCallback(() => {
     stopEdgePan();
+    // Reconcile React with whatever edge-pan wrote live during the drag.
+    canvasActions.commit();
     activeDragCardRef.current = null;
     document.body.classList.remove('dashboard-marquee-active');
     isMultiDragRef.current = false;
     setMultiDragDelta(null);
     setLiveDragInfo(null);
-  }, [stopEdgePan]);
+  }, [stopEdgePan, canvasActions]);
 
   const handleCardDragEnd = useCallback((dx: number, dy: number, didDrag: boolean) => {
     if (didDrag) report('dashboard', 'card_dragged');
