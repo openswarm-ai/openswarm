@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo, RefObject } from 'react';
 import { setCanvasInteractionActive } from '@/shared/canvasInteractionState';
 import { getLastInteractedBrowser } from '@/shared/browserFocus';
+import { getScrollFocusedCard } from '@/shared/cardScrollFocus';
 import { getWebview } from '@/shared/browserRegistry';
 import { applyBrowserZoom } from '@/shared/browserZoom';
 
@@ -264,6 +265,13 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         }
 
         if (cls === 'scrollable' && !isModifierWheel) {
+          // Google Maps model: plain scroll zooms the canvas over ANY card (chat, app, scheduled task) UNLESS you've clicked INTO that card to read it. So a scrollable child only eats the wheel when its card is the scroll-focused one; otherwise fall through to canvas zoom.
+          const cardEl = target.closest('[data-select-id]');
+          const cardId = cardEl?.getAttribute('data-select-id') ?? null;
+          if (!cardId || cardId !== getScrollFocusedCard()) {
+            target = target.parentElement;
+            continue;
+          }
           // Re-read scrollHeight/clientHeight; cached decision is structural, scroll position is dynamic.
           const canScrollY = target.scrollHeight > target.clientHeight;
           const canScrollX = target.scrollWidth > target.clientWidth;
