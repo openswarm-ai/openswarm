@@ -1447,6 +1447,23 @@ async def run_browser_agent(
         if p_plan_note:
             task = f"{task}\n\n{p_plan_note}"
 
+    # READ leg for authed pages (the extraction turn-collapser): prestage landed the logged-in card on the target page; one aux read over the live page text answers a read task without the big-model loop. Fail-open: decline = the loop runs as today.
+    from backend.apps.agents.browser import browser_read_script
+    if (browser_read_script.read_script_enabled() and not task_is_send and not app_mode
+            and not done_called and preloaded_perception and not cancel_event.is_set()):
+        try:
+            p_aux_c, p_aux_m = await p_get_aux_client()
+            p_read_answer = await asyncio.wait_for(browser_read_script.run_read_script(
+                p_aux_c, p_aux_m, task, browser_id, tab_id, execute_browser_tool,
+            ), timeout=25.0)
+        except Exception as p_re:
+            logger.info(f"[browser-readscript] outer skip ({p_re})")
+            p_read_answer = None
+        if p_read_answer:
+            done_called = True
+            done_success = True
+            done_message = p_read_answer
+
     try:
         for turn in range(MAX_TURNS):
             if done_called or cancel_event.is_set():
