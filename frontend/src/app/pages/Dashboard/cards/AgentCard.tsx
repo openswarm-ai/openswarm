@@ -368,7 +368,7 @@ const AgentCard: React.FC<Props> = ({
     if (s.includes('/')) s = s.split('/').pop() || s;
     return s;
   }, [session.model, modelsByProvider]);
-  const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
+  const scrollOverlayRef = useOverlayScrollPassthrough(isSelected && !expanded);
 
   const suggestionPulseRef = useRef('');
   const readyPulseRef = useRef('');
@@ -838,8 +838,8 @@ const AgentCard: React.FC<Props> = ({
         />
       ))}
 
-      {/* Selection overlay , blocks click interaction while selected, enabling drag from anywhere */}
-      {isSelected && (
+      {/* Selection overlay , drag-from-anywhere for a COLLAPSED selected card. Never over an expanded chat: it would sit on the composer/transcript so you couldn't type or click (that was "chat opens stuck in drag mode"). Expanded chats drag via the header zone below (zIndex 16). */}
+      {isSelected && !expanded && (
         <Box
           ref={scrollOverlayRef}
           onPointerDown={handleDragPointerDown}

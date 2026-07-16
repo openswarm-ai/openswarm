@@ -51,7 +51,6 @@ import {
   type BrowserWebview,
 } from '@/shared/browserRegistry';
 import { setLastInteractedBrowser } from '@/shared/browserFocus';
-import { onScrollFocusChange, getScrollFocusedCard } from '@/shared/cardScrollFocus';
 import { registerCapsuleForRestore } from '@/shared/browserStateCapsule';
 import BrowserFindBar from './BrowserFindBar';
 import { useBrowserActivity } from '@/shared/useBrowserActivity';
@@ -270,19 +269,6 @@ const BrowserCard: React.FC<Props> = ({
 
   useEffect(() => {
     setRegistryActiveTab(browserId, activeTabId);
-  }, [browserId, activeTabId]);
-
-  // Tell the (out-of-process) guest whether plain wheel should scroll the page or zoom the canvas.
-  // Focused (clicked-into) = scroll the page; otherwise scroll-to-zoom works while hovering it (Google Maps).
-  useEffect(() => {
-    const push = (focusedId: string | null) => {
-      const focused = focusedId === browserId;
-      for (const wv of webviewMap.current.values()) {
-        try { wv.send?.('openswarm:set-scroll-focus', { focused }); } catch (_e) { /* guest not ready */ }
-      }
-    };
-    push(getScrollFocusedCard());
-    return onScrollFocusChange(push);
   }, [browserId, activeTabId]);
 
   // Open the find bar when AppShell routes a Ctrl/Cmd+F to this browser; re-trigger re-focuses the input.

@@ -163,15 +163,6 @@ try {
     });
   } catch (_) {}
 
-  // Scroll-focus (Google Maps model): plain wheel zooms the canvas over this card UNLESS the user
-  // has clicked INTO it, in which case plain wheel scrolls the page/app content. Host pushes the flag.
-  let scrollFocused = false;
-  try {
-    ipcRenderer.on('openswarm:set-scroll-focus', (_event, payload) => {
-      scrollFocused = !!(payload && payload.focused);
-    });
-  } catch (_) {}
-
   // First in-guest mousedown tells the host to activate interact mode. Never
   // preventDefault so the click still reaches the app (Minecraft etc).
   const onMouseDownNotify = (e) => {
@@ -234,43 +225,18 @@ try {
       } catch (_) {}
       return;
     }
-    // Focused (clicked-into) card, or an interactive app: wheel stays with the page/app content.
-    if (isInteractive || scrollFocused) {
-      // Vertical-dominant scroll stays with the page.
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-      // Horizontal-dominant: defer to the page if anything inside can absorb it; otherwise forward as a canvas pan.
-      if (pageCanScrollX(e.target, e.deltaX)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        ipcRenderer.sendToHost('canvas-wheel-pan', {
-          deltaX: e.deltaX,
-          deltaY: e.deltaY,
-          deltaMode: e.deltaMode,
-        });
-      } catch (_) {}
-      return;
-    }
-    // Not focused: navigate the CANVAS while hovering the card (Google Maps). Horizontal-dominant swipe pans; vertical scroll zooms at the cursor.
+    // A browser page or app owns its OWN scroll/zoom (Google Maps zoom, Figma pan, page scroll), so plain wheel stays with the guest. Only horizontal-dominant swipes with nothing to scroll horizontally fall through to a canvas pan.
+    if (isInteractive) return;
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    if (pageCanScrollX(e.target, e.deltaX)) return;
     e.preventDefault();
     e.stopPropagation();
     try {
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-        ipcRenderer.sendToHost('canvas-wheel-pan', {
-          deltaX: e.deltaX,
-          deltaY: e.deltaY,
-          deltaMode: e.deltaMode,
-        });
-      } else {
-        const iw2 = window.innerWidth || 1;
-        const ih2 = window.innerHeight || 1;
-        ipcRenderer.sendToHost('canvas-wheel-zoom', {
-          deltaY: e.deltaY,
-          deltaMode: e.deltaMode,
-          fracX: Math.max(0, Math.min(1, e.clientX / iw2)),
-          fracY: Math.max(0, Math.min(1, e.clientY / ih2)),
-        });
-      }
+      ipcRenderer.sendToHost('canvas-wheel-pan', {
+        deltaX: e.deltaX,
+        deltaY: e.deltaY,
+        deltaMode: e.deltaMode,
+      });
     } catch (_) {}
   };
   // Listen on both window and document in capture phase so we run before any
