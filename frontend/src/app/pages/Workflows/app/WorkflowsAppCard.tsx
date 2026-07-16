@@ -1,11 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
-import { closeWorkflowsApp, setWorkflowsHubPosition, setWorkflowsHubSize } from '@/shared/state/dashboardLayoutSlice';
-import EventRepeatIcon from '@mui/icons-material/EventRepeat';
-import IconButton from '@mui/material/IconButton';
-import CloseIcon from '@mui/icons-material/Close';
-import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { useWC, FONT_SERIF } from './uiKit';
+import { setWorkflowsHubPosition, setWorkflowsHubSize } from '@/shared/state/dashboardLayoutSlice';
+import { useWC } from './uiKit';
 import WorkflowsAppContent from './WorkflowsAppContent';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -58,7 +54,6 @@ const WorkflowsAppCard: React.FC<Props> = ({
   onCardSelect, onDragStart, onDragMove, onDragEnd, onBringToFront,
 }) => {
   const WC = useWC();
-  const c = useClaudeTokens();
   const dispatch = useAppDispatch();
 
   const panRef = useRef({ panX, panY });
@@ -216,31 +211,14 @@ const WorkflowsAppCard: React.FC<Props> = ({
         transition: noTransition ? 'none' : 'box-shadow 0.3s ease, border-color 0.2s ease',
       }}
     >
-      {/* TITLE BAR (drag handle) */}
-      <div
-        onPointerDown={onHeaderPointerDown}
-        onPointerMove={onHeaderPointerMove}
-        onPointerUp={onHeaderPointerUp}
-        style={{ height: 42, flex: 'none', display: 'flex', alignItems: 'center', padding: '0 16px', borderBottom: `1px solid ${WC.line}`, background: WC.panel, gap: 14, cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none' }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <EventRepeatIcon sx={{ fontSize: 18, color: WC.accent, display: 'block' }} />
-          <span style={{ fontFamily: FONT_SERIF, fontSize: 14.5, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em', lineHeight: 1, transform: 'translateY(2.5px)' }}>Workflows</span>
-        </div>
-        <div style={{ flex: 1 }} />
-        <IconButton
-          aria-label="Close"
-          data-no-drag
-          size="small"
-          onClick={(e) => { e.stopPropagation(); dispatch(closeWorkflowsApp()); }}
-          onPointerDown={(e) => e.stopPropagation()}
-          sx={{ color: c.text.tertiary, '&:hover': { color: c.status.error, bgcolor: `${c.status.error}14` } }}
-        >
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </div>
-
-      <WorkflowsAppContent />
+      <WorkflowsAppContent
+        header={{
+          onPointerDown: onHeaderPointerDown,
+          onPointerMove: onHeaderPointerMove,
+          onPointerUp: onHeaderPointerUp,
+          dragging: isDragging,
+        }}
+      />
 
       {HANDLE_DEFS.map(({ dir, css }) => (
         <div

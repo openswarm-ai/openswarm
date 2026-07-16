@@ -9,6 +9,12 @@ const MAX_ZOOM = 3.0;
 const ZOOM_IN_FACTOR = 1.1;
 const ZOOM_OUT_FACTOR = 1 / ZOOM_IN_FACTOR;
 const FIT_PADDING = 200;
+// Card-framing (spawn, click-to-focus, arrow-nav) snaps as fast as the zoom buttons so a new card lands under you now, not after a lazy glide.
+const FIT_DURATION = 150;
+// Must outlast FIT_DURATION so the drift re-snap lands after the glide, never mid-flight.
+const FIT_SETTLE_DELAY = FIT_DURATION + 60;
+// A mouse notch lands as deltaY 100 where a trackpad sends ~1-10, so cap the per-event zoom delta: uncapped, one notch is a ~24% jump and macOS wheel acceleration stacks them. No-op for trackpads.
+const WHEEL_ZOOM_DELTA_CAP = 24;
 
 // Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.004).
 function sensitivityToMultiplier(setting: number): number {
@@ -173,7 +179,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
 
   animateToRef.current = animateTo;
 
-  // Wheel zoom centered on cursor
+  // Plain wheel zooms at the viewport center; cmd/ctrl+wheel pans vertically; trackpad pinch zooms at the cursor.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el || !enabled) return;  // Skip wheel listener when canvas is hidden
@@ -199,9 +205,10 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
           const factor = Math.pow(2, -zDy * sensitivityToMultiplier(sensitivityRef.current));
           const newZoom = clamp(prev.zoom * factor, MIN_ZOOM, MAX_ZOOM);
           const ratio = newZoom / prev.zoom;
+          // Apply any pan accumulated in the same frame too: a zoom and a pan can now land together (vertical zoom + horizontal pan across a RAF boundary, or a forwarded pan), and dropping it would swallow the gesture.
           return {
-            panX: zCenter.cx - (zCenter.cx - prev.panX) * ratio,
-            panY: zCenter.cy - (zCenter.cy - prev.panY) * ratio,
+            panX: zCenter.cx - (zCenter.cx - prev.panX) * ratio - dx,
+            panY: zCenter.cy - (zCenter.cy - prev.panY) * ratio - dy,
             zoom: newZoom,
           };
         });
@@ -230,8 +237,8 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     const scrollableCache: WeakMap<HTMLElement, 'scrollable' | 'not'> = new WeakMap();
 
     const onWheel = (e: WheelEvent) => {
-      // Pinch-to-zoom on trackpads sets ctrlKey; plain scroll does not
-      const isPinchZoom = e.ctrlKey || e.metaKey;
+      // ctrl/cmd wheel is a modifier gesture: a real held key (cmd/ctrl + scroll → vertical pan) or a trackpad pinch, which also sets ctrlKey (→ zoom at cursor). Either way it bypasses scrollable children and acts on the canvas.
+      const isModifierWheel = e.ctrlKey || e.metaKey;
 
       // Let scrollable children handle the event when appropriate, but fall through to canvas pan if the child is at its scroll boundary.
       const dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
@@ -256,7 +263,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
           scrollableCache.set(target, cls);
         }
 
-        if (cls === 'scrollable' && !isPinchZoom) {
+        if (cls === 'scrollable' && !isModifierWheel) {
           // Re-read scrollHeight/clientHeight; cached decision is structural, scroll position is dynamic.
           const canScrollY = target.scrollHeight > target.clientHeight;
           const canScrollX = target.scrollWidth > target.clientWidth;
@@ -289,16 +296,25 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         inertiaFrameRef.current = null;
       }
 
-      if (isPinchZoom) {
-        // Pinch gesture → accumulate zoom deltas + last cursor position. factor = 2^(-Σdy·s) which equals the product of per-event factors, so accumulating dy is mathematically identical to applying each event one at a time.
+      if (isModifierWheel && cmdRef.current) {
+        // Real cmd/ctrl physically held + scroll → vertical pan. cmdRef is set from a keydown; a trackpad pinch sets ctrlKey with no keydown, so it falls through to the zoom branch below and pinch-to-zoom survives.
+        pendingPanDy += dy;
+        scheduleWheelFlush();
+      } else if (isModifierWheel) {
+        // Trackpad pinch → accumulate zoom deltas + last cursor position. factor = 2^(-Σdy·s) which equals the product of per-event factors, so accumulating dy is mathematically identical to applying each event one at a time.
         const rect = el.getBoundingClientRect();
         pendingZoomDy += dy;
         pendingZoomCenter = { cx: e.clientX - rect.left, cy: e.clientY - rect.top };
         scheduleWheelFlush();
-      } else {
-        // Two-finger scroll → accumulate pan deltas.
+      } else if (Math.abs(dx) > Math.abs(dy)) {
+        // Horizontal-dominant scroll → pan X; it's the only horizontal-pan gesture. Dominant-axis, so the vertical jitter in a sideways swipe doesn't also zoom.
         pendingPanDx += dx;
-        pendingPanDy += dy;
+        scheduleWheelFlush();
+      } else {
+        // Plain vertical scroll → zoom at the cursor (same anchor as pinch) so the point under the pointer grows toward you, not away. Clamp the per-event delta so a discrete mouse notch is a small step, not a lurch.
+        const rect = el.getBoundingClientRect();
+        pendingZoomDy += clamp(dy, -WHEEL_ZOOM_DELTA_CAP, WHEEL_ZOOM_DELTA_CAP);
+        pendingZoomCenter = { cx: e.clientX - rect.left, cy: e.clientY - rect.top };
         scheduleWheelFlush();
       }
     };
@@ -651,7 +667,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         const dPan = Math.abs(cur.panX - target.panX) + Math.abs(cur.panY - target.panY);
         const dZoom = Math.abs(cur.zoom - target.zoom);
         if (dPan < 5 && dZoom < 0.01) return;
-        animateTo(target);
+        animateTo(target, FIT_DURATION);
         // Settle pass: cancelAnimation() must be able to cancel it, else back-to-back fitToCards races and the first settle overwrites the second target.
         settleTimerRef.current = window.setTimeout(() => {
           settleTimerRef.current = null;
@@ -663,12 +679,52 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
             Math.abs(cur2.panY - fresh.panY) +
             Math.abs(cur2.zoom - fresh.zoom) * 1000;
           if (drift > 8) setState(fresh);
-        }, 370);
+        }, FIT_SETTLE_DELAY);
       } else {
         setState(target);
       }
     },
     [cancelAnimation, animateTo, computeFitTarget],
+  );
+
+  // Figma-style spawn camera: never zoom IN, never move if the cards are already on screen; otherwise the minimal pan that reveals them, zooming out only when they cannot fit at the current zoom.
+  const revealCards = useCallback(
+    (cardRects: Array<{ x: number; y: number; width: number; height: number }>) => {
+      const viewport = viewportRef.current;
+      if (!viewport || cardRects.length === 0) return;
+      const v = viewport.getBoundingClientRect();
+      if (v.width <= 0 || v.height <= 0) return;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const r of cardRects) {
+        minX = Math.min(minX, r.x);
+        minY = Math.min(minY, r.y);
+        maxX = Math.max(maxX, r.x + r.width);
+        maxY = Math.max(maxY, r.y + r.height);
+      }
+      if (!isFinite(minX)) return;
+      const REVEAL_MARGIN = 48;
+      const cur = stateRef.current;
+      const fitZoom = Math.min(
+        (v.width - REVEAL_MARGIN * 2) / (maxX - minX),
+        (v.height - REVEAL_MARGIN * 2) / (maxY - minY),
+      );
+      const zoom = clamp(Math.min(cur.zoom, fitZoom), MIN_ZOOM, MAX_ZOOM);
+      // If zooming out, keep the viewport-center world point fixed first, then clamp.
+      const ratio = zoom / cur.zoom;
+      let panX = v.width / 2 - (v.width / 2 - cur.panX) * ratio;
+      let panY = v.height / 2 - (v.height / 2 - cur.panY) * ratio;
+      const left = minX * zoom + panX, right = maxX * zoom + panX;
+      if (left < REVEAL_MARGIN) panX += REVEAL_MARGIN - left;
+      else if (right > v.width - REVEAL_MARGIN) panX -= right - (v.width - REVEAL_MARGIN);
+      const top = minY * zoom + panY, bottom = maxY * zoom + panY;
+      if (top < REVEAL_MARGIN) panY += REVEAL_MARGIN - top;
+      else if (bottom > v.height - REVEAL_MARGIN) panY -= bottom - (v.height - REVEAL_MARGIN);
+      const cur2 = stateRef.current;
+      if (Math.abs(panX - cur2.panX) < 2 && Math.abs(panY - cur2.panY) < 2 && Math.abs(zoom - cur2.zoom) < 0.005) return;
+      cancelAnimation();
+      animateTo({ panX, panY, zoom }, FIT_DURATION);
+    },
+    [cancelAnimation, animateTo],
   );
 
   const handlers = useMemo(() => ({
@@ -678,8 +734,8 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
   }), [handleMouseDown, handleMouseMove, handleMouseUp]);
 
   const actions = useMemo(() => ({
-    zoomIn, zoomOut, resetZoom, fitToView, fitToCards, animateTo, cancelAnimation, setState,
-  }), [zoomIn, zoomOut, resetZoom, fitToView, fitToCards, animateTo, cancelAnimation]);
+    zoomIn, zoomOut, resetZoom, fitToView, fitToCards, revealCards, animateTo, cancelAnimation, setState,
+  }), [zoomIn, zoomOut, resetZoom, fitToView, fitToCards, revealCards, animateTo, cancelAnimation]);
 
   return {
     ...state,

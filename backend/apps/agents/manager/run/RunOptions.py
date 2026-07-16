@@ -188,7 +188,7 @@ class RunOptions(AgentManagerProtocol):
         }
         # cc/cx/gc/ag/gemini/openrouter prefixes force 9Router; route="api" bypasses to the provider's host directly; otherwise Pro proxy or key.
         await configure_provider_env(
-            options_kwargs, session, resolved_model, api_type, global_settings, []
+            options_kwargs, session, resolved_model, api_type, global_settings
         )
         if mcp_servers:
             options_kwargs["mcp_servers"] = mcp_servers
@@ -229,6 +229,9 @@ class RunOptions(AgentManagerProtocol):
         # The claude_code preset auto-attaches the user's claude.ai- connected partner MCPs (`mcp__claude_ai_*`). Those bypass our MCPActivate gate, don't share OAuth state with the OpenSwarm Gmail/Calendar/Drive connectors the user actually configured here, and confuse the model into picking the partner shim instead of our vetted server. Hard-block them at the SDK layer so the model can't even attempt the call.
         options_kwargs["disallowed_tools"] = [
             "mcp__claude_ai_*",
+            # The CLI's built-in sub-agent tool is replaced by our SpawnAgent MCP (prompt + run_in_background only); it is named Task on CLI 2.1.122 (Agent on older builds, kept for safety), and its subagent types resolve to models router setups can't serve.
+            "Agent",
+            "Task",
         ]
 
         if session.cwd:

@@ -505,8 +505,14 @@ export function computeSpawnPosition(
     return placeBesideCard(state, anchor.beside, newW, newH, expandedSessionIds);
   }
   if (anchor.viewportCenter) {
-    // Land dead-center, "in front of you", even if a card is already there. Overlap is intentional (new card sits on top via its higher zOrder); dodging to free space is exactly the "spawned off to the side" behavior we're removing.
-    return { x: anchor.viewportCenter.x - newW / 2, y: anchor.viewportCenter.y - newH / 2 };
+    // Closest open gap to the viewport center: dead-center-with-overlap stacked spawns invisibly on top of each other (two center spawns in a row = the second fully covers the first). The spiral stays center-biased so it still reads as "in front of you".
+    return findOpenSpotNear(
+      anchor.viewportCenter.x - newW / 2,
+      anchor.viewportCenter.y - newH / 2,
+      collectOccupiedRects(state, expandedSessionIds),
+      newW,
+      newH,
+    );
   }
   return findOpenGridCell(collectOccupiedRects(state, expandedSessionIds), newW, newH);
 }

@@ -155,7 +155,8 @@ const lightFeedColors: FeedColors = {
 // Stable ref keeps shallowEqual happy when there are no browser sessions yet.
 const EMPTY_STREAMING: Record<string, StreamingMessage> = Object.freeze({}) as Record<string, StreamingMessage>;
 
-const selectBrowserSessions = createSelector(
+// Factory, one selector PER FEED: a module-level createSelector has a cache of 1 shared by every mounted feed, so two feeds with different args thrash it and every render recomputes (and returns a fresh array identity, which defeats all downstream memoization).
+const makeSelectBrowserSessions = () => createSelector(
   [(state: RootState) => state.agents.sessions,
    (_: RootState, parentSessionId: string) => parentSessionId,
    (_: RootState, __: string, browserId?: string) => browserId],
@@ -166,6 +167,8 @@ const selectBrowserSessions = createSelector(
         s.parent_session_id === parentSessionId &&
         (!browserId || s.browser_id === browserId),
     ),
+  // Same members = same array identity: ANY session update rebuilds the sessions dict, and without this every unrelated agent:status re-ran formatMessage over the whole feed history.
+  { memoizeOptions: { resultEqualityCheck: shallowEqual } },
 );
 
 const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId }) => {
@@ -176,6 +179,7 @@ const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId })
   const scrollRef = useRef<HTMLDivElement>(null);
   const fetchedForSession = useRef<string | null>(null);
 
+  const selectBrowserSessions = useMemo(makeSelectBrowserSessions, []);
   const browserSessions = useAppSelector((state) =>
     selectBrowserSessions(state, parentSessionId, browserId),
   );
@@ -197,29 +201,37 @@ const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId })
     shallowEqual,
   );
 
+  // A child that arrived only through the trimmed session-list poll carries its message_count but no messages; fetch the full children so its history renders instead of showing a blank feed. Keyed by the unhydrated-children set (not one-shot per parent) so a NEW child appearing mid-run still hydrates, while the same set never refetches (no loop).
+  const unhydratedKey = browserSessions.length === 0
+    ? `${parentSessionId}:empty`
+    : browserSessions.filter((s) => (s.message_count ?? 0) > 0 && s.messages.length === 0).map((s) => s.id).sort().join(',');
   useEffect(() => {
-    if (browserSessions.length === 0 && fetchedForSession.current !== parentSessionId) {
-      fetchedForSession.current = parentSessionId;
-      dispatch(fetchBrowserAgentChildren(parentSessionId))
-        .unwrap()
-        .catch(() => { fetchedForSession.current = null; });
-    }
-  }, [browserSessions.length, parentSessionId, dispatch]);
+    if (!unhydratedKey.endsWith(':empty') && unhydratedKey === '') return;
+    if (fetchedForSession.current === unhydratedKey) return;
+    fetchedForSession.current = unhydratedKey;
+    dispatch(fetchBrowserAgentChildren(parentSessionId))
+      .unwrap()
+      .catch(() => { fetchedForSession.current = null; });
+  }, [unhydratedKey, parentSessionId, dispatch]);
 
-  const sessionsWithEntries = useMemo(() => {
+  const sessionsWithHistoricalEntries = useMemo(() => {
     return browserSessions.map((session) => {
       const entries: FeedEntry[] = [];
       for (const msg of session.messages) {
         const entry = formatMessage(msg);
         if (entry) entries.push(entry);
       }
-      const stream: StreamingMessage | undefined = streamingBySession[session.id];
-      if (stream?.role === 'assistant' && stream.content) {
-        entries.push({ type: 'thought', text: stream.content });
-      }
       return { session, entries };
     });
-  }, [browserSessions, streamingBySession]);
+  }, [browserSessions]);
+
+  const sessionsWithEntries = sessionsWithHistoricalEntries.map(({ session, entries }) => {
+    const stream: StreamingMessage | undefined = streamingBySession[session.id];
+    if (stream?.role === 'assistant' && stream.content) {
+      return { session, entries: [...entries, { type: 'thought' as const, text: stream.content }] };
+    }
+    return { session, entries };
+  });
 
   const totalMessages = browserSessions.reduce(
     (n, s) => n + s.messages.length + (streamingBySession[s.id] ? 1 : 0),
@@ -404,7 +416,8 @@ const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId })
   );
 };
 
-const EntryRow: React.FC<{ entry: FeedEntry; accentColor: string; fc: FeedColors }> = ({ entry, accentColor, fc }) => {
+// Memoized: the feed re-renders on every streamed token, and un-memoized rows re-render the ENTIRE lazy-loaded history per token (the "browser use = hella lag" bug).
+const EntryRow = React.memo<{ entry: FeedEntry; accentColor: string; fc: FeedColors }>(({ entry, accentColor, fc }) => {
   const c = useClaudeTokens();
 
   if (entry.type === 'thought') {
@@ -485,7 +498,7 @@ const EntryRow: React.FC<{ entry: FeedEntry; accentColor: string; fc: FeedColors
   }
 
   return null;
-};
+});
 
 const SessionStatusChip: React.FC<{ status: string }> = ({ status }) => {
   const c = useClaudeTokens();

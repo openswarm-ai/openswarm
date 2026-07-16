@@ -7,6 +7,7 @@ import { useIframeElementSelector } from './useIframeElementSelector';
 import { getAuthToken, ensureAuthToken } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { registerViewWebview, unregisterViewWebview, type ViewWebview } from '@/shared/viewWebviewRegistry';
+import { registerViewFrame, unregisterViewFrame } from '@/shared/viewFrameRegistry';
 import RunInDesktopMessage from '@/app/components/RunInDesktopMessage';
 import { registerWebview, unregisterWebview, setActiveTab, type BrowserWebview } from '@/shared/browserRegistry';
 
@@ -323,6 +324,15 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
     registerViewWebview(registryId, wv as ViewWebview);
     return () => unregisterViewWebview(registryId);
   }, [useWebview, registryId, iframeSrc]);
+
+  // Same registration for the srcdoc path, so the dashboard's arrow keys can reach a non-webview app card's content. Re-runs on reloadKey because a reload swaps the element.
+  useEffect(() => {
+    if (useWebview || !registryId) return;
+    const frame = iframeRef.current;
+    if (!frame) return;
+    registerViewFrame(registryId, frame);
+    return () => unregisterViewFrame(registryId);
+  }, [useWebview, registryId, iframeSrc, reloadKey]);
 
   // Mirror `interactive` into a ref so the once-per-load did-finish-load listener can read the latest value when it pushes initial state.
   const interactiveRef = useRef(interactive);

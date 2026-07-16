@@ -28,11 +28,11 @@ export async function exportPreflight(target: ShareTarget): Promise<ExportPrefli
   return res.json();
 }
 
-export async function downloadSwarm(target: ShareTarget, filename: string): Promise<void> {
+export async function downloadSwarm(target: ShareTarget, filename: string, allowSecrets = false): Promise<void> {
   const res = await fetch(`${API_BASE}/swarm/export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: target.kind, id: target.id }),
+    body: JSON.stringify({ type: target.kind, id: target.id, allow_secrets: allowSecrets }),
   });
   if (!res.ok) throw new Error(await _detail(res, "We couldn't build the file."));
   const blob = await res.blob();

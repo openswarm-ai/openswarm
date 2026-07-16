@@ -65,7 +65,7 @@ export function useDashboardCardActions({
       }
       const card = viewCards[focusKey];
       if (card) {
-        canvasActions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true, undefined, true);
+        canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
         handleHighlightCard(focusKey);
       }
     }, 200);
@@ -88,7 +88,7 @@ export function useDashboardCardActions({
       const newId = Object.keys(allNotes).find((id) => !prevIds.has(id));
       if (newId) {
         const note = allNotes[newId];
-        canvasActions.fitToCards([{ x: note.x, y: note.y, width: note.width, height: note.height }], 1.15, true, undefined, true);
+        canvasActions.revealCards([{ x: note.x, y: note.y, width: note.width, height: note.height }]);
         handleHighlightCard(newId);
       }
     }, 200);
@@ -109,7 +109,7 @@ export function useDashboardCardActions({
         setTimeout(() => {
           const card = store.getState().dashboardLayout.cards[sessionId];
           if (card) {
-            canvasActions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true);
+            canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
             handleHighlightCard(sessionId);
           }
         }, 200);

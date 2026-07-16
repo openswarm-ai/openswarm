@@ -404,6 +404,13 @@ const BrowserCard: React.FC<Props> = ({
         });
       };
 
+      // A failed/aborted main-frame load never fires did-stop-loading, and initializedTabs is already set so doLoad won't re-arm: without this the card sits blank with the spinner running forever. errorCode -3 is ERR_ABORTED (a superseded nav), not a failure.
+      const onDidFailLoad = (e: any) => {
+        if (!e || e.isMainFrame === false) return;
+        updateTabLocal(tabId, { loading: false });
+        if (e.errorCode && e.errorCode !== -3) onProcessGone();
+      };
+
       const onFaviconUpdate = (e: any) => {
         const favicons = e.favicons || (e.detail && e.detail.favicons);
         if (favicons?.[0]) {
@@ -428,6 +435,7 @@ const BrowserCard: React.FC<Props> = ({
       wv.addEventListener('new-window', onNewWindow as any);
       wv.addEventListener('render-process-gone', onProcessGone as any);
       wv.addEventListener('crashed', onProcessGone as any);
+      wv.addEventListener('did-fail-load', onDidFailLoad as any);
 
       cleanups.push(() => {
         unregisterWebview(browserId, tabId);
@@ -441,6 +449,7 @@ const BrowserCard: React.FC<Props> = ({
         wv.removeEventListener('new-window', onNewWindow as any);
         wv.removeEventListener('render-process-gone', onProcessGone as any);
         wv.removeEventListener('crashed', onProcessGone as any);
+        wv.removeEventListener('did-fail-load', onDidFailLoad as any);
         const churn = urlChurnThrottle.current.get(tabId);
         if (churn?.timer) { clearTimeout(churn.timer); churn.timer = null; }
       });

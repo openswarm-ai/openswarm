@@ -871,6 +871,37 @@ async def settings_meta(action: str, request: Request):
 
 
 
+@app.post("/api/spawn-agent/run")
+async def spawn_agent_run(request: Request):
+    """Spawn a fresh sub-agent session for the SpawnAgent tool.
+    Called by the spawn_agent_mcp_server stdio subprocess."""
+    body = await request.json()
+    prompt = body.get("prompt", "")
+    parent_session_id = body.get("parent_session_id", "")
+    dashboard_id = body.get("dashboard_id", "")
+    run_in_background = bool(body.get("run_in_background", False))
+
+    if not prompt:
+        return JSONResponse({"error": "prompt is required"}, status_code=400)
+    if not parent_session_id:
+        return JSONResponse({"error": "parent_session_id is required"}, status_code=400)
+
+    try:
+        from backend.apps.agents.agent_manager import agent_manager
+        result = await agent_manager.spawn_agent(
+            prompt=prompt,
+            parent_session_id=parent_session_id,
+            dashboard_id=dashboard_id or None,
+            run_in_background=run_in_background,
+        )
+        return JSONResponse(result)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except Exception as e:
+        logger.exception("spawn_agent_run failed")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.post("/api/invoke-agent/run")
 async def invoke_agent_run(request: Request):
     """Fork an existing agent session and send it a new message.

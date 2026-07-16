@@ -60,6 +60,14 @@ def build_effective_tool_lists(
                         effective_disallowed.append(f"mcp__openswarm-invoke-agent__{it}")
                 continue
 
+            if name == "openswarm-spawn-agent":
+                policy = builtin_perms.get("Agent", "always_allow")
+                if policy == "always_allow":
+                    effective_allowed.append("mcp__openswarm-spawn-agent__SpawnAgent")
+                elif policy == "deny":
+                    effective_disallowed.append("mcp__openswarm-spawn-agent__SpawnAgent")
+                continue
+
             if name == "openswarm-skill":
                 policy = builtin_perms.get("Skill", "always_allow")
                 if policy == "always_allow":

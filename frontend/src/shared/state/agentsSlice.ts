@@ -84,6 +84,10 @@ export interface AgentSession {
   cost_usd: number;
   tokens: { input: number; output: number };
   messages: AgentMessage[];
+  /** Compact dashboard-list metadata; full messages are fetched when a chat opens. */
+  last_message_preview?: string;
+  first_user_message?: string;
+  message_count?: number;
   pending_approvals: ApprovalRequest[];
   branches: Record<string, MessageBranch>;
   active_branch_id: string;
@@ -342,25 +346,42 @@ export const fetchSession = createAsyncThunk(
 
 export const launchAndSendFirstMessage = createAsyncThunk(
   'agents/launchAndSendFirstMessage',
-  async ({ draftId, config, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedAppIds, selectedSettingIds }: LaunchAndSendPayload) => {
-    const launchRes = await fetch(`${AGENTS_API}/launch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    });
-    const launchData = await launchRes.json();
-    const session = launchData.session as AgentSession;
+  async ({ draftId, config, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds, selectedAppIds, selectedSettingIds }: LaunchAndSendPayload, { dispatch }) => {
+    // Optimistic bubble on the DRAFT before the three round-trips (launch/message/refetch): without it the first message of every fresh chat rendered nothing until the network came back. The fulfilled rekey swaps in the server session, which carries the real turn by then.
+    const clientMessageId = _genOptimisticId();
+    dispatch(addOptimisticMessage({
+      sessionId: draftId,
+      clientMessageId,
+      prompt,
+      contextPaths,
+      forcedTools,
+      attachedSkills: attachedSkills?.map((s) => ({ id: s.id, name: s.name })),
+      images: images?.map((img) => ({ data: img.data, media_type: img.media_type })),
+      hidden: false,
+    }));
+    try {
+      const launchRes = await fetch(`${AGENTS_API}/launch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      const launchData = await launchRes.json();
+      const session = launchData.session as AgentSession;
 
-    await fetch(`${AGENTS_API}/sessions/${session.id}/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, selected_browser_ids: selectedBrowserIds, selected_app_output_ids: selectedAppIds, selected_setting_ids: selectedSettingIds }),
-    });
+      await fetch(`${AGENTS_API}/sessions/${session.id}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, selected_browser_ids: selectedBrowserIds, selected_app_output_ids: selectedAppIds, selected_setting_ids: selectedSettingIds, client_message_id: clientMessageId }),
+      });
 
-    const refreshRes = await fetch(`${AGENTS_API}/sessions/${session.id}`);
-    const updatedSession = await refreshRes.json() as AgentSession;
+      const refreshRes = await fetch(`${AGENTS_API}/sessions/${session.id}`);
+      const updatedSession = await refreshRes.json() as AgentSession;
 
-    return { draftId, session: updatedSession };
+      return { draftId, session: updatedSession };
+    } catch (err) {
+      dispatch(markOptimisticFailed({ sessionId: draftId, clientMessageId }));
+      throw err;
+    }
   }
 );
 
@@ -1385,10 +1406,20 @@ const agentsSlice = createSlice({
           else mergedMessages.splice(at, 0, m);
         }
         delete (session as AgentSession & { _streamingActive?: boolean })._streamingActive;
+        // Keep the EXISTING object for any message the snapshot didn't change: this refetch runs every 5s while a session is live, and fresh JSON clones of identical messages broke every bubble's React.memo (a whole-transcript re-render hitch per tick).
+        const prevById = new Map((existing?.messages ?? []).map((m) => [m.id, m]));
+        const contentUnchanged = (a: AgentMessage, b: AgentMessage): boolean =>
+          typeof a.content === 'string' && typeof b.content === 'string'
+            ? a.content === b.content
+            : Array.isArray(a.content) && Array.isArray(b.content) && a.content.length === b.content.length;
+        const stableMessages = mergedMessages.map((m) => {
+          const prev = prevById.get(m.id);
+          return prev && prev.timestamp === m.timestamp && prev.role === m.role && contentUnchanged(prev, m) ? prev : m;
+        });
         state.sessions[session.id] = {
           ...session,
           name: normalizeSessionName(session.name),
-          messages: mergedMessages,
+          messages: stableMessages,
           pending_approvals: session.pending_approvals ?? existing?.pending_approvals ?? [],
           tool_group_meta: session.tool_group_meta ?? existing?.tool_group_meta ?? {},
           // mcp_suggestions live in client state only (the backend never returns them in the session payload). Preserve them across refresh so the suggestion banner stays put until the user dismisses it or activates one.
@@ -1412,13 +1443,17 @@ const agentsSlice = createSlice({
       })
       .addCase(fetchBrowserAgentChildren.fulfilled, (state, action) => {
         for (const session of action.payload) {
-          if (!state.sessions[session.id]) {
+          const existing = state.sessions[session.id];
+          if (!existing) {
             state.sessions[session.id] = {
               ...session,
               name: normalizeSessionName(session.name),
               tool_group_meta: session.tool_group_meta ?? {},
               pending_approvals: session.pending_approvals ?? [],
             };
+          } else if (existing.messages.length === 0 && session.messages.length > 0) {
+            // Hydrate a child the trimmed session-list poll left message-less; don't touch one mid-stream (already has messages).
+            existing.messages = session.messages;
           }
         }
       })

@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { deleteWorkflow } from '@/shared/state/workflowsSlice';
 import { isScheduleActive, describeSchedule } from '@/app/pages/Workflows/scheduleUtils';
+import ShareButton from '@/app/components/share/ShareButton';
 import { colorForWorkflow, useWC } from './uiKit';
 import WorkflowTitle from './WorkflowTitle';
 import type { AppNav } from './types';
@@ -18,6 +19,7 @@ const LeftRail: React.FC<{ nav: AppNav }> = ({ nav }) => {
   const items = useAppSelector((s) => s.workflows.items);
   const trashCount = useAppSelector((s) => s.workflows.deleted.length);
   const [query, setQuery] = useState('');
+  const [hovered, setHovered] = useState<string | null>(null);
 
   const workflows = useMemo(() => Object.values(items)
     .filter((w) => !w.unsaved)
@@ -93,6 +95,8 @@ const LeftRail: React.FC<{ nav: AppNav }> = ({ nav }) => {
             <div
               key={w.id}
               onClick={() => nav.selectWorkflow(w.id)}
+              onMouseEnter={() => setHovered(w.id)}
+              onMouseLeave={() => setHovered((h) => (h === w.id ? null : h))}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '5px 9px', borderRadius: 8, cursor: 'pointer', background: isSel ? WC.selBg : 'transparent' }}
             >
               <div style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: colorForWorkflow(w), opacity: active ? 1 : 0.35 }} />
@@ -104,6 +108,22 @@ const LeftRail: React.FC<{ nav: AppNav }> = ({ nav }) => {
                   {active ? describeSchedule(w.schedule) : 'Paused'}
                 </div>
               </div>
+              {/* Faded rather than unmounted on hover-out: ShareButton owns the modal's open state, so unmounting it would close the modal the moment the pointer left the row for the dialog. Also keeps the row from reflowing on hover. */}
+              <span
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  display: 'flex',
+                  flex: 'none',
+                  opacity: hovered === w.id ? 1 : 0,
+                  pointerEvents: hovered === w.id ? 'auto' : 'none',
+                  transition: 'opacity 0.12s',
+                }}
+              >
+                <ShareButton
+                  target={{ kind: 'workflow', id: w.id, name: w.title || 'Untitled workflow' }}
+                  iconFontSize={13}
+                />
+              </span>
               <div
                 onClick={(e) => { e.stopPropagation(); onDelete(w.id); }}
                 style={{ width: 22, height: 22, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: WC.faint, flex: 'none' }}

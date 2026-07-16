@@ -19,7 +19,6 @@ FULL_TOOLS = [
     "TaskOutput", "TaskStop",
     "CronCreate", "CronList", "CronDelete",
     "InvokeAgent",
-    "Agent",
     # ToolSearch is the loader the CLI uses to expose deferred tool schemas on demand. Must be in the allowedTools whitelist or the model can't call it, which means none of the deferred extended tools become reachable even when the CLI advertises them in the system prompt.
     "ToolSearch",
 ]

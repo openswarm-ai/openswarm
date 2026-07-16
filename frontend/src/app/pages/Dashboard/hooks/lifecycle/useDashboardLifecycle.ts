@@ -215,7 +215,7 @@ export function useDashboardLifecycle({
     setTimeout(() => {
       const card = store.getState().dashboardLayout.cards[agentId];
       if (card) {
-        canvasActions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true);
+        canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
         handleHighlightCard(agentId);
       }
     }, 350);
@@ -231,13 +231,7 @@ export function useDashboardLifecycle({
     setTimeout(() => {
       const card = store.getState().dashboardLayout.browserCards[browserId];
       if (card) {
-        canvasActions.fitToCards(
-          [{ x: card.x, y: card.y, width: card.width, height: card.height }],
-          1.15,
-          true,
-          0.8,
-          true,
-        );
+        canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
         handleHighlightCard(browserId);
       }
     }, 200);
@@ -253,7 +247,7 @@ export function useDashboardLifecycle({
     setTimeout(() => {
       const card = store.getState().dashboardLayout.viewCards[cardKey];
       if (card) {
-        canvasActions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true);
+        canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
         handleHighlightCard(cardKey);
       }
     }, 200);
@@ -268,11 +262,7 @@ export function useDashboardLifecycle({
     setTimeout(() => {
       const card = store.getState().dashboardLayout.workflowCards[workflowId];
       if (card) {
-        canvasActions.fitToCards(
-          [{ x: card.x, y: card.y, width: card.width, height: card.height }],
-          1.15,
-          true,
-        );
+        canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
         handleHighlightCard(workflowId);
       }
     }, 200);
@@ -352,7 +342,7 @@ export function useDashboardLifecycle({
         const rects = [{ x: vc.x, y: vc.y, width: vc.width, height: vc.height }];
         const ac = store.getState().dashboardLayout.cards[sid];
         if (ac) rects.push({ x: ac.x, y: ac.y, width: ac.width, height: ac.height });
-        canvasActions.fitToCards(rects, 1.15, true);
+        canvasActions.revealCards(rects);
         handleHighlightCard(outputId);
       }, 200);
     }
@@ -366,7 +356,10 @@ export function useDashboardLifecycle({
     if (!dash) return;
     if (!dash.auto_named && dash.name !== 'Untitled Dashboard') return;
     const hasUserMessage = Object.values(sessions).some(
-      (s) => s.dashboard_id === dashboardId && s.messages?.some((m) => m.role === 'user'),
+      (s) => s.dashboard_id === dashboardId && (
+        s.messages?.some((m) => m.role === 'user') ||
+        (s.messages.length === 0 && !!s.first_user_message)
+      ),
     );
     if (!hasUserMessage) return;
     namedOnFirstMessageRef.current = dashboardId;

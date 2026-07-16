@@ -104,6 +104,8 @@ class ReviewSummary(BaseModel):
 class ExportRequest(BaseModel):
     type: EntityType
     id: str
+    # User-confirmed "export anyway": skips the file-content secret heuristic on direct download only; denied payload fields stay blocked.
+    allow_secrets: bool = False
 
 
 class ExportPreflightResponse(BaseModel):
