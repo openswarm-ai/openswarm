@@ -426,10 +426,8 @@ P_AUTO_STATE_TOOLS = {
 P_AUTO_STATE_MAX_LINES = 60
 P_AUTO_SETTLE_CAPS_MS = {"BrowserNavigate": 2500, "BrowserBatch": 1500}
 
-# URL shapes that mean "a list of candidates to pick from" (auto candidate scan)
-RESULTS_URL_RE = re.compile(
-    r"[?&](q|query|keywords|search|search_query|find|term)=|/search\b|/results\b", re.I,
-)
+# RESULTS_URL_RE moved to browser_prestage (its READY overrule uses it too); re-exported here for the scan sites.
+from backend.apps.agents.browser.browser_prestage import RESULTS_URL_RE
 P_AUTO_SCAN_MAX_PER_RUN = 2
 # The candidate scan is a fast HINT, not the critical path. Cap the aux input to the top of the
 # page (matches are first) and bail quickly, so a big page can't turn the scan into dead idle time

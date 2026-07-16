@@ -28,6 +28,11 @@ OPENER_MAX_STEPS = 6
 OPENER_TOTAL_TIMEOUT_S = 32.0
 
 P_STEP_RE = re.compile(r"^\s*(NAVIGATE|CLICK|READY)\b[:\s]*(.*)$", re.I)
+
+# URL shapes that mean "a list of candidates to pick from" (also drives the agent's candidate scan)
+RESULTS_URL_RE = re.compile(
+    r"[?&](q|query|keywords|search|search_query|find|term)=|/search\b|/results\b", re.I,
+)
 P_BLOCKED_CLICK_RE = re.compile(
     r"\b(send|submit|post|pay|buy|order|delete|confirm|apply|accept|invite|"
     r"connect|purchase|checkout|subscribe|unfollow|sign\s?out|log\s?out)\b",
@@ -254,6 +259,7 @@ async def run_prestage(
         p_max_steps = OPENER_MAX_STEPS if opener_mode() else MAX_STEPS
         p_total_timeout = OPENER_TOTAL_TIMEOUT_S if opener_mode() else TOTAL_TIMEOUT_S
         p_system = P_SYSTEM_OPENER if opener_mode() else P_SYSTEM
+        p_results_overruled = False
         while steps < p_max_steps and (time.monotonic() - t0) < p_total_timeout:
             li_text, gt_text, seen_url = await perceive()
             current_url = seen_url or current_url
@@ -270,6 +276,14 @@ async def run_prestage(
             )).strip()
             verb, arg = parse_step(reply)
             if verb == "ready" or not arg:
+                # A results LIST is never the staged page for a task about one specific person/thing; the aux accepts it about half the time (measured, 2/4 cold LinkedIn runs) and every downstream tier then declines. Overrule ONCE with a nudge re-ask; a second READY is accepted, some tasks really do target the list.
+                if RESULTS_URL_RE.search(current_url or "") and not p_results_overruled:
+                    p_results_overruled = True
+                    task = task + (
+                        "\n\n[You replied READY on a search-results LIST. If the task is about "
+                        "one specific person or thing, CLICK through to its own page first; "
+                        "READY again only if the task really is about this list.]")
+                    continue
                 staged_complete = True
                 logger.info(f"[browser-prestage] READY after {steps} step(s): {arg[:80]}")
                 break
