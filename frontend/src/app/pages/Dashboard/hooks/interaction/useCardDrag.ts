@@ -79,12 +79,13 @@ export function useCardDrag({
     edgePanFrameRef.current = requestAnimationFrame(tickEdgePan);
   }, [viewportRef, canvasActions]);
 
-  const handleCardDragStart = useCallback((id: string, _type: CardType) => {
+  const handleCardDragStart = useCallback((id: string, type: CardType) => {
     activeDragCardRef.current = id;
     if (selection.isSelected(id)) {
       isMultiDragRef.current = true;
     } else {
-      selection.deselectAll();
+      // Grabbing an unselected card SELECTS just it (was deselectAll, which left nothing selected, so the next spawn had no anchor and flew to viewport-center far from the card you just moved). Also survives the stale-read where the capture-phase click already selected it.
+      selection.selectCard(id, type, false);
       isMultiDragRef.current = false;
     }
   }, [selection]);
