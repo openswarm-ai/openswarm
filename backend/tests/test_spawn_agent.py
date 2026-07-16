@@ -70,14 +70,16 @@ def test_spawn_agent_unknown_parent_raises() -> None:
         asyncio.run(agent_manager.spawn_agent(prompt="x", parent_session_id="nope-" + "0" * 28))
 
 
-def test_builtin_agent_tool_stays_blocked() -> None:
-    # The CLI's Agent tool must not be offered: out of the catalog AND hard-blocked at the SDK layer.
+def test_builtin_subagent_tools_stay_blocked() -> None:
+    # The CLI's built-in sub-agent tool (Task on 2.1.122, Agent on older builds) must not be offered: out of the catalog AND hard-blocked at the SDK layer.
     from backend.apps.agents.manager.prompt.tool_catalog import FULL_TOOLS
     assert "Agent" not in FULL_TOOLS
+    assert "Task" not in FULL_TOOLS
     import inspect
     from backend.apps.agents.manager.run import RunOptions
     src = inspect.getsource(RunOptions)
-    assert '"Agent",' in src.split('disallowed_tools"] = [')[1][:300]
+    block = src.split('disallowed_tools"] = [')[1][:400]
+    assert '"Agent",' in block and '"Task",' in block
 
 
 def test_spawn_server_schema_is_prompt_plus_background_only() -> None:
