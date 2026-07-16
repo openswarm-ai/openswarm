@@ -87,9 +87,17 @@ async def run_verified_step(
                 # an errored irreversible action provably did NOT happen; safe to stop, never retry blindly
                 return {"ok": False, "verified": False, "acted": False, "note": note}
             continue  # reversible: re-aim
-        await asyncio.sleep(settle_s)
-        after, after_url = await p_fresh(execute_tool, browser_id, tab_id)
-        if va.expectation_met(expect, before, after, before_url, after_url):
+        # Smart-wait: check the expectation early and again at the full settle window; the common fast case exits ~0.5-0.8s sooner than a flat sleep, the slow case keeps its whole window. A settle too small to split keeps the single flat check.
+        p_waits = [0.4, settle_s - 0.4] if settle_s > 0.4 else [settle_s]
+        p_met = False
+        for p_wait in p_waits:
+            if p_wait:
+                await asyncio.sleep(p_wait)
+            after, after_url = await p_fresh(execute_tool, browser_id, tab_id)
+            if va.expectation_met(expect, before, after, before_url, after_url):
+                p_met = True
+                break
+        if p_met:
             logger.info(f"[verified-step] {step.kind} {step.target!r} -> {expect} OK (attempt {attempt + 1})")
             return {"ok": True, "verified": True, "acted": True, "note": ""}
         if step.irreversible:
