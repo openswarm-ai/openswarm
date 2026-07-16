@@ -1334,9 +1334,10 @@ async def run_browser_agent(
                     f"sim={p_h_score:.2f} steps={len(route_hint_keys)} state={p_h_skill.get('state')}"
                 )
 
-    # Pre-nav landed on a results page (the cold entry case): scan it NOW so the model's very first turn can pick a candidate instead of read-then-decide.
+    task_is_send = not deliverable_is_informational("", task)
+    # Pre-nav landed on a results page (the cold entry case): scan it NOW so the model's very first turn can pick a candidate instead of read-then-decide. SKIP it for a SEND task: sending (message a person, reply to a post) clicks through to a composer, it never picks from a ranked candidate list, so the scan is a ~4s blocking aux call for nothing on the exact path we most want instant.
     p_start_url = (current_url or initial_url or "").split("#")[0]
-    if p_start_url and RESULTS_URL_RE.search(p_start_url):
+    if p_start_url and RESULTS_URL_RE.search(p_start_url) and not task_is_send:
         auto_scanned_urls.add(p_start_url)
         p_scan_json, p_sc_ms = await p_scan_results(task)
         if p_scan_json:
@@ -1367,8 +1368,7 @@ async def run_browser_agent(
     done_message = ""
     done_success = True
     done_keep_open = False
-    # Completion detection: once an irreversible SEND has confirmed, the goal is met. The model otherwise stalls re-verifying what the confirm already proved (measured: send done at turn ~11, then ~12 wasted perception turns). We drive it to the OUTCOME and, if it keeps re-perceiving, end the run. A genuine multi-send task issues its NEXT send (an action) which resets the stall, so only true spinning ends here. This whole shortcut is meaningless for a gather/read task (no send to confirm), and arming it there let a cookie 'Accept all' click masquerade as the task's send, so we gate it on intent.
-    task_is_send = not deliverable_is_informational("", task)
+    # Completion detection uses task_is_send (computed above, before the candidate scan): once an irreversible SEND has confirmed, the goal is met. The model otherwise stalls re-verifying what the confirm already proved (measured: send done at turn ~11, then ~12 wasted perception turns). We drive it to the OUTCOME and, if it keeps re-perceiving, end the run. A genuine multi-send task issues its NEXT send (an action) which resets the stall, so only true spinning ends here. Meaningless for a gather/read task, and arming it there let a cookie 'Accept all' click masquerade as the task's send, so we gate it on intent.
     send_confirmed = False
     # Two-sided receipt evidence: the fill must have VISIBLY committed its text to a textbox before a send-class click may end the run in code. r228 clicked a send-labeled control after an uncommitted fill and the old click-name-only receipt claimed a send that never happened.
     composer_committed_payload = ""
