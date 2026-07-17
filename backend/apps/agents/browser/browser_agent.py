@@ -2112,8 +2112,8 @@ async def run_browser_agent(
                              "role": r.get("clickedRole") or ""})
                         for r in (result.get("results") or []))))
                 if p_is_send_click and p_expect:
-                    result["confirmed"] = True
-                    result["text"] = f"{result.get('text') or ''}\nConfirmed by receipt: the send-class click registered."
+                    # Click registration is NOT delivery proof (curve2: X swallowed a clean click); this branch only skips the unreliable 4s text-probe, the composer receipt below is the arbiter.
+                    result["text"] = f"{result.get('text') or ''}\nThe send-class click registered; delivery is checked by the composer receipt."
                 elif p_expect and "error" not in result and tu.name in P_CONFIRM_TOOLS:
                     # target_only: wait for the expected text to actually appear, don't call it 'not confirmed' just because the page settled first (a sent message lands in the thread a beat after settle, esp. under load)
                     p_conf = await browser_wait.smart_wait(p_wait_exec, browser_id, tab_id, 4000,
@@ -2144,9 +2144,9 @@ async def run_browser_agent(
                         for r in (result.get("results") or []))
                     if p_send_click:
                         send_confirmed = True
+                        p_receipt_ok = False
                         if os.environ.get("OSW_RECEIPT_DONE", "1") != "0" and composer_committed_payload:
                             # Deterministic receipt, two-sided: the fill was SEEN committed to a textbox earlier, and the box must now be SEEN empty of it. Click-name alone is not proof (r228: send-labeled click after an uncommitted fill = false success); missing evidence falls through to the old model-verified path, so the failure mode costs turns, never a lie.
-                            p_receipt_ok = False
                             try:
                                 for p_rw in (0.4, 1.0):
                                     await asyncio.sleep(p_rw)
@@ -2174,9 +2174,17 @@ async def run_browser_agent(
                                 logger.info(f"[browser-receipt {session_id}] two-sided receipt passed (fill committed + composer cleared); run ends in code")
                             else:
                                 logger.info(f"[browser-receipt {session_id}] receipt WITHHELD (composer state unverified); model verifies")
-                        result["text"] = (f"{result.get('text') or ''}\n\n[task complete] The send "
-                            "went through (the composer cleared). Don't re-check it. Finish now by "
-                            "calling Done with your reply to the user.")
+                        # The completion text must match the evidence: the old unconditional "went through, don't re-check" rode along even when the receipt was WITHHELD, and the model repeated it to the user as fact while nothing had posted (curve2 X, live). Verified = drive to Done; unverified = one truthful verify pass, never a resend.
+                        if p_receipt_ok:
+                            result["text"] = (f"{result.get('text') or ''}\n\n[task complete] The send "
+                                "went through (the composer cleared). Don't re-check it. Finish now by "
+                                "calling Done with your reply to the user.")
+                        else:
+                            result["text"] = (f"{result.get('text') or ''}\n\n[send clicked, NOT verified] "
+                                "The send click registered but delivery was NOT confirmed (no composer-cleared "
+                                "receipt). Do NOT click send again, a resend risks a double-post. Verify ON THE "
+                                "PAGE that the message actually posted (find it in the thread/feed/sent items); "
+                                "if you cannot see it, report honestly that the send did not confirm.")
 
                 action_log.append({
                     "tool": tu.name,
@@ -2843,6 +2851,26 @@ async def p_create_browser_card(dashboard_id: str, url: str, parent_session_id: 
     return browser_id
 
 
+async def p_rebroadcast_card(dashboard_id: str | None, browser_id: str) -> None:
+    """Re-send a card's card_added broadcast from the persisted layout. The spawn broadcast is
+    fire-and-forget with no ack, so a renderer that misses it (rAF stall, WS blip) leaves the card
+    unmounted forever = the dead-run wedge. Idempotent: the renderer no-ops on a card it already has."""
+    if not dashboard_id:
+        return
+    try:
+        from backend.apps.dashboards.dashboards import load
+        card = load(dashboard_id).layout.browser_cards.get(browser_id)
+        if card is None:
+            return
+        await ws_manager.broadcast_global("dashboard:browser_card_added", {
+            "dashboard_id": dashboard_id,
+            "browser_card": card.model_dump(mode="json"),
+            "parent_session_id": getattr(card, "spawned_by", "") or "",
+        })
+    except Exception as e:
+        logger.info(f"[browser-spawn-ack] rebroadcast failed for {browser_id}: {e}")
+
+
 async def run_browser_agents(
     tasks: list[dict],
     model: str,
@@ -2909,15 +2937,31 @@ async def run_browser_agents(
             elif os.environ.get("OSW_PRELUDE_TRIM", "1") != "0":
                 # Poll until the mounting card serves real page text instead of a blind 2s; capped, so the worst case is the old wait plus one probe.
                 p_mount_t0 = time.monotonic()
+                p_mounted = False
                 while time.monotonic() - p_mount_t0 < 2.5:
                     try:
                         p_probe = await execute_browser_tool("BrowserGetText", {}, browser_id)
                         if (isinstance(p_probe, dict) and not p_probe.get("error")
                                 and len(str(p_probe.get("text") or "")) > 200):
+                            p_mounted = True
                             break
                     except Exception:
                         pass
                     await asyncio.sleep(0.25)
+                if not p_mounted:
+                    # Spawn ack: no response yet could be a slow page OR a renderer that missed the card_added broadcast entirely (no ack exists). Re-broadcast (idempotent) and give it one more bounded window; a card that's still dead after this hits the prestage dead-card catch instead of a wasted run.
+                    await p_rebroadcast_card(dashboard_id, browser_id)
+                    p_ack_t0 = time.monotonic()
+                    while time.monotonic() - p_ack_t0 < 4.0:
+                        try:
+                            p_probe = await execute_browser_tool("BrowserGetText", {}, browser_id)
+                            if isinstance(p_probe, dict) and not p_probe.get("error"):
+                                p_mounted = True
+                                break
+                        except Exception:
+                            pass
+                        await asyncio.sleep(0.4)
+                    logger.info(f"[browser-spawn-ack] {browser_id} rebroadcast after silent mount; alive={p_mounted}")
                 logger.info(f"[browser-cold] mount poll {int((time.monotonic() - p_mount_t0) * 1000)}ms for {browser_id}")
             else:
                 await asyncio.sleep(2.0)
