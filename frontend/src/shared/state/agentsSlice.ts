@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { API_BASE } from '@/shared/config';
 import { normalizeSessionName } from './sessionDisplay';
+import { mergeSessionMessages } from './mergeSessionMessages';
 
 const AGENTS_API = `${API_BASE}/agents`;
 
@@ -368,16 +369,21 @@ export const launchAndSendFirstMessage = createAsyncThunk(
       const launchData = await launchRes.json();
       const session = launchData.session as AgentSession;
 
-      await fetch(`${AGENTS_API}/sessions/${session.id}/message`, {
+      // Only the launch response is load-bearing (it mints the session id); the message POST runs off the critical path so the rekey (and the chat's stream hookup) doesn't wait a round trip. The optimistic bubble already shows the message and flips to failed if this dies.
+      fetch(`${AGENTS_API}/sessions/${session.id}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, selected_browser_ids: selectedBrowserIds, selected_app_output_ids: selectedAppIds, selected_setting_ids: selectedSettingIds, client_message_id: clientMessageId }),
+      }).then((res) => {
+        if (!res.ok) throw new Error(`first message failed: ${res.status}`);
+      }).catch(() => {
+        // The bubble lives on whichever session the rekey race left it in; one of these no-ops.
+        dispatch(markOptimisticFailed({ sessionId: session.id, clientMessageId }));
+        dispatch(markOptimisticFailed({ sessionId: draftId, clientMessageId }));
+        dispatch(updateSessionStatus({ sessionId: session.id, status: 'completed' }));
       });
 
-      const refreshRes = await fetch(`${AGENTS_API}/sessions/${session.id}`);
-      const updatedSession = await refreshRes.json() as AgentSession;
-
-      return { draftId, session: updatedSession };
+      return { draftId, session };
     } catch (err) {
       dispatch(markOptimisticFailed({ sessionId: draftId, clientMessageId }));
       throw err;
@@ -728,6 +734,9 @@ const agentsSlice = createSlice({
       state.sessions[action.payload.id] = {
         ...action.payload,
         name: normalizeSessionName(action.payload.name),
+        // Status frames replay stale on WS reconnect; the transcript and branch set only move forward here (fetchSession owns server-side deletes).
+        messages: mergeSessionMessages(existing?.messages, action.payload.messages, false),
+        branches: { ...existing?.branches, ...action.payload.branches },
         pending_approvals: mergedApprovals,
         tool_group_meta: { ...existing?.tool_group_meta, ...action.payload.tool_group_meta },
       };
@@ -1212,8 +1221,21 @@ const agentsSlice = createSlice({
       .addCase(launchAndSendFirstMessage.fulfilled, (state, action) => {
         const { draftId, session } = action.payload;
         const shouldExpand = action.meta.arg.expand !== false;
+        // The swap uses the LAUNCH response (no refetch round trip), so the user's message exists only as the draft's optimistic bubble; carry it (never the seeded greeting, which is cosmetic and must not reach the server session) plus anything the WS already landed under the server id.
+        const carried = [
+          ...(state.sessions[session.id]?.messages ?? []),
+          ...(state.sessions[draftId]?.messages ?? []).filter((m) => m.optimistic_status),
+        ];
         delete state.sessions[draftId];
-        state.sessions[session.id] = { ...session, name: normalizeSessionName(session.name), tool_group_meta: session.tool_group_meta ?? {}, pending_approvals: session.pending_approvals ?? [] };
+        state.sessions[session.id] = {
+          ...session,
+          name: normalizeSessionName(session.name),
+          // The first message POST is in flight; its failure path flips this back (same optimism as sendMessage.pending).
+          status: 'running',
+          messages: mergeSessionMessages(carried, session.messages, false),
+          tool_group_meta: session.tool_group_meta ?? {},
+          pending_approvals: session.pending_approvals ?? [],
+        };
         state.activeSessionId = session.id;
         state.draftLaunchMap[draftId] = session.id;
         state.expandedSessionIds = state.expandedSessionIds.map((id) => (id === draftId ? session.id : id));
@@ -1381,41 +1403,14 @@ const agentsSlice = createSlice({
         const session = action.payload;
         const existing = state.sessions[session.id];
         // Preserve local messages the server snapshot doesn't carry yet. On remount mid-stream (leave the chat + come back) this fetch's snapshot predates the just-sent user turn, so a blind replace wiped the user's own bubble while the assistant stream (separate slice) kept going. The WS echo clears optimistic_status the instant it arrives, so the message is usually "confirmed but not yet server-persisted" rather than still 'pending' (that's why a pending-only filter missed it). Gate on the session being LIVE: on a running/streaming session, carry forward any local message the snapshot lacks; on a settled session the snapshot is authoritative (so a server-side delete isn't resurrected).
-        const incomingMsgs = session.messages ?? [];
         // Live by EITHER side's account: a send on a completed chat flips local status to running while the racing snapshot still says completed and lacks the new turn; trusting only the snapshot wiped the user bubble until the run finished.
         const isLive = (s?: string) => s === 'running' || s === 'waiting_approval';
         // A streaming session counts as live even if neither status says 'running' (streaming lives in streamingSlice). Without this, a mid-stream reopen dropped the just-sent user bubble until the turn finished.
         const streamingActive = !!(session as AgentSession & { _streamingActive?: boolean })._streamingActive;
         const liveStatus = streamingActive || isLive(session.status) || isLive(existing?.status);
-        const incomingClientIds = new Set(
-          incomingMsgs.map((m) => m.client_message_id).filter(Boolean),
-        );
-        const incomingIds = new Set(incomingMsgs.map((m) => m.id));
-        // An optimistic message (no WS echo yet) is preserved even when both sides read settled: right after a send on a completed chat, NEITHER status has flipped to running, and the racing snapshot wiped the just-typed bubble for seconds. It can't be a deleted-message resurrection; the server has never confirmed it existed.
-        const surviving = (existing?.messages ?? []).filter(
-          (m) =>
-            (liveStatus || m.optimistic_status) &&
-            !incomingIds.has(m.id) &&
-            !(m.client_message_id && incomingClientIds.has(m.client_message_id)),
-        );
-        // Place survivors by timestamp, not blindly at the end: when the snapshot already carries the agent's reply, appending the just-sent user bubble rendered the OUTPUT above the INPUT. Insert before the first incoming message that is newer.
-        const mergedMessages = surviving.length ? [...incomingMsgs] : incomingMsgs;
-        for (const m of surviving) {
-          const at = mergedMessages.findIndex((x) => (x.timestamp || '') > (m.timestamp || ''));
-          if (at === -1) mergedMessages.push(m);
-          else mergedMessages.splice(at, 0, m);
-        }
         delete (session as AgentSession & { _streamingActive?: boolean })._streamingActive;
-        // Keep the EXISTING object for any message the snapshot didn't change: this refetch runs every 5s while a session is live, and fresh JSON clones of identical messages broke every bubble's React.memo (a whole-transcript re-render hitch per tick).
-        const prevById = new Map((existing?.messages ?? []).map((m) => [m.id, m]));
-        const contentUnchanged = (a: AgentMessage, b: AgentMessage): boolean =>
-          typeof a.content === 'string' && typeof b.content === 'string'
-            ? a.content === b.content
-            : Array.isArray(a.content) && Array.isArray(b.content) && a.content.length === b.content.length;
-        const stableMessages = mergedMessages.map((m) => {
-          const prev = prevById.get(m.id);
-          return prev && prev.timestamp === m.timestamp && prev.role === m.role && contentUnchanged(prev, m) ? prev : m;
-        });
+        // Deletes only apply on a settled session: a snapshot racing a live turn is stale, not authoritative.
+        const stableMessages = mergeSessionMessages(existing?.messages, session.messages, !liveStatus);
         state.sessions[session.id] = {
           ...session,
           name: normalizeSessionName(session.name),
