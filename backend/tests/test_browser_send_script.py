@@ -224,3 +224,32 @@ async def test_readonly_probe_never_fires():
                                  payload_source=TASK, current_url=THREAD_URL)
     assert r is None
     assert not calls["clicks"]
+
+
+def test_looks_like_login_wall_hits_and_false_positives():
+    # login/auth URLs (the live instagram/threads mis-fire was one of these)
+    assert ss.looks_like_login_wall("https://www.instagram.com/accounts/login/?force_authentication", "")
+    assert ss.looks_like_login_wall("https://accounts.google.com/v3/signin/identifier", "")
+    assert ss.looks_like_login_wall("https://www.reddit.com/login/", "")
+    assert ss.looks_like_login_wall("https://x.com/i/flow/login", "")
+    # auth-form perception signals with an innocuous url
+    assert ss.looks_like_login_wall("https://site.com/x", '[3]<textbox "Password">')
+    assert ss.looks_like_login_wall("https://site.com/x", "Log in to X to continue")
+    # false positives: a real composer page, a blog path, gmail inbox, a /author/ path
+    assert not ss.looks_like_login_wall("https://x.com/home", X_COMPOSER)
+    assert not ss.looks_like_login_wall("https://example.com/blog/login-tips", "")
+    assert not ss.looks_like_login_wall("https://mail.google.com/mail/u/0/#inbox?compose=new", "")
+    assert not ss.looks_like_login_wall("https://site.com/author/jane", "")
+
+
+@pytest.mark.asyncio
+async def test_login_wall_url_declines_before_any_fill():
+    """A login URL declines even when the perception carries a composer and the task quotes a
+    payload: a real send surface never shares a page with a login wall, and filling here types
+    into the auth form (the live instagram/threads mis-fire under the reveal finder)."""
+    ex, calls = make_exec([X_COMPOSER])
+    r = await ss.run_send_script('post this exactly: "hello from the test x9"', "b1", "", X_COMPOSER, ex,
+                                 send_submit_index_in_state, payload_in_textbox,
+                                 current_url="https://x.com/i/flow/login")
+    assert r is None
+    assert not calls["clicks"]

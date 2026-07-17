@@ -37,6 +37,31 @@ P_COMPOSER_NAME_RE = re.compile(
     re.I,
 )
 
+# Login/auth walls: a logged-out card lands here, and the structural reveal-finder would
+# otherwise fill a login field and arm the page's own submit as a "send" (measured live on
+# instagram/threads). A real composer never lives on one of these, so decline outright.
+P_LOGIN_WALL_URL_RE = re.compile(
+    r"accounts\.google\.com|/i/flow/login|/accounts/login|/uas/login|/users/sign_in|"
+    r"/sessions/new|/checkpoint|force_authentication|"
+    r"/(?:log[_-]?in|sign[_-]?in|signin|logon)(?:[/?#]|$)",
+    re.I,
+)
+P_LOGIN_WALL_STATE_RE = re.compile(
+    r'<\s*textbox\s+"[^"]*(?:password|passwd)|(?:log|sign)\s?in to |'
+    r"continue with (?:google|apple|facebook)",
+    re.I,
+)
+
+
+def looks_like_login_wall(current_url: str, state_text: str) -> bool:
+    """A login/auth page (by URL) or an auth form in the perception (a password field, a
+    'Log in to X' heading, an OAuth 'Continue with ...'). The scripted send declines here:
+    a real composer never shares a page with these, and filling here types a login field."""
+    if current_url and P_LOGIN_WALL_URL_RE.search(current_url):
+        return True
+    return bool(state_text and P_LOGIN_WALL_STATE_RE.search(state_text))
+
+
 ToolRunner = Callable[[str, dict, str, str], Awaitable[dict]]
 
 
@@ -187,6 +212,9 @@ async def run_send_script(
     if P_READONLY_RE.search(task) or P_READONLY_RE.search(payload_source or ""):
         logger.info("[browser-sendscript] decline: read-only directive in task")
         return None
+    if looks_like_login_wall(current_url, state_text):
+        logger.info(f"[browser-sendscript] decline: login/auth wall ({(current_url or '')[:60]!r})")
+        return None
     payload = quoted_payload(payload_source or task)
     if not payload:
         logger.info("[browser-sendscript] decline: no unambiguous quoted payload")
@@ -255,7 +283,13 @@ async def run_send_script(
                     break
                 logger.info("[browser-sendscript] reveal navigated (open-first); re-perceiving the destination")
                 await asyncio.sleep(1.5)
-                await fresh_list()
+                dest = await fresh_list()
+                # open-first can land on a login redirect (a logged-out feed's first item);
+                # stop before the NEXT fill so we never type into the auth form we just opened.
+                if looks_like_login_wall("", dest):
+                    logger.info("[browser-sendscript] decline: reveal landed on a login/auth wall")
+                    fc = {}
+                    break
             if isinstance(fc, dict) and fc.get("found") and fc.get("filled"):
                 p_struct_selector = str(fc.get("selector") or "")
                 logger.info(f"[browser-sendscript] structural composer role={fc.get('role')!r} "
