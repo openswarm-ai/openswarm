@@ -906,6 +906,32 @@ async def run_browser_agent(
         except Exception as e:
             logger.info(f"[browser-prestage] outer skip ({e})")
 
+    # Early dead-card catch: a wedged or unmounted webview perceives as nothing (no url, no
+    # elements) even after prestage's warmup. Left alone the model burns a whole run piling up
+    # card_gone_streak before the late gate evicts it (measured ~70s of ghosting). One confirming
+    # probe here separates a genuinely dead card from a merely slow one; a dead one is evicted +
+    # recovered at the top of the loop instead, turning the wasted run into a ~10s honest bail.
+    p_card_dead_early = False
+    # Gate on the empty perception BLOCK, not current_url: prestage falls current_url back to
+    # start_url when the live perceive is empty, so a dead card still reports a url (measured).
+    # An empty block means the perceive got no live elements/text (dead OR merely thin); the
+    # confirming probe below is what separates the two.
+    if (browser_prestage.prestage_enabled() and not app_mode and not p_skip_prestage_for_skill
+            and not cancel_event.is_set() and not preloaded_perception
+            and os.environ.get("OSW_DEADCARD_EVICT", "1") != "0"):
+        try:
+            p_dead_probe = await asyncio.wait_for(
+                execute_browser_tool("BrowserGetText", {}, browser_id, tab_id), timeout=6.0)
+            p_card_dead_early = not (isinstance(p_dead_probe, dict)
+                                     and (str(p_dead_probe.get("url") or "")
+                                          or str(p_dead_probe.get("text") or "")))
+        except Exception:
+            p_card_dead_early = True
+        if p_card_dead_early:
+            logger.warning(
+                f"[browser-agent {session_id}] card {browser_id} perceives dead after prestage "
+                "(no url/elements, confirming probe empty); evicting + recovering early")
+
     # Resume prior conversation on this browser if we have one cached. This lets the sub-agent skip the "take a screenshot to figure out where I am" cycle every time the parent issues a new task. Defensively validate the cache; if it's somehow corrupted (orphaned tool_use_ids), drop it and start fresh rather than crash on the next API call.
     prior_messages = browser_history.BROWSER_HISTORY.get(browser_id) or []
     if prior_messages and not validate_message_pairing(prior_messages):
@@ -1470,6 +1496,14 @@ async def run_browser_agent(
 
     try:
         for turn in range(MAX_TURNS):
+            if p_card_dead_early:
+                # Prestage already proved this webview dead; evict + report unresponsive via the
+                # exact same path the late gate uses, so recovery re-dispatches a fresh card
+                # without burning a run. turn is 0 here, so terminal handling stays well-defined.
+                DEAD_CARDS.add(browser_id)
+                await p_evict_dead_card(dashboard_id, browser_id)
+                card_gone_streak = CARD_GONE_LIMIT
+                break
             if done_called or cancel_event.is_set():
                 break
 
