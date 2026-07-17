@@ -34,9 +34,12 @@ P_SYSTEM = (
     "Answer the user's request using ONLY the page text provided. Be direct and "
     "complete in a few sentences; quote exact titles/values from the page. End "
     "with nothing else.\n"
-    "If ANY part of what the request asks for is missing from the page text, "
-    "reply with exactly the single word INSUFFICIENT. A partial or hedged "
-    "answer is worse than declining: the caller has a full fallback."
+    "Reply with exactly the single word INSUFFICIENT only when the requested "
+    "information would live somewhere this page is not (a different page, behind "
+    "a click), so the caller should go get it. If THIS page is the right place "
+    "and it shows a value (even a placeholder) or visibly lacks the field, that "
+    "IS the answer: report exactly what the page shows. Never guess at anything "
+    "the page doesn't show."
 )
 
 
