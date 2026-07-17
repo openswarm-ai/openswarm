@@ -69,6 +69,8 @@ export interface Workflow {
   deleted_at?: string | null;
   system_prompt: string | null;
   use_synced_prompt: boolean;
+  /** Agents may run this workflow via the InvokeWorkflow tool (opt-in per workflow on the Actions page). */
+  exposed_as_tool?: boolean;
   steps: WorkflowStep[];
   actions: ActionsConfig;
   schedule: ScheduleConfig;

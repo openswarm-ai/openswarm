@@ -295,7 +295,7 @@ def send_response(id_, result=None, error=None):
     sys.stdout.flush()
 
 
-def _call(method: str, path: str, body=None) -> dict:
+def _call(method: str, path: str, body=None, timeout: int = 30) -> dict:
     url = BACKEND_BASE + path
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"}
@@ -303,7 +303,7 @@ def _call(method: str, path: str, body=None) -> dict:
         headers["Authorization"] = f"Bearer {BACKEND_AUTH}"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode() or "null") or {}
     except urllib.error.HTTPError as e:
         body_err = e.read().decode() if e.fp else str(e)
@@ -370,7 +370,12 @@ def handle_list(_args: dict) -> dict:
         title = w.get("title", "(untitled)")
         wid = w.get("id", "")
         state = "ON" if enabled else "off"
-        lines.append(f"  - {title} [{state}] {unit} at {hour:02d}:00  (id: {wid})")
+        desc = (w.get("description") or "").strip().replace("\n", " ")
+        if len(desc) > 120:
+            desc = desc[:117] + "..."
+        invocable = "  [agent-invocable]" if w.get("exposed_as_tool") else ""
+        suffix = f"  - {desc}" if desc else ""
+        lines.append(f"  - {title} [{state}] {unit} at {hour:02d}:00  (id: {wid}){invocable}{suffix}")
     return _ok("\n".join(lines))
 
 
@@ -560,7 +565,53 @@ def handle_suggest_convert_to_workflow(args: dict) -> dict:
     return {"content": [{"type": "text", "text": result}]}
 
 
+# Matches the backend's INVOKE_WAIT_TIMEOUT_S; the HTTP call outlives the run wait by a margin.
+INVOKE_WAIT_TIMEOUT_S = 15 * 60
+
+TOOLS.append({
+    "name": "InvokeWorkflow",
+    "description": (
+        "Run one of the user's saved workflows and WAIT for its result (status + full transcript). "
+        "Only workflows the user marked agent-invocable on the Actions page can be run; "
+        "ListScheduledWorkflows marks those with [agent-invocable]. Pass the workflow id or exact title. "
+        "Long workflows may take minutes; the call blocks until the run finishes (15 min cap)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "workflow": {"type": "string", "description": "Workflow id or exact title"},
+        },
+        "required": ["workflow"],
+    },
+})
+
+
+def handle_invoke_workflow(args: dict) -> dict:
+    ident = str(args.get("workflow") or "").strip()
+    if not ident:
+        return _err("workflow (id or exact title) is required")
+    r = _call("GET", "/list")
+    if "_error" in r:
+        return _err(r["_error"])
+    exposed = [w for w in r.get("workflows", []) if w.get("exposed_as_tool")]
+    match = next((w for w in exposed if w.get("id") == ident), None) or next(
+        (w for w in exposed if (w.get("title") or "").strip().lower() == ident.lower()), None)
+    if not match:
+        names = ", ".join(f"{w.get('title')} (id: {w.get('id')})" for w in exposed) or "(none)"
+        return _err(f"No agent-invocable workflow matches '{ident}'. Invocable workflows: {names}")
+    res = _call("POST", f"/{match['id']}/invoke", body={}, timeout=INVOKE_WAIT_TIMEOUT_S + 30)
+    if "_error" in res:
+        return _err(res["_error"])
+    if res.get("timed_out"):
+        return _ok(f"Run of '{match.get('title')}' is still going after 15 minutes; it continues in the background. Check the workflow's History for the outcome.")
+    status = res.get("status") or "unknown"
+    err_line = f"\nError: {res.get('error')}" if res.get("error") else ""
+    transcript = res.get("transcript") or "(no transcript)"
+    return _ok(f"Workflow '{match.get('title')}' run {status}.{err_line}\n\n=== RUN TRANSCRIPT ===\n{transcript}\n=== END TRANSCRIPT ===")
+
+
 HANDLERS = {
+    "InvokeWorkflow": handle_invoke_workflow,
     "ScheduleWorkflow": handle_schedule_workflow,
     "ListScheduledWorkflows": handle_list,
     "UpdateScheduledWorkflow": handle_update,
