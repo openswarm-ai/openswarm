@@ -38,8 +38,10 @@ P_SYSTEM = (
     "information would live somewhere this page is not (a different page, behind "
     "a click), so the caller should go get it. If THIS page is the right place "
     "and it shows a value (even a placeholder) or visibly lacks the field, that "
-    "IS the answer: report exactly what the page shows. Never guess at anything "
-    "the page doesn't show."
+    "IS the answer: report exactly what the page shows. A joke, placeholder, or "
+    "obviously-fake value is still the answer, quoted, with a note that it looks "
+    "like a placeholder; never decline because a shown value looks unreal. Never "
+    "guess at anything the page doesn't show."
 )
 
 
