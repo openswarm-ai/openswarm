@@ -73,13 +73,23 @@ def test_spawn_agent_unknown_parent_raises() -> None:
 def test_builtin_subagent_tools_stay_blocked() -> None:
     # The CLI's built-in sub-agent tool (Task on 2.1.122, Agent on older builds) must not be offered: out of the catalog AND hard-blocked at the SDK layer.
     from backend.apps.agents.manager.prompt.tool_catalog import FULL_TOOLS
+    from backend.apps.agents.manager.run.run_options_helpers import merge_hard_blocked_tools
     assert "Agent" not in FULL_TOOLS
     assert "Task" not in FULL_TOOLS
-    import inspect
-    from backend.apps.agents.manager.run import RunOptions
-    src = inspect.getsource(RunOptions)
-    block = src.split('disallowed_tools"] = [')[1][:400]
-    assert '"Agent",' in block and '"Task",' in block
+    blocked = merge_hard_blocked_tools([])
+    assert "Agent" in blocked and "Task" in blocked and "mcp__claude_ai_*" in blocked
+
+
+def test_effective_disallowed_reaches_the_sdk_deny_list() -> None:
+    # Regression: a plain assignment once DISCARDED the computed denies (Cron*/Skill/web-swap/per-tool MCP), leaving the runtime gate as the only wall. The merge must keep them AND append the hard blocks, deduped.
+    from backend.apps.agents.manager.run.run_options_helpers import merge_hard_blocked_tools
+    computed = ["CronCreate", "CronList", "CronDelete", "Skill", "mcp__gmail__DeleteEmail", "Task"]
+    merged = merge_hard_blocked_tools(computed)
+    for t in computed:
+        assert t in merged
+    assert "Agent" in merged and "mcp__claude_ai_*" in merged
+    assert merged.count("Task") == 1
+    assert merged[:len(computed)] == computed
 
 
 def test_spawn_server_schema_is_prompt_plus_background_only() -> None:

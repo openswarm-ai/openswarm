@@ -29,7 +29,7 @@ from backend.apps.agents.manager.prompt.tool_catalog import get_all_tool_names
 from backend.apps.agents.manager.prompt.prompt_context import resolve_mode
 from backend.apps.agents.manager.run.run_options_helpers import (
     pre_send_context_guard, set_framework_overhead, register_web_mcp_server,
-    append_web_tools_hint, inject_thinking_options,
+    append_web_tools_hint, inject_thinking_options, merge_hard_blocked_tools,
 )
 
 logger = logging.getLogger(__name__)
@@ -227,12 +227,8 @@ class RunOptions(AgentManagerProtocol):
             options_kwargs["extra_args"] = p_ea
 
         # The claude_code preset auto-attaches the user's claude.ai- connected partner MCPs (`mcp__claude_ai_*`). Those bypass our MCPActivate gate, don't share OAuth state with the OpenSwarm Gmail/Calendar/Drive connectors the user actually configured here, and confuse the model into picking the partner shim instead of our vetted server. Hard-block them at the SDK layer so the model can't even attempt the call.
-        options_kwargs["disallowed_tools"] = [
-            "mcp__claude_ai_*",
-            # The CLI's built-in sub-agent tool is replaced by our SpawnAgent MCP (prompt + run_in_background only); it is named Task on CLI 2.1.122 (Agent on older builds, kept for safety), and its subagent types resolve to models router setups can't serve.
-            "Agent",
-            "Task",
-        ]
+        # merge EXTENDS effective_disallowed: the old plain assignment silently discarded the computed denies (Cron*/Skill/web-swap/per-tool MCP) and left the runtime gate as the only wall.
+        options_kwargs["disallowed_tools"] = merge_hard_blocked_tools(effective_disallowed)
 
         if session.cwd:
             # Pre-existing sessions may have workspaces that predate the git-init block in launch_agent, leaving them without a valid HEAD. Ensure it here so subagent worktree-add always works.
