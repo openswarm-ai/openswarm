@@ -287,6 +287,16 @@ P_ACTION_ASK_RE = re.compile(
     re.I,
 )
 
+P_DELETE_INTENT_RE = re.compile(
+    r"\b(delete|remove|take ?down|unsend|retract|unpost|discard|trash)\b", re.I)
+
+
+def is_removal_task(task: str) -> bool:
+    """A delete/remove ask. The send-script must stand down on these: a removal task is also
+    task_is_send (the classifier keys on the verb), so without this the composer fill would
+    TYPE the target text and POST it (measured live: delete tasks re-posted the marker)."""
+    return bool(P_DELETE_INTENT_RE.search(task or ""))
+
 
 def deliverable_is_informational(summary: str, task: str = "") -> bool:
     """True if the run's final answer is GATHERED CONTENT (a list/report the model

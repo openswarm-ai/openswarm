@@ -38,6 +38,7 @@ from backend.apps.agents.browser.browser_loop import (
     completion_is_honest,
     deliverable_is_informational,
     interstitial_dismiss_target,
+    is_removal_task,
     recoverable_tool_error,
     replay_recheck_is_safe,
     stagnation_exhausted,
@@ -253,6 +254,24 @@ async def execute_browser_tool(
     p_action = p_summarize_action(tool_name, tool_input)
     if p_action:
         logger.info(f"[browser-action] {tool_name}: {p_action}  -> {browser_id}")
+
+    # BrowserDeleteItem: a model-invoked remove, translated to one BrowserEvaluate that runs the
+    # site's own delete flow scoped to the named item, then verifies it's gone (App-bridge pattern).
+    if tool_name == "BrowserDeleteItem":
+        from backend.apps.agents.browser import browser_delete_script
+        p_target = str((tool_input or {}).get("target_text") or "")
+        if len(p_target) < browser_delete_script.MIN_TARGET_CHARS:
+            return {"error": "target_text too short; give a longer distinctive snippet of the item's own text"}
+        p_res = await ws_manager.send_browser_command(
+            uuid4().hex, "evaluate", browser_id,
+            {"expression": browser_delete_script.delete_item_expression(p_target)}, tab_id=tab_id)
+        p_parsed = browser_delete_script.parse_delete_result(p_res)
+        logger.info(f"[browser-deleteitem] target={p_target[:40]!r} removed={p_parsed['removed']} stage={p_parsed['stage']}")
+        if p_parsed["removed"]:
+            return {"text": f'Removed the item containing "{p_target[:60]}" (verified gone).', "removed": True}
+        return {"text": (f'Did NOT remove it (stage={p_parsed["stage"]}): {p_parsed["msg"]}. If the item '
+                         "is not on this page, navigate to where it lives (e.g. your profile) and retry."),
+                "removed": False}
 
     # App bridge tools translate to a single BrowserEvaluate against the app's
     # window.OPENSWARM_APP, so they need no frontend command-handler changes.
@@ -1134,7 +1153,10 @@ async def run_browser_agent(
         "type": "text", "text": run_system_prompt,
         "cache_control": {"type": "ephemeral"},
     }]
+    from backend.apps.agents.browser import browser_delete_script
     p_cached_tools = [dict(t) for t in (APP_VISIBLE_TOOLS if app_mode else browser_schema.MODEL_VISIBLE_TOOLS)]
+    if not browser_delete_script.delete_tool_enabled():
+        p_cached_tools = [t for t in p_cached_tools if t["name"] != "BrowserDeleteItem"]
     if p_cached_tools:
         p_cached_tools[-1] = {**p_cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
@@ -1417,8 +1439,11 @@ async def run_browser_agent(
     # Staged-send script: prestage left a ready composer + the task quotes its payload -> code runs the fill/verify/send/verify tail the model spends 4-5 turns on. Success skips the loop entirely (turns=0); any pre-click ambiguity falls through untouched.
     from backend.apps.agents.browser import browser_send_script
     p_script = None
-    if (browser_send_script.script_enabled() and task_is_send and not app_mode
-            and preloaded_perception and not cancel_event.is_set()):
+    # A removal task ("delete the post that says 'X'") is also task_is_send (the classifier keys
+    # on the verb), so the send-script must stand down or it TYPES the target into a composer and
+    # POSTS it (measured live: delete tasks re-posted the marker). BrowserDeleteItem owns removals.
+    if (browser_send_script.script_enabled() and task_is_send and not is_removal_task(task)
+            and not app_mode and preloaded_perception and not cancel_event.is_set()):
         try:
             p_script = await asyncio.wait_for(browser_send_script.run_send_script(
                 task, browser_id, tab_id, preloaded_perception,

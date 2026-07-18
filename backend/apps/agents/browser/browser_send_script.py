@@ -204,11 +204,30 @@ async def run_send_script(
     made every real payload look ambiguous (r242/r243)."""
     t0 = time.monotonic()
     p_struct = os.environ.get("OSW_COMPOSER_STRUCT") == "1"
+
+    async def fresh_list() -> str:
+        try:
+            r = await asyncio.wait_for(
+                execute_tool("BrowserListInteractives", {}, browser_id, tab_id), timeout=6.0)
+            return str(r.get("text") or "") if isinstance(r, dict) and "error" not in r else ""
+        except Exception:
+            return ""
+
     # The name-based surface gate can't see an unnamed/non-standard composer; under the
     # structural flag, don't early-decline on it, the in-page finder gets a chance below.
     if not surface_supports_script(current_url, state_text) and not p_struct:
-        logger.info(f"[browser-sendscript] decline: no composer or opener in the perception ({current_url[:50]!r})")
-        return None
+        # The composer lazy-renders a beat after prestage snapshotted (X home does this ~half the
+        # time), so poll a fresh perception before declining, else a late box is a false "no
+        # composer" and the whole write flakes to the slow model path.
+        for wait_s in (0.6, 1.0, 1.4):
+            await asyncio.sleep(wait_s)
+            fresh = await fresh_list()
+            if surface_supports_script(current_url, fresh):
+                state_text = fresh
+                break
+        else:
+            logger.info(f"[browser-sendscript] decline: no composer or opener after poll ({current_url[:50]!r})")
+            return None
     if P_READONLY_RE.search(task) or P_READONLY_RE.search(payload_source or ""):
         logger.info("[browser-sendscript] decline: read-only directive in task")
         return None
@@ -220,14 +239,6 @@ async def run_send_script(
         logger.info("[browser-sendscript] decline: no unambiguous quoted payload")
         return None
     log: list[dict] = []
-
-    async def fresh_list() -> str:
-        try:
-            r = await asyncio.wait_for(
-                execute_tool("BrowserListInteractives", {}, browser_id, tab_id), timeout=6.0)
-            return str(r.get("text") or "") if isinstance(r, dict) and "error" not in r else ""
-        except Exception:
-            return ""
 
     composer = composer_index_in_state(state_text)
     if not composer:

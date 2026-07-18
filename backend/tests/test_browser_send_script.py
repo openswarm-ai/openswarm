@@ -59,12 +59,28 @@ X_COMPOSER = '[3]<textbox "Post your reply">\n[8]<button "Reply">'  # X, not Lin
 async def test_surface_gate_declines_when_no_composer_in_perception():
     """STRUCTURAL gate: a page whose perception has no compose-shaped textbox and no
     messaging opener declines UNTOUCHED, regardless of URL, so the script never fires
-    where a fill would land nowhere useful."""
-    ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
+    where a fill would land nowhere useful. Stays composer-less through the poll."""
+    ex, calls = make_exec([NO_COMPOSER, NO_COMPOSER, NO_COMPOSER, NO_COMPOSER])
     r = await ss.run_send_script(TASK, "b1", "", NO_COMPOSER, ex, send_submit_index_in_state,
                                  payload_in_textbox, payload_source=TASK, current_url=FEED_URL)
     assert r is None
     assert not calls["clicks"]
+
+
+@pytest.mark.asyncio
+async def test_surface_gate_polls_for_a_late_rendering_composer():
+    """The flake fix: the composer isn't in the FIRST perception (prestage snapshotted early,
+    X home does this ~half the time) but lazy-renders a beat later. The gate polls a fresh
+    perception before declining, so the write doesn't falsely fall to the slow model path."""
+    # initial perception (passed in) has no composer; the fresh poll finds X's composer, then
+    # the fill-committed and cleared states follow.
+    X_FILLED = '[3]<textbox "Post your reply" value="[test] hello world r9-os">\n[8]<button "Reply">'
+    X_SENT = '[3]<textbox "Post your reply">\n[1]<link "Home">'
+    ex, calls = make_exec([X_COMPOSER, X_FILLED, X_SENT])
+    r = await ss.run_send_script(TASK, "b1", "", NO_COMPOSER, ex, send_submit_index_in_state,
+                                 payload_in_textbox, payload_source=TASK, current_url=FEED_URL)
+    assert r is not None and r["sent"] is True  # it fired instead of a false decline
+    assert calls["clicks"]
 
 
 @pytest.mark.asyncio

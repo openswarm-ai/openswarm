@@ -762,6 +762,32 @@ BROWSER_TOOLS_SCHEMA = [
             "required": ["problem", "instruction"],
         },
     },
+    {
+        "name": "BrowserDeleteItem",
+        "description": (
+            "Remove ONE item visible on the CURRENT page, named by a distinctive snippet of its "
+            "own text. Navigate to where the item lives FIRST (your profile, the thread) so it is "
+            "on screen, then call this. It opens that item's overflow / 'More' menu, clicks "
+            "Delete/Remove, confirms, and verifies the item is gone. Use this instead of clicking "
+            "the '...' menu yourself, that menu is small and lazy-rendered and hand-clicking it is "
+            "unreliable. Only your OWN items expose a Delete option. Returns whether it was "
+            "verifiably removed; if it says the item isn't on the page, navigate to where it lives "
+            "and retry."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_text": {
+                    "type": "string",
+                    "description": (
+                        "A distinctive exact snippet of the target item's own text, long enough "
+                        "to match only that one item (a phrase or id from the post/comment)."
+                    ),
+                },
+            },
+            "required": ["target_text"],
+        },
+    },
 ]
 
 # Schema-forced batching: the model ignored every prompt-level batching invitation (0 adoptions across 8 measured runs), so the single-step mutating tools are not offered to it at all; acting means a BrowserBatch array, and the one deliberate solo path is BrowserClickIndex (irreversible step with expect, or a text-box fill). Executors and replay still support everything.
