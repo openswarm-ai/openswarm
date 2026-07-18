@@ -41,6 +41,19 @@ export const INTEGRATIONS: Integration[] = [
     ),
   },
   {
+    id: 'spotify',
+    name: "Spotify",
+    description: 'Control playback, search tracks, and manage playlists.',
+    mcp_config: { type: 'stdio', command: 'python', args: ['-m', 'backend.apps.spotify_mcp_shim'] },
+    color: '#1DB954',
+    website: 'https://open.spotify.com',
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <path fill="#1DB954" d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.063 17.188a.75.75 0 0 1-1.031.254c-2.826-1.727-6.375-2.121-10.562-1.185a.75.75 0 1 1-.318-1.46c4.58-1.0 8.53-.544 11.6 1.337a.75.75 0 0 1 .31 1.054zm1.437-3.656a.937.937 0 0 1-1.29.316c-3.24-1.98-8.175-2.56-11.97-1.43a.937.937 0 1 1-.546-1.79c4.28-1.31 9.66-.66 13.48 1.67a.937.937 0 0 1 .325 1.23zM18.5 8.5a1.125 1.125 0 0 1-1.558.378c-3.63-2.45-9.72-2.67-13.0-1.49A1.125 1.125 0 0 1 4.06 5.6c3.8-1.34 10.22-1.08 14.06 1.77A1.125 1.125 0 0 1 18.5 8.5z"/>
+      </svg>
+    ),
+  },
+  {
     id: 'tiktok',
     name: 'TikTok',
     description: 'Browse the For You feed, search, read videos and comments, like, comment, follow, and favorite, all from your own logged-in TikTok session. No API key.',

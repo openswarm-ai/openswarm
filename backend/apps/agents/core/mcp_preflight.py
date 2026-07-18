@@ -27,6 +27,11 @@ CURATED_SHORTLIST: list[CuratedEntry] = [
         "description": "Gmail, Calendar, Drive, Docs, Sheets, Slides; for reading/sending email, checking the user's schedule, and pulling context from their documents.",
     },
     {
+        "id": "Spotify",
+        "title": "Spotify",
+        "description": "Control playback, search music, and manage playlists; when the task involves music or audio."
+    },
+    {
         "id": "Microsoft 365",
         "title": "Microsoft 365",
         "description": "Outlook email, Calendar, OneDrive, Teams, Excel, OneNote; Microsoft-stack equivalent of Google Workspace.",
