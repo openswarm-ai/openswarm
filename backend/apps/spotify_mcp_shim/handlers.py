@@ -262,7 +262,7 @@ async def play_media(query: str, media_type: str, engine: Optional[str] = None) 
                 return {
                     "is_error": False,
                     "is_human_intervention": True,
-                    "message": "To allow me to play music for you, I need permission to interact with Safari.\n\n1. Open Safari and press `Option-Command-,` (or go to **Safari > Settings > Advanced**).\n2. Check the box at the bottom for **Show features for web developers**.\n3. In the menu bar at the top of your screen, click **Develop > Allow JavaScript from Apple Events**.\n\n(You might see a scary Apple warning about malicious programs. Don't worry, this is just a standard warning because you are giving an AI permission to click buttons on web pages on your behalf!)\n\nIf you'd prefer not to do this, you can just ask me to use **Google Chrome** instead!"
+                    "message": "To allow me to play music for you, I need permission to interact with Safari.\n\n1. Open Safari and press `Command-,` (or go to **Safari > Settings > Advanced**).\n2. Check the box at the bottom for **Show features for web developers**.\n3. In the menu bar at the top of your screen, click **Develop > Allow JavaScript from Apple Events**.\n\n(You might see a scary Apple warning about malicious programs. Don't worry, this is just a standard warning because you are giving an AI permission to click buttons on web pages on your behalf!)\n\nIf you'd prefer not to do this, you can just ask me to use **Google Chrome** instead!"
                 }
                 
             action_history = []
