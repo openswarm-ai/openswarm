@@ -59,4 +59,9 @@ class PrepResponse(BaseModel):
     app_title: str = ""
     app_prompt: str = ""
     app_reason: str = ""
+    # The "looked into this for you" card: a live web-research task aimed at the ONE thing this user
+    # keeps asking their AI about, so the reveal shows OpenSwarm going and finding it, not just planning.
+    research_title: str = ""
+    research_prompt: str = ""
+    research_reason: str = ""
     automations: List[PersonalizedAutomation] = Field(default_factory=list)

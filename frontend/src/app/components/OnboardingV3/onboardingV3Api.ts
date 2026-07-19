@@ -29,6 +29,9 @@ export interface PrepResponse {
   app_title: string;
   app_prompt: string;
   app_reason: string;
+  research_title: string;
+  research_prompt: string;
+  research_reason: string;
   automations: PersonalizedAutomation[];
 }
 

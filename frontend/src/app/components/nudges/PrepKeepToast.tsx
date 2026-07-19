@@ -5,7 +5,8 @@ import Button from '@mui/material/Button';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { deleteSession } from '@/shared/state/agentsSlice';
-import { removeCard } from '@/shared/state/dashboardLayoutSlice';
+import { removeCard, removeWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
+import { deleteWorkflow } from '@/shared/state/workflowsSlice';
 import { clearPrepped } from '@/shared/state/onboardingV3Slice';
 
 const RESOLVED_KEY = 'openswarm.prep-keep.v1';
@@ -31,8 +32,13 @@ const PrepKeepToast: React.FC = () => {
 
   const discard = useCallback(() => {
     for (const job of prepped) {
-      dispatch(removeCard(job.sessionId));
-      void dispatch(deleteSession({ sessionId: job.sessionId }));
+      if (job.kind === 'schedule' && job.workflowId) {
+        dispatch(removeWorkflowCard(job.workflowId));
+        void dispatch(deleteWorkflow(job.workflowId));
+      } else {
+        dispatch(removeCard(job.sessionId));
+        void dispatch(deleteSession({ sessionId: job.sessionId }));
+      }
     }
     finish();
   }, [prepped, dispatch, finish]);
