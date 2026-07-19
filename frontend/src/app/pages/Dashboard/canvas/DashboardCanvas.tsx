@@ -1,5 +1,7 @@
-import React, { type RefObject } from 'react';
+import React, { useEffect, type RefObject } from 'react';
 import Box from '@mui/material/Box';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { clearTiledCard, selectFullscreenCardId } from '@/shared/state/dashboardLayoutSlice';
 import DashboardHeader from './DashboardHeader';
 import TetherLayer from './TetherLayer';
 import DashboardCardLayer from './DashboardCardLayer';
@@ -7,6 +9,7 @@ import DashboardOverlays from './DashboardOverlays';
 import DashboardEmptyState from './DashboardEmptyState';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { useThemeAccent, useThemeWash } from '@/shared/styles/ThemeContext';
+import { GRAIN_URL } from '@/shared/styles/grainTexture';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 import type {
   CardPosition,
@@ -161,12 +164,27 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
 
   useWebviewSuspend(browserCards, canvas.panX, canvas.panY, canvas.zoom, canvas.viewportRef);
 
+  // macOS full screen: one card owns the whole window, every piece of chrome steps aside; Esc exits.
+  const dispatch = useAppDispatch();
+  const fullscreenCardId = useAppSelector(selectFullscreenCardId);
+  useEffect(() => {
+    if (!fullscreenCardId) return undefined;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      dispatch(clearTiledCard(fullscreenCardId));
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [fullscreenCardId, dispatch]);
+
   return (
     <>
     <Box sx={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
       {/* Floating header overlay */}
       <Box
         sx={{
+          display: fullscreenCardId ? 'none' : undefined,
           position: 'absolute',
           top: 0,
           left: 0,
@@ -176,7 +194,8 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           // p: 3 (24px) was leaving a chunky air gap between the sidebar edge and the dashboard header that read as "two disconnected panels" rather than one continuous surface. 0.75 (6px) tightens the inset so the header floats just inside the content area without losing its breathing room from the top-most pixel.
           p: 0.75,
           pb: 0,
-          background: `linear-gradient(to bottom, ${c.bg.page} 60%, transparent)`,
+          // No scrim: the header carries its own translucent pill (DashboardHeader), so a full-width
+          // page->transparent fade here just read as a light-leak band over the themed canvas.
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', pointerEvents: 'auto' }}>
@@ -201,6 +220,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
       {/* Canvas viewport */}
       <Box
         ref={canvas.viewportRef}
+        data-canvas-viewport
         onMouseDown={onViewportMouseDown}
         onMouseMove={onViewportMouseMove}
         onMouseUp={onViewportMouseUp}
@@ -229,14 +249,14 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
             }}
           />
         )}
-        {gradient && gradient.length > 1 && grain > 0 && (
+        {grain > 0 && (
           <Box
             sx={{
               position: 'absolute',
               inset: 0,
               pointerEvents: 'none',
-              opacity: grain * 0.6,
-              backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")",
+              opacity: grain,
+              backgroundImage: GRAIN_URL,
             }}
           />
         )}
@@ -304,11 +324,13 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
             />
           </div>
         )}
-        {sessionList.length === 0 && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0 && Object.keys(workflowCards).length === 0 && !workflowsHub && (
+        {sessionList.length === 0 && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0 && Object.keys(workflowCards).length === 0 && !workflowsHub && !fullscreenCardId && (
           <DashboardEmptyState c={c} onLaunch={onToolbarSend} onStarter={onStarter} />
         )}
       </Box>
 
+      {/* display:contents when visible so the overlays' absolute children keep positioning against the canvas root; display:none (not unmount) so the toolbar composer draft survives fullscreen. */}
+      <Box sx={{ display: fullscreenCardId ? 'none' : 'contents' }}>
       <DashboardOverlays
         canvas={canvas}
         dashboardId={dashboardId}
@@ -339,6 +361,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         toolbarPrefill={toolbarPrefill}
         toolbarPrefillMode={toolbarPrefillMode}
       />
+      </Box>
     </Box>
     </>
   );

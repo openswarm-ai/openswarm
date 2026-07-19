@@ -144,6 +144,10 @@ export interface DashboardLayoutState {
   recentlyClosed: ClosedCard[];
   glowingBrowserCards: Record<string, { sourceId: string; fading: boolean; label?: string }>;
   glowingAgentCards: Record<string, { sourceId: string; fading: boolean; sourceYRatio?: number; label?: string }>;
+  /** Window controls: cards collapsed to a title pill (many at once). Keyed by any card id (session/note/browser/view/workflow). */
+  minimizedCards: Record<string, boolean>;
+  /** macOS-style tiling: card id -> zone ('fullscreen' | 'fill' | 'left'|'right'|'top'|'bottom' | 'tl'|'tr'|'bl'|'br' | 't3l'|'t3c'|'t3r'). A tiled card renders at that viewport region (webview stays mounted); 'fullscreen' also hides the app chrome. */
+  tiledCards: Record<string, string>;
   persistedExpandedSessionIds: string[];
   nextZOrder: number;
   loading: boolean;
@@ -193,6 +197,8 @@ const initialState: DashboardLayoutState = {
   recentlyClosed: [],
   glowingBrowserCards: {},
   glowingAgentCards: {},
+  minimizedCards: {},
+  tiledCards: {},
   persistedExpandedSessionIds: [],
   nextZOrder: 1,
   loading: false,
@@ -530,6 +536,34 @@ const dashboardLayoutSlice = createSlice({
   name: 'dashboardLayout',
   initialState,
   reducers: {
+    // Window controls (traffic lights). Minimize toggles a per-card pill; tiling snaps a card to a
+    // macOS-style viewport zone (green = 'fill'). Minimizing an un-tiles and vice-versa, so a card
+    // is never both pill'd and tiled at once.
+    toggleMinimizeCard(state, action: PayloadAction<{ cardId: string }>) {
+      const id = action.payload.cardId;
+      if (state.minimizedCards[id]) {
+        delete state.minimizedCards[id];
+      } else {
+        state.minimizedCards[id] = true;
+        if (state.tiledCards[id]) delete state.tiledCards[id];
+      }
+    },
+    setTiledCard(state, action: PayloadAction<{ cardId: string; zone: string }>) {
+      const { cardId, zone } = action.payload;
+      state.tiledCards[cardId] = zone;
+      if (state.minimizedCards[cardId]) delete state.minimizedCards[cardId];
+    },
+    clearTiledCard(state, action: PayloadAction<string>) {
+      if (state.tiledCards[action.payload]) delete state.tiledCards[action.payload];
+    },
+    clearAllTiles(state) {
+      state.tiledCards = {};
+    },
+    clearCardWindowState(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      if (state.minimizedCards[id]) delete state.minimizedCards[id];
+      if (state.tiledCards[id]) delete state.tiledCards[id];
+    },
     setCardPosition(
       state,
       action: PayloadAction<{ sessionId: string; x: number; y: number }>
@@ -1729,6 +1763,11 @@ export const {
   setGlowingAgentCard,
   fadeGlowingAgentCard,
   clearGlowingAgentCard,
+  toggleMinimizeCard,
+  setTiledCard,
+  clearTiledCard,
+  clearAllTiles,
+  clearCardWindowState,
   clearPendingFocusBrowserId,
   clearPendingFocusViewCardId,
   addWorkflowCard,
@@ -1782,5 +1821,10 @@ export const reopenLastClosed = createAsyncThunk(
     dispatch(popClosedCard(entry.uid));
   }
 );
+
+export const selectFullscreenCardId = (state: { dashboardLayout: DashboardLayoutState }): string | null => {
+  const entry = Object.entries(state.dashboardLayout.tiledCards).find(([, zone]) => zone === 'fullscreen');
+  return entry ? entry[0] : null;
+};
 
 export default dashboardLayoutSlice.reducer;

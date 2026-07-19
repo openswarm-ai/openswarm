@@ -7,7 +7,6 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import CloseIcon from '@mui/icons-material/Close';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
@@ -16,8 +15,10 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import AddIcon from '@mui/icons-material/Add';
 import KeyboardArrowUpRounded from '@mui/icons-material/KeyboardArrowUpRounded';
 import { Output, SERVE_BASE } from '@/shared/state/outputsSlice';
-import { setViewCardPosition, setViewCardSize, setActiveViewCardId, recordClosedCard, addViewCard } from '@/shared/state/dashboardLayoutSlice';
+import { setViewCardPosition, setViewCardSize, setActiveViewCardId, recordClosedCard, addViewCard, setTiledCard, clearTiledCard, toggleMinimizeCard } from '@/shared/state/dashboardLayoutSlice';
 import { removeViewCardCleanly } from '@/shared/viewTeardown';
+import WindowControls from './WindowControls';
+import { useTiledStyle } from './tileZones';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { API_BASE, getAuthToken } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -135,6 +136,10 @@ const DashboardViewCard: React.FC<Props> = ({
   const previewRef = useRef<ViewPreviewHandle>(null);
   const activeViewCardId = useAppSelector((s) => s.dashboardLayout.activeViewCardId);
   const interactive = activeViewCardId === cardKey;
+  const tileZone = useAppSelector((s) => s.dashboardLayout.tiledCards[cardKey]);
+  const isMinimized = useAppSelector((s) => !!s.dashboardLayout.minimizedCards[cardKey]);
+  const tiledStyle = useTiledStyle(tileZone, panX, panY, zoom);
+  const isFullscreen = tileZone === 'fullscreen';
 
   // Deselecting the card exits interact mode (click anywhere else on canvas).
   useEffect(() => {
@@ -361,10 +366,15 @@ const DashboardViewCard: React.FC<Props> = ({
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   }, [computeResize, dispatch, cardKey]);
 
-  const handleRemove = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleRemove = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     dispatch(recordClosedCard({ kind: 'view', id: cardKey }));
     void removeViewCardCleanly(cardKey, dispatch);
+  };
+  const onMinimize = () => dispatch(toggleMinimizeCard({ cardId: cardKey }));
+  const onTile = (zone: string) => {
+    if (zone === 'restore') dispatch(clearTiledCard(cardKey));
+    else dispatch(setTiledCard({ cardId: cardKey, zone }));
   };
 
   // Spawn ANOTHER independent instance of this app (own runtime + ports); the reducer picks the next #N and the lifecycle hook fits + highlights it.
@@ -415,6 +425,7 @@ const DashboardViewCard: React.FC<Props> = ({
       data-select-type="view-card"
       data-select-id={cardKey}
       data-select-meta={JSON.stringify({ name: output.name, description: output.description, path: output.workspace_path })}
+      className="osw-card"
       onPointerDownCapture={() => onBringToFront?.(cardKey, 'view')}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
@@ -429,11 +440,13 @@ const DashboardViewCard: React.FC<Props> = ({
         // contain + willChange: own compositor layer so paint stays scoped (see AgentCard for full rationale).
         contain: 'layout style',
         willChange: 'transform',
-        left: displayX,
-        top: displayY,
-        width: displayW,
-        height: displayH,
-        borderRadius: `${c.radius.lg}px`,
+        left: tiledStyle ? tiledStyle.left : displayX,
+        top: tiledStyle ? tiledStyle.top : displayY,
+        width: tiledStyle ? tiledStyle.width : (isMinimized ? 220 : displayW),
+        height: tiledStyle ? tiledStyle.height : (isMinimized ? 44 : displayH),
+        transform: tiledStyle ? tiledStyle.transform : undefined,
+        transformOrigin: tiledStyle ? tiledStyle.transformOrigin : undefined,
+        borderRadius: isFullscreen ? '12px' : `${c.radius.lg}px`,
         border: isHighlighted
           ? `2px solid ${c.accent.primary}`
           : interactive
@@ -450,7 +463,7 @@ const DashboardViewCard: React.FC<Props> = ({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: (isDragging || isResizing) ? 999999 : cardZOrder,
+        zIndex: tiledStyle ? 999990 : (isDragging || isResizing) ? 999999 : cardZOrder,
         transition: noTransition ? 'none' : 'box-shadow 0.2s',
         '&:hover .resize-handle': { opacity: 1 },
         ...(isHighlighted && {
@@ -517,7 +530,10 @@ const DashboardViewCard: React.FC<Props> = ({
           userSelect: 'none',
         }}
       >
-        <GridViewRoundedIcon sx={{ fontSize: 16, color: c.accent.primary, flexShrink: 0 }} />
+        <Box onPointerDown={(e) => e.stopPropagation()} sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, mr: 0.25 }}>
+          <WindowControls onClose={() => handleRemove()} onMinimize={onMinimize} onTile={onTile} tiled={!!tileZone} />
+        </Box>
+        {!isMinimized && <GridViewRoundedIcon sx={{ fontSize: 16, color: c.accent.primary, flexShrink: 0 }} />}
         <Typography
           sx={{
             flex: 1,
@@ -537,7 +553,7 @@ const DashboardViewCard: React.FC<Props> = ({
           </Typography>
         )}
 
-        {showControls && (
+        {showControls && !isMinimized && (
           <>
             {hasWorkspace && (
               <Box
@@ -616,27 +632,18 @@ const DashboardViewCard: React.FC<Props> = ({
           </>
         )}
 
-        <Tooltip title={headerCollapsed ? 'Show toolbar' : 'Hide toolbar'} placement="top">
-          <IconButton
-            size="small"
-            onClick={(e) => { e.stopPropagation(); setHeaderPeek(false); setHeaderCollapsed((v) => !v); }}
-            onPointerDown={(e) => e.stopPropagation()}
-            sx={{ color: c.text.ghost, p: 0.5, '&:hover': { color: c.text.primary } }}
-          >
-            <KeyboardArrowUpRounded sx={{ fontSize: 18, transition: 'transform 0.15s', transform: headerCollapsed ? 'rotate(180deg)' : 'none' }} />
-          </IconButton>
-        </Tooltip>
-
-        <Tooltip title="Remove from dashboard" placement="top">
-          <IconButton
-            size="small"
-            onClick={handleRemove}
-            onPointerDown={(e) => e.stopPropagation()}
-            sx={{ color: c.text.ghost, p: 0.5, '&:hover': { color: c.status.error } }}
-          >
-            <CloseIcon sx={{ fontSize: 16 }} />
-          </IconButton>
-        </Tooltip>
+        {!isMinimized && (
+          <Tooltip title={headerCollapsed ? 'Show toolbar' : 'Hide toolbar'} placement="top">
+            <IconButton
+              size="small"
+              onClick={(e) => { e.stopPropagation(); setHeaderPeek(false); setHeaderCollapsed((v) => !v); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              sx={{ color: c.text.ghost, p: 0.5, '&:hover': { color: c.text.primary } }}
+            >
+              <KeyboardArrowUpRounded sx={{ fontSize: 18, transition: 'transform 0.15s', transform: headerCollapsed ? 'rotate(180deg)' : 'none' }} />
+            </IconButton>
+          </Tooltip>
+        )}
       </Box>
 
       {/* Preview body */}
@@ -677,7 +684,7 @@ const DashboardViewCard: React.FC<Props> = ({
       </Box>
 
       {/* Resize handles */}
-      {HANDLE_DEFS.map(({ dir, sx }) => (
+      {!isMinimized && HANDLE_DEFS.map(({ dir, sx }) => (
         <Box
           key={dir}
           className="resize-handle"

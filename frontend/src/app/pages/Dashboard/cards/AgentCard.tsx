@@ -11,7 +11,6 @@ import CheckIcon from '@mui/icons-material/Check';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CloseIcon from '@mui/icons-material/Close';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import { motion } from 'framer-motion';
 import {
@@ -31,7 +30,11 @@ import {
   clearGlowingAgentCard,
   removeCard,
   recordClosedCard,
+  setTiledCard,
+  clearTiledCard,
 } from '@/shared/state/dashboardLayoutSlice';
+import WindowControls from './WindowControls';
+import { useTiledStyle } from './tileZones';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { QuestionForm } from '@/app/pages/AgentChat/shell/ApprovalBar';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
@@ -620,9 +623,9 @@ const AgentCard: React.FC<Props> = ({
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   }, [computeResize, dispatch, session.id]);
 
-  const handleRemove = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
+  const handleRemove = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
     if (linkedWorkflowSidecarId) {
       dispatch(setCardSidecar({ workflowId: linkedWorkflowSidecarId, sessionId: null, kind: null }));
     }
@@ -637,6 +640,27 @@ const AgentCard: React.FC<Props> = ({
     } else {
       dispatch(closeSession({ sessionId: session.id }));
     }
+  };
+
+  const tileZone = useAppSelector((s) => s.dashboardLayout.tiledCards[session.id]);
+  const isFullscreen = tileZone === 'fullscreen';
+  // Fullscreen pins the card to the viewport, so while tiled the geometry must track canvas pan/zoom.
+  // Chat cards read the camera via a getter (not props) to avoid re-rendering on every pan tick, so
+  // we subscribe to the pan event ONLY while tiled (one card at most), and read fresh camera then.
+  const [tileTick, setTileTick] = useState(0);
+  useEffect(() => {
+    if (!tileZone) return undefined;
+    const onPan = (): void => setTileTick((t) => t + 1);
+    window.addEventListener('openswarm:canvas-pan-changed', onPan);
+    return () => window.removeEventListener('openswarm:canvas-pan-changed', onPan);
+  }, [tileZone]);
+  void tileTick;
+  const cam = getCanvasState();
+  const tiledStyle = useTiledStyle(tileZone, cam.panX, cam.panY, cam.zoom);
+  const onMinimize = (): void => { dispatch(collapseSession(session.id)); };
+  const onTile = (zone: string): void => {
+    if (zone === 'restore') dispatch(clearTiledCard(session.id));
+    else dispatch(setTiledCard({ cardId: session.id, zone }));
   };
 
 
@@ -692,17 +716,19 @@ const AgentCard: React.FC<Props> = ({
     <motion.div
       layout={false}
       initial={spawnInitial}
-      animate={{ opacity: 1, scale: 1, left: activeX, top: activeY }}
+      animate={{ opacity: 1, scale: 1, left: tiledStyle ? tiledStyle.left : activeX, top: tiledStyle ? tiledStyle.top : activeY }}
       exit={exitAnimation}
-      transition={spawnTransition}
+      // While tiled the card is pinned to the viewport: position must track pan instantly, never spring.
+      transition={tiledStyle ? { ...spawnTransition, left: { duration: 0 }, top: { duration: 0 } } : spawnTransition}
       onPointerDownCapture={() => onBringToFront?.(session.id, 'agent')}
       style={{
         position: 'absolute',
-        zIndex: isDragging || isResizing ? 999999 : cardZOrder,
+        zIndex: tiledStyle ? 999990 : isDragging || isResizing ? 999999 : cardZOrder,
       }}
     >
     <Box
       ref={cardBoxRef}
+      className="osw-card"
       data-select-type="agent-card"
       data-select-id={session.id}
       data-select-meta={JSON.stringify({ name: session.name || session.id, status: session.status, model: session.model, mode: session.mode })}
@@ -726,8 +752,10 @@ const AgentCard: React.FC<Props> = ({
         contain: 'layout style',
         // Each card gets its own compositor layer; hover-cross used to cost 100-200ms PRESENTATION by re-painting the whole canvas.
         willChange: 'transform',
-        width: localResize ? activeW : Math.max(cardWidth, MIN_W),
-        height: localResize ? activeH : (expanded ? Math.max(EXPANDED_OVERLAY_H, cardHeight) : 'auto'),
+        width: tiledStyle ? tiledStyle.width : (localResize ? activeW : Math.max(cardWidth, MIN_W)),
+        height: tiledStyle ? tiledStyle.height : (localResize ? activeH : (expanded ? Math.max(EXPANDED_OVERLAY_H, cardHeight) : 'auto')),
+        transform: tiledStyle ? tiledStyle.transform : undefined,
+        transformOrigin: tiledStyle ? tiledStyle.transformOrigin : undefined,
         bgcolor: c.bg.surface,
         border: isHighlighted
           ? `2px solid ${c.accent.primary}`
@@ -740,7 +768,7 @@ const AgentCard: React.FC<Props> = ({
                 : expanded
                   ? `1px solid ${c.border.strong}`
                   : `1px solid ${c.border.subtle}`,
-        borderRadius: 3,
+        borderRadius: isFullscreen ? '12px' : 3,
         p: 2,
         cursor: expanded ? 'default' : 'pointer',
         transition: noTransition
@@ -884,14 +912,10 @@ const AgentCard: React.FC<Props> = ({
         >
           <Box
             className="drag-handle"
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              mr: 0.5,
-              color: c.text.ghost,
-            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            sx={{ display: 'flex', alignItems: 'center', mr: 0.75, flexShrink: 0 }}
           >
-            <DragIndicatorIcon sx={{ fontSize: 16 }} />
+            <WindowControls onClose={() => handleRemove()} onMinimize={onMinimize} onTile={onTile} tiled={!!tileZone} />
           </Box>
           <Box
             sx={{
@@ -957,25 +981,6 @@ const AgentCard: React.FC<Props> = ({
                 />
               </Tooltip>
             </Fade>
-          </Box>
-          <Box
-            onPointerDown={(e) => e.stopPropagation()}
-            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, ml: 0.5 }}
-          >
-            <Tooltip title={isDraft ? 'Remove' : 'Close chat'}>
-              <IconButton
-                size="small"
-                onClick={handleRemove}
-                onMouseDown={(e) => e.stopPropagation()}
-                sx={{
-                  color: c.text.ghost,
-                  p: 0.5,
-                  '&:hover': { color: c.status.error, bgcolor: `${c.status.errorBg}` },
-                }}
-              >
-                <CloseIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
           </Box>
         </Box>
 

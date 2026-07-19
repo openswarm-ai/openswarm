@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
-import CloseIcon from '@mui/icons-material/Close';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import {
   setNotePosition,
@@ -10,10 +9,16 @@ import {
   updateNoteContent,
   setNoteColor,
   recordClosedCard,
+  toggleMinimizeCard,
+  setTiledCard,
+  clearTiledCard,
+  clearCardWindowState,
   NoteColor,
 } from '@/shared/state/dashboardLayoutSlice';
-import { useAppDispatch } from '@/shared/hooks';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import WindowControls from './WindowControls';
+import { useTiledStyle } from './tileZones';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -81,6 +86,8 @@ const NoteCard: React.FC<Props> = ({
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const palette = NOTE_PALETTE[color] || NOTE_PALETTE.yellow;
+  const isMinimized = useAppSelector((s) => !!s.dashboardLayout.minimizedCards[noteId]);
+  const tileZone = useAppSelector((s) => s.dashboardLayout.tiledCards[noteId]);
 
   const DRAG_THRESHOLD = 3;
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; startPanX: number; startPanY: number } | null>(null);
@@ -237,11 +244,19 @@ const NoteCard: React.FC<Props> = ({
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   }, [computeResize, dispatch, noteId]);
 
-  const handleRemove = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleRemove = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    dispatch(clearCardWindowState(noteId));
     dispatch(recordClosedCard({ kind: 'note', id: noteId }));
     dispatch(removeNote(noteId));
   };
+  const onMinimize = () => dispatch(toggleMinimizeCard({ cardId: noteId }));
+  const onTile = (zone: string) => {
+    if (zone === 'restore') dispatch(clearTiledCard(noteId));
+    else dispatch(setTiledCard({ cardId: noteId, zone }));
+  };
+  const tiledStyle = useTiledStyle(tileZone, panX, panY, zoom);
+  const isFullscreen = tileZone === 'fullscreen';
 
   const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
   const mdDy = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dy : 0;
@@ -252,6 +267,7 @@ const NoteCard: React.FC<Props> = ({
 
   return (
     <Box
+      className="osw-card"
       data-select-type="note-card"
       data-select-id={noteId}
       data-select-meta={JSON.stringify({ name: 'Note', content: content.slice(0, 60) })}
@@ -266,14 +282,16 @@ const NoteCard: React.FC<Props> = ({
       }}
       sx={{
         position: 'absolute',
-        left: displayX,
-        top: displayY,
-        width: displayW,
-        height: displayH,
+        left: tiledStyle ? tiledStyle.left : displayX,
+        top: tiledStyle ? tiledStyle.top : displayY,
+        width: tiledStyle ? tiledStyle.width : (isMinimized ? 190 : displayW),
+        height: tiledStyle ? tiledStyle.height : (isMinimized ? 32 : displayH),
+        transform: tiledStyle ? tiledStyle.transform : undefined,
+        transformOrigin: tiledStyle ? tiledStyle.transformOrigin : undefined,
         // contain + willChange: own compositor layer so paint stays scoped (see AgentCard for full rationale).
         contain: 'layout style',
         willChange: 'transform',
-        borderRadius: `${c.radius.md}px`,
+        borderRadius: isFullscreen ? '12px' : `${c.radius.md}px`,
         bgcolor: palette.bg,
         border: isHighlighted
           ? `2px solid ${c.accent.primary}`
@@ -285,7 +303,7 @@ const NoteCard: React.FC<Props> = ({
             : isSelected
               ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
               : c.shadow.sm,
-        zIndex: (isDragging || isResizing) ? 999999 : cardZOrder,
+        zIndex: tiledStyle ? 999990 : (isDragging || isResizing) ? 999999 : cardZOrder,
         display: 'flex',
         flexDirection: 'column',
         '&:hover .note-controls': { opacity: 1 },
@@ -298,19 +316,27 @@ const NoteCard: React.FC<Props> = ({
         onPointerUp={handleDragPointerUp}
         onPointerCancel={handleDragPointerUp}
         sx={{
-          height: HEADER_H,
+          height: isMinimized ? '100%' : HEADER_H,
           flexShrink: 0,
           cursor: isDragging ? 'grabbing' : 'grab',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 0.75,
           px: 0.75,
           touchAction: 'none',
         }}
       >
+        <Box onPointerDown={(e) => e.stopPropagation()} sx={{ display: 'flex', alignItems: 'center' }}>
+          <WindowControls onClose={() => handleRemove()} onMinimize={onMinimize} onTile={onTile} tiled={!!tileZone} />
+        </Box>
+        {isMinimized && (
+          <Box sx={{ flex: 1, minWidth: 0, fontSize: '0.8rem', color: palette.text, opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {content.trim() || 'Note'}
+          </Box>
+        )}
         <Box
           className="note-controls"
-          sx={{ display: 'flex', alignItems: 'center', gap: 0.25, opacity: 0, transition: 'opacity 0.15s' }}
+          sx={{ ml: 'auto', opacity: 0, transition: 'opacity 0.15s', display: isMinimized ? 'none' : 'flex' }}
           onPointerDown={(e) => e.stopPropagation()}
         >
           <IconButton
@@ -319,19 +345,6 @@ const NoteCard: React.FC<Props> = ({
             sx={{ p: 0.25, color: palette.text, opacity: 0.55, '&:hover': { opacity: 1, bgcolor: 'rgba(0,0,0,0.06)' } }}
           >
             <PaletteOutlinedIcon sx={{ fontSize: 13 }} />
-          </IconButton>
-        </Box>
-        <Box
-          className="note-controls"
-          sx={{ opacity: 0, transition: 'opacity 0.15s' }}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <IconButton
-            size="small"
-            onClick={handleRemove}
-            sx={{ p: 0.25, color: palette.text, opacity: 0.55, '&:hover': { opacity: 1, bgcolor: 'rgba(0,0,0,0.06)' } }}
-          >
-            <CloseIcon sx={{ fontSize: 13 }} />
           </IconButton>
         </Box>
       </Box>
@@ -378,8 +391,9 @@ const NoteCard: React.FC<Props> = ({
         </Box>
       )}
 
-      {/* Editable content */}
-      <Box sx={{ flex: 1, p: 1, pt: 0.25, display: 'flex', minHeight: 0 }}>
+      {/* Editable content. Fullscreen = focus-writing mode: reading-size type in a centered column, like Bear/Arc, not 12px lost in a 2800px card. */}
+      {!isMinimized && (
+      <Box sx={{ flex: 1, p: 1, pt: 0.25, display: 'flex', justifyContent: 'center', minHeight: 0 }}>
         <textarea
           ref={textareaRef}
           value={content}
@@ -396,15 +410,17 @@ const NoteCard: React.FC<Props> = ({
             background: 'transparent',
             color: palette.text,
             fontFamily: c.font.sans,
-            fontSize: '0.85rem',
-            lineHeight: 1.45,
-            padding: 0,
+            fontSize: isFullscreen ? 'clamp(1.1rem, 1.3vw, 1.5rem)' : '0.85rem',
+            lineHeight: isFullscreen ? 1.6 : 1.45,
+            padding: isFullscreen ? '4vh 0 0' : 0,
+            maxWidth: isFullscreen ? 'min(72ch, 82%)' : undefined,
           }}
         />
       </Box>
+      )}
 
       {/* Resize handles */}
-      {HANDLE_DEFS.map(({ dir, sx }) => (
+      {!isMinimized && HANDLE_DEFS.map(({ dir, sx }) => (
         <Box
           key={dir}
           onPointerDown={handleResizeDown(dir)}
