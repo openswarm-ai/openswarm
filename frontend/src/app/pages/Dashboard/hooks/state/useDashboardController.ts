@@ -173,6 +173,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     viewportRef: canvas.viewportRef,
     canvasStateRef,
     createWelcomeDraft,
+    fitToCards: canvas.actions.fitToCards,
   });
 
   // Silently harvest the user's provider chat history the first time they open ChatGPT/Claude in-app, then sharpen their saved suggestions.
