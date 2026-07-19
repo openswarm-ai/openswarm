@@ -66,7 +66,7 @@ interface DashboardCanvasProps {
   onViewportMouseMove: (e: React.MouseEvent) => void;
   onViewportMouseUp: (e: React.MouseEvent) => void;
   onViewportDoubleClick: (e: React.MouseEvent) => void;
-  onCardSelect: (id: string, type: CardType, shiftKey: boolean) => void;
+  onCardSelect: (id: string, type: CardType, shiftKey: boolean, originTarget?: EventTarget | null) => void;
   onDragStart: (id: string, type: CardType) => void;
   onDragMove: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd: (dx: number, dy: number, didDrag: boolean) => void;

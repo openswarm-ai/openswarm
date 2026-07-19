@@ -22,6 +22,19 @@ function isCardTarget(target: EventTarget | null, boundary: EventTarget | null):
   return false;
 }
 
+const CONTROL_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'WEBVIEW']);
+
+// True when the press landed on a real control (text field, button, browser URL bar/tabs, note textarea, webview) rather than the card's frame. Walk up ONLY to the card root so a button living above the card never counts.
+function pressLandedOnControl(target: EventTarget | null | undefined): boolean {
+  let el = target as HTMLElement | null;
+  while (el) {
+    if (el.hasAttribute(SELECT_ATTR)) return false;
+    if (CONTROL_TAGS.has(el.tagName) || el.isContentEditable || el.getAttribute('role') === 'button') return true;
+    el = el.parentElement;
+  }
+  return false;
+}
+
 interface UseDashboardInteractionsArgs {
   canvas: Canvas;
   selection: Selection;
@@ -44,7 +57,7 @@ export function useDashboardInteractions({
   // Delay single-click collapse so double-click can override
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCardSelect = useCallback((id: string, type: CardType, shiftKey: boolean) => {
+  const handleCardSelect = useCallback((id: string, type: CardType, shiftKey: boolean, originTarget?: EventTarget | null) => {
     report('dashboard', 'card_clicked', { card_type: type, shift: shiftKey });
     if (shiftKey) {
       selection.selectCard(id, type, true);
@@ -53,6 +66,9 @@ export function useDashboardInteractions({
 
     selection.selectCard(id, type, false);
     dispatch(bringToFront({ id, type }));
+
+    // Clicking a control INSIDE a card (text field, button, browser URL bar/tabs, note textarea) selects + raises it but must NOT re-center the camera onto it: yanking focus to a card just to click into its input is hostile (same reasoning as the guest-page and Workflows carve-outs). Card frame/body clicks still auto-focus.
+    if (pressLandedOnControl(originTarget)) return;
 
     // The Workflows window is an app you click around inside, not a card you re-center every tap. Single-click only raises + selects it; double-click still zoom-to-fits (handleCardDoubleClick). Without this, clicking any button inside it yanked the canvas into a re-zoom.
     if (type === 'workflows-hub' || type === 'workflows-monitor') return;

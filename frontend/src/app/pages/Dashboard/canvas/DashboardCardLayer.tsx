@@ -51,7 +51,7 @@ interface DashboardCardLayerProps {
   revealSpawnedRef: RefObject<Set<string>>;
   measuredHeightsRef: RefObject<Record<string, number>>;
   getCanvasState: () => { panX: number; panY: number; zoom: number };
-  onCardSelect: (id: string, type: CardType, shiftKey: boolean) => void;
+  onCardSelect: (id: string, type: CardType, shiftKey: boolean, originTarget?: EventTarget | null) => void;
   onDragStart: (id: string, type: CardType) => void;
   onDragMove: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd: (dx: number, dy: number, didDrag: boolean) => void;

@@ -164,7 +164,7 @@ interface Props {
   multiDragDelta?: { dx: number; dy: number } | null;
   // Belongs to a non-active dashboard but kept mounted-hidden so its webContents + sessionStorage survive the switch.
   keepAliveHidden?: boolean;
-  onCardSelect?: (id: string, type: 'agent' | 'view' | 'browser', shiftKey: boolean) => void;
+  onCardSelect?: (id: string, type: 'agent' | 'view' | 'browser', shiftKey: boolean, originTarget?: EventTarget | null) => void;
   onDragStart?: (id: string, type: 'agent' | 'view' | 'browser') => void;
   onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
@@ -843,8 +843,8 @@ const BrowserCard: React.FC<Props> = ({
       data-keepalive-hidden={keepAliveHidden ? '1' : undefined}
       onPointerDownCapture={(e: React.PointerEvent) => {
         onBringToFront?.(browserId, 'browser');
-        // Capture-phase so chrome clicks (tab strip, URL bar) the children swallow still select the card; clicks inside the guest page never reach the host at all. Shift keeps the bubbled toggle path.
-        if (e.button === 0 && !e.shiftKey) onCardSelect?.(browserId, 'browser', false);
+        // Capture-phase so chrome clicks (tab strip, URL bar) the children swallow still select the card; clicks inside the guest page never reach the host at all. Shift keeps the bubbled toggle path. Pass the target so URL-bar/tab presses select without yanking the camera.
+        if (e.button === 0 && !e.shiftKey) onCardSelect?.(browserId, 'browser', false, e.target);
       }}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;

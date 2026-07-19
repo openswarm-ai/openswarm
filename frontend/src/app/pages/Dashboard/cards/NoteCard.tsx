@@ -64,7 +64,7 @@ interface Props {
   color: NoteColor;
   cardZOrder?: number;
   autoFocus?: boolean;
-  onCardSelect?: (id: string, type: 'agent' | 'view' | 'browser' | 'note', shiftKey: boolean) => void;
+  onCardSelect?: (id: string, type: 'agent' | 'view' | 'browser' | 'note', shiftKey: boolean, originTarget?: EventTarget | null) => void;
   onDragStart?: (id: string, type: 'agent' | 'view' | 'browser' | 'note') => void;
   onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
@@ -261,8 +261,8 @@ const NoteCard: React.FC<Props> = ({
       data-select-meta={JSON.stringify({ name: 'Note', content: content.slice(0, 60) })}
       onPointerDownCapture={(e: React.PointerEvent) => {
         onBringToFront?.(noteId, 'note');
-        // Capture-phase so a click the textarea swallows still selects the note; shift keeps the bubbled toggle path.
-        if (e.button === 0 && !e.shiftKey) onCardSelect?.(noteId, 'note', false);
+        // Capture-phase so a click the textarea swallows still selects the note; shift keeps the bubbled toggle path. Pass the target so a textarea press selects without yanking the camera.
+        if (e.button === 0 && !e.shiftKey) onCardSelect?.(noteId, 'note', false, e.target);
       }}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
