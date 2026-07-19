@@ -103,6 +103,13 @@ fi
 # directly), so the env stays unset in production and uvicorn boots in
 # its leaner non-reload mode.
 export OPENSWARM_DEV=1
+
+# Opt-in dev telemetry. Dev normally never reports (the analytics client falls back to a dead local ingest); set OPENSWARM_ANALYTICS=1 (e.g. a hackathon cohort) to report to the prod edge, tagged with a -dev channel so those events stay filterable from real installs. Off by default so a stray `bash run.sh` never phones home.
+if [ "${OPENSWARM_ANALYTICS:-0}" = "1" ]; then
+    export OPENSWARM_ANALYTICS_URL="${OPENSWARM_ANALYTICS_URL:-https://analytics.openswarm.com}"
+    export OPENSWARM_APP_CHANNEL="${OPENSWARM_APP_CHANNEL:-dev}"
+fi
+
 echo -e "${BLUE}${BOLD}[backend]${RESET}  Starting backend server..."
 bash "$PROJECT_ROOT/backend/run.sh" > >(
     while IFS= read -r line; do
