@@ -21,14 +21,20 @@ def p_ok(payload) -> dict:
         return {"content": [{"type": "text", "text": payload}]}
     return {"content": [{"type": "text", "text": json.dumps(payload, indent=2, default=str)}]}
 
-from backend.apps.spotify_mcp_shim.handlers import play_track
+import asyncio
+from backend.apps.spotify_mcp_shim import handlers
+
+def execute_tool_function(func, args: dict):
+    if asyncio.iscoroutinefunction(func):
+        return asyncio.run(func(**args))
+    return func(**args)
 
 def handle_tool_call(name: str, args: dict) -> dict:
-    match name:
-        case "play_track":
-            return p_ok(play_track(**args))
-
-    return p_err(f"Unknown tool: {name}")
+    handler = getattr(handlers, name, None)
+    if not handler or not callable(handler):
+        return p_err(f"Unknown tool: {name}")
+        
+    return p_ok(execute_tool_function(handler, args))
 
 def main():
     for line in sys.stdin:
