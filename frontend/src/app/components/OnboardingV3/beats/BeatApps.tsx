@@ -1,6 +1,5 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Check } from 'lucide-react';
 import { INTEGRATIONS } from '@/app/pages/Tools/integrations';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import BeatShell from './BeatShell';
@@ -29,9 +28,11 @@ const BeatApps: React.FC<{
       c={c}
       title="Choose the apps you live in."
       body="I'll shape your starting canvas around them."
-      nextLabel={picks.length > 0 ? 'Next' : 'Skip for now'}
+      nextLabel="Next"
       onNext={onNext}
       onBack={onBack}
+      secondaryLabel="Skip for now"
+      onSecondary={onNext}
     >
       <motion.div
         initial={{ opacity: 0, y: 16, scale: 0.97 }}
@@ -48,9 +49,10 @@ const BeatApps: React.FC<{
           ))}
           <span style={{ marginLeft: 8, fontSize: '0.72rem', fontWeight: 600, color: c.text.tertiary, letterSpacing: '0.04em' }}>OpenSwarm</span>
         </div>
-        <div style={{ padding: 18, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(108px, 1fr))', gap: 11 }}>
+        <div style={{ padding: 18, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 12 }}>
           {entries.map((entry, i) => {
             const picked = picks.includes(entry.id);
+            // Arc's picked tile lights up in the APP's own brand color, not one shared accent.
             return (
               <motion.button
                 key={entry.id}
@@ -59,21 +61,17 @@ const BeatApps: React.FC<{
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ type: 'spring', stiffness: 360, damping: 24, delay: 0.28 + i * 0.035 }}
                 style={{
-                  position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9,
-                  padding: '16px 8px 12px', borderRadius: c.radius.md,
-                  border: `1.5px solid ${picked ? c.accent.primary : c.border.medium}`,
-                  background: c.bg.surface, cursor: 'pointer', fontFamily: 'inherit',
-                  boxShadow: picked ? `0 0 0 3px ${c.accent.primary}22` : c.shadow.sm,
-                  transition: 'border-color 140ms ease, box-shadow 140ms ease',
+                  position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 9,
+                  padding: '18px 8px', borderRadius: 16,
+                  border: `2px solid ${picked ? entry.color : 'transparent'}`,
+                  background: picked ? `${entry.color}14` : c.bg.secondary,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  boxShadow: picked ? `0 0 0 4px ${entry.color}22` : 'none',
+                  transition: 'border-color 150ms ease, box-shadow 150ms ease, background 150ms ease',
                 }}
               >
-                {picked && (
-                  <span style={{ position: 'absolute', top: 6, right: 6, width: 17, height: 17, borderRadius: 999, background: c.accent.primary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Check size={11} color="#fff" />
-                  </span>
-                )}
-                <span style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{entry.icon}</span>
-                <span style={{ fontSize: '0.78rem', fontWeight: 500, color: c.text.secondary, textAlign: 'center' }}>{entry.name}</span>
+                <span style={{ width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{entry.icon}</span>
+                <span style={{ fontSize: '0.76rem', fontWeight: 500, color: picked ? c.text.primary : c.text.secondary, textAlign: 'center' }}>{entry.name}</span>
               </motion.button>
             );
           })}

@@ -51,13 +51,15 @@ const BeatTheme: React.FC<{
       nextLabel="Next"
       onNext={onNext}
       onBack={onBack}
+      stageDark
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.94, y: 14 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 220, damping: 24, delay: 0.2 }}
         style={{
-          width: 'min(430px, 100%)', borderRadius: 20, background: c.bg.inverse,
+          // Fixed dark: the picker is a physical device, it doesn't repaint with the theme it edits.
+          width: 'min(430px, 100%)', borderRadius: 20, background: '#141413',
           boxShadow: '0 18px 50px rgba(0,0,0,0.3)', padding: '14px 16px 18px', boxSizing: 'border-box',
           display: 'flex', flexDirection: 'column', gap: 12,
         }}
@@ -72,7 +74,7 @@ const BeatTheme: React.FC<{
                 width: 34, height: 28, borderRadius: 8, border: 'none', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: choice === key ? c.accent.primary : 'transparent',
-                color: choice === key ? '#fff' : c.text.inverse + '88',
+                color: choice === key ? '#fff' : 'rgba(255,255,255,0.55)',
                 transition: 'background 140ms ease, color 140ms ease',
               }}
             >

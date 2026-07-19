@@ -1,9 +1,14 @@
-import React, { useCallback, useRef } from 'react';
-import { Minus, Plus } from 'lucide-react';
+import React, { useCallback, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
 import { hexToHsl, hslToHex } from '@/shared/styles/claudeTokens';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
+import { Knob, SquiggleSlider } from './WashDials';
 
-export const ACCENT_PRESETS = ['#ae5630', '#b0453c', '#8e5cb8', '#3a6fc4', '#2e8f6f', '#b08b2e', '#c2588f', '#5c6470'];
+export const ACCENT_PRESETS = [
+  '#ae5630', '#b0453c', '#8e5cb8', '#3a6fc4', '#2e8f6f', '#b08b2e', '#c2588f', '#5c6470',
+  '#e8b4b8', '#f2d0a4', '#a8d8b9', '#9ec5e8', '#c3aed6', '#f7e8a4', '#87d1c6', '#d98cb3',
+];
+const PRESETS_PER_PAGE = 8;
 const MAX_STOPS = 3;
 
 function stopToXY(hex: string): { x: number; y: number } | null {
@@ -30,6 +35,8 @@ const AccentColorPad: React.FC<{
   const padRef = useRef<HTMLDivElement | null>(null);
   const grabbedRef = useRef<number | null>(null);
   const lastApplyRef = useRef(0);
+  const [presetPage, setPresetPage] = useState(0);
+  const presetPages = Math.ceil(ACCENT_PRESETS.length / PRESETS_PER_PAGE);
 
   const pointToHex = useCallback((clientX: number, clientY: number): string | null => {
     const pad = padRef.current;
@@ -104,9 +111,16 @@ const AccentColorPad: React.FC<{
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         style={{
+          // Arc's pad: dark dot-grid field with the spectrum only ghosting through, the picked dots carry the color.
           position: 'relative', height, borderRadius: c.radius.lg, cursor: 'crosshair',
           border: `1px solid ${c.border.medium}`, touchAction: 'none',
-          background: 'linear-gradient(to bottom, rgba(255,255,255,0.55), rgba(0,0,0,0.45)), linear-gradient(to right, hsl(0,72%,55%), hsl(60,72%,55%), hsl(120,72%,55%), hsl(180,72%,55%), hsl(240,72%,55%), hsl(300,72%,55%), hsl(360,72%,55%))',
+          background: [
+            'radial-gradient(rgba(255,255,255,0.13) 1px, transparent 1.4px)',
+            'linear-gradient(rgba(30,29,27,0.84), rgba(30,29,27,0.84))',
+            'linear-gradient(to bottom, rgba(255,255,255,0.55), rgba(0,0,0,0.45))',
+            'linear-gradient(to right, hsl(0,72%,55%), hsl(60,72%,55%), hsl(120,72%,55%), hsl(180,72%,55%), hsl(240,72%,55%), hsl(300,72%,55%), hsl(360,72%,55%))',
+          ].join(', '),
+          backgroundSize: '14px 14px, auto, auto, auto',
         }}
       >
         {stops.map((hex, i) => {
@@ -150,8 +164,16 @@ const AccentColorPad: React.FC<{
           </button>
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-        {ACCENT_PRESETS.map((hex) => (
+      {/* Arc's preset carousel: a page of dots between chevrons. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <button
+          onClick={() => setPresetPage((p) => Math.max(0, p - 1))}
+          disabled={presetPage === 0}
+          style={{ border: 'none', background: 'transparent', padding: 0, cursor: presetPage === 0 ? 'default' : 'pointer', color: c.text.tertiary, opacity: presetPage === 0 ? 0.35 : 1, display: 'flex' }}
+        >
+          <ChevronLeft size={15} />
+        </button>
+        {ACCENT_PRESETS.slice(presetPage * PRESETS_PER_PAGE, (presetPage + 1) * PRESETS_PER_PAGE).map((hex) => (
           <button
             key={hex}
             onClick={() => onChange([hex])}
@@ -163,6 +185,13 @@ const AccentColorPad: React.FC<{
           />
         ))}
         <button
+          onClick={() => setPresetPage((p) => Math.min(presetPages - 1, p + 1))}
+          disabled={presetPage >= presetPages - 1}
+          style={{ border: 'none', background: 'transparent', padding: 0, cursor: presetPage >= presetPages - 1 ? 'default' : 'pointer', color: c.text.tertiary, opacity: presetPage >= presetPages - 1 ? 0.35 : 1, display: 'flex' }}
+        >
+          <ChevronRight size={15} />
+        </button>
+        <button
           onClick={() => onChange(null)}
           style={{
             marginLeft: 'auto', border: 'none', background: 'transparent', padding: 0,
@@ -172,16 +201,11 @@ const AccentColorPad: React.FC<{
           Reset
         </button>
       </div>
+      {/* Arc's dials row: wavy line = grain, round knob = intensity. */}
       {wash && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.78rem', color: c.text.tertiary }}>
-            <span style={{ width: 52, flexShrink: 0 }}>Intensity</span>
-            <input type="range" min={0} max={1} step={0.01} value={wash.opacity} onChange={(e) => wash.onOpacity(parseFloat(e.target.value))} style={{ flex: 1, accentColor: c.accent.primary }} />
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.78rem', color: c.text.tertiary }}>
-            <span style={{ width: 52, flexShrink: 0 }}>Grain</span>
-            <input type="range" min={0} max={1} step={0.01} value={wash.grain} onChange={(e) => wash.onGrain(parseFloat(e.target.value))} style={{ flex: 1, accentColor: c.accent.primary }} />
-          </label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, color: c.text.tertiary }}>
+          <SquiggleSlider value={wash.grain} onChange={wash.onGrain} width={190} />
+          <Knob value={wash.opacity} onChange={wash.onOpacity} />
         </div>
       )}
     </div>
