@@ -4,7 +4,6 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Collapse from '@mui/material/Collapse';
-import SearchIcon from '@mui/icons-material/Search';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import CheckIcon from '@mui/icons-material/Check';
@@ -239,7 +238,7 @@ const DynamicIsland: React.FC = () => {
   const [userExpanded, setUserExpanded] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // Global Cmd/Ctrl+K opens search palette from anywhere.
+  // Global Cmd/Ctrl+K, or the sidebar search pill, opens the palette from anywhere.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
@@ -247,8 +246,13 @@ const DynamicIsland: React.FC = () => {
         setSearchOpen((prev) => !prev);
       }
     };
+    const openFromSidebar = (): void => setSearchOpen(true);
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('openswarm:open-search', openFromSidebar);
+    return () => {
+      window.removeEventListener('keydown', handler);
+      window.removeEventListener('openswarm:open-search', openFromSidebar);
+    };
   }, []);
 
   // Cmd/Ctrl+L: clear the chat (focused card > activeSessionId > sole session); same as /clear.
@@ -501,6 +505,8 @@ const DynamicIsland: React.FC = () => {
   return (
     <>
     {islandState === 'compact-actionable' && <style>{glowKeyframes}</style>}
+    {/* Search moved to the sidebar, so the island only appears for live agent activity, not idle. */}
+    {islandState !== 'idle' && (
     <motion.div
       ref={islandRef}
       layout
@@ -538,9 +544,6 @@ const DynamicIsland: React.FC = () => {
         }}
       >
         <AnimatePresence mode="wait">
-          {islandState === 'idle' && (
-            <IdlePill key="idle" c={c} onClick={() => setSearchOpen(true)} />
-          )}
           {islandState === 'compact' && (
             <CompactPill
               key="compact"
@@ -584,64 +587,11 @@ const DynamicIsland: React.FC = () => {
         </AnimatePresence>
       </motion.div>
     </motion.div>
+    )}
     <GlobalSearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </>
   );
 };
-
-const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-const SEARCH_HOTKEY = isMac ? '⌘K' : 'Ctrl+K';
-
-const IdlePill: React.FC<{ c: ReturnType<typeof useClaudeTokens>; onClick: () => void }> = ({ c, onClick }) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.92 }}
-    animate={{ opacity: 1, scale: 1 }}
-    exit={{ opacity: 0, scale: 0.92 }}
-    transition={{ duration: 0.2 }}
-  >
-    <Tooltip title={`Search (${SEARCH_HOTKEY})`} arrow placement="bottom">
-      <Box
-        onClick={(e) => { e.stopPropagation(); onClick(); }}
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          px: 1.5,
-          height: 30,
-          userSelect: 'none',
-          cursor: 'pointer',
-          transition: 'background 0.15s',
-          '&:hover': { bgcolor: 'rgba(255,255,255,0.04)' },
-        }}
-      >
-        <SearchIcon sx={{ fontSize: 16, color: c.text.muted, flexShrink: 0 }} />
-        <Typography
-          sx={{
-            color: c.text.muted,
-            fontSize: '0.78rem',
-            fontWeight: 400,
-            lineHeight: 1,
-            whiteSpace: 'nowrap',
-            flex: 1,
-          }}
-        >
-          Search…
-        </Typography>
-        <Typography
-          sx={{
-            color: c.text.ghost,
-            fontSize: '0.7rem',
-            fontFamily: c.font.mono,
-            lineHeight: 1,
-            opacity: 0.7,
-          }}
-        >
-          {SEARCH_HOTKEY}
-        </Typography>
-      </Box>
-    </Tooltip>
-  </motion.div>
-);
 
 const CompactPill: React.FC<{
   c: ReturnType<typeof useClaudeTokens>;
