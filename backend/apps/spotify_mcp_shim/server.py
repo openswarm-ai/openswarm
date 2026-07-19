@@ -1,5 +1,6 @@
 import sys
 import json
+import inspect
 
 from backend.apps.spotify_mcp_shim.tools import TOOLS
 
@@ -24,54 +25,68 @@ def p_ok(payload) -> dict:
 import asyncio
 from backend.apps.spotify_mcp_shim import handlers
 
-def execute_tool_function(func, args: dict):
-    if asyncio.iscoroutinefunction(func):
-        return asyncio.run(func(**args))
+async def execute_tool_function(func, args: dict):
+    if inspect.iscoroutinefunction(func):
+        return await func(**args)
     return func(**args)
 
-def handle_tool_call(name: str, args: dict) -> dict:
+async def handle_tool_call(name: str, args: dict) -> dict:
     handler = getattr(handlers, name, None)
     if not handler or not callable(handler):
         return p_err(f"Unknown tool: {name}")
         
-    return p_ok(execute_tool_function(handler, args))
+    return p_ok(await execute_tool_function(handler, args))
+
+async def process_line(line: str):
+    line = line.strip()
+    if not line:
+        return
+        
+    try:
+        msg = json.loads(line)
+    except json.JSONDecodeError:
+        return
+
+    method = msg.get("method")
+    id_ = msg.get("id")
+    params = msg.get("params", {}) or {}
+
+    if method == "initialize":
+        p_send(id_, {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "openswarm-spotify", "version": "1.0.0"},
+        })
+    elif method == "notifications/initialized":
+        pass
+    elif method == "tools/list":
+        p_send(id_, {"tools": TOOLS})
+    elif method == "tools/call":
+        name = params.get("name", "")
+        args = params.get("arguments", {}) or {}
+        try:
+            res = await handle_tool_call(name, args)
+            p_send(id_, res)
+        except Exception as e:
+            p_send(id_, p_err(f"shim crashed: {e!r}"))
+    elif method == "ping":
+        p_send(id_, {})
+    elif id_ is not None:
+        p_send(id_, error={"code": -32601, "message": f"Method not found: {method}"})
+
+async def async_main():
+    loop = asyncio.get_running_loop()
+    while True:
+        line = await loop.run_in_executor(None, sys.stdin.readline)
+        if not line:
+            break
+        await process_line(line)
 
 def main():
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-    
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-
-        method = msg.get("method")
-        id_ = msg.get("id")
-        params = msg.get("params", {}) or {}
-
-        if method == "initialize":
-            p_send(id_, {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "openswarm-spotify", "version": "1.0.0"},
-            })
-        elif method == "notifications/initialized":
-            pass
-        elif method == "tools/list":
-            p_send(id_, {"tools": TOOLS})
-        elif method == "tools/call":
-            name = params.get("name", "")
-            args = params.get("arguments", {}) or {}
-            try:
-                p_send(id_, handle_tool_call(name, args))
-            except Exception as e:
-                p_send(id_, p_err(f"shim crashed: {e!r}"))
-        elif method == "ping":
-            p_send(id_, {})
-        elif id_ is not None:
-            p_send(id_, error={"code": -32601, "message": f"Method not found: {method}"})
+    try:
+        asyncio.run(async_main())
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == "__main__":
     main()
