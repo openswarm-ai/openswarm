@@ -1,7 +1,7 @@
 from typing import Optional, Any, Dict
-import asyncio
 import json
 import urllib.request
+import asyncio
 import os
 
 # Bypass the OpenSwarm proxy for local Chrome CDP connections
@@ -11,10 +11,23 @@ os.environ["no_proxy"] = "*"
 import subprocess
 import time
 
-def p_ensure_chrome_cdp():
-    """Ensure Chrome is running with CDP on port 9223.
-    If not, we launch a dedicated profile so we don't conflict with the user's main Chrome,
-    and we leave it running in the background so music keeps playing after the script exits!
+def get_browser_executable() -> str:
+    """Returns the path to a browser that is both CDP and Spotify compatibile."""
+    browsers = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/Applications/Opera.app/Contents/MacOS/Opera",
+        "/Applications/Opera GX.app/Contents/MacOS/Opera GX",
+    ]
+    for b in browsers:
+        if os.path.exists(b):
+            return b
+    raise FileNotFoundError("No CDP-compatible browser found (Chrome, Edge, Opera).")
+
+def ensure_browser_cdp() -> bool:
+    """Ensure a CDP-compatible browser is running with CDP on port 9223.
+    If not, we launch a dedicated profile so we don't conflict with the user's main browser,
+    and we leave it running in the background.
     """
     try:
         req = urllib.request.Request("http://127.0.0.1:9223/json/version")
@@ -24,12 +37,18 @@ def p_ensure_chrome_cdp():
     except Exception:
         pass
 
-    # CDP not responding. Let's auto-launch a dedicated Chrome instance!
+    # CDP not responding. Let's auto-launch a dedicated profile!
+    try:
+        executable = get_browser_executable()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return False
+
     profile_dir = os.path.expanduser("~/.openswarm/spotify_chrome_profile")
     os.makedirs(profile_dir, exist_ok=True)
     
     subprocess.Popen([
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        executable,
         "--remote-debugging-port=9223",
         f"--user-data-dir={profile_dir}",
         "--no-first-run",
@@ -51,22 +70,34 @@ def p_ensure_chrome_cdp():
             
     return False
 
-async def play_track(track_name: str, artist: Optional[str]) -> Dict[str, Any]:
+async def get_browser_page(p, target_url_substring: Optional[str] = None):
     """
-    Using the Playwright MCP, we'll:
-
-    1. Auto-launch a dedicated Chrome instance (with CDP) if it's not already running.
-    2. Navigate to Spotify. If this is the user's first time on this dedicated profile, they will need to log in.
-    3. Search for the song name.
-    4. Play the song!
+    Connects to the CDP browser and returns a (browser, context, page) tuple.
+    If target_url_substring is provided, it will try to find and return an existing tab
+    that matches the substring. Otherwise, it will open a new tab.
     """
+    if not ensure_browser_cdp():
+        raise RuntimeError("Failed to auto-start browser with remote debugging on port 9223.")
+        
+    browser = await p.chromium.connect_over_cdp("http://127.0.0.1:9223")
+    context = browser.contexts[0]
+    
+    page = None
+    if target_url_substring:
+        for p_obj in context.pages:
+            if target_url_substring in p_obj.url:
+                page = p_obj
+                break
+                
+    if not page:
+        page = await context.new_page()
+        
+    return browser, context, page
 
-    if not p_ensure_chrome_cdp():
-        return {
-            "is_error": True,
-            "is_human_intervention": False,
-            "message": "Failed to auto-start Chrome with remote debugging on port 9223."
-        }
+async def play_media(query: str, media_type: str) -> Dict[str, Any]:
+    """
+    Shared helper for play_track, play_album, and play_playlist.
+    """
 
     from playwright.async_api import async_playwright
     import urllib.parse
@@ -91,60 +122,31 @@ async def play_track(track_name: str, artist: Optional[str]) -> Dict[str, Any]:
     
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.connect_over_cdp("http://127.0.0.1:9223")
-            context = browser.contexts[0]
-            
-            page = None
-            for p_obj in context.pages:
-                if "spotify.com" in p_obj.url:
-                    page = p_obj
-                    break
-            
-            if not page:
-                page = await context.new_page()
-            
-            query = track_name
-            if artist:
-                query += f" {artist}"
+            try:
+                browser, context, page = await get_browser_page(p, target_url_substring="spotify.com")
+            except RuntimeError as e:
+                return {
+                    "is_error": True,
+                    "is_human_intervention": False,
+                    "message": str(e)
+                }
                 
-            search_url = f"https://open.spotify.com/search/{urllib.parse.quote(query)}"
+            search_url = f"https://open.spotify.com/search/{urllib.parse.quote(query, safe='')}"
             await page.goto(search_url)
-            await page.wait_for_load_state("networkidle")
-            await asyncio.sleep(4) # Give elements time to render
             
-            prompt = f"""
-I want to play the track '{query}' on Spotify. Look at this screenshot of the Spotify web UI.
-Determine the state and return ONLY a valid JSON object. Do not include markdown formatting or backticks, just the raw JSON.
-You must choose one of the following exact JSON structures:
-
-1. If a login prompt or overlay is blocking the UI:
-{{
-"action": "human_intervention",
-"message": "User needs to log in"
-}}
-
-2. If the track '{query}' is already playing (a pause button is visible, or the now-playing bar at the bottom shows the track playing):
-{{
-"action": "done",
-"message": "Successfully started playback"
-}}
-
-3. Otherwise, find the Play button for the top search result and return its exact center coordinates as percentages (0 to 100) of the image width and height:
-{{
-"action": "click",
-"x_percent": 50.5,
-"y_percent": 25.0,
-"message": "Clicking play button"
-}}
-
-CRITICAL: Return strictly valid JSON. Double check your quotes and commas.
-""".strip()
-
+            try:
+                await page.wait_for_load_state("networkidle", timeout=2000)
+            except Exception:
+                pass
+                
+            try:
+                # Scientifically wait for the play buttons OR the login button to render in the DOM
+                await page.wait_for_selector('button[data-testid="play-button"], [data-testid="login-button"]', timeout=4000)
+            except Exception:
+                pass
+            
+            action_history = []
             for attempt in range(4):
-                if attempt > 0:
-                    # Wait a bit longer between clicks/checks to let the stream start
-                    await asyncio.sleep(4)
-                    
                 screenshot_bytes = await page.screenshot()
                 
                 img = Image.open(BytesIO(screenshot_bytes))
@@ -155,6 +157,32 @@ CRITICAL: Return strictly valid JSON. Double check your quotes and commas.
                 buf = BytesIO()
                 img.convert("RGB").save(buf, format="JPEG", quality=45)
                 b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
+                
+                prompt = f"""
+I want to play the {media_type} '{query}' on Spotify. Look at this screenshot of the Spotify web UI.
+Determine the state and return ONLY a valid JSON object. Do not include markdown formatting or backticks, just the raw JSON.
+You must choose one of the following exact JSON structures:
+
+1. If a login prompt or overlay is blocking the UI:
+{{
+"action": "human_intervention",
+"message": "User needs to log in"
+}}
+
+3. Otherwise, if the {media_type} is not currently playing, you must start it.
+- Look at the screen. If you are currently on a search results page, find the best match for '{query}' that is explicitly labeled as a {media_type} (e.g. look for the subtitle 'Album', 'Playlist', 'Song', or 'Artist').
+  - If the best match has a prominent green Play button (e.g., the Top Result card), return its coordinates.
+  - If the best match does NOT have a visible Play button (e.g., it is a row in a list), return the coordinates of its text title to click on it. This will navigate to its dedicated page where a Play button will be visible on the next step.
+- If you are ALREADY on a dedicated media page (e.g., you already clicked a title in a previous step), return the coordinates of the main green Play button on the page.
+{{
+"action": "click",
+"x_percent": 50.5,
+"y_percent": 25.0,
+"message": "Clicking play button (or title to navigate)"
+}}
+
+CRITICAL: Return strictly valid JSON. Double check your quotes and commas.
+""".strip()
                 
                 response = await client.messages.create(
                     model=model_id,
@@ -201,18 +229,13 @@ CRITICAL: Return strictly valid JSON. Double check your quotes and commas.
                         resp_text = resp_text[3:-3].strip()
                         
                     action_data = json.loads(resp_text)
+                    action_history.append(action_data)
                     
                     if action_data["action"] == "human_intervention":
                         return {
                             "is_error": False,
                             "is_human_intervention": True,
                             "message": action_data.get("message", "Human intervention needed.")
-                        }
-                    elif action_data["action"] == "done":
-                        return {
-                            "is_error": False,
-                            "is_human_intervention": False,
-                            "message": action_data.get("message", "Task completed.")
                         }
                     elif action_data["action"] == "click":
                         vp_w = await page.evaluate("window.innerWidth")
@@ -233,8 +256,36 @@ CRITICAL: Return strictly valid JSON. Double check your quotes and commas.
                             click_x = float(action_data["x"]) * (vp_w / img.width)
                             click_y = float(action_data["y"]) * (vp_h / img.height)
                             
-                        await page.mouse.click(click_x, click_y)
-                        # sleep is now handled at the start of the next loop iteration
+                        await page.mouse.click(click_x, click_y, delay=100)
+                        
+                        # Deterministically wait for playback to start
+                        success = False
+                        for _ in range(10): # 5 seconds
+                            try:
+                                # Check React UI
+                                pause_btn = await page.query_selector('button[data-testid="control-button-pause"]')
+                                if pause_btn:
+                                    success = True
+                                    break
+                                
+                                # Check HTML5 Media
+                                is_playing = await page.evaluate("() => Array.from(document.querySelectorAll('audio, video')).some(el => !el.paused && el.duration > 0)")
+                                if is_playing:
+                                    success = True
+                                    break
+                            except Exception:
+                                pass
+                                
+                            await asyncio.sleep(0.5)
+                            
+                        if success:
+                            return {
+                                "is_error": False,
+                                "is_human_intervention": False,
+                                "message": "Task completed. Playback verified programmatically."
+                            }
+                        
+                        # If not successful, the loop will just continue to the next attempt!
                 except Exception as e:
                     raw_resp = getattr(response, 'content', 'No content attribute')
                     return {
@@ -246,7 +297,7 @@ CRITICAL: Return strictly valid JSON. Double check your quotes and commas.
             return {
                 "is_error": True,
                 "is_human_intervention": False,
-                "message": "AI failed to start playback after multiple attempts."
+                "message": f"AI failed to start playback after multiple attempts.\nAction history:\n{json.dumps(action_history, indent=2)}"
             }
             
     except Exception as e:
@@ -256,3 +307,23 @@ CRITICAL: Return strictly valid JSON. Double check your quotes and commas.
             "is_human_intervention": False,
             "message": f"An error occurred: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
         }
+
+async def play_track(track_name: str, artist: Optional[str] = None) -> Dict[str, Any]:
+    query = track_name
+    if artist:
+        query += f" {artist}"
+    return await play_media(query, "track")
+
+async def play_album(album_name: str, artist: Optional[str] = None) -> Dict[str, Any]:
+    query = album_name
+    if artist:
+        query += f" {artist}"
+    return await play_media(query, "album")
+
+async def play_playlist(playlist_name: str) -> Dict[str, Any]:
+    query = playlist_name
+    return await play_media(query, "playlist")
+
+async def play_artist(artist_name: str) -> Dict[str, Any]:
+    query = artist_name
+    return await play_media(query, "artist")
