@@ -69,10 +69,18 @@ async def list_sessions(dashboard_id: str = ""):
 
 @agents.router.get("/activity")
 async def agent_activity():
-    """How many agent tasks are live right now. Drives the desktop's idle-update gate so a
-    silent update-on-idle never lands on top of a running agent."""
+    """How many agent tasks are live right now, plus seconds until the next scheduled
+    workflow fires. Drives the desktop's idle-update gate so a silent update-on-idle
+    never lands on top of a running agent or right before a scheduled run."""
     active = sum(1 for t in agent_manager.tasks.values() if not t.done())
-    return {"active": active}
+    try:
+        # Local import: workflows pulls in agent machinery, a module-level import here would cycle.
+        from backend.apps.workflows.scheduler import seconds_to_next_fire
+        next_run_in_s = seconds_to_next_fire()
+    except Exception:
+        # Fail open (None = no block): a broken lookahead must never wedge updates forever; the agents gate still protects running work.
+        next_run_in_s = None
+    return {"active": active, "next_run_in_s": next_run_in_s}
 
 @agents.router.get("/sessions/{session_id}")
 async def get_session(session_id: str):

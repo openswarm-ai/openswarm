@@ -21,8 +21,10 @@ import platform
 from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Literal, Optional
 
 from fastapi import Body
+from pydantic import BaseModel, ConfigDict
 
 from backend.config.Apps import SubApp
 from backend.config.paths import SESSIONS_DIR
@@ -509,6 +511,25 @@ async def post_event(body: dict):
     }
     svc.sync(envelope)
     p_bridge_to_analytics(envelope)
+    return {"ok": True}
+
+
+class UpdaterEventBody(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+    kind: Literal["idle_install"]
+    staged_version: Optional[str] = None
+
+
+@service.router.post("/updater-event")
+async def post_updater_event(body: UpdaterEventBody):
+    """Electron main reports updater milestones (today just the evergreen idle install) so fleet convergence shows up in analytics logs instead of being inferred."""
+    from backend.apps.service.analytics.client import get_analytics_client
+    client = get_analytics_client()
+    if client is not None:
+        try:
+            client.logs.write(tag="updater", subtag=body.kind, data={"staged_version": body.staged_version or "", "app_version": APP_VERSION})
+        except Exception:
+            pass
     return {"ok": True}
 
 
