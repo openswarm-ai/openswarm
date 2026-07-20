@@ -152,6 +152,8 @@ export interface DashboardLayoutState {
   nextZOrder: number;
   loading: boolean;
   initialized: boolean;
+  /** True only after a SUCCESSFUL layout fetch for the current dashboard; saveLayout is a no-op until then (a failed boot fetch must never wipe the server layout). */
+  saveArmed: boolean;
   /** Transient: new browser card id; Dashboard pans/zooms to it then clears via clearPendingFocusBrowserId. */
   pendingFocusBrowserId: string | null;
   // Set when a view card is opened from outside the canvas (sidebar app click / toolbar picker) so the dashboard fits+highlights it on arrival; holds the card key.
@@ -203,6 +205,7 @@ const initialState: DashboardLayoutState = {
   nextZOrder: 1,
   loading: false,
   initialized: false,
+  saveArmed: false,
   pendingFocusBrowserId: null,
   pendingFocusViewCardId: null,
   pendingFocusNoteId: null,
@@ -237,6 +240,8 @@ export const fetchLayout = createAsyncThunk(
   // isReconnect distinguishes a socket-reconnect recovery refetch (merge, keep live positions) from a fresh mount/switch load (replace, snapshot is the user's saved layout). Passed explicitly, not inferred from state, so a stale in-flight fetch from a previous dashboard can't be misread as a merge.
   async ({ dashboardId }: { dashboardId: string; isReconnect?: boolean }) => {
     const res = await fetch(`${DASHBOARDS_API}/${dashboardId}`);
+    // A non-2xx body silently parsing to "no layout" is how a healthy dashboard gets wiped: the empty result gets marked initialized and the next debounced save persists it.
+    if (!res.ok) throw new Error(`layout fetch failed: ${res.status}`);
     const data = await res.json();
     const layout = data.layout ?? {};
     const browserCards = (layout.browser_cards ?? {}) as Record<string, any>;
@@ -271,7 +276,10 @@ interface SaveLayoutPayload extends LayoutPayload {
 
 export const saveLayout = createAsyncThunk(
   'dashboardLayout/save',
-  async (payload: SaveLayoutPayload) => {
+  async (payload: SaveLayoutPayload, { getState }) => {
+    // Never persist a layout this client never successfully loaded; a failed boot fetch otherwise saves the pristine empty store over the server's real layout (the wipe class).
+    const armed = (getState() as { dashboardLayout: { saveArmed: boolean } }).dashboardLayout.saveArmed;
+    if (!armed) return payload;
     await fetch(`${DASHBOARDS_API}/${payload.dashboardId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -1626,6 +1634,7 @@ const dashboardLayoutSlice = createSlice({
       state.persistedExpandedSessionIds = [];
       state.nextZOrder = 1;
       state.initialized = false;
+      state.saveArmed = false;
       state.pendingFocusNoteId = null;
       state.suspendedBrowserCards = keptSuspended;
       state.endingBrowserCards = {};
@@ -1643,6 +1652,7 @@ const dashboardLayoutSlice = createSlice({
         // A fresh mount/switch load replaces (the snapshot is the user's saved layout, authoritative). A reconnect refetch (useDashboardLifecycle line ~90) recovers cards lost in a socket gap and must MERGE, blind- replacing there clobbered the live, collision-placed positions of cards already on canvas (the overlap / vanish under load while many browsers spawn). The caller says which; never inferred from state.
         const isReconnectRefetch = action.meta.arg.isReconnect === true;
         state.initialized = true;
+        state.saveArmed = true;
         const ownerDashboardId = action.meta.arg.dashboardId;
         if (!isReconnectRefetch) {
           state.cards = action.payload.cards;
@@ -1701,6 +1711,7 @@ const dashboardLayoutSlice = createSlice({
       })
       .addCase(fetchLayout.rejected, (state) => {
         state.loading = false;
+        // Fail-open for RENDERING only; saveArmed stays false so this client can never persist the empty layout it booted with over the server's real one (the wipe that hit 2026-07-20).
         state.initialized = true;
       })
       .addCase(fetchSessionRejectedAction, (state, action) => {
