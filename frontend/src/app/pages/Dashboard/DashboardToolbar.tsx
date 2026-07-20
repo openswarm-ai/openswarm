@@ -15,7 +15,7 @@ import SchedulePopover from '@/app/pages/Workflows/SchedulePopover';
 import { openWorkflowCard, fetchAllRuns, upsertRun } from '@/shared/state/workflowsSlice';
 import { addWorkflowCard, openWorkflowsApp, closeWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
-import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useClaudeTokens, DarkTokensScope } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { searchHistory, clearHistorySearch } from '@/shared/state/agentsSlice';
 import { updateSettingsPatch, AppSettings } from '@/shared/state/settingsSlice';
@@ -376,11 +376,14 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           display: 'flex',
           flexDirection: 'column',
           // Drop toolbar card chrome when popover is open (popover supplies its own surface) and when
-          // collapsed (the spawn pill carries its own dark glass).
-          background: historyOpen || !isExpanded ? 'transparent' : c.bg.surface,
-          border: historyOpen || !isExpanded ? '1px solid transparent' : `1px solid ${c.border.subtle}`,
+          // collapsed (the spawn pill carries its own dark glass). The open composer wears the same
+          // desktop dark glass as the rest of the shell.
+          background: historyOpen ? 'transparent' : viewPickerOpen ? c.bg.surface : inputOpen ? 'rgba(22,12,34,0.82)' : 'transparent',
+          backdropFilter: inputOpen && !historyOpen && !viewPickerOpen ? 'blur(20px) saturate(160%)' : undefined,
+          WebkitBackdropFilter: inputOpen && !historyOpen && !viewPickerOpen ? 'blur(20px) saturate(160%)' : undefined,
+          border: viewPickerOpen ? `1px solid ${c.border.subtle}` : '1px solid transparent',
           borderRadius: `${c.radius.xl}px`,
-          boxShadow: historyOpen || !isExpanded ? 'none' : c.shadow.lg,
+          boxShadow: historyOpen || !isExpanded ? 'none' : '0 12px 32px rgba(0,0,0,0.4)',
           padding: isExpanded ? '6px' : '0px',
           userSelect: 'none' as const,
           overflow: inputOpen || newAgentBounce || historyOpen ? 'visible' : 'hidden',
@@ -394,20 +397,22 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
             data-onboarding-scope="dock"
             style={{ width: '100%', minHeight: 56, paddingBottom: 0, marginBottom: -4 }}
           >
-            <ChatInput
-              onSend={handleSend}
-              mode={mode}
-              onModeChange={handleModeChange}
-              model={model}
-              onModelChange={handleModelChange}
-              embedded
-              autoFocus
-              sessionId={TOOLBAR_OWNER_ID}
-              thinkingLevel={thinkingLevel}
-              onThinkingLevelChange={handleThinkingLevelChange}
-              prefillPrompt={prefillPrompt}
-              placeholderOverride="What should I do sir..."
-            />
+            <DarkTokensScope>
+              <ChatInput
+                onSend={handleSend}
+                mode={mode}
+                onModeChange={handleModeChange}
+                model={model}
+                onModelChange={handleModelChange}
+                embedded
+                autoFocus
+                sessionId={TOOLBAR_OWNER_ID}
+                thinkingLevel={thinkingLevel}
+                onThinkingLevelChange={handleThinkingLevelChange}
+                prefillPrompt={prefillPrompt}
+                placeholderOverride="What should I do sir..."
+              />
+            </DarkTokensScope>
           </div>
         ) : historyOpen ? (
           <div style={{ width: '100%' }}>

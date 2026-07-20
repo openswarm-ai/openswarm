@@ -131,6 +131,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 };
 
 export const useClaudeTokens = (): ClaudeTokens => useContext(ThemeContext).tokens;
+
+/** Forces dark tokens for a subtree: desktop-shell glass panels stay dark even in light mode. */
+export const DarkTokensScope: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const ctx = useContext(ThemeContext);
+  const value = useMemo(() => ({
+    ...ctx,
+    mode: 'dark' as ThemeMode,
+    tokens: withAccent(darkTokens, ctx.accent, 'dark'),
+  }), [ctx]);
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+};
 export const useThemeMode = () => {
   const { mode, toggleMode, setMode } = useContext(ThemeContext);
   return { mode, toggleMode, setMode };
