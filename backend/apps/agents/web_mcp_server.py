@@ -16,6 +16,15 @@ FETCH_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/web/fetch"
 PRIMARY_HINT = os.environ.get("OPENSWARM_PRIMARY_API", "") or None
 # Whether this session actually has browser-delegation tools; gates the backend's "fall back to the browser" nudge.
 BROWSER_OK = os.environ.get("OPENSWARM_BROWSER_OK", "0") == "1"
+# Whether the openswarm-ui server is live this session. The render-as-component reminder rides the
+# tool RESULT because that's what the model reads right before answering; the system-prompt nudge
+# alone loses to the prose prior (live-proven on haiku).
+RICH_UI_OK = os.environ.get("OPENSWARM_RICH_UI_OK", "0") == "1"
+RICH_UI_HINT = (
+    "\n\n[presentation] When you answer the user with this data, render it with the ShowUI tool "
+    "(weather for forecasts, data-table for rows, stats-display for metrics, links for sources, "
+    "chart for series) and keep prose to one line. Answer in plain text only if no component fits."
+)
 
 TOOLS = [
     {
@@ -115,6 +124,8 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         results = r.get("results", "")
         if not results:
             results = f"No results for: {query}"
+        elif RICH_UI_OK:
+            results += RICH_UI_HINT
         return {"content": [{"type": "text", "text": results}]}
 
     if tool_name == "WebFetch":
@@ -135,6 +146,8 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         content = r.get("content", "")
         if not content:
             content = f"No content returned from {url}"
+        elif RICH_UI_OK:
+            content += RICH_UI_HINT
         return {"content": [{"type": "text", "text": content}]}
 
     return {"content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}], "isError": True}

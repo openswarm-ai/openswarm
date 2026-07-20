@@ -101,7 +101,7 @@ def set_framework_overhead(session: AgentSession, composed_prompt: Optional[str]
 
 
 @typechecked
-def register_web_mcp_server(mcp_servers: Dict, p_m: str, browser_ok: bool = False) -> None:
+def register_web_mcp_server(mcp_servers: Dict, p_m: str, browser_ok: bool = False, rich_ui_ok: bool = False) -> None:
     """Register the DDG-backed openswarm-web stdio MCP into the server set when the primary has no
     reliable native web path. The server script lives in the agents package (not here), so resolve
     it off that package dir, not __file__."""
@@ -125,6 +125,7 @@ def register_web_mcp_server(mcp_servers: Dict, p_m: str, browser_ok: bool = Fals
             "OPENSWARM_AUTH_TOKEN": p_get_auth_token3(),
             "OPENSWARM_PRIMARY_API": p_primary_hint,
             "OPENSWARM_BROWSER_OK": "1" if browser_ok else "0",
+            "OPENSWARM_RICH_UI_OK": "1" if rich_ui_ok else "0",
         },
         "type": "stdio",
     }

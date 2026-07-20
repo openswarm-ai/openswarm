@@ -133,7 +133,12 @@ class RunOptions(AgentManagerProtocol):
         )
         if need_web_mcp:
             # browser_ok gates the search-dead fallback nudge: never tell the model to call CreateBrowserAgent in a session where browser delegation is denied.
-            register_web_mcp_server(mcp_servers, p_m, browser_ok=bool(browser_delegation_tools))
+            # rich_ui_ok plants the render-as-component reminder inside web results: the system-prompt nudge alone loses to the prose prior (live-proven on haiku).
+            register_web_mcp_server(
+                mcp_servers, p_m,
+                browser_ok=bool(browser_delegation_tools),
+                rich_ui_ok="openswarm-ui" in mcp_servers,
+            )
 
         effective_allowed, effective_disallowed = build_effective_tool_lists(
             session, mcp_servers, builtin_perms, need_web_mcp,
