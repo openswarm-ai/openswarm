@@ -89,6 +89,25 @@ def compose_turn_system_prompt(
         )
         composed_prompt = f"{composed_prompt}\n\n{apps_note}" if composed_prompt else apps_note
 
+    # Default-on nudge to actually REACH for the rich components; the tool descriptions alone
+    # under-trigger. Skipped entirely when the user disabled ShowUI so we never advertise a dead tool.
+    try:
+        from backend.apps.tools_lib.tools_lib import load_builtin_permissions
+        if load_builtin_permissions().get("ShowUI", "always_allow") != "deny":
+            rich_ui_note = (
+                "<rich_ui>\n"
+                "Strongly prefer rendering rich UI over prose, every time the content fits:\n"
+                "- ShowUI for any structured result: tables, stats, links, plans, progress, code, diffs, "
+                "charts, maps, media, posts, receipts. Render the component, then add one line of text.\n"
+                "- AskUI for ANY question with enumerable choices, an approval, or tunable values: render "
+                "it and wait for the answer instead of asking in prose.\n"
+                "Describing structured data in plain text when a component fits is the worse answer.\n"
+                "</rich_ui>"
+            )
+            composed_prompt = f"{composed_prompt}\n\n{rich_ui_note}" if composed_prompt else rich_ui_note
+    except Exception:
+        pass
+
     # App cards the user picked via the dashboard element picker: give the agent each app's on-disk path + meta + SKILL.md pointer so it can edit them in place (the dashboard card's runtime live-reloads). Additive and independent of view-builder mode above.
     app_ctx = build_selected_app_context(selected_app_output_ids)
     if app_ctx:
