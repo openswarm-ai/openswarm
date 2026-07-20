@@ -7,6 +7,7 @@ import TetherLayer from './TetherLayer';
 import DashboardCardLayer from './DashboardCardLayer';
 import DashboardOverlays from './DashboardOverlays';
 import DashboardEmptyState from './DashboardEmptyState';
+import DesktopWallpaper from '../desktop/DesktopWallpaper';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { useThemeAccent, useThemeWash } from '@/shared/styles/ThemeContext';
 import { GRAIN_URL } from '@/shared/styles/grainTexture';
@@ -238,6 +239,8 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
                 : 'default',
         }}
       >
+        <DesktopWallpaper />
+
         {/* Gradient wash: the user's theme-pad stops tint the canvas, Arc-window style; intensity + grain come from the theme device; sits under the dot grid. */}
         {gradient && gradient.length > 1 && (
           <Box
