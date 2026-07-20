@@ -72,6 +72,14 @@ def build_effective_tool_lists(
                     effective_disallowed.append("mcp__openswarm-skill__Skill")
                 continue
 
+            if name == "openswarm-ui":
+                policy = builtin_perms.get("ShowUI", "always_allow")
+                if policy == "always_allow":
+                    effective_allowed.append("mcp__openswarm-ui__ShowUI")
+                else:
+                    effective_disallowed.append("mcp__openswarm-ui__ShowUI")
+                continue
+
             if name == "openswarm-web":
                 # Expose our DDG-backed web tools under an MCP prefix. Honor existing WebSearch/WebFetch permission policy, if the user disabled them in Settings, don't offer the MCP variants either.
                 for wt in ("WebSearch", "WebFetch"):

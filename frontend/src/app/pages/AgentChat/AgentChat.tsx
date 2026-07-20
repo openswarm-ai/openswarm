@@ -58,6 +58,8 @@ import CompactionMarker from './bubbles/CompactionMarker';
 import MessageActionBar from './shell/MessageActionBar';
 import ToolCallBubble, { ToolPair } from './tool-bubbles/ToolCallBubble';
 import ToolGroupBubble, { RenderItem, ToolGroup, isToolGroup, isToolPair } from './tool-bubbles/ToolGroupBubble';
+import ToolUiBubble from './tool-ui/ToolUiBubble';
+import { isShowUiPair } from './tool-ui/showUiPayload';
 import ApprovalBar, { BatchApprovalBar } from './shell/ApprovalBar';
 import ForceStopAgentBar from './ForceStopAgentBar';
 import { RateLimitPill } from './shell/RateLimitPill';
@@ -1063,14 +1065,20 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
           i++;
         }
 
-        const calls = group.filter((m) => m.role === 'tool_call');
+        const allCalls = group.filter((m) => m.role === 'tool_call');
         const results = group.filter((m) => m.role === 'tool_result');
-        const pairs: ToolPair[] = calls.map((call, idx) => ({
+        const allPairs: ToolPair[] = allCalls.map((call, idx) => ({
           type: 'tool_pair' as const,
           id: `pair-${call.id}`,
           call,
           result: results[idx] || null,
         }));
+
+        // ShowUI calls render as inline components, never buried inside a collapsed group.
+        // They typically cap a run of work, so the quiet group row stays above the widget.
+        const showUiPairs = allPairs.filter(isShowUiPair);
+        const pairs = allPairs.filter((p) => !isShowUiPair(p));
+        const calls = pairs.map((p) => p.call);
 
         const mcpServers = new Set(
           calls.map((m) => {
@@ -1113,6 +1121,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
             callCount: calls.length,
           } satisfies ToolGroup);
         }
+        items.push(...showUiPairs);
       } else {
         if (!msg.hidden) {
           items.push(msg);
@@ -1593,6 +1602,14 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               }
               if (isToolPair(item)) {
                 const isPending = item.result === null && sessionRunning;
+                if (isShowUiPair(item)) {
+                  return (
+                    <Box key={item.id} data-window-item-id={item.id} ref={isLastVisibleItem ? lastVisibleItemRef : undefined}>
+                      <ToolUiBubble pair={item} sessionId={session.id} isPending={isPending} suppressReveal={item.call.id === justStreamedId} />
+                      {compactionChip}
+                    </Box>
+                  );
+                }
                 return (
                   <Box key={item.id} data-window-item-id={item.id} ref={isLastVisibleItem ? lastVisibleItemRef : undefined}>
                     <ToolCallBubble call={item.call} result={item.result} isPending={isPending} sessionId={session.id} suppressReveal={item.call.id === justStreamedId} />
