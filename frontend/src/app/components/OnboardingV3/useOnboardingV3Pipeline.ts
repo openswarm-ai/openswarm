@@ -34,6 +34,16 @@ function cadenceToSchedule(cadence: string): Record<string, unknown> {
   return { ...base, repeat_unit: 'week', on_days: [1] };
 }
 
+// Gap between the demo launches. Right after connect the provider's OAuth token can still be mid-refresh,
+// and four simultaneous cold turns raced that refresh and all "hit a snag"; the first launch warms the
+// token, the rest ride it warm. Fires during the curtain beats, so the lead time is hidden.
+const LAUNCH_STAGGER_MS = 1200;
+
+// How long finish() will wait for prep before staging the reveal. Prep is kicked early (theme beat) so it
+// has usually resolved; this only bites a user who outran it, and a brief wait for a COHERENT reveal beats
+// an instant one showing a previous run's stale greeting. Capped so it's never an open-ended spinner.
+const PREP_WAIT_CAP_MS = 5000;
+
 // Used when prep's aux dropped the automations field, so the reveal always demonstrates automation.
 // A useful digest (not a cleanup chore, which the value bar bans).
 const SCHEDULE_FALLBACK: PersonalizedAutomation = {
@@ -144,14 +154,27 @@ export function useOnboardingV3Pipeline() {
       launchedRef.current = true;
       // The four auto-run showcase jobs, one per capability: build an app, dig the web, drive a real
       // browser, and set up a scheduled task. The lame file-audit is gone; the browser task shows the
-      // agent controlling a real site live.
-      if (prep.app_title && prep.app_prompt) launchJob(prep.app_title, prep.app_prompt, 'app', prep.app_reason ?? '');
-      if (prep.research_title && prep.research_prompt) launchJob(prep.research_title, prep.research_prompt, 'research', prep.research_reason ?? '');
-      if (prep.browser_title && prep.browser_prompt) launchJob(prep.browser_title, prep.browser_prompt, 'browser', prep.browser_reason ?? '');
+      // agent controlling a real site live. Fired STAGGERED so the first turn warms the just-connected
+      // provider token before the rest hit it (see LAUNCH_STAGGER_MS).
+      const launches: Array<() => void> = [];
+      if (prep.app_title && prep.app_prompt) {
+        const t = prep.app_title, p = prep.app_prompt, r = prep.app_reason ?? '';
+        launches.push(() => launchJob(t, p, 'app', r));
+      }
+      if (prep.research_title && prep.research_prompt) {
+        const t = prep.research_title, p = prep.research_prompt, r = prep.research_reason ?? '';
+        launches.push(() => launchJob(t, p, 'research', r));
+      }
+      if (prep.browser_title && prep.browser_prompt) {
+        const t = prep.browser_title, p = prep.browser_prompt, r = prep.browser_reason ?? '';
+        launches.push(() => launchJob(t, p, 'browser', r));
+      }
       // The scheduled task is a first-class part of the reveal (the "it automates for me" capability), so
       // guarantee one: use the model's automation when it emitted one (it sometimes drops the last JSON
-      // field), else fall back to a safe, universally-useful weekly Downloads sweep.
-      createScheduledJob(prep.automations[0] ?? SCHEDULE_FALLBACK);
+      // field), else fall back to a safe, universally-useful weekly roundup.
+      const auto = prep.automations[0] ?? SCHEDULE_FALLBACK;
+      launches.push(() => createScheduledJob(auto));
+      launches.forEach((fn, idx) => { if (idx === 0) fn(); else window.setTimeout(fn, idx * LAUNCH_STAGGER_MS); });
     });
   }, [launchJob, createScheduledJob]);
 
@@ -161,30 +184,32 @@ export function useOnboardingV3Pipeline() {
       dispatch(updateSettingsPatch({ onboarding_v3: 'skipped', accent_color: accent, accent_gradient: gradient, theme: mode }));
       return;
     }
-    // NEVER block the curtain behind a spinner. The connect head-start means prep has usually resolved
-    // during the beats, so seed with the real jobs/greeting synchronously; if a fast user beat prep to
-    // this point, seed with what we have and let the late-jobs effect + the async patch below fill in.
-    // The whole point of gating on connect is this head start, so the reveal must show it in motion.
-    const ready = prepReadyRef.current;
     dispatch(updateSettingsPatch({ onboarding_v3: 'done', accent_color: accent, accent_gradient: gradient, theme: mode }));
+    // Wait for prep (kicked early during the beats, usually already resolved) so the welcome greeting +
+    // starters are from the SAME prep as the launched jobs. A previous run's greeting persists in settings,
+    // so staging the reveal before this patch landed showed a stale, mismatched greeting; persist FIRST,
+    // then stage. Capped so a user who outran prep waits a beat, never an open-ended spinner.
+    let prep = prepReadyRef.current;
+    if (!prep && prepRef.current) {
+      prep = (await Promise.race([
+        prepRef.current,
+        new Promise<null>((res) => window.setTimeout(() => res(null), PREP_WAIT_CAP_MS)),
+      ]).catch(() => null)) ?? prepReadyRef.current;
+    }
+    // Always patch (even to null): clears a previous run's stale greeting when this prep produced none.
+    dispatch(updateSettingsPatch({
+      personalized_greeting: prep?.greeting?.trim() || null,
+      personalized_headline: prep?.headline?.trim() || null,
+      personalized_starters: prep?.starters ?? [],
+      personalized_automations: prep?.automations ?? [],
+    }));
     dispatch(stageReveal({
-      greeting: ready?.greeting?.trim() || null,
-      starters: ready?.starters ?? [],
+      greeting: prep?.greeting?.trim() || null,
+      starters: prep?.starters ?? [],
       scanSummary: summarizeScan(scanResultRef.current),
       autoPrompt: null,
     }));
     dispatch(setFlowActive(false));
-    // Personalized fields land the instant prep resolves (often already have): the welcome greeting
-    // waits for personalized_greeting then streams it in, and the starter chips read it live.
-    void (prepRef.current ?? Promise.resolve(null)).then((prep) => {
-      if (!prep) return;
-      dispatch(updateSettingsPatch({
-        personalized_greeting: prep.greeting?.trim() || null,
-        personalized_headline: prep.headline?.trim() || null,
-        personalized_starters: prep.starters ?? [],
-        personalized_automations: prep.automations ?? [],
-      }));
-    });
   }, [dispatch, accent, gradient, mode]);
 
   return { identity, kickIdentity, kickScan, kickUsageRead, kickPrep, finish };

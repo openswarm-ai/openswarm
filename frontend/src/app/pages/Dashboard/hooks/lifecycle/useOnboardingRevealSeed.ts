@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
 import {
-  placeCard, openWorkflowMonitor, setWorkflowsMonitorPosition, setViewCardPosition,
-  DEFAULT_CARD_W, DEFAULT_CARD_H, EXPANDED_CARD_MIN_H,
+  placeCard, openWorkflowsApp, setWorkflowsHubPosition, setWorkflowsHubSize,
+  clearPendingFocusWorkflowsHub, setViewCardPosition,
+  DEFAULT_CARD_W, EXPANDED_CARD_MIN_H,
 } from '@/shared/state/dashboardLayoutSlice';
 import { clearReveal, setRevealAnchor } from '@/shared/state/onboardingV3Slice';
 
@@ -18,9 +19,10 @@ interface Args {
 }
 
 const GAP = 48;
-// The scheduled task renders as a RunMonitor card, which is taller than a job card; reserve its slot so
-// the camera frames it. Mirrors the monitor default height in dashboardLayoutSlice.openWorkflowMonitor.
-const WORKFLOW_MONITOR_H = 560;
+// The scheduled task opens the FULL Workflows app (rich detail view), sized to span the 2-column agent
+// grid below it so the default 1280x800 hub doesn't dominate the reveal.
+const REVEAL_WORKFLOW_W = 2 * DEFAULT_CARD_W + GAP;
+const REVEAL_WORKFLOW_H = 560;
 
 /** Where the reveal's app view card is born: right of the welcome chat, top-aligned. The "here's what I did" legend is the fixed RevealHero panel, not a canvas note, so the app sits right next to the chat. */
 export function revealAppSpot(anchor: { cx: number; cy: number }): { x: number; y: number } {
@@ -38,28 +40,41 @@ export function useOnboardingRevealSeed({ isActive, dashboardId, expandedSession
   // anchor + placed-set let us keep dropping those cards in the same left stack instead of losing them.
   const anchorRef = useRef<{ cx: number; cy: number } | null>(null);
   const placedRef = useRef<Set<string>>(new Set());
+  // Only the agent-card jobs flow into the 2-column grid; the schedule gets its own wide slot below, so
+  // count agent cards separately or the schedule would leave a hole in the grid rhythm.
+  const agentCountRef = useRef(0);
 
   const placeJobs = useCallback(() => {
     const a = anchorRef.current;
     if (!a) return;
+    // Grid geometry, shared by placement here and the schedule's below-grid slot.
+    const gridLeftX = a.cx - DEFAULT_CARD_W / 2 - 2 * GAP - 2 * DEFAULT_CARD_W;
+    const gridTopY = a.cy - EXPANDED_CARD_MIN_H / 2;
     prepped.forEach((job) => {
       // Every job shows its AGENT card (its live transcript), including the app builder, so the reveal
       // makes it obvious the agent is BUILDING the app, not just a "building..." box. Its finished app
       // view card appears beside it when it renders (birth-position path in useDashboardLifecycle).
       const key = job.workflowId || job.sessionId;
       if (placedRef.current.has(key)) return;
-      const i = placedRef.current.size;
-      // Left column, top-aligned with the expanded welcome chat. Cards open ENLARGED, so the vertical
-      // rhythm is the expanded height, not the compact one, or enlarged cards would overlap.
-      const x = a.cx - DEFAULT_CARD_W / 2 - GAP - DEFAULT_CARD_W;
-      const y = a.cy - EXPANDED_CARD_MIN_H / 2 + i * (EXPANDED_CARD_MIN_H + 24);
       if (job.kind === 'schedule' && job.workflowId) {
-        // The scheduled task is a workflow. The canvas only draws ONE workflow card (the "monitor"), so
-        // open the scheduled workflow AS that monitor card, else it never renders (the workflowCards map
-        // it used to go into is not drawn). Its taller monitor card gets its own slot below the jobs.
-        dispatch(openWorkflowMonitor({ workflowId: job.workflowId }));
-        dispatch(setWorkflowsMonitorPosition({ x, y }));
+        // The scheduled task opens the FULL Workflows app (its rich detail view: schedule + steps), not
+        // the compact run-monitor card, so the reveal shows off the real automation GUI. It sits in a wide
+        // slot below the agent grid. Opening the app normally snaps the camera to the hub (a fitToCards on
+        // pendingFocusWorkflowsHub); clear that flag so the reveal's own framing wins.
+        const sy = gridTopY + 2 * (EXPANDED_CARD_MIN_H + 24);
+        dispatch(openWorkflowsApp({ workflowId: job.workflowId, expandedSessionIds }));
+        dispatch(clearPendingFocusWorkflowsHub());
+        dispatch(setWorkflowsHubSize({ width: REVEAL_WORKFLOW_W, height: REVEAL_WORKFLOW_H }));
+        dispatch(setWorkflowsHubPosition({ x: gridLeftX, y: sy }));
       } else {
+        // 2-column grid to the LEFT of the welcome chat. A single tall column (enlarged cards stacked)
+        // forced the camera so far out the cards went unreadable; wide-and-short frames at a legible zoom.
+        const gi = agentCountRef.current;
+        agentCountRef.current += 1;
+        const col = gi % 2;
+        const row = Math.floor(gi / 2);
+        const x = gridLeftX + col * (DEFAULT_CARD_W + GAP);
+        const y = gridTopY + row * (EXPANDED_CARD_MIN_H + 24);
         dispatch(placeCard({ sessionId: job.sessionId, x, y, width: DEFAULT_CARD_W, height: EXPANDED_CARD_MIN_H, expandedSessionIds, exact: true }));
       }
       placedRef.current.add(key);
@@ -100,12 +115,12 @@ export function useOnboardingRevealSeed({ isActive, dashboardId, expandedSession
         // readable, not scattered. The pipeline ALWAYS sets up one scheduled task, whose RunMonitor card is
         // tall and lands late; reserve its slot now (2 short job cards + the monitor) so the camera never
         // cuts it off when it arrives. Width runs from the left column to the far edge of the app view card.
-        const left = cx - DEFAULT_CARD_W / 2 - GAP - DEFAULT_CARD_W;
+        const left = cx - DEFAULT_CARD_W / 2 - 2 * GAP - 2 * DEFAULT_CARD_W; // left edge of the 2-col grid
         const top = cy - EXPANDED_CARD_MIN_H / 2;
-        const right = cx + DEFAULT_CARD_W / 2 + GAP + DEFAULT_CARD_W;
-        // The left column is now enlarged agent cards (audit + app-builder + research) + the tall
-        // scheduled-task monitor below them, so reserve for three cards plus the monitor.
-        const stackH = 3 * (EXPANDED_CARD_MIN_H + 24) + WORKFLOW_MONITOR_H;
+        const right = cx + DEFAULT_CARD_W / 2 + GAP + DEFAULT_CARD_W; // right edge of the app view card
+        // The agent cards lay out as a 2-column grid (2 enlarged rows) with the full Workflows app spanning
+        // a wide row below them. Reserve for both now so the schedule, which lands late, is already in frame.
+        const stackH = 2 * (EXPANDED_CARD_MIN_H + 24) + REVEAL_WORKFLOW_H;
         // Reserve headroom at the top so the topmost cards clear the macOS traffic lights + the floating
         // dashboard title pill + the run-status pill, instead of the chat header landing under them.
         const TOP_CHROME_PAD = 130;
