@@ -725,9 +725,10 @@ async def execute_output(body: OutputExecute):
                 code_preview = output.backend_code
         if not warnings_out:
             try:
-                # We've either already vetted (no warnings above) or the user explicitly opted in with force=True. Pass skip_validation=True so we don't pay for a redundant AST walk inside execute_backend_code.
+                # We've either already vetted (no warnings above) or the user explicitly opted in with force=True. Pass skip_validation=True so we don't pay for a redundant AST walk inside execute_backend_code. force_env is gated on body.force ALONE: vetted-but-not-forced code stays in the minimal env, so `os.system` can't reach a shell without explicit consent (issue #134).
                 exec_result = await execute_backend_code(
-                    output.backend_code, body.input_data, skip_validation=True
+                    output.backend_code, body.input_data,
+                    skip_validation=True, force_env=bool(body.force),
                 )
                 backend_result = exec_result.result
                 stdout_text = exec_result.stdout
