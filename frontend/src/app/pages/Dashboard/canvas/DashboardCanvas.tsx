@@ -170,6 +170,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   // macOS full screen: one card owns the whole window, every piece of chrome steps aside; Esc exits.
   const dispatch = useAppDispatch();
   const fullscreenCardId = useAppSelector(selectFullscreenCardId);
+  const [headerRevealed, setHeaderRevealed] = React.useState(false);
   useEffect(() => {
     if (!fullscreenCardId) return undefined;
     const onKey = (e: KeyboardEvent): void => {
@@ -184,8 +185,14 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   return (
     <>
     <Box sx={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
+      {/* Top-edge hover strip: the desktop shell keeps the top chromeless; grazing it reveals the header. */}
+      <Box
+        onMouseEnter={() => setHeaderRevealed(true)}
+        sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 22, zIndex: 9 }}
+      />
       {/* Floating header overlay */}
       <Box
+        onMouseLeave={() => setHeaderRevealed(false)}
         sx={{
           display: fullscreenCardId ? 'none' : undefined,
           position: 'absolute',
@@ -193,7 +200,10 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           left: 0,
           right: 0,
           zIndex: 10,
-          pointerEvents: 'none',
+          pointerEvents: headerRevealed ? undefined : 'none',
+          opacity: headerRevealed ? 1 : 0,
+          transform: headerRevealed ? 'translateY(0)' : 'translateY(-6px)',
+          transition: 'opacity 0.18s ease, transform 0.18s ease',
           // p: 3 (24px) was leaving a chunky air gap between the sidebar edge and the dashboard header that read as "two disconnected panels" rather than one continuous surface. 0.75 (6px) tightens the inset so the header floats just inside the content area without losing its breathing room from the top-most pixel.
           p: 0.75,
           pb: 0,
