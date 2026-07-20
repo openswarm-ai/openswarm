@@ -42,7 +42,9 @@ function describe(node: any, depth: number): string {
     if (depth >= 2) return 'obj';
     const req = new Set(node.required || []);
     const props = node.properties || {};
-    const parts = Object.keys(props).map((k) => `${k}${req.has(k) ? '' : '?'}: ${describe(props[k], depth + 1)}`);
+    // Required props FIRST so tail truncation can only ever cost optional detail, never a required field.
+    const keys = Object.keys(props).sort((a, b) => Number(req.has(b)) - Number(req.has(a)));
+    const parts = keys.map((k) => `${k}${req.has(k) ? '' : '?'}: ${describe(props[k], depth + 1)}`);
     return `{${parts.join(', ')}}`;
   }
   if (t === 'string') return 'str';
@@ -52,22 +54,19 @@ function describe(node: any, depth: number): string {
 }
 
 async function main(): Promise<void> {
-  const out: Record<string, string> = {};
+  const fs = await import('fs');
+  const out: Record<string, { hint: string; schema: unknown }> = {};
   for (const [name, [path, exportName]] of Object.entries(TARGETS)) {
-    try {
-      const mod = await import(path);
-      const schema = mod[exportName];
-      const js = z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' } as any) as any;
-      let hint = describe(js, 0);
-      if (hint.length > 360) hint = hint.slice(0, 357) + '...';
-      out[name] = hint;
-    } catch (e) {
-      out[name] = `ERROR: ${(e as Error).message.slice(0, 80)}`;
-    }
+    const mod = await import(path);
+    const schema = mod[exportName];
+    const js = z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' } as any) as any;
+    let hint = describe(js, 0);
+    if (hint.length > 420) hint = hint.slice(0, 417) + '...';
+    out[name] = { hint: `props: ${hint.replace(/"/g, "'")}`, schema: js };
   }
-  for (const [name, hint] of Object.entries(out)) {
-    console.log(`    "${name}": "props: ${hint.replace(/"/g, "'")}",`);
-  }
+  const dest = new URL('../../backend/apps/agents/toolui_schemas.json', import.meta.url).pathname;
+  fs.writeFileSync(dest, JSON.stringify(out, null, 1));
+  console.log(`wrote ${Object.keys(out).length} component schemas to ${dest}`);
 }
 
 void main();

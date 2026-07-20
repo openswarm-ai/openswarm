@@ -1,0 +1,3911 @@
+{
+ "approval-card": {
+  "hint": "props: {id: str, title: str, role?: 'information'|'decision'|'control'|'state'|'composite', description?: str, icon?: str, metadata?: [{key: str, value: str}], variant?: 'default'|'destructive', confirmLabel?: str, cancelLabel?: str, choice?: 'approved'|'denied'}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "title": {
+     "type": "string",
+     "minLength": 1
+    },
+    "description": {
+     "type": "string"
+    },
+    "icon": {
+     "type": "string"
+    },
+    "metadata": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "key": {
+        "type": "string",
+        "minLength": 1
+       },
+       "value": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "key",
+       "value"
+      ]
+     }
+    },
+    "variant": {
+     "type": "string",
+     "enum": [
+      "default",
+      "destructive"
+     ]
+    },
+    "confirmLabel": {
+     "type": "string"
+    },
+    "cancelLabel": {
+     "type": "string"
+    },
+    "choice": {
+     "type": "string",
+     "enum": [
+      "approved",
+      "denied"
+     ]
+    }
+   },
+   "required": [
+    "id",
+    "title"
+   ]
+  }
+ },
+ "audio": {
+  "hint": "props: {id: str, assetId: str, src: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, artwork?: str, durationMs?: num, fileSizeBytes?: num, createdAt?: str, locale?: str, source?: {label: str, iconUrl?: str, url?: str}}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "assetId": {
+     "type": "string"
+    },
+    "src": {
+     "type": "string",
+     "format": "uri"
+    },
+    "title": {
+     "type": "string"
+    },
+    "description": {
+     "type": "string"
+    },
+    "artwork": {
+     "type": "string",
+     "format": "uri"
+    },
+    "durationMs": {
+     "type": "integer",
+     "exclusiveMinimum": 0,
+     "maximum": 9007199254740991
+    },
+    "fileSizeBytes": {
+     "type": "integer",
+     "exclusiveMinimum": 0,
+     "maximum": 9007199254740991
+    },
+    "createdAt": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "locale": {
+     "type": "string"
+    },
+    "source": {
+     "type": "object",
+     "properties": {
+      "label": {
+       "type": "string"
+      },
+      "iconUrl": {
+       "type": "string",
+       "format": "uri"
+      },
+      "url": {
+       "type": "string",
+       "format": "uri"
+      }
+     },
+     "required": [
+      "label"
+     ]
+    }
+   },
+   "required": [
+    "id",
+    "assetId",
+    "src"
+   ]
+  }
+ },
+ "chart": {
+  "hint": "props: {id: str, type: 'bar'|'line', data: [{}], xKey: str, series: [{key: str, label: str, color?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, colors?: [str], showLegend?: bool, showGrid?: bool}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "type": {
+     "type": "string",
+     "enum": [
+      "bar",
+      "line"
+     ]
+    },
+    "title": {
+     "type": "string"
+    },
+    "description": {
+     "type": "string"
+    },
+    "data": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "propertyNames": {
+       "type": "string"
+      },
+      "additionalProperties": {}
+     }
+    },
+    "xKey": {
+     "type": "string",
+     "minLength": 1
+    },
+    "series": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "key": {
+        "type": "string",
+        "minLength": 1
+       },
+       "label": {
+        "type": "string",
+        "minLength": 1
+       },
+       "color": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "key",
+       "label"
+      ]
+     }
+    },
+    "colors": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "showLegend": {
+     "type": "boolean"
+    },
+    "showGrid": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "type",
+    "data",
+    "xKey",
+    "series"
+   ]
+  }
+ },
+ "citation": {
+  "hint": "props: {id: str, href: str, title: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, snippet?: str, domain?: str, favicon?: str, author?: str, publishedAt?: str, type?: 'webpage'|'document'|'article'|'api'|'code'|'other', locale?: str}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "href": {
+     "type": "string",
+     "format": "uri"
+    },
+    "title": {
+     "type": "string"
+    },
+    "snippet": {
+     "type": "string"
+    },
+    "domain": {
+     "type": "string"
+    },
+    "favicon": {
+     "type": "string",
+     "format": "uri"
+    },
+    "author": {
+     "type": "string"
+    },
+    "publishedAt": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "type": {
+     "type": "string",
+     "enum": [
+      "webpage",
+      "document",
+      "article",
+      "api",
+      "code",
+      "other"
+     ]
+    },
+    "locale": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "href",
+    "title"
+   ]
+  }
+ },
+ "code-block": {
+  "hint": "props: {id: str, code: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, language?: str, lineNumbers?: 'visible'|'hidden', filename?: str, highlightLines?: [num], maxCollapsedLines?: num}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "code": {
+     "type": "string"
+    },
+    "language": {
+     "default": "text",
+     "type": "string",
+     "minLength": 1
+    },
+    "lineNumbers": {
+     "default": "visible",
+     "type": "string",
+     "enum": [
+      "visible",
+      "hidden"
+     ]
+    },
+    "filename": {
+     "type": "string"
+    },
+    "highlightLines": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     }
+    },
+    "maxCollapsedLines": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "id",
+    "code"
+   ]
+  }
+ },
+ "code-diff": {
+  "hint": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, oldCode?: str, newCode?: str, patch?: str, language?: str, filename?: str, lineNumbers?: 'visible'|'hidden', diffStyle?: 'unified'|'split', maxCollapsedLines?: num}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "oldCode": {
+     "type": "string"
+    },
+    "newCode": {
+     "type": "string"
+    },
+    "patch": {
+     "type": "string"
+    },
+    "language": {
+     "default": "text",
+     "type": "string",
+     "minLength": 1
+    },
+    "filename": {
+     "type": "string"
+    },
+    "lineNumbers": {
+     "default": "visible",
+     "type": "string",
+     "enum": [
+      "visible",
+      "hidden"
+     ]
+    },
+    "diffStyle": {
+     "default": "unified",
+     "type": "string",
+     "enum": [
+      "unified",
+      "split"
+     ]
+    },
+    "maxCollapsedLines": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "id"
+   ]
+  }
+ },
+ "data-table": {
+  "hint": "props: {id: str, columns: [{key: str, label: str, abbr?: str, sortable?: bool, align?: 'left'|'right'|'center', width?: str, truncate?: bool, priority?: 'primary'|'secondary'|'tertiary', hideOnMobile?: bool, format?: any}], data: [{}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, rowIdKey?: str, defa...",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "columns": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "key": {
+        "type": "string"
+       },
+       "label": {
+        "type": "string"
+       },
+       "abbr": {
+        "type": "string"
+       },
+       "sortable": {
+        "type": "boolean"
+       },
+       "align": {
+        "type": "string",
+        "enum": [
+         "left",
+         "right",
+         "center"
+        ]
+       },
+       "width": {
+        "type": "string"
+       },
+       "truncate": {
+        "type": "boolean"
+       },
+       "priority": {
+        "type": "string",
+        "enum": [
+         "primary",
+         "secondary",
+         "tertiary"
+        ]
+       },
+       "hideOnMobile": {
+        "type": "boolean"
+       },
+       "format": {
+        "oneOf": [
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "text"
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "number"
+           },
+           "decimals": {
+            "type": "number"
+           },
+           "unit": {
+            "type": "string"
+           },
+           "compact": {
+            "type": "boolean"
+           },
+           "showSign": {
+            "type": "boolean"
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "currency"
+           },
+           "currency": {
+            "type": "string"
+           },
+           "decimals": {
+            "type": "number"
+           }
+          },
+          "required": [
+           "kind",
+           "currency"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "percent"
+           },
+           "decimals": {
+            "type": "number"
+           },
+           "showSign": {
+            "type": "boolean"
+           },
+           "basis": {
+            "type": "string",
+            "enum": [
+             "fraction",
+             "unit"
+            ]
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "date"
+           },
+           "dateFormat": {
+            "type": "string",
+            "enum": [
+             "short",
+             "long",
+             "relative"
+            ]
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "delta"
+           },
+           "decimals": {
+            "type": "number"
+           },
+           "upIsPositive": {
+            "type": "boolean"
+           },
+           "showSign": {
+            "type": "boolean"
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "status"
+           },
+           "statusMap": {
+            "type": "object",
+            "propertyNames": {
+             "type": "string"
+            },
+            "additionalProperties": {
+             "type": "object",
+             "properties": {
+              "tone": {
+               "type": "string",
+               "enum": [
+                "success",
+                "warning",
+                "danger",
+                "info",
+                "neutral"
+               ]
+              },
+              "label": {
+               "type": "string"
+              }
+             },
+             "required": [
+              "tone"
+             ]
+            }
+           }
+          },
+          "required": [
+           "kind",
+           "statusMap"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "boolean"
+           },
+           "labels": {
+            "type": "object",
+            "properties": {
+             "true": {
+              "type": "string"
+             },
+             "false": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "true",
+             "false"
+            ]
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "link"
+           },
+           "hrefKey": {
+            "type": "string"
+           },
+           "external": {
+            "type": "boolean"
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "badge"
+           },
+           "colorMap": {
+            "type": "object",
+            "propertyNames": {
+             "type": "string"
+            },
+            "additionalProperties": {
+             "type": "string",
+             "enum": [
+              "success",
+              "warning",
+              "danger",
+              "info",
+              "neutral"
+             ]
+            }
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "array"
+           },
+           "maxVisible": {
+            "type": "number"
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         }
+        ]
+       }
+      },
+      "required": [
+       "key",
+       "label"
+      ]
+     }
+    },
+    "data": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "propertyNames": {
+       "type": "string"
+      },
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "number"
+          },
+          {
+           "type": "boolean"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        {
+         "type": "array",
+         "items": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "number"
+           },
+           {
+            "type": "boolean"
+           },
+           {
+            "type": "null"
+           }
+          ]
+         }
+        }
+       ]
+      }
+     }
+    },
+    "rowIdKey": {
+     "type": "string"
+    },
+    "defaultSort": {
+     "type": "object",
+     "properties": {
+      "by": {
+       "type": "string"
+      },
+      "direction": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ]
+      }
+     }
+    },
+    "sort": {
+     "type": "object",
+     "properties": {
+      "by": {
+       "type": "string"
+      },
+      "direction": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ]
+      }
+     }
+    },
+    "emptyMessage": {
+     "type": "string"
+    },
+    "maxHeight": {
+     "type": "string"
+    },
+    "locale": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "columns",
+    "data"
+   ]
+  }
+ },
+ "geo-map": {
+  "hint": "props: {id: str, markers: [{lat: num, lng: num, id?: str, label?: str, description?: str, tooltip?: 'none'|'hover'|'always', icon?: obj|obj|obj}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, routes?: [{points: [obj], id?: str, label?: str, description?: str, tooltip?:...",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "title": {
+     "type": "string"
+    },
+    "description": {
+     "type": "string"
+    },
+    "markers": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "lat": {
+        "type": "number",
+        "minimum": -90,
+        "maximum": 90
+       },
+       "lng": {
+        "type": "number",
+        "minimum": -180,
+        "maximum": 180
+       },
+       "label": {
+        "type": "string"
+       },
+       "description": {
+        "type": "string"
+       },
+       "tooltip": {
+        "type": "string",
+        "enum": [
+         "none",
+         "hover",
+         "always"
+        ]
+       },
+       "icon": {
+        "anyOf": [
+         {
+          "type": "object",
+          "properties": {
+           "type": {
+            "type": "string",
+            "const": "dot"
+           },
+           "color": {
+            "type": "string"
+           },
+           "borderColor": {
+            "type": "string"
+           },
+           "radius": {
+            "type": "number",
+            "minimum": 3,
+            "maximum": 16
+           }
+          },
+          "required": [
+           "type"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "type": {
+            "type": "string",
+            "const": "emoji"
+           },
+           "value": {
+            "type": "string",
+            "minLength": 1
+           },
+           "size": {
+            "type": "number",
+            "minimum": 16,
+            "maximum": 40
+           },
+           "bgColor": {
+            "type": "string"
+           },
+           "borderColor": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "type",
+           "value"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "type": {
+            "type": "string",
+            "const": "image"
+           },
+           "url": {
+            "type": "string",
+            "format": "uri"
+           },
+           "width": {
+            "type": "number",
+            "minimum": 16,
+            "maximum": 64
+           },
+           "height": {
+            "type": "number",
+            "minimum": 16,
+            "maximum": 64
+           },
+           "borderRadius": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 999
+           },
+           "borderColor": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "type",
+           "url"
+          ]
+         }
+        ]
+       }
+      },
+      "required": [
+       "lat",
+       "lng"
+      ]
+     }
+    },
+    "routes": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "points": {
+        "minItems": 2,
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "lat": {
+           "type": "number",
+           "minimum": -90,
+           "maximum": 90
+          },
+          "lng": {
+           "type": "number",
+           "minimum": -180,
+           "maximum": 180
+          }
+         },
+         "required": [
+          "lat",
+          "lng"
+         ]
+        }
+       },
+       "label": {
+        "type": "string"
+       },
+       "description": {
+        "type": "string"
+       },
+       "tooltip": {
+        "type": "string",
+        "enum": [
+         "none",
+         "hover",
+         "always"
+        ]
+       },
+       "color": {
+        "type": "string"
+       },
+       "weight": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 12
+       },
+       "opacity": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+       },
+       "dashArray": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "points"
+      ]
+     }
+    },
+    "clustering": {
+     "type": "object",
+     "properties": {
+      "enabled": {
+       "type": "boolean"
+      },
+      "radius": {
+       "type": "number",
+       "minimum": 20,
+       "maximum": 120
+      },
+      "maxZoom": {
+       "type": "number",
+       "minimum": 1,
+       "maximum": 22
+      },
+      "minPoints": {
+       "type": "number",
+       "minimum": 2,
+       "maximum": 20
+      }
+     }
+    },
+    "viewport": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "mode": {
+         "type": "string",
+         "const": "fit"
+        },
+        "padding": {
+         "type": "number",
+         "minimum": 0
+        },
+        "maxZoom": {
+         "type": "number",
+         "minimum": 1,
+         "maximum": 22
+        },
+        "target": {
+         "type": "string",
+         "enum": [
+          "markers",
+          "routes",
+          "all"
+         ]
+        }
+       },
+       "required": [
+        "mode"
+       ]
+      },
+      {
+       "type": "object",
+       "properties": {
+        "mode": {
+         "type": "string",
+         "const": "center"
+        },
+        "center": {
+         "type": "object",
+         "properties": {
+          "lat": {
+           "type": "number",
+           "minimum": -90,
+           "maximum": 90
+          },
+          "lng": {
+           "type": "number",
+           "minimum": -180,
+           "maximum": 180
+          }
+         },
+         "required": [
+          "lat",
+          "lng"
+         ]
+        },
+        "zoom": {
+         "type": "number",
+         "minimum": 1,
+         "maximum": 22
+        }
+       },
+       "required": [
+        "mode",
+        "center",
+        "zoom"
+       ]
+      }
+     ]
+    },
+    "showZoomControl": {
+     "type": "boolean"
+    },
+    "theme": {
+     "type": "string",
+     "enum": [
+      "light",
+      "dark"
+     ]
+    }
+   },
+   "required": [
+    "id",
+    "markers"
+   ]
+  }
+ },
+ "image": {
+  "hint": "props: {id: str, assetId: str, src: str, alt: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, href?: str, domain?: str, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', fileSizeBytes?: num, createdAt?: str, locale?: str, source?: {label: str, iconUr...",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "assetId": {
+     "type": "string"
+    },
+    "src": {
+     "type": "string",
+     "format": "uri"
+    },
+    "alt": {
+     "type": "string",
+     "minLength": 1
+    },
+    "title": {
+     "type": "string"
+    },
+    "description": {
+     "type": "string"
+    },
+    "href": {
+     "type": "string",
+     "format": "uri"
+    },
+    "domain": {
+     "type": "string"
+    },
+    "ratio": {
+     "default": "auto",
+     "type": "string",
+     "enum": [
+      "auto",
+      "1:1",
+      "4:3",
+      "16:9",
+      "9:16"
+     ]
+    },
+    "fit": {
+     "default": "cover",
+     "type": "string",
+     "enum": [
+      "cover",
+      "contain"
+     ]
+    },
+    "fileSizeBytes": {
+     "type": "integer",
+     "exclusiveMinimum": 0,
+     "maximum": 9007199254740991
+    },
+    "createdAt": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "locale": {
+     "type": "string"
+    },
+    "source": {
+     "type": "object",
+     "properties": {
+      "label": {
+       "type": "string"
+      },
+      "iconUrl": {
+       "type": "string",
+       "format": "uri"
+      },
+      "url": {
+       "type": "string",
+       "format": "uri"
+      }
+     },
+     "required": [
+      "label"
+     ]
+    }
+   },
+   "required": [
+    "id",
+    "assetId",
+    "src",
+    "alt"
+   ]
+  }
+ },
+ "image-gallery": {
+  "hint": "props: {id: str, images: [{id: str, src: str, alt: str, width: num, height: num, title?: str, caption?: str, source?: obj}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "images": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "src": {
+        "type": "string",
+        "format": "uri"
+       },
+       "alt": {
+        "type": "string",
+        "minLength": 1
+       },
+       "width": {
+        "type": "number",
+        "exclusiveMinimum": 0
+       },
+       "height": {
+        "type": "number",
+        "exclusiveMinimum": 0
+       },
+       "title": {
+        "type": "string"
+       },
+       "caption": {
+        "type": "string"
+       },
+       "source": {
+        "type": "object",
+        "properties": {
+         "label": {
+          "type": "string"
+         },
+         "url": {
+          "type": "string",
+          "format": "uri"
+         }
+        },
+        "required": [
+         "label"
+        ]
+       }
+      },
+      "required": [
+       "id",
+       "src",
+       "alt",
+       "width",
+       "height"
+      ]
+     }
+    },
+    "title": {
+     "type": "string"
+    },
+    "description": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "images"
+   ]
+  }
+ },
+ "instagram-post": {
+  "hint": "props: {id: str, author: {name: str, handle: str, avatarUrl: str, verified?: bool}, text?: str, media?: [{type: 'image'|'video', url: str, alt: str}], stats?: {likes?: num, isLiked?: bool}, createdAt?: str}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "author": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "handle": {
+       "type": "string"
+      },
+      "avatarUrl": {
+       "type": "string"
+      },
+      "verified": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "name",
+      "handle",
+      "avatarUrl"
+     ]
+    },
+    "text": {
+     "type": "string"
+    },
+    "media": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "string",
+        "enum": [
+         "image",
+         "video"
+        ]
+       },
+       "url": {
+        "type": "string"
+       },
+       "alt": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "type",
+       "url",
+       "alt"
+      ]
+     }
+    },
+    "stats": {
+     "type": "object",
+     "properties": {
+      "likes": {
+       "type": "number"
+      },
+      "isLiked": {
+       "type": "boolean"
+      }
+     }
+    },
+    "createdAt": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "author"
+   ]
+  }
+ },
+ "item-carousel": {
+  "hint": "props: {id: str, name: str, subtitle?: str, image?: str, color?: str, actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'destructive'|'secondary'|'ghost'|'outline', loading?: bool, disabled?: bool, shortcut?: str}]}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1
+    },
+    "subtitle": {
+     "type": "string"
+    },
+    "image": {
+     "type": "string",
+     "format": "uri"
+    },
+    "color": {
+     "type": "string"
+    },
+    "actions": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "label": {
+        "type": "string",
+        "minLength": 1
+       },
+       "sentence": {
+        "type": "string"
+       },
+       "confirmLabel": {
+        "type": "string"
+       },
+       "variant": {
+        "type": "string",
+        "enum": [
+         "default",
+         "destructive",
+         "secondary",
+         "ghost",
+         "outline"
+        ]
+       },
+       "loading": {
+        "type": "boolean"
+       },
+       "disabled": {
+        "type": "boolean"
+       },
+       "shortcut": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "label"
+      ]
+     }
+    }
+   },
+   "required": [
+    "id",
+    "name"
+   ]
+  }
+ },
+ "link-preview": {
+  "hint": "props: {id: str, href: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, image?: str, domain?: str, favicon?: str, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', createdAt?: str, locale?: str}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "href": {
+     "type": "string",
+     "format": "uri"
+    },
+    "title": {
+     "type": "string"
+    },
+    "description": {
+     "type": "string"
+    },
+    "image": {
+     "type": "string",
+     "format": "uri"
+    },
+    "domain": {
+     "type": "string"
+    },
+    "favicon": {
+     "type": "string",
+     "format": "uri"
+    },
+    "ratio": {
+     "default": "auto",
+     "type": "string",
+     "enum": [
+      "auto",
+      "1:1",
+      "4:3",
+      "16:9",
+      "9:16"
+     ]
+    },
+    "fit": {
+     "default": "cover",
+     "type": "string",
+     "enum": [
+      "cover",
+      "contain"
+     ]
+    },
+    "createdAt": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "locale": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "href"
+   ]
+  }
+ },
+ "linkedin-post": {
+  "hint": "props: {id: str, author: {name: str, avatarUrl: str, headline?: str}, text?: str, media?: {type: 'image'|'video', url: str, alt: str}, linkPreview?: {url: str, title?: str, description?: str, imageUrl?: str, domain?: str}, stats?: {likes?: num, isLiked?: bool}, createdAt?: str}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "author": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "avatarUrl": {
+       "type": "string"
+      },
+      "headline": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "name",
+      "avatarUrl"
+     ]
+    },
+    "text": {
+     "type": "string"
+    },
+    "media": {
+     "type": "object",
+     "properties": {
+      "type": {
+       "type": "string",
+       "enum": [
+        "image",
+        "video"
+       ]
+      },
+      "url": {
+       "type": "string"
+      },
+      "alt": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "type",
+      "url",
+      "alt"
+     ]
+    },
+    "linkPreview": {
+     "type": "object",
+     "properties": {
+      "url": {
+       "type": "string"
+      },
+      "title": {
+       "type": "string"
+      },
+      "description": {
+       "type": "string"
+      },
+      "imageUrl": {
+       "type": "string"
+      },
+      "domain": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "url"
+     ]
+    },
+    "stats": {
+     "type": "object",
+     "properties": {
+      "likes": {
+       "type": "number"
+      },
+      "isLiked": {
+       "type": "boolean"
+      }
+     }
+    },
+    "createdAt": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "author"
+   ]
+  }
+ },
+ "message-draft": {
+  "hint": "props: {id: str, body: str, channel: str, subject: str, to: [str], role?: 'information'|'decision'|'control'|'state'|'composite', outcome?: 'sent'|'cancelled', from?: str, cc?: [str], bcc?: [str]}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "body": {
+     "type": "string",
+     "minLength": 1
+    },
+    "outcome": {
+     "type": "string",
+     "enum": [
+      "sent",
+      "cancelled"
+     ]
+    },
+    "channel": {
+     "type": "string",
+     "const": "email"
+    },
+    "subject": {
+     "type": "string",
+     "minLength": 1
+    },
+    "from": {
+     "type": "string"
+    },
+    "to": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "cc": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "bcc": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "id",
+    "body",
+    "channel",
+    "subject",
+    "to"
+   ]
+  }
+ },
+ "option-list": {
+  "hint": "props: {id: str, options: [{id: str, label: str, description?: str, disabled?: bool}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, selectionMode?: 'multi'|'single', defaultValue?: [str]|str|any, choice?: [str]|str|any, actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'd...",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "options": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "label": {
+        "type": "string",
+        "minLength": 1
+       },
+       "description": {
+        "type": "string"
+       },
+       "disabled": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "id",
+       "label"
+      ]
+     }
+    },
+    "selectionMode": {
+     "type": "string",
+     "enum": [
+      "multi",
+      "single"
+     ]
+    },
+    "defaultValue": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "choice": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "actions": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string",
+          "minLength": 1
+         },
+         "label": {
+          "type": "string",
+          "minLength": 1
+         },
+         "sentence": {
+          "type": "string"
+         },
+         "confirmLabel": {
+          "type": "string"
+         },
+         "variant": {
+          "type": "string",
+          "enum": [
+           "default",
+           "destructive",
+           "secondary",
+           "ghost",
+           "outline"
+          ]
+         },
+         "loading": {
+          "type": "boolean"
+         },
+         "disabled": {
+          "type": "boolean"
+         },
+         "shortcut": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "id",
+         "label"
+        ]
+       }
+      },
+      {
+       "type": "object",
+       "properties": {
+        "items": {
+         "minItems": 1,
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "string",
+            "minLength": 1
+           },
+           "label": {
+            "type": "string",
+            "minLength": 1
+           },
+           "sentence": {
+            "type": "string"
+           },
+           "confirmLabel": {
+            "type": "string"
+           },
+           "variant": {
+            "type": "string",
+            "enum": [
+             "default",
+             "destructive",
+             "secondary",
+             "ghost",
+             "outline"
+            ]
+           },
+           "loading": {
+            "type": "boolean"
+           },
+           "disabled": {
+            "type": "boolean"
+           },
+           "shortcut": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "id",
+           "label"
+          ]
+         }
+        },
+        "align": {
+         "type": "string",
+         "enum": [
+          "left",
+          "center",
+          "right"
+         ]
+        },
+        "confirmTimeout": {
+         "type": "number",
+         "exclusiveMinimum": 0
+        }
+       },
+       "required": [
+        "items"
+       ]
+      }
+     ]
+    },
+    "minSelections": {
+     "type": "number",
+     "minimum": 0
+    },
+    "maxSelections": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "id",
+    "options"
+   ],
+   "additionalProperties": false
+  }
+ },
+ "order-summary": {
+  "hint": "props: {id: str, items: [{id: str, name: str, unitPrice: num, description?: str, imageUrl?: str, quantity?: num}], pricing: {subtotal: num, total: num, tax?: num, taxLabel?: str, shipping?: num, discount?: num, discountLabel?: str, currency?: str}, role?: 'information'|'decision'|'control'|'state'|'composite', title?: str, variant?: 'summary'|'receipt', choice?: {action: str, orderId?: str, confirmedAt?: str}}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "title": {
+     "type": "string"
+    },
+    "variant": {
+     "type": "string",
+     "enum": [
+      "summary",
+      "receipt"
+     ]
+    },
+    "items": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       },
+       "description": {
+        "type": "string"
+       },
+       "imageUrl": {
+        "type": "string",
+        "format": "uri"
+       },
+       "quantity": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+       },
+       "unitPrice": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "id",
+       "name",
+       "unitPrice"
+      ]
+     }
+    },
+    "pricing": {
+     "type": "object",
+     "properties": {
+      "subtotal": {
+       "type": "number"
+      },
+      "tax": {
+       "type": "number"
+      },
+      "taxLabel": {
+       "type": "string"
+      },
+      "shipping": {
+       "type": "number"
+      },
+      "discount": {
+       "type": "number",
+       "minimum": 0
+      },
+      "discountLabel": {
+       "type": "string"
+      },
+      "total": {
+       "type": "number"
+      },
+      "currency": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "subtotal",
+      "total"
+     ]
+    },
+    "choice": {
+     "type": "object",
+     "properties": {
+      "action": {
+       "type": "string",
+       "const": "confirm"
+      },
+      "orderId": {
+       "type": "string"
+      },
+      "confirmedAt": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "action"
+     ]
+    }
+   },
+   "required": [
+    "id",
+    "items",
+    "pricing"
+   ],
+   "additionalProperties": false
+  }
+ },
+ "parameter-slider": {
+  "hint": "props: {id: str, sliders: [{id: str, label: str, min: num, max: num, value: num, step?: num, unit?: str, precision?: num, disabled?: bool, trackClassName?: str, fillClassName?: str, handleClassName?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'destructive'|'secondary'|'ghost'|'outline', loading?: bool, disa...",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "sliders": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "label": {
+        "type": "string",
+        "minLength": 1
+       },
+       "min": {
+        "type": "number"
+       },
+       "max": {
+        "type": "number"
+       },
+       "step": {
+        "type": "number",
+        "exclusiveMinimum": 0
+       },
+       "value": {
+        "type": "number"
+       },
+       "unit": {
+        "type": "string"
+       },
+       "precision": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+       },
+       "disabled": {
+        "type": "boolean"
+       },
+       "trackClassName": {
+        "type": "string"
+       },
+       "fillClassName": {
+        "type": "string"
+       },
+       "handleClassName": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "label",
+       "min",
+       "max",
+       "value"
+      ]
+     }
+    },
+    "actions": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string",
+          "minLength": 1
+         },
+         "label": {
+          "type": "string",
+          "minLength": 1
+         },
+         "sentence": {
+          "type": "string"
+         },
+         "confirmLabel": {
+          "type": "string"
+         },
+         "variant": {
+          "type": "string",
+          "enum": [
+           "default",
+           "destructive",
+           "secondary",
+           "ghost",
+           "outline"
+          ]
+         },
+         "loading": {
+          "type": "boolean"
+         },
+         "disabled": {
+          "type": "boolean"
+         },
+         "shortcut": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "id",
+         "label"
+        ]
+       }
+      },
+      {
+       "type": "object",
+       "properties": {
+        "items": {
+         "minItems": 1,
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "string",
+            "minLength": 1
+           },
+           "label": {
+            "type": "string",
+            "minLength": 1
+           },
+           "sentence": {
+            "type": "string"
+           },
+           "confirmLabel": {
+            "type": "string"
+           },
+           "variant": {
+            "type": "string",
+            "enum": [
+             "default",
+             "destructive",
+             "secondary",
+             "ghost",
+             "outline"
+            ]
+           },
+           "loading": {
+            "type": "boolean"
+           },
+           "disabled": {
+            "type": "boolean"
+           },
+           "shortcut": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "id",
+           "label"
+          ]
+         }
+        },
+        "align": {
+         "type": "string",
+         "enum": [
+          "left",
+          "center",
+          "right"
+         ]
+        },
+        "confirmTimeout": {
+         "type": "number",
+         "exclusiveMinimum": 0
+        }
+       },
+       "required": [
+        "items"
+       ]
+      }
+     ]
+    }
+   },
+   "required": [
+    "id",
+    "sliders"
+   ],
+   "additionalProperties": false
+  }
+ },
+ "plan": {
+  "hint": "props: {id: str, title: str, todos: [{id: str, label: str, status: 'pending'|'in_progress'|'completed'|'cancelled', description?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, description?: str, maxVisibleTodos?: num}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "title": {
+     "type": "string",
+     "minLength": 1
+    },
+    "description": {
+     "type": "string"
+    },
+    "todos": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "label": {
+        "type": "string",
+        "minLength": 1
+       },
+       "status": {
+        "type": "string",
+        "enum": [
+         "pending",
+         "in_progress",
+         "completed",
+         "cancelled"
+        ]
+       },
+       "description": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "label",
+       "status"
+      ]
+     }
+    },
+    "maxVisibleTodos": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740991
+    }
+   },
+   "required": [
+    "id",
+    "title",
+    "todos"
+   ]
+  }
+ },
+ "preferences-panel": {
+  "hint": "props: {id: str, sections: [{items: [any], heading?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'destructive'|'secondary'|'ghost'|'outline', loading?: bool, disabled?: bool, shortcut?: str}]...",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "title": {
+     "type": "string",
+     "minLength": 1
+    },
+    "sections": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "heading": {
+        "type": "string",
+        "minLength": 1
+       },
+       "items": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+         "oneOf": [
+          {
+           "type": "object",
+           "properties": {
+            "id": {
+             "type": "string",
+             "minLength": 1
+            },
+            "label": {
+             "type": "string",
+             "minLength": 1
+            },
+            "description": {
+             "type": "string"
+            },
+            "type": {
+             "type": "string",
+             "const": "switch"
+            },
+            "defaultChecked": {
+             "type": "boolean"
+            }
+           },
+           "required": [
+            "id",
+            "label",
+            "type"
+           ]
+          },
+          {
+           "type": "object",
+           "properties": {
+            "id": {
+             "type": "string",
+             "minLength": 1
+            },
+            "label": {
+             "type": "string",
+             "minLength": 1
+            },
+            "description": {
+             "type": "string"
+            },
+            "type": {
+             "type": "string",
+             "const": "toggle"
+            },
+            "options": {
+             "minItems": 2,
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "value": {
+                "type": "string",
+                "minLength": 1
+               },
+               "label": {
+                "type": "string",
+                "minLength": 1
+               }
+              },
+              "required": [
+               "value",
+               "label"
+              ]
+             }
+            },
+            "defaultValue": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "label",
+            "type",
+            "options"
+           ]
+          },
+          {
+           "type": "object",
+           "properties": {
+            "id": {
+             "type": "string",
+             "minLength": 1
+            },
+            "label": {
+             "type": "string",
+             "minLength": 1
+            },
+            "description": {
+             "type": "string"
+            },
+            "type": {
+             "type": "string",
+             "const": "select"
+            },
+            "selectOptions": {
+             "minItems": 5,
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "value": {
+                "type": "string",
+                "minLength": 1
+               },
+               "label": {
+                "type": "string",
+                "minLength": 1
+               }
+              },
+              "required": [
+               "value",
+               "label"
+              ]
+             }
+            },
+            "defaultSelected": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "label",
+            "type",
+            "selectOptions"
+           ]
+          }
+         ]
+        }
+       }
+      },
+      "required": [
+       "items"
+      ]
+     }
+    },
+    "actions": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string",
+          "minLength": 1
+         },
+         "label": {
+          "type": "string",
+          "minLength": 1
+         },
+         "sentence": {
+          "type": "string"
+         },
+         "confirmLabel": {
+          "type": "string"
+         },
+         "variant": {
+          "type": "string",
+          "enum": [
+           "default",
+           "destructive",
+           "secondary",
+           "ghost",
+           "outline"
+          ]
+         },
+         "loading": {
+          "type": "boolean"
+         },
+         "disabled": {
+          "type": "boolean"
+         },
+         "shortcut": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "id",
+         "label"
+        ]
+       }
+      },
+      {
+       "type": "object",
+       "properties": {
+        "items": {
+         "minItems": 1,
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "string",
+            "minLength": 1
+           },
+           "label": {
+            "type": "string",
+            "minLength": 1
+           },
+           "sentence": {
+            "type": "string"
+           },
+           "confirmLabel": {
+            "type": "string"
+           },
+           "variant": {
+            "type": "string",
+            "enum": [
+             "default",
+             "destructive",
+             "secondary",
+             "ghost",
+             "outline"
+            ]
+           },
+           "loading": {
+            "type": "boolean"
+           },
+           "disabled": {
+            "type": "boolean"
+           },
+           "shortcut": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "id",
+           "label"
+          ]
+         }
+        },
+        "align": {
+         "type": "string",
+         "enum": [
+          "left",
+          "center",
+          "right"
+         ]
+        },
+        "confirmTimeout": {
+         "type": "number",
+         "exclusiveMinimum": 0
+        }
+       },
+       "required": [
+        "items"
+       ]
+      }
+     ]
+    }
+   },
+   "required": [
+    "id",
+    "sections"
+   ],
+   "additionalProperties": false
+  }
+ },
+ "progress-tracker": {
+  "hint": "props: {id: str, steps: [{id: str, label: str, status: 'pending'|'in-progress'|'completed'|'failed', description?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', elapsedTime?: num, choice?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "steps": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "label": {
+        "type": "string",
+        "minLength": 1
+       },
+       "description": {
+        "type": "string"
+       },
+       "status": {
+        "type": "string",
+        "enum": [
+         "pending",
+         "in-progress",
+         "completed",
+         "failed"
+        ]
+       }
+      },
+      "required": [
+       "id",
+       "label",
+       "status"
+      ]
+     }
+    },
+    "elapsedTime": {
+     "type": "number",
+     "minimum": 0
+    },
+    "choice": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    }
+   },
+   "required": [
+    "id",
+    "steps"
+   ],
+   "additionalProperties": false
+  }
+ },
+ "question-flow": {
+  "hint": "props: {id: str, step: num, title: str, options: [{id: str, label: str, description?: str, disabled?: bool}], role?: 'information'|'decision'|'control'|'state'|'composite', description?: str, selectionMode?: 'single'|'multi'}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "step": {
+     "type": "number",
+     "minimum": 1
+    },
+    "title": {
+     "type": "string",
+     "minLength": 1
+    },
+    "description": {
+     "type": "string"
+    },
+    "options": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "label": {
+        "type": "string",
+        "minLength": 1
+       },
+       "description": {
+        "type": "string"
+       },
+       "disabled": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "id",
+       "label"
+      ]
+     }
+    },
+    "selectionMode": {
+     "type": "string",
+     "enum": [
+      "single",
+      "multi"
+     ]
+    }
+   },
+   "required": [
+    "id",
+    "step",
+    "title",
+    "options"
+   ]
+  }
+ },
+ "stats-display": {
+  "hint": "props: {id: str, stats: [{key: str, label: str, value: str|num, format?: any, diff?: obj, sparkline?: obj}], role?: 'information'|'decision'|'control'|'state'|'composite', title?: str, description?: str}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "title": {
+     "type": "string"
+    },
+    "description": {
+     "type": "string"
+    },
+    "stats": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "key": {
+        "type": "string",
+        "minLength": 1
+       },
+       "label": {
+        "type": "string",
+        "minLength": 1
+       },
+       "value": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "number"
+         }
+        ]
+       },
+       "format": {
+        "oneOf": [
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "text"
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "number"
+           },
+           "decimals": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+           },
+           "compact": {
+            "type": "boolean"
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "currency"
+           },
+           "currency": {
+            "type": "string",
+            "minLength": 1
+           },
+           "decimals": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+           }
+          },
+          "required": [
+           "kind",
+           "currency"
+          ]
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "percent"
+           },
+           "decimals": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+           },
+           "basis": {
+            "type": "string",
+            "enum": [
+             "fraction",
+             "unit"
+            ]
+           }
+          },
+          "required": [
+           "kind"
+          ]
+         }
+        ]
+       },
+       "diff": {
+        "type": "object",
+        "properties": {
+         "value": {
+          "type": "number"
+         },
+         "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+         },
+         "upIsPositive": {
+          "type": "boolean"
+         },
+         "label": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "value"
+        ]
+       },
+       "sparkline": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "minItems": 2,
+          "type": "array",
+          "items": {
+           "type": "number"
+          }
+         },
+         "color": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "data"
+        ]
+       }
+      },
+      "required": [
+       "key",
+       "label",
+       "value"
+      ]
+     }
+    }
+   },
+   "required": [
+    "id",
+    "stats"
+   ]
+  }
+ },
+ "terminal": {
+  "hint": "props: {id: str, command: str, exitCode: num, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, stdout?: str, stderr?: str, durationMs?: num, cwd?: str, truncated?: bool, maxCollapsedLines?: num}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "command": {
+     "type": "string"
+    },
+    "stdout": {
+     "type": "string"
+    },
+    "stderr": {
+     "type": "string"
+    },
+    "exitCode": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991
+    },
+    "durationMs": {
+     "type": "number"
+    },
+    "cwd": {
+     "type": "string"
+    },
+    "truncated": {
+     "type": "boolean"
+    },
+    "maxCollapsedLines": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "id",
+    "command",
+    "exitCode"
+   ]
+  }
+ },
+ "video": {
+  "hint": "props: {id: str, assetId: str, src: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, poster?: str, title?: str, description?: str, href?: str, domain?: str, durationMs?: num, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', createdAt?: str, locale?: str, source?: {label: str, iconU...",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "information",
+      "decision",
+      "control",
+      "state",
+      "composite"
+     ]
+    },
+    "receipt": {
+     "type": "object",
+     "properties": {
+      "outcome": {
+       "type": "string",
+       "enum": [
+        "success",
+        "partial",
+        "failed",
+        "cancelled"
+       ]
+      },
+      "summary": {
+       "type": "string",
+       "minLength": 1
+      },
+      "identifiers": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      },
+      "at": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+      }
+     },
+     "required": [
+      "outcome",
+      "summary",
+      "at"
+     ]
+    },
+    "assetId": {
+     "type": "string"
+    },
+    "src": {
+     "type": "string",
+     "format": "uri"
+    },
+    "poster": {
+     "type": "string",
+     "format": "uri"
+    },
+    "title": {
+     "type": "string"
+    },
+    "description": {
+     "type": "string"
+    },
+    "href": {
+     "type": "string",
+     "format": "uri"
+    },
+    "domain": {
+     "type": "string"
+    },
+    "durationMs": {
+     "type": "integer",
+     "exclusiveMinimum": 0,
+     "maximum": 9007199254740991
+    },
+    "ratio": {
+     "default": "auto",
+     "type": "string",
+     "enum": [
+      "auto",
+      "1:1",
+      "4:3",
+      "16:9",
+      "9:16"
+     ]
+    },
+    "fit": {
+     "default": "cover",
+     "type": "string",
+     "enum": [
+      "cover",
+      "contain"
+     ]
+    },
+    "createdAt": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "locale": {
+     "type": "string"
+    },
+    "source": {
+     "type": "object",
+     "properties": {
+      "label": {
+       "type": "string"
+      },
+      "iconUrl": {
+       "type": "string",
+       "format": "uri"
+      },
+      "url": {
+       "type": "string",
+       "format": "uri"
+      }
+     },
+     "required": [
+      "label"
+     ]
+    }
+   },
+   "required": [
+    "id",
+    "assetId",
+    "src"
+   ]
+  }
+ },
+ "x-post": {
+  "hint": "props: {id: str, author: {name: str, handle: str, avatarUrl: str, verified?: bool}, text?: str, media?: {type: 'image'|'video', url: str, alt: str, aspectRatio?: '1:1'|'4:3'|'16:9'|'9:16'}, linkPreview?: {url: str, title?: str, description?: str, imageUrl?: str, domain?: str}, quotedPost?: any, stats?: {likes?: num, isLiked?: bool, isReposted?: bool, isBookmarked?: bool}, createdAt?: str}",
+  "schema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "author": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "handle": {
+       "type": "string"
+      },
+      "avatarUrl": {
+       "type": "string",
+       "format": "uri"
+      },
+      "verified": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "name",
+      "handle",
+      "avatarUrl"
+     ]
+    },
+    "text": {
+     "type": "string"
+    },
+    "media": {
+     "type": "object",
+     "properties": {
+      "type": {
+       "type": "string",
+       "enum": [
+        "image",
+        "video"
+       ]
+      },
+      "url": {
+       "type": "string",
+       "format": "uri"
+      },
+      "alt": {
+       "type": "string"
+      },
+      "aspectRatio": {
+       "type": "string",
+       "enum": [
+        "1:1",
+        "4:3",
+        "16:9",
+        "9:16"
+       ]
+      }
+     },
+     "required": [
+      "type",
+      "url",
+      "alt"
+     ]
+    },
+    "linkPreview": {
+     "type": "object",
+     "properties": {
+      "url": {
+       "type": "string",
+       "format": "uri"
+      },
+      "title": {
+       "type": "string"
+      },
+      "description": {
+       "type": "string"
+      },
+      "imageUrl": {
+       "type": "string",
+       "format": "uri"
+      },
+      "domain": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "url"
+     ]
+    },
+    "quotedPost": {
+     "$ref": "#"
+    },
+    "stats": {
+     "type": "object",
+     "properties": {
+      "likes": {
+       "type": "number"
+      },
+      "isLiked": {
+       "type": "boolean"
+      },
+      "isReposted": {
+       "type": "boolean"
+      },
+      "isBookmarked": {
+       "type": "boolean"
+      }
+     }
+    },
+    "createdAt": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "author"
+   ]
+  }
+ }
+}

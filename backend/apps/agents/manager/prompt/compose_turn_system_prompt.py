@@ -62,7 +62,9 @@ def compose_turn_system_prompt(
             "<current_time>\n"
             f"Today is {now_local.strftime('%A, %B %-d, %Y')}.\n"
             f"Local time: {now_local.strftime('%-I:%M %p')} {tz_abbr} ({tz_name}).\n"
-            "Use this as ground truth for any date/time/day-of-week question.\n"
+            "Use this as ground truth for any date/time/day-of-week question. The timezone also "
+            "gives the user's coarse region; when they say 'here' or 'near me' without a place, "
+            "infer the likely city from it (say you inferred it) instead of claiming you can't know.\n"
             "</current_time>"
         )
         composed_prompt = (composed_prompt + "\n\n" + time_ctx) if composed_prompt else time_ctx

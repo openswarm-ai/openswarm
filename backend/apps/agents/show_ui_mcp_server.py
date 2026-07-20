@@ -20,39 +20,27 @@ ASK_TIMEOUT_S = 600
 
 MAX_PROPS_BYTES = 20_000
 
+# Hints + JSON Schemas for the vendored tool-ui set are GENERATED from the shipped zod contracts
+# (frontend/scripts/gen-toolui-hints.ts writes toolui_schemas.json next to this file). Loading them
+# here means the tool description and the server-side validation can never drift from what renders.
+def p_load_generated():
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "toolui_schemas.json")) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+GENERATED = p_load_generated()
+
 COMPONENT_SPECS = {
-    "weather": "props: {location: str, temp: number, unit?: 'F'|'C', high?: number, low?: number, condition?: str, forecast?: [{day: str, condition?: str, high: number, low?: number}] (max 7)}",
+    "weather": "props: {location: str, temp: number, unit?: 'F'|'C', high?: number, low?: number, condition?: str, forecast?: [{day: str, condition?: str, high?: number, low?: number}] (max 7)}",
     "stats": "props: {title?: str, stats: [{label: str, value: str, delta?: str, direction?: 'up'|'down'}] (max 8)}",
     "links": "props: {links: [{title: str, url: str, description?: str}] (max 10)}",
-    # Vendored tool-ui set (MIT, https://tool-ui.com); hints are AUTO-GENERATED from the shipped zod
-    # contracts by frontend/scripts/gen-toolui-hints.ts. Regenerate after upgrading src/toolui.
-    "approval-card": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', title: str, description?: str, icon?: str, metadata?: [{key: str, value: str}], variant?: 'default'|'destructive', confirmLabel?: str, cancelLabel?: str, choice?: 'approved'|'denied'}",
-    "audio": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, assetId: str, src: str, title?: str, description?: str, artwork?: str, durationMs?: num, fileSizeBytes?: num, createdAt?: str, locale?: str, source?: {label: str, iconUrl?: str, u...",
-    "chart": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, type: 'bar'|'line', title?: str, description?: str, data: [{}], xKey: str, series: [{key: str, label: str, color?: str}], colors?: [str], showLegend?: bool, showGrid?: bool}",
-    "citation": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, href: str, title: str, snippet?: str, domain?: str, favicon?: str, author?: str, publishedAt?: str, type?: 'webpage'|'document'|'article'|'api'|'code'|'other', locale?: str}",
-    "code-block": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, code: str, language?: str, lineNumbers?: 'visible'|'hidden', filename?: str, highlightLines?: [num], maxCollapsedLines?: num}",
-    "code-diff": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, oldCode?: str, newCode?: str, patch?: str, language?: str, filename?: str, lineNumbers?: 'visible'|'hidden', diffStyle?: 'unified'|'split', maxCollapsedLines?: num}",
-    "data-table": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, columns: [{key: str, label: str, abbr?: str, sortable?: bool, align?: 'left'|'right'|'center', width?: str, truncate?: bool, priority?: 'primary'|'secondary'|'tertiary', hideOnMob...",
-    "geo-map": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, title?: str, description?: str, markers: [{id?: str, lat: num, lng: num, label?: str, description?: str, tooltip?: 'none'|'hover'|'always', icon?: obj|obj|obj}], routes?: [{id?: s...",
-    "image": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, assetId: str, src: str, alt: str, title?: str, description?: str, href?: str, domain?: str, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', fileSizeBytes?: num,...",
-    "image-gallery": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, images: [{id: str, src: str, alt: str, width: num, height: num, title?: str, caption?: str, source?: obj}], title?: str, description?: str}",
-    "instagram-post": "props: {id: str, author: {name: str, handle: str, avatarUrl: str, verified?: bool}, text?: str, media?: [{type: 'image'|'video', url: str, alt: str}], stats?: {likes?: num, isLiked?: bool}, createdAt?: str}",
-    "item-carousel": "props: {id: str, name: str, subtitle?: str, image?: str, color?: str, actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'destructive'|'secondary'|'ghost'|'outline', loading?: bool, disabled?: bool, shortcut?: str}]}",
-    "link-preview": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, href: str, title?: str, description?: str, image?: str, domain?: str, favicon?: str, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', createdAt?: str, locale?: str}",
-    "linkedin-post": "props: {id: str, author: {name: str, avatarUrl: str, headline?: str}, text?: str, media?: {type: 'image'|'video', url: str, alt: str}, linkPreview?: {url: str, title?: str, description?: str, imageUrl?: str, domain?: str}, stats?: {likes?: num, isLiked?: bool}, createdAt?: str}",
-    "message-draft": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', body: str, outcome?: 'sent'|'cancelled', channel: str, subject: str, from?: str, to: [str], cc?: [str], bcc?: [str]}",
-    "option-list": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, options: [{id: str, label: str, description?: str, disabled?: bool}], selectionMode?: 'multi'|'single', defaultValue?: [str]|str|any, choice?: [str]|str|any, actions?: [{id: str, ...",
-    "order-summary": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', title?: str, variant?: 'summary'|'receipt', items: [{id: str, name: str, description?: str, imageUrl?: str, quantity?: num, unitPrice: num}], pricing: {subtotal: num, tax?: num, taxLabel?: str, shipping?: num, discount?: num, discountLabel?: str, total: num, currency?: str}, choice?:...",
-    "parameter-slider": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', sliders: [{id: str, label: str, min: num, max: num, step?: num, value: num, unit?: str, precision?: num, disabled?: bool, trackClassName?: str, fillClassName?: str, handleClassName?: str}], actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'dest...",
-    "plan": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, title: str, description?: str, todos: [{id: str, label: str, status: 'pending'|'in_progress'|'completed'|'cancelled', description?: str}], maxVisibleTodos?: num}",
-    "preferences-panel": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, title?: str, sections: [{heading?: str, items: [any]}], actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'destructive'|'secondary'|'ghost'|...",
-    "progress-tracker": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', steps: [{id: str, label: str, description?: str, status: 'pending'|'in-progress'|'completed'|'failed'}], elapsedTime?: num, choice?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}}",
-    "question-flow": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', step: num, title: str, description?: str, options: [{id: str, label: str, description?: str, disabled?: bool}], selectionMode?: 'single'|'multi'}",
-    "stats-display": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', title?: str, description?: str, stats: [{key: str, label: str, value: str|num, format?: any, diff?: obj, sparkline?: obj}]}",
-    "terminal": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, command: str, stdout?: str, stderr?: str, exitCode: num, durationMs?: num, cwd?: str, truncated?: bool, maxCollapsedLines?: num}",
-    "video": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, identifiers?: obj, at: str}, assetId: str, src: str, poster?: str, title?: str, description?: str, href?: str, domain?: str, durationMs?: num, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain'...",
-    "x-post": "props: {id: str, author: {name: str, handle: str, avatarUrl: str, verified?: bool}, text?: str, media?: {type: 'image'|'video', url: str, alt: str, aspectRatio?: '1:1'|'4:3'|'16:9'|'9:16'}, linkPreview?: {url: str, title?: str, description?: str, imageUrl?: str, domain?: str}, quotedPost?: any, stats?: {likes?: num, isLiked?: bool, isReposted?: bool, isBookmarke...",
 }
+
+COMPONENT_SPECS.update({name: entry["hint"] for name, entry in GENERATED.items()})
+
 
 INTERACTIVE_COMPONENTS = (
     "option-list", "question-flow", "parameter-slider", "preferences-panel", "approval-card",
@@ -140,9 +128,71 @@ def validate(component: str, props: dict) -> str:
         return f"stats needs a non-empty stats list. {COMPONENT_SPECS['stats']}"
     if component == "links" and not (isinstance(props.get("links"), list) and props["links"]):
         return f"links needs a non-empty links list. {COMPONENT_SPECS['links']}"
-    # Vendored tool-ui components validate deeply client-side against their zod contracts; here we
-    # only shape-check so a wrong payload comes back as a teaching error instead of a dead render.
+    # Vendored components: validate against the GENERATED JSON Schema so a bad payload comes back
+    # as a teaching error the model can fix in-turn, instead of a dead render it never hears about.
+    entry = GENERATED.get(component)
+    if entry and isinstance(entry.get("schema"), dict):
+        errors = []
+        p_check(props, entry["schema"], "props", errors)
+        if errors:
+            return (
+                f"{component} payload invalid: " + "; ".join(errors[:4])
+                + f". Full shape: {COMPONENT_SPECS[component]}. Fix the props and call the tool again."
+            )
     return ""
+
+
+def p_type_ok(value, t: str) -> bool:
+    if t == "string":
+        return isinstance(value, str)
+    if t in ("number", "integer"):
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if t == "boolean":
+        return isinstance(value, bool)
+    if t == "object":
+        return isinstance(value, dict)
+    if t == "array":
+        return isinstance(value, list)
+    if t == "null":
+        return value is None
+    return True
+
+
+def p_check(value, schema: dict, path: str, errors: list) -> None:
+    """Minimal JSON Schema walk: required keys, primitive types, enums, anyOf. Anything it can't
+    interpret passes; the client zod contract stays the deep authority."""
+    if len(errors) >= 6 or not isinstance(schema, dict):
+        return
+    branches = schema.get("anyOf")
+    if isinstance(branches, list) and branches:
+        for branch in branches:
+            trial = []
+            p_check(value, branch, path, trial)
+            if not trial:
+                return
+        errors.append(f"{path} matches none of its allowed shapes")
+        return
+    enum = schema.get("enum")
+    if isinstance(enum, list) and enum and value not in enum:
+        errors.append(f"{path} must be one of {enum[:6]}")
+        return
+    t = schema.get("type")
+    if isinstance(t, str) and not p_type_ok(value, t):
+        errors.append(f"{path} must be a {t}")
+        return
+    if t == "object" and isinstance(value, dict):
+        for key in schema.get("required", []) or []:
+            if key not in value:
+                errors.append(f"{path}.{key} is required")
+        props = schema.get("properties") or {}
+        for key, sub in props.items():
+            if key in value:
+                p_check(value[key], sub, f"{path}.{key}", errors)
+    elif t == "array" and isinstance(value, list):
+        items = schema.get("items")
+        if isinstance(items, dict):
+            for i, item in enumerate(value):
+                p_check(item, items, f"{path}[{i}]", errors)
 
 
 def p_post(url: str, body: dict, timeout: float) -> dict:

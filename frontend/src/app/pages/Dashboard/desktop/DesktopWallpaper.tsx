@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import { useThemeMode } from '@/shared/styles/ThemeContext';
+import './desktop.css';
 
 /**
  * Monterey-style layered-ridge wallpaper. Design rules: scenery not signal (long smooth ridges,

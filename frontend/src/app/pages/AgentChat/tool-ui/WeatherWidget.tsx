@@ -23,7 +23,7 @@ function toConditionCode(condition: string | undefined): WeatherConditionCode {
 }
 
 /** Agent-facing 'weather' shape adapted onto the vendored animated (WebGL) weather widget. */
-function WeatherWidget({ props }: { props: WeatherProps }): React.ReactElement {
+function WeatherWidget({ props, ambient }: { props: WeatherProps; ambient?: boolean }): React.ReactElement {
   const { mode } = useThemeMode();
   const forecast: ForecastDay[] = (props.forecast || []).slice(0, 7).map((d) => ({
     label: d.day,
@@ -48,7 +48,7 @@ function WeatherWidget({ props }: { props: WeatherProps }): React.ReactElement {
         }}
         forecast={forecast}
         time={{ localTimeOfDay: new Date().getHours() + new Date().getMinutes() / 60 }}
-        effects={{ enabled: true, quality: 'auto' }}
+        effects={{ enabled: true, quality: ambient ? 'low' : 'auto' }}
       />
     </div>
   );

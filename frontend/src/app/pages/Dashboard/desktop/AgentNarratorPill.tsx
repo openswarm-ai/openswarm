@@ -73,7 +73,7 @@ function AgentNarratorPill({ label, running, todos, artifact, browserShot, selec
 
       {artifact ? (
         <Box key={artifactKey} className="osw-artifact">
-          <ShowUiWidgetView payload={artifact} />
+          <ShowUiWidgetView payload={artifact} ambient />
         </Box>
       ) : browserShot ? (
         <Box
