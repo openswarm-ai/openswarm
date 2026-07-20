@@ -870,9 +870,11 @@ const AppShell: React.FC = () => {
               </span>
             </Tooltip>
             <Box sx={{ flex: 1 }} />
-            <Tooltip title="Hide sidebar">
-              <IconButton size="small" onClick={() => setSidebarCollapsed(true)}
-                data-onboarding="sidebar-toggle" aria-expanded
+            <Tooltip title={sideOverlay ? 'Dock sidebar' : 'Hide sidebar'}>
+              {/* Arc-style pin: from the floating peek this DOCKS the sidebar permanently (pushes the
+                  canvas), from docked it collapses back to peek. Toggle, not one-way collapse. */}
+              <IconButton size="small" onClick={() => setSidebarCollapsed((v) => !v)}
+                data-onboarding="sidebar-toggle" aria-expanded={!sidebarCollapsed}
                 sx={{ color: c.text.tertiary, p: 0.5, borderRadius: 1, '&:hover': { color: c.text.secondary, bgcolor: `${c.text.tertiary}14` } }}>
                 <AnimatedPanelLeft size={17} />
               </IconButton>

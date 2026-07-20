@@ -209,16 +209,6 @@ const OnboardingV3Root: React.FC = () => {
               {beat === 'card' && <BeatCard c={c} identity={pipeline.identity} onFinish={(name) => { void leaveCard(name); }} onBack={() => setBeat('theme')} />}
             </motion.div>
           </AnimatePresence>
-          {/* Traffic lights on every beat: Arc's onboarding is a real window and never hides them. */}
-          <motion.div
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-            style={{ position: 'absolute', top: 13, left: 14, display: 'flex', gap: 7, pointerEvents: 'none', zIndex: 10 }}
-          >
-            {['#FF5F57', '#FEBC2E', '#28C840'].map((dot) => (
-              <span key={dot} style={{ width: 11, height: 11, borderRadius: 999, background: dot, opacity: 0.9 }} />
-            ))}
-          </motion.div>
         </motion.div>
       </motion.div>
       )}
