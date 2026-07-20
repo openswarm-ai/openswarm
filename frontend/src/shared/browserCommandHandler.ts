@@ -1,4 +1,4 @@
-import { getWebview, findWebviewByDomain, hasDomReady, markDomReady, type BrowserWebview } from './browserRegistry';
+import { getWebview, findWebviewByDomain, hasDomReady, markDomReady, isPendingLoad, wakePendingLoad, clearPendingLoad, type BrowserWebview } from './browserRegistry';
 import { store } from './state/store';
 import { resumeBrowserCard } from './state/dashboardLayoutSlice';
 import { dashboardWs } from './ws/WebSocketManager';
@@ -1434,7 +1434,7 @@ async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): 
 }
 
 // The registry is renderer-local and a card briefly unregisters on remount / tab-switch; a command landing in that gap shouldn't hard-fail. Wait a bounded window for (re)registration before giving up, so the error stays a real "card is gone" signal rather than a transient race.
-async function awaitWebview(browserId: string, tabId?: string): Promise<BrowserWebview | undefined> {
+async function awaitWebview(browserId: string, tabId?: string, action?: string): Promise<BrowserWebview | undefined> {
   // A suspended (snapshot-swapped) card has no webview at all; wake it and wait out the remount + page reload before the command touches it.
   const wasSuspended = !!store.getState().dashboardLayout.suspendedBrowserCards[browserId];
   if (wasSuspended) store.dispatch(resumeBrowserCard(browserId));
@@ -1452,6 +1452,24 @@ async function awaitWebview(browserId: string, tabId?: string): Promise<BrowserW
         // mid-mount hiccup; keep waiting
       }
       await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+  // A lazy background tab mounts at about:blank with its real page deferred; an agent command needs
+  // the real page, so wake it and wait out the load, same as a resumed suspended card. A navigate
+  // is about to load its own url, so just drop the deferred load instead of loading the old one first.
+  if (wv && isPendingLoad(wv)) {
+    if (action === 'navigate') {
+      clearPendingLoad(wv);
+    } else if (wakePendingLoad(wv)) {
+      const loadDeadline = Date.now() + 12000;
+      while (Date.now() < loadDeadline) {
+        try {
+          if (!wv.isLoading() && wv.getURL() !== 'about:blank') break;
+        } catch {
+          // mid-load hiccup; keep waiting
+        }
+        await new Promise((r) => setTimeout(r, 150));
+      }
     }
   }
   return wv;
@@ -1501,6 +1519,18 @@ async function handlePerformAction(params: Record<string, any>): Promise<Record<
   if (!wv) {
     return { error: `No ${domain} browser card is open. Open ${domain} in an OpenSwarm browser card and sign in, then retry.` };
   }
+  // findWebviewByDomain can resolve a deferred background tab by its intended url; wake it and wait out the load before driving it, so the session-borrow shims never act on an about:blank tab.
+  if (isPendingLoad(wv) && wakePendingLoad(wv)) {
+    const loadDeadline = Date.now() + 12000;
+    while (Date.now() < loadDeadline) {
+      try {
+        if (!wv.isLoading() && wv.getURL() !== 'about:blank') break;
+      } catch {
+        // mid-load hiccup; keep waiting
+      }
+      await new Promise((res) => setTimeout(res, 150));
+    }
+  }
   const steps = Array.isArray(params.steps) ? params.steps : [];
   const results: Record<string, any>[] = [];
   for (const step of steps) {
@@ -1530,7 +1560,7 @@ async function runBrowserCommand(
     dashboardWs.send('browser:result', { request_id, ...result });
     return;
   }
-  const wv = await awaitWebview(browser_id, tab_id || undefined);
+  const wv = await awaitWebview(browser_id, tab_id || undefined, action);
   if (!wv) {
     dashboardWs.send('browser:result', {
       request_id,

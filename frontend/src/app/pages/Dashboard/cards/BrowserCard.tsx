@@ -48,6 +48,8 @@ import {
   registerWebview,
   unregisterWebview,
   setActiveTab as setRegistryActiveTab,
+  registerPendingLoad,
+  wakePendingLoad,
   type BrowserWebview,
 } from '@/shared/browserRegistry';
 import { setLastInteractedBrowser } from '@/shared/browserFocus';
@@ -265,8 +267,14 @@ const BrowserCard: React.FC<Props> = ({
     }
   }, []);
 
+  // Kept current so the mount-time load decision (eager vs deferred) reads the live active tab, not a stale closure (the load effect keys on the tab SET, not activeTabId).
+  const activeTabIdRef = useRef(activeTabId);
   useEffect(() => {
+    activeTabIdRef.current = activeTabId;
     setRegistryActiveTab(browserId, activeTabId);
+    // Switching to a deferred background tab loads it now; no-op if it already loaded or hasn't reached dom-ready yet (onReady then loads it eagerly because it's the active tab).
+    const wv = webviewMap.current.get(activeTabId);
+    if (wv) wakePendingLoad(wv);
   }, [browserId, activeTabId]);
 
   // Open the find bar when AppShell routes a Ctrl/Cmd+F to this browser; re-trigger re-focuses the input.
@@ -320,8 +328,15 @@ const BrowserCard: React.FC<Props> = ({
             (wv as any).setZoomFactor?.(1);
           } catch (_) {}
         };
-        wv.addEventListener('dom-ready', doLoad, { once: true });
-        cleanups.push(() => wv.removeEventListener('dom-ready', doLoad));
+        // Lazy tabs: only the VISIBLE tab loads its page on mount. A background tab stays at
+        // about:blank (deferred) so a many-tab card doesn't load every page at once; it's woken
+        // the instant it becomes active OR an agent command resolves it (browserRegistry wake).
+        const onReady = () => {
+          if (tabId === activeTabIdRef.current) doLoad();
+          else registerPendingLoad(wv, targetUrl, doLoad);
+        };
+        wv.addEventListener('dom-ready', onReady, { once: true });
+        cleanups.push(() => wv.removeEventListener('dom-ready', onReady));
       }
 
       const mirrorUrl = () => dispatch(updateBrowserTabUrl({ browserId, tabId, url: wv.getURL() }));
