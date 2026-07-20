@@ -1,13 +1,12 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import LanguageIcon from '@mui/icons-material/Language';
+import DashboardGlyph from '../canvas/DashboardGlyph';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
-import CoPresentIcon from '@mui/icons-material/CoPresent';
 import { useAppDispatch } from '@/shared/hooks';
 import { openSettingsModal } from '@/shared/state/settingsSlice';
 import { getWebview } from '@/shared/browserRegistry';
@@ -57,6 +56,21 @@ interface DesktopDockProps {
 const TILE = 30;
 const PREVIEW_W = 190;
 
+// Frames show a colorful per-card dock, not uniform tiles; hues rotate by name so two agents rarely match.
+const AGENT_TILE_HUES = [
+  'linear-gradient(135deg, #4a7dd6, #2b4fa8)',
+  'linear-gradient(135deg, #8a5bd6, #5b34a8)',
+  'linear-gradient(135deg, #3aa88f, #1f7a64)',
+  'linear-gradient(135deg, #d6754a, #a8492b)',
+  'linear-gradient(135deg, #c94a7d, #96305c)',
+];
+
+function hueFor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return AGENT_TILE_HUES[Math.abs(h) % AGENT_TILE_HUES.length];
+}
+
 /** Left-edge desktop dock: one tile per open card, hover previews, click focuses the window. */
 function DesktopDock({
   sessions,
@@ -80,12 +94,13 @@ function DesktopDock({
     for (const card of Object.values(cards)) {
       const session = sessions[card.session_id];
       if (!session) continue;
+      const title = displayChatTitle(session);
       list.push({
         id: card.session_id,
-        label: displayChatTitle(session),
+        label: title,
         rect: card,
-        tileBg: 'linear-gradient(135deg, #4a7dd6, #2b4fa8)',
-        icon: <AutoAwesomeIcon sx={{ fontSize: 17, color: '#fff' }} />,
+        tileBg: hueFor(title),
+        icon: <DashboardGlyph name={title} size={16} color="#fff" />,
         snippet: session.turn_label?.label || undefined,
       });
     }
@@ -103,12 +118,17 @@ function DesktopDock({
     }
     for (const [cardKey, vc] of Object.entries(viewCards)) {
       const output = outputs[vc.output_id];
+      const appName = output?.name || 'App';
       list.push({
         id: cardKey,
-        label: output?.name || 'App',
+        label: appName,
         rect: vc,
         tileBg: 'linear-gradient(135deg, #ef9552, #d96a2b)',
-        icon: <CoPresentIcon sx={{ fontSize: 16, color: '#fff' }} />,
+        icon: (
+          <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#fff', lineHeight: 1 }}>
+            {appName.charAt(0).toUpperCase()}
+          </Typography>
+        ),
         thumbnail: output?.thumbnail,
       });
     }

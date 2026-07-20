@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import { useThemeMode } from '@/shared/styles/ThemeContext';
 
@@ -10,6 +10,26 @@ import { useThemeMode } from '@/shared/styles/ThemeContext';
  */
 function DesktopWallpaper(): React.ReactElement {
   const { mode } = useThemeMode();
+  // The user's real OS wallpaper when the Electron bridge can supply it (never bundled); SVG scenery otherwise.
+  const [realWallpaper, setRealWallpaper] = useState<string | null>(null);
+  useEffect(() => {
+    const getWallpaper = (window as unknown as { openswarm?: { getDesktopWallpaper?: () => Promise<string | null> } })
+      .openswarm?.getDesktopWallpaper;
+    if (!getWallpaper) return;
+    let cancelled = false;
+    getWallpaper().then((dataUrl) => { if (!cancelled && dataUrl) setRealWallpaper(dataUrl); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  if (realWallpaper) {
+    return (
+      <Box aria-hidden sx={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+        <Box component="img" src={realWallpaper} alt="" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        {mode === 'dark' && <Box sx={{ position: 'absolute', inset: 0, background: 'rgba(12,6,24,0.38)' }} />}
+      </Box>
+    );
+  }
+
   return (
     <Box
       aria-hidden
