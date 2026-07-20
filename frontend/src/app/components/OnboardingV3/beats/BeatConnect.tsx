@@ -67,8 +67,6 @@ const BeatConnect: React.FC<{
   // Which provider rows are live, so the tab itself shows "Connected", not a floating label below.
   const connections = useAppSelector(selectSubscriptionConnections);
   const connectedIds = new Set(connections.filter((cx) => cx.isActive !== false).map((cx) => cx.provider));
-  const identityFor = (pid: string): ProviderIdentity | undefined =>
-    identity.find((id) => id.provider === pid) ?? (pid === 'antigravity' ? identity.find((id) => id.provider === 'gemini') : undefined);
   // The whole flow leans on a real connection (identity, chat-history read, personalized reveal), so
   // there is no skip: Continue stays locked until a provider is connected or the free trial is armed.
   const canContinue = connected || freeTrial;
@@ -89,7 +87,6 @@ const BeatConnect: React.FC<{
         {SUBSCRIPTION_PROVIDERS.map((p, i) => {
           const isThis = connecting === p.id;
           const isConnected = connectedIds.has(p.id);
-          const ident = isConnected ? identityFor(p.id) : undefined;
           return (
             <motion.button
               key={p.id}
@@ -111,11 +108,10 @@ const BeatConnect: React.FC<{
               }} />
               <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '11px 0' }}>
                 <span style={{ fontSize: '0.98rem', fontWeight: 600, color: '#3d3d3a' }}>{p.name}</span>
-                {isConnected
-                  ? <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#1a9e6a' }}>Connected{ident?.email ? ` as ${ident.email}` : ''}</span>
-                  : isThis && !connected
-                    ? <span style={{ fontSize: '0.78rem', fontWeight: 400, color: '#8a8a86' }}>waiting for sign-in...</span>
-                    : null}
+                {/* The green ring + filled radio already signal connected, so no redundant "Connected" text. */}
+                {!isConnected && isThis && !connected
+                  ? <span style={{ fontSize: '0.78rem', fontWeight: 400, color: '#8a8a86' }}>waiting for sign-in...</span>
+                  : null}
               </span>
               {/* Arc's icon tile: a full-height soft-tinted zone on the row's right edge, real brand mark inside. */}
               <span style={{
