@@ -28,8 +28,6 @@ from backend.apps.outputs.view_builder_templates import (
 from backend.apps.settings.settings import load_settings
 from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR as WORKSPACE_DIR
 from backend.apps.outputs.html_inject import (
-    MODEL_MAP,
-    resolve_model,
     get_anthropic_client,
     validate_against_schema,
     build_data_injection,

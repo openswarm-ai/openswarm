@@ -153,6 +153,7 @@ class SessionLifecycle(AgentManagerProtocol):
         limit: int = 20,
         offset: int = 0,
         dashboard_id: Optional[str] = None,
+        closed_only: bool = False,
     ) -> Dict:
         """Return paginated, optionally filtered summaries of closed sessions."""
         all_data = load_all_session_data()
@@ -161,6 +162,9 @@ class SessionLifecycle(AgentManagerProtocol):
         q_lower = q.strip().lower()
         history = []
         for sid, data in all_data:
+            # The boot fetch wants CLOSED sessions only: open ones landing in the client's history map made its resurrection gate swallow their terminal frames. Search keeps the full pool (open sessions on other dashboards are reachable nowhere else).
+            if closed_only and not data.get("closed_at"):
+                continue
             if dashboard_id and data.get("dashboard_id") != dashboard_id:
                 continue
             if q_lower:

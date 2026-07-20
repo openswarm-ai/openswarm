@@ -85,6 +85,8 @@ class Workflow(BaseModel):
     deleted_at: Optional[datetime] = None
     system_prompt: Optional[str] = None
     use_synced_prompt: bool = True
+    # Agents may call this workflow via the InvokeWorkflow MCP tool (user opt-in per workflow on the Actions page).
+    exposed_as_tool: bool = False
     steps: list[WorkflowStep] = Field(default_factory=list)
     actions: ActionsConfig = Field(default_factory=ActionsConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
@@ -162,6 +164,8 @@ class WorkflowCreate(BaseModel):
     color: Optional[str] = None
     system_prompt: Optional[str] = None
     use_synced_prompt: bool = True
+    # Agents may call this workflow via the InvokeWorkflow MCP tool (user opt-in per workflow on the Actions page).
+    exposed_as_tool: bool = False
     steps: list[WorkflowStep] = Field(default_factory=list)
     actions: ActionsConfig = Field(default_factory=ActionsConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
@@ -198,6 +202,7 @@ class WorkflowUpdate(BaseModel):
     color: Optional[str] = None
     system_prompt: Optional[str] = None
     use_synced_prompt: Optional[bool] = None
+    exposed_as_tool: Optional[bool] = None
     steps: Optional[list[WorkflowStep]] = None
     actions: Optional[ActionsConfig] = None
     schedule: Optional[ScheduleConfig] = None

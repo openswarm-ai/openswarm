@@ -272,7 +272,9 @@ const AppShell: React.FC = () => {
       dispatch(setPendingBrowserUrl(url));
       const lastId = (window as any).__openswarm_last_dashboard_id as string | undefined;
       const firstDashboard = dashboardList[0];
-      const targetId = lastId || firstDashboard?.id;
+      // Only navigate to lastId if it's a REAL dashboard: a stale localStorage id for a deleted dashboard used to route to /dashboard/<phantom>, which 404s and re-fires the layout wipe (drops your cards / breaks a drag).
+      const lastIsReal = !!lastId && dashboardList.some((d) => d.id === lastId);
+      const targetId = (lastIsReal ? lastId : undefined) || firstDashboard?.id;
       if (targetId) {
         navigate(`/dashboard/${targetId}`);
       } else {

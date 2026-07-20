@@ -126,9 +126,9 @@ def build_manifest(root_type: EntityType, root_id: str) -> Manifest:
     return p_assemble(root_type, root_id)[0]
 
 
-def build_bundle(root_type: EntityType, root_id: str) -> tuple[bytes, str]:
+def build_bundle(root_type: EntityType, root_id: str, allow_file_secrets: bool = False) -> tuple[bytes, str]:
     manifest, payloads, files = p_assemble(root_type, root_id)
-    raw = pack(manifest.model_dump(by_alias=True, mode="json"), payloads, files)
+    raw = pack(manifest.model_dump(by_alias=True, mode="json"), payloads, files, allow_file_secrets=allow_file_secrets)
     return raw, manifest.root.name
 
 

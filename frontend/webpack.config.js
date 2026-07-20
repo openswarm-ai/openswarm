@@ -79,13 +79,14 @@ module.exports = (env, argv) => {
     devServer: {
       static: { directory: path.join(__dirname, 'public') },
       compress: true,
-      port: 3000,
+      // Dev only: OPENSWARM_DEV_PORT / OPENSWARM_PORT let a second worktree run its own stack without colliding on 3000/8324 (electron reads the same var names).
+      port: Number(process.env.OPENSWARM_DEV_PORT) || 3000,
       hot: true,
       open: false,
       historyApiFallback: true,
       proxy: {
         '/api': {
-          target: 'http://localhost:8324',
+          target: `http://localhost:${process.env.OPENSWARM_PORT || 8324}`,
           changeOrigin: true,
         },
       },

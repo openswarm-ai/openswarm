@@ -1239,8 +1239,8 @@ function createWindow() {
   });
 
   if (isDev) {
-    // OPENSWARM_DEV_URL lets a worktree stack (webpack on an alternate port) run its own Electron.
-    mainWindow.loadURL(process.env.OPENSWARM_DEV_URL || `http://localhost:3000`);
+    // Dev only: a worktree's Electron can point at its own webpack-dev-server via OPENSWARM_DEV_URL (full URL) or OPENSWARM_DEV_PORT (port), instead of colliding on the shared :3000. Packaged builds never hit this branch.
+    mainWindow.loadURL(process.env.OPENSWARM_DEV_URL || `http://localhost:${process.env.OPENSWARM_DEV_PORT || 3000}`);
   } else if (frontendServerPort) {
     mainWindow.loadURL(`http://127.0.0.1:${frontendServerPort}/index.html`);
   } else {
@@ -1664,18 +1664,40 @@ function setupAutoUpdater() {
   // the button uses. Deliberately conservative so it can never land on top of a live task.
   const IDLE_INSTALL_MIN_IDLE_S = 30 * 60;
   const IDLE_INSTALL_MIN_UPTIME_MS = 2 * 60 * 60 * 1000;
+  const IDLE_INSTALL_WORKFLOW_LOOKAHEAD_S = 15 * 60;
   const _idleInstallStart = Date.now();
-  const _backendActiveAgents = () => new Promise((resolve) => {
-    if (!backendPort) return resolve(-1);
+  const _backendActivity = () => new Promise((resolve) => {
+    if (!backendPort) return resolve(null);
     const req = http.request({
       hostname: '127.0.0.1', port: backendPort, path: '/api/agents/activity', method: 'GET',
       headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) }, timeout: 4000,
     }, (res) => {
       let d = ''; res.on('data', (c) => (d += c));
-      res.on('end', () => { try { resolve(Number(JSON.parse(d).active)); } catch (_) { resolve(-1); } });
+      res.on('end', () => {
+        try {
+          const j = JSON.parse(d);
+          resolve({ active: Number(j.active), nextRunInS: j.next_run_in_s == null ? null : Number(j.next_run_in_s) });
+        } catch (_) { resolve(null); }
+      });
     });
-    req.on('error', () => resolve(-1));
-    req.on('timeout', () => { req.destroy(); resolve(-1); });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+  // Breadcrumb so fleet convergence is queryable in analytics; bounded + best-effort, the install never waits on it failing.
+  const _reportIdleInstall = () => new Promise((resolve) => {
+    if (!backendPort) return resolve();
+    const payload = JSON.stringify({
+      kind: 'idle_install',
+      staged_version: (cachedUpdateStatus && cachedUpdateStatus.info && cachedUpdateStatus.info.version) || null,
+    });
+    const req = http.request({
+      hostname: '127.0.0.1', port: backendPort, path: '/api/service/updater-event', method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) }, timeout: 2000,
+    }, (res) => { res.resume(); res.on('end', resolve); });
+    req.on('error', resolve);
+    req.on('timeout', () => { req.destroy(); resolve(); });
+    req.write(payload);
     req.end();
   });
   setInterval(async () => {
@@ -1683,9 +1705,12 @@ function setupAutoUpdater() {
       if (isInstallingUpdate || !cachedUpdateStatus || cachedUpdateStatus.status !== 'downloaded') return;
       if (Date.now() - _idleInstallStart < IDLE_INSTALL_MIN_UPTIME_MS) return;
       if (powerMonitor.getSystemIdleTime() < IDLE_INSTALL_MIN_IDLE_S) return;
-      const active = await _backendActiveAgents();
-      if (active !== 0) return; // unknown (-1) or busy -> stay put, never interrupt a task
-      console.log('[updater] staged update + machine idle + no agents; applying silently');
+      const act = await _backendActivity();
+      if (!act || act.active !== 0) return; // unknown or busy -> stay put, never interrupt a task
+      // A scheduled workflow fires soon; restarting now would race it. Let it run, catch the next idle window.
+      if (act.nextRunInS != null && act.nextRunInS < IDLE_INSTALL_WORKFLOW_LOOKAHEAD_S) return;
+      console.log('[updater] staged update + machine idle + no agents + no imminent workflow; applying silently');
+      try { await _reportIdleInstall(); } catch (_) {}
       installDownloadedUpdate();
     } catch (_) { /* a heartbeat must never throw */ }
   }, 5 * 60 * 1000);

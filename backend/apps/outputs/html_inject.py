@@ -14,17 +14,6 @@ from jsonschema import validate as schema_validate, ValidationError as SchemaVal
 
 logger = logging.getLogger(__name__)
 
-MODEL_MAP = {
-    "sonnet": "claude-sonnet-4-20250514",
-    "opus": "claude-opus-4-20250514",
-    "haiku": "claude-haiku-4-5-20251001",
-}
-
-
-def resolve_model(short_name: str) -> str:
-    return MODEL_MAP.get(short_name, short_name)
-
-
 def get_anthropic_client(api_model: str | None = None):
     """Create an AsyncAnthropic client using the API key from app settings.
 

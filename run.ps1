@@ -99,6 +99,12 @@ function Cleanup-All {
     Write-Host "All services stopped." -ForegroundColor Green
 }
 
+# Opt-in dev telemetry: OPENSWARM_ANALYTICS=1 reports to the prod edge tagged with a -dev channel so it stays filterable from real installs; off by default so a stray run never phones home.
+if ($env:OPENSWARM_ANALYTICS -eq '1') {
+    if (-not $env:OPENSWARM_ANALYTICS_URL) { $env:OPENSWARM_ANALYTICS_URL = 'https://analytics.openswarm.com' }
+    if (-not $env:OPENSWARM_APP_CHANNEL)   { $env:OPENSWARM_APP_CHANNEL = 'dev' }
+}
+
 try {
     # --- Start backend (NoNewWindow so logs interleave into this terminal) ---
     # No --reload on Windows: uvicorn's reload mode forces use_subprocess=True

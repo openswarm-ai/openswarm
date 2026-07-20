@@ -78,6 +78,23 @@ def register_builtin_mcp_servers(
             "type": "stdio",
         }
 
+    # SpawnAgent replaces the CLI's built-in Agent tool (blocked in RunOptions); gated by the same "Agent" permission so the Tools-page toggle keeps working.
+    if builtin_perms.get("Agent", "always_allow") != "deny":
+        spawn_agent_server_path = os.path.join(
+            agents_dir, "spawn_agent_mcp_server.py"
+        )
+        mcp_servers["openswarm-spawn-agent"] = {
+            "command": sys.executable,
+            "args": [spawn_agent_server_path],
+            "env": {
+                "OPENSWARM_PORT": os.environ.get("OPENSWARM_PORT", "8324"),
+                "OPENSWARM_AUTH_TOKEN": get_auth_token(),
+                "OPENSWARM_PARENT_SESSION_ID": session.id,
+                "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
+            },
+            "type": "stdio",
+        }
+
     # Always-on meta-MCP server. Exposes MCPList / MCPSearch / MCPActivate so the model can discover and activate user MCPs at runtime. The activation gate (active_mcps filter in build_mcp_servers above) ensures the model cannot reach any other MCP server's tools without going through this layer first.
     mcp_meta_server_path = os.path.join(
         agents_dir, "mcp_meta_server.py"

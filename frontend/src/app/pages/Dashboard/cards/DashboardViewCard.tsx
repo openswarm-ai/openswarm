@@ -73,9 +73,7 @@ interface Props {
   cardY: number;
   cardWidth: number;
   cardHeight: number;
-  zoom?: number;
-  panX?: number;
-  panY?: number;
+  getCanvasState: () => { panX: number; panY: number; zoom: number };
   cmdHeld?: boolean;
   isSelected?: boolean;
   isHighlighted?: boolean;
@@ -125,7 +123,7 @@ const BootingBody: React.FC = () => {
 };
 
 const DashboardViewCard: React.FC<Props> = ({
-  output, cardKey: cardKeyProp, instance = 1, cardX, cardY, cardWidth, cardHeight, zoom = 1, panX = 0, panY = 0, cmdHeld = false,
+  output, cardKey: cardKeyProp, instance = 1, cardX, cardY, cardWidth, cardHeight, getCanvasState, cmdHeld = false,
   isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
   cardZOrder = 0, onDoubleClick, onBringToFront,
 }) => {
@@ -135,10 +133,24 @@ const DashboardViewCard: React.FC<Props> = ({
   const scrollOverlayRef = useOverlayScrollPassthrough(isSelected);
   const previewRef = useRef<ViewPreviewHandle>(null);
   const activeViewCardId = useAppSelector((s) => s.dashboardLayout.activeViewCardId);
+  // Agent-driving glow, same treatment as browser cards: an AppAgent session carries browser_id "app:<output_id>", which keys glowingBrowserCards.
+  const appGlow = useAppSelector((s) => s.dashboardLayout.glowingBrowserCards[`app:${cardKeyProp ?? output.id}`]);
+  const showAgentGlow = !!appGlow && !appGlow.fading;
   const interactive = activeViewCardId === cardKey;
   const tileZone = useAppSelector((s) => s.dashboardLayout.tiledCards[cardKey]);
   const isMinimized = useAppSelector((s) => !!s.dashboardLayout.minimizedCards[cardKey]);
-  const tiledStyle = useTiledStyle(tileZone, panX, panY, zoom);
+  // Fullscreen pins the card to the viewport, so while tiled the geometry must track canvas pan/zoom.
+  // The camera lives outside React (getCanvasState), so subscribe to pan ticks ONLY while tiled and read fresh.
+  const [tileTick, setTileTick] = useState(0);
+  useEffect(() => {
+    if (!tileZone) return undefined;
+    const onPan = (): void => setTileTick((t) => t + 1);
+    window.addEventListener('openswarm:canvas-pan-changed', onPan);
+    return () => window.removeEventListener('openswarm:canvas-pan-changed', onPan);
+  }, [tileZone]);
+  void tileTick;
+  const cam = getCanvasState();
+  const tiledStyle = useTiledStyle(tileZone, cam.panX, cam.panY, cam.zoom);
   const isFullscreen = tileZone === 'fullscreen';
 
   // Deselecting the card exits interact mode (click anywhere else on canvas).
@@ -228,22 +240,19 @@ const DashboardViewCard: React.FC<Props> = ({
   const justDraggedRef = useRef(false);
   const lastPointerRef = useRef<{ clientX: number; clientY: number }>({ clientX: 0, clientY: 0 });
 
-  const panRef = useRef({ panX, panY });
-  panRef.current = { panX, panY };
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
 
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY, startPanX: panRef.current.panX, startPanY: panRef.current.panY };
+    const cs = getCanvasState();
+    dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY, startPanX: cs.panX, startPanY: cs.panY };
     lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
     didDrag.current = false;
     setIsDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     onDragStart?.(cardKey, 'view');
-  }, [cardX, cardY, onDragStart, cardKey]);
+  }, [cardX, cardY, onDragStart, cardKey, getCanvasState]);
 
   const recomputeDragPos = useCallback(() => {
     const ds = dragState.current;
@@ -251,18 +260,25 @@ const DashboardViewCard: React.FC<Props> = ({
     const { clientX, clientY } = lastPointerRef.current;
     const rawDx = clientX - ds.startX;
     const rawDy = clientY - ds.startY;
-    const z = zoomRef.current;
-    const panDx = (panRef.current.panX - ds.startPanX) / z;
-    const panDy = (panRef.current.panY - ds.startPanY) / z;
+    const cs = getCanvasState();
+    const z = cs.zoom;
+    const panDx = (cs.panX - ds.startPanX) / z;
+    const panDy = (cs.panY - ds.startPanY) / z;
     const dx = rawDx / z - panDx;
     const dy = rawDy / z - panDy;
     setLocalDragPos({ x: ds.origX + dx, y: ds.origY + dy });
     onDragMove?.(dx, dy, clientX, clientY);
-  }, [onDragMove]);
+  }, [onDragMove, getCanvasState]);
 
+  // Edge-pan/wheel-zoom moves the camera without a React commit; the pan-changed event is the live signal to re-pin the card to the cursor.
   useEffect(() => {
-    if (isDragging && didDrag.current) recomputeDragPos();
-  }, [panX, panY, isDragging, recomputeDragPos]);
+    if (!isDragging) return;
+    const onPanChange = () => {
+      if (didDrag.current) recomputeDragPos();
+    };
+    window.addEventListener('openswarm:canvas-pan-changed', onPanChange);
+    return () => window.removeEventListener('openswarm:canvas-pan-changed', onPanChange);
+  }, [isDragging, recomputeDragPos]);
 
   const handleDragPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
@@ -276,9 +292,10 @@ const DashboardViewCard: React.FC<Props> = ({
 
   const handleDragPointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
-    const z = zoomRef.current;
-    const panDx = (panRef.current.panX - dragState.current.startPanX) / z;
-    const panDy = (panRef.current.panY - dragState.current.startPanY) / z;
+    const cs = getCanvasState();
+    const z = cs.zoom;
+    const panDx = (cs.panX - dragState.current.startPanX) / z;
+    const panDy = (cs.panY - dragState.current.startPanY) / z;
     const dx = (e.clientX - dragState.current.startX) / z - panDx;
     const dy = (e.clientY - dragState.current.startY) / z - panDy;
     if (didDrag.current) {
@@ -303,7 +320,7 @@ const DashboardViewCard: React.FC<Props> = ({
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [dispatch, cardKey, onDragEnd]);
+  }, [dispatch, cardKey, onDragEnd, getCanvasState]);
 
   const resizeRef = useRef<{
     dir: ResizeDir; startX: number; startY: number;
@@ -331,6 +348,7 @@ const DashboardViewCard: React.FC<Props> = ({
     (e: React.PointerEvent) => {
       if (!resizeRef.current) return null;
       const { dir, startX, startY, origX, origY, origW, origH } = resizeRef.current;
+      const zoom = getCanvasState().zoom;
       const dx = (e.clientX - startX) / zoom;
       const dy = (e.clientY - startY) / zoom;
       let newX = origX, newY = origY, newW = origW, newH = origH;
@@ -342,7 +360,7 @@ const DashboardViewCard: React.FC<Props> = ({
       if (newH < MIN_H) { if (dir.includes('n')) newY = origY + origH - MIN_H; newH = MIN_H; }
       return { x: newX, y: newY, w: newW, h: newH };
     },
-    [zoom],
+    [getCanvasState],
   );
 
   const handleResizeMove = useCallback(
@@ -419,6 +437,10 @@ const DashboardViewCard: React.FC<Props> = ({
   const displayW = localResize?.w ?? cardWidth;
   const displayH = localResize?.h ?? cardHeight;
   const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
+  // Drag via a compositor transform, not left/top: an app card's webview surface shimmers back and forth while edge-panning otherwise (the transform and the late left/top relayout desync a frame). Same fix as BrowserCard.
+  const dragging = isDragging && !!localDragPos && !localResize;
+  const dragTx = dragging ? displayX - cardX : 0;
+  const dragTy = dragging ? displayY - cardY : 0;
 
   return (
     <Box
@@ -440,31 +462,35 @@ const DashboardViewCard: React.FC<Props> = ({
         // contain + willChange: own compositor layer so paint stays scoped (see AgentCard for full rationale).
         contain: 'layout style',
         willChange: 'transform',
-        left: tiledStyle ? tiledStyle.left : displayX,
-        top: tiledStyle ? tiledStyle.top : displayY,
+        left: tiledStyle ? tiledStyle.left : (dragging ? cardX : displayX),
+        top: tiledStyle ? tiledStyle.top : (dragging ? cardY : displayY),
+        transform: tiledStyle ? tiledStyle.transform : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : undefined),
+        transformOrigin: tiledStyle ? tiledStyle.transformOrigin : undefined,
         width: tiledStyle ? tiledStyle.width : (isMinimized ? 220 : displayW),
         height: tiledStyle ? tiledStyle.height : (isMinimized ? 44 : displayH),
-        transform: tiledStyle ? tiledStyle.transform : undefined,
-        transformOrigin: tiledStyle ? tiledStyle.transformOrigin : undefined,
         borderRadius: isFullscreen ? '12px' : `${c.radius.lg}px`,
         border: isHighlighted
           ? `2px solid ${c.accent.primary}`
-          : interactive
+          : showAgentGlow
             ? `2px solid ${c.accent.primary}`
-            : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`,
+            : interactive
+              ? `2px solid ${c.accent.primary}`
+              : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`,
         bgcolor: c.bg.surface,
         boxShadow: isHighlighted
           ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
-          : isDragging || isResizing
-            ? c.shadow.lg
-            : isSelected
-              ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
-              : c.shadow.md,
+          : showAgentGlow
+            ? `0 0 0 2px ${c.accent.primary}40, 0 0 18px ${c.accent.primary}30, 0 0 40px ${c.accent.primary}15, inset 0 0 30px ${c.accent.primary}25`
+            : isDragging || isResizing
+              ? c.shadow.lg
+              : isSelected
+                ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
+                : c.shadow.md,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         zIndex: tiledStyle ? 999990 : (isDragging || isResizing) ? 999999 : cardZOrder,
-        transition: noTransition ? 'none' : 'box-shadow 0.2s',
+        transition: noTransition ? 'none' : 'box-shadow 0.4s ease, border 0.3s ease',
         '&:hover .resize-handle': { opacity: 1 },
         ...(isHighlighted && {
           animation: 'card-highlight-pulse 2s ease-out forwards',

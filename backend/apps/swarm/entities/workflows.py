@@ -1,8 +1,5 @@
 """WorkflowExportable: shares a scheduled-task/workflow recipe (steps, schedule
-shape, actions, model). The workflow store lives on the eric/workflow branch and
-is NOT on eric/dev yet, so every store touch is lazy: on a build without it,
-export finds nothing and import fails with a clear message, and the module still
-imports cleanly. It lights up the moment the workflow forward-port lands.
+shape, actions, model).
 
 Safety: an imported workflow must never silently start running on someone else's
 machine, so the schedule is forced off on import (the importer re-arms it). The
@@ -12,6 +9,8 @@ from __future__ import annotations
 
 from backend.apps.swarm.exportable import DepRef, ExportContext, RemapTable
 from backend.apps.swarm.models import EntityType, Requirement, RequirementKind
+from backend.apps.workflows import storage
+from backend.apps.workflows.models import Workflow
 
 P_BUILTIN_MODES = {"agent", "ask", "plan", "view-builder", "skill-builder"}
 
@@ -52,10 +51,7 @@ class WorkflowExportable:
 
     @classmethod
     def load(cls, local_id: str) -> "WorkflowExportable | None":
-        store = p_store()
-        if store is None:
-            return None
-        wf = store.get_workflow(local_id)
+        wf = storage.get_workflow(local_id)
         if wf is None:
             return None
         data = wf.model_dump(mode="json")
@@ -92,38 +88,15 @@ class WorkflowExportable:
 
     @classmethod
     def import_(cls, payload: dict, files: dict[str, bytes], remap: RemapTable) -> str:
-        store = p_store()
-        model = p_model()
-        if store is None or model is None:
-            from backend.apps.swarm.ziputil import BundleError
-            raise BundleError("this build doesn't support workflows yet; please update OpenSwarm")
         clean = sanitize_workflow(payload)
         clean.pop("id", None)  # fresh id via the model's default_factory
-        wf = model(**clean)
-        store.save_workflow(wf)
+        wf = Workflow(**clean)
+        storage.save_workflow(wf)
         return wf.id
 
     @classmethod
     def rollback(cls, local_id: str) -> None:
-        store = p_store()
-        if store is not None:
-            try:
-                store.delete_workflow(local_id)
-            except Exception:
-                pass
-
-
-def p_store():
-    try:
-        from backend.apps.workflows import storage
-        return storage
-    except Exception:
-        return None
-
-
-def p_model():
-    try:
-        from backend.apps.workflows.models import Workflow
-        return Workflow
-    except Exception:
-        return None
+        try:
+            storage.delete_workflow(local_id)
+        except Exception:
+            pass

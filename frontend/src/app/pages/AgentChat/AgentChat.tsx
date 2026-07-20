@@ -47,7 +47,7 @@ import { displayChatTitle, isLegacyAutoName } from '@/shared/state/sessionDispla
 import { Typewriter } from '@/app/components/feedback/Animated';
 import { store } from '@/shared/state/store';
 import { fetchModes } from '@/shared/state/modesSlice';
-import { createSessionWs, acquireSessionWs, releaseSessionWs } from '@/shared/ws/WebSocketManager';
+import { createSessionWs, acquireSessionWs, releaseSessionWs, seedSessionSeq } from '@/shared/ws/WebSocketManager';
 import StreamingBubble from './bubbles/StreamingBubble';
 import WelcomeQuickReplies from './WelcomeQuickReplies';
 import { useWelcomeGreeting } from './useWelcomeGreeting';
@@ -374,7 +374,12 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
         dispatch(fetchSession(id));
       } else {
         try {
-          await dispatch(fetchSession(id));
+          const action = await dispatch(fetchSession(id));
+          // Seed the resume cursor from the snapshot's seq so the connect below doesn't replay the whole ring buffer we just hydrated over REST.
+          if (fetchSession.fulfilled.match(action)) {
+            const seq = (action.payload as { event_seq?: number }).event_seq;
+            if (typeof seq === 'number') seedSessionSeq(id, seq);
+          }
         } catch {
           // Even if the REST hydrate fails, still connect, the WS resume protocol can hydrate from buffered events as a fallback.
         }

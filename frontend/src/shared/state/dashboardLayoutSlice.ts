@@ -392,8 +392,18 @@ export function findOpenSpotNear(
     };
   }
 
-  // Spiral by ring perimeter; right/down preference for stability.
+  // Ring order approximates distance but returns the first-in-scan cell, which flings a card to a
+  // far corner when the near cells are blocked (a big browser + expanded chats). Instead pick the
+  // cell CLOSEST to the anchor by real distance: scan outward, and once a ring yields a free cell,
+  // scan ONE more ring (a ring-r corner ~r*1.41 can lose to a ring-(r+1) edge) then take the nearest.
   const MAX_RING = 32;
+  const spotDist = (col: number, row: number): number => {
+    const x = GRID_ORIGIN.x + col * cellW;
+    const y = GRID_ORIGIN.y + row * cellH;
+    return Math.hypot(x - anchorX, y - anchorY);
+  };
+  let best: { col: number; row: number; d: number } | null = null;
+  let firstHitRing = -1;
   for (let r = 1; r <= MAX_RING; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
@@ -401,14 +411,20 @@ export function findOpenSpotNear(
         const col = baseCol + dx;
         const row = baseRow + dy;
         if (col < 0 || row < 0) continue;
-        if (cellFree(col, row)) {
-          return {
-            x: GRID_ORIGIN.x + col * cellW,
-            y: GRID_ORIGIN.y + row * cellH,
-          };
-        }
+        if (!cellFree(col, row)) continue;
+        const d = spotDist(col, row);
+        if (!best || d < best.d) best = { col, row, d };
       }
     }
+    if (best && firstHitRing === -1) firstHitRing = r;
+    // Scan one ring past the first hit (a ring-r corner can lose to a ring-(r+1) edge), then commit.
+    if (firstHitRing !== -1 && r >= firstHitRing + 1) break;
+  }
+  if (best) {
+    return {
+      x: GRID_ORIGIN.x + best.col * cellW,
+      y: GRID_ORIGIN.y + best.row * cellH,
+    };
   }
 
   // Pathological, full canvas occupied near anchor. Fall back to the global first-empty scan so we never return an overlap.
@@ -511,8 +527,14 @@ export function computeSpawnPosition(
     return placeBesideCard(state, anchor.beside, newW, newH, expandedSessionIds);
   }
   if (anchor.viewportCenter) {
-    // Land dead-center, "in front of you", even if a card is already there. Overlap is intentional (new card sits on top via its higher zOrder); dodging to free space is exactly the "spawned off to the side" behavior we're removing.
-    return { x: anchor.viewportCenter.x - newW / 2, y: anchor.viewportCenter.y - newH / 2 };
+    // Closest open gap to the viewport center: dead-center-with-overlap stacked spawns invisibly on top of each other (two center spawns in a row = the second fully covers the first). The spiral stays center-biased so it still reads as "in front of you".
+    return findOpenSpotNear(
+      anchor.viewportCenter.x - newW / 2,
+      anchor.viewportCenter.y - newH / 2,
+      collectOccupiedRects(state, expandedSessionIds),
+      newW,
+      newH,
+    );
   }
   return findOpenGridCell(collectOccupiedRects(state, expandedSessionIds), newW, newH);
 }

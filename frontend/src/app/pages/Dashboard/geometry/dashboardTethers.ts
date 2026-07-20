@@ -258,9 +258,11 @@ export function useTethers({
     }
 
     const glowTethers = new Map<string, ReturnType<typeof cardTether>>();
+    // An "app:<output_id>" glow key targets a VIEW card (AppAgent driving an app); everything else is a browser card.
+    const glowTarget = (id: string) => (id.startsWith('app:') ? viewCards[id.slice(4)] : browserCards[id]);
     for (const [browserId, { sourceId, fading, label }] of Object.entries(glowingBrowserCards)) {
       const t = cardTether(
-        browserCards[browserId],
+        glowTarget(browserId),
         browserId,
         sourceId,
         `browser-${browserId}`,
@@ -278,7 +280,7 @@ export function useTethers({
       // A browser docked below the hub keeps a "Browser" pointer so the link reads at a glance; the right-docked agent/run cases stay label-free (their glow already said it on spawn).
       const parent = sessionById.get(s.parent_session_id);
       const t = cardTether(
-        browserCards[s.browser_id],
+        glowTarget(s.browser_id),
         s.browser_id,
         s.parent_session_id,
         `browser-${s.browser_id}`,

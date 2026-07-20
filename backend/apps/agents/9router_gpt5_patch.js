@@ -64,20 +64,31 @@ const _http = require('http');
             const backendPort = process.env.OPENSWARM_PORT || '8324';
             const path = '/api/subscriptions/callback' + url.slice('/callback'.length);
             let done = false;
-            const finish = () => {
+            // Relay the backend's real outcome page: the old static close-page rendered success even when the exchange failed, so a broken claude connect looked like it worked and left nothing to debug from user reports.
+            const finish = (body) => {
               if (done) return;
               done = true;
-              try { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(closePage); } catch (_) {}
+              try { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(body || closePage); } catch (_) {}
             };
             try {
               const proxyReq = http.request(
                 { host: '127.0.0.1', port: backendPort, path: path, method: 'GET' },
-                (proxyRes) => { proxyRes.resume(); proxyRes.on('end', finish); }
+                (proxyRes) => {
+                  const chunks = [];
+                  proxyRes.on('data', (c) => { if (chunks.length < 64) chunks.push(c); });
+                  proxyRes.on('end', () => finish(Buffer.concat(chunks).toString('utf8') || null));
+                  proxyRes.on('error', () => finish(null));
+                }
               );
-              proxyReq.on('error', finish);
-              proxyReq.setTimeout(5000, () => { try { proxyReq.destroy(); } catch (_) {} finish(); });
+              proxyReq.on('error', () => finish(
+                '<!doctype html><meta charset="utf-8"><body style="font-family:-apple-system,system-ui;' +
+                'text-align:center;color:#c66;padding-top:80px;background:#1a1a1a">' +
+                'Connection failed: OpenSwarm is not reachable on this machine (port ' + backendPort + '). ' +
+                'Open the OpenSwarm app and try connecting again.</body>'
+              ));
+              proxyReq.setTimeout(15000, () => { try { proxyReq.destroy(); } catch (_) {} finish(null); });
               proxyReq.end();
-            } catch (_) { finish(); }
+            } catch (_) { finish(null); }
             return true;
           }
         } catch (_) {}

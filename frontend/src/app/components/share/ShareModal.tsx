@@ -55,11 +55,11 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
     return load();
   }, [open, load]);
 
-  const handleDownload = async () => {
+  const handleDownload = async (allowSecrets = false) => {
     if (!preflight) return;
     setDownloading(true);
     try {
-      await downloadSwarm(target, preflight.filename);
+      await downloadSwarm(target, preflight.filename, allowSecrets);
       setToast(`Saved ${preflight.filename}`);
       onClose();
     } catch (e: any) {
@@ -68,6 +68,8 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
       setDownloading(false);
     }
   };
+  // The file-content secret heuristic is overridable (download goes to people you trust); our own credential fields ("secret-shaped field(s)") are not.
+  const secretOverridable = error.includes('secret-shaped value');
 
   const optionRow = (
     selected: boolean,
@@ -150,6 +152,16 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
                 <Button size="small" onClick={load} sx={{ textTransform: 'none', color: c.accent.primary }}>
                   Try again
                 </Button>
+                {secretOverridable && (
+                  <Button
+                    size="small"
+                    onClick={() => { setError(''); handleDownload(true); }}
+                    disabled={downloading}
+                    sx={{ textTransform: 'none', color: c.status.error, ml: 1 }}
+                  >
+                    Export anyway (includes the flagged value; only send to people you trust)
+                  </Button>
+                )}
               </Box>
             ) : preflight ? (
               <IncludesList summary={preflight.summary} />
@@ -179,7 +191,7 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
             <Button
               variant="contained"
-              onClick={handleDownload}
+              onClick={() => handleDownload()}
               disabled={!preflight || downloading}
               startIcon={
                 downloading ? (

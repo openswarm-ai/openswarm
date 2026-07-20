@@ -23,6 +23,29 @@ BROWSER_CMD_REBROADCAST_S = 3.0
 P_WS_RECONNECT_WAIT_S = 8.0
 
 
+def slim_status_data(event: str, data: dict) -> dict:
+    """agent:status frames carry session METADATA, never the transcript: every message already
+    reaches clients as its own agent:message event (and the stream), so re-shipping full history
+    per status flip was pure duplication, and replayed stale copies rolled clients backwards.
+    Preview fields mirror p_session_list_item so collapsed-card previews keep working."""
+    if event != "agent:status":
+        return data
+    sess = data.get("session")
+    if not isinstance(sess, dict) or not sess.get("messages"):
+        return data
+    messages = sess["messages"]
+    last = messages[-1].get("content", "")
+    first_user = next((m.get("content") for m in messages if m.get("role") == "user"), "")
+    slim = dict(sess)
+    slim["messages"] = []
+    slim["last_message_preview"] = last[:120] if isinstance(last, str) else ""
+    slim["first_user_message"] = first_user[:200] if isinstance(first_user, str) else ""
+    slim["message_count"] = len(messages)
+    out = dict(data)
+    out["session"] = slim
+    return out
+
+
 async def await_reconnect(has_conn) -> bool:
     """Poll up to P_WS_RECONNECT_WAIT_S for a dashboard socket to (re)appear.
     `has_conn` is a 0-arg callable returning truthy when connected."""
@@ -94,6 +117,7 @@ class ConnectionManager:
 
     async def send_to_session(self, session_id: str, event: str, data: dict):
         """Broadcast a session event with monotonic sequencing; terminal statuses also persist to disk."""
+        data = slim_status_data(event, data)
         async with seq_log.stamp(session_id, event, data) as (seq, payload_str):
             for ws in list(self.connections.get(session_id, [])):
                 try:
@@ -163,6 +187,10 @@ class ConnectionManager:
                 "to_seq": newest,
             }
 
+        # Live log and the client is at (or past) the top: caught up, nothing to send. Without this, every cursor-seeded reconnect got the persisted terminal frame re-sent as "replay".
+        if newest is not None and last_seq >= newest and newest > 0:
+            return {"ok": True, "replayed": 0, "current_seq": newest}
+
         terminal = seq_log.load_terminal(session_id)
         if terminal is not None:
             try:
@@ -225,7 +253,7 @@ class ConnectionManager:
 
     async def broadcast_global(self, event: str, data: dict):
         """Send to all dashboard connections; bypasses seq_log (dashboard resumes via full state refetch)."""
-        payload = json.dumps({"event": event, "data": data})
+        payload = json.dumps({"event": event, "data": slim_status_data(event, data)})
         dead: list[WebSocket] = []
         for ws in list(self.global_connections):
             try:

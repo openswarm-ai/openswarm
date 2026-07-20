@@ -22,6 +22,14 @@ FRONTEND_PID=""
 ELECTRON_PID=""
 SHUTTING_DOWN=false
 
+# Dev ports. Override BOTH to run a second worktree in parallel without colliding on 3000/8324
+# (e.g. OPENSWARM_PORT=8425 OPENSWARM_DEV_PORT=3005 bash run.sh). Electron, backend/run.sh, and
+# webpack all read these same names, so one export each wires the whole stack.
+BACKEND_PORT="${OPENSWARM_PORT:-8324}"
+FRONTEND_PORT="${OPENSWARM_DEV_PORT:-3000}"
+export OPENSWARM_PORT="$BACKEND_PORT"
+export OPENSWARM_DEV_PORT="$FRONTEND_PORT"
+
 kill_tree() {
     local pid=$1 sig=${2:-TERM}
     local children
@@ -91,9 +99,9 @@ fi
 # That makes the next `bash run.sh` fail with Errno 48 "Address already
 # in use" and leaves the user thinking the dev loop is broken. Free the
 # port up front instead of asking the user to debug.
-if lsof -ti :8324 >/dev/null 2>&1; then
-    echo -e "${YELLOW}${BOLD}[preflight]${RESET} Port 8324 still bound from a prior run — killing stale process..."
-    lsof -ti :8324 | xargs kill -9 2>/dev/null || true
+if lsof -ti :$BACKEND_PORT >/dev/null 2>&1; then
+    echo -e "${YELLOW}${BOLD}[preflight]${RESET} Port ${BACKEND_PORT} still bound from a prior run, killing stale process..."
+    lsof -ti :$BACKEND_PORT | xargs kill -9 2>/dev/null || true
     sleep 0.3
 fi
 
@@ -103,6 +111,13 @@ fi
 # directly), so the env stays unset in production and uvicorn boots in
 # its leaner non-reload mode.
 export OPENSWARM_DEV=1
+
+# Opt-in dev telemetry. Dev normally never reports (the analytics client falls back to a dead local ingest); set OPENSWARM_ANALYTICS=1 (e.g. a hackathon cohort) to report to the prod edge, tagged with a -dev channel so those events stay filterable from real installs. Off by default so a stray `bash run.sh` never phones home.
+if [ "${OPENSWARM_ANALYTICS:-0}" = "1" ]; then
+    export OPENSWARM_ANALYTICS_URL="${OPENSWARM_ANALYTICS_URL:-https://analytics.openswarm.com}"
+    export OPENSWARM_APP_CHANNEL="${OPENSWARM_APP_CHANNEL:-dev}"
+fi
+
 echo -e "${BLUE}${BOLD}[backend]${RESET}  Starting backend server..."
 bash "$PROJECT_ROOT/backend/run.sh" > >(
     while IFS= read -r line; do
@@ -112,11 +127,11 @@ bash "$PROJECT_ROOT/backend/run.sh" > >(
 BACKEND_PID=$!
 
 # --- Wait for backend to become healthy ---
-echo -e "${YELLOW}${BOLD}Waiting for backend (http://localhost:8324) to be ready...${RESET}"
+echo -e "${YELLOW}${BOLD}Waiting for backend (http://localhost:${BACKEND_PORT}) to be ready...${RESET}"
 MAX_WAIT=120
 elapsed=0
 while (( elapsed < MAX_WAIT )); do
-    if curl -s -o /dev/null --connect-timeout 1 http://localhost:8324/ 2>/dev/null; then
+    if curl -s -o /dev/null --connect-timeout 1 http://localhost:${BACKEND_PORT}/ 2>/dev/null; then
         echo -e "${GREEN}${BOLD}Backend is ready!${RESET}"
         break
     fi
@@ -143,11 +158,11 @@ bash "$PROJECT_ROOT/frontend/run.sh" > >(
 FRONTEND_PID=$!
 
 # --- Wait for frontend dev server to become available ---
-echo -e "${YELLOW}${BOLD}Waiting for frontend (http://localhost:3000) to be ready...${RESET}"
+echo -e "${YELLOW}${BOLD}Waiting for frontend (http://localhost:${FRONTEND_PORT}) to be ready...${RESET}"
 FRONTEND_MAX_WAIT=60
 frontend_elapsed=0
 while (( frontend_elapsed < FRONTEND_MAX_WAIT )); do
-    if curl -s -o /dev/null --connect-timeout 1 http://localhost:3000/ 2>/dev/null; then
+    if curl -s -o /dev/null --connect-timeout 1 http://localhost:${FRONTEND_PORT}/ 2>/dev/null; then
         echo -e "${GREEN}${BOLD}Frontend is ready!${RESET}"
         break
     fi
@@ -192,8 +207,8 @@ ELECTRON_PID=$!
 
 echo ""
 echo -e "${BOLD}All services are running. Press Ctrl+C to stop.${RESET}"
-echo -e "  Backend:  ${BLUE}http://localhost:8324${RESET}"
-echo -e "  Frontend: ${GREEN}http://localhost:3000${RESET}"
+echo -e "  Backend:  ${BLUE}http://localhost:${BACKEND_PORT}${RESET}"
+echo -e "  Frontend: ${GREEN}http://localhost:${FRONTEND_PORT}${RESET}"
 echo -e "  Electron: ${MAGENTA}dev shell (pid $ELECTRON_PID)${RESET}"
 echo ""
 

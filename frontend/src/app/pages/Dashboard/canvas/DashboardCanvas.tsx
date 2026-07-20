@@ -70,7 +70,7 @@ interface DashboardCanvasProps {
   onViewportMouseMove: (e: React.MouseEvent) => void;
   onViewportMouseUp: (e: React.MouseEvent) => void;
   onViewportDoubleClick: (e: React.MouseEvent) => void;
-  onCardSelect: (id: string, type: CardType, shiftKey: boolean) => void;
+  onCardSelect: (id: string, type: CardType, shiftKey: boolean, originTarget?: EventTarget | null) => void;
   onDragStart: (id: string, type: CardType) => void;
   onDragMove: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd: (dx: number, dy: number, didDrag: boolean) => void;
@@ -177,6 +177,10 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [fullscreenCardId, dispatch]);
+  // Gestures write the transform imperatively (no React commit per frame), so a foreign render mid-gesture would paint the stale committed transform for a frame. Re-applying live after EVERY render seals that; do not remove.
+  React.useLayoutEffect(() => {
+    canvas.actions.syncTransform();
+  });
 
   return (
     <>
@@ -264,8 +268,9 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           />
         )}
 
-        {/* Dot grid background */}
+        {/* Dot grid background; gestures move it imperatively via gridRef (phase + scale), commits re-render it here (dot radius included) */}
         <Box
+          ref={canvas.gridRef}
           sx={{
             position: 'absolute',
             inset: 0,
@@ -301,9 +306,6 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
               outputs={outputs}
               glowingAgentCards={glowingAgentCards}
               expandedSessionIds={expandedSessionIds}
-              zoom={canvas.zoom}
-              panX={canvas.panX}
-              panY={canvas.panY}
               cmdHeld={canvas.cmdHeld}
               selection={selection}
               highlightedCardId={highlightedCardId}

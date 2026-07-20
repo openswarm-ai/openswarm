@@ -322,10 +322,11 @@ async def _fire(wf: Workflow, scheduled_for: Optional[datetime]) -> None:
         logger.exception("scheduler fire failed for workflow=%s", wf.id)
 
 
-def _seconds_until_next() -> float:
-    # While globally paused, _tick no-ops and never rolls next_run_at forward, so an overdue slot would otherwise spin this loop at the 1s floor. Resume calls kick(), so idling the full interval here costs nothing.
+def seconds_to_next_fire() -> Optional[float]:
+    """Seconds until the soonest enabled scheduled workflow fires; None when nothing is
+    queued or scheduling is globally paused. Also feeds the desktop's idle-update gate."""
     if storage.get_paused():
-        return 60.0
+        return None
     now_utc = datetime.now(timezone.utc)
     soonest: Optional[datetime] = None
     for wf in storage.list_workflows():
@@ -337,8 +338,15 @@ def _seconds_until_next() -> float:
         if soonest is None or nra < soonest:
             soonest = nra
     if soonest is None:
+        return None
+    return max(0.0, (soonest - now_utc).total_seconds())
+
+
+def _seconds_until_next() -> float:
+    # While globally paused, _tick no-ops and never rolls next_run_at forward, so an overdue slot would otherwise spin this loop at the 1s floor. Resume calls kick(), so idling the full interval here costs nothing.
+    delta = seconds_to_next_fire()
+    if delta is None:
         return 60.0
-    delta = (soonest - now_utc).total_seconds()
     return max(1.0, min(delta, 60.0))
 
 

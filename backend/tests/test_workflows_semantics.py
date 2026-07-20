@@ -888,3 +888,52 @@ def test_escalation_noop_for_single_tier():
     run = WorkflowRun(workflow_id=wf.id, status="success")
     escalation.schedule(wf, run)
     assert escalation.status(run.id) is None
+
+
+# --- idle-update gate lookahead ----------------------------------------------
+
+def test_seconds_to_next_fire_none_when_nothing_queued():
+    from backend.apps.workflows import storage
+    from backend.apps.workflows.scheduler import seconds_to_next_fire
+    storage.init()
+    assert seconds_to_next_fire() is None
+
+
+def test_seconds_to_next_fire_reports_soonest_enabled_only():
+    from backend.apps.workflows import storage
+    from backend.apps.workflows.scheduler import seconds_to_next_fire
+    storage.init()
+    soon = _make_wf()
+    soon.next_run_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    storage.save_workflow(soon)
+    later = _make_wf()
+    later.next_run_at = datetime.now(timezone.utc) + timedelta(hours=3)
+    storage.save_workflow(later)
+    disabled = _make_wf()
+    disabled.schedule.enabled = False
+    disabled.next_run_at = datetime.now(timezone.utc) + timedelta(minutes=1)
+    storage.save_workflow(disabled)
+    got = seconds_to_next_fire()
+    assert got is not None
+    assert 9 * 60 < got <= 10 * 60
+
+
+def test_seconds_to_next_fire_clamps_overdue_to_zero():
+    from backend.apps.workflows import storage
+    from backend.apps.workflows.scheduler import seconds_to_next_fire
+    storage.init()
+    wf = _make_wf()
+    wf.next_run_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    storage.save_workflow(wf)
+    assert seconds_to_next_fire() == 0.0
+
+
+def test_seconds_to_next_fire_none_while_paused(monkeypatch):
+    from backend.apps.workflows import storage
+    from backend.apps.workflows.scheduler import seconds_to_next_fire
+    storage.init()
+    wf = _make_wf()
+    wf.next_run_at = datetime.now(timezone.utc) + timedelta(minutes=1)
+    storage.save_workflow(wf)
+    monkeypatch.setattr(storage, "get_paused", lambda: True)
+    assert seconds_to_next_fire() is None

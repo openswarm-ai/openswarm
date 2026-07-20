@@ -114,13 +114,16 @@ export function useDashboardLifecycle({
 
   useEffect(() => {
     if (!dashboardId) return;
-    hasFittedRef.current = false;
-    restoredExpandedRef.current = false;
-    setOutputsRefetched(false);
-    dispatch(resetLayout({ keepBrowserIds: getKeepAliveBrowserIds() }));
-    // CRITICAL path: these populate the cards the user expects to see on first paint. Don't defer.
-    dispatch(fetchSessions({ dashboardId }));
-    dispatch(fetchLayout({ dashboardId }));
+    // Never wipe+reload the layout while a card drag or marquee is in flight: a spurious mid-gesture nav (e.g. a phantom-dashboard round-trip) would unmount the card under the cursor and the drag silently dies. You can't switch dashboards while holding a drag, so any reset firing now is spurious. The shield class is up for exactly that window. Handlers below still install.
+    if (!document.body.classList.contains('dashboard-marquee-active')) {
+      hasFittedRef.current = false;
+      restoredExpandedRef.current = false;
+      setOutputsRefetched(false);
+      dispatch(resetLayout({ keepBrowserIds: getKeepAliveBrowserIds() }));
+      // CRITICAL path: these populate the cards the user expects to see on first paint. Don't defer.
+      dispatch(fetchSessions({ dashboardId }));
+      dispatch(fetchLayout({ dashboardId }));
+    }
     const cleanupBrowserHandler = initBrowserCommandHandler();
     // Global broadcasts (spawned browser cards) skip the replay log, so a socket gap loses them; a reconnect refetch is the only way they return.
     const unsubReconnect = dashboardWs.on('dashboard:reconnected', () => {
@@ -216,7 +219,7 @@ export function useDashboardLifecycle({
     setTimeout(() => {
       const card = store.getState().dashboardLayout.cards[agentId];
       if (card) {
-        canvasActions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true);
+        canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
         handleHighlightCard(agentId);
       }
     }, 350);
@@ -232,13 +235,7 @@ export function useDashboardLifecycle({
     setTimeout(() => {
       const card = store.getState().dashboardLayout.browserCards[browserId];
       if (card) {
-        canvasActions.fitToCards(
-          [{ x: card.x, y: card.y, width: card.width, height: card.height }],
-          1.15,
-          true,
-          0.8,
-          true,
-        );
+        canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
         handleHighlightCard(browserId);
       }
     }, 200);
@@ -254,7 +251,7 @@ export function useDashboardLifecycle({
     setTimeout(() => {
       const card = store.getState().dashboardLayout.viewCards[cardKey];
       if (card) {
-        canvasActions.fitToCards([{ x: card.x, y: card.y, width: card.width, height: card.height }], 1.15, true);
+        canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
         handleHighlightCard(cardKey);
       }
     }, 200);
@@ -269,11 +266,7 @@ export function useDashboardLifecycle({
     setTimeout(() => {
       const card = store.getState().dashboardLayout.workflowCards[workflowId];
       if (card) {
-        canvasActions.fitToCards(
-          [{ x: card.x, y: card.y, width: card.width, height: card.height }],
-          1.15,
-          true,
-        );
+        canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
         handleHighlightCard(workflowId);
       }
     }, 200);
@@ -366,7 +359,7 @@ export function useDashboardLifecycle({
           const ac = store.getState().dashboardLayout.cards[sid];
           if (ac) rects.push({ x: ac.x, y: ac.y, width: ac.width, height: ac.height });
         }
-        canvasActions.fitToCards(rects, 1.15, true);
+        canvasActions.revealCards(rects);
         handleHighlightCard(outputId);
       }, 200);
     }
@@ -380,7 +373,10 @@ export function useDashboardLifecycle({
     if (!dash) return;
     if (!dash.auto_named && dash.name !== 'Untitled Dashboard') return;
     const hasUserMessage = Object.values(sessions).some(
-      (s) => s.dashboard_id === dashboardId && s.messages?.some((m) => m.role === 'user'),
+      (s) => s.dashboard_id === dashboardId && (
+        s.messages?.some((m) => m.role === 'user') ||
+        (s.messages.length === 0 && !!s.first_user_message)
+      ),
     );
     if (!hasUserMessage) return;
     namedOnFirstMessageRef.current = dashboardId;

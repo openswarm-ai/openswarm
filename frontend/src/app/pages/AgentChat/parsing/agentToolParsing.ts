@@ -13,7 +13,9 @@ export function isInvokeAgentTool(name: string): boolean {
 }
 
 export function isCreateAgentTool(name: string): boolean {
-  return name === 'Agent';
+  if (name === 'Agent') return true;
+  const mcp = parseMcpToolName(name);
+  return mcp.isMcp && mcp.serverSlug === 'openswarm-spawn-agent';
 }
 
 export function parseInvokedSessionId(rawText: string): string | null {

@@ -48,6 +48,8 @@ import {
   registerWebview,
   unregisterWebview,
   setActiveTab as setRegistryActiveTab,
+  registerPendingLoad,
+  wakePendingLoad,
   type BrowserWebview,
 } from '@/shared/browserRegistry';
 import { setLastInteractedBrowser } from '@/shared/browserFocus';
@@ -157,16 +159,14 @@ interface Props {
   cardY: number;
   cardWidth: number;
   cardHeight: number;
-  zoom?: number;
-  panX?: number;
-  panY?: number;
+  getCanvasState: () => { panX: number; panY: number; zoom: number };
   cmdHeld?: boolean;
   isSelected?: boolean;
   isHighlighted?: boolean;
   multiDragDelta?: { dx: number; dy: number } | null;
   // Belongs to a non-active dashboard but kept mounted-hidden so its webContents + sessionStorage survive the switch.
   keepAliveHidden?: boolean;
-  onCardSelect?: (id: string, type: 'agent' | 'view' | 'browser', shiftKey: boolean) => void;
+  onCardSelect?: (id: string, type: 'agent' | 'view' | 'browser', shiftKey: boolean, originTarget?: EventTarget | null) => void;
   onDragStart?: (id: string, type: 'agent' | 'view' | 'browser') => void;
   onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
@@ -177,7 +177,7 @@ interface Props {
 
 
 const BrowserCard: React.FC<Props> = ({
-  browserId, tabs, activeTabId, cardX, cardY, cardWidth, cardHeight, zoom = 1, panX = 0, panY = 0, cmdHeld = false,
+  browserId, tabs, activeTabId, cardX, cardY, cardWidth, cardHeight, getCanvasState, cmdHeld = false,
   isSelected = false, isHighlighted = false, keepAliveHidden = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
   cardZOrder = 0, onDoubleClick, onBringToFront,
 }) => {
@@ -267,8 +267,14 @@ const BrowserCard: React.FC<Props> = ({
     }
   }, []);
 
+  // Kept current so the mount-time load decision (eager vs deferred) reads the live active tab, not a stale closure (the load effect keys on the tab SET, not activeTabId).
+  const activeTabIdRef = useRef(activeTabId);
   useEffect(() => {
+    activeTabIdRef.current = activeTabId;
     setRegistryActiveTab(browserId, activeTabId);
+    // Switching to a deferred background tab loads it now; no-op if it already loaded or hasn't reached dom-ready yet (onReady then loads it eagerly because it's the active tab).
+    const wv = webviewMap.current.get(activeTabId);
+    if (wv) wakePendingLoad(wv);
   }, [browserId, activeTabId]);
 
   // Open the find bar when AppShell routes a Ctrl/Cmd+F to this browser; re-trigger re-focuses the input.
@@ -322,8 +328,15 @@ const BrowserCard: React.FC<Props> = ({
             (wv as any).setZoomFactor?.(1);
           } catch (_) {}
         };
-        wv.addEventListener('dom-ready', doLoad, { once: true });
-        cleanups.push(() => wv.removeEventListener('dom-ready', doLoad));
+        // Lazy tabs: only the VISIBLE tab loads its page on mount. A background tab stays at
+        // about:blank (deferred) so a many-tab card doesn't load every page at once; it's woken
+        // the instant it becomes active OR an agent command resolves it (browserRegistry wake).
+        const onReady = () => {
+          if (tabId === activeTabIdRef.current) doLoad();
+          else registerPendingLoad(wv, targetUrl, doLoad);
+        };
+        wv.addEventListener('dom-ready', onReady, { once: true });
+        cleanups.push(() => wv.removeEventListener('dom-ready', onReady));
       }
 
       const mirrorUrl = () => dispatch(updateBrowserTabUrl({ browserId, tabId, url: wv.getURL() }));
@@ -404,6 +417,13 @@ const BrowserCard: React.FC<Props> = ({
         });
       };
 
+      // A failed/aborted main-frame load never fires did-stop-loading, and initializedTabs is already set so doLoad won't re-arm: without this the card sits blank with the spinner running forever. errorCode -3 is ERR_ABORTED (a superseded nav), not a failure.
+      const onDidFailLoad = (e: any) => {
+        if (!e || e.isMainFrame === false) return;
+        updateTabLocal(tabId, { loading: false });
+        if (e.errorCode && e.errorCode !== -3) onProcessGone();
+      };
+
       const onFaviconUpdate = (e: any) => {
         const favicons = e.favicons || (e.detail && e.detail.favicons);
         if (favicons?.[0]) {
@@ -428,6 +448,7 @@ const BrowserCard: React.FC<Props> = ({
       wv.addEventListener('new-window', onNewWindow as any);
       wv.addEventListener('render-process-gone', onProcessGone as any);
       wv.addEventListener('crashed', onProcessGone as any);
+      wv.addEventListener('did-fail-load', onDidFailLoad as any);
 
       cleanups.push(() => {
         unregisterWebview(browserId, tabId);
@@ -441,6 +462,7 @@ const BrowserCard: React.FC<Props> = ({
         wv.removeEventListener('new-window', onNewWindow as any);
         wv.removeEventListener('render-process-gone', onProcessGone as any);
         wv.removeEventListener('crashed', onProcessGone as any);
+        wv.removeEventListener('did-fail-load', onDidFailLoad as any);
         const churn = urlChurnThrottle.current.get(tabId);
         if (churn?.timer) { clearTimeout(churn.timer); churn.timer = null; }
       });
@@ -615,8 +637,9 @@ const BrowserCard: React.FC<Props> = ({
         // Screen -> canvas: derive the transform origin from this card's own strip (screenX = originX + canvasX * zoom).
         const barRect = tabBarRef.current?.getBoundingClientRect();
         if (barRect) {
-          const dropX = (e.clientX - (barRect.left - cardX * zoomRef.current)) / zoomRef.current - 40;
-          const dropY = (e.clientY - (barRect.top - cardY * zoomRef.current)) / zoomRef.current - 16;
+          const z = getCanvasState().zoom;
+          const dropX = (e.clientX - (barRect.left - cardX * z)) / z - 40;
+          const dropY = (e.clientY - (barRect.top - cardY * z)) / z - 16;
           dispatch(moveBrowserTab({ fromBrowserId: browserId, tabId: drag.tabId, x: dropX, y: dropY }));
         }
       }
@@ -626,7 +649,7 @@ const BrowserCard: React.FC<Props> = ({
     setDragTabOffset(0);
     setDetachGhost(null);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [handleSwitchTab, dispatch, browserId, cardX, cardY]);
+  }, [handleSwitchTab, dispatch, browserId, cardX, cardY, getCanvasState]);
 
   const DRAG_THRESHOLD = 3;
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; startPanX: number; startPanY: number } | null>(null);
@@ -636,22 +659,18 @@ const BrowserCard: React.FC<Props> = ({
   const justDraggedRef = useRef(false);
   const lastPointerRef = useRef<{ clientX: number; clientY: number }>({ clientX: 0, clientY: 0 });
 
-  const panRef = useRef({ panX, panY });
-  panRef.current = { panX, panY };
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
-
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY, startPanX: panRef.current.panX, startPanY: panRef.current.panY };
+    const cs = getCanvasState();
+    dragState.current = { startX: e.clientX, startY: e.clientY, origX: cardX, origY: cardY, startPanX: cs.panX, startPanY: cs.panY };
     lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
     didDrag.current = false;
     setIsDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     onDragStart?.(browserId, 'browser');
-  }, [cardX, cardY, onDragStart, browserId]);
+  }, [cardX, cardY, onDragStart, browserId, getCanvasState]);
 
   const recomputeDragPos = useCallback(() => {
     const ds = dragState.current;
@@ -659,18 +678,25 @@ const BrowserCard: React.FC<Props> = ({
     const { clientX, clientY } = lastPointerRef.current;
     const rawDx = clientX - ds.startX;
     const rawDy = clientY - ds.startY;
-    const z = zoomRef.current;
-    const panDx = (panRef.current.panX - ds.startPanX) / z;
-    const panDy = (panRef.current.panY - ds.startPanY) / z;
+    const cs = getCanvasState();
+    const z = cs.zoom;
+    const panDx = (cs.panX - ds.startPanX) / z;
+    const panDy = (cs.panY - ds.startPanY) / z;
     const dx = rawDx / z - panDx;
     const dy = rawDy / z - panDy;
     setLocalDragPos({ x: ds.origX + dx, y: ds.origY + dy });
     onDragMove?.(dx, dy, clientX, clientY);
-  }, [onDragMove]);
+  }, [onDragMove, getCanvasState]);
 
+  // Edge-pan/wheel-zoom moves the camera without a React commit; the pan-changed event is the live signal to re-pin the card to the cursor.
   useEffect(() => {
-    if (isDragging && didDrag.current) recomputeDragPos();
-  }, [panX, panY, isDragging, recomputeDragPos]);
+    if (!isDragging) return;
+    const onPanChange = () => {
+      if (didDrag.current) recomputeDragPos();
+    };
+    window.addEventListener('openswarm:canvas-pan-changed', onPanChange);
+    return () => window.removeEventListener('openswarm:canvas-pan-changed', onPanChange);
+  }, [isDragging, recomputeDragPos]);
 
   const handleDragPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
@@ -684,9 +710,10 @@ const BrowserCard: React.FC<Props> = ({
 
   const handleDragPointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
-    const z = zoomRef.current;
-    const panDx = (panRef.current.panX - dragState.current.startPanX) / z;
-    const panDy = (panRef.current.panY - dragState.current.startPanY) / z;
+    const cs = getCanvasState();
+    const z = cs.zoom;
+    const panDx = (cs.panX - dragState.current.startPanX) / z;
+    const panDy = (cs.panY - dragState.current.startPanY) / z;
     const dx = (e.clientX - dragState.current.startX) / z - panDx;
     const dy = (e.clientY - dragState.current.startY) / z - panDy;
     if (didDrag.current) {
@@ -711,7 +738,7 @@ const BrowserCard: React.FC<Props> = ({
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [dispatch, browserId, onDragEnd]);
+  }, [dispatch, browserId, onDragEnd, getCanvasState]);
 
   const resizeRef = useRef<{
     dir: ResizeDir; startX: number; startY: number;
@@ -739,6 +766,7 @@ const BrowserCard: React.FC<Props> = ({
     (e: React.PointerEvent) => {
       if (!resizeRef.current) return null;
       const { dir, startX, startY, origX, origY, origW, origH } = resizeRef.current;
+      const zoom = getCanvasState().zoom;
       const dx = (e.clientX - startX) / zoom;
       const dy = (e.clientY - startY) / zoom;
       let newX = origX, newY = origY, newW = origW, newH = origH;
@@ -750,7 +778,7 @@ const BrowserCard: React.FC<Props> = ({
       if (newH < MIN_H) { if (dir.includes('n')) newY = origY + origH - MIN_H; newH = MIN_H; }
       return { x: newX, y: newY, w: newW, h: newH };
     },
-    [zoom],
+    [getCanvasState],
   );
 
   const handleResizeMove = useCallback(
@@ -781,6 +809,10 @@ const BrowserCard: React.FC<Props> = ({
   const displayW = localResize?.w ?? cardWidth;
   const displayH = localResize?.h ?? cardHeight;
   const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
+  // During a drag, move the card by a COMPOSITOR transform, not left/top layout: while edge-panning, the canvas transform and the card's left/top update land a frame apart, and the webview's guest surface follows the transform immediately while left/top relayouts late, so the browser visibly shimmers back and forth. A transform for the drag delta rides the same compositor path as the canvas pan, so they move together in one frame.
+  const dragging = isDragging && !!localDragPos && !localResize;
+  const dragTx = dragging ? displayX - cardX : 0;
+  const dragTy = dragging ? displayY - cardY : 0;
 
   const isSecure = activeUrl.startsWith('https://');
   const isSearch = isGoogleSearch(activeUrl);
@@ -826,8 +858,8 @@ const BrowserCard: React.FC<Props> = ({
       data-keepalive-hidden={keepAliveHidden ? '1' : undefined}
       onPointerDownCapture={(e: React.PointerEvent) => {
         onBringToFront?.(browserId, 'browser');
-        // Capture-phase so chrome clicks (tab strip, URL bar) the children swallow still select the card; clicks inside the guest page never reach the host at all. Shift keeps the bubbled toggle path.
-        if (e.button === 0 && !e.shiftKey) onCardSelect?.(browserId, 'browser', false);
+        // Capture-phase so chrome clicks (tab strip, URL bar) the children swallow still select the card; clicks inside the guest page never reach the host at all. Shift keeps the bubbled toggle path. Pass the target so URL-bar/tab presses select without yanking the camera.
+        if (e.button === 0 && !e.shiftKey) onCardSelect?.(browserId, 'browser', false, e.target);
       }}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
@@ -845,8 +877,9 @@ const BrowserCard: React.FC<Props> = ({
         contain: 'layout style',
         // Own compositor layer so hover/paint invalidations stay contained to this card. See AgentCard for full rationale.
         willChange: 'transform',
-        left: keepAliveHidden ? -100000 : displayX,
-        top: displayY,
+        left: keepAliveHidden ? -100000 : (dragging ? cardX : displayX),
+        top: dragging ? cardY : displayY,
+        transform: dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : undefined,
         width: displayW,
         height: displayH,
         borderRadius: `${c.radius.lg}px`,

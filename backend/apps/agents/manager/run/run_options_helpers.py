@@ -12,6 +12,15 @@ from backend.apps.agents.manager.session.history_compaction import estimate_post
 
 logger = logging.getLogger(__name__)
 
+# Always SDK-blocked regardless of permissions: claude.ai partner MCPs bypass our MCPActivate gate, and the CLI's built-in sub-agent tool (Task on 2.1.122, Agent on older builds) is replaced by our SpawnAgent MCP.
+HARD_BLOCKED_TOOLS: List[str] = ["mcp__claude_ai_*", "Agent", "Task"]
+
+
+@typechecked
+def merge_hard_blocked_tools(effective_disallowed: List[str]) -> List[str]:
+    """The SDK deny list = the computed per-turn denies PLUS the unconditional hard blocks. A plain assignment here once silently discarded effective_disallowed (Cron*/Skill/web-swap/per-tool MCP denies), leaving the runtime gate as the only wall; merge, never overwrite."""
+    return effective_disallowed + [t for t in HARD_BLOCKED_TOOLS if t not in effective_disallowed]
+
 
 # `manager` is the AgentManager; it isn't annotated because typing it would import agent_manager back into a module agent_manager already imports (a cycle). Same reason self is never annotated.
 @typechecked

@@ -20,6 +20,7 @@ export interface BrowserWebview extends HTMLElement {
   reload: () => void;
   canGoBack: () => boolean;
   canGoForward: () => boolean;
+  stop: () => void;
   getURL: () => string;
   getTitle: () => string;
   isLoading: () => boolean;
@@ -44,8 +45,61 @@ function makeKey(browserId: string, tabId: string): string {
   return `${browserId}:${tabId}`;
 }
 
+// Electron suspends webContents.executeJavaScript until the page "stops loading", and pages with straggler iframes (LinkedIn's recaptcha/trackers) can stay isLoading for minutes; the guarded eval in browserCommandHandler needs to know the document itself is usable before it dares wv.stop().
+const domReadyDocs = new WeakSet<BrowserWebview>();
+const loadTrackingArmed = new WeakSet<BrowserWebview>();
+
+function armLoadStateTracking(wv: BrowserWebview): void {
+  if (loadTrackingArmed.has(wv)) return;
+  loadTrackingArmed.add(wv);
+  wv.addEventListener('dom-ready', () => domReadyDocs.add(wv));
+  // a real main-frame navigation starts a new document; in-page (SPA pushState) ones don't
+  wv.addEventListener('did-navigate', () => domReadyDocs.delete(wv));
+}
+
+export function hasDomReady(wv: BrowserWebview): boolean {
+  return domReadyDocs.has(wv);
+}
+
+export function markDomReady(wv: BrowserWebview): void {
+  domReadyDocs.add(wv);
+}
+
 export function registerWebview(browserId: string, tabId: string, wv: BrowserWebview): void {
   registry.set(makeKey(browserId, tabId), wv);
+  armLoadStateTracking(wv);
+}
+
+// Lazy-tab loading: a background tab mounts its <webview> (so it stays registered + resolvable
+// exactly like a live one) but defers loadURL until it's actually needed, so a many-tab card
+// doesn't load every page at once. The tab is never starved: it's woken when it becomes active
+// OR the moment an agent command resolves it.
+const pendingLoad = new WeakMap<BrowserWebview, () => void>();
+const intendedUrl = new WeakMap<BrowserWebview, string>();
+
+export function registerPendingLoad(wv: BrowserWebview, url: string, load: () => void): void {
+  pendingLoad.set(wv, load);
+  intendedUrl.set(wv, url);
+}
+
+export function isPendingLoad(wv: BrowserWebview): boolean {
+  return pendingLoad.has(wv);
+}
+
+// Fire a lazy tab's deferred load exactly once; returns true if it was pending (the caller then
+// waits out the page load, same as a resumed suspended card). No-op on an already-loaded tab.
+export function wakePendingLoad(wv: BrowserWebview): boolean {
+  const load = pendingLoad.get(wv);
+  if (!load) return false;
+  pendingLoad.delete(wv);
+  load();
+  return true;
+}
+
+// Drop a lazy tab's deferred load WITHOUT firing it: an agent navigate is about to load a
+// different url, so loading the old intended url first would be wasted work.
+export function clearPendingLoad(wv: BrowserWebview): void {
+  pendingLoad.delete(wv);
 }
 
 export function unregisterWebview(browserId: string, tabId: string): void {
@@ -84,13 +138,23 @@ export function findBrowserByWebContentsId(wcId: number): string | undefined {
 // LIVE url (not a stale persisted card.url) so the action lands on the real tab.
 export function findWebviewByDomain(domain: string): BrowserWebview | undefined {
   const d = domain.toLowerCase().replace(/^\./, '');
-  for (const wv of registry.values()) {
+  const matchesHost = (u: string): boolean => {
     try {
-      const host = new URL(wv.getURL()).hostname.toLowerCase();
-      if (host === d || host.endsWith('.' + d)) return wv;
+      const host = new URL(u).hostname.toLowerCase();
+      return host === d || host.endsWith('.' + d);
     } catch {
       // about:blank or a torn-down webview has no parseable URL; skip it.
+      return false;
     }
+  };
+  for (const wv of registry.values()) {
+    if (matchesHost(wv.getURL())) return wv;
+  }
+  // A lazy background tab sits at about:blank, so its LIVE url can't match; fall back to its
+  // INTENDED (deferred) url so the session-borrow shims still find + wake it. The caller wakes it.
+  for (const wv of registry.values()) {
+    const pend = intendedUrl.get(wv);
+    if (pend && pendingLoad.has(wv) && matchesHost(pend)) return wv;
   }
   return undefined;
 }

@@ -25,11 +25,11 @@ from backend.apps.agents.manager.configure_provider_env import configure_provide
 from backend.apps.agents.manager.session.workspace_git import ensure_cwd_git_repo
 from backend.apps.agents.manager.session.history_compaction import build_history_prefix, get_branch_messages
 from backend.apps.agents.manager.prompt.compose_turn_system_prompt import compose_turn_system_prompt
-from backend.apps.agents.manager.prompt.tool_catalog import get_all_tool_names
+from backend.apps.agents.manager.prompt.tool_catalog import get_all_tool_names, resolve_builtin_tools_option
 from backend.apps.agents.manager.prompt.prompt_context import resolve_mode
 from backend.apps.agents.manager.run.run_options_helpers import (
     pre_send_context_guard, set_framework_overhead, register_web_mcp_server,
-    append_web_tools_hint, inject_thinking_options,
+    append_web_tools_hint, inject_thinking_options, merge_hard_blocked_tools,
 )
 
 logger = logging.getLogger(__name__)
@@ -188,17 +188,14 @@ class RunOptions(AgentManagerProtocol):
         }
         # cc/cx/gc/ag/gemini/openrouter prefixes force 9Router; route="api" bypasses to the provider's host directly; otherwise Pro proxy or key.
         await configure_provider_env(
-            options_kwargs, session, resolved_model, api_type, global_settings, []
+            options_kwargs, session, resolved_model, api_type, global_settings
         )
         if mcp_servers:
             options_kwargs["mcp_servers"] = mcp_servers
             mcp_json_len = len(json.dumps({"mcpServers": mcp_servers}))
             logger.info(f"[MCP-DEBUG] mcp_servers passed to SDK: {list(mcp_servers.keys())}, JSON length={mcp_json_len}")
-        # claude_code preset for BOTH system_prompt and tools so the CLI's deferred-tools scaffolding survives. Raw string would replace it.
-        options_kwargs["tools"] = {
-            "type": "preset",
-            "preset": "claude_code",
-        }
+        # Built-in tool surface (preset vs pruned FULL_TOOLS manifest); see resolve_builtin_tools_option. system_prompt keeps the preset regardless.
+        options_kwargs["tools"] = resolve_builtin_tools_option()
         # exclude_dynamic_sections=True moves cwd/git/OS grounding out of the cached prefix and into the first user message, unlocks Anthropic prompt cache (~80% input-token cut, 13-31% faster TTFT). Trade-off: grounding freezes at turn 1.
         if composed_prompt:
             options_kwargs["system_prompt"] = {
@@ -227,12 +224,10 @@ class RunOptions(AgentManagerProtocol):
             options_kwargs["extra_args"] = p_ea
 
         # The claude_code preset auto-attaches the user's claude.ai- connected partner MCPs (`mcp__claude_ai_*`). Those bypass our MCPActivate gate, don't share OAuth state with the OpenSwarm Gmail/Calendar/Drive connectors the user actually configured here, and confuse the model into picking the partner shim instead of our vetted server. Hard-block them at the SDK layer so the model can't even attempt the call.
-        # EXTEND, never reassign: a plain assignment here silently discarded every effective_disallowed
-        # entry (read-only sessions could still run Bash). Same fix as eric/dev ce3e67d6.
-        options_kwargs["disallowed_tools"] = [
-            *(options_kwargs.get("disallowed_tools") or []),
-            "mcp__claude_ai_*",
-        ]
+        # EXTEND, never reassign: a plain assignment silently discarded the computed denies (Cron*/Skill/
+        # web-swap/per-tool MCP + read-only Bash). merge_hard_blocked_tools carries those; keep the
+        # claude.ai partner-MCP block on top too.
+        options_kwargs["disallowed_tools"] = [*merge_hard_blocked_tools(effective_disallowed), "mcp__claude_ai_*"]
 
         if session.cwd:
             # Pre-existing sessions may have workspaces that predate the git-init block in launch_agent, leaving them without a valid HEAD. Ensure it here so subagent worktree-add always works.

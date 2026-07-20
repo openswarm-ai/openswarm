@@ -198,7 +198,7 @@ export function useAgentSpawn({
             if (bc) rects.push({ x: bc.x, y: bc.y, width: bc.width, height: bc.height });
           }
         }
-        canvasActions.fitToCards(rects, 1.15, true, undefined, true);
+        canvasActions.revealCards(rects);
         handleHighlightCard(draftId);
       }
 

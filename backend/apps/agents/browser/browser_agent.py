@@ -2011,6 +2011,11 @@ async def run_browser_agent(
                     f"[browser-agent {session_id}] browser card {browser_id} is unusable "
                     f"({card_gone_streak} consecutive gone/hung results); aborting fast"
                 )
+                if os.environ.get("OSW_DEADCARD_EVICT", "1") != "0":
+                    DEAD_CARDS.add(browser_id)
+                    logger.info(f"[browser-agent] {browser_id} marked dead; same-host reuse will skip it")
+                    # Tear the wedged webview DOWN now, before recovery spawns a fresh card. Two heavy pages (the dead one + the recovery one) starve the renderer's event loop = the recovery-card wedge; unmounting the dead one frees its renderer so the recovery card is the only heavy neighbor.
+                    await evict_dead_card(dashboard_id, browser_id)
                 break
 
         if cancel_event.is_set():
@@ -2217,6 +2222,8 @@ async def run_browser_agent(
 
 # Cards a sub-agent is actively driving in this process. Reuse must never hand two agents one webview (their commands would interleave into chaos).
 ACTIVE_AGENT_CARDS: set[str] = set()
+# Cards a browser agent gave up on (gone/hung). Same-host reuse skips them so a retry never grabs a wedged card; the evict tears the agent-spawned ones down.
+DEAD_CARDS: set[str] = set()
 # find+claim+create must be one critical section or two parallel dispatches race to claim the same idle card (or both miss and double-create).
 p_card_pick_lock = asyncio.Lock()
 
@@ -2239,7 +2246,7 @@ def find_reusable_card(dashboard_id: str, url: str, parent_session_id: str | Non
     own, orphan = "", ""
     for bid, card in cards.items():
         spawned = getattr(card, "spawned_by", None)
-        if not spawned or bid in ACTIVE_AGENT_CARDS:
+        if not spawned or bid in ACTIVE_AGENT_CARDS or bid in DEAD_CARDS:
             continue
         if browser_skills.host_of(getattr(card, "url", "") or "") != want:
             continue
@@ -2250,6 +2257,43 @@ def find_reusable_card(dashboard_id: str, url: str, parent_session_id: str | Non
             if parent is None or getattr(parent, "status", "") != "running":
                 orphan = orphan or bid
     return own or orphan
+
+
+# The renderer needs a beat to unmount the <webview> and let Electron free its renderer process. Recovery spawns its fresh card the instant this returns, so we hold here until the teardown has almost certainly landed, else the new card mounts next to a still-freeing dead one and eats the same 15s starvation cap. Failure-path only, so its cost is invisible next to the cap it prevents.
+P_EVICT_SETTLE_S = 1.5
+
+
+async def evict_dead_card(dashboard_id: str | None, browser_id: str) -> None:
+    """Free a wedged card's webview so the recovery card isn't its heavy neighbor: tell the
+    renderer to unmount it (frees the renderer process), drop it from the persisted layout, and
+    WAIT for teardown before the caller spawns the recovery card. Fail-open, never raises into the
+    abort path. ONLY agent-spawned cards are evicted: a user's own card must never be deleted out
+    from under them, wedged or not; for those the DEAD_CARDS reuse-skip is the whole remedy."""
+    ACTIVE_AGENT_CARDS.discard(browser_id)
+    try:
+        from backend.apps.dashboards.dashboards import load as p_dash_load
+        p_card = p_dash_load(dashboard_id).layout.browser_cards.get(browser_id) if dashboard_id else None
+        if p_card is None or not getattr(p_card, "spawned_by", None):
+            logger.info(f"[browser-agent] {browser_id} is not an agent-spawned card; skipping evict (reuse-skip only)")
+            return
+    except Exception:
+        return
+    try:
+        await ws_manager.broadcast_global("dashboard:browser_card_evict", {
+            "dashboard_id": dashboard_id or "", "browser_id": browser_id})
+    except Exception:
+        pass
+    if dashboard_id:
+        try:
+            from backend.apps.dashboards.dashboards import load, save
+            dash = load(dashboard_id)
+            if browser_id in dash.layout.browser_cards:
+                del dash.layout.browser_cards[browser_id]
+                dash.updated_at = datetime.now()
+                save(dash)
+        except Exception:
+            pass
+    await asyncio.sleep(P_EVICT_SETTLE_S)
 
 
 async def p_create_browser_card(dashboard_id: str, url: str, parent_session_id: str | None = None) -> str:

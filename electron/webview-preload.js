@@ -225,11 +225,9 @@ try {
       } catch (_) {}
       return;
     }
+    // A browser page or app owns its OWN scroll/zoom (Google Maps zoom, Figma pan, page scroll), so plain wheel stays with the guest. Only horizontal-dominant swipes with nothing to scroll horizontally fall through to a canvas pan.
     if (isInteractive) return;
-    // Vertical-dominant scroll stays with the page.
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-    // Horizontal-dominant: defer to the page if anything inside can absorb
-    // it; otherwise forward to the host as a canvas pan.
     if (pageCanScrollX(e.target, e.deltaX)) return;
     e.preventDefault();
     e.stopPropagation();

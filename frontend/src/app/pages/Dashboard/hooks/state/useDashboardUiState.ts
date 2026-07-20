@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CardPosition } from '@/shared/state/dashboardLayoutSlice';
+import { setScrollFocusedCard } from '@/shared/cardScrollFocus';
 import type { useDashboardSelection } from './useDashboardSelection';
 
 type Selection = ReturnType<typeof useDashboardSelection>;
@@ -45,6 +46,8 @@ export function useDashboardUiState(selection: Selection, cards: Record<string, 
     if (!cards[pendingSelectSessionId]) return;
     setPendingSelectSessionId(null);
     selection.selectCard(pendingSelectSessionId, 'agent', false);
+    // A freshly spawned chat is the active one: focus it for scrolling so its transcript scrolls immediately (Google Maps gate) instead of zooming the canvas until the user clicks it.
+    setScrollFocusedCard(pendingSelectSessionId);
   }, [pendingSelectSessionId, cards, selection]);
 
   const spawnOriginsRef = useRef<Record<string, SpawnOrigin>>({});

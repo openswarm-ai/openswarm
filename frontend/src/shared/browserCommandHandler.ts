@@ -1,4 +1,4 @@
-import { getWebview, findWebviewByDomain, type BrowserWebview } from './browserRegistry';
+import { getWebview, findWebviewByDomain, hasDomReady, markDomReady, isPendingLoad, wakePendingLoad, clearPendingLoad, type BrowserWebview } from './browserRegistry';
 import { store } from './state/store';
 import { resumeBrowserCard } from './state/dashboardLayoutSlice';
 import { dashboardWs } from './ws/WebSocketManager';
@@ -189,8 +189,40 @@ async function countSafeRoutes(wv: BrowserWebview): Promise<number> {
   } catch { return 0; }
 }
 
+// Electron queues executeJavaScript until the page "stops loading", and pages with straggler subresources (recaptcha/tracker iframes) can stay isLoading for minutes, starving EVERY command into its backend timeout (the wedged-webview tail). Once the document itself is ready, wv.stop() cancels only the stragglers and fires did-stop-loading, which flushes the queue; a genuinely-still-loading document (no dom-ready yet) is left alone.
+const STUCK_EVAL_GRACE_MS = 2500;
+const STUCK_EVAL_LIMIT_MS = 9000;
+
+async function evalInPage(wv: BrowserWebview, code: string): Promise<any> {
+  const run = wv.executeJavaScript(code).then((v) => {
+    markDomReady(wv);
+    return { done: true as const, value: v };
+  });
+  const grace = new Promise<{ done: false }>((r) => setTimeout(() => r({ done: false }), STUCK_EVAL_GRACE_MS));
+  let first = await Promise.race([run, grace]);
+  if (!first.done) {
+    let stopped = false;
+    try {
+      if (wv.isLoading() && hasDomReady(wv)) {
+        wv.stop();
+        stopped = true;
+      }
+    } catch {
+      // torn-down webview; the limit below surfaces it
+    }
+    const limit = new Promise<{ done: false }>((r) => setTimeout(() => r({ done: false }), STUCK_EVAL_LIMIT_MS));
+    first = await Promise.race([run, limit]);
+    if (!first.done) {
+      throw new Error(stopped
+        ? 'page never finished loading even after cancelling stragglers'
+        : 'page is still loading; retry shortly');
+    }
+  }
+  return first.value;
+}
+
 async function handleGetText(wv: BrowserWebview): Promise<Record<string, any>> {
-  const text: string = await wv.executeJavaScript(
+  const text: string = await evalInPage(wv,
     'document.body.innerText.substring(0, 15000)'
   );
   // Sampled HERE (on a read), not on navigate: by the time the agent reads the page, the SPA's XHR/fetch have fired, so routes are actually captured.
@@ -272,7 +304,7 @@ async function handleClick(wv: BrowserWebview, params: Record<string, any>): Pro
       clickY: window.innerHeight > 0 ? y / window.innerHeight : 0.5,
     };
   })()`;
-  const result = await wv.executeJavaScript(code);
+  const result = await evalInPage(wv, code);
   return result;
 }
 
@@ -300,7 +332,7 @@ async function handleType(wv: BrowserWebview, params: Record<string, any>): Prom
       text: 'Typed into: ' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
     };
   })()`;
-  const result = await wv.executeJavaScript(code);
+  const result = await evalInPage(wv, code);
   return result;
 }
 
@@ -316,12 +348,63 @@ const KEY_NAME_MAP: Record<string, string> = {
   Del: 'Delete',
 };
 
+interface CdpKeyDescriptor { key: string; code: string; vk: number; text?: string }
+
+const CDP_KEYS: Record<string, CdpKeyDescriptor> = {
+  Enter: { key: 'Enter', code: 'Enter', vk: 13, text: '\r' },
+  Tab: { key: 'Tab', code: 'Tab', vk: 9 },
+  Escape: { key: 'Escape', code: 'Escape', vk: 27 },
+  Backspace: { key: 'Backspace', code: 'Backspace', vk: 8 },
+  Delete: { key: 'Delete', code: 'Delete', vk: 46 },
+  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', vk: 38 },
+  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', vk: 40 },
+  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft', vk: 37 },
+  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', vk: 39 },
+  Home: { key: 'Home', code: 'Home', vk: 36 },
+  End: { key: 'End', code: 'End', vk: 35 },
+  PageUp: { key: 'PageUp', code: 'PageUp', vk: 33 },
+  PageDown: { key: 'PageDown', code: 'PageDown', vk: 34 },
+  ' ': { key: ' ', code: 'Space', vk: 32, text: ' ' },
+};
+
+// Loose names the model actually sends, folded onto the canonical DOM names above.
+const CDP_KEY_ALIASES: Record<string, string> = {
+  Up: 'ArrowUp', Down: 'ArrowDown', Left: 'ArrowLeft', Right: 'ArrowRight',
+  Space: ' ', Spacebar: ' ', Esc: 'Escape', Del: 'Delete', Return: 'Enter',
+};
+
+function cdpKeyDescriptor(rawKey: string): CdpKeyDescriptor | null {
+  const canonical = CDP_KEY_ALIASES[rawKey] || rawKey;
+  const named = CDP_KEYS[canonical];
+  if (named) return named;
+  if (canonical.length === 1) {
+    const upper = canonical.toUpperCase();
+    const code = /[a-z]/i.test(canonical) ? `Key${upper}` : /[0-9]/.test(canonical) ? `Digit${canonical}` : '';
+    return { key: canonical, code, vk: upper.charCodeAt(0), text: canonical };
+  }
+  return null;
+}
+
 async function handlePressKey(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
   const rawKey = (params.key as string) || '';
   if (!rawKey) return { error: 'key parameter is required' };
+  await evalInPage(wv, 'document.body && document.body.focus && document.body.focus(); true');
+  const desc = cdpKeyDescriptor(rawKey);
+  if (desc) {
+    try {
+      // CDP key events are trusted AND scoped to THIS webview no matter where the user's cursor sits; the sendInputEvent path delivered to whatever had focus, which is the "agent typed into my note" bug. keyDown-with-text inserts the char; bare named keys use rawKeyDown so no stray char lands.
+      const down: Record<string, any> = { type: desc.text ? 'keyDown' : 'rawKeyDown', key: desc.key, windowsVirtualKeyCode: desc.vk, nativeVirtualKeyCode: desc.vk };
+      if (desc.code) down.code = desc.code;
+      if (desc.text) down.text = desc.text;
+      await sendCdp(wv, 'Input.dispatchKeyEvent', down);
+      const up: Record<string, any> = { type: 'keyUp', key: desc.key, windowsVirtualKeyCode: desc.vk, nativeVirtualKeyCode: desc.vk };
+      if (desc.code) up.code = desc.code;
+      await sendCdp(wv, 'Input.dispatchKeyEvent', up);
+      return { text: `Pressed ${rawKey}` };
+    } catch { /* fall through to the legacy path so a CDP hiccup never makes a key dead */ }
+  }
+  // Legacy focus-dependent fallback (exotic keys or CDP unavailable): keeps every key that worked before working.
   const keyCode = KEY_NAME_MAP[rawKey] || rawKey;
-  await wv.executeJavaScript('document.body && document.body.focus && document.body.focus(); true');
-  // Native OS-level key events have isTrusted=true, so hostile sites' keyboard handlers respect them.
   wv.sendInputEvent({ type: 'keyDown', keyCode });
   wv.sendInputEvent({ type: 'char', keyCode });
   wv.sendInputEvent({ type: 'keyUp', keyCode });
@@ -348,7 +431,7 @@ async function handleClickPoint(wv: BrowserWebview, params: Record<string, any>)
   // host element's box. One cheap round-trip; falls back to the element box.
   let vw = wv.clientWidth, vh = wv.clientHeight;
   try {
-    const d = await wv.executeJavaScript('({w: window.innerWidth, h: window.innerHeight})');
+    const d = await evalInPage(wv, '({w: window.innerWidth, h: window.innerHeight})');
     if (d && d.w > 0 && d.h > 0) { vw = d.w; vh = d.h; }
   } catch { /* use the element box as a fallback */ }
   const x = (cx / 100) * vw;
@@ -1122,7 +1205,7 @@ async function handleScroll(wv: BrowserWebview, params: Record<string, any>): Pr
     };
   })()`;
   try {
-    const result = await wv.executeJavaScript(code);
+    const result = await evalInPage(wv, code);
     const status = result.atBottom ? ' (reached bottom)' : result.atTop ? ' (reached top)' : '';
     return {
       text: `Scrolled ${direction} by ${result.scrolled}px${status}. Position: ${result.scrollTop}/${result.scrollHeight - result.clientHeight}px`,
@@ -1150,7 +1233,7 @@ async function handleWait(wv: BrowserWebview, params: Record<string, any>): Prom
     const elapsed = Date.now() - start;
     if (elapsed >= ms) break;
     try {
-      const probe = JSON.parse(await wv.executeJavaScript(probeJs));
+      const probe = JSON.parse(await evalInPage(wv, probeJs));
       probeErrors = 0;
       if (probe.elems !== lastElems) { lastElems = probe.elems; elemsChangedAt = Date.now(); }
       const domStable = Date.now() - elemsChangedAt;
@@ -1238,7 +1321,7 @@ async function handleGetElements(wv: BrowserWebview, params: Record<string, any>
     return { elements: results, total: interactive.length, url: location.href, title: document.title };
   })()`;
   try {
-    const result = await wv.executeJavaScript(code);
+    const result = await evalInPage(wv, code);
     return { text: JSON.stringify(result, null, 2), url: wv.getURL() };
   } catch (err: any) {
     return { error: `Failed to get elements: ${err?.message || String(err)}` };
@@ -1263,7 +1346,7 @@ async function handleDetectWebMCP(wv: BrowserWebview): Promise<Record<string, an
     return { present: true, tools };
   })()`;
   try {
-    const r = await wv.executeJavaScript(code);
+    const r = await evalInPage(wv, code);
     if (!r || !r.present) {
       return { text: 'No WebMCP on this page (navigator.modelContext not present). Use the normal browser tools.', url: wv.getURL() };
     }
@@ -1328,7 +1411,7 @@ async function handleReplayRoute(wv: BrowserWebview, params: Record<string, any>
     } catch (e) { return { error: String((e && e.message) || e) }; }
   })()`;
   try {
-    const res = await wv.executeJavaScript(code);
+    const res = await evalInPage(wv, code);
     if (res.error) return { error: `Replay failed: ${res.error}` };
     return { text: `${method} ${absUrl} -> HTTP ${res.status}\n${res.body}`, status: res.status, url: wv.getURL() };
   } catch (err: any) {
@@ -1340,7 +1423,7 @@ async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): 
   const expression = params.expression as string;
   if (!expression) return { error: 'expression parameter is required' };
   try {
-    const result = await wv.executeJavaScript(expression);
+    const result = await evalInPage(wv, expression);
     const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
     // evaluate is the agent's main read path; sample routes here too (XHRs have fired by now) so the backend can surface the fast network tier once.
     const routes_available = await countSafeRoutes(wv);
@@ -1351,7 +1434,7 @@ async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): 
 }
 
 // The registry is renderer-local and a card briefly unregisters on remount / tab-switch; a command landing in that gap shouldn't hard-fail. Wait a bounded window for (re)registration before giving up, so the error stays a real "card is gone" signal rather than a transient race.
-async function awaitWebview(browserId: string, tabId?: string): Promise<BrowserWebview | undefined> {
+async function awaitWebview(browserId: string, tabId?: string, action?: string): Promise<BrowserWebview | undefined> {
   // A suspended (snapshot-swapped) card has no webview at all; wake it and wait out the remount + page reload before the command touches it.
   const wasSuspended = !!store.getState().dashboardLayout.suspendedBrowserCards[browserId];
   if (wasSuspended) store.dispatch(resumeBrowserCard(browserId));
@@ -1369,6 +1452,24 @@ async function awaitWebview(browserId: string, tabId?: string): Promise<BrowserW
         // mid-mount hiccup; keep waiting
       }
       await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+  // A lazy background tab mounts at about:blank with its real page deferred; an agent command needs
+  // the real page, so wake it and wait out the load, same as a resumed suspended card. A navigate
+  // is about to load its own url, so just drop the deferred load instead of loading the old one first.
+  if (wv && isPendingLoad(wv)) {
+    if (action === 'navigate') {
+      clearPendingLoad(wv);
+    } else if (wakePendingLoad(wv)) {
+      const loadDeadline = Date.now() + 12000;
+      while (Date.now() < loadDeadline) {
+        try {
+          if (!wv.isLoading() && wv.getURL() !== 'about:blank') break;
+        } catch {
+          // mid-load hiccup; keep waiting
+        }
+        await new Promise((r) => setTimeout(r, 150));
+      }
     }
   }
   return wv;
@@ -1418,6 +1519,18 @@ async function handlePerformAction(params: Record<string, any>): Promise<Record<
   if (!wv) {
     return { error: `No ${domain} browser card is open. Open ${domain} in an OpenSwarm browser card and sign in, then retry.` };
   }
+  // findWebviewByDomain can resolve a deferred background tab by its intended url; wake it and wait out the load before driving it, so the session-borrow shims never act on an about:blank tab.
+  if (isPendingLoad(wv) && wakePendingLoad(wv)) {
+    const loadDeadline = Date.now() + 12000;
+    while (Date.now() < loadDeadline) {
+      try {
+        if (!wv.isLoading() && wv.getURL() !== 'about:blank') break;
+      } catch {
+        // mid-load hiccup; keep waiting
+      }
+      await new Promise((res) => setTimeout(res, 150));
+    }
+  }
   const steps = Array.isArray(params.steps) ? params.steps : [];
   const results: Record<string, any>[] = [];
   for (const step of steps) {
@@ -1447,7 +1560,7 @@ async function runBrowserCommand(
     dashboardWs.send('browser:result', { request_id, ...result });
     return;
   }
-  const wv = await awaitWebview(browser_id, tab_id || undefined);
+  const wv = await awaitWebview(browser_id, tab_id || undefined, action);
   if (!wv) {
     dashboardWs.send('browser:result', {
       request_id,

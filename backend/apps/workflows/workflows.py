@@ -1438,6 +1438,41 @@ async def run_workflow_now(workflow_id: str, body: Optional[dict] = None):
     return {"run_id": "", "status": None, "error": None}
 
 
+# Bounded so a runaway workflow can't pin the calling agent's tool call forever; on timeout the run keeps going and lands in History.
+INVOKE_WAIT_TIMEOUT_S = 15 * 60
+
+
+@workflows.router.post("/{workflow_id}/invoke")
+async def invoke_workflow(workflow_id: str):
+    """Run a workflow AND wait for the result: the InvokeWorkflow MCP tool's backend. Unlike /run
+    (fire-and-forget for the History pane), the caller here is an agent that needs the outcome inline,
+    so this awaits the executor and returns status + transcript. Gated on the per-workflow opt-in."""
+    wf = storage.get_workflow(workflow_id)
+    if not wf or wf.deleted_at:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if not wf.exposed_as_tool:
+        raise HTTPException(status_code=403, detail="Workflow is not agent-invocable (enable it on the Actions page)")
+    task = asyncio.create_task(executor.execute(wf, triggered_by="manual"))
+    try:
+        # shield: a timeout must not cancel the run, it continues and History has it.
+        run = await asyncio.wait_for(asyncio.shield(task), timeout=INVOKE_WAIT_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        return {"run_id": "", "status": "running", "error": None, "cost_usd": 0.0, "transcript": "",
+                "timed_out": True}
+    transcript = ""
+    if run.session_id:
+        from backend.apps.agents.agent_manager import agent_manager
+        sess = agent_manager.sessions.get(run.session_id)
+        if sess is None:
+            try:
+                sess = await agent_manager.resume_session(run.session_id)
+            except ValueError:
+                sess = None
+        transcript = p_render_test_transcript(getattr(sess, "messages", []) or []) if sess else ""
+    return {"run_id": run.id, "status": run.status, "error": run.error,
+            "cost_usd": run.cost_usd, "transcript": transcript, "timed_out": False}
+
+
 def _find_active_run(run_id: str):
     """Locate a currently-running run by id, returning (workflow_id, run)."""
     for wf in storage.list_workflows():

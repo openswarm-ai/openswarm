@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { report } from '@/shared/serviceClient';
 import { useAppDispatch } from '@/shared/hooks';
+import { store } from '@/shared/state/store';
 import { collapseSession, expandSession } from '@/shared/state/agentsSlice';
 import { bringToFront } from '@/shared/state/dashboardLayoutSlice';
+import { setScrollFocusedCard } from '@/shared/cardScrollFocus';
 import type { CardType, useDashboardSelection } from '../state/useDashboardSelection';
 import type { useCanvasControls } from './useCanvasControls';
 
@@ -15,6 +17,19 @@ function isCardTarget(target: EventTarget | null, boundary: EventTarget | null):
   let el = target as HTMLElement | null;
   while (el && el !== boundary) {
     if (el.hasAttribute(SELECT_ATTR)) return true;
+    el = el.parentElement;
+  }
+  return false;
+}
+
+const CONTROL_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'WEBVIEW']);
+
+// True when the press landed on a real control (text field, button, browser URL bar/tabs, note textarea, webview) rather than the card's frame. Walk up ONLY to the card root so a button living above the card never counts.
+function pressLandedOnControl(target: EventTarget | null | undefined): boolean {
+  let el = target as HTMLElement | null;
+  while (el) {
+    if (el.hasAttribute(SELECT_ATTR)) return false;
+    if (CONTROL_TAGS.has(el.tagName) || el.isContentEditable || el.getAttribute('role') === 'button') return true;
     el = el.parentElement;
   }
   return false;
@@ -42,7 +57,7 @@ export function useDashboardInteractions({
   // Delay single-click collapse so double-click can override
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCardSelect = useCallback((id: string, type: CardType, shiftKey: boolean) => {
+  const handleCardSelect = useCallback((id: string, type: CardType, shiftKey: boolean, originTarget?: EventTarget | null) => {
     report('dashboard', 'card_clicked', { card_type: type, shift: shiftKey });
     if (shiftKey) {
       selection.selectCard(id, type, true);
@@ -51,6 +66,9 @@ export function useDashboardInteractions({
 
     selection.selectCard(id, type, false);
     dispatch(bringToFront({ id, type }));
+
+    // Clicking a control INSIDE a card (text field, button, browser URL bar/tabs, note textarea) selects + raises it but must NOT re-center the camera onto it: yanking focus to a card just to click into its input is hostile (same reasoning as the guest-page and Workflows carve-outs). Card frame/body clicks still auto-focus.
+    if (pressLandedOnControl(originTarget)) return;
 
     // The Workflows window is an app you click around inside, not a card you re-center every tap. Single-click only raises + selects it; double-click still zoom-to-fits (handleCardDoubleClick). Without this, clicking any button inside it yanked the canvas into a re-zoom.
     if (type === 'workflows-hub' || type === 'workflows-monitor') return;
@@ -72,6 +90,8 @@ export function useDashboardInteractions({
     }
     setFocusedCardId(id);
     setTimeout(() => {
+      // The capture-phase select fires this on pointer DOWN; if the press became a drag (or marquee), re-framing the camera mid-gesture is the "canvas yanks as I start dragging" nudge. The webview shield class is up for exactly that window.
+      if (document.body.classList.contains('dashboard-marquee-active')) return;
       const rect = getCardRect(id, type);
       if (rect) canvas.actions.fitToCards([rect], 1.15, true, type === 'browser' ? 0.8 : undefined);
       setTimeout(() => {
@@ -87,6 +107,8 @@ export function useDashboardInteractions({
 
   const handleBringToFront = useCallback((id: string, type: CardType) => {
     dispatch(bringToFront({ id, type }));
+    // Pressing ANY part of a card (header, body, composer) focuses it for scrolling, so its content scrolls instead of the canvas zooming (Google Maps model). Fires via onPointerDownCapture on every card, so a click into a chat's composer focuses it even though the body swallows the bubble. Cleared on blank-canvas press.
+    setScrollFocusedCard(id);
   }, [dispatch]);
 
   // A click INSIDE a webview's page never reaches the host DOM; BrowserCard forwards the guest's app-clicked IPC as this event. Select + raise only, no camera fit: you're clicking around inside the page, re-framing the canvas every tap would be hostile (same carve-out as the Workflows window).
@@ -94,8 +116,20 @@ export function useDashboardInteractions({
     const onGuestSelect = (e: Event) => {
       const browserId = (e as CustomEvent).detail?.browserId;
       if (typeof browserId !== 'string' || !browserId) return;
+      // Mid-drag/marquee a selection change joins the card to the multi-drag (the browser visibly chased the cursor); the shield class is up for exactly that window.
+      if (document.body.classList.contains('dashboard-marquee-active')) return;
+      // The guest preload fires app-clicked for the AGENT's clicks too; a working agent driving its own page must not steal selection (it also re-anchored spawn-beside onto its browser).
+      const st = store.getState();
+      const working = (s?: { status?: string }) => !!s && (s.status === 'running' || s.status === 'waiting_approval');
+      const glow = st.dashboardLayout.glowingBrowserCards[browserId];
+      const agentDriven =
+        Object.values(st.agents.sessions).some((s) => s.browser_id === browserId && working(s)) ||
+        (!!glow && !glow.fading && working(st.agents.sessions[glow.sourceId]));
+      if (agentDriven) return;
       selection.selectCard(browserId, 'browser', false);
       dispatch(bringToFront({ id: browserId, type: 'browser' }));
+      // In-guest clicks never reach the host capture handler, so mark the browser focused here, mainly to UN-focus any chat so scroll over other cards behaves right (the browser's own page scroll/zoom is native regardless).
+      setScrollFocusedCard(browserId);
     };
     window.addEventListener('openswarm:browser-guest-select', onGuestSelect);
     return () => window.removeEventListener('openswarm:browser-guest-select', onGuestSelect);
@@ -116,6 +150,9 @@ export function useDashboardInteractions({
 
     if (e.button !== 0) return;
     if (isCardTarget(e.target, e.currentTarget)) return;
+
+    // Clicking blank canvas leaves every card: plain scroll zooms the canvas again (Google Maps model).
+    setScrollFocusedCard(null);
 
     // Canvas click, drop any lingering input focus so arrow-key nav works immediately without the user having to press Escape first.
     const active = document.activeElement as HTMLElement | null;

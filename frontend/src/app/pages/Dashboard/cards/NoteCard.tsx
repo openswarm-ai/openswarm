@@ -60,9 +60,7 @@ interface Props {
   cardY: number;
   cardWidth: number;
   cardHeight: number;
-  zoom?: number;
-  panX?: number;
-  panY?: number;
+  getCanvasState: () => { panX: number; panY: number; zoom: number };
   cmdHeld?: boolean;
   isSelected?: boolean;
   isHighlighted?: boolean;
@@ -71,7 +69,7 @@ interface Props {
   color: NoteColor;
   cardZOrder?: number;
   autoFocus?: boolean;
-  onCardSelect?: (id: string, type: 'agent' | 'view' | 'browser' | 'note', shiftKey: boolean) => void;
+  onCardSelect?: (id: string, type: 'agent' | 'view' | 'browser' | 'note', shiftKey: boolean, originTarget?: EventTarget | null) => void;
   onDragStart?: (id: string, type: 'agent' | 'view' | 'browser' | 'note') => void;
   onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
@@ -79,7 +77,7 @@ interface Props {
 }
 
 const NoteCard: React.FC<Props> = ({
-  noteId, cardX, cardY, cardWidth, cardHeight, zoom = 1, panX = 0, panY = 0,
+  noteId, cardX, cardY, cardWidth, cardHeight, getCanvasState,
   isSelected = false, isHighlighted = false, multiDragDelta, content, color,
   cardZOrder = 0, autoFocus, onCardSelect, onDragStart, onDragMove, onDragEnd, onBringToFront,
 }) => {
@@ -96,10 +94,6 @@ const NoteCard: React.FC<Props> = ({
   const didDrag = useRef(false);
   const justDraggedRef = useRef(false);
   const lastPointerRef = useRef<{ clientX: number; clientY: number }>({ clientX: 0, clientY: 0 });
-  const panRef = useRef({ panX, panY });
-  panRef.current = { panX, panY };
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
 
   const [showColorPicker, setShowColorPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -116,17 +110,18 @@ const NoteCard: React.FC<Props> = ({
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    const cs = getCanvasState();
     dragState.current = {
       startX: e.clientX, startY: e.clientY,
       origX: cardX, origY: cardY,
-      startPanX: panRef.current.panX, startPanY: panRef.current.panY,
+      startPanX: cs.panX, startPanY: cs.panY,
     };
     lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
     didDrag.current = false;
     setIsDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     onDragStart?.(noteId, 'note');
-  }, [cardX, cardY, noteId, onDragStart]);
+  }, [cardX, cardY, noteId, onDragStart, getCanvasState]);
 
   const recomputeDragPos = useCallback(() => {
     const ds = dragState.current;
@@ -134,18 +129,25 @@ const NoteCard: React.FC<Props> = ({
     const { clientX, clientY } = lastPointerRef.current;
     const rawDx = clientX - ds.startX;
     const rawDy = clientY - ds.startY;
-    const z = zoomRef.current;
-    const panDx = (panRef.current.panX - ds.startPanX) / z;
-    const panDy = (panRef.current.panY - ds.startPanY) / z;
+    const cs = getCanvasState();
+    const z = cs.zoom;
+    const panDx = (cs.panX - ds.startPanX) / z;
+    const panDy = (cs.panY - ds.startPanY) / z;
     const dx = rawDx / z - panDx;
     const dy = rawDy / z - panDy;
     setLocalDragPos({ x: ds.origX + dx, y: ds.origY + dy });
     onDragMove?.(dx, dy, clientX, clientY);
-  }, [onDragMove]);
+  }, [onDragMove, getCanvasState]);
 
+  // Edge-pan/wheel-zoom moves the camera without a React commit; the pan-changed event is the live signal to re-pin the card to the cursor.
   useEffect(() => {
-    if (isDragging && didDrag.current) recomputeDragPos();
-  }, [panX, panY, isDragging, recomputeDragPos]);
+    if (!isDragging) return;
+    const onPanChange = () => {
+      if (didDrag.current) recomputeDragPos();
+    };
+    window.addEventListener('openswarm:canvas-pan-changed', onPanChange);
+    return () => window.removeEventListener('openswarm:canvas-pan-changed', onPanChange);
+  }, [isDragging, recomputeDragPos]);
 
   const handleDragPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
@@ -159,9 +161,10 @@ const NoteCard: React.FC<Props> = ({
 
   const handleDragPointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
-    const z = zoomRef.current;
-    const panDx = (panRef.current.panX - dragState.current.startPanX) / z;
-    const panDy = (panRef.current.panY - dragState.current.startPanY) / z;
+    const cs = getCanvasState();
+    const z = cs.zoom;
+    const panDx = (cs.panX - dragState.current.startPanX) / z;
+    const panDy = (cs.panY - dragState.current.startPanY) / z;
     const dx = (e.clientX - dragState.current.startX) / z - panDx;
     const dy = (e.clientY - dragState.current.startY) / z - panDy;
     if (didDrag.current) {
@@ -181,7 +184,7 @@ const NoteCard: React.FC<Props> = ({
     setLocalDragPos(null);
     setIsDragging(false);
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [dispatch, noteId, onDragEnd]);
+  }, [dispatch, noteId, onDragEnd, getCanvasState]);
 
   const resizeRef = useRef<{
     dir: ResizeDir; startX: number; startY: number;
@@ -209,6 +212,7 @@ const NoteCard: React.FC<Props> = ({
     (e: React.PointerEvent) => {
       if (!resizeRef.current) return null;
       const { dir, startX, startY, origX, origY, origW, origH } = resizeRef.current;
+      const zoom = getCanvasState().zoom;
       const dx = (e.clientX - startX) / zoom;
       const dy = (e.clientY - startY) / zoom;
       let newX = origX, newY = origY, newW = origW, newH = origH;
@@ -220,7 +224,7 @@ const NoteCard: React.FC<Props> = ({
       if (newH < MIN_H) { if (dir.includes('n')) newY = origY + origH - MIN_H; newH = MIN_H; }
       return { x: newX, y: newY, w: newW, h: newH };
     },
-    [zoom],
+    [getCanvasState],
   );
 
   const handleResizeMove = useCallback(
@@ -255,7 +259,18 @@ const NoteCard: React.FC<Props> = ({
     if (zone === 'restore') dispatch(clearTiledCard(noteId));
     else dispatch(setTiledCard({ cardId: noteId, zone }));
   };
-  const tiledStyle = useTiledStyle(tileZone, panX, panY, zoom);
+  // Fullscreen pins the card to the viewport, so while tiled the geometry must track canvas pan/zoom.
+  // The camera lives outside React (getCanvasState), so subscribe to pan ticks ONLY while tiled and read fresh.
+  const [tileTick, setTileTick] = useState(0);
+  useEffect(() => {
+    if (!tileZone) return undefined;
+    const onPan = (): void => setTileTick((t) => t + 1);
+    window.addEventListener('openswarm:canvas-pan-changed', onPan);
+    return () => window.removeEventListener('openswarm:canvas-pan-changed', onPan);
+  }, [tileZone]);
+  void tileTick;
+  const cam = getCanvasState();
+  const tiledStyle = useTiledStyle(tileZone, cam.panX, cam.panY, cam.zoom);
   const isFullscreen = tileZone === 'fullscreen';
 
   const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
@@ -273,8 +288,8 @@ const NoteCard: React.FC<Props> = ({
       data-select-meta={JSON.stringify({ name: 'Note', content: content.slice(0, 60) })}
       onPointerDownCapture={(e: React.PointerEvent) => {
         onBringToFront?.(noteId, 'note');
-        // Capture-phase so a click the textarea swallows still selects the note; shift keeps the bubbled toggle path.
-        if (e.button === 0 && !e.shiftKey) onCardSelect?.(noteId, 'note', false);
+        // Capture-phase so a click the textarea swallows still selects the note; shift keeps the bubbled toggle path. Pass the target so a textarea press selects without yanking the camera.
+        if (e.button === 0 && !e.shiftKey) onCardSelect?.(noteId, 'note', false, e.target);
       }}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;

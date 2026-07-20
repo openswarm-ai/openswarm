@@ -20,6 +20,7 @@ from backend.apps.agents.manager.session.session_store import (
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming.PartialReply import PartialReply
 from backend.apps.agents.manager.session.SessionLifecycle import SessionLifecycle
+from backend.apps.agents.manager.SpawnAgentRun import SpawnAgentRun
 from backend.apps.agents.manager.session.SessionPersistence import SessionPersistence
 from backend.apps.agents.manager.Messaging import Messaging
 from backend.apps.agents.manager.SessionControl import SessionControl
@@ -38,7 +39,7 @@ os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 MAX_CONCURRENT_TURNS = int(os.environ.get("OSW_MAX_CONCURRENT_TURNS", "8") or "0")
 
 
-class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionControl, AgentLaunch, MockAgent, TurnRunner, RunOptions, RunSupport):
+class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionControl, AgentLaunch, SpawnAgentRun, MockAgent, TurnRunner, RunOptions, RunSupport):
     @typechecked
     def __init__(self):
         self.sessions: Dict[str, AgentSession] = {}

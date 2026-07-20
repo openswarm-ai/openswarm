@@ -1,22 +1,19 @@
 """The SDK PostToolUse hook, lifted out of the agent loop. Runs after every tool call:
 records per-tool latency, normalizes the raw tool response into displayable text, re-renders
-view-builder writes (and drains build errors), materializes a spawned Agent sub-session into
-the manager registry, spills oversized results to disk, and broadcasts the tool_result message.
+view-builder writes (and drains build errors), spills oversized results to disk, and
+broadcasts the tool_result message.
 Operates on the HookContext (its `sessions` is the manager's live registry). The dict returns
 and payloads are the SDK hook protocol / existing message shapes, not internal models."""
 
 import asyncio
 import logging
 import time
-from datetime import datetime
 from typing import Dict
-from uuid import uuid4
 
 from typeguard import typechecked
 
-from backend.apps.agents.core.models import AgentSession, Message
+from backend.apps.agents.core.models import Message
 from backend.apps.agents.core.ws_manager import ws_manager
-from backend.apps.agents.manager.session.apply_context_window import apply_context_window
 from backend.apps.agents.manager.session.history_compaction import (
     truncate_large_tool_result,
     wrap_platform_note,
@@ -145,68 +142,7 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
     if elapsed_ms is not None:
         result_payload["elapsed_ms"] = elapsed_ms
 
-    if hook_tool_name == "Agent":
-        tool_input = input_data.get("tool_input", {})
-        agent_prompt = tool_input.get("prompt", tool_input.get("task", ""))
-
-        sub_text = content
-        sub_cost = 0.0
-        sub_tokens = {"input": 0, "output": 0}
-        sub_model = session.model
-        if isinstance(raw_response, dict):
-            blocks = raw_response.get("content")
-            if isinstance(blocks, list):
-                parts = [
-                    b.get("text", "")
-                    for b in blocks
-                    if isinstance(b, dict) and b.get("type") == "text"
-                ]
-                if parts:
-                    sub_text = "\n".join(parts) if len(parts) > 1 else parts[0]
-            elif isinstance(raw_response.get("text"), str):
-                sub_text = raw_response["text"]
-            usage = raw_response.get("usage", {})
-            if isinstance(usage, dict):
-                sub_tokens["input"] = usage.get("input_tokens", 0) + usage.get("cache_creation_input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
-                # Pill-only lane: NEW (uncached) input, excludes the cached static prefix so the bubble shows what this turn added.
-                sub_tokens["input_fresh"] = usage.get("input_tokens", 0)
-                sub_tokens["output"] = usage.get("output_tokens", 0)
-            if raw_response.get("total_cost_usd"):
-                sub_cost = raw_response["total_cost_usd"]
-            if raw_response.get("model"):
-                sub_model = raw_response["model"]
-
-        sub_session_id = uuid4().hex
-        sub_name = agent_prompt[:50] if agent_prompt else "Sub-agent"
-        # Subagent context isolation invariant (Phase 3, Layer P): children DO NOT inherit the parent's active_mcps or compaction state. They start with the AgentSession defaults (empty lists). Reasoning: - Security: a parent that activated Gmail shouldn't leak Gmail tools to a subagent doing an unrelated task. The user only approved Gmail for the parent. - Token cost: subagents typically have a narrow task, they don't need the parent's full activated set. - Failure isolation: if the parent compacted history, the subagent shouldn't inherit a summary it can't re-expand. If a subagent ever needs a parent activation, the user must approve it explicitly via MCPActivate inside the subagent session, same gate as a fresh top-level chat.
-        sub_session = AgentSession(
-            id=sub_session_id,
-            name=sub_name,
-            status="completed",
-            model=sub_model,
-            mode="sub-agent",
-            cwd=session.cwd,
-            created_at=datetime.now(),
-            cost_usd=sub_cost,
-            tokens=sub_tokens,
-            messages=[
-                Message(role="user", content=agent_prompt, branch_id="main"),
-                Message(role="assistant", content=sub_text, branch_id="main"),
-            ],
-            dashboard_id=session.dashboard_id,
-            parent_session_id=session_id,
-            # Explicit empty list (matches the model default) so the invariant is visible at the spawn site rather than relying on the field's default_factory.
-            active_mcps=[],
-        )
-        apply_context_window(sub_session)
-        ctx.sessions[sub_session_id] = sub_session
-        await ws_manager.broadcast_global("agent:status", {
-            "session_id": sub_session_id,
-            "status": sub_session.status,
-            "session": sub_session.model_dump(mode="json"),
-        })
-        result_payload["sub_session_id"] = sub_session_id
-
+    # The CLI's built-in Agent/Task sub-agent tool is hard-blocked (disallowed_tools) and replaced by the SpawnAgent MCP route, which materializes real child sessions itself; no per-tool branch needed here anymore.
     result_msg = Message(role="tool_result", content=result_payload, branch_id=session.active_branch_id)
     # Spill oversized tool results to per-session disk storage. The replacement keeps the first 4KB inline so the model retains some signal; the rest lives on disk for the UI to surface in the compaction drawer. Crucially this happens at *write* time (before the next turn ships history to the SDK) so the bloat never re-enters context.
     try:

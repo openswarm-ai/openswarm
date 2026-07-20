@@ -33,6 +33,7 @@ import { Integration, INTEGRATIONS } from './integrations';
 import { CATEGORY_ORDER } from './toolsHelpers';
 import ToolSection from './cards/ToolSection';
 import BrowserPermissionCard from './cards/BrowserPermissionCard';
+import AgentWorkflowsSection from './cards/AgentWorkflowsSection';
 import RegistryBrowserDialog from './dialogs/RegistryBrowserDialog';
 import ToolDialogs from './dialogs/ToolDialogs';
 import CustomToolCard from './cards/CustomToolCard';
@@ -178,6 +179,7 @@ const Tools: React.FC = () => {
           </Box>
         </Collapse>
       </Box>
+      <AgentWorkflowsSection />
 
       <Box sx={{ mb: 2 }}>
         <Box onClick={() => setCustomSectionOpen((v) => !v)} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, cursor: 'pointer', userSelect: 'none', '&:hover .section-arrow': { color: c.text.secondary } }}>

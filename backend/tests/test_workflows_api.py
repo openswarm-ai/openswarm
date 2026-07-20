@@ -113,3 +113,56 @@ def test_pause_all_and_resume_all_flip_global_flag(make_wf):
     assert storage.get_paused() is True
     assert _run(resume_all_schedules()) == {"paused": False}
     assert storage.get_paused() is False
+
+
+# ---- InvokeWorkflow (agents run a workflow as a tool and wait for the result) ----
+
+def test_invoke_unknown_workflow_404():
+    from fastapi import HTTPException
+    from backend.apps.workflows.workflows import invoke_workflow
+    with pytest.raises(HTTPException) as ei:
+        _run(invoke_workflow("nope"))
+    assert ei.value.status_code == 404
+
+
+def test_invoke_requires_the_exposed_opt_in(make_wf):
+    # A workflow the user never opted in must refuse: exposure is the whole permission model here.
+    from fastapi import HTTPException
+    from backend.apps.workflows import storage
+    from backend.apps.workflows.workflows import invoke_workflow
+    wf = make_wf()
+    storage.save_workflow(wf)
+    with pytest.raises(HTTPException) as ei:
+        _run(invoke_workflow(wf.id))
+    assert ei.value.status_code == 403
+
+
+def test_invoke_waits_and_returns_transcript(make_wf, monkeypatch):
+    from backend.apps.workflows import storage, executor
+    from backend.apps.workflows.models import WorkflowRun
+    from backend.apps.workflows.workflows import invoke_workflow
+    wf = make_wf(exposed_as_tool=True)
+    storage.save_workflow(wf)
+
+    async def p_fake_execute(w, triggered_by="schedule", scheduled_for=None, tested_signature=None):
+        assert triggered_by == "manual"
+        return WorkflowRun(workflow_id=w.id, status="success", session_id="sess-invoke-1", cost_usd=0.02)
+
+    monkeypatch.setattr(executor, "execute", p_fake_execute)
+
+    from backend.apps.agents.agent_manager import agent_manager
+
+    class p_FakeMsg:
+        role = "assistant"
+        content = "invoked step done"
+        hidden = False
+
+    class p_FakeSess:
+        messages = [p_FakeMsg()]
+
+    monkeypatch.setitem(agent_manager.sessions, "sess-invoke-1", p_FakeSess())
+    res = _run(invoke_workflow(wf.id))
+    assert res["status"] == "success"
+    assert res["run_id"]
+    assert res["timed_out"] is False
+    assert "invoked step done" in res["transcript"]

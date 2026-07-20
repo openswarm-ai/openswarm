@@ -51,6 +51,9 @@ export function useDashboardClipboard({
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'c') return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      // Highlighted text owns Cmd+C (OS semantics). Without this, clicking a chat selects the CARD, so copying a highlighted message overwrote the clipboard with the card's NAME (the "I copied text but pasted the chat title" bug).
+      const textSel = window.getSelection();
+      if (textSel && !textSel.isCollapsed && textSel.toString().trim()) return;
       if (selection.selectedIds.size === 0) return;
 
       e.preventDefault();

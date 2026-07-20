@@ -1,5 +1,6 @@
 import logging
-from typing import List, Optional, Set
+import os
+from typing import Dict, List, Optional, Set, Union
 
 from typeguard import typechecked
 
@@ -12,17 +13,31 @@ from backend.apps.tools_lib.tools_lib import (
 
 logger = logging.getLogger(__name__)
 
+# Cron* live only in the force-deny list (path_gate): our Schedule MCP replaces the CLI scheduler, so allowing them here just churned the allow/deny lists. InvokeAgent's real tool is the mcp__openswarm-invoke-agent__ ref; the bare name was a no-op.
 FULL_TOOLS = [
     "Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion",
     "WebSearch", "WebFetch", "NotebookEdit", "TodoWrite",
     "EnterPlanMode", "ExitPlanMode", "EnterWorktree",
     "TaskOutput", "TaskStop",
-    "CronCreate", "CronList", "CronDelete",
-    "InvokeAgent",
-    "Agent",
     # ToolSearch is the loader the CLI uses to expose deferred tool schemas on demand. Must be in the allowedTools whitelist or the model can't call it, which means none of the deferred extended tools become reachable even when the CLI advertises them in the system prompt.
     "ToolSearch",
 ]
+
+
+@typechecked
+def resolve_builtin_tools_option() -> Union[List[str], Dict[str, str]]:
+    """The SDK `tools` option (CLI `--tools`), the base set of built-in tools.
+
+    Default: the full claude_code preset, which ships every preset built-in's schema. With
+    OSW_TOOL_MANIFEST=1, an explicit FULL_TOOLS list instead, ONLY the built-ins OpenSwarm exposes,
+    which prunes the ~9 preset extras nothing here references (Cron*/Monitor/Task*/PushNotification/
+    RemoteTrigger/etc) for ~940 schema tokens/turn, cache-stable. MCP tools ride mcp_servers, so
+    SpawnAgent/browser/schedule/skill/web/user MCPs are untouched; ToolSearch stays in FULL_TOOLS so
+    deferred loading survives (live-proven: the model still ToolSearch-loads + calls MCP tools under
+    the manifest). Flag-gated pending a real-app soak before default-on."""
+    if os.environ.get("OSW_TOOL_MANIFEST") == "1":
+        return list(FULL_TOOLS)
+    return {"type": "preset", "preset": "claude_code"}
 
 
 @typechecked

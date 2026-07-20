@@ -1,10 +1,9 @@
 """Configure the SDK environment for the run's provider route: set ANTHROPIC/OPENAI/GOOGLE
 auth env vars (direct key, OpenSwarm Pro proxy, OpenRouter, or 9Router) and pin subagent models,
-ensuring 9Router is up where the route needs it. sub_conns is the active-connection list for
-subagent-model fallback (empty today)."""
+ensuring 9Router is up where the route needs it."""
 
 import os
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from typeguard import typechecked
 
@@ -50,7 +49,6 @@ async def configure_provider_env(
     resolved_model: object,
     api_type: Optional[str],
     global_settings: AppSettings,
-    sub_conns: List,
 ) -> None:
     from backend.apps.nine_router import is_running as nine_router_running
     from backend.apps.agents.providers.registry import NINEROUTER_MODEL_PREFIXES as NINEROUTER_MODEL_PREFIXES
@@ -198,7 +196,9 @@ async def configure_provider_env(
                 "ANTHROPIC_API_KEY": "9router",
                 "ANTHROPIC_BASE_URL": "http://localhost:20128",
             }
-        # Pin subagents to whichever lane the user has, else CLI's default Haiku 4.5 hits 9Router with no Claude route and 401s. NOTE: callers pass sub_conns=[] today so this is inert (latent regression from the run/ split; pyright caught the dangling _conns ref).
+        # Pin subagents to whichever lane the user has, else the CLI's default Haiku 4.5 hits 9Router with no Claude route and every sub-agent 401s while the parent turn works. Fetched live here (fail-open []) so no caller can starve the pin with a stale list again, the run/ split did exactly that and silently killed sub-agents on router routes.
+        from backend.apps.nine_router import get_providers as p_get_providers
+        sub_conns = await p_get_providers()
         active = {c.get("provider") for c in sub_conns
                    if isinstance(c, dict) and c.get("isActive")}
         sub_model = None

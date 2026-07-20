@@ -110,6 +110,15 @@ def test_pack_allows_clean_workspace_file():
     assert zipfile.is_zipfile(io.BytesIO(raw))
 
 
+def test_pack_export_anyway_overrides_file_scan_but_never_denied_keys():
+    # User-confirmed override ships a flagged workspace FILE (trusted recipient); our own credential fields stay unexportable no matter what.
+    leak = b"const KEY = 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA';\n"
+    raw = pack({"format_version": 1}, {"bid1": {"name": "ok"}}, {"entities/bid1/files/config.js": leak}, allow_file_secrets=True)
+    assert zipfile.is_zipfile(io.BytesIO(raw))
+    with pytest.raises(BundleError):
+        pack({"format_version": 1}, {"bid1": {"api_key": "leak"}}, {}, allow_file_secrets=True)
+
+
 def test_app_export_drops_machine_env(tmp_path, monkeypatch):
     # The live .env holds the source machine's absolute paths + pinned port; it must never ride along. .env.example (portable) does.
     from backend.apps.swarm.entities import apps as appmod

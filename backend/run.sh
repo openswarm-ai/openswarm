@@ -56,7 +56,9 @@ fi
 # (compared via `dir in path.parents`). So we pass ABSOLUTE paths to
 # the dirs we want to exclude — those are the only patterns uvicorn's
 # WatchFilesReload actually honors for "anywhere under this tree".
-echo "Starting backend server on http://0.0.0.0:8324 ..."
+# Dev only: OPENSWARM_PORT lets a parallel worktree bind its own backend port instead of colliding on 8324. Packaged builds never set it.
+BACKEND_PORT="${OPENSWARM_PORT:-8324}"
+echo "Starting backend server on http://0.0.0.0:${BACKEND_PORT} ..."
 cd "$PROJECT_ROOT_ABSPATH"
 
 UVICORN_EXCLUDE_ARGS=(--reload-exclude '*.pyc')
@@ -79,10 +81,10 @@ done
 # launcher does). Packaged builds leave it unset → fast, lean,
 # single-process uvicorn.
 if [[ "${OPENSWARM_DEV:-}" == "1" ]]; then
-    echo "OPENSWARM_DEV=1 detected — running uvicorn with --reload."
-    python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8324 --reload \
+    echo "OPENSWARM_DEV=1 detected, running uvicorn with --reload."
+    python3 -m uvicorn backend.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --reload \
         --reload-dir "$BACKEND_DIR_ABSPATH" \
         "${UVICORN_EXCLUDE_ARGS[@]}"
 else
-    python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8324
+    python3 -m uvicorn backend.main:app --host 0.0.0.0 --port "$BACKEND_PORT"
 fi

@@ -1,15 +1,17 @@
-from backend.config.Apps import SubApp
-from backend.apps.agents.agent_manager import agent_manager
-from backend.apps.agents.core.ws_manager import ws_manager
-from backend.apps.agents.core.models import AgentConfig, ApprovalResponse
-from backend.apps.agents.manager.session.history_compaction import estimate_post_compact_input
-from contextlib import asynccontextmanager
-from fastapi import WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import JSONResponse
 import asyncio
-import json
 import logging
 import time
+from contextlib import asynccontextmanager
+from typing import Any, Dict
+
+from fastapi import HTTPException
+from typeguard import typechecked
+
+from backend.apps.agents.agent_manager import agent_manager
+from backend.apps.agents.core.models import AgentConfig, AgentSession, ApprovalResponse
+from backend.apps.agents.core.seq_log import seq_log
+from backend.apps.agents.manager.session.history_compaction import estimate_post_compact_input
+from backend.config.Apps import SubApp
 
 logger = logging.getLogger(__name__)
 
@@ -39,17 +41,46 @@ async def agents_lifespan():
 agents = SubApp("agents", agents_lifespan)
 
 
+@typechecked
+def p_session_list_item(session: AgentSession) -> Dict[str, Any]:
+    """Serialize dashboard metadata without retaining the full chat history."""
+    data = session.model_dump(mode="json", exclude={"messages"})
+    messages = session.messages
+    last_content = messages[-1].content if messages else ""
+    first_user_content = next(
+        (message.content for message in messages if message.role == "user"),
+        "",
+    )
+    data.update(
+        messages=[],
+        last_message_preview=last_content[:120] if isinstance(last_content, str) else "",
+        first_user_message=(
+            first_user_content[:200] if isinstance(first_user_content, str) else ""
+        ),
+        message_count=len(messages),
+    )
+    return data
+
+
 @agents.router.get("/sessions")
 async def list_sessions(dashboard_id: str = ""):
     sessions = agent_manager.get_all_sessions(dashboard_id=dashboard_id or None)
-    return {"sessions": [s.model_dump(mode="json") for s in sessions]}
+    return {"sessions": [p_session_list_item(s) for s in sessions]}
 
 @agents.router.get("/activity")
 async def agent_activity():
-    """How many agent tasks are live right now. Drives the desktop's idle-update gate so a
-    silent update-on-idle never lands on top of a running agent."""
+    """How many agent tasks are live right now, plus seconds until the next scheduled
+    workflow fires. Drives the desktop's idle-update gate so a silent update-on-idle
+    never lands on top of a running agent or right before a scheduled run."""
     active = sum(1 for t in agent_manager.tasks.values() if not t.done())
-    return {"active": active}
+    try:
+        # Local import: workflows pulls in agent machinery, a module-level import here would cycle.
+        from backend.apps.workflows.scheduler import seconds_to_next_fire
+        next_run_in_s = seconds_to_next_fire()
+    except Exception:
+        # Fail open (None = no block): a broken lookahead must never wedge updates forever; the agents gate still protects running work.
+        next_run_in_s = None
+    return {"active": active, "next_run_in_s": next_run_in_s}
 
 @agents.router.get("/sessions/{session_id}")
 async def get_session(session_id: str):
@@ -70,7 +101,11 @@ async def get_session(session_id: str):
             session = await agent_manager.resume_session(session_id)
         except ValueError:
             raise HTTPException(status_code=404, detail="Session not found")
-    return session.model_dump(mode="json")
+    # Seq read before the dump (no await between = atomic): the client seeds its WS resume cursor from this, so a REST hydrate isn't followed by a full from-zero replay of everything it just received.
+    event_seq = seq_log.current_seq(session_id)
+    payload = session.model_dump(mode="json")
+    payload["event_seq"] = event_seq
+    return payload
 
 @agents.router.post("/launch")
 async def launch_agent(config: AgentConfig):
@@ -251,10 +286,11 @@ async def delete_session(session_id: str):
     return {"ok": True}
 
 @agents.router.get("/history")
-async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_id: str = ""):
+async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_id: str = "", closed_only: int = 0):
     return agent_manager.get_history(
         q=q, limit=limit, offset=offset,
         dashboard_id=dashboard_id or None,
+        closed_only=bool(closed_only),
     )
 
 @agents.router.get("/sessions/{session_id}/browser-agents")
