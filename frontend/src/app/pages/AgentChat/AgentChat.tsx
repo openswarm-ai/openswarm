@@ -155,22 +155,13 @@ const thinkingShimmerKeyframes = `
 }
 `;
 
-// Pick a label deterministically per session-turn so the pill has variety without flickering between renders. Shared list with MessageBubble.
-function streamingLabelFor(seedKey: string | undefined): string {
-  if (!seedKey) return THINKING_LABELS[0].live;
-  let h = 0;
-  for (let i = 0; i < seedKey.length; i++) {
-    h = ((h << 5) - h + seedKey.charCodeAt(i)) | 0;
-  }
-  return THINKING_LABELS[Math.abs(h) % THINKING_LABELS.length].live;
-}
-
-const ThinkingBubble: React.FC<{ label?: string | null; seedKey?: string }> = ({ label, seedKey }) => {
+const ThinkingBubble: React.FC<{ label?: string | null }> = ({ label }) => {
   const c = useClaudeTokens();
   const shimmerBase = c.text.tertiary;
   const shimmerHighlight = c.text.primary;
-  // Aux-LLM label wins; otherwise pick a quirky verb keyed off seedKey so different sessions / turns show different verbs without flicker.
-  const display = label ? `${label}…` : `${streamingLabelFor(seedKey)}…`;
+  // Aux-LLM label wins; otherwise the pill stays plain "Thinking". The whimsical verbs read as personality
+  // in the per-message thinking bubble (MessageBubble), but as a vague, confusing status on a working card.
+  const display = label ? `${label}…` : `${THINKING_LABELS[0].live}…`;
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75 }}>
       <style>{thinkingShimmerKeyframes}</style>
@@ -1779,7 +1770,6 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               <Box sx={{ overflowAnchor: 'none' }}>
                 <ThinkingBubble
                   label={preSendActivityLabel || session.turn_label?.label}
-                  seedKey={`${session.id}:${session.messages?.length ?? 0}`}
                 />
               </Box>
             )}

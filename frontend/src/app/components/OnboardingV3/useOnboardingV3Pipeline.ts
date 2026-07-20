@@ -34,11 +34,6 @@ function cadenceToSchedule(cadence: string): Record<string, unknown> {
   return { ...base, repeat_unit: 'week', on_days: [1] };
 }
 
-// Gap between the demo launches. Right after connect the provider's OAuth token can still be mid-refresh,
-// and four simultaneous cold turns raced that refresh and all "hit a snag"; the first launch warms the
-// token, the rest ride it warm. Fires during the curtain beats, so the lead time is hidden.
-const LAUNCH_STAGGER_MS = 1200;
-
 // How long finish() will wait for prep before staging the reveal. Prep is kicked early (theme beat) so it
 // has usually resolved; this only bites a user who outran it, and a brief wait for a COHERENT reveal beats
 // an instant one showing a previous run's stale greeting. Capped so it's never an open-ended spinner.
@@ -153,28 +148,16 @@ export function useOnboardingV3Pipeline() {
       if (launchedRef.current || !prep || !prep.greeting || !launchCtxRef.current.connected) return;
       launchedRef.current = true;
       // The four auto-run showcase jobs, one per capability: build an app, dig the web, drive a real
-      // browser, and set up a scheduled task. The lame file-audit is gone; the browser task shows the
-      // agent controlling a real site live. Fired STAGGERED so the first turn warms the just-connected
-      // provider token before the rest hit it (see LAUNCH_STAGGER_MS).
-      const launches: Array<() => void> = [];
-      if (prep.app_title && prep.app_prompt) {
-        const t = prep.app_title, p = prep.app_prompt, r = prep.app_reason ?? '';
-        launches.push(() => launchJob(t, p, 'app', r));
-      }
-      if (prep.research_title && prep.research_prompt) {
-        const t = prep.research_title, p = prep.research_prompt, r = prep.research_reason ?? '';
-        launches.push(() => launchJob(t, p, 'research', r));
-      }
-      if (prep.browser_title && prep.browser_prompt) {
-        const t = prep.browser_title, p = prep.browser_prompt, r = prep.browser_reason ?? '';
-        launches.push(() => launchJob(t, p, 'browser', r));
-      }
+      // browser, and set up a scheduled task. Each fires INDEPENDENTLY (own draft session, own async
+      // launch, own error handling), so none waits on another and one failing never blocks the rest; a
+      // real first-run's provider token is fresh (just connected), so parallel launch is safe.
+      if (prep.app_title && prep.app_prompt) launchJob(prep.app_title, prep.app_prompt, 'app', prep.app_reason ?? '');
+      if (prep.research_title && prep.research_prompt) launchJob(prep.research_title, prep.research_prompt, 'research', prep.research_reason ?? '');
+      if (prep.browser_title && prep.browser_prompt) launchJob(prep.browser_title, prep.browser_prompt, 'browser', prep.browser_reason ?? '');
       // The scheduled task is a first-class part of the reveal (the "it automates for me" capability), so
       // guarantee one: use the model's automation when it emitted one (it sometimes drops the last JSON
       // field), else fall back to a safe, universally-useful weekly roundup.
-      const auto = prep.automations[0] ?? SCHEDULE_FALLBACK;
-      launches.push(() => createScheduledJob(auto));
-      launches.forEach((fn, idx) => { if (idx === 0) fn(); else window.setTimeout(fn, idx * LAUNCH_STAGGER_MS); });
+      createScheduledJob(prep.automations[0] ?? SCHEDULE_FALLBACK);
     });
   }, [launchJob, createScheduledJob]);
 

@@ -853,9 +853,13 @@ const AppShell: React.FC = () => {
           // Zen/Arc compact mode: a detached, rounded panel that SLIDES in and out from the left edge
           // (sidePeek drives the transform both ways; it stays mounted so leaving glides it away, not vanish).
           ...(sideOverlay ? {
-            position: 'fixed', top: 10, left: 10, bottom: 10, zIndex: 1000002,
-            borderRadius: '14px', overflow: 'hidden',
-            boxShadow: '0 16px 48px rgba(0,0,0,0.34)', border: `1px solid ${c.border.medium}`,
+            // Hug the window's top/left/bottom edges (same footprint as the docked sidebar) so the
+            // dashboard's corner tint can't peek in the margins; only the dashboard-facing right corners
+            // stay rounded. The OS clips the square outer corners to the window's own rounding, so the
+            // window edge (the "last border") stays intact.
+            position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 1000002,
+            borderRadius: '0 14px 14px 0', overflow: 'hidden',
+            boxShadow: '8px 0 32px rgba(0,0,0,0.28)', borderRight: `1px solid ${c.border.medium}`,
             transform: sidePeek ? 'translateX(0)' : 'translateX(-118%)',
             transition: 'transform 240ms cubic-bezier(0.22,1,0.36,1)',
             pointerEvents: sidePeek ? 'auto' : 'none',

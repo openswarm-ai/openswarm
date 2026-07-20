@@ -3,18 +3,12 @@ export interface ToolLabel {
   past: string;
 }
 
-// djb2 hash; same seed always picks the same variant so rows don't flicker.
-function _stableIndex(seed: string | undefined, n: number): number {
-  if (n <= 1 || !seed) return 0;
-  let h = 5381;
-  for (let i = 0; i < seed.length; i++) {
-    h = ((h << 5) + h + seed.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h) % n;
-}
-
+// The clearest label of each verb pool. We used to seed-pick a random synonym for personality, but the
+// whimsical spread ("Rummaging the toolbox", "Eyeballing") read as vague status noise on a working card;
+// that variety lives on in the per-message thinking bubble instead. Index 0 is the plain literal by design.
 function _pick<T>(variants: T[], seed?: string): T {
-  return variants[_stableIndex(seed, variants.length)];
+  void seed;
+  return variants[0];
 }
 
 // Index 0 is the safe default; single-entry pools mean no seeded variation.
@@ -142,17 +136,10 @@ const VARIANTS: Record<string, ToolLabel[]> = {
     { present: 'Pulling up the task', past: 'Pulled up the task' },
   ],
   toolsearch: [
-    { present: 'Looking through the toolbox', past: 'Looked through the toolbox' },
-    { present: 'Hunting for the right tool', past: 'Found a tool' },
-    { present: 'Browsing the toolbox', past: 'Browsed the toolbox' },
-    { present: 'Rummaging the toolbox', past: 'Rummaged the toolbox' },
-    { present: 'Digging through the toolbox', past: 'Dug through the toolbox' },
+    { present: 'Finding the right tool', past: 'Found the right tool' },
   ],
   mcpsearch: [
-    { present: 'Looking through the toolbox', past: 'Looked through the toolbox' },
-    { present: 'Hunting for the right tool', past: 'Found a tool' },
-    { present: 'Browsing the toolbox', past: 'Browsed the toolbox' },
-    { present: 'Rummaging the toolbox', past: 'Rummaged the toolbox' },
+    { present: 'Finding the right tool', past: 'Found the right tool' },
   ],
   // getToolLabelWithInput has the brand-aware version; this is the seedless fallback.
   mcpactivate: [
@@ -164,7 +151,6 @@ const VARIANTS: Record<string, ToolLabel[]> = {
   ],
   mcplist: [
     { present: 'Listing tools', past: 'Listed tools' },
-    { present: 'Browsing the toolbox', past: 'Browsed the toolbox' },
   ],
   settingsread: [
     { present: 'Checking your settings', past: 'Checked your settings' },
