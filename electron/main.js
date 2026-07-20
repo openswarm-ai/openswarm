@@ -1209,7 +1209,8 @@ function createWindow() {
   });
 
   if (isDev) {
-    mainWindow.loadURL(`http://localhost:3000`);
+    // Dev only: OPENSWARM_DEV_PORT lets a second worktree's Electron point at its own webpack-dev-server (default 3000) instead of colliding on the shared port. Packaged builds never hit this branch.
+    mainWindow.loadURL(`http://localhost:${process.env.OPENSWARM_DEV_PORT || 3000}`);
   } else if (frontendServerPort) {
     mainWindow.loadURL(`http://127.0.0.1:${frontendServerPort}/index.html`);
   } else {
