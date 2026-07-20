@@ -3,10 +3,7 @@ import Box from '@mui/material/Box';
 import ToolCallBubble from '../tool-bubbles/ToolCallBubble';
 import type { ToolPair } from '../tool-bubbles/ToolCallBubble';
 import { parseShowUiPayload } from './showUiPayload';
-import WeatherWidget from './WeatherWidget';
-import PlanWidget from './PlanWidget';
-import StatsWidget from './StatsWidget';
-import LinksWidget from './LinksWidget';
+import ShowUiWidgetView from './ShowUiWidgetView';
 
 interface ToolUiBubbleProps {
   pair: ToolPair;
@@ -25,10 +22,7 @@ function ToolUiBubble({ pair, sessionId, isPending, suppressReveal }: ToolUiBubb
   }
   return (
     <Box sx={{ my: 1, contain: 'layout style' }} data-select-type="tool-ui" data-select-id={pair.id} data-select-meta={JSON.stringify({ component: payload.component })}>
-      {payload.component === 'weather' && <WeatherWidget props={payload.props} />}
-      {payload.component === 'plan' && <PlanWidget props={payload.props} />}
-      {payload.component === 'stats' && <StatsWidget props={payload.props} />}
-      {payload.component === 'links' && <LinksWidget props={payload.props} />}
+      <ShowUiWidgetView payload={payload} />
     </Box>
   );
 }

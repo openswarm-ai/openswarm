@@ -68,10 +68,26 @@ export function isShowUiPair(pair: ToolPair): boolean {
   return /(^|__)ShowUI$/.test(tool);
 }
 
+/** Latest ShowUI payload anywhere in a transcript; the collapsed card pins this artifact under its pill. */
+export function extractLatestShowUi(messages: Array<{ role: string; content: any }>): ShowUiPayload | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'tool_call') continue;
+    const tool = typeof msg.content === 'object' ? String(msg.content?.tool || '') : '';
+    if (!/(^|__)ShowUI$/.test(tool)) continue;
+    const parsed = parseShowUiInput(msg.content?.input);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
 /** Strict parse of a ShowUI tool_call's input; null on any mismatch so the caller falls back to the plain bubble. */
 export function parseShowUiPayload(pair: ToolPair): ShowUiPayload | null {
   const content = typeof pair.call.content === 'object' ? pair.call.content : null;
-  const input = content?.input;
+  return parseShowUiInput(content?.input);
+}
+
+function parseShowUiInput(input: unknown): ShowUiPayload | null {
   if (!input || typeof input !== 'object') return null;
   const component = String((input as { component?: unknown }).component || '');
   const props = (input as { props?: unknown }).props;

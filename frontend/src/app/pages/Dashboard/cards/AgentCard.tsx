@@ -37,6 +37,8 @@ import WindowControls from './WindowControls';
 import { useTiledStyle } from './tileZones';
 import AgentNarratorPill from '../desktop/AgentNarratorPill';
 import { extractLatestTodos } from '../desktop/agentTodos';
+import { extractLatestShowUi } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
+import { getWebview } from '@/shared/browserRegistry';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { QuestionForm } from '@/app/pages/AgentChat/shell/ApprovalBar';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
@@ -691,9 +693,39 @@ const AgentCard: React.FC<Props> = ({
   // Desktop-shell narrator pill: a collapsed card with nothing to ask renders as the minimal pill
   // (live turn label + plan checklist); approvals and drafts keep the full card so their UI has a home.
   const todos = useMemo(() => extractLatestTodos(session.messages || []), [session.messages]);
+  const pillArtifact = useMemo(() => extractLatestShowUi(session.messages || []), [session.messages]);
   const pillMode = !expanded && !hasPending && !isDraft && !tileZone;
   const pillLabel = session.turn_label?.label || displayChatTitle(session);
   const pillRunning = session.status === 'running';
+
+  // f7's collapsed state: a session that spawned a browser shows that window under the pill.
+  const spawnedBrowserId = useAppSelector((s) => {
+    for (const bc of Object.values(s.dashboardLayout.browserCards)) {
+      if (bc.spawned_by === session.id) return bc.browser_id;
+    }
+    return null;
+  });
+  const [browserShot, setBrowserShot] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pillMode || pillArtifact || !spawnedBrowserId) {
+      setBrowserShot(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const capture = (): void => {
+      const wv = getWebview(spawnedBrowserId);
+      const p = wv?.capturePage?.();
+      if (p && typeof (p as Promise<unknown>).then === 'function') {
+        (p as Promise<{ toDataURL(): string }>)
+          .then((img) => { if (!cancelled) setBrowserShot(img.toDataURL()); })
+          .catch(() => undefined);
+      }
+    };
+    capture();
+    // Refresh while the agent is driving so the shot tracks the page; parked cards keep the last frame.
+    const timer = pillRunning ? window.setInterval(capture, 5000) : null;
+    return () => { cancelled = true; if (timer) window.clearInterval(timer); };
+  }, [pillMode, pillArtifact, spawnedBrowserId, pillRunning]);
 
   const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
 
@@ -926,6 +958,8 @@ const AgentCard: React.FC<Props> = ({
             label={pillLabel}
             running={pillRunning}
             todos={todos}
+            artifact={pillArtifact}
+            browserShot={browserShot}
             selected={isSelected}
             highlighted={isHighlighted}
           />

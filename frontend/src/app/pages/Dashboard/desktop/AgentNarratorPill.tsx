@@ -3,12 +3,16 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CheckIcon from '@mui/icons-material/Check';
 import DashboardGlyph from '../canvas/DashboardGlyph';
+import ShowUiWidgetView from '@/app/pages/AgentChat/tool-ui/ShowUiWidgetView';
+import type { ShowUiPayload } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
 import type { AgentTodoItem } from './agentTodos';
 
 interface AgentNarratorPillProps {
   label: string;
   running: boolean;
   todos: AgentTodoItem[] | null;
+  artifact: ShowUiPayload | null;
+  browserShot: string | null;
   selected: boolean;
   highlighted: boolean;
 }
@@ -17,8 +21,8 @@ const GLASS = 'rgba(24,14,32,0.8)';
 const GLASS_BLUR = 'blur(18px) saturate(150%)';
 const MAX_VISIBLE_TODOS = 4;
 
-/** Collapsed running agent as the desktop narrator pill, with its live plan hanging below. */
-function AgentNarratorPill({ label, running, todos, selected, highlighted }: AgentNarratorPillProps): React.ReactElement {
+/** Collapsed agent as the desktop narrator pill; below it, the best artifact wins: widget > browser shot > plan > Thinking. */
+function AgentNarratorPill({ label, running, todos, artifact, browserShot, selected, highlighted }: AgentNarratorPillProps): React.ReactElement {
   const visibleTodos = (todos || []).slice(0, MAX_VISIBLE_TODOS);
   const hiddenCount = (todos?.length || 0) - visibleTodos.length;
   const ring = selected || highlighted ? { outline: '2px solid #3b82f6', outlineOffset: '2px' } : undefined;
@@ -48,7 +52,16 @@ function AgentNarratorPill({ label, running, todos, selected, highlighted }: Age
         </Typography>
       </Box>
 
-      {visibleTodos.length > 0 ? (
+      {artifact ? (
+        <ShowUiWidgetView payload={artifact} />
+      ) : browserShot ? (
+        <Box
+          component="img"
+          src={browserShot}
+          alt=""
+          sx={{ width: 300, display: 'block', borderRadius: '10px', boxShadow: '0 10px 30px rgba(0,0,0,0.35)' }}
+        />
+      ) : visibleTodos.length > 0 ? (
         <Box
           sx={{
             borderRadius: '16px',
