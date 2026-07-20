@@ -35,9 +35,10 @@ function cadenceToSchedule(cadence: string): Record<string, unknown> {
 }
 
 // Used when prep's aux dropped the automations field, so the reveal always demonstrates automation.
+// A useful digest (not a cleanup chore, which the value bar bans).
 const SCHEDULE_FALLBACK: PersonalizedAutomation = {
-  title: 'Weekly Downloads Sweep',
-  prompt: 'Review my Downloads folder for files added this past week and suggest what to keep, archive, or organize into folders. Report only, never move or delete anything.',
+  title: 'Weekly Roundup',
+  prompt: 'Search the web for the most notable new tools, articles, and releases from this past week in technology and design, and write a short, skimmable roundup to a dated file at Documents/weekly_roundup_<date>.md. Do it in one pass with no questions.',
   cadence: 'weekly',
 };
 
