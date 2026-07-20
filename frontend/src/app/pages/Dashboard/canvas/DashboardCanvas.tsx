@@ -8,6 +8,7 @@ import DashboardCardLayer from './DashboardCardLayer';
 import DashboardOverlays from './DashboardOverlays';
 import DashboardEmptyState from './DashboardEmptyState';
 import DesktopWallpaper from '../desktop/DesktopWallpaper';
+import DesktopDock from '../desktop/DesktopDock';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { useThemeAccent, useThemeWash } from '@/shared/styles/ThemeContext';
 import { GRAIN_URL } from '@/shared/styles/grainTexture';
@@ -217,6 +218,23 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           />
         </Box>
       </Box>
+
+      {!fullscreenCardId && (
+        <DesktopDock
+          sessions={sessions}
+          cards={cards}
+          viewCards={viewCards}
+          browserCards={browserCards}
+          notes={notes}
+          workflowCards={workflowCards}
+          outputs={outputs}
+          selectedIds={Array.from(selection.selectedIds.keys())}
+          onFocusCard={(cardId, rect) => {
+            canvas.actions.fitToCards([rect], 1.15, true);
+            onHighlightCard?.(cardId);
+          }}
+        />
+      )}
 
       {/* Canvas viewport */}
       <Box
