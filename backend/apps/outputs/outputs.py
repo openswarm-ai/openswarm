@@ -51,6 +51,24 @@ from backend.apps.outputs.prompts import VIBE_CODE_SYSTEM_PROMPT
 logger = logging.getLogger(__name__)
 
 
+def safe_workspace_path(folder: str, rel: str) -> Optional[str]:
+    """Resolve `rel` under workspace `folder`, returning the real path only if it stays inside.
+
+    `os.path.realpath` (not `os.path.normpath`) so a symlink ANYWHERE in the
+    tree, including an intermediate component of a not-yet-created write target,
+    can't redirect the read/write/delete outside the workspace (issue #135).
+    Both sides are realpath'd, so a legit symlink in the base (e.g. macOS
+    `/var`->`/private/var`) doesn't false-reject. Returns None on escape; the
+    caller decides whether to 403 or skip. The `+ os.sep` guard also closes the
+    sibling prefix collision (`abc` vs `abc-evil`).
+    """
+    root = os.path.realpath(folder)
+    dest = os.path.realpath(os.path.join(folder, rel))
+    if dest != root and not dest.startswith(root + os.sep):
+        return None
+    return dest
+
+
 @asynccontextmanager
 async def outputs_lifespan():
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -77,8 +95,8 @@ outputs = SubApp("outputs", outputs_lifespan)
 async def serve_workspace_file(workspace_id: str, filepath: str, p_d: str = ""):
     """Serve a file from a workspace folder. For index.html, inject OUTPUT data."""
     folder = os.path.join(WORKSPACE_DIR, workspace_id)
-    full_path = os.path.normpath(os.path.join(folder, filepath))
-    if not full_path.startswith(os.path.normpath(folder)):
+    full_path = safe_workspace_path(folder, filepath)
+    if full_path is None:
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
     if not os.path.isfile(full_path):
         raise HTTPException(status_code=404, detail="File not found")
@@ -364,8 +382,8 @@ async def seed_workspace(body: WorkspaceSeedRequest):
     # Legacy flat path. Seed only fills in MISSING files; it never overwrites what's already on disk. A reopen re-sends the inline output.files snapshot, which lags behind whatever the agent just wrote to the workspace; writing it back reverted every edited file (new files survived, edited ones snapped to the snapshot). Disk wins once an app exists.
     if body.files:
         for rel_path, content in body.files.items():
-            full_path = os.path.normpath(os.path.join(folder, rel_path))
-            if not full_path.startswith(os.path.normpath(folder)):
+            full_path = safe_workspace_path(folder, rel_path)
+            if full_path is None:
                 continue
             if os.path.exists(full_path):
                 continue
@@ -525,10 +543,8 @@ async def write_workspace_file(workspace_id: str, filepath: str, body: dict):
     folder = os.path.join(WORKSPACE_DIR, workspace_id)
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
-    folder_norm = os.path.normpath(folder)
-    full_path = os.path.normpath(os.path.join(folder, filepath))
-    # `startswith(folder_norm + os.sep)` (not just folder_norm) so a workspace `abc-123` can't be tricked into writing into a sibling `abc-1234-evil`, prefix-string collision rather than path-component containment. Today's UUID-format ids make the collision unlikely in practice, but the check is one character and immunizes future id schemes.
-    if full_path != folder_norm and not full_path.startswith(folder_norm + os.sep):
+    full_path = safe_workspace_path(folder, filepath)
+    if full_path is None:
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
     content = body.get("content", "")
     if would_shrink_oversize_file(full_path, content):
@@ -545,14 +561,13 @@ async def delete_workspace_file(workspace_id: str, filepath: str):
     folder = os.path.join(WORKSPACE_DIR, workspace_id)
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
-    folder_norm = os.path.normpath(folder)
-    full_path = os.path.normpath(os.path.join(folder, filepath))
-    if full_path != folder_norm and not full_path.startswith(folder_norm + os.sep):
+    full_path = safe_workspace_path(folder, filepath)
+    if full_path is None:
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
     if os.path.isfile(full_path):
         os.remove(full_path)
         parent = os.path.dirname(full_path)
-        while parent != os.path.normpath(folder):
+        while parent != os.path.realpath(folder):
             if os.path.isdir(parent) and not os.listdir(parent):
                 os.rmdir(parent)
                 parent = os.path.dirname(parent)
