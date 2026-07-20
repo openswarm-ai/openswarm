@@ -25,6 +25,7 @@ import type { Output } from '@/shared/state/outputsSlice';
 import type { CardType, useDashboardSelection } from '../hooks/state/useDashboardSelection';
 import type { useCanvasControls } from '../hooks/interaction/useCanvasControls';
 import { useWebviewSuspend } from '../hooks/interaction/useWebviewSuspend';
+import { deleteSelectedCards } from '../hooks/interaction/deleteSelectedCards';
 import type { Tether } from '../geometry/dashboardTethers';
 
 type Selection = ReturnType<typeof useDashboardSelection>;
@@ -378,6 +379,11 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         onNewAgentBounceEnd={onNewAgentBounceEnd}
         onFitToView={onFitToView}
         onTidy={onTidy}
+        onDeleteSelected={() => {
+          deleteSelectedCards(selection.selectedIds, dispatch);
+          selection.deselectAll();
+        }}
+        hasSelection={selection.selectedIds.size > 0}
         onSearchPaletteClose={onSearchPaletteClose}
         toolbarPrefill={toolbarPrefill}
         toolbarPrefillMode={toolbarPrefillMode}
