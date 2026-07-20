@@ -206,6 +206,11 @@ import Typography from '@mui/material/Typography';
 import { Button, Box, Stack, Typography } from '@mui/material';
 ```
 
+**This template is MUI v7.** For layout use `import Grid from '@mui/material/Grid'` (the v7 Grid takes
+`size={{ xs: 12, md: 6 }}`). Do NOT import `@mui/material/Grid2` or `@mui/material/Unstable_Grid2` —
+those are v5/v6 paths and DO NOT EXIST here, they crash the build with "Failed to resolve import". When
+unsure a component or path exists, prefer plain `Box` with fl*/grid `sx` instead of guessing a package path.
+
 Same rule for icons — even more important there because
 `@mui/icons-material` re-exports thousands of SVG components:
 
@@ -617,5 +622,10 @@ When making a new app from scratch:
 4. Add additional pages under `frontend/src/pages/`.
 5. If using a sidebar, update its nav entries in
    `frontend/src/app/components/Layout/Sidebar.tsx`.
-6. Style with `useClaudeTokens()` and MUI's `sx`.
+6. Style with `useClaudeTokens()` and MUI's `sx`. **The moment you type
+   `useClaudeTokens()` in a file, add its import to that SAME file:**
+   `import { useClaudeTokens } from '@/shared/styles/ThemeContext';` — you are
+   rewriting `pages/index.tsx` from scratch (step 2), so the import the starter
+   had is GONE. A missing import here is the #1 way a rewritten page throws
+   "useClaudeTokens is not defined" and the whole app fails to boot.
 7. If you need a backend: `bash backend_init.sh`, then add a SubApp under `backend/apps/<name>/`.

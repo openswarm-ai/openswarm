@@ -78,6 +78,10 @@ export default defineConfig(({ mode }) => {
       port: Number(process.env.FRONTEND_PORT) || 3000,
       strictPort: true,
       open: false,
+      // Never show Vite's full-screen red error overlay: a transient bad import mid-build (the agent is
+      // still writing files) would flash a scary crash screen at the user. Errors still hit the console
+      // + terminal.log, which the agent reads to fix; the card shows a clean "building" state instead.
+      hmr: { overlay: false },
       proxy: backendEnabled
         ? {
             '/api': {
