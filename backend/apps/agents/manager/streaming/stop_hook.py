@@ -26,8 +26,9 @@ async def stop_hook(ctx: HookContext, input_data: dict, tool_use_id, context) ->
     to render, blocks with the error so the agent fixes it, up to
     MAX_RETRIES then lets the stop through."""
     session = ctx.session
-    if session.mode != "view-builder":
-        return {}
+    # Gate on the DIRTY set (any app-building session that wrote a frontend file with a runtime
+    # attached), not the mode: onboarding builds its dashboard in a plain agent session via CreateApp,
+    # which must be render-gated too, not just the dedicated view-builder.
     if session.id not in view_builder_dirty_sessions:
         return {}
     from backend.apps.outputs.runtime import (

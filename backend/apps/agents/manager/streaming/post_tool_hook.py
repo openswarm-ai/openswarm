@@ -94,23 +94,28 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
             "yarn add", "yarn install", "yarn remove",
         ))
 
-    if session.mode == "view-builder" and (wrote_frontend_file or installed_pkg):
-        view_builder_dirty_sessions.add(session.id)
+    if wrote_frontend_file or installed_pkg:
         try:
             from backend.apps.outputs.runtime import (
                 manager as outputs_runtime_manager,
             )
-            outputs_runtime_manager.reset_render_state_for_workspace(session.id)
+            # ANY session building an app has a preview runtime attached: the dedicated view-builder AND
+            # a plain agent using CreateApp (how onboarding builds its dashboard). Gate on the runtime,
+            # not the mode, so the Stop render-gate covers agent-mode app builds too (a plain /frontend/
+            # write with no runtime, e.g. editing OpenSwarm's own source, has none and is skipped).
+            if outputs_runtime_manager.get(session.id) is not None:
+                view_builder_dirty_sessions.add(session.id)
+                outputs_runtime_manager.reset_render_state_for_workspace(session.id)
+                if installed_pkg:
+                    # Tell the app card this turn changed deps so its turn-finish reload restarts Vite; a soft webview reload can't pick up newly installed packages.
+                    try:
+                        await ws_manager.send_to_session(session.id, "agent:app_deps_changed", {
+                            "session_id": session.id,
+                        })
+                    except Exception:
+                        pass
         except Exception:
             pass
-        if installed_pkg:
-            # Tell the app card this turn changed deps so its turn-finish reload restarts Vite; a soft webview reload can't pick up newly installed packages.
-            try:
-                await ws_manager.send_to_session(session.id, "agent:app_deps_changed", {
-                    "session_id": session.id,
-                })
-            except Exception:
-                pass
     # Every write drains, App Builder included. This was an `elif` on the branch above, so a view-builder frontend write took that branch and skipped the drain: the one agent whose whole job is the app never saw its own vite/babel/tsc errors.
     if wrote_files and file_path:
         errs: list[str] = []
