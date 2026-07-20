@@ -9,6 +9,7 @@ import DashboardOverlays from './DashboardOverlays';
 import DashboardEmptyState from './DashboardEmptyState';
 import DesktopWallpaper from '../desktop/DesktopWallpaper';
 import DesktopDock from '../desktop/DesktopDock';
+import MinimizedStack from '../desktop/MinimizedStack';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { useThemeAccent, useThemeWash } from '@/shared/styles/ThemeContext';
 import { GRAIN_URL } from '@/shared/styles/grainTexture';
@@ -229,6 +230,16 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           />
         </Box>
       </Box>
+
+      {!fullscreenCardId && (
+        <MinimizedStack
+          browserCards={browserCards}
+          onRestore={(cardId, rect) => {
+            canvas.actions.fitToCards([rect], 1.15, true);
+            onHighlightCard?.(cardId);
+          }}
+        />
+      )}
 
       {!fullscreenCardId && (
         <DesktopDock
