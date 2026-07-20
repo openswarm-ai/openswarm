@@ -24,6 +24,7 @@ export interface ScanResult {
 }
 
 export interface PrepResponse {
+  headline: string;
   greeting: string;
   starters: PersonalizedStarter[];
   app_title: string;
@@ -32,6 +33,9 @@ export interface PrepResponse {
   research_title: string;
   research_prompt: string;
   research_reason: string;
+  browser_title: string;
+  browser_prompt: string;
+  browser_reason: string;
   automations: PersonalizedAutomation[];
 }
 

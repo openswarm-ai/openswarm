@@ -54,6 +54,9 @@ class PrepRequest(BaseModel):
 class PrepResponse(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
+    # A punchy <=10-word identity hook, read at a glance in the reveal's focal beat (the greeting is the
+    # longer warm read for the chat; the headline is the scannable one-liner most people actually read).
+    headline: str = ""
     greeting: str = ""
     starters: List[PersonalizedStarter] = Field(default_factory=list)
     app_title: str = ""
@@ -64,4 +67,9 @@ class PrepResponse(BaseModel):
     research_title: str = ""
     research_prompt: str = ""
     research_reason: str = ""
+    # The "watch it drive a real browser" card: an agent opens a public site and does a multi-step task
+    # live, so the reveal shows off browser control alongside app-building, research, and scheduling.
+    browser_title: str = ""
+    browser_prompt: str = ""
+    browser_reason: str = ""
     automations: List[PersonalizedAutomation] = Field(default_factory=list)

@@ -47,16 +47,20 @@ async def post_prep(body: PrepRequest) -> dict:
     from backend.apps.onboarding.usage.claude_usage import harvest_claude_usage
     from backend.apps.settings.store import load_settings
 
-    # The frontend read needs a logged-in provider CARD, which a fresh install lacks. Fill the gap from what we already have: ChatGPT via the codex connect token, Claude via the user's own browser session cookies. Each fails open to "", so a missing one just drops out.
-    if not body.usage_summary.strip():
-        parts: list[str] = []
-        chatgpt = await harvest_chatgpt_usage()
-        if chatgpt:
-            parts.append("ChatGPT usage:\n" + chatgpt)
-        claude = await harvest_claude_usage()
-        if claude:
-            parts.append("Claude usage:\n" + claude)
-        if parts:
-            body.usage_summary = "\n\n".join(parts)
+    # ALWAYS read the ENTIRE recent conversations (not just titles) from the rich providers, ChatGPT via
+    # the codex connect token, Claude via the user's own browser session cookies, and PREFER that over
+    # whatever the frontend read. The frontend reads only the single connected provider, which for a
+    # Gemini/antigravity user is a titles-only DOM scrape that can surface a stale topic (the "skincare
+    # app" the user hasn't touched in ages). Multiple providers connected? We take all the rich ones and
+    # let the clustering pass merge them into one profile. Each fails open to "", so a missing one drops.
+    parts: list[str] = []
+    chatgpt = await harvest_chatgpt_usage()
+    if chatgpt:
+        parts.append("ChatGPT conversations:\n" + chatgpt)
+    claude = await harvest_claude_usage()
+    if claude:
+        parts.append("Claude conversations:\n" + claude)
+    if parts:
+        body.usage_summary = "\n\n".join(parts)   # entire-chat content wins over the frontend's titles
 
     return (await build_prep(load_settings(), body)).model_dump()

@@ -9,7 +9,6 @@ import MissedRunsToast from '@/app/pages/Workflows/MissedRunsToast';
 import ProviderHealthToast from '@/app/components/overlays/ProviderHealthToast';
 import ScheduleOfferToast from '@/app/components/nudges/ScheduleOfferToast';
 import PrepKeepToast from '@/app/components/nudges/PrepKeepToast';
-import RevealHero from '@/app/components/nudges/RevealHero';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 import type {
   CardPosition,
@@ -163,8 +162,8 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
       {/* One-shot dependency beat: first completed personalized starter offers to become a weekly job */}
       <ScheduleOfferToast dashboardId={dashboardId} />
 
-      {/* Unmissable top-center legend of the work the reveal did, with live working/done status */}
-      <RevealHero />
+      {/* The reveal's payoff is the hold-to-enter gradient flood (BeatEnter) landing you on the live work,
+          not a summary card, so no modal here. */}
 
       {/* Accept-or-deny for the audit + app the flow started on the user's behalf */}
       <PrepKeepToast />

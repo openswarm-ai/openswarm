@@ -83,6 +83,8 @@ export interface AppSettings {
   /** Multi-stop gradient from the theme pad (2-3 hexes); washes the canvas. */
   accent_gradient?: string[] | null;
   personalized_greeting?: string | null;
+  /** The short one-glance identity hook shown in the reveal's focal beat (greeting is the longer read). */
+  personalized_headline?: string | null;
   personalized_starters?: PersonalizedStarter[];
   personalized_automations?: PersonalizedAutomation[];
   personalized_usage_summary?: string | null;

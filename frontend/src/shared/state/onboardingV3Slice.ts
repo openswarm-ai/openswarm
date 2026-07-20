@@ -7,7 +7,7 @@ export interface PreppedJob {
   /** Agent-session id for audit/app/research jobs; '' for a scheduled workflow (keyed by workflowId instead). */
   sessionId: string;
   title: string;
-  kind: 'audit' | 'app' | 'schedule' | 'research';
+  kind: 'audit' | 'app' | 'schedule' | 'research' | 'browser';
   /** The one-clause "why we started this for you", shown in the reveal note. */
   reason?: string;
   /** Set for kind 'schedule': the created scheduled workflow, placed as a workflow card + deletable on discard. */

@@ -30,15 +30,16 @@ function configure(opts) {
 }
 
 // Runs in the page context. Sweeps recent conversation titles (paginated + deduped)
-// plus ChatGPT Memory. Bounded on EVERY dimension so no provider's endpoint speed can
-// wedge the read: a wall-clock BUDGET_MS (ChatGPT's /conversations is ~4s/page, so an
-// unbounded loop over a many-chat account would run minutes and outlive the offscreen
-// window, losing everything), a per-fetch abort, and hard page/title caps. The most
-// recent titles are the strongest personalization signal, so a partial is a good result.
+// plus ChatGPT Memory, THEN pulls the FULL text of the CONVO_N most recent conversations
+// (the user's real asks + the exchange, far higher signal than a vague title). Bounded on
+// EVERY dimension so no provider's endpoint speed can wedge the read: a wall-clock BUDGET_MS,
+// a per-fetch abort, hard page/title caps, and a per-conversation char cap so one marathon
+// chat can't dominate. A partial read is a good result; the recent stuff is the strongest signal.
 const PREAMBLE = `
-  // Prep reads only ~150 titles, so pulling 1000 just burned onboarding runway (up to the 14s budget)
-  // for signal we throw away. Cap the pull; the count becomes an honest "N+" floor when we stop early.
-  const BUDGET_MS=14000, PAGE=100, CAP_PAGES=60, CAP_TITLES=200, GAP_MS=120, FETCH_MS=6000;
+  // Prep reads only ~150 titles, so pulling 1000 just burned onboarding runway for signal we throw
+  // away. Cap the pull; the count becomes an honest "N+" floor when we stop early. CONVO_N full convos
+  // (capped per convo) are the real payload; the budget is raised to fit their detail fetches.
+  const BUDGET_MS=20000, PAGE=100, CAP_PAGES=60, CAP_TITLES=200, GAP_MS=120, FETCH_MS=6000, CONVO_N=10, CONVO_CHARS=8000;
   const startedAt = Date.now();
   const haveTime = () => Date.now() - startedAt < BUDGET_MS;
   const jget = async (url, extra) => {
@@ -50,49 +51,77 @@ const SCRIPT = {
   codex: `(async () => {${PREAMBLE}
     try {
       const sess = await jget('/api/auth/session');
-      if (!sess || !sess.accessToken) return {ok:false, total:0, titles:[], memories:[]};
+      if (!sess || !sess.accessToken) return {ok:false, total:0, titles:[], memories:[], convos:[]};
       const H = {headers:{Authorization:'Bearer '+sess.accessToken, accept:'application/json'}};
-      const seen = new Set(); const titles = [];
+      const seen = new Set(); const titles = []; const convList = [];
       let offset = 0, page = 0;
       while (page < CAP_PAGES && titles.length < CAP_TITLES && haveTime()) {
         const j = await jget('/backend-api/conversations?offset='+offset+'&limit='+PAGE+'&order=updated', H);
         const items = (j && j.items) || [];
         if (!items.length) break;
         let fresh = 0;
-        for (const c of items) { if (c && c.id && !seen.has(c.id)) { seen.add(c.id); if (c.title) titles.push(c.title); fresh++; } }
+        for (const c of items) { if (c && c.id && !seen.has(c.id)) { seen.add(c.id); if (c.title) titles.push(c.title); convList.push({id:c.id, title:c.title||''}); fresh++; } }
         if (fresh === 0 || items.length < PAGE) break;
         offset += PAGE; page++;
         await new Promise(r=>setTimeout(r, GAP_MS));
       }
       const mem = await jget('/backend-api/memories?include_memory_entries=true', H);
+      // The payload: FULL text of the most recent convos, fetched in parallel (bounded by the budget).
+      const top = convList.slice(0, CONVO_N);
+      const details = await Promise.all(top.map(cv => haveTime() ? jget('/backend-api/conversation/'+cv.id, H) : Promise.resolve(null)));
+      const convos = [];
+      for (let i=0;i<top.length;i++) {
+        const d = details[i]; if (!d || !d.mapping) continue;
+        const msgs = Object.keys(d.mapping).map(k=>d.mapping[k] && d.mapping[k].message)
+          .filter(m=>m && m.author && (m.author.role==='user'||m.author.role==='assistant') && m.content && m.content.content_type==='text' && m.content.parts && m.content.parts.length)
+          .sort((a,b)=>(a.create_time||0)-(b.create_time||0))
+          .map(m=>(m.author.role==='user'?'You: ':'AI: ')+String(m.content.parts.join(' ')).trim())
+          .filter(s=>s.length>5);
+        let text = msgs.join('\\n'); if (text.length > CONVO_CHARS) text = text.slice(0, CONVO_CHARS)+' …';
+        if (text) convos.push({title: top[i].title, text});
+      }
       return {
         ok: true,
         total: seen.size,
         capped: seen.size >= CAP_TITLES,
         titles: titles.slice(0, CAP_TITLES),
         memories: ((mem && mem.memories) || []).map(m=>m.content).filter(Boolean).slice(0, 40),
+        convos,
       };
-    } catch (e) { return {ok:false, total:0, titles:[], memories:[]}; }
+    } catch (e) { return {ok:false, total:0, titles:[], memories:[], convos:[]}; }
   })()`,
   claude: `(async () => {${PREAMBLE}
     try {
       const orgs = await jget('/api/organizations', {headers:{accept:'application/json'}});
-      if (!Array.isArray(orgs) || !orgs.length) return {ok:false, total:0, titles:[], memories:[]};
+      if (!Array.isArray(orgs) || !orgs.length) return {ok:false, total:0, titles:[], memories:[], convos:[]};
       const org = orgs[0].uuid;
-      const seen = new Set(); const titles = [];
+      const seen = new Set(); const titles = []; const convList = [];
       let offset = 0, page = 0;
       while (page < CAP_PAGES && titles.length < CAP_TITLES && haveTime()) {
         const convs = await jget('/api/organizations/'+org+'/chat_conversations?limit='+PAGE+'&offset='+offset, {headers:{accept:'application/json'}});
         const items = Array.isArray(convs) ? convs : [];
         if (!items.length) break;
         let fresh = 0;
-        for (const c of items) { const id = c && c.uuid; if (id && !seen.has(id)) { seen.add(id); if (c.name) titles.push(c.name); fresh++; } }
+        for (const c of items) { const id = c && c.uuid; if (id && !seen.has(id)) { seen.add(id); if (c.name) titles.push(c.name); convList.push({id:id, title:c.name||''}); fresh++; } }
         if (fresh === 0 || items.length < PAGE) break;
         offset += PAGE; page++;
         await new Promise(r=>setTimeout(r, GAP_MS));
       }
-      return {ok:true, total:seen.size, capped:seen.size >= CAP_TITLES, titles:titles.slice(0, CAP_TITLES), memories:[]};
-    } catch (e) { return {ok:false, total:0, titles:[], memories:[]}; }
+      // The payload: FULL text of the most recent convos (both sides), fetched in parallel + capped.
+      const top = convList.slice(0, CONVO_N);
+      const details = await Promise.all(top.map(cv => haveTime() ? jget('/api/organizations/'+org+'/chat_conversations/'+cv.id+'?tree=True&rendering_mode=raw', {headers:{accept:'application/json'}}) : Promise.resolve(null)));
+      const convos = [];
+      for (let i=0;i<top.length;i++) {
+        const d = details[i]; if (!d) continue;
+        const cms = (d && d.chat_messages) || (Array.isArray(d) ? d : []);
+        const msgs = cms.filter(m=>m && (m.sender==='human'||m.sender==='assistant'))
+          .map(m=>{ let t = m.text || ''; if(!t && Array.isArray(m.content)) t = m.content.map(x=>x&&x.text).filter(Boolean).join(' '); return (m.sender==='human'?'You: ':'AI: ')+String(t).trim(); })
+          .filter(s=>s.length>5);
+        let text = msgs.join('\\n'); if (text.length > CONVO_CHARS) text = text.slice(0, CONVO_CHARS)+' …';
+        if (text) convos.push({title: top[i].title, text});
+      }
+      return {ok:true, total:seen.size, capped:seen.size >= CAP_TITLES, titles:titles.slice(0, CAP_TITLES), memories:[], convos};
+    } catch (e) { return {ok:false, total:0, titles:[], memories:[], convos:[]}; }
   })()`,
   // Gemini has no clean history JSON (it's the obfuscated batchexecute RPC), so we scrape the
   // rendered rail. Robust by design, one bounded loop that: gates on real TEXT (empty conversation

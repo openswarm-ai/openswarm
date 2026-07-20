@@ -92,15 +92,16 @@ export function useOnboardingV3Pipeline() {
   }, []);
 
   // Fire one real background agent; the session exists in redux without a card until the reveal composes the canvas.
-  const launchJob = useCallback((title: string, prompt: string, kind: 'audit' | 'app' | 'research', reason: string) => {
+  const launchJob = useCallback((title: string, prompt: string, kind: 'app' | 'research' | 'browser', reason: string) => {
     const { model: liveModel } = launchCtxRef.current;
     const dashboardId = getLastDashboardId() ?? undefined;
-    // The audit reads the user's REAL files unattended, so it runs read-only (Edit/Bash blocked); the
-    // app build writes into its own fresh workspace, so it keeps full tools.
-    const config: AgentConfig = { name: title, model: liveModel, mode: 'agent', dashboard_id: dashboardId, read_only: kind === 'audit' };
+    // All three run with full tools: the app build writes its own workspace, research + the browser task
+    // save their findings. The browser task is kept safe by its PROMPT (public pages, never log in/buy).
+    const config: AgentConfig = { name: title, model: liveModel, mode: 'agent', dashboard_id: dashboardId };
     const draftId = dispatch(createDraftSession({ mode: 'agent', model: liveModel, dashboardId: dashboardId ?? '', setActive: false })).payload.draftId;
-    // expand: false keeps the reveal's left stack as compact cards instead of overlapping transcripts.
-    void dispatch(launchAndSendFirstMessage({ draftId, config, prompt, mode: 'agent', model: liveModel, expand: false }))
+    // Reveal cards open ENLARGED so the user sees the real work (not tiny collapsed stubs), and the
+    // yellow minimize button then has something to collapse. The seeder stacks them at expanded height.
+    void dispatch(launchAndSendFirstMessage({ draftId, config, prompt, mode: 'agent', model: liveModel, expand: true }))
       .then((action) => {
         if (launchAndSendFirstMessage.fulfilled.match(action)) {
           dispatch(addPreppedJob({ sessionId: action.payload.session.id, title, kind, reason }));
@@ -141,11 +142,12 @@ export function useOnboardingV3Pipeline() {
       prepReadyRef.current = prep;
       if (launchedRef.current || !prep || !prep.greeting || !launchCtxRef.current.connected) return;
       launchedRef.current = true;
-      if (prep.starters.length > 0) launchJob(prep.starters[0].title, prep.starters[0].prompt, 'audit', prep.starters[0].reason ?? '');
+      // The four auto-run showcase jobs, one per capability: build an app, dig the web, drive a real
+      // browser, and set up a scheduled task. The lame file-audit is gone; the browser task shows the
+      // agent controlling a real site live.
       if (prep.app_title && prep.app_prompt) launchJob(prep.app_title, prep.app_prompt, 'app', prep.app_reason ?? '');
-      // The "looked into this for you" card: a real live web-research task on the one thing this user
-      // keeps asking about, so the reveal shows OpenSwarm going and finding it, not just planning.
       if (prep.research_title && prep.research_prompt) launchJob(prep.research_title, prep.research_prompt, 'research', prep.research_reason ?? '');
+      if (prep.browser_title && prep.browser_prompt) launchJob(prep.browser_title, prep.browser_prompt, 'browser', prep.browser_reason ?? '');
       // The scheduled task is a first-class part of the reveal (the "it automates for me" capability), so
       // guarantee one: use the model's automation when it emitted one (it sometimes drops the last JSON
       // field), else fall back to a safe, universally-useful weekly Downloads sweep.
@@ -178,6 +180,7 @@ export function useOnboardingV3Pipeline() {
       if (!prep) return;
       dispatch(updateSettingsPatch({
         personalized_greeting: prep.greeting?.trim() || null,
+        personalized_headline: prep.headline?.trim() || null,
         personalized_starters: prep.starters ?? [],
         personalized_automations: prep.automations ?? [],
       }));

@@ -192,8 +192,11 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           zIndex: 10,
           pointerEvents: 'none',
           // p: 3 (24px) was leaving a chunky air gap between the sidebar edge and the dashboard header that read as "two disconnected panels" rather than one continuous surface. 0.75 (6px) tightens the inset so the header floats just inside the content area without losing its breathing room from the top-most pixel.
-          p: 0.75,
+          pt: 0.75,
+          pr: 0.75,
           pb: 0,
+          // Clears the macOS traffic lights when the sidebar is docked away (AppShell sets the var); 6px otherwise.
+          pl: 'var(--osw-header-inset, 6px)',
           // No scrim: the header carries its own translucent pill (DashboardHeader), so a full-width
           // page->transparent fade here just read as a light-leak band over the themed canvas.
         }}

@@ -5,7 +5,7 @@ import Button from '@mui/material/Button';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { deleteSession } from '@/shared/state/agentsSlice';
-import { removeCard, removeWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
+import { removeCard, closeWorkflowMonitor } from '@/shared/state/dashboardLayoutSlice';
 import { deleteWorkflow } from '@/shared/state/workflowsSlice';
 import { clearPrepped } from '@/shared/state/onboardingV3Slice';
 
@@ -33,7 +33,7 @@ const PrepKeepToast: React.FC = () => {
   const discard = useCallback(() => {
     for (const job of prepped) {
       if (job.kind === 'schedule' && job.workflowId) {
-        dispatch(removeWorkflowCard(job.workflowId));
+        dispatch(closeWorkflowMonitor());
         void dispatch(deleteWorkflow(job.workflowId));
       } else {
         dispatch(removeCard(job.sessionId));

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
 import {
-  placeCard, addWorkflowCard, setWorkflowCardPosition, setViewCardPosition,
+  placeCard, openWorkflowMonitor, setWorkflowsMonitorPosition, setViewCardPosition,
   DEFAULT_CARD_W, DEFAULT_CARD_H, EXPANDED_CARD_MIN_H,
 } from '@/shared/state/dashboardLayoutSlice';
 import { clearReveal, setRevealAnchor } from '@/shared/state/onboardingV3Slice';
@@ -18,6 +18,9 @@ interface Args {
 }
 
 const GAP = 48;
+// The scheduled task renders as a RunMonitor card, which is taller than a job card; reserve its slot so
+// the camera frames it. Mirrors the monitor default height in dashboardLayoutSlice.openWorkflowMonitor.
+const WORKFLOW_MONITOR_H = 560;
 
 /** Where the reveal's app view card is born: right of the welcome chat, top-aligned. The "here's what I did" legend is the fixed RevealHero panel, not a canvas note, so the app sits right next to the chat. */
 export function revealAppSpot(anchor: { cx: number; cy: number }): { x: number; y: number } {
@@ -40,18 +43,24 @@ export function useOnboardingRevealSeed({ isActive, dashboardId, expandedSession
     const a = anchorRef.current;
     if (!a) return;
     prepped.forEach((job) => {
+      // Every job shows its AGENT card (its live transcript), including the app builder, so the reveal
+      // makes it obvious the agent is BUILDING the app, not just a "building..." box. Its finished app
+      // view card appears beside it when it renders (birth-position path in useDashboardLifecycle).
       const key = job.workflowId || job.sessionId;
       if (placedRef.current.has(key)) return;
       const i = placedRef.current.size;
-      // Left column, top-aligned with the expanded welcome chat, tight vertical rhythm.
+      // Left column, top-aligned with the expanded welcome chat. Cards open ENLARGED, so the vertical
+      // rhythm is the expanded height, not the compact one, or enlarged cards would overlap.
       const x = a.cx - DEFAULT_CARD_W / 2 - GAP - DEFAULT_CARD_W;
-      const y = a.cy - EXPANDED_CARD_MIN_H / 2 + i * (DEFAULT_CARD_H + 24);
+      const y = a.cy - EXPANDED_CARD_MIN_H / 2 + i * (EXPANDED_CARD_MIN_H + 24);
       if (job.kind === 'schedule' && job.workflowId) {
-        // The scheduled task is a workflow, not an agent session: place its workflow card in the same stack.
-        dispatch(addWorkflowCard({ workflowId: job.workflowId, expandedSessionIds }));
-        dispatch(setWorkflowCardPosition({ workflowId: job.workflowId, x, y }));
+        // The scheduled task is a workflow. The canvas only draws ONE workflow card (the "monitor"), so
+        // open the scheduled workflow AS that monitor card, else it never renders (the workflowCards map
+        // it used to go into is not drawn). Its taller monitor card gets its own slot below the jobs.
+        dispatch(openWorkflowMonitor({ workflowId: job.workflowId }));
+        dispatch(setWorkflowsMonitorPosition({ x, y }));
       } else {
-        dispatch(placeCard({ sessionId: job.sessionId, x, y, width: DEFAULT_CARD_W, height: DEFAULT_CARD_H, expandedSessionIds, exact: true }));
+        dispatch(placeCard({ sessionId: job.sessionId, x, y, width: DEFAULT_CARD_W, height: EXPANDED_CARD_MIN_H, expandedSessionIds, exact: true }));
       }
       placedRef.current.add(key);
     });
@@ -87,11 +96,21 @@ export function useOnboardingRevealSeed({ isActive, dashboardId, expandedSession
           }
         }
         createWelcomeDraft();
-        // Frame the whole cluster (jobs column + chat + note) so the reveal is readable, not scattered.
+        // Frame the whole cluster (left job column + chat + app view card on the right) so the reveal is
+        // readable, not scattered. The pipeline ALWAYS sets up one scheduled task, whose RunMonitor card is
+        // tall and lands late; reserve its slot now (2 short job cards + the monitor) so the camera never
+        // cuts it off when it arrives. Width runs from the left column to the far edge of the app view card.
         const left = cx - DEFAULT_CARD_W / 2 - GAP - DEFAULT_CARD_W;
         const top = cy - EXPANDED_CARD_MIN_H / 2;
+        const right = cx + DEFAULT_CARD_W / 2 + GAP + DEFAULT_CARD_W;
+        // The left column is now enlarged agent cards (audit + app-builder + research) + the tall
+        // scheduled-task monitor below them, so reserve for three cards plus the monitor.
+        const stackH = 3 * (EXPANDED_CARD_MIN_H + 24) + WORKFLOW_MONITOR_H;
+        // Reserve headroom at the top so the topmost cards clear the macOS traffic lights + the floating
+        // dashboard title pill + the run-status pill, instead of the chat header landing under them.
+        const TOP_CHROME_PAD = 130;
         fitToCards(
-          [{ x: left, y: top, width: (DEFAULT_CARD_W * 2) + (GAP * 2), height: Math.max(EXPANDED_CARD_MIN_H, DEFAULT_CARD_H * 3 + 48) }],
+          [{ x: left, y: top - TOP_CHROME_PAD, width: right - left, height: Math.max(EXPANDED_CARD_MIN_H, stackH) + TOP_CHROME_PAD }],
           0.9,
           true,
         );

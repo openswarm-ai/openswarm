@@ -68,6 +68,8 @@ class AppSettings(BaseModel):
     # Multi-stop gradient from the theme pad (2-3 hexes); washes the canvas.
     accent_gradient: Optional[list[str]] = None
     personalized_greeting: Optional[str] = None
+    # Short one-glance identity hook for the reveal's focal beat (greeting is the longer warm read).
+    personalized_headline: Optional[str] = None
     personalized_starters: list["PersonalizedStarter"] = Field(default_factory=list)
     personalized_automations: list["PersonalizedAutomation"] = Field(default_factory=list)
     # Distilled from the user's provider chat history the first time they open ChatGPT/Claude in-app; re-feeds prep to sharpen suggestions.

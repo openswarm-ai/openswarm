@@ -594,12 +594,15 @@ const AgentCard: React.FC<Props> = ({
       if (dir.includes('s')) newH = origH + dy;
       if (dir.includes('n')) { newH = origH - dy; newY = origY + dy; }
 
+      // An enlarged card can't be shrunk below its content-showing height, else the user resizes the
+      // chat down until the transcript vanishes (which felt broken). Collapsed cards keep the tiny floor.
+      const minH = expanded ? EXPANDED_OVERLAY_H : MIN_H;
       if (newW < MIN_W) { if (dir.includes('w')) newX = origX + origW - MIN_W; newW = MIN_W; }
-      if (newH < MIN_H) { if (dir.includes('n')) newY = origY + origH - MIN_H; newH = MIN_H; }
+      if (newH < minH) { if (dir.includes('n')) newY = origY + origH - minH; newH = minH; }
 
       return { x: newX, y: newY, w: newW, h: newH };
     },
-    [getCanvasState],
+    [getCanvasState, expanded],
   );
 
   const handleResizeMove = useCallback(

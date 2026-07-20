@@ -445,6 +445,16 @@ const AppShell: React.FC = () => {
   const sidebarAway = (sidebarCollapsed || fsActive) && isDashboardViewActive;
   const [sidePeek, setSidePeek] = useState(false);
   useEffect(() => { if (!sidebarAway) setSidePeek(false); }, [sidebarAway]);
+  // When the sidebar docks away, the canvas runs flush to the window's left edge, so the floating
+  // dashboard header would sit right under the macOS traffic lights. Publish an inset the header reads
+  // (only on macOS, where the lights exist) so it clears them; the sidebar carries its own clearance.
+  useEffect(() => {
+    const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
+    const root = document.documentElement;
+    if (sidebarAway && isMac) root.style.setProperty('--osw-header-inset', '80px');
+    else root.style.removeProperty('--osw-header-inset');
+    return () => { root.style.removeProperty('--osw-header-inset'); };
+  }, [sidebarAway]);
   // Close-on-leave with a grace delay (cancelled on re-enter): a bare mouseLeave closed the peek the
   // instant the cursor dipped past the panel edge while reaching for an item, so clicks never landed.
   const peekCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

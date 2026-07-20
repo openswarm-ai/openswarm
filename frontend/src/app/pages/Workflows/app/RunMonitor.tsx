@@ -5,7 +5,7 @@ import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import { fetchRuns, controlWorkflowRun } from '@/shared/state/workflowsSlice';
-import type { Workflow, WorkflowRun } from '@/shared/state/workflowsSlice';
+import type { Workflow, WorkflowRun, ScheduleConfig } from '@/shared/state/workflowsSlice';
 import {
   bringToFront, closeWorkflowMonitor, setWorkflowsMonitorPosition,
 } from '@/shared/state/dashboardLayoutSlice';
@@ -25,6 +25,27 @@ function kindLabel(run: WorkflowRun | null): string {
   if (run.triggered_by === 'manual') return 'MANUAL RUN';
   if (run.triggered_by === 'retry') return 'RE-RUN';
   return 'SCHEDULED RUN';
+}
+
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function fmtTime(hour: number, minute: number): string {
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
+}
+
+// Plain-English cadence for a scheduled task that hasn't run yet, so the card says WHEN, not "0%".
+function formatSchedule(s: ScheduleConfig): string {
+  const time = fmtTime(s.hour ?? 9, s.minute ?? 0);
+  if (s.repeat_unit === 'week' && s.on_days?.length) {
+    const days = s.on_days.slice().sort((a, b) => a - b);
+    if (days.length === 5 && days.every((d, i) => d === i + 1)) return `Every weekday at ${time}`;
+    return `Every ${days.map((d) => WEEKDAY_NAMES[d] ?? '').filter(Boolean).join(', ')} at ${time}`;
+  }
+  if (s.repeat_unit === 'day') return `Every day at ${time}`;
+  if (s.repeat_unit === 'hour') return 'Every hour';
+  if (s.repeat_unit === 'month') return `Monthly at ${time}`;
+  return `Scheduled for ${time}`;
 }
 
 interface Props {
@@ -204,9 +225,33 @@ const RunMonitor: React.FC<Props> = ({ workflow, cardX, cardY, cardWidth, cardHe
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <AgentChat sessionId={sessionId} embedded readOnly />
         </div>
-      ) : (
+      ) : run ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: c.text.tertiary }}>
           {isRunning ? 'Waiting for the run to start…' : failed ? 'This run failed before any agent ran.' : 'No agent chat for this run.'}
+        </div>
+      ) : (
+        /* Never-run scheduled task: show WHEN it runs and WHAT it does, not an empty 0% run pane. */
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: c.text.tertiary, marginBottom: 6 }}>Schedule</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: c.text.primary }}>{formatSchedule(workflow.schedule)}</div>
+            {workflow.next_run_at && (
+              <div style={{ fontSize: 12, color: c.text.tertiary, marginTop: 3 }}>
+                Next run {new Date(workflow.next_run_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </div>
+            )}
+          </div>
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: c.text.tertiary, marginBottom: 8 }}>What it does</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {steps.map((st, idx) => (
+                <div key={st.id || idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 6, flex: 'none', background: c.bg.secondary, color: c.text.tertiary, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{idx + 1}</div>
+                  <div style={{ fontSize: 13, color: c.text.secondary, lineHeight: 1.45 }}>{st.label || st.text.trim()}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
