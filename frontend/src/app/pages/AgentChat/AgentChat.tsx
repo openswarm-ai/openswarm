@@ -57,7 +57,7 @@ import { estimateRenderedTextHeight, RECHECK_VISIBILITY_EVENT } from './bubbles/
 import CompactionMarker from './bubbles/CompactionMarker';
 import MessageActionBar from './shell/MessageActionBar';
 import ToolCallBubble, { ToolPair } from './tool-bubbles/ToolCallBubble';
-import ToolGroupBubble, { RenderItem, ToolGroup, isToolGroup, isToolPair } from './tool-bubbles/ToolGroupBubble';
+import ToolGroupBubble, { RenderItem, ToolGroup, ToolGroupEntry, isToolGroup, isToolPair } from './tool-bubbles/ToolGroupBubble';
 import ToolUiBubble from './tool-ui/ToolUiBubble';
 import AskUiBubble from './tool-ui/AskUiBubble';
 import { isShowUiPair, isAskUiPair } from './tool-ui/showUiPayload';
@@ -1058,17 +1058,40 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const renderItems: RenderItem[] = useMemo(() => {
     const items: RenderItem[] = [];
     let i = 0;
+    // Narration that led INTO a tool phase; folds into that phase's group on a finished session.
+    let leadNotes: typeof activeBranchMessages = [];
     while (i < activeBranchMessages.length) {
       const msg = activeBranchMessages[i];
       if (msg.role === 'tool_call' || msg.role === 'tool_result') {
         const group: typeof activeBranchMessages = [];
-        while (
-          i < activeBranchMessages.length &&
-          (activeBranchMessages[i].role === 'tool_call' ||
-            activeBranchMessages[i].role === 'tool_result')
-        ) {
-          group.push(activeBranchMessages[i]);
-          i++;
+        // On a finished session the whole tool PHASE folds into one quiet row: short narration
+        // LEADING INTO or BETWEEN tool runs is absorbed (readable on expand), only the final
+        // answer stays out. While running, narration streams visibly, so the phase never folds live.
+        const noteMarks: Array<{ afterCall: number; msg: (typeof activeBranchMessages)[number] }> =
+          leadNotes.map((m) => ({ afterCall: 0, msg: m }));
+        leadNotes = [];
+        let callsSoFar = 0;
+        while (i < activeBranchMessages.length) {
+          const m = activeBranchMessages[i];
+          if (m.role === 'tool_call' || m.role === 'tool_result') {
+            group.push(m);
+            if (m.role === 'tool_call') callsSoFar++;
+            i++;
+            continue;
+          }
+          if (!sessionRunning && m.role === 'assistant') {
+            let j = i;
+            while (j < activeBranchMessages.length && activeBranchMessages[j].role === 'assistant') j++;
+            const next = activeBranchMessages[j];
+            if (next && (next.role === 'tool_call' || next.role === 'tool_result')) {
+              for (let k = i; k < j; k++) {
+                if (!activeBranchMessages[k].hidden) noteMarks.push({ afterCall: callsSoFar, msg: activeBranchMessages[k] });
+              }
+              i = j;
+              continue;
+            }
+          }
+          break;
         }
 
         const allCalls = group.filter((m) => m.role === 'tool_call');
@@ -1085,6 +1108,27 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
         const showUiPairs = allPairs.filter((p) => isShowUiPair(p) || isAskUiPair(p));
         const pairs = allPairs.filter((p) => !isShowUiPair(p) && !isAskUiPair(p));
         const calls = pairs.map((p) => p.call);
+
+        // Folded narration goes back at its original position among the visible pairs.
+        const groupEntries: ToolGroupEntry[] | undefined = (() => {
+          if (noteMarks.length === 0) return undefined;
+          const entries: ToolGroupEntry[] = [];
+          let noteIdx = 0;
+          const noteText = (m: (typeof activeBranchMessages)[number]) =>
+            typeof m.content === 'string' ? m.content : '';
+          allPairs.forEach((pair, idx) => {
+            while (noteIdx < noteMarks.length && noteMarks[noteIdx].afterCall <= idx) {
+              entries.push({ kind: 'note', id: `note-${noteMarks[noteIdx].msg.id}`, text: noteText(noteMarks[noteIdx].msg) });
+              noteIdx++;
+            }
+            if (!isShowUiPair(pair) && !isAskUiPair(pair)) entries.push({ kind: 'pair', pair });
+          });
+          while (noteIdx < noteMarks.length) {
+            entries.push({ kind: 'note', id: `note-${noteMarks[noteIdx].msg.id}`, text: noteText(noteMarks[noteIdx].msg) });
+            noteIdx++;
+          }
+          return entries;
+        })();
 
         const mcpServers = new Set(
           calls.map((m) => {
@@ -1110,8 +1154,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
             label,
             callCount: calls.length,
             mcpServer,
+            entries: groupEntries,
           } satisfies ToolGroup);
-        } else if (pairs.length <= 2) {
+        } else if (sessionRunning && pairs.length <= 2 && !groupEntries) {
+          // Live turns keep bare rows for streaming detail; finished transcripts always rest as the quiet group row.
           items.push(...pairs);
         } else if (pairs.length > 0) {
           const toolNames = new Set(
@@ -1125,10 +1171,24 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
             pairs,
             label,
             callCount: calls.length,
+            entries: groupEntries,
           } satisfies ToolGroup);
+        } else if (noteMarks.length > 0) {
+          // Phase held only ShowUI/AskUI pairs: narration has no group to fold into, keep it visible.
+          for (const nm of noteMarks) items.push(nm.msg);
         }
         items.push(...showUiPairs);
       } else {
+        if (!sessionRunning && msg.role === 'assistant') {
+          let j = i;
+          while (j < activeBranchMessages.length && activeBranchMessages[j].role === 'assistant') j++;
+          const next = activeBranchMessages[j];
+          if (next && (next.role === 'tool_call' || next.role === 'tool_result')) {
+            leadNotes = activeBranchMessages.slice(i, j).filter((m) => !m.hidden);
+            i = j;
+            continue;
+          }
+        }
         if (!msg.hidden) {
           items.push(msg);
         }
@@ -1136,7 +1196,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       }
     }
     return items;
-  }, [activeBranchMessages]);
+  }, [activeBranchMessages, sessionRunning]);
 
   React.useLayoutEffect(() => {
     const total = renderItems.length;
@@ -2290,6 +2350,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   autoFocus={autoFocus}
                   prefillPrompt={prefillPrompt}
                   placeholderOverride={runContext ? 'Ask about this run...' : embedded ? 'Send a message...' : undefined}
+                  quietComposer={embedded}
                   runContext={runContext}
                   onClearRunContext={onClearRunContext}
                   thinkingLevel={session?.thinking_level ?? 'auto'}

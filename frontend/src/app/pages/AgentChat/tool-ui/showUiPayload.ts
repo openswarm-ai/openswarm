@@ -4,7 +4,7 @@ import { isToolUiComponent } from '@toolui/registry';
 export interface WeatherForecastDay {
   day: string;
   condition?: string;
-  high: number;
+  high?: number;
   low?: number;
 }
 
@@ -113,12 +113,13 @@ function parseShowUiInput(input: unknown): ShowUiPayload | null {
     if (!str(p.location) || !num(p.temp)) return null;
     const forecast = Array.isArray(p.forecast)
       ? (p.forecast as Array<Record<string, unknown>>)
-          .filter((d) => str(d.day) && num(d.high))
+          // Either bound is enough; a "Tonight" entry legitimately has only a low.
+          .filter((d) => str(d.day) && (num(d.high) || num(d.low)))
           .slice(0, 7)
           .map((d) => ({
             day: d.day as string,
             condition: str(d.condition) ? d.condition : undefined,
-            high: d.high as number,
+            high: num(d.high) ? d.high : undefined,
             low: num(d.low) ? d.low : undefined,
           }))
       : undefined;

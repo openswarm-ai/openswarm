@@ -50,6 +50,8 @@ interface Props {
   isRunning?: boolean;
   onStop?: () => void;
   handleSend: () => void;
+  /** Embedded-card resting look: only attach + mic; pickers come back on focus. */
+  restMode?: boolean;
 }
 
 export const ChatInputToolbar: React.FC<Props> = (p) => {
@@ -58,7 +60,7 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
     allModelFlat, model, onModelChange, onProviderChange, picker, pendingKinds, pendingPayloadEstimate,
     thinkingLevel, onThinkingLevelChange, contextEstimate, elementSelection, autoRunMode,
     ownerId, sessionId, generalFileInputRef, addImageFiles, uploadAndAttachFiles,
-    hasContent, disabled, isRunning, onStop, handleSend,
+    hasContent, disabled, isRunning, onStop, handleSend, restMode,
   } = p;
 
   const menuPaperProps = {
@@ -94,12 +96,14 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
         pt: 0,
       }}
     >
-      <ModelControl
-        c={c}
-        setModelAnchor={setModelAnchor}
-        allModelFlat={allModelFlat}
-        model={model}
-      />
+      {!restMode && (
+        <ModelControl
+          c={c}
+          setModelAnchor={setModelAnchor}
+          allModelFlat={allModelFlat}
+          model={model}
+        />
+      )}
 
       <ModelPickerMenu
         c={c}
@@ -134,7 +138,7 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
         pendingPayloadEstimate={pendingPayloadEstimate}
       />
 
-      {!hideForTrial && (
+      {!hideForTrial && !restMode && (
         <ThinkingLevelControl
           c={c}
           model={model}
@@ -149,7 +153,7 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
 
       <Box sx={{ flex: 1 }} />
 
-      {contextEstimate && (
+      {contextEstimate && !restMode && (
         <ContextRing
           used={contextEstimate.used}
           limit={contextEstimate.limit}
@@ -160,6 +164,7 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
 
       <ToolbarActions
         c={c}
+        restMode={restMode}
         elementSelection={elementSelection}
         autoRunMode={autoRunMode}
         ownerId={ownerId}

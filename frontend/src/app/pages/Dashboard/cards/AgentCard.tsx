@@ -18,6 +18,7 @@ import {
   handleApproval,
   collapseSession,
   closeSession,
+  fetchSession,
   renameSession,
 } from '@/shared/state/agentsSlice';
 import { displayChatTitle, isLegacyAutoName } from '@/shared/state/sessionDisplay';
@@ -697,6 +698,15 @@ const AgentCard: React.FC<Props> = ({
   const pillMode = !expanded && !hasPending && !isDraft && !tileZone;
   const pillLabel = session.turn_label?.label || displayChatTitle(session);
   const pillRunning = session.status === 'running';
+
+  // Cold-loaded collapsed cards carry no transcript (status frames are slim), so the pill can't pin
+  // its widget/checklist artifact; hydrate ONCE per card actually on this dashboard, never in a loop.
+  const pillHydratedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!pillMode || pillHydratedRef.current) return;
+    pillHydratedRef.current = true;
+    if ((session.messages || []).length === 0) dispatch(fetchSession(session.id));
+  }, [pillMode, session.messages, session.id, dispatch]);
 
   // f7's collapsed state: a session that spawned a browser shows that window under the pill.
   const spawnedBrowserId = useAppSelector((s) => {

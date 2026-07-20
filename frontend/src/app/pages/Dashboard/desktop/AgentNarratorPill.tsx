@@ -26,9 +26,28 @@ function AgentNarratorPill({ label, running, todos, artifact, browserShot, selec
   const visibleTodos = (todos || []).slice(0, MAX_VISIBLE_TODOS);
   const hiddenCount = (todos?.length || 0) - visibleTodos.length;
   const ring = selected || highlighted ? { outline: '2px solid #3b82f6', outlineOffset: '2px' } : undefined;
+  // One key per ladder state so a state CHANGE remounts the artifact and replays the one-shot entrance; nothing loops.
+  const artifactKey = artifact ? 'widget' : browserShot ? 'shot' : visibleTodos.length > 0 ? 'todos' : running ? 'thinking' : 'none';
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: 1,
+        '@keyframes osw-artifact-in': {
+          from: { opacity: 0, transform: 'translateY(8px) scale(0.98)' },
+          to: { opacity: 1, transform: 'translateY(0) scale(1)' },
+        },
+        '& .osw-artifact': {
+          animation: 'osw-artifact-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both',
+        },
+        '@media (prefers-reduced-motion: reduce)': {
+          '& .osw-artifact': { animation: 'none' },
+        },
+      }}
+    >
       <Box
         sx={{
           display: 'inline-flex',
@@ -53,9 +72,13 @@ function AgentNarratorPill({ label, running, todos, artifact, browserShot, selec
       </Box>
 
       {artifact ? (
-        <ShowUiWidgetView payload={artifact} />
+        <Box key={artifactKey} className="osw-artifact">
+          <ShowUiWidgetView payload={artifact} />
+        </Box>
       ) : browserShot ? (
         <Box
+          key={artifactKey}
+          className="osw-artifact"
           component="img"
           src={browserShot}
           alt=""
@@ -63,6 +86,8 @@ function AgentNarratorPill({ label, running, todos, artifact, browserShot, selec
         />
       ) : visibleTodos.length > 0 ? (
         <Box
+          key={artifactKey}
+          className="osw-artifact"
           sx={{
             borderRadius: '16px',
             background: GLASS,
@@ -123,6 +148,8 @@ function AgentNarratorPill({ label, running, todos, artifact, browserShot, selec
         </Box>
       ) : running ? (
         <Box
+          key={artifactKey}
+          className="osw-artifact"
           sx={{
             display: 'inline-flex',
             alignItems: 'center',

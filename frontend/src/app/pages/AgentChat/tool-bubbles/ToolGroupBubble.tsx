@@ -13,6 +13,10 @@ import { sanitizeSvgString } from '@/shared/sanitizeSvg';
 import { parseMcpToolName, getWorkflowToolLabel } from '@/shared/mcpToolMeta';
 import ToolCallBubble, { ToolPair } from './ToolCallBubble';
 
+export type ToolGroupEntry =
+  | { kind: 'pair'; pair: ToolPair }
+  | { kind: 'note'; id: string; text: string };
+
 export interface ToolGroup {
   type: 'tool_group';
   id: string;
@@ -20,6 +24,8 @@ export interface ToolGroup {
   label: string;
   callCount: number;
   mcpServer?: string;
+  /** Pairs interleaved with the folded mid-phase narration; present only when narration was absorbed. */
+  entries?: ToolGroupEntry[];
 }
 
 export type RenderItem = AgentMessage | ToolGroup | ToolPair;
@@ -75,7 +81,12 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
   const c = useClaudeTokens();
   const reveal = useMountReveal(); // JS-driven slide-in; see useMountReveal (was a fragile mount keyframe)
   const isMcp = !!group.mcpServer;
-  const [expanded, setExpanded] = useState(isMcp);
+  // MCP groups auto-expand only WHILE the run is live; a finished transcript rests as the quiet row.
+  const [expanded, setExpanded] = useState(isMcp && isSessionRunning);
+  const userToggledRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!isSessionRunning && !userToggledRef.current) setExpanded(false);
+  }, [isSessionRunning]);
 
   const completedCount = group.pairs.filter((p) => p.result !== null).length;
   const pendingCount = group.pairs.filter((p) => p.result === null).length;
@@ -126,7 +137,7 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
         {/* Collapsed = the quiet "N tool calls ›" line; the detail card only materializes on expand. */}
         {!expanded ? (
           <Box
-            onClick={() => setExpanded(true)}
+            onClick={() => { userToggledRef.current = true; setExpanded(true); }}
             sx={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -154,7 +165,7 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
           </Box>
         ) : (
         <Box
-          onClick={() => setExpanded(false)}
+          onClick={() => { userToggledRef.current = true; setExpanded(false); }}
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -228,16 +239,25 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
               },
             }}
           >
-            {group.pairs.map((pair) => (
-              <ToolCallBubble
-                key={pair.id}
-                call={pair.call}
-                result={pair.result}
-                isPending={pair.result === null && isSessionRunning}
-                mcpCompact
-                sessionId={sessionId}
-              />
-            ))}
+            {(group.entries ?? group.pairs.map((pair) => ({ kind: 'pair' as const, pair }))).map((entry) =>
+              entry.kind === 'pair' ? (
+                <ToolCallBubble
+                  key={entry.pair.id}
+                  call={entry.pair.call}
+                  result={entry.pair.result}
+                  isPending={entry.pair.result === null && isSessionRunning}
+                  mcpCompact
+                  sessionId={sessionId}
+                />
+              ) : (
+                <Typography
+                  key={entry.id}
+                  sx={{ px: 1.5, py: 0.5, fontSize: '0.78rem', color: c.text.tertiary }}
+                >
+                  {entry.text}
+                </Typography>
+              ),
+            )}
           </Box>
         </Collapse>
       </Box>

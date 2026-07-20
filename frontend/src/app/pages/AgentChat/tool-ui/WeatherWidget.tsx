@@ -5,7 +5,8 @@ import { useThemeMode } from '@/shared/styles/ThemeContext';
 import type { WeatherProps } from './showUiPayload';
 
 function toConditionCode(condition: string | undefined): WeatherConditionCode {
-  const cond = (condition || '').toLowerCase();
+  // "Partly Cloudy with Slight Chance of Showers" is a partly-cloudy scene, not a rain scene: drop the chance-of qualifiers so the leading descriptor wins.
+  const cond = (condition || '').toLowerCase().replace(/(slight |small )?chance( of)? (showers?|rain|snow|thunderstorms?)/g, '');
   if (/thunder|storm/.test(cond)) return 'thunderstorm';
   if (/heavy rain|downpour/.test(cond)) return 'heavy-rain';
   if (/drizzle/.test(cond)) return 'drizzle';
@@ -27,12 +28,13 @@ function WeatherWidget({ props }: { props: WeatherProps }): React.ReactElement {
   const forecast: ForecastDay[] = (props.forecast || []).slice(0, 7).map((d) => ({
     label: d.day,
     conditionCode: toConditionCode(d.condition),
-    tempMin: Math.round(d.low ?? d.high - 8),
-    tempMax: Math.round(d.high),
+    tempMin: Math.round(d.low ?? (d.high ?? props.temp) - 8),
+    tempMax: Math.round(d.high ?? (d.low ?? props.temp) + 8),
   }));
 
   return (
-    <div className={`tool-ui-scope${mode === 'dark' ? ' dark' : ''}`} style={{ width: 320 }}>
+    // 4:3 card; the vendored strip reveals at 245px height and its day icons at 280px, so width must be >= 374 for the full frame look.
+    <div className={`tool-ui-scope${mode === 'dark' ? ' dark' : ''}`} style={{ width: 384, maxWidth: '100%' }}>
       <AnimatedWeatherWidget
         version="3.1"
         id={`weather-${props.location}`}
