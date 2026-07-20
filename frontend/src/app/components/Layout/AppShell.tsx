@@ -455,6 +455,18 @@ const AppShell: React.FC = () => {
     cancelPeekClose();
     peekCloseTimerRef.current = setTimeout(() => setSidePeek(false), 260);
   }, [cancelPeekClose]);
+  // Reliable window-level close: the panel's own mouseLeave can get eaten (webview/overlay capture),
+  // leaving the peek stuck open. This fires on every move and closes ONLY when the cursor is clearly
+  // to the right of the floating panel (generous 130px buffer so reaching for an item never closes it).
+  useEffect(() => {
+    if (!sidePeek) return undefined;
+    const onMove = (e: MouseEvent): void => {
+      if (e.clientX > 10 + sidebarWidth + 130) schedulePeekClose();
+      else cancelPeekClose();
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, [sidePeek, sidebarWidth, schedulePeekClose, cancelPeekClose]);
   // Fullscreen still hides the top-center island anchor + banners; the sidebar floats in on peek.
   const fsHideChrome = fsActive;
   // In overlay mode the panel stays MOUNTED (so it can slide out, not vanish); sidePeek only drives the slide.
