@@ -444,7 +444,10 @@ const AppShell: React.FC = () => {
   // Zen compact mode: the sidebar is the only chrome now, so whenever it's "away" (user collapsed it,
   // OR a fullscreen card hides everything) a left-edge hover floats it back in as an overlay.
   const fsActive = !!fullscreenCardId && isDashboardViewActive;
-  const sidebarAway = (sidebarCollapsed || fsActive) && isDashboardViewActive;
+  // Arc: the sidebar toggle PINS the sidebar open inside fullscreen (docked, card shrinks beside it);
+  // unpinned fullscreen keeps the hover-peek overlay.
+  const [fsSidebarPinned, setFsSidebarPinned] = useState(false);
+  const sidebarAway = (sidebarCollapsed || (fsActive && !fsSidebarPinned)) && isDashboardViewActive;
   const [sidePeek, setSidePeek] = useState(false);
   useEffect(() => { if (!sidebarAway) setSidePeek(false); }, [sidebarAway]);
   // When the sidebar docks away, the canvas runs flush to the window's left edge, so the floating
@@ -849,7 +852,7 @@ const AppShell: React.FC = () => {
       )}
 
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
-      {((!sidebarCollapsed && !fsHideChrome) || sideOverlay) && (
+      {((!sidebarCollapsed && (!fsHideChrome || fsSidebarPinned)) || sideOverlay) && (
       <>
       <Box
         onMouseEnter={() => { if (sideOverlay) cancelPeekClose(); }}
@@ -900,7 +903,16 @@ const AppShell: React.FC = () => {
             <Tooltip title={sideOverlay ? 'Dock sidebar' : 'Hide sidebar'}>
               {/* Arc-style pin: from the floating peek this DOCKS the sidebar permanently (pushes the
                   canvas), from docked it collapses back to peek. Toggle, not one-way collapse. */}
-              <IconButton size="small" onClick={() => setSidebarCollapsed((v) => !v)}
+              <IconButton size="small" onClick={() => {
+                  if (fsActive) {
+                    setFsSidebarPinned((v) => {
+                      if (!v) setSidebarCollapsed(false);
+                      return !v;
+                    });
+                    return;
+                  }
+                  setSidebarCollapsed((v) => !v);
+                }}
                 data-onboarding="sidebar-toggle" aria-expanded={!sidebarCollapsed}
                 sx={{ color: c.text.tertiary, p: 0.5, borderRadius: 1, '&:hover': { color: c.text.secondary, bgcolor: `${c.text.tertiary}14` } }}>
                 <AnimatedPanelLeft size={17} />

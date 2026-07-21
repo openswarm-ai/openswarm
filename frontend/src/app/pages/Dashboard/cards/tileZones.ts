@@ -48,19 +48,17 @@ function workspaceSize(): { w: number; h: number } {
 }
 
 export function computeTiledStyle(zone: string, panX: number, panY: number, zoom: number): TiledStyle | null {
-  // 'fullscreen' = the Arc layout: the app chrome hides except the dock rail, which stays put on
-  // the left, and the card expands into the ENTIRE dashboard beside it, floating on the same gap
-  // the tile zones use. Target is WINDOW space here, so the viewport origin does NOT cancel.
+  // 'fullscreen' = the Arc layout: the dock rail stays put on the left and the card expands into
+  // the ENTIRE dashboard beside it, floating on the same gap the tile zones use. Anchored to the
+  // VIEWPORT (not the window) so docked chrome, like the pinned sidebar, squeezes the card instead
+  // of being covered by it.
   if (zone === 'fullscreen') {
-    const el = document.querySelector('[data-canvas-viewport]');
-    const r = el ? el.getBoundingClientRect() : null;
-    const ox = r ? r.left : 0;
-    const oy = r ? r.top : 0;
+    const { w: vpW, h: vpH } = workspaceSize();
     return {
-      left: (FULLSCREEN_DOCK_RAIL + GAP - ox - panX) / zoom,
-      top: (GAP - oy - panY) / zoom,
-      width: window.innerWidth - FULLSCREEN_DOCK_RAIL - GAP * 2,
-      height: window.innerHeight - GAP * 2,
+      left: (FULLSCREEN_DOCK_RAIL + GAP - panX) / zoom,
+      top: (GAP - panY) / zoom,
+      width: vpW - FULLSCREEN_DOCK_RAIL - GAP * 2,
+      height: vpH - GAP * 2,
       transform: `scale(${1 / zoom})`,
       transformOrigin: 'top left',
     };
