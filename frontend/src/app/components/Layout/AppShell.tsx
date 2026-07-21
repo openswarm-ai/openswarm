@@ -43,7 +43,7 @@ import { shallowEqual } from 'react-redux';
 import { fetchDashboards, createDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
 import { Typewriter } from '@/app/components/feedback/Animated';
 import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
-import { addBrowserCard, addBrowserTab, cycleBrowserTab, reopenLastClosed, addViewCard, selectFullscreenCardId } from '@/shared/state/dashboardLayoutSlice';
+import { addBrowserCard, addBrowserTab, cycleBrowserTab, reopenLastClosed, addViewCard, selectFullscreenCardId, setTiledCard, clearTiledCard } from '@/shared/state/dashboardLayoutSlice';
 import { setPendingBrowserUrl } from '@/shared/state/tempStateSlice';
 import { fetchOutputs, deleteOutput, updateOutput } from '@/shared/state/outputsSlice';
 import { removeViewCardCleanly } from '@/shared/viewTeardown';
@@ -521,13 +521,18 @@ const AppShell: React.FC = () => {
   }, [switchDashboard]);
 
   const [lastDashboardId, setLastDashboardId] = useLastDashboardId();
-  // Apps no longer have a full-page editor; clicking one in the sidebar drops (or focuses) its live card on the current dashboard. Fold-in of the old App Builder.
+  // Apps no longer have a full-page editor; clicking one in the sidebar drops (or focuses) its live card on the current dashboard. Fold-in of the old App Builder. While a card is fullscreen the click SWAPS the pinned card to this app (Arc: the sidebar switches what fills the screen), otherwise the new card would land invisibly behind it.
   const navigateToApp = useCallback((id: string) => {
     dispatch(addViewCard({ outputId: id }));
+    if (fullscreenCardId) {
+      if (fullscreenCardId !== id) dispatch(clearTiledCard(fullscreenCardId));
+      dispatch(setTiledCard({ cardId: id, zone: 'fullscreen' }));
+      return;
+    }
     if (lastDashboardId && location.pathname !== `/dashboard/${lastDashboardId}`) {
       navigate(`/dashboard/${lastDashboardId}`);
     }
-  }, [dispatch, navigate, lastDashboardId, location.pathname]);
+  }, [dispatch, navigate, lastDashboardId, location.pathname, fullscreenCardId]);
   // The real delete, run only once Undo has lapsed: tear the live view card down cleanly (never rip a
   // webview GPU surface mid-composite), then delete the output for good.
   const commitDeleteApp = useCallback((id: string) => {
@@ -596,6 +601,12 @@ const AppShell: React.FC = () => {
 
   const handleDashboardItemClick = (dashboardId: string) => {
     if (renamingDashboardId === dashboardId) return;
+    // In fullscreen, clicking the dashboard you are already on means "show me the canvas": exit the
+    // pinned view. A different dashboard exits via the resetLayout tile clear on switch.
+    if (fullscreenCardId && activeDashboardId === dashboardId) {
+      dispatch(clearTiledCard(fullscreenCardId));
+      return;
+    }
     navigate(`/dashboard/${dashboardId}`);
   };
 
