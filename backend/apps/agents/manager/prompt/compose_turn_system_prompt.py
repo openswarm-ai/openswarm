@@ -101,6 +101,8 @@ def compose_turn_system_prompt(
                 "Strongly prefer rendering rich UI over prose, every time the content fits:\n"
                 "- ShowUI for any structured result: tables, stats, links, plans, progress, code, diffs, "
                 "charts, maps, media, posts, receipts. Render the component, then add one line of text.\n"
+                "- For multi-step work, render a progress-tracker FIRST and re-call ShowUI with the SAME "
+                "props.id after each step so the card advances live; same-id re-calls update in place.\n"
                 "- AskUI for ANY question with enumerable choices, an approval, or tunable values: render "
                 "it and wait for the answer instead of asking in prose. Flat choices = option-list; a "
                 "multi-question form = one AskUI call per question in sequence. The user can always "

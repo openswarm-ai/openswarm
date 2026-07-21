@@ -2,6 +2,33 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { useThemeMode } from '@/shared/styles/ThemeContext';
 import { TOOL_UI_REGISTRY } from './registry';
 
+interface GuardProps { name: string; children: React.ReactNode }
+
+// A component render throwing must cost exactly one quiet line, never the app: the top-level
+// ErrorBoundary unmounts the whole shell for any uncaught child throw (the linkedin-post {post}
+// mismatch took down the dashboard until this wall existed).
+class ComponentGuard extends React.Component<GuardProps, { failed: boolean }> {
+  constructor(props: GuardProps) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  render(): React.ReactNode {
+    if (this.state.failed) {
+      return (
+        <div style={{ fontSize: '0.75rem', opacity: 0.55, padding: '4px 0' }}>
+          {this.props.name} failed to render
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 interface VendoredToolUiProps {
   name: string;
   props: Record<string, unknown>;
@@ -65,9 +92,11 @@ function VendoredToolUi({ name, props, extraProps }: VendoredToolUiProps): React
   const Component = entry.Component;
   return (
     <div className={`tool-ui-scope${mode === 'dark' ? ' dark' : ''}`}>
-      <Suspense fallback={<div style={{ height: 48, width: 280, borderRadius: 12, background: 'rgba(127,127,127,0.12)' }} />}>
-        <Component {...gate.parsed} {...(extraProps || {})} />
-      </Suspense>
+      <ComponentGuard name={name}>
+        <Suspense fallback={<div style={{ height: 48, width: 280, borderRadius: 12, background: 'rgba(127,127,127,0.12)' }} />}>
+          <Component {...gate.parsed} {...(extraProps || {})} />
+        </Suspense>
+      </ComponentGuard>
     </div>
   );
 }

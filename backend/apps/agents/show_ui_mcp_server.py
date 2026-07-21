@@ -34,7 +34,7 @@ def p_load_generated():
 GENERATED = p_load_generated()
 
 COMPONENT_SPECS = {
-    "weather": "props: {location: str, temp: number, unit?: 'F'|'C', high?: number, low?: number, condition?: str, forecast?: [{day: str, condition?: str, high?: number, low?: number}] (max 7)}",
+    "weather": "props: {id?: str, location: str, temp: number, unit?: 'F'|'C', high?: number, low?: number, condition?: str, forecast?: [{day: str, condition?: str, high?: number, low?: number}] (max 7)}",
     "stats": "props: {title?: str, stats: [{label: str, value: str, delta?: str, direction?: 'up'|'down'}] (max 8)}",
     "links": "props: {links: [{title: str, url: str, description?: str}] (max 10)}",
 }
@@ -82,7 +82,10 @@ TOOLS = [
             "Use it whenever a result fits one of the shapes. Supported components:\n"
             + "\n".join(f"- '{name}': {spec}" for name, spec in COMPONENT_SPECS.items())
             + "\nCall it with the component name and a props object matching that shape. "
-            "The component renders in place of raw text; still give a one-line text summary after."
+            "The component renders in place of raw text; still give a one-line text summary after. "
+            "LIVE UPDATES: calling ShowUI again with the SAME component and props.id updates that "
+            "card in place. Use this to advance progress-tracker/plan step statuses AS you complete "
+            "each step of real work, or to refresh data; never mint a new id for an update."
         ),
         "inputSchema": {
             "type": "object",

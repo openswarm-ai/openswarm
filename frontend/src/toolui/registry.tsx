@@ -10,6 +10,13 @@ export interface ToolUiEntry {
 
 /* Every entry lazy-loads both the component and its zod contract so the chat bundle only pays
    for components a transcript actually uses. Names mirror upstream tool-ui component slugs. */
+// The social-post components take their data nested as {post}; the wire props ARE the post.
+function wrapAsPost<P extends { id?: unknown }>(Inner: React.ComponentType<{ post: P }>): React.ComponentType<P> {
+  return function PostAdapter(props: P) {
+    return <Inner post={props} />;
+  };
+}
+
 export const TOOL_UI_REGISTRY: Record<string, ToolUiEntry> = {
   'audio': {
     Component: lazy(() => import('./components/audio').then((m) => ({ default: m.Audio }))),
@@ -52,19 +59,19 @@ export const TOOL_UI_REGISTRY: Record<string, ToolUiEntry> = {
     loadSchema: () => import('./components/image-gallery/schema').then((m) => m.SerializableImageGallerySchema),
   },
   'instagram-post': {
-    Component: lazy(() => import('./components/instagram-post').then((m) => ({ default: m.InstagramPost }))),
+    Component: lazy(() => import('./components/instagram-post').then((m) => ({ default: wrapAsPost(m.InstagramPost) }))),
     loadSchema: () => import('./components/instagram-post/schema').then((m) => m.SerializableInstagramPostSchema),
   },
   'item-carousel': {
     Component: lazy(() => import('./components/item-carousel').then((m) => ({ default: m.ItemCarousel }))),
-    loadSchema: () => import('./components/item-carousel/schema').then((m) => m.SerializableItemSchema),
+    loadSchema: () => import('./components/item-carousel/schema').then((m) => m.SerializableItemCarouselSchema),
   },
   'link-preview': {
     Component: lazy(() => import('./components/link-preview').then((m) => ({ default: m.LinkPreview }))),
     loadSchema: () => import('./components/link-preview/schema').then((m) => m.SerializableLinkPreviewSchema),
   },
   'linkedin-post': {
-    Component: lazy(() => import('./components/linkedin-post').then((m) => ({ default: m.LinkedInPost }))),
+    Component: lazy(() => import('./components/linkedin-post').then((m) => ({ default: wrapAsPost(m.LinkedInPost) }))),
     loadSchema: () => import('./components/linkedin-post/schema').then((m) => m.SerializableLinkedInPostSchema),
   },
   'message-draft': {
@@ -112,7 +119,7 @@ export const TOOL_UI_REGISTRY: Record<string, ToolUiEntry> = {
     loadSchema: () => import('./components/video/schema').then((m) => m.SerializableVideoSchema),
   },
   'x-post': {
-    Component: lazy(() => import('./components/x-post').then((m) => ({ default: m.XPost }))),
+    Component: lazy(() => import('./components/x-post').then((m) => ({ default: wrapAsPost(m.XPost) }))),
     loadSchema: () => import('./components/x-post/schema').then((m) => m.SerializableXPostSchema),
   },
 };

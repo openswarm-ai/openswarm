@@ -1806,7 +1806,7 @@
   }
  },
  "item-carousel": {
-  "hint": "props: {id: str, name: str, subtitle?: str, image?: str, color?: str, actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'destructive'|'secondary'|'ghost'|'outline', loading?: bool, disabled?: bool, shortcut?: str}]}",
+  "hint": "props: {id: str, items: [{id: str, name: str, subtitle?: str, image?: str, color?: str, actions?: [obj]}], title?: str, description?: str}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -1815,21 +1815,13 @@
      "type": "string",
      "minLength": 1
     },
-    "name": {
-     "type": "string",
-     "minLength": 1
-    },
-    "subtitle": {
+    "title": {
      "type": "string"
     },
-    "image": {
-     "type": "string",
-     "format": "uri"
-    },
-    "color": {
+    "description": {
      "type": "string"
     },
-    "actions": {
+    "items": {
      "type": "array",
      "items": {
       "type": "object",
@@ -1838,46 +1830,76 @@
         "type": "string",
         "minLength": 1
        },
-       "label": {
+       "name": {
         "type": "string",
         "minLength": 1
        },
-       "sentence": {
+       "subtitle": {
         "type": "string"
        },
-       "confirmLabel": {
-        "type": "string"
-       },
-       "variant": {
+       "image": {
         "type": "string",
-        "enum": [
-         "default",
-         "destructive",
-         "secondary",
-         "ghost",
-         "outline"
-        ]
+        "format": "uri"
        },
-       "loading": {
-        "type": "boolean"
-       },
-       "disabled": {
-        "type": "boolean"
-       },
-       "shortcut": {
+       "color": {
         "type": "string"
+       },
+       "actions": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "minLength": 1
+          },
+          "label": {
+           "type": "string",
+           "minLength": 1
+          },
+          "sentence": {
+           "type": "string"
+          },
+          "confirmLabel": {
+           "type": "string"
+          },
+          "variant": {
+           "type": "string",
+           "enum": [
+            "default",
+            "destructive",
+            "secondary",
+            "ghost",
+            "outline"
+           ]
+          },
+          "loading": {
+           "type": "boolean"
+          },
+          "disabled": {
+           "type": "boolean"
+          },
+          "shortcut": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "label"
+         ]
+        }
        }
       },
       "required": [
        "id",
-       "label"
+       "name"
       ]
      }
     }
    },
    "required": [
     "id",
-    "name"
+    "items"
    ]
   }
  },

@@ -1058,6 +1058,25 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const renderItems: RenderItem[] = useMemo(() => {
     const items: RenderItem[] = [];
     let i = 0;
+    // Live-updating cards: repeated ShowUI calls with the SAME component+props.id are one card that
+    // UPDATES IN PLACE at its first position (progress advances, data refreshes), never a stack of
+    // stale snapshots. Pre-scan maps each id key to its first slot and its latest call+result.
+    const firstCallIdByKey = new Map<string, string>();
+    const latestByKey = new Map<string, { call: (typeof activeBranchMessages)[number]; result: (typeof activeBranchMessages)[number] | null }>();
+    const keyByCallId = new Map<string, string>();
+    for (let s = 0; s < activeBranchMessages.length; s++) {
+      const m = activeBranchMessages[s];
+      const mc = m.content;
+      if (m.role !== 'tool_call' || typeof mc !== 'object' || !/(^|__)ShowUI$/.test(String(mc?.tool || ''))) continue;
+      const input = mc?.input as { component?: unknown; props?: { id?: unknown } } | undefined;
+      const compId = input?.props?.id;
+      if (!input?.component || typeof compId !== 'string' || !compId) continue;
+      const key = `${input.component}:${compId}`;
+      keyByCallId.set(m.id, key);
+      if (!firstCallIdByKey.has(key)) firstCallIdByKey.set(key, m.id);
+      const next = activeBranchMessages[s + 1];
+      latestByKey.set(key, { call: m, result: next && next.role === 'tool_result' ? next : null });
+    }
     // Narration that led INTO a tool phase; folds into that phase's group on a finished session.
     let leadNotes: typeof activeBranchMessages = [];
     while (i < activeBranchMessages.length) {
@@ -1177,7 +1196,23 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
           // Phase held only ShowUI/AskUI pairs: narration has no group to fold into, keep it visible.
           for (const nm of noteMarks) items.push(nm.msg);
         }
-        items.push(...showUiPairs);
+        for (const p of showUiPairs) {
+          const key = keyByCallId.get(p.call.id);
+          if (!key || isAskUiPair(p)) {
+            items.push(p);
+            continue;
+          }
+          // Later updates render nowhere themselves; the first slot always shows the latest call
+          // under a STABLE key so React updates the mounted component instead of remounting it.
+          if (p.call.id !== firstCallIdByKey.get(key)) continue;
+          const latest = latestByKey.get(key);
+          items.push({
+            type: 'tool_pair' as const,
+            id: `showui-${key}`,
+            call: latest ? latest.call : p.call,
+            result: latest ? latest.result : p.result,
+          });
+        }
       } else {
         if (!sessionRunning && msg.role === 'assistant') {
           let j = i;

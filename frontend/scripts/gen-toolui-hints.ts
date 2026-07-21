@@ -15,7 +15,7 @@ const TARGETS: Record<string, [string, string]> = {
   'image': ['../src/toolui/components/image/schema', 'SerializableImageSchema'],
   'image-gallery': ['../src/toolui/components/image-gallery/schema', 'SerializableImageGallerySchema'],
   'instagram-post': ['../src/toolui/components/instagram-post/schema', 'SerializableInstagramPostSchema'],
-  'item-carousel': ['../src/toolui/components/item-carousel/schema', 'SerializableItemSchema'],
+  'item-carousel': ['../src/toolui/components/item-carousel/schema', 'SerializableItemCarouselSchema'],
   'link-preview': ['../src/toolui/components/link-preview/schema', 'SerializableLinkPreviewSchema'],
   'linkedin-post': ['../src/toolui/components/linkedin-post/schema', 'SerializableLinkedInPostSchema'],
   'message-draft': ['../src/toolui/components/message-draft/schema', 'SerializableEmailDraftSchema'],
