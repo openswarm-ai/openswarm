@@ -5,7 +5,7 @@ import LanguageIcon from '@mui/icons-material/Language';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { toggleMinimizeCard, setTiledCard, recordClosedCard } from '@/shared/state/dashboardLayoutSlice';
 import { removeBrowserCardCleanly } from '@/shared/browserTeardown';
-import WindowControls from '../cards/WindowControls';
+import WindowControls, { ARC_CHIP_SX } from '../cards/WindowControls';
 import { getMinimizedShot, dropMinimizedShot } from './minimizedShots';
 import type { BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
 
@@ -56,7 +56,7 @@ function MinimizedStack({ browserCards, onRestore }: MinimizedStackProps): React
             key={bc.browser_id}
             onClick={restore}
             title={activeTab?.title || 'Browser'}
-            className="osw-card"
+            className="osw-card osw-pill-host"
             sx={{
               position: 'relative',
               width: THUMB_W,
@@ -73,8 +73,8 @@ function MinimizedStack({ browserCards, onRestore }: MinimizedStackProps): React
               className="osw-pill-lights"
               onClick={(e: React.MouseEvent) => e.stopPropagation()}
               sx={{
-                position: 'absolute', top: 3, left: 3, zIndex: 2, display: 'flex', alignItems: 'center',
-                px: 1, py: 0.5, borderRadius: 999, background: 'rgba(24,14,32,0.85)',
+                ...ARC_CHIP_SX,
+                position: 'absolute', top: 2, left: 2, zIndex: 2, background: 'rgba(24,14,32,0.85)',
                 backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
                 opacity: 0, pointerEvents: 'none', transition: 'opacity 140ms ease',
               }}

@@ -35,7 +35,7 @@ import {
   setTiledCard,
   clearTiledCard,
 } from '@/shared/state/dashboardLayoutSlice';
-import WindowControls from './WindowControls';
+import WindowControls, { ARC_CHIP_SX } from './WindowControls';
 import { useTiledStyle } from './tileZones';
 import AgentNarratorPill from '../desktop/AgentNarratorPill';
 import { extractLatestTodos } from '../desktop/agentTodos';
@@ -982,14 +982,15 @@ const AgentCard: React.FC<Props> = ({
           onPointerDown={handleDragPointerDown}
           onPointerMove={handleDragPointerMove}
           onPointerUp={handleDragPointerUp}
+          className="osw-pill-host"
           sx={{ position: 'relative', touchAction: 'none', userSelect: 'none', pt: '26px', mt: '-26px', '&:hover .osw-pill-lights': { opacity: 1, pointerEvents: 'auto' } }}
         >
           <Box
             className="osw-pill-lights osw-card"
             onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
             sx={{
-              position: 'absolute', top: 0, left: 4, zIndex: 2, display: 'flex', alignItems: 'center',
-              px: 1, py: 0.5, borderRadius: 999, background: 'rgba(24,14,32,0.85)',
+              ...ARC_CHIP_SX,
+              position: 'absolute', top: -8, left: 4, zIndex: 2, background: 'rgba(24,14,32,0.85)',
               backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
               opacity: 0, pointerEvents: 'none', transition: 'opacity 140ms ease',
             }}

@@ -31,6 +31,25 @@ const dotSx = (color: string): Record<string, unknown> => ({
   '& > span': { fontSize: 9, fontWeight: 800, lineHeight: 1, color: 'rgba(0,0,0,0.5)', opacity: 0, transition: 'opacity 120ms', pointerEvents: 'none' },
 });
 
+// Circular chip form for minimized pills/thumbnails: the three dots collapse to a point and fan out
+// along an arc on hover (OptionWheel / macOS-dock energy), instead of a flat row in a lozenge.
+export const ARC_CHIP_SX: Record<string, unknown> = {
+  width: 40,
+  height: 40,
+  borderRadius: 999,
+  '& .osw-window-lights': { position: 'relative', width: '100%', height: '100%', display: 'block' },
+  '& .osw-window-lights > *': {
+    position: 'absolute', left: '50%', top: '50%',
+    transform: 'translate(-50%, -50%) scale(0.35)', opacity: 0,
+    transition: 'transform 190ms cubic-bezier(.3,.9,.3,1), opacity 150ms ease',
+  },
+  // red / yellow / green land at 150deg / 90deg / 30deg on a 12px arc over the chip's crown.
+  // Keyed off the HOST (whole pill/thumb) hover, so grazing any part of it fans the dots out.
+  '.osw-pill-host:hover & .osw-window-lights > :nth-of-type(1)': { transform: 'translate(calc(-50% - 11px), calc(-50% + 5px)) scale(1)', opacity: 1 },
+  '.osw-pill-host:hover & .osw-window-lights > :nth-of-type(2)': { transform: 'translate(-50%, calc(-50% - 7px)) scale(1)', opacity: 1, transitionDelay: '40ms' },
+  '.osw-pill-host:hover & .osw-window-lights > :nth-of-type(3)': { transform: 'translate(calc(-50% + 11px), calc(-50% + 5px)) scale(1)', opacity: 1, transitionDelay: '80ms' },
+};
+
 function WindowControls({ onClose, onMinimize, onTile, tiled }: WindowControlsProps): React.ReactElement {
   const [menuOpen, setMenuOpen] = useState(false);
   const closeTimer = useRef<number | null>(null);
