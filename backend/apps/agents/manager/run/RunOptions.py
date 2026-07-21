@@ -133,7 +133,12 @@ class RunOptions(AgentManagerProtocol):
         )
         if need_web_mcp:
             # browser_ok gates the search-dead fallback nudge: never tell the model to call CreateBrowserAgent in a session where browser delegation is denied.
-            register_web_mcp_server(mcp_servers, p_m, browser_ok=bool(browser_delegation_tools))
+            # rich_ui_ok plants the render-as-component reminder inside web results: the system-prompt nudge alone loses to the prose prior (live-proven on haiku).
+            register_web_mcp_server(
+                mcp_servers, p_m,
+                browser_ok=bool(browser_delegation_tools),
+                rich_ui_ok="openswarm-ui" in mcp_servers,
+            )
 
         effective_allowed, effective_disallowed = build_effective_tool_lists(
             session, mcp_servers, builtin_perms, need_web_mcp,
@@ -224,10 +229,8 @@ class RunOptions(AgentManagerProtocol):
             options_kwargs["extra_args"] = p_ea
 
         # The claude_code preset auto-attaches the user's claude.ai- connected partner MCPs (`mcp__claude_ai_*`). Those bypass our MCPActivate gate, don't share OAuth state with the OpenSwarm Gmail/Calendar/Drive connectors the user actually configured here, and confuse the model into picking the partner shim instead of our vetted server. Hard-block them at the SDK layer so the model can't even attempt the call.
-        # EXTEND, never reassign: a plain assignment silently discarded the computed denies (Cron*/Skill/
-        # web-swap/per-tool MCP + read-only Bash). merge_hard_blocked_tools carries those; keep the
-        # claude.ai partner-MCP block on top too.
-        options_kwargs["disallowed_tools"] = [*merge_hard_blocked_tools(effective_disallowed), "mcp__claude_ai_*"]
+        # merge EXTENDS effective_disallowed: the old plain assignment silently discarded the computed denies (Cron*/Skill/web-swap/per-tool MCP) and left the runtime gate as the only wall.
+        options_kwargs["disallowed_tools"] = merge_hard_blocked_tools(effective_disallowed)
 
         if session.cwd:
             # Pre-existing sessions may have workspaces that predate the git-init block in launch_agent, leaving them without a valid HEAD. Ensure it here so subagent worktree-add always works.

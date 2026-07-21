@@ -1059,7 +1059,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
           ...(isOversized ? { width: '85%' } : {}),
           bgcolor: isUser ? c.user.bubble : c.bg.surface,
           border: isUser ? (isFailed ? `1px solid ${c.status.error}` : 'none') : `1px solid ${c.border.subtle}`,
-          borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+          borderRadius: isUser ? '18px' : '16px 16px 16px 4px',
           px: 2,
           py: 1.25,
           boxShadow: isUser ? 'none' : c.shadow.sm,

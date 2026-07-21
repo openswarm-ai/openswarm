@@ -50,11 +50,16 @@ async def test_view_builder_dep_install_broadcasts_app_deps_changed():
     registry: dict = {}
     ctx = p_ctx(registry)
     ctx.session.mode = "view-builder"
-    with patch.object(tool_result_hook.ws_manager, "send_to_session", new=AsyncMock()) as send:
+    # The broadcast gates on an attached preview runtime (not the mode), so agent-mode CreateApp builds get it too.
+    fake_runtime_manager = MagicMock()
+    fake_runtime_manager.get.return_value = object()
+    with patch.object(tool_result_hook.ws_manager, "send_to_session", new=AsyncMock()) as send, \
+         patch("backend.apps.outputs.runtime.manager", fake_runtime_manager):
         await tool_result_hook.post_tool_hook(
             ctx, {"tool_name": "Bash", "tool_response": "added 3 packages",
                   "tool_input": {"command": "npm install recharts"}}, "tu1", None
         )
+    view_builder_state.view_builder_dirty_sessions.discard(ctx.session_id)
     events = [c.args[1] for c in send.await_args_list]
     assert "agent:app_deps_changed" in events
 

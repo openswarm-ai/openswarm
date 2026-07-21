@@ -57,7 +57,10 @@ import { estimateRenderedTextHeight, RECHECK_VISIBILITY_EVENT } from './bubbles/
 import CompactionMarker from './bubbles/CompactionMarker';
 import MessageActionBar from './shell/MessageActionBar';
 import ToolCallBubble, { ToolPair } from './tool-bubbles/ToolCallBubble';
-import ToolGroupBubble, { RenderItem, ToolGroup, isToolGroup, isToolPair } from './tool-bubbles/ToolGroupBubble';
+import ToolGroupBubble, { RenderItem, ToolGroup, ToolGroupEntry, isToolGroup, isToolPair } from './tool-bubbles/ToolGroupBubble';
+import ToolUiBubble from './tool-ui/ToolUiBubble';
+import AskUiBubble from './tool-ui/AskUiBubble';
+import { isShowUiPair, isAskUiPair } from './tool-ui/showUiPayload';
 import ApprovalBar, { BatchApprovalBar } from './shell/ApprovalBar';
 import ForceStopAgentBar from './ForceStopAgentBar';
 import { RateLimitPill } from './shell/RateLimitPill';
@@ -1046,27 +1049,96 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const renderItems: RenderItem[] = useMemo(() => {
     const items: RenderItem[] = [];
     let i = 0;
+    // Live-updating cards: repeated ShowUI calls with the SAME component+props.id are one card that
+    // UPDATES IN PLACE at its first position (progress advances, data refreshes), never a stack of
+    // stale snapshots. Pre-scan maps each id key to its first slot and its latest call+result.
+    const firstCallIdByKey = new Map<string, string>();
+    const latestByKey = new Map<string, { call: (typeof activeBranchMessages)[number]; result: (typeof activeBranchMessages)[number] | null }>();
+    const keyByCallId = new Map<string, string>();
+    for (let s = 0; s < activeBranchMessages.length; s++) {
+      const m = activeBranchMessages[s];
+      const mc = m.content;
+      if (m.role !== 'tool_call' || typeof mc !== 'object' || !/(^|__)ShowUI$/.test(String(mc?.tool || ''))) continue;
+      const input = mc?.input as { component?: unknown; props?: { id?: unknown } } | undefined;
+      const compId = input?.props?.id;
+      if (!input?.component || typeof compId !== 'string' || !compId) continue;
+      const key = `${input.component}:${compId}`;
+      keyByCallId.set(m.id, key);
+      if (!firstCallIdByKey.has(key)) firstCallIdByKey.set(key, m.id);
+      const next = activeBranchMessages[s + 1];
+      latestByKey.set(key, { call: m, result: next && next.role === 'tool_result' ? next : null });
+    }
+    // Narration that led INTO a tool phase; folds into that phase's group on a finished session.
+    let leadNotes: typeof activeBranchMessages = [];
     while (i < activeBranchMessages.length) {
       const msg = activeBranchMessages[i];
       if (msg.role === 'tool_call' || msg.role === 'tool_result') {
         const group: typeof activeBranchMessages = [];
-        while (
-          i < activeBranchMessages.length &&
-          (activeBranchMessages[i].role === 'tool_call' ||
-            activeBranchMessages[i].role === 'tool_result')
-        ) {
-          group.push(activeBranchMessages[i]);
-          i++;
+        // On a finished session the whole tool PHASE folds into one quiet row: short narration
+        // LEADING INTO or BETWEEN tool runs is absorbed (readable on expand), only the final
+        // answer stays out. While running, narration streams visibly, so the phase never folds live.
+        const noteMarks: Array<{ afterCall: number; msg: (typeof activeBranchMessages)[number] }> =
+          leadNotes.map((m) => ({ afterCall: 0, msg: m }));
+        leadNotes = [];
+        let callsSoFar = 0;
+        while (i < activeBranchMessages.length) {
+          const m = activeBranchMessages[i];
+          if (m.role === 'tool_call' || m.role === 'tool_result') {
+            group.push(m);
+            if (m.role === 'tool_call') callsSoFar++;
+            i++;
+            continue;
+          }
+          if (!sessionRunning && m.role === 'assistant') {
+            let j = i;
+            while (j < activeBranchMessages.length && activeBranchMessages[j].role === 'assistant') j++;
+            const next = activeBranchMessages[j];
+            if (next && (next.role === 'tool_call' || next.role === 'tool_result')) {
+              for (let k = i; k < j; k++) {
+                if (!activeBranchMessages[k].hidden) noteMarks.push({ afterCall: callsSoFar, msg: activeBranchMessages[k] });
+              }
+              i = j;
+              continue;
+            }
+          }
+          break;
         }
 
-        const calls = group.filter((m) => m.role === 'tool_call');
+        const allCalls = group.filter((m) => m.role === 'tool_call');
         const results = group.filter((m) => m.role === 'tool_result');
-        const pairs: ToolPair[] = calls.map((call, idx) => ({
+        const allPairs: ToolPair[] = allCalls.map((call, idx) => ({
           type: 'tool_pair' as const,
           id: `pair-${call.id}`,
           call,
           result: results[idx] || null,
         }));
+
+        // ShowUI/AskUI calls render as inline components, never buried inside a collapsed group.
+        // They typically cap a run of work, so the quiet group row stays above the widget.
+        const showUiPairs = allPairs.filter((p) => isShowUiPair(p) || isAskUiPair(p));
+        const pairs = allPairs.filter((p) => !isShowUiPair(p) && !isAskUiPair(p));
+        const calls = pairs.map((p) => p.call);
+
+        // Folded narration goes back at its original position among the visible pairs.
+        const groupEntries: ToolGroupEntry[] | undefined = (() => {
+          if (noteMarks.length === 0) return undefined;
+          const entries: ToolGroupEntry[] = [];
+          let noteIdx = 0;
+          const noteText = (m: (typeof activeBranchMessages)[number]) =>
+            typeof m.content === 'string' ? m.content : '';
+          allPairs.forEach((pair, idx) => {
+            while (noteIdx < noteMarks.length && noteMarks[noteIdx].afterCall <= idx) {
+              entries.push({ kind: 'note', id: `note-${noteMarks[noteIdx].msg.id}`, text: noteText(noteMarks[noteIdx].msg) });
+              noteIdx++;
+            }
+            if (!isShowUiPair(pair) && !isAskUiPair(pair)) entries.push({ kind: 'pair', pair });
+          });
+          while (noteIdx < noteMarks.length) {
+            entries.push({ kind: 'note', id: `note-${noteMarks[noteIdx].msg.id}`, text: noteText(noteMarks[noteIdx].msg) });
+            noteIdx++;
+          }
+          return entries;
+        })();
 
         const mcpServers = new Set(
           calls.map((m) => {
@@ -1092,8 +1164,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
             label,
             callCount: calls.length,
             mcpServer,
+            entries: groupEntries,
           } satisfies ToolGroup);
-        } else if (pairs.length <= 2) {
+        } else if (sessionRunning && pairs.length <= 2 && !groupEntries) {
+          // Live turns keep bare rows for streaming detail; finished transcripts always rest as the quiet group row.
           items.push(...pairs);
         } else if (pairs.length > 0) {
           const toolNames = new Set(
@@ -1107,9 +1181,40 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
             pairs,
             label,
             callCount: calls.length,
+            entries: groupEntries,
           } satisfies ToolGroup);
+        } else if (noteMarks.length > 0) {
+          // Phase held only ShowUI/AskUI pairs: narration has no group to fold into, keep it visible.
+          for (const nm of noteMarks) items.push(nm.msg);
+        }
+        for (const p of showUiPairs) {
+          const key = keyByCallId.get(p.call.id);
+          if (!key || isAskUiPair(p)) {
+            items.push(p);
+            continue;
+          }
+          // Later updates render nowhere themselves; the first slot always shows the latest call
+          // under a STABLE key so React updates the mounted component instead of remounting it.
+          if (p.call.id !== firstCallIdByKey.get(key)) continue;
+          const latest = latestByKey.get(key);
+          items.push({
+            type: 'tool_pair' as const,
+            id: `showui-${key}`,
+            call: latest ? latest.call : p.call,
+            result: latest ? latest.result : p.result,
+          });
         }
       } else {
+        if (!sessionRunning && msg.role === 'assistant') {
+          let j = i;
+          while (j < activeBranchMessages.length && activeBranchMessages[j].role === 'assistant') j++;
+          const next = activeBranchMessages[j];
+          if (next && (next.role === 'tool_call' || next.role === 'tool_result')) {
+            leadNotes = activeBranchMessages.slice(i, j).filter((m) => !m.hidden);
+            i = j;
+            continue;
+          }
+        }
         if (!msg.hidden) {
           items.push(msg);
         }
@@ -1117,7 +1222,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       }
     }
     return items;
-  }, [activeBranchMessages]);
+  }, [activeBranchMessages, sessionRunning]);
 
   React.useLayoutEffect(() => {
     const total = renderItems.length;
@@ -1589,6 +1694,22 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               }
               if (isToolPair(item)) {
                 const isPending = item.result === null && sessionRunning;
+                if (isAskUiPair(item)) {
+                  return (
+                    <Box key={item.id} data-window-item-id={item.id} ref={isLastVisibleItem ? lastVisibleItemRef : undefined}>
+                      <AskUiBubble pair={item} sessionId={session.id} isPending={isPending} suppressReveal={item.call.id === justStreamedId} />
+                      {compactionChip}
+                    </Box>
+                  );
+                }
+                if (isShowUiPair(item)) {
+                  return (
+                    <Box key={item.id} data-window-item-id={item.id} ref={isLastVisibleItem ? lastVisibleItemRef : undefined}>
+                      <ToolUiBubble pair={item} sessionId={session.id} isPending={isPending} suppressReveal={item.call.id === justStreamedId} sessionRunning={sessionRunning} />
+                      {compactionChip}
+                    </Box>
+                  );
+                }
                 return (
                   <Box key={item.id} data-window-item-id={item.id} ref={isLastVisibleItem ? lastVisibleItemRef : undefined}>
                     <ToolCallBubble call={item.call} result={item.result} isPending={isPending} sessionId={session.id} suppressReveal={item.call.id === justStreamedId} />
@@ -2253,7 +2374,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   sessionId={id}
                   autoFocus={autoFocus}
                   prefillPrompt={prefillPrompt}
-                  placeholderOverride={runContext ? 'Ask about this run...' : undefined}
+                  placeholderOverride={runContext ? 'Ask about this run...' : embedded ? 'Send a message...' : undefined}
+                  quietComposer={embedded}
                   runContext={runContext}
                   onClearRunContext={onClearRunContext}
                   thinkingLevel={session?.thinking_level ?? 'auto'}

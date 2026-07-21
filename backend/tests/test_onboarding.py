@@ -114,14 +114,27 @@ def test_parse_prep_carries_reasons():
 
 
 def test_summarize_chatgpt_usage_leads_with_memory_and_caps():
-    from backend.apps.onboarding.usage.chatgpt_usage import summarize_chatgpt_usage
+    from backend.apps.onboarding.usage.chatgpt_usage import TOTAL_CONVO_CHARS, summarize_chatgpt_usage
 
-    s = summarize_chatgpt_usage(812, ["Has an Akita", "Squats 495"], ["Swift concurrency", "Deadlift form"])
+    s = summarize_chatgpt_usage(
+        812,
+        ["Has an Akita", "Squats 495"],
+        ["Swift concurrency", "Deadlift form"],
+        ["User: fix my squat form?\nAssistant: brace harder."],
+    )
     assert "812 past AI conversations" in s
     assert "Has an Akita; Squats 495" in s
     assert "Swift concurrency; Deadlift form" in s
-    big = summarize_chatgpt_usage(1000, [], [f"topic number {i} about something" for i in range(1000)])
-    assert len(big) <= 4000
+    assert "fix my squat form?" in s
+    big = summarize_chatgpt_usage(
+        1000,
+        [],
+        [f"t{i}x" for i in range(1000)],
+        ["c" * 60000 for _ in range(10)],
+    )
+    assert "t149x" in big and "t150x" not in big
+    convo_block = big.split("real asks + the exchange")[1]
+    assert len(convo_block) <= TOTAL_CONVO_CHARS + 10000
 
 
 @pytest.mark.asyncio
@@ -183,13 +196,20 @@ def test_read_google_session_records_scopes_to_named_auth_cookies(monkeypatch):
 
 
 def test_summarize_claude_usage_counts_and_caps():
-    from backend.apps.onboarding.usage.claude_usage import summarize_claude_usage
+    from backend.apps.onboarding.usage.claude_usage import TOTAL_CONVO_CHARS, summarize_claude_usage
 
-    s = summarize_claude_usage(490, ["Yuji Itadori and Buddhism", "B2B SaaS Startup Ideas"])
+    s = summarize_claude_usage(
+        490,
+        ["Yuji Itadori and Buddhism", "B2B SaaS Startup Ideas"],
+        ["User: pitch me a startup\nAssistant: sure."],
+    )
     assert "490 past Claude conversations" in s
     assert "Yuji Itadori and Buddhism; B2B SaaS Startup Ideas" in s
-    big = summarize_claude_usage(1000, [f"topic number {i} about something specific" for i in range(1000)])
-    assert len(big) <= 4000
+    assert "pitch me a startup" in s
+    big = summarize_claude_usage(1000, [f"t{i}x" for i in range(1000)], ["c" * 60000 for _ in range(10)])
+    assert "t149x" in big and "t150x" not in big
+    convo_block = big.split("real asks + the exchange")[1]
+    assert len(convo_block) <= TOTAL_CONVO_CHARS + 10000
 
 
 @pytest.mark.asyncio

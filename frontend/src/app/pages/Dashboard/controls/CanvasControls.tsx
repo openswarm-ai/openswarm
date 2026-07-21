@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import RemoveIcon from '@mui/icons-material/Remove';
 import AddIcon from '@mui/icons-material/Add';
-import FitScreenIcon from '@mui/icons-material/FitScreen';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import SpaceDashboardOutlinedIcon from '@mui/icons-material/SpaceDashboardOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import MapIcon from '@mui/icons-material/Map';
-import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import type { CanvasActions } from '../hooks/interaction/useCanvasControls';
 import Minimap from './Minimap';
 import type { MinimapProps } from './Minimap';
@@ -18,6 +16,8 @@ interface Props {
   actions: CanvasActions;
   onFitToView: () => void;
   onTidy: () => void;
+  onDeleteSelected: () => void;
+  hasSelection: boolean;
   minimapProps: Omit<MinimapProps, 'onPan'>;
   onMinimapPan: (panX: number, panY: number) => void;
 }
@@ -33,8 +33,27 @@ function readMinimapPref(): boolean {
   }
 }
 
-const CanvasControls: React.FC<Props> = ({ zoom, actions, onFitToView, onTidy, minimapProps, onMinimapPan }) => {
-  const c = useClaudeTokens();
+const GLASS = 'rgba(22,12,34,0.66)';
+const GLASS_BLUR = 'blur(20px) saturate(160%)';
+
+const circleSx = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 30,
+  height: 30,
+  borderRadius: '50%',
+  background: GLASS,
+  backdropFilter: GLASS_BLUR,
+  WebkitBackdropFilter: GLASS_BLUR,
+  boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
+  color: 'rgba(255,255,255,0.72)',
+  cursor: 'pointer',
+  transition: 'color 0.15s',
+  '&:hover': { color: '#fff' },
+};
+
+const CanvasControls: React.FC<Props> = ({ zoom, actions, onFitToView, onTidy, onDeleteSelected, hasSelection, minimapProps, onMinimapPan }) => {
   const pct = Math.round(zoom * 100);
   const [minimapOpen, setMinimapOpen] = useState<boolean>(() => readMinimapPref());
   const setAndPersistMinimap = (next: boolean) => {
@@ -53,10 +72,11 @@ const CanvasControls: React.FC<Props> = ({ zoom, actions, onFitToView, onTidy, m
           sx={{
             width: 200,
             height: 140,
-            bgcolor: c.bg.surface,
-            border: `1px solid ${c.border.medium}`,
-            borderRadius: `${c.radius.lg}px`,
-            boxShadow: c.shadow.md,
+            background: GLASS,
+            backdropFilter: GLASS_BLUR,
+            WebkitBackdropFilter: GLASS_BLUR,
+            borderRadius: '12px',
+            boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
             overflow: 'hidden',
           }}
         >
@@ -64,87 +84,82 @@ const CanvasControls: React.FC<Props> = ({ zoom, actions, onFitToView, onTidy, m
         </Box>
       )}
 
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.25,
-          bgcolor: c.bg.surface,
-          border: `1px solid ${c.border.medium}`,
-          borderRadius: `${c.radius.lg}px`,
-          boxShadow: c.shadow.sm,
-          py: 0.25,
-          px: 0.5,
-          userSelect: 'none',
-        }}
-        data-onboarding="canvas-controls"
-      >
-        <Tooltip title="Zoom out" placement="top">
-          <IconButton size="small" onClick={actions.zoomOut} sx={{ color: c.text.muted }}>
-            <RemoveIcon sx={{ fontSize: '1rem' }} />
-          </IconButton>
-        </Tooltip>
+      <Tooltip title={minimapOpen ? 'Hide minimap' : 'Show minimap'} placement="left">
+        <Box
+          role="button"
+          aria-label="Toggle minimap"
+          onClick={() => setAndPersistMinimap(!minimapOpen)}
+          data-onboarding="canvas-minimap-toggle"
+          sx={{ ...circleSx, width: 26, height: 26, borderRadius: '8px', ...(minimapOpen && { color: '#fff' }) }}
+        >
+          <MapIcon sx={{ fontSize: 14 }} />
+        </Box>
+      </Tooltip>
 
-        <Tooltip title="Reset to 100%" placement="top">
-          <Typography
-            onClick={actions.resetZoom}
-            sx={{
-              fontSize: '0.75rem',
-              fontWeight: 500,
-              color: c.text.secondary,
-              minWidth: 40,
-              textAlign: 'center',
-              cursor: 'pointer',
-              lineHeight: 1,
-              '&:hover': { color: c.text.primary },
-            }}
-          >
-            {pct}%
-          </Typography>
-        </Tooltip>
-
-        <Tooltip title="Zoom in" placement="top">
-          <IconButton size="small" onClick={actions.zoomIn} sx={{ color: c.text.muted }}>
-            <AddIcon sx={{ fontSize: '1rem' }} />
-          </IconButton>
-        </Tooltip>
-
-        <Box sx={{ width: 1, height: 16, bgcolor: c.border.medium, mx: 0.5 }} />
-
-        <Tooltip title="Fit to view" placement="top">
-          <IconButton
-            size="small"
-            onClick={onFitToView}
-            sx={{ color: c.text.muted }}
-            data-onboarding="canvas-fit-to-view"
-          >
-            <FitScreenIcon sx={{ fontSize: '1rem' }} />
-          </IconButton>
-        </Tooltip>
-
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }} data-onboarding="canvas-controls">
         <Tooltip title="Tidy layout" placement="top">
-          <IconButton
-            size="small"
-            onClick={onTidy}
-            sx={{ color: c.text.muted }}
-            data-onboarding="canvas-tidy-layout"
-          >
-            <AutoAwesomeIcon sx={{ fontSize: '1rem' }} />
-          </IconButton>
+          <Box role="button" aria-label="Tidy layout" onClick={onTidy} data-onboarding="canvas-tidy-layout" sx={circleSx}>
+            <SpaceDashboardOutlinedIcon sx={{ fontSize: 15 }} />
+          </Box>
         </Tooltip>
 
-        <Box sx={{ width: 1, height: 16, bgcolor: c.border.medium, mx: 0.5 }} />
-
-        <Tooltip title={minimapOpen ? 'Hide minimap' : 'Show minimap'} placement="top">
-          <IconButton
-            size="small"
-            onClick={() => setAndPersistMinimap(!minimapOpen)}
-            sx={{ color: minimapOpen ? c.accent.primary : c.text.muted }}
-            data-onboarding="canvas-minimap-toggle"
+        <Tooltip title={hasSelection ? 'Close selected' : 'Select a card to close it'} placement="top">
+          <Box
+            role="button"
+            aria-label="Close selected"
+            onClick={() => { if (hasSelection) onDeleteSelected(); }}
+            sx={{ ...circleSx, ...(!hasSelection && { color: 'rgba(255,255,255,0.35)', cursor: 'default', '&:hover': { color: 'rgba(255,255,255,0.35)' } }) }}
           >
-            <MapIcon sx={{ fontSize: '1rem' }} />
-          </IconButton>
+            <DeleteOutlineIcon sx={{ fontSize: 15 }} />
+          </Box>
         </Tooltip>
+
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            height: 30,
+            px: 1,
+            borderRadius: 999,
+            background: GLASS,
+            backdropFilter: GLASS_BLUR,
+            WebkitBackdropFilter: GLASS_BLUR,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
+            userSelect: 'none',
+          }}
+        >
+          <Tooltip title="Zoom out" placement="top">
+            <Box role="button" aria-label="Zoom out" onClick={actions.zoomOut} sx={{ display: 'flex', alignItems: 'center', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', '&:hover': { color: '#fff' } }}>
+              <RemoveIcon sx={{ fontSize: 15 }} />
+            </Box>
+          </Tooltip>
+
+          <Tooltip title="Fit to view" placement="top">
+            <Typography
+              onClick={onFitToView}
+              data-onboarding="canvas-fit-to-view"
+              sx={{
+                fontSize: '0.72rem',
+                fontWeight: 500,
+                color: 'rgba(255,255,255,0.78)',
+                minWidth: 38,
+                textAlign: 'center',
+                cursor: 'pointer',
+                lineHeight: 1,
+                '&:hover': { color: '#fff' },
+              }}
+            >
+              {pct}%
+            </Typography>
+          </Tooltip>
+
+          <Tooltip title="Zoom in" placement="top">
+            <Box role="button" aria-label="Zoom in" onClick={actions.zoomIn} sx={{ display: 'flex', alignItems: 'center', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', '&:hover': { color: '#fff' } }}>
+              <AddIcon sx={{ fontSize: 15 }} />
+            </Box>
+          </Tooltip>
+        </Box>
       </Box>
     </Box>
   );

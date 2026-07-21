@@ -1239,7 +1239,7 @@ function createWindow() {
   });
 
   if (isDev) {
-    // Dev only: a worktree's Electron can point at its own webpack-dev-server via OPENSWARM_DEV_URL (full URL) or OPENSWARM_DEV_PORT (port), instead of colliding on the shared :3000. Packaged builds never hit this branch.
+    // Dev only: OPENSWARM_DEV_URL (full override) or OPENSWARM_DEV_PORT lets a second worktree's Electron point at its own webpack-dev-server instead of colliding on the shared :3000. Packaged builds never hit this branch.
     mainWindow.loadURL(process.env.OPENSWARM_DEV_URL || `http://localhost:${process.env.OPENSWARM_DEV_PORT || 3000}`);
   } else if (frontendServerPort) {
     mainWindow.loadURL(`http://127.0.0.1:${frontendServerPort}/index.html`);
@@ -3077,6 +3077,69 @@ ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && /^https?:\/\//.test(url)) {
     shell.openExternal(url);
   }
+});
+
+// Applications launcher support. Names are bare .app basenames from the local scan; both
+// handlers hard-validate the name and resolve strictly inside /Applications so a hostile
+// renderer string can't traverse anywhere else.
+const APP_NAME_RE = /^[\w .&'()+-]{1,80}$/;
+const appIconCache = new Map();
+function resolveApplicationPath(name) {
+  if (typeof name !== 'string' || !APP_NAME_RE.test(name) || name.includes('..')) return null;
+  const path = require('path');
+  const resolved = path.join('/Applications', `${name}.app`);
+  if (path.dirname(resolved) !== '/Applications') return null;
+  return resolved;
+}
+
+ipcMain.handle('get-app-icon', async (_event, name) => {
+  const target = resolveApplicationPath(name);
+  if (!target) return null;
+  if (appIconCache.has(name)) return appIconCache.get(name);
+  try {
+    let dataUrl = null;
+    if (process.platform === 'darwin') {
+      // NEVER app.getFileIcon here: a corrupt .icns raises a native ObjC exception no JS try/catch
+      // can contain and SIGTRAPs the whole app (reproduced 2026-07-20: last IPC get-app-icon,
+      // crashpad in_range_cast warning, death). sips does the decode in a disposable child instead.
+      const { execFile } = require('child_process');
+      const os = require('os');
+      const run = (cmd, args) => new Promise((resolve, reject) => {
+        execFile(cmd, args, { timeout: 5000 }, (err, stdout) => (err ? reject(err) : resolve(String(stdout).trim())));
+      });
+      const resources = path.join(target, 'Contents', 'Resources');
+      let icnsName = await run('/usr/bin/defaults', ['read', path.join(target, 'Contents', 'Info'), 'CFBundleIconFile']).catch(() => '');
+      if (icnsName && !icnsName.endsWith('.icns')) icnsName += '.icns';
+      let icns = icnsName ? path.join(resources, icnsName) : '';
+      if (!icns || !fs.existsSync(icns)) {
+        const alt = fs.existsSync(resources) ? fs.readdirSync(resources).find((f) => f.endsWith('.icns')) : null;
+        icns = alt ? path.join(resources, alt) : '';
+      }
+      if (icns && fs.existsSync(icns)) {
+        const outPng = path.join(os.tmpdir(), `osw-icon-${process.pid}-${Date.now()}.png`);
+        await run('/usr/bin/sips', ['-s', 'format', 'png', '-z', '128', '128', icns, '--out', outPng]).catch(() => '');
+        if (fs.existsSync(outPng)) {
+          dataUrl = `data:image/png;base64,${fs.readFileSync(outPng).toString('base64')}`;
+          fs.rmSync(outPng, { force: true });
+        }
+      }
+    } else {
+      const icon = await app.getFileIcon(target, { size: 'large' });
+      dataUrl = icon && !icon.isEmpty() ? icon.toDataURL() : null;
+    }
+    appIconCache.set(name, dataUrl);
+    return dataUrl;
+  } catch (_) {
+    appIconCache.set(name, null);
+    return null;
+  }
+});
+
+ipcMain.handle('open-application', (_event, name) => {
+  const target = resolveApplicationPath(name);
+  if (!target) return false;
+  shell.openPath(target);
+  return true;
 });
 
 // Affiliate install state. Returns the persisted install.json contents so

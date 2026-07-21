@@ -18,6 +18,7 @@ import {
   handleApproval,
   collapseSession,
   closeSession,
+  fetchSession,
   renameSession,
 } from '@/shared/state/agentsSlice';
 import { displayChatTitle, isLegacyAutoName } from '@/shared/state/sessionDisplay';
@@ -35,11 +36,15 @@ import {
 } from '@/shared/state/dashboardLayoutSlice';
 import WindowControls from './WindowControls';
 import { useTiledStyle } from './tileZones';
+import AgentNarratorPill from '../desktop/AgentNarratorPill';
+import { extractLatestTodos } from '../desktop/agentTodos';
+import { extractLatestShowUi, freezeIfDone } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
+import { getWebview } from '@/shared/browserRegistry';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { QuestionForm } from '@/app/pages/AgentChat/shell/ApprovalBar';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import { parseMcpToolName, getMcpShortAction } from '@/shared/mcpToolMeta';
-import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useClaudeTokens, DarkTokensScope } from '@/shared/styles/ThemeContext';
 import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
 import { useOverlayScrollPassthrough } from '../hooks/interaction/useOverlayScrollPassthrough';
 import { useStreamingMessage } from '@/shared/state/streamingSlice';
@@ -689,6 +694,55 @@ const AgentCard: React.FC<Props> = ({
   const hasPending = session.pending_approvals.length > 0;
   const pendingReq = session.pending_approvals[0];
 
+  // Desktop-shell narrator pill: a collapsed card with nothing to ask renders as the minimal pill
+  // (live turn label + plan checklist); approvals and drafts keep the full card so their UI has a home.
+  const todos = useMemo(() => extractLatestTodos(session.messages || []), [session.messages]);
+  const pillArtifact = useMemo(() => {
+    const artifact = extractLatestShowUi(session.messages || []);
+    return artifact ? freezeIfDone(artifact, session.status === 'running') : null;
+  }, [session.messages, session.status]);
+  const pillMode = !expanded && !hasPending && !isDraft && !tileZone;
+  const pillLabel = session.turn_label?.label || displayChatTitle(session);
+  const pillRunning = session.status === 'running';
+
+  // Cold-loaded collapsed cards carry no transcript (status frames are slim), so the pill can't pin
+  // its widget/checklist artifact; hydrate ONCE per card actually on this dashboard, never in a loop.
+  const pillHydratedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!pillMode || pillHydratedRef.current) return;
+    pillHydratedRef.current = true;
+    if ((session.messages || []).length === 0) dispatch(fetchSession(session.id));
+  }, [pillMode, session.messages, session.id, dispatch]);
+
+  // f7's collapsed state: a session that spawned a browser shows that window under the pill.
+  const spawnedBrowserId = useAppSelector((s) => {
+    for (const bc of Object.values(s.dashboardLayout.browserCards)) {
+      if (bc.spawned_by === session.id) return bc.browser_id;
+    }
+    return null;
+  });
+  const [browserShot, setBrowserShot] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pillMode || pillArtifact || !spawnedBrowserId) {
+      setBrowserShot(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const capture = (): void => {
+      const wv = getWebview(spawnedBrowserId);
+      const p = wv?.capturePage?.();
+      if (p && typeof (p as Promise<unknown>).then === 'function') {
+        (p as Promise<{ toDataURL(): string }>)
+          .then((img) => { if (!cancelled) setBrowserShot(img.toDataURL()); })
+          .catch(() => undefined);
+      }
+    };
+    capture();
+    // Refresh while the agent is driving so the shot tracks the page; parked cards keep the last frame.
+    const timer = pillRunning ? window.setInterval(capture, 5000) : null;
+    return () => { cancelled = true; if (timer) window.clearInterval(timer); };
+  }, [pillMode, pillArtifact, spawnedBrowserId, pillRunning]);
+
   const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
 
   const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
@@ -760,7 +814,7 @@ const AgentCard: React.FC<Props> = ({
         contain: 'layout style',
         // Each card gets its own compositor layer; hover-cross used to cost 100-200ms PRESENTATION by re-painting the whole canvas.
         willChange: 'transform',
-        width: tiledStyle ? tiledStyle.width : (localResize ? activeW : Math.max(cardWidth, MIN_W)),
+        width: pillMode ? 'fit-content' : tiledStyle ? tiledStyle.width : (localResize ? activeW : Math.max(cardWidth, MIN_W)),
         height: tiledStyle ? tiledStyle.height : (localResize ? activeH : (expanded ? Math.max(EXPANDED_OVERLAY_H, cardHeight) : 'auto')),
         transform: tiledStyle ? tiledStyle.transform : undefined,
         transformOrigin: tiledStyle ? tiledStyle.transformOrigin : undefined,
@@ -849,9 +903,28 @@ const AgentCard: React.FC<Props> = ({
             borderColor: hasPending ? c.status.warning : c.border.strong,
           },
         }),
+        // Narrator pill sheds every bit of card chrome; the pill body draws its own glass + ring.
+        ...(pillMode && {
+          bgcolor: 'transparent',
+          border: 'none',
+          boxShadow: 'none',
+          p: 0,
+          overflow: 'visible',
+          cursor: isDragging ? 'grabbing' : 'grab',
+          '&:hover': {},
+        }),
+        // Expanded chat wears the desktop dark glass; the header only surfaces on hover.
+        ...(expanded && !tiledStyle && {
+          bgcolor: 'rgba(26,16,34,0.85)',
+          backdropFilter: 'blur(24px) saturate(150%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(150%)',
+          border: isSelected ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
+          borderRadius: '20px',
+          boxShadow: '0 18px 48px rgba(0,0,0,0.4)',
+        }),
       }}
     >
-      {HANDLE_DEFS.map(({ dir, sx }) => (
+      {!pillMode && HANDLE_DEFS.map(({ dir, sx }) => (
         <Box
           key={dir}
           onPointerDown={handleResizeDown(dir)}
@@ -890,19 +963,61 @@ const AgentCard: React.FC<Props> = ({
         />
       )}
 
-      {/* Drag zone: header + metadata , entire region above separator is draggable */}
+      {pillMode && (
+        <Box
+          onPointerDown={handleDragPointerDown}
+          onPointerMove={handleDragPointerMove}
+          onPointerUp={handleDragPointerUp}
+          sx={{ touchAction: 'none', userSelect: 'none' }}
+        >
+          <AgentNarratorPill
+            label={pillLabel}
+            running={pillRunning}
+            todos={todos}
+            artifact={pillArtifact}
+            browserShot={browserShot}
+            selected={isSelected}
+            highlighted={isHighlighted}
+          />
+        </Box>
+      )}
+
+      {/* Drag zone: header + metadata , entire region above separator is draggable.
+          Expanded desktop cards float it as a hover-reveal overlay so the chat reads chromeless. */}
+      {!pillMode && (
       <Box
         onPointerDown={handleDragPointerDown}
         onPointerMove={handleDragPointerMove}
         onPointerUp={handleDragPointerUp}
         sx={{
-          position: 'relative',
-          zIndex: 16,
-          mx: -2,
-          mt: -2,
-          px: 2,
-          pt: 2,
-          pb: 1.5,
+          ...(expanded
+            ? {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                zIndex: 17,
+                px: 2,
+                pt: 1.5,
+                pb: 2,
+                opacity: 0,
+                transition: 'opacity 0.15s ease',
+                '&:hover': { opacity: 1 },
+                background: 'linear-gradient(to bottom, rgba(20,12,28,0.92) 0%, rgba(20,12,28,0.65) 60%, rgba(20,12,28,0) 100%)',
+                borderRadius: '20px 20px 0 0',
+                // Header text must read over the dark scrim regardless of app theme.
+                '& .MuiTypography-root': { color: 'rgba(255,255,255,0.92)' },
+                '& input': { color: 'rgba(255,255,255,0.92)' },
+              }
+            : {
+                position: 'relative',
+                zIndex: 16,
+                mx: -2,
+                mt: -2,
+                px: 2,
+                pt: 2,
+                pb: 1.5,
+              }),
           cursor: isDragging ? 'grabbing' : 'grab',
           touchAction: 'none',
           userSelect: 'none',
@@ -1018,6 +1133,7 @@ const AgentCard: React.FC<Props> = ({
           </Box>
         </Box>
       </Box>
+      )}
 
       {expanded && (
         <Box
@@ -1025,28 +1141,31 @@ const AgentCard: React.FC<Props> = ({
           sx={{
             mx: -2,
             mb: -2,
+            mt: -2,
             flex: 1,
             minHeight: 0,
-            borderTop: `1px solid ${c.border.subtle}`,
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
+            borderRadius: tiledStyle ? undefined : '20px',
           }}
         >
-          <AgentChat
-            key={session.id}
-            sessionId={session.id}
-            onClose={() => dispatch(collapseSession(session.id))}
-            embedded
-            autoFocus={autoFocusInput}
-            isGlowing={isGlowingRedux && !glowFading}
-            onDismissGlow={dismissGlow}
-            onBranch={onBranch ? (newId: string) => onBranch(session.id, newId) : undefined}
-          />
+          <DarkTokensScope>
+            <AgentChat
+              key={session.id}
+              sessionId={session.id}
+              onClose={() => dispatch(collapseSession(session.id))}
+              embedded
+              autoFocus={autoFocusInput}
+              isGlowing={isGlowingRedux && !glowFading}
+              onDismissGlow={dismissGlow}
+              onBranch={onBranch ? (newId: string) => onBranch(session.id, newId) : undefined}
+            />
+          </DarkTokensScope>
         </Box>
       )}
 
-      {!expanded && (
+      {!expanded && !pillMode && (
         <>
           {previewContent && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: hasPending ? 1.5 : 0 }}>

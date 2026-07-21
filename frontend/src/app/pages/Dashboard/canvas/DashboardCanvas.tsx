@@ -7,6 +7,10 @@ import TetherLayer from './TetherLayer';
 import DashboardCardLayer from './DashboardCardLayer';
 import DashboardOverlays from './DashboardOverlays';
 import DashboardEmptyState from './DashboardEmptyState';
+import '../desktop/desktop.css';
+import DesktopDock from '../desktop/DesktopDock';
+import MinimizedStack from '../desktop/MinimizedStack';
+import ApplicationsWindow from '../desktop/ApplicationsWindow';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { useThemeAccent, useThemeWash } from '@/shared/styles/ThemeContext';
 import { GRAIN_URL } from '@/shared/styles/grainTexture';
@@ -23,6 +27,7 @@ import type { Output } from '@/shared/state/outputsSlice';
 import type { CardType, useDashboardSelection } from '../hooks/state/useDashboardSelection';
 import type { useCanvasControls } from '../hooks/interaction/useCanvasControls';
 import { useWebviewSuspend } from '../hooks/interaction/useWebviewSuspend';
+import { deleteSelectedCards } from '../hooks/interaction/deleteSelectedCards';
 import type { Tether } from '../geometry/dashboardTethers';
 
 type Selection = ReturnType<typeof useDashboardSelection>;
@@ -167,6 +172,8 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   // macOS full screen: one card owns the whole window, every piece of chrome steps aside; Esc exits.
   const dispatch = useAppDispatch();
   const fullscreenCardId = useAppSelector(selectFullscreenCardId);
+  const [headerRevealed, setHeaderRevealed] = React.useState(false);
+  const [appsWindowOpen, setAppsWindowOpen] = React.useState(false);
   useEffect(() => {
     if (!fullscreenCardId) return undefined;
     const onKey = (e: KeyboardEvent): void => {
@@ -177,6 +184,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [fullscreenCardId, dispatch]);
+
   // Gestures write the transform imperatively (no React commit per frame), so a foreign render mid-gesture would paint the stale committed transform for a frame. Re-applying live after EVERY render seals that; do not remove.
   React.useLayoutEffect(() => {
     canvas.actions.syncTransform();
@@ -185,8 +193,14 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   return (
     <>
     <Box sx={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
+      {/* Top-edge hover strip: the desktop shell keeps the top chromeless; grazing it reveals the header. */}
+      <Box
+        onMouseEnter={() => setHeaderRevealed(true)}
+        sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 22, zIndex: 9 }}
+      />
       {/* Floating header overlay */}
       <Box
+        onMouseLeave={() => setHeaderRevealed(false)}
         sx={{
           display: fullscreenCardId ? 'none' : undefined,
           position: 'absolute',
@@ -194,7 +208,10 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           left: 0,
           right: 0,
           zIndex: 10,
-          pointerEvents: 'none',
+          pointerEvents: headerRevealed ? undefined : 'none',
+          opacity: headerRevealed ? 1 : 0,
+          transform: headerRevealed ? 'translateY(0)' : 'translateY(-6px)',
+          transition: 'opacity 0.18s ease, transform 0.18s ease',
           // p: 3 (24px) was leaving a chunky air gap between the sidebar edge and the dashboard header that read as "two disconnected panels" rather than one continuous surface. 0.75 (6px) tightens the inset so the header floats just inside the content area without losing its breathing room from the top-most pixel.
           pt: 0.75,
           pr: 0.75,
@@ -223,6 +240,41 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           />
         </Box>
       </Box>
+
+      {!fullscreenCardId && (
+        <MinimizedStack
+          browserCards={browserCards}
+          onRestore={(cardId, rect) => {
+            canvas.actions.fitToCards([rect], 1.15, true);
+            onHighlightCard?.(cardId);
+          }}
+        />
+      )}
+
+      {!fullscreenCardId && (
+        <DesktopDock
+          sessions={sessions}
+          cards={cards}
+          viewCards={viewCards}
+          browserCards={browserCards}
+          notes={notes}
+          workflowCards={workflowCards}
+          outputs={outputs}
+          selectedIds={Array.from(selection.selectedIds.keys())}
+          onFocusCard={(cardId, rect) => {
+            canvas.actions.fitToCards([rect], 1.15, true);
+            onHighlightCard?.(cardId);
+          }}
+          onApplications={() => setAppsWindowOpen((v) => !v)}
+          onNewAgent={onNewAgent}
+          onAddBrowser={onAddBrowser}
+          onAddNote={onAddNote}
+        />
+      )}
+
+      {appsWindowOpen && !fullscreenCardId && (
+        <ApplicationsWindow onClose={() => setAppsWindowOpen(false)} />
+      )}
 
       {/* Canvas viewport */}
       <Box
@@ -362,6 +414,11 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         onNewAgentBounceEnd={onNewAgentBounceEnd}
         onFitToView={onFitToView}
         onTidy={onTidy}
+        onDeleteSelected={() => {
+          deleteSelectedCards(selection.selectedIds, dispatch);
+          selection.deselectAll();
+        }}
+        hasSelection={selection.selectedIds.size > 0}
         onSearchPaletteClose={onSearchPaletteClose}
         toolbarPrefill={toolbarPrefill}
         toolbarPrefillMode={toolbarPrefillMode}

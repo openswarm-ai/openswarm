@@ -1,0 +1,25 @@
+@supports (view-transition-name: none) {
+  ::view-transition-group(active-gallery-image) {
+    animation-duration: 300ms;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    overflow: clip;
+    border-radius: 0.75rem;
+  }
+
+  ::view-transition-image-pair(active-gallery-image) {
+    overflow: clip;
+    border-radius: 0.75rem;
+  }
+
+  ::view-transition-old(active-gallery-image),
+  ::view-transition-new(active-gallery-image) {
+    border-radius: 0.75rem;
+    mix-blend-mode: normal;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(active-gallery-image) {
+      animation-duration: 0ms;
+    }
+  }
+}

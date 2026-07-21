@@ -37,8 +37,10 @@ import {
   reorderBrowserTab,
   moveBrowserTab,
   recordClosedCard,
+  toggleMinimizeCard,
   type BrowserTab,
 } from '@/shared/state/dashboardLayoutSlice';
+import { saveMinimizedShot } from '../desktop/minimizedShots';
 import { removeBrowserCardCleanly } from '@/shared/browserTeardown';
 import { createSelector } from '@reduxjs/toolkit';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -60,6 +62,26 @@ import { getActionLabel } from '@/shared/browserCommandHandler';
 import { resolveInput, isGoogleSearch } from '@/shared/resolveUrl';
 import BrowserAgentOverlay from './BrowserAgentOverlay';
 import { useOverlayScrollPassthrough } from '../hooks/interaction/useOverlayScrollPassthrough';
+
+// Fixed light chrome for the macOS-window look; deliberately theme-independent, like a real browser window.
+const CHROME_BG = '#f2eff5';
+const CHROME_SURFACE = '#ffffff';
+const CHROME_PAGE = '#faf9fc';
+const CHROME_BORDER = 'rgba(0,0,0,0.08)';
+const CHROME_TEXT = '#3c3744';
+const CHROME_TEXT_MUTED = '#8a8494';
+
+const browserLightSx = (color: string): Record<string, unknown> => ({
+  width: 12,
+  height: 12,
+  p: 0,
+  borderRadius: '50%',
+  border: '0.5px solid rgba(0,0,0,0.08)',
+  background: '#d6d3cd',
+  cursor: 'pointer',
+  transition: 'background 150ms',
+  '.osw-card:hover &': { background: color },
+});
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -206,6 +228,7 @@ const BrowserCard: React.FC<Props> = ({
     [browserId],
   );
   const browserAgentSession = useAppSelector(selectBrowserAgentSession);
+  const isMinimized = useAppSelector((s) => Boolean(s.dashboardLayout.minimizedCards[browserId]));
 
   const suspendedSnap = useAppSelector((state) => state.dashboardLayout.suspendedBrowserCards[browserId]);
   const endingState = useAppSelector((state) => state.dashboardLayout.endingBrowserCards[browserId]);
@@ -517,6 +540,22 @@ const BrowserCard: React.FC<Props> = ({
     e.stopPropagation();
     dispatch(addBrowserTab({ browserId, url: browserHomepage }));
   }, [dispatch, browserId, browserHomepage]);
+
+  // Yellow light: snapshot the live page first so the right-edge stack shows a real thumbnail,
+  // then park the card (webContents stays mounted, same as the keep-alive off-screen park).
+  const handleMinimize = useCallback(() => {
+    const wv = webviewMap.current.get(activeTabId);
+    const capture = wv?.capturePage?.();
+    const park = (): void => { dispatch(toggleMinimizeCard({ cardId: browserId })); };
+    if (capture && typeof (capture as Promise<unknown>).then === 'function') {
+      (capture as Promise<{ toDataURL(): string }>)
+        .then((img) => { saveMinimizedShot(browserId, img.toDataURL()); })
+        .catch(() => undefined)
+        .finally(park);
+    } else {
+      park();
+    }
+  }, [dispatch, browserId, activeTabId]);
 
   const handleCloseTab = useCallback((tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -851,11 +890,12 @@ const BrowserCard: React.FC<Props> = ({
 
   return (
     <Box
+      className="osw-card"
       data-select-type="browser-card"
       data-select-id={browserId}
       data-select-meta={JSON.stringify({ name: activeTitle || 'Browser', url: activeUrl })}
       // Marks a kept-alive card parked off-screen (it belongs to another dashboard); fit-to-view must skip it or it pans the canvas to chase it and the card bleeds onto the dashboard you're viewing.
-      data-keepalive-hidden={keepAliveHidden ? '1' : undefined}
+      data-keepalive-hidden={keepAliveHidden || isMinimized ? '1' : undefined}
       onPointerDownCapture={(e: React.PointerEvent) => {
         onBringToFront?.(browserId, 'browser');
         // Capture-phase so chrome clicks (tab strip, URL bar) the children swallow still select the card; clicks inside the guest page never reach the host at all. Shift keeps the bubbled toggle path. Pass the target so URL-bar/tab presses select without yanking the camera.
@@ -872,12 +912,12 @@ const BrowserCard: React.FC<Props> = ({
       sx={{
         position: 'absolute',
         // Kept-alive card from another dashboard: parked far off-screen so its webview surface can't bleed onto the dashboard you're viewing; click-through, webContents stays mounted.
-        pointerEvents: keepAliveHidden ? 'none' : undefined,
+        pointerEvents: keepAliveHidden || isMinimized ? 'none' : undefined,
         // contain: webview repaints don't shake neighbor cards.
         contain: 'layout style',
         // Own compositor layer so hover/paint invalidations stay contained to this card. See AgentCard for full rationale.
         willChange: 'transform',
-        left: keepAliveHidden ? -100000 : (dragging ? cardX : displayX),
+        left: keepAliveHidden || isMinimized ? -100000 : (dragging ? cardX : displayX),
         top: dragging ? cardY : displayY,
         transform: dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : undefined,
         width: displayW,
@@ -926,8 +966,9 @@ const BrowserCard: React.FC<Props> = ({
           zIndex: 16,
           display: 'flex',
           alignItems: 'stretch',
-          bgcolor: agentActive ? `${accentColor}0a` : c.bg.secondary,
-          borderBottom: `1px solid ${agentActive ? `${accentColor}30` : c.border.subtle}`,
+          // Real-browser-window chrome stays light in both app themes, like the window it imitates.
+          bgcolor: agentActive ? `${accentColor}14` : CHROME_BG,
+          borderBottom: `1px solid ${agentActive ? `${accentColor}30` : CHROME_BORDER}`,
           cursor: isDragging ? 'grabbing' : 'grab',
           flexShrink: 0,
           minHeight: 34,
@@ -936,6 +977,25 @@ const BrowserCard: React.FC<Props> = ({
           overflow: 'hidden',
         }}
       >
+        <Box
+          onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
+          sx={{ display: 'flex', alignItems: 'center', gap: '7px', pl: 1.25, pr: 0.75, flexShrink: 0 }}
+        >
+          <Box
+            component="button"
+            type="button"
+            aria-label="Close browser"
+            onClick={handleRemove}
+            sx={{ ...browserLightSx('#ff5f57'), }}
+          />
+          <Box
+            component="button"
+            type="button"
+            aria-label="Minimize browser"
+            onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleMinimize(); }}
+            sx={{ ...browserLightSx('#febc2e'), }}
+          />
+        </Box>
         <Box
           sx={{
             display: 'flex',
@@ -969,13 +1029,13 @@ const BrowserCard: React.FC<Props> = ({
                   maxWidth: 180,
                   flex: '0 1 180px',
                   position: 'relative',
-                  borderRight: `1px solid ${c.border.subtle}`,
-                  bgcolor: isActive ? c.bg.surface : 'transparent',
+                  borderRight: `1px solid ${CHROME_BORDER}`,
+                  bgcolor: isActive ? CHROME_SURFACE : 'transparent',
                   cursor: isBeingDragged ? 'grabbing' : 'pointer',
                   transform: isBeingDragged ? `translateX(${dragTabOffset}px)` : 'none',
                   transition: isBeingDragged ? 'none' : 'background 0.15s ease, transform 0.2s ease',
                   zIndex: isBeingDragged ? 10 : 1,
-                  '&:hover': { bgcolor: isActive ? c.bg.surface : c.bg.secondary },
+                  '&:hover': { bgcolor: isActive ? CHROME_SURFACE : 'rgba(0,0,0,0.04)' },
                   '&:hover .tab-close': { opacity: 1 },
                   ...(isActive && {
                     '&::after': {
@@ -1001,7 +1061,7 @@ const BrowserCard: React.FC<Props> = ({
                       onError={(e: any) => { e.target.style.display = 'none'; }}
                     />
                   ) : (
-                    <LanguageIcon sx={{ fontSize: 13, color: isActive ? accentColor : c.text.ghost }} />
+                    <LanguageIcon sx={{ fontSize: 13, color: isActive ? accentColor : CHROME_TEXT_MUTED }} />
                   )}
                 </Box>
 
@@ -1010,7 +1070,7 @@ const BrowserCard: React.FC<Props> = ({
                     flex: 1,
                     fontSize: '0.7rem',
                     fontWeight: isActive ? 600 : 400,
-                    color: isActive ? c.text.primary : c.text.muted,
+                    color: isActive ? CHROME_TEXT : CHROME_TEXT_MUTED,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
@@ -1036,10 +1096,10 @@ const BrowserCard: React.FC<Props> = ({
                     opacity: isActive ? 0.6 : 0,
                     cursor: 'pointer',
                     transition: 'opacity 0.15s, background 0.15s',
-                    '&:hover': { bgcolor: `${c.text.muted}25`, opacity: 1 },
+                    '&:hover': { bgcolor: 'rgba(0,0,0,0.09)', opacity: 1 },
                   }}
                 >
-                  <CloseIcon sx={{ fontSize: 10, color: c.text.muted }} />
+                  <CloseIcon sx={{ fontSize: 10, color: CHROME_TEXT_MUTED }} />
                 </Box>
               </Box>
             );
@@ -1059,10 +1119,10 @@ const BrowserCard: React.FC<Props> = ({
               mx: 0.25,
               my: 0.5,
               transition: 'background 0.15s',
-              '&:hover': { bgcolor: `${c.text.muted}15` },
+              '&:hover': { bgcolor: 'rgba(0,0,0,0.06)' },
             }}
           >
-            <AddIcon sx={{ fontSize: 15, color: c.text.muted }} />
+            <AddIcon sx={{ fontSize: 15, color: CHROME_TEXT_MUTED }} />
           </Box>
         </Box>
 
@@ -1105,16 +1165,6 @@ const BrowserCard: React.FC<Props> = ({
             </Box>
           )}
 
-          <Tooltip title="Close browser" placement="top">
-            <IconButton
-              size="small"
-              onClick={handleRemove}
-              onPointerDown={(e) => e.stopPropagation()}
-              sx={{ color: c.text.ghost, p: 0.4, '&:hover': { color: c.status.error } }}
-            >
-              <CloseIcon sx={{ fontSize: 15 }} />
-            </IconButton>
-          </Tooltip>
         </Box>
       </Box>
 
@@ -1126,8 +1176,8 @@ const BrowserCard: React.FC<Props> = ({
           gap: 0.25,
           px: 0.5,
           py: 0.25,
-          bgcolor: c.bg.page,
-          borderBottom: `1px solid ${c.border.subtle}`,
+          bgcolor: CHROME_PAGE,
+          borderBottom: `1px solid ${CHROME_BORDER}`,
           flexShrink: 0,
         }}
       >
@@ -1138,7 +1188,7 @@ const BrowserCard: React.FC<Props> = ({
               onClick={handleBack}
               onPointerDown={(e) => e.stopPropagation()}
               disabled={!activeLocal.canGoBack}
-              sx={{ color: c.text.muted, p: 0.4, '&:hover': { color: c.text.primary } }}
+              sx={{ color: CHROME_TEXT_MUTED, p: 0.4, '&:hover': { color: CHROME_TEXT } }}
             >
               <ArrowBackIcon sx={{ fontSize: 15 }} />
             </IconButton>
@@ -1152,7 +1202,7 @@ const BrowserCard: React.FC<Props> = ({
               onClick={handleForward}
               onPointerDown={(e) => e.stopPropagation()}
               disabled={!activeLocal.canGoForward}
-              sx={{ color: c.text.muted, p: 0.4, '&:hover': { color: c.text.primary } }}
+              sx={{ color: CHROME_TEXT_MUTED, p: 0.4, '&:hover': { color: CHROME_TEXT } }}
             >
               <ArrowForwardIcon sx={{ fontSize: 15 }} />
             </IconButton>
@@ -1164,7 +1214,7 @@ const BrowserCard: React.FC<Props> = ({
             size="small"
             onClick={handleRefresh}
             onPointerDown={(e) => e.stopPropagation()}
-            sx={{ color: c.text.muted, p: 0.4, '&:hover': { color: c.text.primary } }}
+            sx={{ color: CHROME_TEXT_MUTED, p: 0.4, '&:hover': { color: CHROME_TEXT } }}
           >
             <RefreshIcon sx={{ fontSize: 15 }} />
           </IconButton>
@@ -1180,13 +1230,13 @@ const BrowserCard: React.FC<Props> = ({
             ml: 0.5,
             px: 1,
             py: 0.2,
-            bgcolor: c.bg.secondary,
+            bgcolor: '#eceaf1',
             borderRadius: `${c.radius.md}px`,
-            border: `1px solid ${c.border.subtle}`,
+            border: `1px solid ${CHROME_BORDER}`,
           }}
         >
           {isSearch ? (
-            <SearchIcon sx={{ fontSize: 13, color: c.text.muted, flexShrink: 0 }} />
+            <SearchIcon sx={{ fontSize: 13, color: CHROME_TEXT_MUTED, flexShrink: 0 }} />
           ) : isSecure ? (
             <LockIcon sx={{ fontSize: 12, color: c.status.success, flexShrink: 0 }} />
           ) : null}
@@ -1202,10 +1252,10 @@ const BrowserCard: React.FC<Props> = ({
               flex: 1,
               fontSize: '0.74rem',
               fontFamily: c.font.mono,
-              color: c.text.secondary,
+              color: CHROME_TEXT,
               py: 0,
-              '& input': { py: '2px' },
-              '& input::placeholder': { color: c.text.ghost, opacity: 1 },
+              '& input': { py: '2px', textAlign: 'center' },
+              '& input::placeholder': { color: CHROME_TEXT_MUTED, opacity: 1 },
             }}
           />
         </Box>

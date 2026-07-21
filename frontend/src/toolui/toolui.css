@@ -1,0 +1,141 @@
+/* Vendored tool-ui styling: Tailwind v4 UTILITIES ONLY (no preflight import, so MUI and app
+   styles are untouched) plus the shadcn theme variables scoped to .tool-ui-scope. */
+@custom-variant dark (&:is(.dark *));
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+}
+
+/* Scoped mini-preflight: exactly the resets the vendored components rely on, never global. */
+.tool-ui-scope,
+.tool-ui-scope *,
+.tool-ui-scope *::before,
+.tool-ui-scope *::after {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: var(--border);
+}
+.tool-ui-scope button {
+  background-color: transparent;
+  background-image: none;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.tool-ui-scope p,
+.tool-ui-scope h1,
+.tool-ui-scope h2,
+.tool-ui-scope h3,
+.tool-ui-scope h4,
+.tool-ui-scope ul,
+.tool-ui-scope ol,
+.tool-ui-scope figure {
+  margin: 0;
+}
+.tool-ui-scope ul,
+.tool-ui-scope ol {
+  list-style: none;
+  padding: 0;
+}
+.tool-ui-scope img,
+.tool-ui-scope video,
+.tool-ui-scope canvas {
+  max-width: 100%;
+  display: block;
+}
+.tool-ui-scope {
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.tool-ui-scope {
+  color-scheme: light;
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.723 0.219 149.579);
+  --chart-2: oklch(0.637 0.237 25.331);
+  --chart-3: oklch(0.623 0.214 259.815);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.795 0.184 86.047);
+}
+
+.tool-ui-scope.dark,
+.dark .tool-ui-scope {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.792 0.209 151.711);
+  --chart-2: oklch(0.704 0.191 22.216);
+  --chart-3: oklch(0.707 0.165 254.624);
+  --chart-4: oklch(0.714 0.203 305.504);
+  --chart-5: oklch(0.852 0.199 91.936);
+}

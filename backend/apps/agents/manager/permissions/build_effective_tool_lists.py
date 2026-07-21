@@ -80,6 +80,15 @@ def build_effective_tool_lists(
                     effective_disallowed.append("mcp__openswarm-skill__Skill")
                 continue
 
+            if name == "openswarm-ui":
+                policy = builtin_perms.get("ShowUI", "always_allow")
+                for ui_tool in ("ShowUI", "AskUI"):
+                    if policy == "always_allow":
+                        effective_allowed.append(f"mcp__openswarm-ui__{ui_tool}")
+                    else:
+                        effective_disallowed.append(f"mcp__openswarm-ui__{ui_tool}")
+                continue
+
             if name == "openswarm-web":
                 # Expose our DDG-backed web tools under an MCP prefix. Honor existing WebSearch/WebFetch permission policy, if the user disabled them in Settings, don't offer the MCP variants either.
                 for wt in ("WebSearch", "WebFetch"):
@@ -113,6 +122,14 @@ def build_effective_tool_lists(
         for wt_name in ("WebSearch", "WebFetch"):
             if wt_name not in effective_disallowed:
                 effective_disallowed.append(wt_name)
+    # With the openswarm-ui server live, the built-in AskUserQuestion is swapped for AskUI (same
+    # Agent->SpawnAgent playbook: prompt nudges lose to the trained prior, a hard deny doesn't).
+    # AskUI's option-list/question-flow cover the flat-choice cases; denying the built-in is what
+    # actually routes questions through the rich components.
+    if "openswarm-ui" in mcp_servers:
+        effective_allowed = [t for t in effective_allowed if t != "AskUserQuestion"]
+        if "AskUserQuestion" not in effective_disallowed:
+            effective_disallowed.append("AskUserQuestion")
     # Claude's internal Cron* scheduler is denied in favour of the visible native one; withhold it from the SDK so the model doesn't even reach for it.
     for bt in path_gate.CLAUDE_INTERNAL_SCHEDULER_TOOLS:
         if bt not in effective_disallowed:

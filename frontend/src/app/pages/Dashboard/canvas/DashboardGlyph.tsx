@@ -8,7 +8,7 @@ import {
   Music, Video, Image, Camera, ShoppingCart, Bot, Gamepad2, Home, Shield,
   Users, Scale, Building2, Newspaper, Briefcase, Rocket, Globe, Database,
   Wrench, Lightbulb, Target, Trophy, Bell, Folder, Package, Truck,
-  LayoutDashboard,
+  LayoutDashboard, CloudSun,
 } from 'lucide-react';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
@@ -62,6 +62,7 @@ const KEYWORDS: Record<string, LucideIcon> = {
   archive: Folder, collection: Folder, library: Folder,
   inventory: Package, stock: Package, package: Package, supply: Package,
   delivery: Truck, shipping: Truck, logistics: Truck, truck: Truck, fleet: Truck,
+  weather: CloudSun, forecast: CloudSun, temperature: CloudSun,
 };
 
 function pickIcon(title: string): LucideIcon | null {
@@ -76,21 +77,23 @@ function pickIcon(title: string): LucideIcon | null {
 interface DashboardGlyphProps {
   name: string | undefined;
   size?: number;
+  color?: string;
 }
 
-const DashboardGlyph: React.FC<DashboardGlyphProps> = ({ name, size = 16 }) => {
+const DashboardGlyph: React.FC<DashboardGlyphProps> = ({ name, size = 16, color }) => {
   const c = useClaudeTokens();
+  const glyphColor = color || c.accent.primary;
   const title = (name || '').trim();
   const Icon = useMemo(() => (title ? pickIcon(title) : null), [title]);
 
   if (Icon) {
-    return <Icon size={size} strokeWidth={1.75} color={c.accent.primary} />;
+    return <Icon size={size} strokeWidth={1.75} color={glyphColor} />;
   }
 
   // No keyword hit: a tinted monogram of the first letter. Honest identity, never a misleading icon. A title with no latin letters falls back to the glyph.
   const letter = title.match(/[a-z0-9]/i)?.[0]?.toUpperCase();
   if (!letter) {
-    return <LayoutDashboard size={size} strokeWidth={1.75} color={c.accent.primary} />;
+    return <LayoutDashboard size={size} strokeWidth={1.75} color={glyphColor} />;
   }
   return (
     <Box
@@ -98,8 +101,8 @@ const DashboardGlyph: React.FC<DashboardGlyphProps> = ({ name, size = 16 }) => {
         width: size,
         height: size,
         borderRadius: '4px',
-        bgcolor: `${c.accent.primary}1F`,
-        color: c.accent.primary,
+        bgcolor: color ? 'rgba(255,255,255,0.16)' : `${c.accent.primary}1F`,
+        color: glyphColor,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

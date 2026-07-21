@@ -62,7 +62,9 @@ def compose_turn_system_prompt(
             "<current_time>\n"
             f"Today is {now_local.strftime('%A, %B %-d, %Y')}.\n"
             f"Local time: {now_local.strftime('%-I:%M %p')} {tz_abbr} ({tz_name}).\n"
-            "Use this as ground truth for any date/time/day-of-week question.\n"
+            "Use this as ground truth for any date/time/day-of-week question. The timezone also "
+            "gives the user's coarse region; when they say 'here' or 'near me' without a place, "
+            "infer the likely city from it (say you inferred it) instead of claiming you can't know.\n"
             "</current_time>"
         )
         composed_prompt = (composed_prompt + "\n\n" + time_ctx) if composed_prompt else time_ctx
@@ -88,6 +90,29 @@ def compose_turn_system_prompt(
             "</apps_capability>"
         )
         composed_prompt = f"{composed_prompt}\n\n{apps_note}" if composed_prompt else apps_note
+
+    # Default-on nudge to actually REACH for the rich components; the tool descriptions alone
+    # under-trigger. Skipped entirely when the user disabled ShowUI so we never advertise a dead tool.
+    try:
+        from backend.apps.tools_lib.tools_lib import load_builtin_permissions
+        if load_builtin_permissions().get("ShowUI", "always_allow") != "deny":
+            rich_ui_note = (
+                "<rich_ui>\n"
+                "Strongly prefer rendering rich UI over prose, every time the content fits:\n"
+                "- ShowUI for any structured result: tables, stats, links, plans, progress, code, diffs, "
+                "charts, maps, media, posts, receipts. Render the component, then add one line of text.\n"
+                "- For multi-step work, render a progress-tracker FIRST and re-call ShowUI with the SAME "
+                "props.id after each step so the card advances live; same-id re-calls update in place.\n"
+                "- AskUI for ANY question with enumerable choices, an approval, or tunable values: render "
+                "it and wait for the answer instead of asking in prose. Flat choices = option-list; a "
+                "multi-question form = one AskUI call per question in sequence. The user can always "
+                "answer off-list in free text (result action 'free_text').\n"
+                "Describing structured data in plain text when a component fits is the worse answer.\n"
+                "</rich_ui>"
+            )
+            composed_prompt = f"{composed_prompt}\n\n{rich_ui_note}" if composed_prompt else rich_ui_note
+    except Exception:
+        pass
 
     # App cards the user picked via the dashboard element picker: give the agent each app's on-disk path + meta + SKILL.md pointer so it can edit them in place (the dashboard card's runtime live-reloads). Additive and independent of view-builder mode above.
     app_ctx = build_selected_app_context(selected_app_output_ids)

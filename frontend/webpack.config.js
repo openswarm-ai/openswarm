@@ -32,6 +32,15 @@ module.exports = (env, argv) => {
           }
         },
         {
+          // Vendored tool-ui styles: Tailwind v4 utilities compiled through PostCSS, scoped under .tool-ui-scope.
+          test: /\.css$/,
+          use: [
+            'style-loader',
+            { loader: 'css-loader', options: { importLoaders: 1 } },
+            { loader: 'postcss-loader', options: { postcssOptions: { plugins: ['@tailwindcss/postcss'] } } },
+          ],
+        },
+        {
           test: /\.module\.(scss|sass)$/,
           use: [
             'style-loader',
@@ -53,7 +62,8 @@ module.exports = (env, argv) => {
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx'],
       alias: {
-        '@': path.resolve(__dirname, 'src')
+        '@': path.resolve(__dirname, 'src'),
+        '@toolui': path.resolve(__dirname, 'src/toolui')
       }
     },
 

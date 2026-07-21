@@ -2,6 +2,7 @@ import React, { type RefObject } from 'react';
 import Box from '@mui/material/Box';
 import DashboardToolbar from '../DashboardToolbar';
 import CanvasControls from '../controls/CanvasControls';
+import HelpPill from '../desktop/HelpPill';
 import CardSearchPalette from '../controls/CardSearchPalette';
 import DirectionHints from '../controls/DirectionHints';
 import WorkflowRunningToast from '@/app/pages/Workflows/WorkflowRunningToast';
@@ -49,6 +50,8 @@ interface DashboardOverlaysProps {
   onNewAgentBounceEnd: () => void;
   onFitToView: () => void;
   onTidy: () => void;
+  onDeleteSelected: () => void;
+  hasSelection: boolean;
   onSearchPaletteClose: () => void;
   toolbarPrefill?: string;
   toolbarPrefillMode?: string;
@@ -80,6 +83,8 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
   onNewAgentBounceEnd,
   onFitToView,
   onTidy,
+  onDeleteSelected,
+  hasSelection,
   onSearchPaletteClose,
   toolbarPrefill,
   toolbarPrefillMode,
@@ -106,6 +111,11 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
         />
       </Box>
 
+      {/* Desktop help pill */}
+      <Box sx={{ position: 'absolute', top: 14, right: 16, zIndex: 10 }}>
+        <HelpPill />
+      </Box>
+
       {/* Arrow navigation hints when zoomed in on a card */}
       {focusedCardId && canvas.zoom >= 0.4 && (
         <DirectionHints
@@ -124,6 +134,8 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
           actions={canvas.actions}
           onFitToView={onFitToView}
           onTidy={onTidy}
+          onDeleteSelected={onDeleteSelected}
+          hasSelection={hasSelection}
           minimapProps={{
             panX: canvas.panX,
             panY: canvas.panY,

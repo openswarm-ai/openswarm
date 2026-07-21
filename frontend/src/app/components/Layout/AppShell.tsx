@@ -82,9 +82,9 @@ const AppShell: React.FC = () => {
   const canGoForward = historyIdx < maxHistoryIdx.current;
   const [dashboardsExpanded, setDashboardsExpanded] = useState(true);
   const [appsExpanded, setAppsExpanded] = useState(true);
-  // Starts collapsed so a fresh boot lands on a clean canvas; the toggle brings it back.
-  // Arc/Zen: the sidebar is the primary chrome (search + nav live here), shown by default.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Desktop shell: the wallpaper canvas IS the home surface, so the sidebar starts docked away
+  // (left-edge hover peeks it; the pin toggle brings it back full-time).
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [renamingDashboardId, setRenamingDashboardId] = useState<string | null>(null);
   const [renamingAppId, setRenamingAppId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');

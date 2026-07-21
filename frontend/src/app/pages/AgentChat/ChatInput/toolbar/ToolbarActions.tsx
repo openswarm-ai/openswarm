@@ -24,15 +24,16 @@ interface Props {
   isRunning?: boolean;
   onStop?: () => void;
   handleSend: () => void;
+  restMode?: boolean;
 }
 
 export const ToolbarActions: React.FC<Props> = ({
   c, elementSelection, autoRunMode, ownerId, sessionId, generalFileInputRef,
-  addImageFiles, uploadAndAttachFiles, hasContent, disabled, isRunning, onStop, handleSend,
+  addImageFiles, uploadAndAttachFiles, hasContent, disabled, isRunning, onStop, handleSend, restMode,
 }) => {
   return (
     <>
-      {elementSelection && !autoRunMode && (() => {
+      {elementSelection && !autoRunMode && !restMode && (() => {
         const isMySelectMode = elementSelection.selectMode && elementSelection.activeOwnerId === ownerId;
         return (
           <Tooltip title={isMySelectMode ? 'Exit select mode' : 'Select UI element'}>

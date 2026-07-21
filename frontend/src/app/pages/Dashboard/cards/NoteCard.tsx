@@ -259,8 +259,7 @@ const NoteCard: React.FC<Props> = ({
     if (zone === 'restore') dispatch(clearTiledCard(noteId));
     else dispatch(setTiledCard({ cardId: noteId, zone }));
   };
-  // Fullscreen pins the card to the viewport, so while tiled the geometry must track canvas pan/zoom.
-  // The camera lives outside React (getCanvasState), so subscribe to pan ticks ONLY while tiled and read fresh.
+  // Tiled geometry must track pan/zoom, but the camera lives outside React now; subscribe to the pan event ONLY while tiled and read the live getter.
   const [tileTick, setTileTick] = useState(0);
   useEffect(() => {
     if (!tileZone) return undefined;

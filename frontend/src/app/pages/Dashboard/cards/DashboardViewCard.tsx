@@ -139,8 +139,7 @@ const DashboardViewCard: React.FC<Props> = ({
   const interactive = activeViewCardId === cardKey;
   const tileZone = useAppSelector((s) => s.dashboardLayout.tiledCards[cardKey]);
   const isMinimized = useAppSelector((s) => !!s.dashboardLayout.minimizedCards[cardKey]);
-  // Fullscreen pins the card to the viewport, so while tiled the geometry must track canvas pan/zoom.
-  // The camera lives outside React (getCanvasState), so subscribe to pan ticks ONLY while tiled and read fresh.
+  // Tiled geometry must track pan/zoom, but the camera lives outside React now; subscribe to the pan event ONLY while tiled and read the live getter.
   const [tileTick, setTileTick] = useState(0);
   useEffect(() => {
     if (!tileZone) return undefined;
@@ -464,10 +463,10 @@ const DashboardViewCard: React.FC<Props> = ({
         willChange: 'transform',
         left: tiledStyle ? tiledStyle.left : (dragging ? cardX : displayX),
         top: tiledStyle ? tiledStyle.top : (dragging ? cardY : displayY),
-        transform: tiledStyle ? tiledStyle.transform : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : undefined),
-        transformOrigin: tiledStyle ? tiledStyle.transformOrigin : undefined,
         width: tiledStyle ? tiledStyle.width : (isMinimized ? 220 : displayW),
         height: tiledStyle ? tiledStyle.height : (isMinimized ? 44 : displayH),
+        transform: tiledStyle ? tiledStyle.transform : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : undefined),
+        transformOrigin: tiledStyle ? tiledStyle.transformOrigin : undefined,
         borderRadius: isFullscreen ? '12px' : `${c.radius.lg}px`,
         border: isHighlighted
           ? `2px solid ${c.accent.primary}`
