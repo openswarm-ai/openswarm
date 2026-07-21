@@ -79,10 +79,11 @@ TOOLS = [
         "name": "ShowUI",
         "description": (
             "Render a rich inline UI component in the chat instead of describing data as text. "
-            "Use it whenever a result fits one of the shapes. Supported components:\n"
-            + "\n".join(f"- '{name}': {spec}" for name, spec in COMPONENT_SPECS.items())
-            + "\nCall it with the component name and a props object matching that shape. "
-            "The component renders in place of raw text; still give a one-line text summary after. "
+            "Use it whenever a result fits a component. Components: "
+            + ", ".join(COMPONENT_SPECS.keys())
+            + ". Call it with the component name and a props object; if your props are off, the tool "
+            "returns that component's exact required shape so you can fix and re-call. The component "
+            "renders in place of raw text; still give a one-line text summary after. "
             "LIVE UPDATES: calling ShowUI again with the SAME component and props.id updates that "
             "card in place. Use this to advance progress-tracker/plan step statuses AS you complete "
             "each step of real work, or to refresh data; never mint a new id for an update. Before "
