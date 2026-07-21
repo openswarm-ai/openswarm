@@ -23,9 +23,9 @@ const WHEEL_ZOOM_DELTA_CAP = 24;
 const WHEEL_STREAM_GAP_MS = 150;
 const MOUSE_NOTCH_MIN_DELTA = 40;
 
-// Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.005; a mouse notch = ~8% zoom step).
+// Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.004).
 function sensitivityToMultiplier(setting: number): number {
-  return 0.0001 * setting;
+  return 0.00008 * setting;
 }
 
 interface CanvasState {
@@ -246,8 +246,11 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       const inStream = e.timeStamp - lastWheelDeviceAt < WHEEL_STREAM_GAP_MS;
       lastWheelDeviceAt = e.timeStamp;
       if (inStream) return lastWheelWasTrackpad;
+      // Chromium stamps discrete wheel notches with legacy wheelDeltaY = ticks*120; trackpads report 3x the pixel delta. This catches slow mouse notches that macOS acceleration shrinks below any pixel threshold.
+      const legacy = (e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY ?? 0;
       let trackpad: boolean;
       if (e.deltaMode !== 0) trackpad = false;
+      else if (legacy !== 0 && legacy % 120 === 0 && dx === 0) trackpad = false;
       else if (dx !== 0 || !Number.isInteger(dy)) trackpad = true;
       else trackpad = Math.abs(dy) < MOUSE_NOTCH_MIN_DELTA;
       lastWheelWasTrackpad = trackpad;
