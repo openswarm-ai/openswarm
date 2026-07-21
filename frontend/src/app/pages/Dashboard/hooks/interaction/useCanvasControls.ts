@@ -16,6 +16,12 @@ const FIT_DURATION = 150;
 const FIT_SETTLE_DELAY = FIT_DURATION + 60;
 // A mouse notch lands as deltaY 100 where a trackpad sends ~1-10, so cap the per-event zoom delta: uncapped, one notch is a ~24% jump and macOS wheel acceleration stacks them. No-op for trackpads.
 const WHEEL_ZOOM_DELTA_CAP = 24;
+// Trackpad-vs-mouse wheel split (the Google Maps trackpad model): a two-finger scroll PANS, only a
+// discrete mouse notch (or pinch) zooms. Fresh verdicts use the shape of the event (line-mode or a
+// big integer no-X delta = mouse); events inside a burst inherit the previous verdict because a
+// physical device can't change mid-gesture, which keeps momentum-glide events panning.
+const WHEEL_STREAM_GAP_MS = 150;
+const MOUSE_NOTCH_MIN_DELTA = 40;
 
 // Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.004).
 function sensitivityToMultiplier(setting: number): number {
@@ -219,7 +225,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
 
   animateToRef.current = animateTo;
 
-  // Plain wheel zooms at the viewport center; cmd/ctrl+wheel pans vertically; trackpad pinch zooms at the cursor.
+  // Google Maps wheel model: mouse notch zooms at the cursor, two-finger trackpad scroll pans, pinch zooms at the cursor, held cmd/ctrl+wheel pans vertically (the mouse user's pan).
   useEffect(() => {
     const el = viewportRef.current;
     if (!el || !enabled) return;  // Skip wheel listener when canvas is hidden
@@ -232,6 +238,21 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     let wheelRafId: number | null = null;
     // No "gestureend" on trackpads; 140ms idle declares the gesture over (short enough to feel snappy, long enough to span inter-burst gaps).
     let wheelIdleTimer: ReturnType<typeof setTimeout> | null = null;
+    // Device classification for the trackpad-pan vs mouse-zoom split; per-mount so a stale verdict can't leak across dashboards.
+    let lastWheelDeviceAt = 0;
+    let lastWheelWasTrackpad = false;
+
+    const classifyTrackpad = (e: WheelEvent, dx: number, dy: number): boolean => {
+      const inStream = e.timeStamp - lastWheelDeviceAt < WHEEL_STREAM_GAP_MS;
+      lastWheelDeviceAt = e.timeStamp;
+      if (inStream) return lastWheelWasTrackpad;
+      let trackpad: boolean;
+      if (e.deltaMode !== 0) trackpad = false;
+      else if (dx !== 0 || !Number.isInteger(dy)) trackpad = true;
+      else trackpad = Math.abs(dy) < MOUSE_NOTCH_MIN_DELTA;
+      lastWheelWasTrackpad = trackpad;
+      return trackpad;
+    };
 
     const flushWheel = () => {
       wheelRafId = null;
@@ -279,6 +300,8 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       // Let scrollable children handle the event when appropriate, but fall through to canvas pan if the child is at its scroll boundary.
       const dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
       const dx = e.deltaMode === 1 ? e.deltaX * 40 : e.deltaX;
+      // Classify on EVERY event (even ones a scrollable child swallows) so stream continuity holds when a gesture drifts from a chat onto the canvas.
+      const isTrackpadScroll = classifyTrackpad(e, e.deltaX, e.deltaY);
       let target = e.target as HTMLElement | null;
       while (target && target !== el) {
         let cls = scrollableCache.get(target);
@@ -300,7 +323,7 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         }
 
         if (cls === 'scrollable' && !isModifierWheel) {
-          // Google Maps model: plain scroll zooms the canvas over a CARD (chat, scheduled task) UNLESS you've clicked INTO it. Only a card that isn't scroll-focused diverts to zoom; non-card scrollable UI (dropdowns, menus, nested panels) always scrolls natively, and a focused card scrolls its content.
+          // Google Maps model: plain scroll acts on the CANVAS over a CARD (chat, scheduled task) UNLESS you've clicked INTO it. Only a card that isn't scroll-focused diverts to the canvas gesture; non-card scrollable UI (dropdowns, menus, nested panels) always scrolls natively, and a focused card scrolls its content.
           const cardEl = target.closest('[data-select-id]');
           const cardId = cardEl?.getAttribute('data-select-id') ?? null;
           if (cardId && cardId !== getScrollFocusedCard()) {
@@ -349,12 +372,17 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         pendingZoomDy += dy;
         pendingZoomCenter = { cx: e.clientX - rect.left, cy: e.clientY - rect.top };
         scheduleWheelFlush();
+      } else if (isTrackpadScroll) {
+        // Two-finger trackpad scroll → pan both axes, exactly like Google Maps; macOS momentum events ride the same branch so the glide keeps panning.
+        pendingPanDx += dx;
+        pendingPanDy += dy;
+        scheduleWheelFlush();
       } else if (Math.abs(dx) > Math.abs(dy)) {
-        // Horizontal-dominant scroll → pan X; it's the only horizontal-pan gesture. Dominant-axis, so the vertical jitter in a sideways swipe doesn't also zoom.
+        // Horizontal-dominant mouse scroll (tilt wheel) → pan X. Dominant-axis, so the vertical jitter in a sideways swipe doesn't also zoom.
         pendingPanDx += dx;
         scheduleWheelFlush();
       } else {
-        // Plain vertical scroll → zoom at the cursor (same anchor as pinch) so the point under the pointer grows toward you, not away. Clamp the per-event delta so a discrete mouse notch is a small step, not a lurch.
+        // Mouse-wheel vertical notch → zoom at the cursor (same anchor as pinch) so the point under the pointer grows toward you, not away. Clamp the per-event delta so a discrete notch is a small step, not a lurch.
         const rect = el.getBoundingClientRect();
         pendingZoomDy += clamp(dy, -WHEEL_ZOOM_DELTA_CAP, WHEEL_ZOOM_DELTA_CAP);
         pendingZoomCenter = { cx: e.clientX - rect.left, cy: e.clientY - rect.top };
