@@ -152,7 +152,7 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
         env["PYTHONPATH"] = (p_project_root + os.pathsep + existing_pp) if existing_pp else p_project_root
 
     # The session-borrow social shims (reddit/x/tiktok) each run as a Python shim that borrows the user's live browser session via the backend's cookie bridge, so they need the localhost port + auth token, plus PYTHONPATH to import themselves.
-    if tool.name.lower() in {"reddit", "x", "tiktok"} and config.get("type") == "stdio":
+    if tool.name.lower() in {"reddit", "x", "tiktok", "spotify"} and config.get("type") == "stdio":
         from backend.auth import get_auth_token
         env = config.setdefault("env", {})
         env["OPENSWARM_PORT"] = os.environ.get("OPENSWARM_PORT", "8324")

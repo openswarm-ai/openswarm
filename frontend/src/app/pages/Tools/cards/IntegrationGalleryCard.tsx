@@ -27,7 +27,7 @@ const IntegrationGalleryCard: React.FC<IntegrationGalleryCardProps> = ({ integra
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         <Box sx={{
                           width: 36, height: 36, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          bgcolor: c.bg.secondary, fontSize: '1.1rem', fontWeight: 700, color: c.text.ghost,
+                          fontSize: '1.1rem', fontWeight: 700, color: c.text.ghost,
                         }}>
                           {ig.icon}
                         </Box>

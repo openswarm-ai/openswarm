@@ -25,3 +25,5 @@ tzlocal==5.3.1
 # Test deps (pytest, pytest-asyncio) live in requirements-dev.txt — they
 # never ship to production users and shaved ~3 MB / ~200 files off the
 # Mac DMG when removed from the prod env.
+psutil==7.2.2
+playwright==1.61.0

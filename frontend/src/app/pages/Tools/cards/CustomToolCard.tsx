@@ -111,7 +111,7 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                         {ig && (
                           <Box sx={{
                             width: 36, height: 36, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            bgcolor: `${ig.color}18`, fontSize: '1.1rem', fontWeight: 700, color: ig.color, flexShrink: 0,
+                            fontSize: '1.1rem', fontWeight: 700, color: ig.color, flexShrink: 0,
                             opacity: isDisabled ? 0.4 : 1, transition: 'opacity 0.2s',
                           }}>
                             {ig.icon}
