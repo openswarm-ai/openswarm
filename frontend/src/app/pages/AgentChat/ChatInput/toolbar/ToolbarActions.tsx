@@ -7,6 +7,7 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import StopIcon from '@mui/icons-material/Stop';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import AdsClickIcon from '@mui/icons-material/AdsClick';
+import LanguageIcon from '@mui/icons-material/Language';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 
@@ -24,14 +25,44 @@ interface Props {
   isRunning?: boolean;
   onStop?: () => void;
   handleSend: () => void;
+  webSearchOn?: boolean;
+  onToggleWebSearch?: () => void;
 }
 
 export const ToolbarActions: React.FC<Props> = ({
   c, elementSelection, autoRunMode, ownerId, sessionId, generalFileInputRef,
   addImageFiles, uploadAndAttachFiles, hasContent, disabled, isRunning, onStop, handleSend,
+  webSearchOn, onToggleWebSearch,
 }) => {
   return (
     <>
+      {onToggleWebSearch && !autoRunMode && (
+        <Tooltip title={webSearchOn ? 'Web search on: replies search the web' : 'Search the web'}>
+          <IconButton
+            size="small"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onToggleWebSearch}
+            sx={{
+              p: 0.5,
+              ...(webSearchOn
+                ? {
+                    bgcolor: '#3b82f6',
+                    color: '#fff',
+                    '&:hover': { bgcolor: '#2563eb' },
+                    boxShadow: '0 0 0 3px rgba(59,130,246,0.18)',
+                  }
+                : {
+                    color: c.text.tertiary,
+                    '&:hover': { color: c.text.secondary, bgcolor: 'rgba(0,0,0,0.04)' },
+                  }),
+              transition: 'background-color 0.15s, color 0.15s',
+            }}
+          >
+            <LanguageIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
+      )}
+
       {elementSelection && !autoRunMode && (() => {
         const isMySelectMode = elementSelection.selectMode && elementSelection.activeOwnerId === ownerId;
         return (

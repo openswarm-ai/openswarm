@@ -60,6 +60,8 @@ interface Props {
   isRunning?: boolean;
   queueLength: number;
   modeConf: ModeConf;
+  webSearchOn?: boolean;
+  onToggleWebSearch?: () => void;
   placeholderOverride?: string;
   ghostSuggestion?: string;
   runContext?: WorkflowsRunContext;
@@ -281,6 +283,8 @@ export const ChatInputView: React.FC<Props> = (p) => {
         isRunning={p.isRunning}
         onStop={p.onStop}
         handleSend={p.handleSend}
+        webSearchOn={p.webSearchOn}
+        onToggleWebSearch={p.onToggleWebSearch}
       />
 
       <ChatInputOverlays

@@ -50,6 +50,8 @@ interface Props {
   isRunning?: boolean;
   onStop?: () => void;
   handleSend: () => void;
+  webSearchOn?: boolean;
+  onToggleWebSearch?: () => void;
 }
 
 export const ChatInputToolbar: React.FC<Props> = (p) => {
@@ -58,7 +60,7 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
     allModelFlat, model, onModelChange, onProviderChange, picker, pendingKinds, pendingPayloadEstimate,
     thinkingLevel, onThinkingLevelChange, contextEstimate, elementSelection, autoRunMode,
     ownerId, sessionId, generalFileInputRef, addImageFiles, uploadAndAttachFiles,
-    hasContent, disabled, isRunning, onStop, handleSend,
+    hasContent, disabled, isRunning, onStop, handleSend, webSearchOn, onToggleWebSearch,
   } = p;
 
   const menuPaperProps = {
@@ -172,6 +174,8 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
         isRunning={isRunning}
         onStop={onStop}
         handleSend={handleSend}
+        webSearchOn={webSearchOn}
+        onToggleWebSearch={onToggleWebSearch}
       />
     </Box>
   );
