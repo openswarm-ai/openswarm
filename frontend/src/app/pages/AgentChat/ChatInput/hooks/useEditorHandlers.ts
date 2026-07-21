@@ -62,13 +62,15 @@ interface Params {
   uploadAndAttachFiles: (files: File[]) => void;
   handleSend: () => void;
   onPasteExpand: (pasteId: string) => void;
+  // Ghost-text prediction shown in the empty composer; Tab fills it as real, editable text.
+  ghostSuggestionRef?: RefObject<string>;
 }
 
 export function useEditorHandlers(p: Params) {
   const {
     editorRef, generalFileInputRef, ownerId, sessionId, autoRunMode, c, skills,
     elementSelection, setHasContent, setAttachedSkills, setForcedTools, onModeChange,
-    addImageFiles, uploadAndAttachFiles, handleSend, onPasteExpand,
+    addImageFiles, uploadAndAttachFiles, handleSend, onPasteExpand, ghostSuggestionRef,
   } = p;
   const dispatch = useAppDispatch();
   const [picker, setPicker] = useState<TriggerState>(EMPTY_TRIGGER);
@@ -232,6 +234,33 @@ export function useEditorHandlers(p: Params) {
     if (picker.visible && ['ArrowDown', 'ArrowUp', 'Escape', 'Tab', 'Enter'].includes(e.key)) {
       e.preventDefault();
       return;
+    }
+    // Tab accepts the ghost prediction (Copilot-style): only when the editor is empty and a
+    // suggestion is showing, so Tab keeps its normal meaning the instant the user starts typing.
+    if (e.key === 'Tab' && !e.shiftKey) {
+      const ghost = ghostSuggestionRef?.current || '';
+      const editor = editorRef.current;
+      if (ghost && editor && !readEditorText(editor).trim()) {
+        e.preventDefault();
+        if (isTextareaEl(editor)) {
+          editor.value = ghost;
+          editor.setSelectionRange(ghost.length, ghost.length);
+        } else {
+          editor.textContent = ghost;
+          const sel = window.getSelection();
+          if (sel) {
+            const range = document.createRange();
+            range.selectNodeContents(editor);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        }
+        editor.focus();
+        updateHasContent();
+        scheduleDraftSave(ownerId, () => readEditorHTML(editor));
+        return;
+      }
     }
     if ((e.ctrlKey || e.metaKey) && ['b', 'i', 'u'].includes(e.key.toLowerCase())) {
       e.preventDefault();

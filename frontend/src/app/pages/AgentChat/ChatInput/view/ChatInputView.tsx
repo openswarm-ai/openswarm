@@ -61,6 +61,7 @@ interface Props {
   queueLength: number;
   modeConf: ModeConf;
   placeholderOverride?: string;
+  ghostSuggestion?: string;
   runContext?: WorkflowsRunContext;
   onClearRunContext?: () => void;
   handleInput: () => void;
@@ -238,6 +239,7 @@ export const ChatInputView: React.FC<Props> = (p) => {
         isRunning={p.isRunning}
         queueLength={p.queueLength}
         placeholderLabel={p.placeholderOverride ?? 'Ask anything, @ for context, / for commands'}
+        ghostSuggestion={p.ghostSuggestion}
         onInput={p.handleInput}
         onClick={p.handleEditorClick}
         onKeyDown={p.handleKeyDown}

@@ -48,14 +48,19 @@ interface Props {
   prefillPrompt?: string;
   // Replaces the default "Agent, @ for context..." placeholder (e.g. "Ask about this run...").
   placeholderOverride?: string;
+  // Predicted next prompt (in the user's voice) shown as ghost text in the empty composer; Tab fills it.
+  ghostSuggestion?: string;
   // A workflow run shown as a small removable chip inside the composer.
   runContext?: WorkflowsRunContext;
   onClearRunContext?: () => void;
 }
 
-const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, provider, onProviderChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0, thinkingLevel = 'auto', onThinkingLevelChange, onActivityLabelChange, prefillPrompt, placeholderOverride, runContext, onClearRunContext }, ref) => {
+const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, provider, onProviderChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0, thinkingLevel = 'auto', onThinkingLevelChange, onActivityLabelChange, prefillPrompt, placeholderOverride, ghostSuggestion, runContext, onClearRunContext }, ref) => {
   const c = useClaudeTokens();
   const editorRef = useRef<HTMLDivElement>(null);
+  // Live ref so the keydown closure reads the current suggestion without re-creating handlers.
+  const ghostSuggestionRef = useRef<string>('');
+  ghostSuggestionRef.current = ghostSuggestion || '';
   const containerRef = useRef<HTMLDivElement>(null);
   const generalFileInputRef = useRef<HTMLInputElement>(null);
   const dispatch = useAppDispatch();
@@ -298,6 +303,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     elementSelection, setHasContent, setAttachedSkills, setForcedTools, onModeChange,
     addImageFiles, uploadAndAttachFiles, handleSend,
     onPasteExpand: setPreviewPasteId,
+    ghostSuggestionRef,
   });
 
   useDraftLoad(editorRef, ownerId, setPreviewPasteId, removePasteCard, c.font.mono, c.status.error);
@@ -353,6 +359,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
       queueLength={queueLength}
       modeConf={modeConf}
       placeholderOverride={placeholderOverride}
+      ghostSuggestion={ghostSuggestion}
       runContext={runContext}
       onClearRunContext={onClearRunContext}
       handleInput={handleInput}

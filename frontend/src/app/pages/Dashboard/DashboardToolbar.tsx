@@ -20,6 +20,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { searchHistory, clearHistorySearch } from '@/shared/state/agentsSlice';
 import { updateSettingsPatch, AppSettings } from '@/shared/state/settingsSlice';
 import { store } from '@/shared/state/store';
+import { API_BASE, getAuthToken } from '@/shared/config';
 import type { Output } from '@/shared/state/outputsSlice';
 
 interface Props {
@@ -94,6 +95,36 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         settingsApplied.current = true;
       }
     }, [settingsLoaded, defaultMode, defaultModel, defaultThinkingLevel]);
+    // Ghost-text predictions: what the user might type next, in their own voice. Fetched once per app
+    // load (cached), then one is shown at a time and cycled while the composer sits idle+empty. Empty
+    // list (no signal / no provider / error) just leaves the static "What should I do sir..." placeholder.
+    const [ghostList, setGhostList] = useState<string[]>([]);
+    const [ghostIdx, setGhostIdx] = useState(0);
+    const ghostFetchedRef = useRef(false);
+    useEffect(() => {
+      if (!inputOpen || ghostFetchedRef.current) return;
+      ghostFetchedRef.current = true;
+      (async () => {
+        try {
+          const tok = (() => { try { return getAuthToken(); } catch { return ''; } })();
+          const headers: Record<string, string> = {};
+          if (tok) headers['Authorization'] = `Bearer ${tok}`;
+          const resp = await fetch(`${API_BASE}/agents/predict-prompts?count=5`, { headers });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          if (Array.isArray(data.suggestions)) setGhostList(data.suggestions.filter((s: unknown) => typeof s === 'string' && s));
+        } catch { /* fail open: keep the static placeholder */ }
+      })();
+    }, [inputOpen]);
+    // Rotate the visible suggestion every few seconds while the composer is open, so the user sees a
+    // few different ideas instead of one. Cheap; the list is already fetched and cached.
+    useEffect(() => {
+      if (!inputOpen || ghostList.length <= 1) return undefined;
+      const t = setInterval(() => setGhostIdx((i) => (i + 1) % ghostList.length), 4500);
+      return () => clearInterval(t);
+    }, [inputOpen, ghostList.length]);
+    const ghostSuggestion = ghostList.length ? ghostList[ghostIdx % ghostList.length] : undefined;
+
     // Reset defaults on each new compose session so in-session picks don't leak into the next new-chat draft.
     const prevInputOpen = useRef(false);
     useEffect(() => {
@@ -417,6 +448,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 onThinkingLevelChange={handleThinkingLevelChange}
                 prefillPrompt={prefillPrompt}
                 placeholderOverride="What should I do sir..."
+                ghostSuggestion={ghostSuggestion}
               />
             </DarkTokensScope>
           </div>

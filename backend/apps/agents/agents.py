@@ -67,6 +67,14 @@ async def list_sessions(dashboard_id: str = ""):
     sessions = agent_manager.get_all_sessions(dashboard_id=dashboard_id or None)
     return {"sessions": [p_session_list_item(s) for s in sessions]}
 
+@agents.router.get("/predict-prompts")
+async def predict_prompts_route(count: int = 5):
+    """Guess a few prompts the user might type next, in their own voice, from what they've already
+    worked on. Drives the composer's ghost-text suggestion. Fails open to [] (no signal / no
+    provider / error), so the composer just keeps its static placeholder."""
+    from backend.apps.agents.manager.predict_prompts import predict_prompts
+    return {"suggestions": await predict_prompts(count=max(1, min(count, 8)))}
+
 @agents.router.get("/activity")
 async def agent_activity():
     """How many agent tasks are live right now, plus seconds until the next scheduled
