@@ -339,8 +339,14 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           onAddBrowser();
         }
       };
+      // The desktop dock's History tile opens the same popover as Cmd+O.
+      const handleOpenHistoryEvent = () => handleOpenHistory();
       window.addEventListener('keydown', handleKey);
-      return () => window.removeEventListener('keydown', handleKey);
+      window.addEventListener('openswarm:open-history', handleOpenHistoryEvent);
+      return () => {
+        window.removeEventListener('keydown', handleKey);
+        window.removeEventListener('openswarm:open-history', handleOpenHistoryEvent);
+      };
     }, [handleOpenViewPicker, handleOpenHistory, onAddBrowser]);
 
     useEffect(() => {

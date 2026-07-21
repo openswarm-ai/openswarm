@@ -3097,8 +3097,36 @@ ipcMain.handle('get-app-icon', async (_event, name) => {
   if (!target) return null;
   if (appIconCache.has(name)) return appIconCache.get(name);
   try {
-    const icon = await app.getFileIcon(target, { size: 'large' });
-    const dataUrl = icon && !icon.isEmpty() ? icon.toDataURL() : null;
+    let dataUrl = null;
+    if (process.platform === 'darwin') {
+      // NEVER app.getFileIcon here: a corrupt .icns raises a native ObjC exception no JS try/catch
+      // can contain and SIGTRAPs the whole app (reproduced 2026-07-20: last IPC get-app-icon,
+      // crashpad in_range_cast warning, death). sips does the decode in a disposable child instead.
+      const { execFile } = require('child_process');
+      const os = require('os');
+      const run = (cmd, args) => new Promise((resolve, reject) => {
+        execFile(cmd, args, { timeout: 5000 }, (err, stdout) => (err ? reject(err) : resolve(String(stdout).trim())));
+      });
+      const resources = path.join(target, 'Contents', 'Resources');
+      let icnsName = await run('/usr/bin/defaults', ['read', path.join(target, 'Contents', 'Info'), 'CFBundleIconFile']).catch(() => '');
+      if (icnsName && !icnsName.endsWith('.icns')) icnsName += '.icns';
+      let icns = icnsName ? path.join(resources, icnsName) : '';
+      if (!icns || !fs.existsSync(icns)) {
+        const alt = fs.existsSync(resources) ? fs.readdirSync(resources).find((f) => f.endsWith('.icns')) : null;
+        icns = alt ? path.join(resources, alt) : '';
+      }
+      if (icns && fs.existsSync(icns)) {
+        const outPng = path.join(os.tmpdir(), `osw-icon-${process.pid}-${Date.now()}.png`);
+        await run('/usr/bin/sips', ['-s', 'format', 'png', '-z', '128', '128', icns, '--out', outPng]).catch(() => '');
+        if (fs.existsSync(outPng)) {
+          dataUrl = `data:image/png;base64,${fs.readFileSync(outPng).toString('base64')}`;
+          fs.rmSync(outPng, { force: true });
+        }
+      }
+    } else {
+      const icon = await app.getFileIcon(target, { size: 'large' });
+      dataUrl = icon && !icon.isEmpty() ? icon.toDataURL() : null;
+    }
     appIconCache.set(name, dataUrl);
     return dataUrl;
   } catch (_) {

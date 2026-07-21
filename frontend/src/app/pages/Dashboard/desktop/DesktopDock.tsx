@@ -1,8 +1,14 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import LanguageIcon from '@mui/icons-material/Language';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import EventRepeatIcon from '@mui/icons-material/EventRepeat';
+import StickyNote2OutlinedIcon from '@mui/icons-material/StickyNote2Outlined';
+import HistoryIcon from '@mui/icons-material/History';
 import DashboardGlyph from '../canvas/DashboardGlyph';
+import { openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded';
 import EditNoteIcon from '@mui/icons-material/EditNote';
@@ -51,6 +57,9 @@ interface DesktopDockProps {
   selectedIds: string[];
   onFocusCard: (id: string, rect: CardRect) => void;
   onApplications: () => void;
+  onNewAgent: () => void;
+  onAddBrowser: () => void;
+  onAddNote: () => void;
 }
 
 const TILE = 30;
@@ -83,6 +92,9 @@ function DesktopDock({
   selectedIds,
   onFocusCard,
   onApplications,
+  onNewAgent,
+  onAddBrowser,
+  onAddNote,
 }: DesktopDockProps): React.ReactElement | null {
   const dispatch = useAppDispatch();
   const [hovered, setHovered] = useState<{ id: string; top: number } | null>(null);
@@ -250,6 +262,37 @@ function DesktopDock({
       {entries.length > 0 && (
         <Box sx={{ width: TILE - 8, height: '1px', background: 'rgba(255,255,255,0.14)' }} />
       )}
+      {/* The og toolbar's actions, dock-resident: chat, browser, workflow, note, history. */}
+      {([
+        { label: 'New chat', icon: <ChatBubbleOutlineIcon sx={{ fontSize: 16, color: '#e8e8ee' }} />, act: onNewAgent },
+        { label: 'New browser', icon: <LanguageIcon sx={{ fontSize: 17, color: '#e8e8ee' }} />, act: onAddBrowser },
+        { label: 'Workflows', icon: <EventRepeatIcon sx={{ fontSize: 16, color: '#e8e8ee' }} />, act: () => dispatch(openWorkflowsApp()) },
+        { label: 'New note', icon: <StickyNote2OutlinedIcon sx={{ fontSize: 16, color: '#e8e8ee' }} />, act: onAddNote },
+        { label: 'History', icon: <HistoryIcon sx={{ fontSize: 17, color: '#e8e8ee' }} />, act: () => window.dispatchEvent(new CustomEvent('openswarm:open-history')) },
+      ] as const).map((a) => (
+        <Tooltip key={a.label} title={a.label} placement="right">
+          <Box
+            onClick={a.act}
+            onMouseEnter={endHover}
+            sx={{
+              width: TILE,
+              height: TILE,
+              borderRadius: '9px',
+              background: 'linear-gradient(135deg, #5a5a62, #34343c)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+              transition: 'transform 0.15s ease',
+              '&:hover': { transform: 'scale(1.12)' },
+            }}
+          >
+            {a.icon}
+          </Box>
+        </Tooltip>
+      ))}
+      <Box sx={{ width: TILE - 8, height: '1px', background: 'rgba(255,255,255,0.14)' }} />
       <Box
         onClick={() => dispatch(openSettingsModal(undefined))}
         onMouseEnter={endHover}

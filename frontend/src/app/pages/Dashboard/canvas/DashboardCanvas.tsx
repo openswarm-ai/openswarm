@@ -263,6 +263,9 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
             onHighlightCard?.(cardId);
           }}
           onApplications={() => setAppsWindowOpen((v) => !v)}
+          onNewAgent={onNewAgent}
+          onAddBrowser={onAddBrowser}
+          onAddNote={onAddNote}
         />
       )}
 
