@@ -23,9 +23,9 @@ const WHEEL_ZOOM_DELTA_CAP = 24;
 const WHEEL_STREAM_GAP_MS = 150;
 const MOUSE_NOTCH_MIN_DELTA = 40;
 
-// Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.004).
+// Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.005; a mouse notch = ~8% zoom step).
 function sensitivityToMultiplier(setting: number): number {
-  return 0.00008 * setting;
+  return 0.0001 * setting;
 }
 
 interface CanvasState {
