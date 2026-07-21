@@ -97,7 +97,10 @@ export default function InlineEditableTitle({ value, onCommit, sx, placeholder, 
       title="Click to rename"
       sx={{
         minWidth: 0, cursor: 'text', borderRadius: 0.5, px: 0.25, mx: -0.25,
-        '&:hover': { bgcolor: c.bg.elevated },
+        // Neutral translucent hover instead of a solid surface token: this title also rides dark
+        // glass headers (the chat card) that live outside the theme scope, where bg.elevated resolved
+        // to a light near-white pill. A gray alpha darkens on light and lightens on dark, reading right on both.
+        '&:hover': { bgcolor: 'rgba(136,136,136,0.18)' },
         ...sx,
       }}
     >
