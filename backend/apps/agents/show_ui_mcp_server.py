@@ -85,7 +85,9 @@ TOOLS = [
             "The component renders in place of raw text; still give a one-line text summary after. "
             "LIVE UPDATES: calling ShowUI again with the SAME component and props.id updates that "
             "card in place. Use this to advance progress-tracker/plan step statuses AS you complete "
-            "each step of real work, or to refresh data; never mint a new id for an update."
+            "each step of real work, or to refresh data; never mint a new id for an update. Before "
+            "ending your turn, send a final same-id update with truthful terminal statuses; never "
+            "leave a step marked in-progress for work you are not actually doing."
         ),
         "inputSchema": {
             "type": "object",
@@ -133,16 +135,39 @@ def validate(component: str, props: dict) -> str:
         return f"links needs a non-empty links list. {COMPONENT_SPECS['links']}"
     # Vendored components: validate against the GENERATED JSON Schema so a bad payload comes back
     # as a teaching error the model can fix in-turn, instead of a dead render it never hears about.
+    # jsonschema gives full-constraint parity with the client zod gate (minimum/minLength/minItems
+    # slipped through the hand walker: question-flow step>=1 rendered server-side, died client-side).
     entry = GENERATED.get(component)
     if entry and isinstance(entry.get("schema"), dict):
-        errors = []
-        p_check(props, entry["schema"], "props", errors)
+        errors = p_full_validate(props, entry["schema"])
+        if errors is None:
+            errors = []
+            p_check(props, entry["schema"], "props", errors)
         if errors:
             return (
                 f"{component} payload invalid: " + "; ".join(errors[:4])
                 + f". Full shape: {COMPONENT_SPECS[component]}. Fix the props and call the tool again."
             )
     return ""
+
+
+def p_full_validate(props: dict, schema: dict):
+    """Full JSON Schema validation via jsonschema; None = library unavailable (fallback walker runs)."""
+    try:
+        import jsonschema
+    except ImportError:
+        return None
+    try:
+        validator = jsonschema.Draft202012Validator(schema)
+        out = []
+        for err in sorted(validator.iter_errors(props), key=lambda e: len(e.path)):
+            where = "props" + "".join(f".{p}" if isinstance(p, str) else f"[{p}]" for p in err.path)
+            out.append(f"{where}: {err.message[:90]}")
+            if len(out) >= 6:
+                break
+        return out
+    except Exception:
+        return None
 
 
 def p_type_ok(value, t: str) -> bool:

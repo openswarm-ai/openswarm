@@ -181,3 +181,19 @@ function parseShowUiInput(input: unknown): ShowUiPayload | null {
 
   return null;
 }
+
+// A dead turn must not keep spinners alive: once the agent stops, any step still marked
+// in-progress is work that is NOT happening, so it renders as its truthful stalled state.
+export function freezeIfDone(payload: ShowUiPayload, running: boolean): ShowUiPayload {
+  if (running || payload.component !== 'vendored') return payload;
+  if (payload.name !== 'progress-tracker' && payload.name !== 'plan') return payload;
+  const steps = payload.props.steps ?? payload.props.todos;
+  if (!Array.isArray(steps)) return payload;
+  const liveKey = payload.name === 'plan' ? 'in_progress' : 'in-progress';
+  if (!steps.some((s) => (s as { status?: string })?.status === liveKey)) return payload;
+  const frozen = steps.map((s) =>
+    (s as { status?: string })?.status === liveKey ? { ...(s as object), status: 'pending' } : s,
+  );
+  const key = payload.name === 'plan' ? 'todos' : 'steps';
+  return { ...payload, props: { ...payload.props, [key]: frozen } };
+}

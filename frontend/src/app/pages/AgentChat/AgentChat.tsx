@@ -1714,7 +1714,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 if (isShowUiPair(item)) {
                   return (
                     <Box key={item.id} data-window-item-id={item.id} ref={isLastVisibleItem ? lastVisibleItemRef : undefined}>
-                      <ToolUiBubble pair={item} sessionId={session.id} isPending={isPending} suppressReveal={item.call.id === justStreamedId} />
+                      <ToolUiBubble pair={item} sessionId={session.id} isPending={isPending} suppressReveal={item.call.id === justStreamedId} sessionRunning={sessionRunning} />
                       {compactionChip}
                     </Box>
                   );
