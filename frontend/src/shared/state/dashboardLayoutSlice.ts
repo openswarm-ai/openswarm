@@ -694,6 +694,8 @@ const dashboardLayoutSlice = createSlice({
 
     removeCard(state, action: PayloadAction<string>) {
       delete state.cards[action.payload];
+      delete state.tiledCards[action.payload];
+      delete state.minimizedCards[action.payload];
     },
 
     reconcileSessions(
@@ -866,6 +868,8 @@ const dashboardLayoutSlice = createSlice({
 
     removeViewCard(state, action: PayloadAction<string>) {
       delete state.viewCards[action.payload];
+      delete state.tiledCards[action.payload];
+      delete state.minimizedCards[action.payload];
       if (state.activeViewCardId === action.payload) state.activeViewCardId = null;
     },
 
@@ -945,6 +949,8 @@ const dashboardLayoutSlice = createSlice({
       delete state.browserCards[action.payload];
       delete state.suspendedBrowserCards[action.payload];
       delete state.endingBrowserCards[action.payload];
+      delete state.tiledCards[action.payload];
+      delete state.minimizedCards[action.payload];
     },
 
     markBrowserCardEnding(
@@ -1484,6 +1490,8 @@ const dashboardLayoutSlice = createSlice({
 
     removeNote(state, action: PayloadAction<string>) {
       delete state.notes[action.payload];
+      delete state.tiledCards[action.payload];
+      delete state.minimizedCards[action.payload];
     },
 
     clearPendingFocusNoteId(state) {
@@ -1614,6 +1622,8 @@ const dashboardLayoutSlice = createSlice({
     },
 
     resetLayout(state, action: PayloadAction<{ keepBrowserIds?: string[] } | undefined>) {
+      state.tiledCards = {};
+      state.minimizedCards = {};
       // Keep the recently-used (keep-alive) browser cards mounted across a dashboard switch so their webContents + sessionStorage survive (logged-in sites stay logged in); everything else is wiped for the fresh load. Their suspend entry rides along so a parked one isn't silently dropped.
       const keep = new Set(action.payload?.keepBrowserIds || []);
       const keptBrowsers: typeof state.browserCards = {};

@@ -186,32 +186,76 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [fullscreenCardId, dispatch]);
 
-  // Arc-style chrome: the mac traffic lights ride the same top-edge hover as the header overlay.
+  // Arc-style chrome: the mac traffic lights ride the top-edge hover, in fullscreen too (Arc/Zen both
+  // keep the native buttons reachable in compact/fullscreen; Zen even exempts them from hover-leave).
   useEffect(() => {
-    window.openswarm?.setWindowButtonsVisible?.(headerRevealed && !fullscreenCardId);
-  }, [headerRevealed, fullscreenCardId]);
+    window.openswarm?.setWindowButtonsVisible?.(headerRevealed);
+  }, [headerRevealed]);
 
   // Reveal on any pointer graze of the top edge. The old 22px strip Box was dead in practice: the
   // hidden header overlay's pointer-events:auto children sat above it and ate the mouseenter.
   useEffect(() => {
     const onMove = (e: MouseEvent): void => {
       if (e.clientY <= 22) setHeaderRevealed(true);
+      else if (fullscreenCardId && e.clientY > 80) setHeaderRevealed(false);
     };
     window.addEventListener('mousemove', onMove);
     return () => window.removeEventListener('mousemove', onMove);
-  }, []);
+  }, [fullscreenCardId]);
 
   // Arc/Zen fullscreen: the dock hides with the rest of the chrome but slides back on a left-edge
   // graze, and clicking a tile SWAPS which card owns the full screen instead of moving the camera.
+  // Hover semantics are a 1:1 port of Zen's compact mode (ZenCompactMode.mjs + compact-mode.yaml):
+  // sidebar-keep-hover 150ms grace after leaving, 1000ms retention when the cursor exits the window
+  // across the dock's screen edge, and an 800ms flash when the active (fullscreen) card switches.
+  const FS_KEEP_HOVER_MS = 150;
+  const FS_WINDOW_LEAVE_MS = 1000;
+  const FS_FLASH_MS = 800;
   const [fsDockRevealed, setFsDockRevealed] = React.useState(false);
+  const fsDockRef = React.useRef<HTMLDivElement | null>(null);
+  const fsRevealedRef = React.useRef(false);
+  fsRevealedRef.current = fsDockRevealed;
   useEffect(() => {
     if (!fullscreenCardId) { setFsDockRevealed(false); return undefined; }
+    let hideTimer: number | null = null;
+    const cancelHide = (): void => { if (hideTimer != null) { window.clearTimeout(hideTimer); hideTimer = null; } };
+    const scheduleHide = (ms: number): void => { cancelHide(); hideTimer = window.setTimeout(() => setFsDockRevealed(false), ms); };
+    const overDock = (x: number, y: number): boolean => {
+      const el = fsDockRef.current;
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return x >= r.left - 8 && x <= r.right + 8 && y >= r.top - 8 && y <= r.bottom + 8;
+    };
     const onMove = (e: MouseEvent): void => {
-      if (e.clientX <= 16) setFsDockRevealed(true);
-      else if (e.clientX > 120) setFsDockRevealed(false);
+      if (e.clientX <= 16 || overDock(e.clientX, e.clientY)) {
+        cancelHide();
+        if (!fsRevealedRef.current) setFsDockRevealed(true);
+      } else if (fsRevealedRef.current && hideTimer == null) {
+        scheduleHide(FS_KEEP_HOVER_MS);
+      }
+    };
+    // Cursor flung out of the window across the dock's edge: keep the dock up (Zen's screen-edge
+    // retention), then let the next in-window move decide.
+    const onOut = (e: MouseEvent): void => {
+      if (!e.relatedTarget && e.clientX <= 24 && fsRevealedRef.current) scheduleHide(FS_WINDOW_LEAVE_MS);
     };
     window.addEventListener('mousemove', onMove);
-    return () => window.removeEventListener('mousemove', onMove);
+    window.addEventListener('mouseout', onOut);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseout', onOut); cancelHide(); };
+  }, [fullscreenCardId]);
+  // Zen flashes the sidebar on tab switch in compact mode; swapping the fullscreen card is our tab switch.
+  const prevFsCardRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevFsCardRef.current;
+    prevFsCardRef.current = fullscreenCardId;
+    if (!fullscreenCardId || !prev || prev === fullscreenCardId) return undefined;
+    setFsDockRevealed(true);
+    const t = window.setTimeout(() => {
+      const el = fsDockRef.current;
+      if (el && el.matches(':hover')) return;
+      setFsDockRevealed(false);
+    }, FS_FLASH_MS);
+    return () => window.clearTimeout(t);
   }, [fullscreenCardId]);
   const swapFullscreen = React.useCallback((cardId: string) => {
     if (!fullscreenCardId || cardId === fullscreenCardId) return;
@@ -283,8 +327,11 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
 
       {(!fullscreenCardId || fsDockRevealed) && (
         <Box
+          ref={fsDockRef}
           sx={fullscreenCardId ? {
-            position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 999995,
+            // Explicit width: the dock inside is position:absolute so the wrapper would collapse to
+            // its padding, and the hover-keep hit test would miss the dock entirely.
+            position: 'absolute', left: 0, top: 0, bottom: 0, width: 64, zIndex: 999995,
             display: 'flex', alignItems: 'center', pl: '4px',
             animation: 'osw-fsdock-in 160ms ease-out',
             '@keyframes osw-fsdock-in': { from: { transform: 'translateX(-52px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } },
