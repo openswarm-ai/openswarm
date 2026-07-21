@@ -82,6 +82,11 @@
   color: var(--foreground);
   font-size: 14px;
   line-height: 1.5;
+  /* The vendored components (data-table, etc.) switch layout on @container width. Without a
+     containment context those queries never match, so a table is stuck in its narrow mobile
+     accordion forever (columns hidden behind a chevron). This makes width-responsive actually work:
+     wide bubble = real grid, narrow = cards. */
+  container-type: inline-size;
 }
 
 .tool-ui-scope {

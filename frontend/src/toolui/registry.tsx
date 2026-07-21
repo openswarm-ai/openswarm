@@ -47,7 +47,10 @@ export const TOOL_UI_REGISTRY: Record<string, ToolUiEntry> = {
     loadSchema: () => import('./components/citation/schema').then((m) => m.SerializableCitationSchema),
   },
   'data-table': {
-    Component: lazy(() => import('./components/data-table').then((m) => ({ default: m.DataTable }))),
+    // Force the real grid (.Table) instead of the responsive default: every chat surface we render
+    // into (card ~380px, fullscreen column ~442px) sits just under the component's @md breakpoint,
+    // so "auto" always fell back to the mobile accordion that buries every column but the first.
+    Component: lazy(() => import('./components/data-table').then((m) => ({ default: m.DataTable.Table }))),
     loadSchema: () => import('./components/data-table/schema').then((m) => m.SerializableDataTableSchema),
   },
   'image': {
