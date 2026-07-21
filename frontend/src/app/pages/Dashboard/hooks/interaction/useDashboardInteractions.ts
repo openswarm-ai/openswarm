@@ -140,15 +140,20 @@ export function useDashboardInteractions({
   }, [selection, dispatch]);
 
   // ---- Viewport event handlers (compose pan + marquee) ----
+  // Google Maps model: LEFT drag pans the canvas, RIGHT drag marquee-selects (inverse of a design
+  // tool, matching how the user asked for it). Middle keeps panning. The viewport move/up handlers
+  // run BOTH pan + marquee every frame, so which one is "armed" is decided here on mousedown.
   const handleViewportMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 1) {
       canvas.handlers.onMouseDown(e);
       return;
     }
 
+    // RIGHT button = marquee select. preventDefault kills the OS context menu on the canvas.
     if (e.button === 2) {
       e.preventDefault();
-      canvas.handlers.onMouseDown(e);
+      if (isCardTarget(e.target, e.currentTarget)) return;
+      selection.handleCanvasMouseDown(e.nativeEvent);
       return;
     }
 
@@ -172,11 +177,13 @@ export function useDashboardInteractions({
       return;
     }
 
-    if (e.metaKey || e.ctrlKey || canvas.spaceHeld) {
+    // meta/ctrl + LEFT keeps a way to marquee-select with the primary button (additive selection);
+    // plain LEFT (and space-held) pans. A plain empty-canvas press clears the selection.
+    if (e.metaKey || e.ctrlKey) {
+      selection.handleCanvasMouseDown(e.nativeEvent);
+    } else {
       selection.deselectAll();
       canvas.handlers.onMouseDown(e);
-    } else {
-      selection.handleCanvasMouseDown(e.nativeEvent);
     }
   }, [canvas.handlers, canvas.spaceHeld, selection, isElementSelectMode]);
 
