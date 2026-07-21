@@ -472,8 +472,10 @@ const AgentCard: React.FC<Props> = ({
   const justDraggedRef = useRef(false);
   const lastPointerRef = useRef<{ clientX: number; clientY: number }>({ clientX: 0, clientY: 0 });
 
+  const tileZone = useAppSelector((s) => s.dashboardLayout.tiledCards[session.id]);
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    if (tileZone) return;
     e.preventDefault();
     e.stopPropagation();
     const cs = getCanvasState();
@@ -483,7 +485,7 @@ const AgentCard: React.FC<Props> = ({
     setIsDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     onDragStart?.(session.id, 'agent');
-  }, [cardX, cardY, onDragStart, session.id, getCanvasState]);
+  }, [cardX, cardY, onDragStart, session.id, getCanvasState, tileZone]);
 
   const recomputeDragPos = useCallback(() => {
     const ds = dragState.current;
@@ -656,7 +658,6 @@ const AgentCard: React.FC<Props> = ({
     }
   };
 
-  const tileZone = useAppSelector((s) => s.dashboardLayout.tiledCards[session.id]);
   const isFullscreen = tileZone === 'fullscreen';
   // Fullscreen pins the card to the viewport, so while tiled the geometry must track canvas pan/zoom.
   // Chat cards read the camera via a getter (not props) to avoid re-rendering on every pan tick, so

@@ -108,6 +108,7 @@ const NoteCard: React.FC<Props> = ({
 
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    if (tileZone) return;
     e.preventDefault();
     e.stopPropagation();
     const cs = getCanvasState();
@@ -121,7 +122,7 @@ const NoteCard: React.FC<Props> = ({
     setIsDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     onDragStart?.(noteId, 'note');
-  }, [cardX, cardY, noteId, onDragStart, getCanvasState]);
+  }, [cardX, cardY, noteId, onDragStart, getCanvasState, tileZone]);
 
   const recomputeDragPos = useCallback(() => {
     const ds = dragState.current;

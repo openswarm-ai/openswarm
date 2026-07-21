@@ -73,6 +73,10 @@ export function useDashboardInteractions({
     // The Workflows window is an app you click around inside, not a card you re-center every tap. Single-click only raises + selects it; double-click still zoom-to-fits (handleCardDoubleClick). Without this, clicking any button inside it yanked the canvas into a re-zoom.
     if (type === 'workflows-hub' || type === 'workflows-monitor') return;
 
+    // A tiled (fullscreen/snapped) card is pinned Arc-style: clicking inside it must not collapse
+    // it or glide the camera; it leaves the mode via its own controls (yellow, Esc, dock swap).
+    if (store.getState().dashboardLayout.tiledCards[id]) return;
+
     const alreadyExpanded = type === 'agent' && expandedSessionIds.includes(id);
 
     if (alreadyExpanded) {
@@ -206,6 +210,7 @@ export function useDashboardInteractions({
     }
     dispatch(bringToFront({ id, type }));
     setFocusedCardId(id);
+    if (store.getState().dashboardLayout.tiledCards[id]) return;
     setTimeout(() => {
       const rect = getCardRect(id, type);
       if (rect) canvas.actions.fitToCards([rect], 1.15, true);

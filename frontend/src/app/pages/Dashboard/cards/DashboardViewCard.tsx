@@ -242,6 +242,7 @@ const DashboardViewCard: React.FC<Props> = ({
 
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    if (tileZone) return;
     e.preventDefault();
     e.stopPropagation();
     const cs = getCanvasState();
@@ -251,7 +252,7 @@ const DashboardViewCard: React.FC<Props> = ({
     setIsDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     onDragStart?.(cardKey, 'view');
-  }, [cardX, cardY, onDragStart, cardKey, getCanvasState]);
+  }, [cardX, cardY, onDragStart, cardKey, getCanvasState, tileZone]);
 
   const recomputeDragPos = useCallback(() => {
     const ds = dragState.current;
