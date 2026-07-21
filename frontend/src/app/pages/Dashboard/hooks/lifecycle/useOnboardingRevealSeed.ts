@@ -29,7 +29,7 @@ export function revealAppSpot(anchor: { cx: number; cy: number }): { x: number; 
   return { x: anchor.cx + DEFAULT_CARD_W / 2 + GAP, y: anchor.cy - EXPANDED_CARD_MIN_H / 2 };
 }
 
-// The reveal: onboarding v3 finished behind the curtain and the prepped work (a personal dashboard app, a live web-research dig, a read-only file tidy-up, and one recurring task) has been running since mid-flow. Compose one tight readable cluster: welcome chat center, jobs stacked left, the plain-English note right; the app view card is born at the arc end (via revealAnchor + the lifecycle auto-add) and the camera glides to it when it arrives. The keep/discard toast owns the jobs' fate afterward.
+// The reveal: onboarding v3 finished behind the curtain and the prepped work (a personal dashboard app, a live web-research dig, a read-only file tidy-up, and one recurring task) has been running since mid-flow. Compose: welcome chat center, job grid + Workflows app to its left, app view card born to its right (via revealAnchor + the lifecycle auto-add). The camera lands on JUST the chat + app slot at readable zoom; the rest peeks in from the left for the user to click into. The keep/discard toast owns the jobs' fate afterward.
 export function useOnboardingRevealSeed({ isActive, dashboardId, expandedSessionIds, viewportRef, canvasStateRef, createWelcomeDraft, fitToCards }: Args): void {
   const dispatch = useAppDispatch();
   const revealPending = useAppSelector((s) => s.onboardingV3.revealPending);
@@ -111,21 +111,18 @@ export function useOnboardingRevealSeed({ isActive, dashboardId, expandedSession
           }
         }
         createWelcomeDraft();
-        // Frame the whole cluster (left job column + chat + app view card on the right) so the reveal is
-        // readable, not scattered. The pipeline ALWAYS sets up one scheduled task, whose RunMonitor card is
-        // tall and lands late; reserve its slot now (2 short job cards + the monitor) so the camera never
-        // cuts it off when it arrives. Width runs from the left column to the far edge of the app view card.
-        const left = cx - DEFAULT_CARD_W / 2 - 2 * GAP - 2 * DEFAULT_CARD_W; // left edge of the 2-col grid
-        const top = cy - EXPANDED_CARD_MIN_H / 2;
-        const right = cx + DEFAULT_CARD_W / 2 + GAP + DEFAULT_CARD_W; // right edge of the app view card
-        // The agent cards lay out as a 2-column grid (2 enlarged rows) with the full Workflows app spanning
-        // a wide row below them. Reserve for both now so the schedule, which lands late, is already in frame.
-        const stackH = 2 * (EXPANDED_CARD_MIN_H + 24) + REVEAL_WORKFLOW_H;
-        // Reserve headroom at the top so the topmost cards clear the macOS traffic lights + the floating
-        // dashboard title pill + the run-status pill, instead of the chat header landing under them.
+        // Land READABLE: frame only the welcome chat + the app slot beside it. Fitting the whole
+        // cluster (grid + Workflows row, ~2000x1850 canvas) forced ~25% zoom: text unreadable AND
+        // every card on-screen at once (nothing can suspend). The job grid edges into the left of
+        // frame as the discovery cue, and the app view card is born inside the frame so its arrival
+        // never yanks the camera; one click on any card still focuses it (fitToCards at 1.15).
+        const frameLeft = cx - DEFAULT_CARD_W / 2;
+        const frameRight = revealAppSpot({ cx, cy }).x + DEFAULT_CARD_W;
+        // Reserve headroom at the top so the chat header clears the macOS traffic lights + the
+        // floating dashboard title pill + the RevealHero panel, instead of landing under them.
         const TOP_CHROME_PAD = 130;
         fitToCards(
-          [{ x: left, y: top - TOP_CHROME_PAD, width: right - left, height: Math.max(EXPANDED_CARD_MIN_H, stackH) + TOP_CHROME_PAD }],
+          [{ x: frameLeft, y: cy - EXPANDED_CARD_MIN_H / 2 - TOP_CHROME_PAD, width: frameRight - frameLeft, height: EXPANDED_CARD_MIN_H + TOP_CHROME_PAD }],
           0.9,
           true,
         );
