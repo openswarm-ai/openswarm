@@ -7,7 +7,7 @@ import TetherLayer from './TetherLayer';
 import DashboardCardLayer from './DashboardCardLayer';
 import DashboardOverlays from './DashboardOverlays';
 import DashboardEmptyState from './DashboardEmptyState';
-import DesktopWallpaper from '../desktop/DesktopWallpaper';
+import '../desktop/desktop.css';
 import DesktopDock from '../desktop/DesktopDock';
 import MinimizedStack from '../desktop/MinimizedStack';
 import ApplicationsWindow from '../desktop/ApplicationsWindow';
@@ -291,8 +291,6 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
                 : 'default',
         }}
       >
-        <DesktopWallpaper />
-
         {/* Gradient wash: the user's theme-pad stops tint the canvas, Arc-window style; intensity + grain come from the theme device; sits under the dot grid. */}
         {gradient && gradient.length > 1 && (
           <Box

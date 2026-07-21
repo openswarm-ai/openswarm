@@ -3114,59 +3114,6 @@ ipcMain.handle('open-application', (_event, name) => {
   return true;
 });
 
-// The user's REAL desktop wallpaper for the dashboard background, read at runtime and never
-// bundled (Apple's images can't ship in an open-source repo). Any failure on any platform
-// returns null and the renderer keeps its SVG scenery, so this can only ever add.
-let desktopWallpaperCache;
-ipcMain.handle('get-desktop-wallpaper', async () => {
-  if (desktopWallpaperCache !== undefined) return desktopWallpaperCache;
-  const { execFile } = require('child_process');
-  const run = (cmd, args) => new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: 8000 }, (err, stdout) => (err ? reject(err) : resolve(String(stdout).trim())));
-  });
-  try {
-    if (process.platform === 'darwin') {
-      let srcPath = await run('/usr/bin/osascript', ['-e', 'tell application "System Events" to get picture of current desktop']).catch(() => '');
-      if (!srcPath || !fs.existsSync(srcPath)) {
-        // Dynamic/aerial wallpapers report a reaped temp frame; the wallpaper store may still hold a real image path.
-        srcPath = '';
-        try {
-          const storePath = path.join(app.getPath('home'), 'Library', 'Application Support', 'com.apple.wallpaper', 'Store', 'Index.plist');
-          const raw = fs.readFileSync(storePath, 'latin1');
-          const candidates = [...raw.matchAll(/file:\/\/(\/[ -~]+?\.(?:jpg|jpeg|png|heic|tiff))/gi)].map((m) => decodeURIComponent(m[1]));
-          srcPath = candidates.find((c) => fs.existsSync(c)) || '';
-        } catch (_) { /* fall through to the SVG scenery */ }
-      }
-      if (!srcPath) { desktopWallpaperCache = null; return null; }
-      // sips normalizes HEIC sources to jpeg and downscales so the data URL stays small.
-      const outPath = path.join(app.getPath('userData'), 'wallpaper-cache.jpg');
-      await run('/usr/bin/sips', ['-s', 'format', 'jpeg', '--resampleHeightWidthMax', '2400', srcPath, '--out', outPath]);
-      desktopWallpaperCache = `data:image/jpeg;base64,${fs.readFileSync(outPath).toString('base64')}`;
-      return desktopWallpaperCache;
-    }
-    if (process.platform === 'win32') {
-      // Windows keeps the active wallpaper pre-transcoded as a JPEG; the registry path is the fallback.
-      const transcoded = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Themes', 'TranscodedWallpaper');
-      let srcPath = fs.existsSync(transcoded) ? transcoded : null;
-      if (!srcPath) {
-        const out = await run('reg', ['query', 'HKCU\\Control Panel\\Desktop', '/v', 'WallPaper']);
-        const match = out.match(/WallPaper\s+REG_SZ\s+(.+)$/m);
-        if (match && fs.existsSync(match[1].trim())) srcPath = match[1].trim();
-      }
-      if (!srcPath) { desktopWallpaperCache = null; return null; }
-      const ext = path.extname(srcPath).toLowerCase();
-      const mime = ext === '.png' ? 'image/png' : ext === '.bmp' ? 'image/bmp' : 'image/jpeg';
-      desktopWallpaperCache = `data:${mime};base64,${fs.readFileSync(srcPath).toString('base64')}`;
-      return desktopWallpaperCache;
-    }
-    desktopWallpaperCache = null;
-    return null;
-  } catch (_) {
-    desktopWallpaperCache = null;
-    return null;
-  }
-});
-
 // Affiliate install state. Returns the persisted install.json contents so
 // the renderer can attach the referral code to authenticated cloud calls
 // (Stripe checkout, sign-in events) for downstream attribution.

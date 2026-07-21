@@ -77,7 +77,6 @@ contextBridge.exposeInMainWorld('openswarm', {
   capturePage: (rect) => ipcRenderer.invoke('capture-page', rect),
   getAppIcon: (name) => ipcRenderer.invoke('get-app-icon', name),
   openApplication: (name) => ipcRenderer.invoke('open-application', name),
-  getDesktopWallpaper: () => ipcRenderer.invoke('get-desktop-wallpaper'),
   getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
   getCrashRecoveryInfo: () => ipcRenderer.invoke('get-crash-recovery-info'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
