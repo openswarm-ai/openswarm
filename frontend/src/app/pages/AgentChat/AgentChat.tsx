@@ -84,6 +84,10 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   haiku: 200_000,
 };
 
+// Full size view reads like a chat page, not a card: the transcript + composer center in one
+// column at a comfortable measure (assistant-ui parks at 44rem, LibreChat 48rem; 760 splits them).
+const FULLSCREEN_READING_MAX_W = 760;
+
 // Only a fallback for never-rendered items; real heights are measured once on screen.
 const RENDER_ITEM_ESTIMATED_HEIGHT = 140;
 // Conservative estimate for an unmeasured tool row: tool groups/pairs render collapsed (~40-50px) far more often than expanded. Leaning low keeps scrollHeight (and the scrollbar thumb) from jumping when a tool row measures shorter.
@@ -228,6 +232,8 @@ interface AgentChatProps {
   workflowEditId?: string;
   // View-only transcript (e.g. the Run Monitor): renders messages + tool calls but no composer, so the session can't be typed into.
   readOnly?: boolean;
+  // Full size view: center the whole chat in a reading column so an expanded card reads like a chat page.
+  fullscreenChat?: boolean;
   // One-shot text to drop into the composer (e.g. a run attached as context).
   prefillPrompt?: string;
   // A workflow run attached as a removable context chip above the composer; while present, each send routes through onSendRunQuestion so the run's transcript rides along as hidden context for that turn.
@@ -236,7 +242,7 @@ interface AgentChatProps {
   onSendRunQuestion?: (prompt: string, runId: string) => Promise<void>;
 }
 
-const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, isGlowing, onDismissGlow, initialContextPaths, onBranch, workflowEditId, readOnly, prefillPrompt, runContext, onClearRunContext, onSendRunQuestion }) => {
+const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, isGlowing, onDismissGlow, initialContextPaths, onBranch, workflowEditId, readOnly, fullscreenChat, prefillPrompt, runContext, onClearRunContext, onSendRunQuestion }) => {
   const c = useClaudeTokens();
   const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
     running: { color: c.status.success, bg: c.status.successBg },
@@ -1443,7 +1449,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   return (
     <Box sx={{ display: 'flex', height: '100%' }}>
       <ContextDrawer />
-      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden', ...(fullscreenChat && { maxWidth: FULLSCREEN_READING_MAX_W, width: '100%', mx: 'auto' }) }}>
         {!embedded && (
           <Box
             sx={{

@@ -23,8 +23,6 @@ export const TILE_ZONES: Record<string, { x: number; y: number; w: number; h: nu
 
 // macOS Sequoia leaves a small gap between tiled windows; we match it.
 const GAP = 8;
-// Width the persistent dock rail owns while a card is fullscreen (the Arc sidebar analog).
-export const FULLSCREEN_DOCK_RAIL = 64;
 
 export interface TiledStyle {
   left: number;
@@ -48,16 +46,15 @@ function workspaceSize(): { w: number; h: number } {
 }
 
 export function computeTiledStyle(zone: string, panX: number, panY: number, zoom: number): TiledStyle | null {
-  // 'fullscreen' = the Arc layout: the dock rail stays put on the left and the card expands into
-  // the ENTIRE dashboard beside it, floating on the same gap the tile zones use. Anchored to the
-  // VIEWPORT (not the window) so docked chrome, like the pinned sidebar, squeezes the card instead
-  // of being covered by it.
+  // 'fullscreen' = the card expands into the ENTIRE dashboard, floating on the same gap the tile
+  // zones use. Anchored to the VIEWPORT (not the window) so docked chrome, like the pinned sidebar,
+  // squeezes the card instead of being covered by it (the canvas viewport shrinks with the sidebar).
   if (zone === 'fullscreen') {
     const { w: vpW, h: vpH } = workspaceSize();
     return {
-      left: (FULLSCREEN_DOCK_RAIL + GAP - panX) / zoom,
+      left: (GAP - panX) / zoom,
       top: (GAP - panY) / zoom,
-      width: vpW - FULLSCREEN_DOCK_RAIL - GAP * 2,
+      width: vpW - GAP * 2,
       height: vpH - GAP * 2,
       transform: `scale(${1 / zoom})`,
       transformOrigin: 'top left',

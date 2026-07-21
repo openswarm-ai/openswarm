@@ -1,8 +1,7 @@
 import React, { useEffect, type RefObject } from 'react';
 import Box from '@mui/material/Box';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { clearTiledCard, setTiledCard, selectFullscreenCardId } from '@/shared/state/dashboardLayoutSlice';
-import { expandSession } from '@/shared/state/agentsSlice';
+import { clearTiledCard, selectFullscreenCardId } from '@/shared/state/dashboardLayoutSlice';
 import DashboardHeader from './DashboardHeader';
 import TetherLayer from './TetherLayer';
 import DashboardCardLayer from './DashboardCardLayer';
@@ -203,15 +202,6 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     return () => window.removeEventListener('mousemove', onMove);
   }, [fullscreenCardId]);
 
-  // Arc fullscreen layout: the dock rail STAYS PUT (Arc's persistent sidebar) while the card
-  // expands into the whole dashboard beside it; clicking a tile SWAPS which card owns the screen.
-  const swapFullscreen = React.useCallback((cardId: string) => {
-    if (!fullscreenCardId || cardId === fullscreenCardId) return;
-    dispatch(clearTiledCard(fullscreenCardId));
-    if (sessions[cardId]) dispatch(expandSession(cardId));
-    dispatch(setTiledCard({ cardId, zone: 'fullscreen' }));
-  }, [fullscreenCardId, dispatch, sessions]);
-
   // Gestures write the transform imperatively (no React commit per frame), so a foreign render mid-gesture would paint the stale committed transform for a frame. Re-applying live after EVERY render seals that; do not remove.
   React.useLayoutEffect(() => {
     canvas.actions.syncTransform();
@@ -273,33 +263,25 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         />
       )}
 
-      {(
-        <Box
-          sx={fullscreenCardId ? {
-            position: 'absolute', left: 0, top: 0, bottom: 0, width: 64, zIndex: 999995,
-            display: 'flex', alignItems: 'center', pl: '4px',
-          } : undefined}
-        >
-          <DesktopDock
-            sessions={sessions}
-            cards={cards}
-            viewCards={viewCards}
-            browserCards={browserCards}
-            notes={notes}
-            workflowCards={workflowCards}
-            outputs={outputs}
-            selectedIds={Array.from(selection.selectedIds.keys())}
-            onFocusCard={(cardId, rect) => {
-              if (fullscreenCardId) { swapFullscreen(cardId); return; }
-              canvas.actions.fitToCards([rect], 1.15, true);
-              onHighlightCard?.(cardId);
-            }}
-            onApplications={() => setAppsWindowOpen((v) => !v)}
-            onNewAgent={onNewAgent}
-            onAddBrowser={onAddBrowser}
-            onAddNote={onAddNote}
-          />
-        </Box>
+      {!fullscreenCardId && (
+        <DesktopDock
+          sessions={sessions}
+          cards={cards}
+          viewCards={viewCards}
+          browserCards={browserCards}
+          notes={notes}
+          workflowCards={workflowCards}
+          outputs={outputs}
+          selectedIds={Array.from(selection.selectedIds.keys())}
+          onFocusCard={(cardId, rect) => {
+            canvas.actions.fitToCards([rect], 1.15, true);
+            onHighlightCard?.(cardId);
+          }}
+          onApplications={() => setAppsWindowOpen((v) => !v)}
+          onNewAgent={onNewAgent}
+          onAddBrowser={onAddBrowser}
+          onAddNote={onAddNote}
+        />
       )}
 
       {appsWindowOpen && !fullscreenCardId && (

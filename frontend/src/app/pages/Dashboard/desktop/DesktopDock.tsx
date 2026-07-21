@@ -98,21 +98,6 @@ function DesktopDock({
   onAddNote,
 }: DesktopDockProps): React.ReactElement | null {
   const dispatch = useAppDispatch();
-  const dockBodyRef = useRef<HTMLDivElement | null>(null);
-  // macOS-dock fisheye: tiles swell as the cursor nears and neighbors fall off along the curve,
-  // with a slight outward bulge so the column reads as a wheel (OptionWheel-style), not a ruler.
-  const applyFisheye = useCallback((clientY: number | null) => {
-    const root = dockBodyRef.current;
-    if (!root) return;
-    const rootTop = root.getBoundingClientRect().top;
-    root.querySelectorAll<HTMLElement>('.osw-dock-tile').forEach((el) => {
-      if (clientY == null) { el.style.transform = ''; return; }
-      const cy = rootTop + el.offsetTop + el.offsetHeight / 2;
-      const t = Math.max(0, 1 - Math.abs(clientY - cy) / 90);
-      const emph = t * t;
-      el.style.transform = `translateX(${(9 * emph).toFixed(1)}px) scale(${(1 + 0.5 * emph).toFixed(3)})`;
-    });
-  }, []);
   const [hovered, setHovered] = useState<{ id: string; top: number } | null>(null);
   const [liveShot, setLiveShot] = useState<{ id: string; dataUrl: string } | null>(null);
   const hoverTimer = useRef<number | null>(null);
@@ -217,9 +202,7 @@ function DesktopDock({
 
   return (
     <Box
-      ref={dockBodyRef}
-      onMouseMove={(e: React.MouseEvent) => applyFisheye(e.clientY)}
-      onMouseLeave={() => { endHover(); applyFisheye(null); }}
+      onMouseLeave={endHover}
       sx={{
         position: 'absolute',
         left: 12,
@@ -248,7 +231,6 @@ function DesktopDock({
               endHover();
               onFocusCard(entry.id, entry.rect);
             }}
-            className="osw-dock-tile"
             sx={{
               position: 'relative',
               width: TILE,
@@ -261,9 +243,6 @@ function DesktopDock({
               cursor: 'pointer',
               overflow: 'hidden',
               flexShrink: 0,
-              transition: 'transform 0.12s ease-out',
-              willChange: 'transform',
-              transformOrigin: 'left center',
               ...(isActive && { outline: '2px solid #6aa2ff', outlineOffset: '2px' }),
             }}
           >
@@ -296,7 +275,6 @@ function DesktopDock({
           <Box
             onClick={a.act}
             onMouseEnter={endHover}
-            className="osw-dock-tile"
             sx={{
               width: TILE,
               height: TILE,
@@ -307,9 +285,6 @@ function DesktopDock({
               justifyContent: 'center',
               cursor: 'pointer',
               flexShrink: 0,
-              transition: 'transform 0.12s ease-out',
-              willChange: 'transform',
-              transformOrigin: 'left center',
             }}
           >
             {a.icon}
@@ -320,7 +295,6 @@ function DesktopDock({
       <Box
         onClick={() => dispatch(openSettingsModal(undefined))}
         onMouseEnter={endHover}
-        className="osw-dock-tile"
         sx={{
           width: TILE,
           height: TILE,
@@ -331,9 +305,6 @@ function DesktopDock({
           justifyContent: 'center',
           cursor: 'pointer',
           flexShrink: 0,
-          transition: 'transform 0.12s ease-out',
-          willChange: 'transform',
-          transformOrigin: 'left center',
         }}
       >
         <SettingsIcon sx={{ fontSize: 18, color: '#e8e8ee' }} />
@@ -341,7 +312,6 @@ function DesktopDock({
       <Box
         onClick={onApplications}
         onMouseEnter={endHover}
-        className="osw-dock-tile"
         sx={{
           width: TILE,
           height: TILE,
@@ -352,9 +322,6 @@ function DesktopDock({
           justifyContent: 'center',
           cursor: 'pointer',
           flexShrink: 0,
-          transition: 'transform 0.12s ease-out',
-          willChange: 'transform',
-          transformOrigin: 'left center',
         }}
       >
         <AppsRoundedIcon sx={{ fontSize: 18, color: '#e8e8ee' }} />

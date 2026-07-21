@@ -933,7 +933,7 @@ const AgentCard: React.FC<Props> = ({
             backdropFilter: 'blur(24px) saturate(150%)',
             WebkitBackdropFilter: 'blur(24px) saturate(150%)',
           }),
-          border: isSelected ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
+          border: isFullscreen ? 'none' : isSelected ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
           borderRadius: tiledStyle ? '12px' : '20px',
           boxShadow: '0 18px 48px rgba(0,0,0,0.4)',
         }),
@@ -1189,6 +1189,7 @@ const AgentCard: React.FC<Props> = ({
               sessionId={session.id}
               onClose={() => dispatch(collapseSession(session.id))}
               embedded
+              fullscreenChat={isFullscreen}
               autoFocus={autoFocusInput}
               isGlowing={isGlowingRedux && !glowFading}
               onDismissGlow={dismissGlow}
