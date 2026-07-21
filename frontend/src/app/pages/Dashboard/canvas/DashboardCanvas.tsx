@@ -1,7 +1,8 @@
 import React, { useEffect, type RefObject } from 'react';
 import Box from '@mui/material/Box';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { clearTiledCard, selectFullscreenCardId } from '@/shared/state/dashboardLayoutSlice';
+import { clearTiledCard, setTiledCard, selectFullscreenCardId } from '@/shared/state/dashboardLayoutSlice';
+import { expandSession } from '@/shared/state/agentsSlice';
 import DashboardHeader from './DashboardHeader';
 import TetherLayer from './TetherLayer';
 import DashboardCardLayer from './DashboardCardLayer';
@@ -185,6 +186,40 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [fullscreenCardId, dispatch]);
 
+  // Arc-style chrome: the mac traffic lights ride the same top-edge hover as the header overlay.
+  useEffect(() => {
+    window.openswarm?.setWindowButtonsVisible?.(headerRevealed && !fullscreenCardId);
+  }, [headerRevealed, fullscreenCardId]);
+
+  // Reveal on any pointer graze of the top edge. The old 22px strip Box was dead in practice: the
+  // hidden header overlay's pointer-events:auto children sat above it and ate the mouseenter.
+  useEffect(() => {
+    const onMove = (e: MouseEvent): void => {
+      if (e.clientY <= 22) setHeaderRevealed(true);
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, []);
+
+  // Arc/Zen fullscreen: the dock hides with the rest of the chrome but slides back on a left-edge
+  // graze, and clicking a tile SWAPS which card owns the full screen instead of moving the camera.
+  const [fsDockRevealed, setFsDockRevealed] = React.useState(false);
+  useEffect(() => {
+    if (!fullscreenCardId) { setFsDockRevealed(false); return undefined; }
+    const onMove = (e: MouseEvent): void => {
+      if (e.clientX <= 16) setFsDockRevealed(true);
+      else if (e.clientX > 120) setFsDockRevealed(false);
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, [fullscreenCardId]);
+  const swapFullscreen = React.useCallback((cardId: string) => {
+    if (!fullscreenCardId || cardId === fullscreenCardId) return;
+    dispatch(clearTiledCard(fullscreenCardId));
+    if (sessions[cardId]) dispatch(expandSession(cardId));
+    dispatch(setTiledCard({ cardId, zone: 'fullscreen' }));
+  }, [fullscreenCardId, dispatch, sessions]);
+
   // Gestures write the transform imperatively (no React commit per frame), so a foreign render mid-gesture would paint the stale committed transform for a frame. Re-applying live after EVERY render seals that; do not remove.
   React.useLayoutEffect(() => {
     canvas.actions.syncTransform();
@@ -193,11 +228,6 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   return (
     <>
     <Box sx={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-      {/* Top-edge hover strip: the desktop shell keeps the top chromeless; grazing it reveals the header. */}
-      <Box
-        onMouseEnter={() => setHeaderRevealed(true)}
-        sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 22, zIndex: 9 }}
-      />
       {/* Floating header overlay */}
       <Box
         onMouseLeave={() => setHeaderRevealed(false)}
@@ -251,25 +281,35 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         />
       )}
 
-      {!fullscreenCardId && (
-        <DesktopDock
-          sessions={sessions}
-          cards={cards}
-          viewCards={viewCards}
-          browserCards={browserCards}
-          notes={notes}
-          workflowCards={workflowCards}
-          outputs={outputs}
-          selectedIds={Array.from(selection.selectedIds.keys())}
-          onFocusCard={(cardId, rect) => {
-            canvas.actions.fitToCards([rect], 1.15, true);
-            onHighlightCard?.(cardId);
-          }}
-          onApplications={() => setAppsWindowOpen((v) => !v)}
-          onNewAgent={onNewAgent}
-          onAddBrowser={onAddBrowser}
-          onAddNote={onAddNote}
-        />
+      {(!fullscreenCardId || fsDockRevealed) && (
+        <Box
+          sx={fullscreenCardId ? {
+            position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 999995,
+            display: 'flex', alignItems: 'center', pl: '4px',
+            animation: 'osw-fsdock-in 160ms ease-out',
+            '@keyframes osw-fsdock-in': { from: { transform: 'translateX(-52px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } },
+          } : undefined}
+        >
+          <DesktopDock
+            sessions={sessions}
+            cards={cards}
+            viewCards={viewCards}
+            browserCards={browserCards}
+            notes={notes}
+            workflowCards={workflowCards}
+            outputs={outputs}
+            selectedIds={Array.from(selection.selectedIds.keys())}
+            onFocusCard={(cardId, rect) => {
+              if (fullscreenCardId) { swapFullscreen(cardId); return; }
+              canvas.actions.fitToCards([rect], 1.15, true);
+              onHighlightCard?.(cardId);
+            }}
+            onApplications={() => setAppsWindowOpen((v) => !v)}
+            onNewAgent={onNewAgent}
+            onAddBrowser={onAddBrowser}
+            onAddNote={onAddNote}
+          />
+        </Box>
       )}
 
       {appsWindowOpen && !fullscreenCardId && (

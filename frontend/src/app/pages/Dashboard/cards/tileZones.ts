@@ -47,11 +47,10 @@ function workspaceSize(): { w: number; h: number } {
 
 export function computeTiledStyle(zone: string, panX: number, panY: number, zoom: number): TiledStyle | null {
   // 'fullscreen' = macOS full screen: the app chrome hides (AppShell/DashboardCanvas react to
-  // selectFullscreenCardId) and the card covers the window minus a thin PEEK sliver, the Zen/Arc
-  // touch where the surroundings stay ever-so-slightly visible. Target is WINDOW space here, so
+  // selectFullscreenCardId) and the card covers the WHOLE window. Target is WINDOW space here, so
   // the viewport origin does NOT cancel; once the chrome collapses that origin goes to ~0 anyway.
   if (zone === 'fullscreen') {
-    const PEEK = 10;
+    const PEEK = 0;
     const el = document.querySelector('[data-canvas-viewport]');
     const r = el ? el.getBoundingClientRect() : null;
     const ox = r ? r.left : 0;

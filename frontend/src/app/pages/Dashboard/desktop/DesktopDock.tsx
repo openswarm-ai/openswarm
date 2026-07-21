@@ -7,7 +7,8 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import EventRepeatIcon from '@mui/icons-material/EventRepeat';
 import StickyNote2OutlinedIcon from '@mui/icons-material/StickyNote2Outlined';
 import HistoryIcon from '@mui/icons-material/History';
-import DashboardGlyph from '../canvas/DashboardGlyph';
+import { pickIcon } from '../canvas/DashboardGlyph';
+import { MessageSquare } from 'lucide-react';
 import { openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded';
@@ -107,12 +108,13 @@ function DesktopDock({
       const session = sessions[card.session_id];
       if (!session) continue;
       const title = displayChatTitle(session);
+      const ChatIcon = pickIcon(title) || MessageSquare;
       list.push({
         id: card.session_id,
         label: title,
         rect: card,
         tileBg: hueFor(title),
-        icon: <DashboardGlyph name={title} size={16} color="#fff" />,
+        icon: <ChatIcon size={16} strokeWidth={1.75} color="#fff" />,
         snippet: session.turn_label?.label || undefined,
       });
     }
@@ -230,6 +232,7 @@ function DesktopDock({
               onFocusCard(entry.id, entry.rect);
             }}
             sx={{
+              position: 'relative',
               width: TILE,
               height: TILE,
               borderRadius: '9px',
@@ -245,15 +248,15 @@ function DesktopDock({
               ...(isActive && { outline: '2px solid #6aa2ff', outlineOffset: '2px' }),
             }}
           >
-            {entry.faviconUrl ? (
+            {entry.icon}
+            {entry.faviconUrl && (
               <Box
                 component="img"
                 src={entry.faviconUrl}
                 alt=""
-                sx={{ width: 18, height: 18, borderRadius: '4px' }}
+                onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.style.display = 'none'; }}
+                sx={{ position: 'absolute', width: 18, height: 18, borderRadius: '4px' }}
               />
-            ) : (
-              entry.icon
             )}
           </Box>
         );

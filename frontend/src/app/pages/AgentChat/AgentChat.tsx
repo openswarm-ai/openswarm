@@ -2375,7 +2375,6 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   autoFocus={autoFocus}
                   prefillPrompt={prefillPrompt}
                   placeholderOverride={runContext ? 'Ask about this run...' : embedded ? 'Send a message...' : undefined}
-                  quietComposer={embedded}
                   runContext={runContext}
                   onClearRunContext={onClearRunContext}
                   thinkingLevel={session?.thinking_level ?? 'auto'}

@@ -28,7 +28,6 @@ interface Props {
   editorRef: RefObject<HTMLDivElement>;
   generalFileInputRef: RefObject<HTMLInputElement>;
   embedded?: boolean;
-  quietComposer?: boolean;
   isDragOver: boolean;
   isUploading: boolean;
   handleDragOver: (e: React.DragEvent) => void;
@@ -107,18 +106,9 @@ interface Props {
 
 export const ChatInputView: React.FC<Props> = (p) => {
   const { c } = p;
-  // Embedded card composers rest as just the input + attach/mic (the frame look); the pickers return on focus, draft text, or any open menu.
-  const [focusWithin, setFocusWithin] = useState(false);
-  const restMode = Boolean(
-    p.quietComposer && !focusWithin && !p.hasContent && !p.modelAnchor && !p.thinkingAnchor && !p.modeAnchor,
-  );
   return (
     <Box
       ref={p.containerRef}
-      onFocusCapture={() => setFocusWithin(true)}
-      onBlurCapture={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusWithin(false);
-      }}
       onDragOver={p.handleDragOver}
       onDragLeave={p.handleDragLeave}
       onDrop={p.handleDrop}
@@ -256,7 +246,6 @@ export const ChatInputView: React.FC<Props> = (p) => {
 
       <ChatInputToolbar
         c={c}
-        restMode={restMode}
         modeConf={p.modeConf}
         modesArr={p.modesArr}
         mode={p.mode}

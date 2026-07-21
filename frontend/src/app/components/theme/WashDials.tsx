@@ -40,17 +40,27 @@ export const SquiggleSlider: React.FC<{ value: number; onChange: (v: number) => 
 };
 
 export const Knob: React.FC<{ value: number; onChange: (v: number) => void; size?: number }> = ({ value, onChange, size = 34 }) => {
-  const dragging = useRef<{ startY: number; startV: number } | null>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [grabbing, setGrabbing] = React.useState(false);
   const angle = -135 + value * 270;
+  // Turn like a physical knob: the indicator chases the pointer's angle around the center.
+  const applyAngle = useCallback((clientX: number, clientY: number) => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const deg = Math.atan2(clientX - (r.left + r.width / 2), (r.top + r.height / 2) - clientY) * (180 / Math.PI);
+    onChange(Math.min(1, Math.max(0, (Math.max(-135, Math.min(135, deg)) + 135) / 270)));
+  }, [onChange]);
   return (
     <div
+      ref={ref}
       title="Intensity"
-      onPointerDown={(e) => { dragging.current = { startY: e.clientY, startV: value }; (e.target as HTMLElement).setPointerCapture?.(e.pointerId); }}
-      onPointerMove={(e) => { const d = dragging.current; if (!d) return; onChange(Math.min(1, Math.max(0, d.startV + (d.startY - e.clientY) / 120))); }}
-      onPointerUp={() => { dragging.current = null; }}
+      onPointerDown={(e) => { setGrabbing(true); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); applyAngle(e.clientX, e.clientY); }}
+      onPointerMove={(e) => { if (grabbing) applyAngle(e.clientX, e.clientY); }}
+      onPointerUp={() => setGrabbing(false)}
       style={{
         position: 'relative', width: size + 10, height: size + 10, display: 'flex', alignItems: 'center',
-        justifyContent: 'center', cursor: 'ns-resize', touchAction: 'none', flexShrink: 0,
+        justifyContent: 'center', cursor: grabbing ? 'grabbing' : 'grab', touchAction: 'none', flexShrink: 0,
       }}
     >
       <div style={{ position: 'absolute', inset: 0, borderRadius: 999, border: '2px dotted currentColor', opacity: 0.4 }} />

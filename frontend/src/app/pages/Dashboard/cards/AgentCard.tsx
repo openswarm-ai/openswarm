@@ -17,6 +17,7 @@ import {
   AgentSession,
   handleApproval,
   collapseSession,
+  expandSession,
   closeSession,
   fetchSession,
   renameSession,
@@ -670,10 +671,18 @@ const AgentCard: React.FC<Props> = ({
   void tileTick;
   const cam = getCanvasState();
   const tiledStyle = useTiledStyle(tileZone, cam.panX, cam.panY, cam.zoom);
+  // A collapsed chat can never stay tiled: collapsing while fullscreen left a white full-window shell
+  // (the header collapse control still fires in full size view). Seal the state instead of the path.
+  useEffect(() => {
+    if (tileZone && !expanded) dispatch(clearTiledCard(session.id));
+  }, [tileZone, expanded, dispatch, session.id]);
   const onMinimize = (): void => { dispatch(collapseSession(session.id)); };
   const onTile = (zone: string): void => {
     if (zone === 'restore') dispatch(clearTiledCard(session.id));
-    else dispatch(setTiledCard({ cardId: session.id, zone }));
+    else {
+      if (!expanded) dispatch(expandSession(session.id));
+      dispatch(setTiledCard({ cardId: session.id, zone }));
+    }
   };
 
 
@@ -913,13 +922,18 @@ const AgentCard: React.FC<Props> = ({
           cursor: isDragging ? 'grabbing' : 'grab',
           '&:hover': {},
         }),
-        // Expanded chat wears the desktop dark glass; the header only surfaces on hover.
-        ...(expanded && !tiledStyle && {
-          bgcolor: 'rgba(26,16,34,0.85)',
-          backdropFilter: 'blur(24px) saturate(150%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(150%)',
+        // Expanded chat wears the desktop dark glass; the header only surfaces on hover. Tiled keeps
+        // the SAME dark surface (excluding it rendered the light-theme white card, the "fullscreen
+        // turns white" bug) but solid + blur-free: nothing shows behind a tiled card, and a
+        // window-sized backdrop blur is pure GPU tax.
+        ...(expanded && {
+          bgcolor: tiledStyle ? 'rgb(26,16,34)' : 'rgba(26,16,34,0.85)',
+          ...(tiledStyle ? {} : {
+            backdropFilter: 'blur(24px) saturate(150%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(150%)',
+          }),
           border: isSelected ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
-          borderRadius: '20px',
+          borderRadius: tiledStyle ? '12px' : '20px',
           boxShadow: '0 18px 48px rgba(0,0,0,0.4)',
         }),
       }}
@@ -968,8 +982,25 @@ const AgentCard: React.FC<Props> = ({
           onPointerDown={handleDragPointerDown}
           onPointerMove={handleDragPointerMove}
           onPointerUp={handleDragPointerUp}
-          sx={{ touchAction: 'none', userSelect: 'none' }}
+          sx={{ position: 'relative', touchAction: 'none', userSelect: 'none', pt: '26px', mt: '-26px', '&:hover .osw-pill-lights': { opacity: 1, pointerEvents: 'auto' } }}
         >
+          <Box
+            className="osw-pill-lights osw-card"
+            onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
+            sx={{
+              position: 'absolute', top: 0, left: 4, zIndex: 2, display: 'flex', alignItems: 'center',
+              px: 1, py: 0.5, borderRadius: 999, background: 'rgba(24,14,32,0.85)',
+              backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              opacity: 0, pointerEvents: 'none', transition: 'opacity 140ms ease',
+            }}
+          >
+            <WindowControls
+              onClose={() => handleRemove()}
+              onMinimize={() => dispatch(expandSession(session.id))}
+              onTile={(zone: string) => { dispatch(expandSession(session.id)); onTile(zone); }}
+              tiled={false}
+            />
+          </Box>
           <AgentNarratorPill
             label={pillLabel}
             running={pillRunning}

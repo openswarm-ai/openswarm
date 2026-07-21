@@ -38,8 +38,12 @@ import {
   moveBrowserTab,
   recordClosedCard,
   toggleMinimizeCard,
+  setTiledCard,
+  clearTiledCard,
   type BrowserTab,
 } from '@/shared/state/dashboardLayoutSlice';
+import WindowControls from './WindowControls';
+import { useTiledStyle } from './tileZones';
 import { saveMinimizedShot } from '../desktop/minimizedShots';
 import { removeBrowserCardCleanly } from '@/shared/browserTeardown';
 import { createSelector } from '@reduxjs/toolkit';
@@ -71,17 +75,6 @@ const CHROME_BORDER = 'rgba(0,0,0,0.08)';
 const CHROME_TEXT = '#3c3744';
 const CHROME_TEXT_MUTED = '#8a8494';
 
-const browserLightSx = (color: string): Record<string, unknown> => ({
-  width: 12,
-  height: 12,
-  p: 0,
-  borderRadius: '50%',
-  border: '0.5px solid rgba(0,0,0,0.08)',
-  background: '#d6d3cd',
-  cursor: 'pointer',
-  transition: 'background 150ms',
-  '.osw-card:hover &': { background: color },
-});
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -229,6 +222,22 @@ const BrowserCard: React.FC<Props> = ({
   );
   const browserAgentSession = useAppSelector(selectBrowserAgentSession);
   const isMinimized = useAppSelector((s) => Boolean(s.dashboardLayout.minimizedCards[browserId]));
+  const tileZone = useAppSelector((s) => s.dashboardLayout.tiledCards[browserId]);
+  // Tiled geometry must track pan/zoom, but the camera lives outside React now; subscribe to the pan event ONLY while tiled and read the live getter.
+  const [tileTick, setTileTick] = useState(0);
+  useEffect(() => {
+    if (!tileZone) return undefined;
+    const onPan = (): void => setTileTick((t) => t + 1);
+    window.addEventListener('openswarm:canvas-pan-changed', onPan);
+    return () => window.removeEventListener('openswarm:canvas-pan-changed', onPan);
+  }, [tileZone]);
+  void tileTick;
+  const cam = getCanvasState();
+  const tiledStyle = useTiledStyle(tileZone, cam.panX, cam.panY, cam.zoom);
+  const onTile = useCallback((zone: string): void => {
+    if (zone === 'restore') dispatch(clearTiledCard(browserId));
+    else dispatch(setTiledCard({ cardId: browserId, zone }));
+  }, [dispatch, browserId]);
 
   const suspendedSnap = useAppSelector((state) => state.dashboardLayout.suspendedBrowserCards[browserId]);
   const endingState = useAppSelector((state) => state.dashboardLayout.endingBrowserCards[browserId]);
@@ -546,8 +555,11 @@ const BrowserCard: React.FC<Props> = ({
   const handleMinimize = useCallback(() => {
     const wv = webviewMap.current.get(activeTabId);
     const capture = wv?.capturePage?.();
-    const park = (): void => { dispatch(toggleMinimizeCard({ cardId: browserId })); };
+    let parked = false;
+    const park = (): void => { if (parked) return; parked = true; dispatch(toggleMinimizeCard({ cardId: browserId })); };
     if (capture && typeof (capture as Promise<unknown>).then === 'function') {
+      // capturePage can hang forever on off-screen guests (Electron 42); the timer guarantees the park.
+      window.setTimeout(park, 800);
       (capture as Promise<{ toDataURL(): string }>)
         .then((img) => { saveMinimizedShot(browserId, img.toDataURL()); })
         .catch(() => undefined)
@@ -917,19 +929,20 @@ const BrowserCard: React.FC<Props> = ({
         contain: 'layout style',
         // Own compositor layer so hover/paint invalidations stay contained to this card. See AgentCard for full rationale.
         willChange: 'transform',
-        left: keepAliveHidden || isMinimized ? -100000 : (dragging ? cardX : displayX),
-        top: dragging ? cardY : displayY,
-        transform: dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : undefined,
-        width: displayW,
-        height: displayH,
-        borderRadius: `${c.radius.lg}px`,
+        left: keepAliveHidden || isMinimized ? -100000 : (tiledStyle ? tiledStyle.left : (dragging ? cardX : displayX)),
+        top: tiledStyle && !(keepAliveHidden || isMinimized) ? tiledStyle.top : (dragging ? cardY : displayY),
+        transform: tiledStyle ? tiledStyle.transform : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : undefined),
+        transformOrigin: tiledStyle ? tiledStyle.transformOrigin : undefined,
+        width: tiledStyle ? tiledStyle.width : displayW,
+        height: tiledStyle ? tiledStyle.height : displayH,
+        borderRadius: tileZone === 'fullscreen' ? '12px' : `${c.radius.lg}px`,
         border: agentBorder,
         bgcolor: c.bg.surface,
         boxShadow: agentShadow,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: (isDragging || isResizing) ? 999999 : cardZOrder,
+        zIndex: tiledStyle ? 999990 : (isDragging || isResizing) ? 999999 : cardZOrder,
         transition: noTransition ? 'none' : 'box-shadow 0.4s ease, border 0.3s ease',
         '&:hover .resize-handle': { opacity: 1 },
         ...(isHighlighted && {
@@ -979,21 +992,13 @@ const BrowserCard: React.FC<Props> = ({
       >
         <Box
           onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
-          sx={{ display: 'flex', alignItems: 'center', gap: '7px', pl: 1.25, pr: 0.75, flexShrink: 0 }}
+          sx={{ display: 'flex', alignItems: 'center', pl: 1.25, pr: 0.75, flexShrink: 0 }}
         >
-          <Box
-            component="button"
-            type="button"
-            aria-label="Close browser"
-            onClick={handleRemove}
-            sx={{ ...browserLightSx('#ff5f57'), }}
-          />
-          <Box
-            component="button"
-            type="button"
-            aria-label="Minimize browser"
-            onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleMinimize(); }}
-            sx={{ ...browserLightSx('#febc2e'), }}
+          <WindowControls
+            onClose={() => { dispatch(recordClosedCard({ kind: 'browser', id: browserId })); removeBrowserCardCleanly(browserId, dispatch); }}
+            onMinimize={handleMinimize}
+            onTile={onTile}
+            tiled={!!tileZone}
           />
         </Box>
         <Box

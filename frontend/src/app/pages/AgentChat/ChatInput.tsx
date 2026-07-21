@@ -48,14 +48,12 @@ interface Props {
   prefillPrompt?: string;
   // Replaces the default "Agent, @ for context..." placeholder (e.g. "Ask about this run...").
   placeholderOverride?: string;
-  // Desktop-card composer: rest as input + attach/mic; pickers return on focus.
-  quietComposer?: boolean;
   // A workflow run shown as a small removable chip inside the composer.
   runContext?: WorkflowsRunContext;
   onClearRunContext?: () => void;
 }
 
-const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, provider, onProviderChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0, thinkingLevel = 'auto', onThinkingLevelChange, onActivityLabelChange, prefillPrompt, placeholderOverride, quietComposer, runContext, onClearRunContext }, ref) => {
+const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, onModeChange, model, onModelChange, provider, onProviderChange, isRunning, onStop, autoRunMode, contextEstimate, embedded, autoFocus, sessionId, queueLength = 0, thinkingLevel = 'auto', onThinkingLevelChange, onActivityLabelChange, prefillPrompt, placeholderOverride, runContext, onClearRunContext }, ref) => {
   const c = useClaudeTokens();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -322,7 +320,6 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
       editorRef={editorRef}
       generalFileInputRef={generalFileInputRef}
       embedded={embedded}
-      quietComposer={quietComposer}
       isDragOver={isDragOver}
       isUploading={isUploading}
       handleDragOver={handleDragOver}

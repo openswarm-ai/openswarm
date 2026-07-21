@@ -65,7 +65,7 @@ const KEYWORDS: Record<string, LucideIcon> = {
   weather: CloudSun, forecast: CloudSun, temperature: CloudSun,
 };
 
-function pickIcon(title: string): LucideIcon | null {
+export function pickIcon(title: string): LucideIcon | null {
   const words = title.toLowerCase().match(/[a-z]+/g) || [];
   for (const w of words) {
     const hit = KEYWORDS[w] || (w.endsWith('s') ? KEYWORDS[w.slice(0, -1)] : undefined);

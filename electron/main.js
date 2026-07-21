@@ -1238,6 +1238,11 @@ function createWindow() {
     },
   });
 
+  // Arc-style traffic lights: hidden until the renderer's top-edge hover asks for them.
+  if (process.platform === 'darwin') {
+    try { mainWindow.setWindowButtonVisibility(false); } catch (err) { console.warn('[main] setWindowButtonVisibility failed:', err.message); }
+  }
+
   if (isDev) {
     // Dev only: OPENSWARM_DEV_URL (full override) or OPENSWARM_DEV_PORT lets a second worktree's Electron point at its own webpack-dev-server instead of colliding on the shared :3000. Packaged builds never hit this branch.
     mainWindow.loadURL(process.env.OPENSWARM_DEV_URL || `http://localhost:${process.env.OPENSWARM_DEV_PORT || 3000}`);
@@ -2828,6 +2833,10 @@ ipcMain.handle('get-auth-token', async () => {
 ipcMain.on('perf:first-agent-response', () => perfMark('first-agent-response'));
 
 ipcMain.handle('get-app-version', () => app.getVersion());
+ipcMain.handle('set-window-buttons-visible', (_e, visible) => {
+  if (process.platform !== 'darwin' || !mainWindow || mainWindow.isDestroyed()) return;
+  try { mainWindow.setWindowButtonVisibility(!!visible); } catch (err) { console.warn('[main] setWindowButtonVisibility failed:', err.message); }
+});
 // Phase 2 provenance: the renderer's About panel shows the commit this build
 // was cut from, so a screenshot is enough to identify the exact code shipped.
 ipcMain.handle('get-build-info', () => getBuildInfo());

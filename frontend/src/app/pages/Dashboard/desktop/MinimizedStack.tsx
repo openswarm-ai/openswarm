@@ -3,7 +3,9 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { toggleMinimizeCard } from '@/shared/state/dashboardLayoutSlice';
+import { toggleMinimizeCard, setTiledCard, recordClosedCard } from '@/shared/state/dashboardLayoutSlice';
+import { removeBrowserCardCleanly } from '@/shared/browserTeardown';
+import WindowControls from '../cards/WindowControls';
 import { getMinimizedShot, dropMinimizedShot } from './minimizedShots';
 import type { BrowserCardPosition } from '@/shared/state/dashboardLayoutSlice';
 
@@ -44,28 +46,48 @@ function MinimizedStack({ browserCards, onRestore }: MinimizedStackProps): React
       {entries.map((bc) => {
         const activeTab = bc.tabs.find((t) => t.id === bc.activeTabId) || bc.tabs[0];
         const shot = getMinimizedShot(bc.browser_id);
+        const restore = (): void => {
+          dropMinimizedShot(bc.browser_id);
+          dispatch(toggleMinimizeCard({ cardId: bc.browser_id }));
+          onRestore(bc.browser_id, bc);
+        };
         return (
           <Box
             key={bc.browser_id}
-            onClick={() => {
-              dropMinimizedShot(bc.browser_id);
-              dispatch(toggleMinimizeCard({ cardId: bc.browser_id }));
-              onRestore(bc.browser_id, bc);
-            }}
+            onClick={restore}
             title={activeTab?.title || 'Browser'}
+            className="osw-card"
             sx={{
+              position: 'relative',
               width: THUMB_W,
               borderRadius: '8px',
-              overflow: 'hidden',
               cursor: 'pointer',
               boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
               background: '#fff',
               transition: 'transform 0.15s ease, box-shadow 0.15s ease',
               '&:hover': { transform: 'scale(1.06)', boxShadow: '0 10px 28px rgba(0,0,0,0.4)' },
+              '&:hover .osw-pill-lights': { opacity: 1, pointerEvents: 'auto' },
             }}
           >
+            <Box
+              className="osw-pill-lights"
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+              sx={{
+                position: 'absolute', top: 3, left: 3, zIndex: 2, display: 'flex', alignItems: 'center',
+                px: 1, py: 0.5, borderRadius: 999, background: 'rgba(24,14,32,0.85)',
+                backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                opacity: 0, pointerEvents: 'none', transition: 'opacity 140ms ease',
+              }}
+            >
+              <WindowControls
+                onClose={() => { dispatch(recordClosedCard({ kind: 'browser', id: bc.browser_id })); removeBrowserCardCleanly(bc.browser_id, dispatch); }}
+                onMinimize={restore}
+                onTile={(zone: string) => { restore(); if (zone !== 'restore') dispatch(setTiledCard({ cardId: bc.browser_id, zone })); }}
+                tiled={false}
+              />
+            </Box>
             {shot ? (
-              <Box component="img" src={shot} alt="" sx={{ width: '100%', display: 'block' }} />
+              <Box component="img" src={shot} alt="" sx={{ width: '100%', display: 'block', borderRadius: '8px' }} />
             ) : (
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, py: 1.5, px: 1 }}>
                 {activeTab?.favicon ? (
