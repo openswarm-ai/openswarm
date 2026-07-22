@@ -928,7 +928,9 @@ const AgentCard: React.FC<Props> = ({
         // turns white" bug) but solid + blur-free: nothing shows behind a tiled card, and a
         // window-sized backdrop blur is pure GPU tax.
         ...(expanded && {
-          bgcolor: tiledStyle ? 'rgb(26,16,34)' : 'rgba(26,16,34,0.85)',
+          // Warm near-neutral dark (the Claude/ChatGPT family) instead of the saturated plum: long
+          // reading sessions want a quiet ground; the accent system carries the brand color.
+          bgcolor: tiledStyle ? 'rgb(33,31,36)' : 'rgba(33,31,36,0.88)',
           ...(tiledStyle ? {} : {
             backdropFilter: 'blur(24px) saturate(150%)',
             WebkitBackdropFilter: 'blur(24px) saturate(150%)',

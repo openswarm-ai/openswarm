@@ -2,7 +2,6 @@ import React, { RefObject } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import MicNoneOutlinedIcon from '@mui/icons-material/MicNoneOutlined';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import StopIcon from '@mui/icons-material/Stop';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
@@ -178,22 +177,6 @@ export const ToolbarActions: React.FC<Props> = ({
               >
                 <StopIcon sx={{ fontSize: 16 }} />
               </IconButton>
-            </Tooltip>
-          ) : !hasContent ? (
-            <Tooltip title="Voice input (coming soon)">
-              <span>
-                <IconButton
-                  size="small"
-                  disabled
-                  sx={{
-                    color: c.text.tertiary,
-                    p: 0.5,
-                    '&.Mui-disabled': { color: c.text.ghost },
-                  }}
-                >
-                  <MicNoneOutlinedIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-              </span>
             </Tooltip>
           ) : null}
         </Box>
