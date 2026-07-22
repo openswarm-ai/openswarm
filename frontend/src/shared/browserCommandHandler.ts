@@ -570,8 +570,11 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
     let hit = findBest();
     const acts = [];
     if (!hit && ${reveal}) {
-      // 1. A compose opener visible up top (Gmail "Compose", LinkedIn "Start a post").
-      try { if (clickTrigger(false)) { acts.push('trigger'); hit = await pollFind(2500); } } catch (e) { /* keep going */ }
+      // 1. A compose opener visible up top (Gmail "Compose", LinkedIn "Start a post"). Patient
+      //    poll: LinkedIn code-splits its share modal, and under a heavy session the editor
+      //    chunk lands past 2.5s (measured: the 2.5s poll missed ~half the time; poll exits the
+      //    moment the editable appears, so the patience costs nothing on the happy path).
+      try { if (clickTrigger(false)) { acts.push('trigger'); hit = await pollFind(6000); } } catch (e) { /* keep going */ }
       // 2. Progressive scroll for a below-fold / lazy composer: YouTube comments hydrate on
       //    scroll and start as a placeholder that only becomes editable once clicked, so scroll
       //    a step, re-scan, and re-click the trigger on whatever just entered the viewport, up to
@@ -590,7 +593,17 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
         }
         if (scrolled) acts.push('scroll');
       }
-      // 3. Last resort: open the first list item (X DMs / chat lists). Navigational, so it runs
+      // 3. Back to the top opener: the scroll ladder ends at page bottom with the top compose
+      //    entry off-screen; a modal that opened slowly (or needed a second click) is only
+      //    winnable by returning and retrying once.
+      if (!hit) {
+        try {
+          (document.scrollingElement || document.documentElement).scrollTo(0, 0);
+          await sleep(400);
+          if (clickTrigger(false)) { acts.push('retop'); hit = await pollFind(4000); }
+        } catch (e) { /* keep going */ }
+      }
+      // 4. Last resort: open the first list item (X DMs / chat lists). Navigational, so it runs
       //    only after trigger+scroll fail, which stops it from yanking YouTube to another video.
       if (!hit) { let did = false; try { did = openFirstItem(); } catch (e) { did = false; } if (did) { acts.push('open-first'); hit = await pollFind(2000); } }
     }
