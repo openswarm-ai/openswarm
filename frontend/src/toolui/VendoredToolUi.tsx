@@ -60,6 +60,29 @@ function parseLeniently(schema: { safeParse: (v: unknown) => any }, props: Recor
   return { state: 'bad', problem: issues };
 }
 
+// Rough resting height per component family so the loading skeleton reserves believable space
+// (Lobe/Open WebUI pattern: a breathing block where the card will land, not a tiny sliver).
+function skeletonHeightFor(name: string): number {
+  if (/table|chart|gallery|map|carousel|post|terminal/.test(name)) return 180;
+  if (/stats|weather|plan|order|preferences|question/.test(name)) return 110;
+  return 56;
+}
+
+const SkeletonBlock: React.FC<{ name: string }> = ({ name }) => (
+  <div
+    style={{
+      height: skeletonHeightFor(name),
+      width: '100%',
+      maxWidth: 520,
+      borderRadius: 12,
+      background: 'rgba(127,127,127,0.12)',
+      animation: 'toolui-skeleton-pulse 1.4s ease-in-out infinite',
+    }}
+  >
+    <style>{'@keyframes toolui-skeleton-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }'}</style>
+  </div>
+);
+
 /** Validates against the upstream zod contract, then renders the vendored component inside the scoped theme. */
 function VendoredToolUi({ name, props, extraProps }: VendoredToolUiProps): React.ReactElement | null {
   const { mode } = useThemeMode();
@@ -87,13 +110,13 @@ function VendoredToolUi({ name, props, extraProps }: VendoredToolUiProps): React
     );
   }
   if (gate.state === 'pending') {
-    return <div style={{ height: 48, width: 280, borderRadius: 12, background: 'rgba(127,127,127,0.12)' }} />;
+    return <SkeletonBlock name={name} />;
   }
   const Component = entry.Component;
   return (
     <div className={`tool-ui-scope${mode === 'dark' ? ' dark' : ''}`}>
       <ComponentGuard name={name}>
-        <Suspense fallback={<div style={{ height: 48, width: 280, borderRadius: 12, background: 'rgba(127,127,127,0.12)' }} />}>
+        <Suspense fallback={<SkeletonBlock name={name} />}>
           <Component {...gate.parsed} {...(extraProps || {})} />
         </Suspense>
       </ComponentGuard>

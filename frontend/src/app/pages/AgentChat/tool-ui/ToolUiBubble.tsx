@@ -26,7 +26,22 @@ function ToolUiBubble({ pair, sessionId, isPending, suppressReveal, sessionRunni
     );
   }
   return (
-    <Box sx={{ my: 1, contain: 'layout style' }} data-select-type="tool-ui" data-select-id={pair.id} data-select-meta={JSON.stringify({ component: payload.component })}>
+    <Box
+      sx={{
+        my: 1,
+        contain: 'layout style',
+        // One-shot entrance (assistant-ui's fade + rise + blur-in): the card arrives, it doesn't pop.
+        animation: 'toolUiEnter 240ms cubic-bezier(0.32, 0.72, 0, 1)',
+        '@keyframes toolUiEnter': {
+          from: { opacity: 0, transform: 'translateY(6px)', filter: 'blur(2px)' },
+          to: { opacity: 1, transform: 'translateY(0)', filter: 'blur(0)' },
+        },
+        '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+      }}
+      data-select-type="tool-ui"
+      data-select-id={pair.id}
+      data-select-meta={JSON.stringify({ component: payload.component })}
+    >
       <ShowUiWidgetView payload={payload} />
     </Box>
   );
