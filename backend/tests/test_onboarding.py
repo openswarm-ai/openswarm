@@ -154,6 +154,47 @@ def test_read_provider_cookies_fails_open_without_a_store(monkeypatch):
     assert browser_cookies.read_provider_cookie_records("claude.ai") == []
 
 
+def test_win_storage_key_parses_local_state_and_unwraps(monkeypatch, tmp_path):
+    from backend.apps.onboarding.usage import browser_cookies
+
+    # Local State carries a base64 "DPAPI"-prefixed key; the Windows path strips the prefix and
+    # hands the rest to CryptUnprotectData. Prove the parse + prefix-strip without needing Windows.
+    raw_key = b"DPAPI" + b"wrapped-key-bytes"
+    local_state_dir = tmp_path / "UserData"
+    local_state_dir.mkdir()
+    (local_state_dir / "Local State").write_text(
+        json.dumps({"os_crypt": {"encrypted_key": base64.b64encode(raw_key).decode()}})
+    )
+    monkeypatch.setattr(browser_cookies, "CHROMIUM_ROOTS", {"Chrome": str(local_state_dir)})
+    seen = {}
+
+    def fake_unprotect(data: bytes):
+        seen["passed"] = data
+        return b"unwrapped-aes-key"
+
+    monkeypatch.setattr(browser_cookies, "p_win_dpapi_unprotect", fake_unprotect)
+    key = browser_cookies.p_win_storage_key("Chrome")
+    assert key == b"unwrapped-aes-key"
+    assert seen["passed"] == b"wrapped-key-bytes"  # the 5-byte "DPAPI" prefix was stripped
+
+
+def test_win_storage_key_fails_open(monkeypatch, tmp_path):
+    from backend.apps.onboarding.usage import browser_cookies
+
+    # Missing Local State, malformed JSON, and DPAPI failure all fail open to None (-> scan fallback).
+    monkeypatch.setattr(browser_cookies, "CHROMIUM_ROOTS", {"Chrome": str(tmp_path)})
+    assert browser_cookies.p_win_storage_key("Chrome") is None  # no Local State file
+    assert browser_cookies.p_win_storage_key("Nonexistent") is None
+
+
+def test_decrypt_rejects_app_bound_v20():
+    from backend.apps.onboarding.usage import browser_cookies
+
+    # v20 = app-bound encryption (modern Chrome), out of reach on both OSes -> None, never a crash.
+    assert browser_cookies.p_decrypt(b"v20" + b"anything", b"\x00" * 32) is None
+    assert browser_cookies.p_decrypt(b"", b"\x00" * 32) is None
+
+
 def test_dump_cookies_only_serves_allowlisted_domains(monkeypatch, capsys):
     from backend.apps.onboarding.usage import dump_cookies
 
