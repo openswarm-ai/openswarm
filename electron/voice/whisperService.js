@@ -22,29 +22,37 @@ function downloadModel(dest) {
   download.error = null;
   try { fs.mkdirSync(path.dirname(dest), { recursive: true }); } catch (_) {}
   const tmp = `${dest}.part`;
-  const file = fs.createWriteStream(tmp);
-  const req = https.get(MODEL_URL, (res) => {
-    if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-      // Follow HuggingFace's CDN redirect once.
-      https.get(res.headers.location, (r2) => pipeTo(r2, file, tmp, dest)).on('error', onErr);
-      return;
-    }
-    pipeTo(res, file, tmp, dest);
-  });
-  req.on('error', onErr);
-  function onErr(e) { download.active = false; download.error = String(e && e.message ? e.message : e); try { file.close(); fs.unlinkSync(tmp); } catch (_) {} }
-}
+  try { fs.unlinkSync(tmp); } catch (_) {}
 
-function pipeTo(res, file, tmp, dest) {
-  const total = Number(res.headers['content-length'] || 0);
-  let got = 0;
-  res.on('data', (c) => { got += c.length; if (total) download.pct = Math.round((got / total) * 100); });
-  res.pipe(file);
-  file.on('finish', () => file.close(() => {
-    try { fs.renameSync(tmp, dest); download.pct = 100; } catch (e) { download.error = String(e); }
-    download.active = false;
-  }));
-  res.on('error', () => { download.active = false; download.error = 'stream-error'; try { fs.unlinkSync(tmp); } catch (_) {} });
+  const fail = (msg) => { download.active = false; download.error = String(msg); try { fs.unlinkSync(tmp); } catch (_) {} };
+
+  // HuggingFace bounces resolve -> CDN -> signed URL, so follow redirects instead of assuming one hop.
+  const fetchUrl = (url, hops) => {
+    if (hops > 6) { fail('too-many-redirects'); return; }
+    const req = https.get(url, { headers: { 'User-Agent': 'openswarm-voice' } }, (res) => {
+      const code = res.statusCode || 0;
+      if (code >= 300 && code < 400 && res.headers.location) {
+        res.resume(); // drain so the socket frees
+        fetchUrl(new URL(res.headers.location, url).toString(), hops + 1);
+        return;
+      }
+      if (code !== 200) { res.resume(); fail(`http-${code}`); return; }
+      const total = Number(res.headers['content-length'] || 0);
+      let got = 0;
+      const file = fs.createWriteStream(tmp);
+      res.on('data', (c) => { got += c.length; if (total) download.pct = Math.round((got / total) * 100); });
+      res.pipe(file);
+      file.on('finish', () => file.close(() => {
+        // A truncated download is worse than none: only accept a complete file.
+        if (total && got < total) { fail('truncated'); return; }
+        try { fs.renameSync(tmp, dest); download.pct = 100; download.active = false; } catch (e) { fail(e && e.message ? e.message : e); }
+      }));
+      res.on('error', () => fail('stream-error'));
+      file.on('error', () => fail('write-error'));
+    });
+    req.on('error', (e) => fail(e && e.message ? e.message : e));
+  };
+  fetchUrl(MODEL_URL, 0);
 }
 
 function modelStatus() {
@@ -98,37 +106,46 @@ async function waitForReady(p, timeoutMs) {
   return false;
 }
 
+async function p_bootServer(resourceDir, userDataDir) {
+  const bin = resolveBinary(resourceDir);
+  const model = resolveModel(resourceDir, userDataDir);
+  if (!model) {
+    // Kick off a one-time background fetch so the NEXT dictation just works.
+    downloadModel(path.join(userDataDir, 'whisper', MODEL_FILE));
+    throw new Error(download.active ? 'model-downloading' : 'no-model');
+  }
+  const p = pickPort();
+  const child = spawn(bin, ['-m', model, '--port', String(p), '-nt', '--convert'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.on('error', () => { proc = null; port = 0; });
+  child.on('exit', () => { proc = null; port = 0; readyPromise = null; });
+  const ok = await waitForReady(p, 20000);
+  if (!ok) {
+    try { child.kill(); } catch (_) {}
+    throw new Error('server-timeout');
+  }
+  proc = child;
+  port = p;
+  return p;
+}
+
 // Boot the warm server once. resourceDir = where a packaged build put the binary+model; userDataDir
 // = app.getPath('userData') for the dev cache. Returns the port, or throws with an actionable reason.
+// The readyPromise is cleared AFTER it settles, never synchronously inside the async body: the old
+// code reset it inside the IIFE where the outer assignment immediately overwrote the null, pinning a
+// settled-rejected promise forever so every later call kept throwing "model-downloading" even after
+// the model finished. Clearing on rejection here lets the next call retry cleanly.
 async function ensureServer(resourceDir, userDataDir) {
   if (proc && port) return port;
   if (readyPromise) return readyPromise;
-  readyPromise = (async () => {
-    const bin = resolveBinary(resourceDir);
-    const model = resolveModel(resourceDir, userDataDir);
-    if (!model) {
-      readyPromise = null;
-      // Kick off a one-time background fetch to the dev cache so the NEXT dictation just works.
-      downloadModel(path.join(userDataDir, 'whisper', MODEL_FILE));
-      throw new Error(download.active ? 'model-downloading' : 'no-model');
-    }
-    const p = pickPort();
-    const child = spawn(bin, ['-m', model, '--port', String(p), '-nt', '--convert'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    child.on('error', () => { proc = null; port = 0; });
-    child.on('exit', () => { proc = null; port = 0; readyPromise = null; });
-    const ok = await waitForReady(p, 20000);
-    if (!ok) {
-      try { child.kill(); } catch (_) {}
-      readyPromise = null;
-      throw new Error('server-timeout');
-    }
-    proc = child;
-    port = p;
-    return p;
-  })();
-  return readyPromise;
+  readyPromise = p_bootServer(resourceDir, userDataDir);
+  try {
+    return await readyPromise;
+  } catch (err) {
+    readyPromise = null;
+    throw err;
+  }
 }
 
 // Transcribe a 16kHz-mono WAV buffer to text. The renderer records + encodes the WAV so the audio

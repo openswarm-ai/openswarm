@@ -15,11 +15,20 @@ interface Recorder {
   chunks: Float32Array[];
 }
 
+// One object per terminal outcome so the overlay's effect always re-fires (new identity every time).
+export interface VoiceFeedback {
+  tone: 'ok' | 'warn' | 'error';
+  icon: 'check' | 'clipboard' | 'mic' | 'info';
+  text: string;
+  at: number;
+}
+
 export function useVoiceDictation() {
   const [state, setState] = useState<VoiceState>('idle');
   const [lastText, setLastText] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [pct, setPct] = useState<number>(0);
+  const [feedback, setFeedback] = useState<VoiceFeedback | null>(null);
   const recRef = useRef<Recorder | null>(null);
   const stateRef = useRef<VoiceState>('idle');
   stateRef.current = state;
@@ -72,7 +81,10 @@ export function useVoiceDictation() {
       // Warm the model the moment recording begins so transcription is instant on stop.
       void window.openswarm?.voiceWarmup?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'mic-unavailable');
+      const msg = err instanceof Error ? err.message : 'mic-unavailable';
+      setError(msg);
+      const denied = /NotAllowed|Permission|denied/i.test(msg);
+      setFeedback({ tone: 'error', icon: 'mic', text: denied ? 'Microphone access needed. Enable it in System Settings, Privacy, Microphone.' : 'Could not start the microphone.', at: Date.now() });
       setState('idle');
     }
   }, []);
@@ -87,7 +99,13 @@ export function useVoiceDictation() {
       const res = await window.openswarm?.voiceTranscribe?.(wav);
       if (res?.ok && res.text) {
         setLastText(res.text);
-        await window.openswarm?.voiceInject?.(res.text);
+        const inj = await window.openswarm?.voiceInject?.(res.text);
+        setFeedback(inj?.pasted
+          ? { tone: 'ok', icon: 'check', text: res.text, at: Date.now() }
+          : { tone: 'ok', icon: 'clipboard', text: `${res.text}  (copied, press Cmd+V)`, at: Date.now() });
+        setState('idle');
+      } else if (res?.ok && !res.text) {
+        setFeedback({ tone: 'warn', icon: 'info', text: "Didn't catch that. Try again.", at: Date.now() });
         setState('idle');
       } else if (res?.error === 'model-downloading' || res?.error === 'no-model') {
         // First use kicked off the model fetch; show progress and don't error out.
@@ -95,10 +113,12 @@ export function useVoiceDictation() {
         pollModel();
       } else {
         setError(res?.error || 'transcription-failed');
+        setFeedback({ tone: 'error', icon: 'info', text: 'Voice transcription failed. Try again.', at: Date.now() });
         setState('idle');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'transcription-failed');
+      setFeedback({ tone: 'error', icon: 'info', text: 'Voice transcription failed. Try again.', at: Date.now() });
       setState('idle');
     }
   }, [teardown, pollModel]);
@@ -117,5 +137,5 @@ export function useVoiceDictation() {
   // A dangling recorder (unmount mid-capture) must release the mic.
   useEffect(() => () => { teardown(); }, [teardown]);
 
-  return { state, lastText, error, pct, toggle, start, stop };
+  return { state, lastText, error, pct, feedback, toggle, start, stop };
 }
