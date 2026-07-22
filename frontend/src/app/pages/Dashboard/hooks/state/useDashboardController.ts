@@ -103,7 +103,6 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
   const {
     multiDragDelta,
     liveDragInfo,
-    snapZone,
     handleCardDragStart,
     handleCardDragMove,
     handleCardDragEnd,
@@ -333,7 +332,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     cards, viewCards, browserCards, keepAliveBrowserCards, notes, outputs, glowingAgentCards,
     workflowCards, workflowsHub,
     expandedSessionIds, tethers, highlightedCardId, autoFocusSessionId,
-    focusedCardId, pendingFocusNoteId, multiDragDelta, snapZone, shakeDirection,
+    focusedCardId, pendingFocusNoteId, multiDragDelta, shakeDirection,
     neighborDirections, toolbarOpen, searchPaletteOpen, newAgentBounce,
     toolbarRef, spawnOriginsRef, revealSpawnedRef, measuredHeightsRef, getCanvasState,
     toolbarPrefill,
