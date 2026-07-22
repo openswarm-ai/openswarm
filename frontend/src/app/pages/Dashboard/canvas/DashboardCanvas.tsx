@@ -7,6 +7,7 @@ import TetherLayer from './TetherLayer';
 import DashboardCardLayer from './DashboardCardLayer';
 import DashboardOverlays from './DashboardOverlays';
 import DashboardEmptyState from './DashboardEmptyState';
+import SnapZonePreview from './SnapZonePreview';
 import '../desktop/desktop.css';
 import DesktopDock from '../desktop/DesktopDock';
 import MinimizedStack from '../desktop/MinimizedStack';
@@ -61,6 +62,7 @@ interface DashboardCanvasProps {
   focusedCardId: string | null;
   pendingFocusNoteId: string | null;
   multiDragDelta: { dx: number; dy: number } | null;
+  snapZone: string | null;
   shakeDirection: Direction | null;
   neighborDirections: NeighborDirections;
   toolbarOpen: boolean;
@@ -124,6 +126,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   focusedCardId,
   pendingFocusNoteId,
   multiDragDelta,
+  snapZone,
   shakeDirection,
   neighborDirections,
   toolbarOpen,
@@ -264,6 +267,8 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           }}
         />
       )}
+
+      <SnapZonePreview zone={snapZone} />
 
       {!anyFullscreen && (
         <DesktopDock
