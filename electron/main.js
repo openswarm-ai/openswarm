@@ -2187,6 +2187,51 @@ function buildBrowserContextMenu(contents, params, webContentsId) {
   } catch (_) {}
 }
 
+// The app's OWN renderer (chat, outputs, sidebar) gets no native menu from Electron by default, so
+// right-clicking text used to do nothing. This is the browser menu minus the nav items that mean
+// nothing inside a single-page app: spelling, copy-link, and the edit/copy roles.
+function buildAppContextMenu(contents, params) {
+  const template = [];
+  const sep = () => template.push({ type: 'separator' });
+
+  if (params.misspelledWord) {
+    const suggestions = params.dictionarySuggestions || [];
+    if (suggestions.length) {
+      for (const s of suggestions) template.push({ label: s, click: () => { try { contents.replaceMisspelling(s); } catch (_) {} } });
+    } else {
+      template.push({ label: 'No spelling suggestions', enabled: false });
+    }
+    template.push({ label: 'Add to Dictionary', click: () => { try { contents.session.addWordToSpellCheckerDictionary(params.misspelledWord); } catch (_) {} } });
+    sep();
+  }
+
+  if (params.linkURL) {
+    template.push({ label: 'Copy Link', click: () => clipboard.writeText(params.linkURL) });
+    sep();
+  }
+
+  const flags = params.editFlags || {};
+  if (params.isEditable) {
+    template.push({ role: 'cut', enabled: flags.canCut !== false });
+    template.push({ role: 'copy', enabled: flags.canCopy !== false });
+    template.push({ role: 'paste', enabled: flags.canPaste !== false });
+    template.push({ role: 'selectAll' });
+  } else if (params.selectionText) {
+    template.push({ role: 'copy' });
+  }
+
+  if (isDev) {
+    if (template.length) sep();
+    template.push({ label: 'Inspect Element', click: () => { try { contents.inspectElement(params.x, params.y); } catch (_) {} } });
+  }
+
+  // Nothing worth showing (empty right-click on non-dev chrome): let the OS do nothing.
+  if (!template.length) return;
+  try {
+    Menu.buildFromTemplate(template).popup({ window: mainWindow || undefined });
+  } catch (_) {}
+}
+
 app.on('web-contents-created', (_event, contents) => {
   // Block Cmd+W from closing the main window, whether the window chrome or one of
   // its embedded webviews has focus. OAuth popups (their own 'window' contents,
@@ -2195,6 +2240,11 @@ app.on('web-contents-created', (_event, contents) => {
   if (isCreatingMainWindow || contents.getType() === 'webview') {
     contents.on('before-input-event', swallowCloseWindowShortcut);
     contents.on('before-input-event', routeReloadShortcut);
+  }
+  // The main app window (created while this flag is set) gets a text-focused native menu; OAuth
+  // popups are 'window' contents created with the flag OFF, so they keep the OS default.
+  if (isCreatingMainWindow) {
+    contents.on('context-menu', (_e, params) => buildAppContextMenu(contents, params));
   }
   if (contents.getType() === 'webview') {
     const wcId = contents.id;
