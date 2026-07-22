@@ -467,6 +467,13 @@ const AppShell: React.FC = () => {
     else root.style.removeProperty('--osw-header-inset');
     return () => { root.style.removeProperty('--osw-header-inset'); };
   }, [sidebarAway]);
+  // When the sidebar is docked, the macOS traffic lights sit over its top strip, which is a window
+  // drag region that swallows mousemove, so the canvas hover-reveal can never fire there. Broadcast
+  // "chrome docked" so the canvas keeps the native lights visible while the sidebar is open (they only
+  // hide-until-hover in the immersive collapsed/fullscreen state). detail.docked = sidebar is present.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('openswarm:chrome-docked', { detail: { docked: !sidebarAway } }));
+  }, [sidebarAway]);
   // Close-on-leave with a grace delay (cancelled on re-enter): a bare mouseLeave closed the peek the
   // instant the cursor dipped past the panel edge while reaching for an item, so clicks never landed.
   const peekCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

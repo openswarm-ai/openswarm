@@ -187,11 +187,21 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [fullscreenCardId, dispatch]);
 
+  // While the sidebar is docked, its top strip (a window drag region) hides the traffic lights AND
+  // eats the hover that would reveal them, so keep them visible the whole time the sidebar is open,
+  // like every Mac app with a sidebar. Only the immersive collapsed/fullscreen state hover-reveals.
+  const [chromeDocked, setChromeDocked] = React.useState(false);
+  useEffect(() => {
+    const onDocked = (e: Event): void => setChromeDocked(!!(e as CustomEvent).detail?.docked);
+    window.addEventListener('openswarm:chrome-docked', onDocked);
+    return () => window.removeEventListener('openswarm:chrome-docked', onDocked);
+  }, []);
+
   // Arc-style chrome: the mac traffic lights ride the top-edge hover, in fullscreen too (Arc/Zen both
   // keep the native buttons reachable in compact/fullscreen; Zen even exempts them from hover-leave).
   useEffect(() => {
-    window.openswarm?.setWindowButtonsVisible?.(headerRevealed);
-  }, [headerRevealed]);
+    window.openswarm?.setWindowButtonsVisible?.(headerRevealed || chromeDocked);
+  }, [headerRevealed, chromeDocked]);
 
   // Reveal on any pointer graze of the top edge. The old 22px strip Box was dead in practice: the
   // hidden header overlay's pointer-events:auto children sat above it and ate the mouseenter.
