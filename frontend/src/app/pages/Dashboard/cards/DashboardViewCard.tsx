@@ -557,7 +557,7 @@ const DashboardViewCard: React.FC<Props> = ({
         }}
       >
         <Box onPointerDown={(e) => e.stopPropagation()} sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, mr: 0.25 }}>
-          <WindowControls onClose={() => handleRemove()} onMinimize={onMinimize} onTile={onTile} tiled={!!tileZone} />
+          <WindowControls onClose={() => handleRemove()} onMinimize={onMinimize} onTile={onTile} tiled={!!tileZone} fullscreen={tileZone === 'fullscreen'} />
         </Box>
         {!isMinimized && <GridViewRoundedIcon sx={{ fontSize: 16, color: c.accent.primary, flexShrink: 0 }} />}
         <Typography

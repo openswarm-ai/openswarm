@@ -1071,7 +1071,7 @@ const AgentCard: React.FC<Props> = ({
             onPointerDown={(e) => e.stopPropagation()}
             sx={{ display: 'flex', alignItems: 'center', mr: 0.75, flexShrink: 0 }}
           >
-            <WindowControls onClose={() => handleRemove()} onMinimize={onMinimize} onTile={onTile} tiled={!!tileZone} />
+            <WindowControls onClose={() => handleRemove()} onMinimize={onMinimize} onTile={onTile} tiled={!!tileZone} fullscreen={isFullscreen} />
           </Box>
           <Box
             sx={{
