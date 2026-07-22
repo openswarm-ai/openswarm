@@ -4,6 +4,9 @@ import Typography from '@mui/material/Typography';
 import Tooltip from '@mui/material/Tooltip';
 import AddRounded from '@mui/icons-material/AddRounded';
 import MicNoneOutlinedIcon from '@mui/icons-material/MicNoneOutlined';
+import MicIcon from '@mui/icons-material/Mic';
+import CircularProgress from '@mui/material/CircularProgress';
+import { useVoice } from '@/shared/voice/VoiceDictationContext';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import StickyNote2OutlinedIcon from '@mui/icons-material/StickyNote2Outlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
@@ -38,6 +41,11 @@ function DesktopSpawnPill({
 }: DesktopSpawnPillProps): React.ReactElement {
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const { state: voiceState, pct: voicePct, toggle: toggleVoice } = useVoice();
+  const recording = voiceState === 'recording';
+  const transcribing = voiceState === 'transcribing';
+  const preparing = voiceState === 'preparing';
+  const voiceBusy = transcribing || preparing;
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -152,8 +160,11 @@ function DesktopSpawnPill({
         >
           <AddRounded sx={{ fontSize: 18 }} />
         </Box>
-        <Tooltip title="Voice input (coming soon)" placement="top" arrow>
+        <Tooltip title={recording ? 'Stop dictation' : preparing ? `Downloading voice model ${voicePct}%` : 'Dictate (Cmd+Shift+D)'} placement="top" arrow>
           <Box
+            role="button"
+            aria-label="Voice dictation"
+            onClick={(e) => { e.stopPropagation(); if (!voiceBusy) toggleVoice(); }}
             sx={{
               display: 'flex',
               alignItems: 'center',
@@ -161,11 +172,16 @@ function DesktopSpawnPill({
               width: 22,
               height: 22,
               borderRadius: '50%',
-              color: 'rgba(255,255,255,0.45)',
-              cursor: 'default',
+              color: recording ? '#ff8a8a' : 'rgba(255,255,255,0.6)',
+              cursor: voiceBusy ? 'default' : 'pointer',
+              '&:hover': { color: '#fff', background: 'rgba(255,255,255,0.12)' },
             }}
           >
-            <MicNoneOutlinedIcon sx={{ fontSize: 16 }} />
+            {voiceBusy
+              ? <CircularProgress size={14} thickness={5} sx={{ color: 'rgba(255,255,255,0.7)' }} />
+              : recording
+                ? <MicIcon sx={{ fontSize: 16 }} />
+                : <MicNoneOutlinedIcon sx={{ fontSize: 16 }} />}
           </Box>
         </Tooltip>
       </Box>

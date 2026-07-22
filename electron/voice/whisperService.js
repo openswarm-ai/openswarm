@@ -6,8 +6,50 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 
 const MODEL_FILE = 'ggml-base.en.bin';
+const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin';
+
+// First-run model fetch, so a dev build (or a prod build that shipped without the model) still works
+// instead of dead-ending on "no model". Progress is exposed so the pill can say "Preparing voice 40%".
+const download = { active: false, pct: 0, error: null };
+
+function downloadModel(dest) {
+  if (download.active) return;
+  download.active = true;
+  download.pct = 0;
+  download.error = null;
+  try { fs.mkdirSync(path.dirname(dest), { recursive: true }); } catch (_) {}
+  const tmp = `${dest}.part`;
+  const file = fs.createWriteStream(tmp);
+  const req = https.get(MODEL_URL, (res) => {
+    if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+      // Follow HuggingFace's CDN redirect once.
+      https.get(res.headers.location, (r2) => pipeTo(r2, file, tmp, dest)).on('error', onErr);
+      return;
+    }
+    pipeTo(res, file, tmp, dest);
+  });
+  req.on('error', onErr);
+  function onErr(e) { download.active = false; download.error = String(e && e.message ? e.message : e); try { file.close(); fs.unlinkSync(tmp); } catch (_) {} }
+}
+
+function pipeTo(res, file, tmp, dest) {
+  const total = Number(res.headers['content-length'] || 0);
+  let got = 0;
+  res.on('data', (c) => { got += c.length; if (total) download.pct = Math.round((got / total) * 100); });
+  res.pipe(file);
+  file.on('finish', () => file.close(() => {
+    try { fs.renameSync(tmp, dest); download.pct = 100; } catch (e) { download.error = String(e); }
+    download.active = false;
+  }));
+  res.on('error', () => { download.active = false; download.error = 'stream-error'; try { fs.unlinkSync(tmp); } catch (_) {} });
+}
+
+function modelStatus() {
+  return { downloading: download.active, pct: download.pct, error: download.error };
+}
 
 // Resolve the whisper-server binary. Env override wins (dev convenience), then the bundled per-arch
 // copy, then whatever is on PATH so a dev machine with `brew install whisper-cpp` just works.
@@ -66,7 +108,9 @@ async function ensureServer(resourceDir, userDataDir) {
     const model = resolveModel(resourceDir, userDataDir);
     if (!model) {
       readyPromise = null;
-      throw new Error('no-model'); // caller surfaces a "voice model missing" state, never crashes
+      // Kick off a one-time background fetch to the dev cache so the NEXT dictation just works.
+      downloadModel(path.join(userDataDir, 'whisper', MODEL_FILE));
+      throw new Error(download.active ? 'model-downloading' : 'no-model');
     }
     const p = pickPort();
     const child = spawn(bin, ['-m', model, '--port', String(p), '-nt', '--convert'], {
@@ -109,4 +153,4 @@ function stopServer() {
   readyPromise = null;
 }
 
-module.exports = { ensureServer, transcribe, stopServer, resolveBinary, resolveModel };
+module.exports = { ensureServer, transcribe, stopServer, resolveBinary, resolveModel, modelStatus };

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { encodeWav, VOICE_SAMPLE_RATE } from '@/shared/voice/encodeWav';
+import { encodeWav, VOICE_SAMPLE_RATE } from './encodeWav';
 
-export type VoiceState = 'idle' | 'recording' | 'transcribing';
+export type VoiceState = 'idle' | 'recording' | 'transcribing' | 'preparing';
 
-// WhisperFlow-style push-to-dictate: toggle recording (global hotkey or the pill), speak, and the
+// WhisperFlow-style push-to-dictate: toggle recording (global hotkey or a mic), speak, and the
 // transcribed text is pasted into whatever field has focus. Capture is 16kHz mono PCM so it feeds
 // whisper.cpp with no server-side resample. The recording path can only be proven with a real mic;
 // the encode -> transcribe -> inject half is exercised by the encoder round-trip test.
@@ -19,9 +19,24 @@ export function useVoiceDictation() {
   const [state, setState] = useState<VoiceState>('idle');
   const [lastText, setLastText] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [pct, setPct] = useState<number>(0);
   const recRef = useRef<Recorder | null>(null);
   const stateRef = useRef<VoiceState>('idle');
   stateRef.current = state;
+
+  // First-run: the model is downloading. Poll progress until it lands, then drop back to idle so the
+  // next click records for real. Never records while preparing, so nothing is lost to a dropped phrase.
+  const pollModel = useCallback((): void => {
+    const tick = async (): Promise<void> => {
+      const st = await window.openswarm?.voiceStatus?.();
+      if (!st) { setState('idle'); return; }
+      setPct(st.pct || 0);
+      if (st.error) { setError(st.error); setState('idle'); return; }
+      if (!st.downloading) { setState('idle'); return; }
+      setTimeout(() => { void tick(); }, 1000);
+    };
+    void tick();
+  }, []);
 
   const teardown = useCallback((): Float32Array | null => {
     const rec = recRef.current;
@@ -41,6 +56,7 @@ export function useVoiceDictation() {
 
   const start = useCallback(async (): Promise<void> => {
     if (stateRef.current !== 'idle') return;
+    if (!window.openswarm?.voiceTranscribe) { setError('desktop-only'); return; } // no Electron bridge = web build
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
@@ -72,15 +88,20 @@ export function useVoiceDictation() {
       if (res?.ok && res.text) {
         setLastText(res.text);
         await window.openswarm?.voiceInject?.(res.text);
+        setState('idle');
+      } else if (res?.error === 'model-downloading' || res?.error === 'no-model') {
+        // First use kicked off the model fetch; show progress and don't error out.
+        setState('preparing');
+        pollModel();
       } else {
         setError(res?.error || 'transcription-failed');
+        setState('idle');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'transcription-failed');
-    } finally {
       setState('idle');
     }
-  }, [teardown]);
+  }, [teardown, pollModel]);
 
   const toggle = useCallback((): void => {
     if (stateRef.current === 'recording') void stop();
@@ -96,5 +117,5 @@ export function useVoiceDictation() {
   // A dangling recorder (unmount mid-capture) must release the mic.
   useEffect(() => () => { teardown(); }, [teardown]);
 
-  return { state, lastText, error, toggle, start, stop };
+  return { state, lastText, error, pct, toggle, start, stop };
 }

@@ -2893,6 +2893,8 @@ ipcMain.handle('voice:transcribe', async (_e, wavArrayBuffer) => {
 ipcMain.handle('voice:warmup', async () => {
   try { await whisperService.ensureServer(voiceResourceDir(), voiceUserDataDir()); return { ok: true }; } catch (err) { return { ok: false, error: String(err && err.message ? err.message : err) }; }
 });
+// First-run model download progress so the pill can show "Preparing voice N%".
+ipcMain.handle('voice:status', () => whisperService.modelStatus());
 // Paste the text into the frontmost app (dictate-anywhere). Returns whether the OS paste actually fired.
 ipcMain.handle('voice:inject', async (_e, text) => {
   try { const pasted = await injectText(String(text || '')); return { ok: true, pasted }; } catch (err) { return { ok: false, error: String(err && err.message ? err.message : err) }; }

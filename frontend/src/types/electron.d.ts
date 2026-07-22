@@ -55,6 +55,7 @@ declare global {
     hardReset?: () => Promise<void>;
     clearBrowserData?: () => Promise<{ ok: boolean }>;
     voiceWarmup?: () => Promise<{ ok: boolean; error?: string }>;
+    voiceStatus?: () => Promise<{ downloading: boolean; pct: number; error: string | null }>;
     voiceTranscribe?: (wav: ArrayBuffer) => Promise<{ ok: boolean; text?: string; error?: string }>;
     voiceInject?: (text: string) => Promise<{ ok: boolean; pasted?: boolean; error?: string }>;
     onVoiceToggle?: (cb: () => void) => () => void;

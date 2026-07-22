@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('openswarm', {
   // Voice dictation (local whisper.cpp). transcribe takes a 16kHz-mono WAV ArrayBuffer; inject pastes
   // text into the frontmost app; warmup pre-loads the model; onVoiceToggle fires on the global hotkey.
   voiceWarmup: () => ipcRenderer.invoke('voice:warmup'),
+  voiceStatus: () => ipcRenderer.invoke('voice:status'),
   voiceTranscribe: (wavArrayBuffer) => ipcRenderer.invoke('voice:transcribe', wavArrayBuffer),
   voiceInject: (text) => ipcRenderer.invoke('voice:inject', text),
   onVoiceToggle: (cb) => {

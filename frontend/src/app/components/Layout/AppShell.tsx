@@ -10,6 +10,7 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
+import { VoiceDictationProvider } from '@/shared/voice/VoiceDictationContext';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
@@ -1399,24 +1400,28 @@ const AppShell: React.FC = () => {
         ml: fsHideChrome ? 0 : '6px',
         borderRadius: fsHideChrome ? 0 : '14px',
       }}>
-        {/* Hidden (not unmounted) when the dashboard view is active so the persistent Dashboard layered above can take over. */}
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            visibility: isDashboardViewActive ? 'hidden' : 'visible',
-            pointerEvents: isDashboardViewActive ? 'none' : 'auto',
-          }}
-        >
-          <Outlet />
-        </Box>
+        {/* One voice controller wraps BOTH the routed content and the persistent Dashboard host, so
+            the spawn-pill mic (which lives in the persistent host, not the Outlet) shares the recorder. */}
+        <VoiceDictationProvider>
+          {/* Hidden (not unmounted) when the dashboard view is active so the persistent Dashboard layered above can take over. */}
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              visibility: isDashboardViewActive ? 'hidden' : 'visible',
+              pointerEvents: isDashboardViewActive ? 'none' : 'auto',
+            }}
+          >
+            <Outlet />
+          </Box>
 
-        {/* CSS-hidden on other routes so webviews + state survive nav. */}
-        {lastDashboardId && (
-          <DashboardHost visible={isDashboardViewActive}>
-            <Dashboard dashboardId={lastDashboardId} isActive={isDashboardViewActive} />
-          </DashboardHost>
-        )}
+          {/* CSS-hidden on other routes so webviews + state survive nav. */}
+          {lastDashboardId && (
+            <DashboardHost visible={isDashboardViewActive}>
+              <Dashboard dashboardId={lastDashboardId} isActive={isDashboardViewActive} />
+            </DashboardHost>
+          )}
+        </VoiceDictationProvider>
       </Box>
       </Box>
 

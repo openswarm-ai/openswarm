@@ -7,16 +7,18 @@ import MicNoneOutlinedIcon from '@mui/icons-material/MicNoneOutlined';
 import MicIcon from '@mui/icons-material/Mic';
 import { useAppDispatch } from '@/shared/hooks';
 import { addBrowserCard } from '@/shared/state/dashboardLayoutSlice';
-import { useVoiceDictation } from './useVoiceDictation';
+import { useVoice } from '@/shared/voice/VoiceDictationContext';
 
 const HELP_URL = 'https://openswarm.com';
 
 /** Top-right desktop pill: Help opens the docs; the mic dictates (local whisper) into the focused field. */
 function HelpPill(): React.ReactElement {
   const dispatch = useAppDispatch();
-  const { state, toggle } = useVoiceDictation();
+  const { state, pct, toggle } = useVoice();
   const recording = state === 'recording';
   const transcribing = state === 'transcribing';
+  const preparing = state === 'preparing';
+  const busy = transcribing || preparing;
 
   return (
     <Box
@@ -39,14 +41,14 @@ function HelpPill(): React.ReactElement {
       onClick={() => dispatch(addBrowserCard({ url: HELP_URL }))}
     >
       <Typography sx={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.72)', fontWeight: 500 }}>
-        {recording ? 'Listening' : transcribing ? 'Transcribing' : 'Help'}
+        {recording ? 'Listening' : transcribing ? 'Transcribing' : preparing ? `Preparing ${pct}%` : 'Help'}
       </Typography>
-      <Tooltip title={recording ? 'Stop dictation' : 'Dictate (Cmd+Shift+D)'} placement="bottom" arrow>
+      <Tooltip title={recording ? 'Stop dictation' : preparing ? 'Downloading voice model' : 'Dictate (Cmd+Shift+D)'} placement="bottom" arrow>
         <Box
           sx={{ display: 'flex', alignItems: 'center', color: recording ? '#fff' : 'rgba(255,255,255,0.55)' }}
-          onClick={(e) => { e.stopPropagation(); if (!transcribing) toggle(); }}
+          onClick={(e) => { e.stopPropagation(); if (!busy) toggle(); }}
         >
-          {transcribing
+          {busy
             ? <CircularProgress size={13} thickness={5} sx={{ color: 'rgba(255,255,255,0.7)' }} />
             : recording
               ? <MicIcon sx={{ fontSize: 16 }} />
