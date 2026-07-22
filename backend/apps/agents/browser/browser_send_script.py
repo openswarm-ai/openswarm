@@ -107,12 +107,16 @@ async def complete_send(
         send_name = send_btn[1]
     else:
         # No submit listed below the composer (the capped listing can starve a modal of its own
-        # button): click the submit inside the composer's OWN container, then last-resort by-name.
-        r_send = await execute_tool(
+        # button): resolve the submit inside the composer's OWN container and click it with REAL
+        # input (synthetic clicks are ignored by web-component sites), then last-resort by-name.
+        r_ev = await execute_tool(
             "BrowserEvaluate",
             {"expression": browser_submit_click.container_submit_expression(payload)}, browser_id, tab_id)
-        p_v = browser_submit_click.parse_eval_value(r_send)
-        if isinstance(p_v, dict) and p_v.get("ok"):
+        p_v = browser_submit_click.parse_eval_value(r_ev)
+        if isinstance(p_v, dict) and p_v.get("ok") and p_v.get("xPct") is not None:
+            r_send = await execute_tool(
+                "BrowserClickPoint",
+                {"xPercent": float(p_v["xPct"]), "yPercent": float(p_v["yPct"])}, browser_id, tab_id)
             send_name = str(p_v.get("name") or "submit")
             via = "container"
         else:

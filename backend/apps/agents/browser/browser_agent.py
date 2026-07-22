@@ -264,10 +264,7 @@ async def execute_browser_tool(
         p_target = str((tool_input or {}).get("target_text") or "")
         if len(p_target) < browser_delete_script.MIN_TARGET_CHARS:
             return {"error": "target_text too short; give a longer distinctive snippet of the item's own text"}
-        p_res = await ws_manager.send_browser_command(
-            uuid4().hex, "evaluate", browser_id,
-            {"expression": browser_delete_script.delete_item_expression(p_target)}, tab_id=tab_id)
-        p_parsed = browser_delete_script.parse_delete_result(p_res)
+        p_parsed = await browser_delete_script.run_delete(p_target, browser_id, tab_id, execute_browser_tool)
         logger.info(f"[browser-deleteitem] target={p_target[:40]!r} removed={p_parsed['removed']} stage={p_parsed['stage']}")
         if p_parsed["removed"]:
             return {"text": f'Removed the item containing "{p_target[:60]}" (verified gone).', "removed": True}
@@ -326,6 +323,8 @@ async def execute_browser_tool(
     result = await ws_manager.send_browser_command(
         request_id, action, browser_id, params, tab_id=tab_id,
     )
+    if os.environ.get("OSW_DEBUG_LIST") == "1" and action == "list_interactives" and isinstance(result, dict):
+        logger.info(f"[debug-list] {str(result.get('text') or '')[:2400]}")
     # Click telemetry lives at the top level for a solo click and inside `results[]` for a batched one; scan both.
     p_click_parts = [result] if isinstance(result, dict) else []
     if isinstance(result, dict) and isinstance(result.get("results"), list):
@@ -1510,10 +1509,7 @@ async def run_browser_agent(
         p_del_target = browser_send_script.quoted_payload(user_prompt or task)
         if p_del_target and len(p_del_target) >= browser_delete_script.MIN_TARGET_CHARS:
             try:
-                p_del_res = await ws_manager.send_browser_command(
-                    uuid4().hex, "evaluate", browser_id,
-                    {"expression": browser_delete_script.delete_item_expression(p_del_target)}, tab_id=tab_id)
-                p_del = browser_delete_script.parse_delete_result(p_del_res)
+                p_del = await browser_delete_script.run_delete(p_del_target, browser_id, tab_id, execute_browser_tool)
             except Exception as p_de:
                 logger.info(f"[browser-deletedispatch] outer skip ({p_de})")
                 p_del = {"removed": False, "stage": "eval", "msg": str(p_de)}

@@ -716,16 +716,21 @@ async function handleClickPoint(wv: BrowserWebview, params: Record<string, any>)
   } catch { /* use the element box as a fallback */ }
   const x = (cx / 100) * vw;
   const y = (cy / 100) * vh;
+  // hoverOnly: real mouse move, no press. Hover-revealed controls (reddit's post kebab only
+  // materializes on tile hover) need this; a click there would navigate into the post.
+  const hoverOnly = params.hoverOnly === true;
   try {
     await sendCdp(wv, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
-    await sendCdp(wv, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount: 1 });
-    if (holdMs > 0) await new Promise((r) => setTimeout(r, holdMs));
-    await sendCdp(wv, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount: 1 });
+    if (!hoverOnly) {
+      await sendCdp(wv, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount: 1 });
+      if (holdMs > 0) await new Promise((r) => setTimeout(r, holdMs));
+      await sendCdp(wv, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount: 1 });
+    }
   } catch (err: any) {
     return { error: `Click point failed: ${err?.message || String(err)}` };
   }
   return {
-    text: `Clicked at (${Math.round(x)}, ${Math.round(y)})${holdMs ? ` held ${holdMs}ms` : ''}.`,
+    text: `${hoverOnly ? 'Hovered' : 'Clicked'} at (${Math.round(x)}, ${Math.round(y)})${holdMs && !hoverOnly ? ` held ${holdMs}ms` : ''}.`,
     clickX: cx, clickY: cy, url: wv.getURL(),
   };
 }

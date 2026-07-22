@@ -29,14 +29,16 @@ def make_exec(eval_result):
 @pytest.mark.asyncio
 async def test_container_submit_tier_between_index_and_by_name():
     """X's compose modal: covered feed rows behind the overlay eat the 60-row cap, so the modal's
-    own Post never reaches the picker (live 0/2 deliveries). The container-scoped JS tier clicks
-    the submit inside the composer's own container; by-name stays the last resort."""
-    execute, calls = make_exec({"value": {"ok": True, "name": "post"}})
+    own Post never reaches the picker (live 0/2 deliveries). The container tier resolves the
+    submit inside the composer's own container and clicks it with REAL input; by-name stays last."""
+    execute, calls = make_exec({"value": {"ok": True, "name": "post", "xPct": 61.0, "yPct": 33.0}})
     r = await ss.complete_send("[test] hello world r9-os", COMPOSER_FILLED_NO_SEND,
                                "b1", "", execute, send_submit_index_in_state, composer_index=24)
     assert r["clicked"] is True and r["sent"] is True
     tools = [c[0] for c in calls["clicks"]]
     assert "BrowserEvaluate" in tools and "BrowserClickByName" not in tools
+    point = [c for c in calls["clicks"] if c[0] == "BrowserClickPoint"]
+    assert point and point[0][1] == {"xPercent": 61.0, "yPercent": 33.0}
 
 
 @pytest.mark.asyncio
