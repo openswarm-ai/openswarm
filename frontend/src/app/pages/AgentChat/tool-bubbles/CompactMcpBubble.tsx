@@ -7,6 +7,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import BlockIcon from '@mui/icons-material/Block';
+import SearchIcon from '@mui/icons-material/Search';
 import { AgentMessage } from '@/shared/state/agentsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { getToolLabel } from '../parsing/toolLabels';
@@ -84,9 +85,14 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
           '&:hover': canToggleDetails ? { bgcolor: 'rgba(0,0,0,0.02)' } : undefined,
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.6 }}>
+        <Box className="osw-mcp-row" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.6 }}>
           {ServiceIcon}
-          {!hideVerbLabel && (
+          {/* Web rows drop the repeated verb (the group header already says "Searched the web"); a
+              muted glyph + the source carries the row, so the card isn't a wall of accent green. */}
+          {isWebRow && !webDomain && (
+            <SearchIcon sx={{ fontSize: 13, color: c.text.tertiary, flexShrink: 0 }} />
+          )}
+          {!hideVerbLabel && !isWebRow && (
             <Typography
               sx={{
                 color: c.accent.primary,
@@ -145,15 +151,17 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
               {isError && (
                 <ErrorOutlineIcon sx={{ fontSize: 12, color: c.status.error }} />
               )}
+              {/* Timings are debug detail, not content: ghosted at rest, legible on row hover
+                  (LibreChat/ChatGPT show none at all; we keep them one hover away). */}
               {resultElapsedMs != null && (
-                <Typography sx={{ fontSize: '0.63rem', fontFamily: c.font.mono, color: c.text.tertiary }}>
+                <Typography sx={{ fontSize: '0.63rem', fontFamily: c.font.mono, color: c.text.ghost, transition: 'color 120ms', '.osw-mcp-row:hover &': { color: c.text.tertiary } }}>
                   {formatElapsed(resultElapsedMs)}
                 </Typography>
               )}
             </Box>
           )}
           {canToggleDetails && (
-            <IconButton size="small" sx={{ color: c.text.tertiary, p: 0.15, flexShrink: 0 }}>
+            <IconButton size="small" sx={{ color: c.text.tertiary, p: 0.15, flexShrink: 0, opacity: 0, transition: 'opacity 120ms', '.osw-mcp-row:hover &': { opacity: 1 }, ...(showBody ? { opacity: 1 } : {}) }}>
               {showBody ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
             </IconButton>
           )}
