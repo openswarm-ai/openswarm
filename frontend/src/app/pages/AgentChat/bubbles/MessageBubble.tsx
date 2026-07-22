@@ -4,6 +4,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
+import InputBase from '@mui/material/InputBase';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
@@ -16,6 +17,7 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
+import LanguageIcon from '@mui/icons-material/Language';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import WindowedMarkdown from './WindowedMarkdown';
@@ -354,16 +356,30 @@ function buildContextGroups(
 
   const forcedTools = message.forced_tools;
   if (forcedTools && forcedTools.length > 0) {
-    groups.push({
-      key: 'tools',
-      icon: <BuildOutlinedIcon sx={{ fontSize: 13 }} />,
-      color: '#f59e0b',
-      label: `${forcedTools.length} action${forcedTools.length > 1 ? 's' : ''} requested`,
-      chips: forcedTools.map((t) => ({
-        label: t,
-        icon: <BuildOutlinedIcon sx={{ fontSize: 12 }} />,
-      })),
-    });
+    // The web-search toggle forces WebSearch/WebFetch on every send; that's a MODE, not an
+    // attachment, so it reads as one quiet globe instead of an amber "2 actions requested" banner.
+    const visibleForced = forcedTools.filter((t) => t !== 'WebSearch' && t !== 'WebFetch');
+    if (visibleForced.length !== forcedTools.length) {
+      groups.push({
+        key: 'web',
+        icon: <LanguageIcon sx={{ fontSize: 13 }} />,
+        color: '#8a8a94',
+        label: 'Web search',
+        chips: [],
+      });
+    }
+    if (visibleForced.length > 0) {
+      groups.push({
+        key: 'tools',
+        icon: <BuildOutlinedIcon sx={{ fontSize: 13 }} />,
+        color: '#f59e0b',
+        label: `${visibleForced.length} action${visibleForced.length > 1 ? 's' : ''} requested`,
+        chips: visibleForced.map((t) => ({
+          label: t,
+          icon: <BuildOutlinedIcon sx={{ fontSize: 12 }} />,
+        })),
+      });
+    }
   }
 
   return groups;
@@ -380,7 +396,8 @@ const AttachedContextSection: React.FC<{
   if (groups.length === 0) return null;
 
   return (
-    <Box sx={{ mt: 1, pt: 0.75, borderTop: `1px solid ${c.border.subtle}` }}>
+    // Quiet metadata, not a banner: no divider, ghost text, tiny glyphs; detail stays one click away.
+    <Box sx={{ mt: 0.75 }}>
       <Box
         onClick={() => setExpanded(!expanded)}
         sx={{
@@ -388,8 +405,9 @@ const AttachedContextSection: React.FC<{
           alignItems: 'center',
           gap: 0.5,
           cursor: 'pointer',
-          mb: 0.5,
-          '&:hover': { opacity: 0.8 },
+          opacity: 0.75,
+          '&:hover': { opacity: 1 },
+          transition: 'opacity 120ms',
         }}
       >
         {groups.map((g) => (
@@ -397,7 +415,7 @@ const AttachedContextSection: React.FC<{
             {g.icon}
           </Box>
         ))}
-        <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: c.text.muted }}>
+        <Typography sx={{ fontSize: '0.68rem', fontWeight: 500, color: c.text.muted }}>
           {groups.map((g) => g.label).join(' · ')}
         </Typography>
         <ExpandMoreIcon
@@ -1071,14 +1089,14 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
       >
         {isUser ? (
           editing ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 240 }}>
-              <TextField
+            // Claude's edit grammar: the SAME bubble becomes editable in place, no boxed field, no
+            // focus ring, no explainer banner; just the text with two quiet controls under it.
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, minWidth: 240 }}>
+              <InputBase
                 multiline
                 fullWidth
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
-                variant="outlined"
-                size="small"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -1088,35 +1106,36 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                   if (e.key === 'Escape') handleCancelEdit();
                 }}
                 sx={{
-                  '& .MuiOutlinedInput-root': {
-                    color: c.text.primary,
-                    fontSize: '0.875rem',
-                    '& fieldset': { borderColor: c.border.strong },
-                    '&:hover fieldset': { borderColor: c.text.tertiary },
-                    '&.Mui-focused fieldset': { borderColor: c.accent.primary },
-                  },
+                  color: c.text.primary,
+                  fontSize: '0.875rem',
+                  lineHeight: 1.55,
+                  p: 0,
+                  '& textarea': { p: 0 },
                 }}
               />
-              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+              <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end', alignItems: 'center' }}>
                 <Button
                   size="small"
                   onClick={handleCancelEdit}
-                  sx={{ color: c.text.muted, fontSize: '0.75rem' }}
+                  sx={{ color: c.text.muted, fontSize: '0.75rem', textTransform: 'none', minWidth: 0, px: 1 }}
                 >
                   Cancel
                 </Button>
                 <Button
                   size="small"
-                  variant="contained"
                   onClick={handleSaveEdit}
                   disabled={!editText.trim() || editText.trim() === rawText}
                   sx={{
-                    bgcolor: c.accent.primary,
+                    color: c.accent.primary,
+                    fontWeight: 600,
                     fontSize: '0.75rem',
-                    '&:hover': { bgcolor: c.accent.hover },
+                    textTransform: 'none',
+                    minWidth: 0,
+                    px: 1,
+                    '&.Mui-disabled': { color: c.text.ghost },
                   }}
                 >
-                  Save & Submit
+                  Save
                 </Button>
               </Box>
             </Box>
