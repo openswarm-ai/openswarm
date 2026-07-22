@@ -99,7 +99,6 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     // load (cached), then one is shown at a time and cycled while the composer sits idle+empty. Empty
     // list (no signal / no provider / error) just leaves the static "What should I do sir..." placeholder.
     const [ghostList, setGhostList] = useState<string[]>([]);
-    const [ghostIdx, setGhostIdx] = useState(0);
     const ghostFetchedRef = useRef(false);
     useEffect(() => {
       if (!inputOpen || ghostFetchedRef.current) return;
@@ -116,14 +115,10 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         } catch { /* fail open: keep the static placeholder */ }
       })();
     }, [inputOpen]);
-    // Rotate the visible suggestion every few seconds while the composer is open, so the user sees a
-    // few different ideas instead of one. Cheap; the list is already fetched and cached.
-    useEffect(() => {
-      if (!inputOpen || ghostList.length <= 1) return undefined;
-      const t = setInterval(() => setGhostIdx((i) => (i + 1) % ghostList.length), 4500);
-      return () => clearInterval(t);
-    }, [inputOpen, ghostList.length]);
-    const ghostSuggestion = ghostList.length ? ghostList[ghostIdx % ghostList.length] : undefined;
+    // ONE stable suggestion, never a rotating carousel: cycling guesses every few seconds reads as
+    // "the app is throwing darts." The backend only returns anything when it has real usage history to
+    // predict from (see predict_prompts.py), so an empty list just leaves the neutral placeholder.
+    const ghostSuggestion = ghostList.length ? ghostList[0] : undefined;
 
     // Reset defaults on each new compose session so in-session picks don't leak into the next new-chat draft.
     const prevInputOpen = useRef(false);

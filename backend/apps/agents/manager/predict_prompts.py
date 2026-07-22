@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 MAX_TOPICS = 24
 MAX_SUGGESTIONS = 5
+# Don't predict someone's next prompt until we ACTUALLY know their patterns. Below this many real
+# past chats, any guess is just noise (onboarding starters alone are what they browsed at setup, not
+# a read on what they want now), so we stay silent and let the neutral placeholder stand.
+MIN_REAL_TOPICS = 4
 # Names the aux title-gen hands out for empty/greeting chats; they carry no topic signal.
 P_SKIP_NAMES = {"untitled", "new chat", "greeting", "chat", ""}
 
@@ -70,8 +74,9 @@ async def predict_prompts(count: int = MAX_SUGGESTIONS) -> List[str]:
             for s in (global_settings.personalized_starters or [])
             if getattr(s, "prompt", None)
         ]
-        # Nothing to personalize from: let the composer keep its static placeholder.
-        if not topics and not starters:
+        # Only predict once there's a real track record. Onboarding starters can enrich a prediction
+        # but never trigger one on their own: a brand-new user hasn't shown us what they want yet.
+        if len(topics) < MIN_REAL_TOPICS:
             return []
 
         aux_model = (await resolve_aux_model(global_settings, preferred_tier="haiku"))[0]
