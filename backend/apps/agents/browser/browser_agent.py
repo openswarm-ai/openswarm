@@ -62,6 +62,8 @@ P_WRAPUP_NUDGE = (
 from backend.apps.agents.browser import browser_batch_replay
 from backend.apps.agents.browser import browser_extract
 from backend.apps.agents.browser import browser_metrics
+from backend.apps.agents.browser import browser_send_script
+from backend.apps.agents.browser import browser_submit_click
 from backend.apps.agents.browser import browser_playbook
 from backend.apps.agents.browser import browser_save
 from backend.apps.agents.browser import browser_meta_playbook
@@ -525,11 +527,8 @@ P_HINT_SEND_LABELS = frozenset({"send", "send now", "send message"})
 # send-path COMPLETE on X/IG/FB/Threads/YouTube. Safe ONLY there because the send-script re-verifies
 # the composer cleared the exact payload, so an opener-vs-submit mismatch fails safe, never a false
 # send. button-only (P_SEND_ROW_RE) + exact match keeps "Post" from matching "Post a job" etc.
-P_SEND_LABELS = frozenset({
-    "send", "send now", "send message",              # LinkedIn / Gmail / DMs
-    "post", "post all", "tweet", "reply",            # X / Threads compose + reply
-    "publish", "comment", "share",                   # articles / YouTube+FB comments / shares
-})
+# Defined in browser_submit_click so the container-scoped JS tier shares the exact same set.
+P_SEND_LABELS = browser_submit_click.SEND_LABELS
 
 
 def send_index_in_state(state_text: str):
@@ -542,13 +541,16 @@ def send_index_in_state(state_text: str):
     return None
 
 
-def send_submit_index_in_state(state_text: str):
+def send_submit_index_in_state(state_text: str, after_index: int = -1):
     """(index, name) of a submit button across the popular composers (Post/Reply/Tweet/...), for the
     receipt-gated SEND-SCRIPT only. Broader than the hint matcher; safe because the send-script
-    verifies the composer cleared afterward, so a wrong match aborts, never sends."""
+    verifies the composer cleared afterward, so a wrong match aborts, never sends. `after_index`
+    scopes the scan to buttons BELOW the filled composer: every real submit follows its editor in
+    the listing, while a compose OPENER (X's sidebar "Post") sits above it, and clicking the opener
+    posts nothing (measured live: 0/2 X deliveries the day X shipped its opener as a button)."""
     for line in (state_text or "").splitlines():
         m = P_SEND_ROW_RE.search(line)
-        if m and m.group(2).strip().lower() in P_SEND_LABELS:
+        if m and m.group(2).strip().lower() in P_SEND_LABELS and int(m.group(1)) > after_index:
             return int(m.group(1)), m.group(2)
     return None
 
@@ -613,6 +615,25 @@ def fill_text_of(tool_name: str, tool_input: dict) -> str:
             if a.get("type") in ("type", "click_index") and str(p.get("text") or "").strip():
                 return str(p.get("text")).strip()
     return ""
+
+
+def fill_index_of(tool_name: str, tool_input: dict) -> int:
+    """The listing index a composer-fill action typed into, -1 when unknown. Mirrors fill_text_of."""
+    ti = tool_input or {}
+    if tool_name in ("BrowserClickIndex", "BrowserType"):
+        try:
+            return int(ti.get("index", -1))
+        except (TypeError, ValueError):
+            return -1
+    if tool_name == "BrowserBatch":
+        for a in (ti.get("actions") or []):
+            p = a.get("params") or {}
+            if a.get("type") in ("type", "click_index") and str(p.get("text") or "").strip():
+                try:
+                    return int(p.get("index", -1))
+                except (TypeError, ValueError):
+                    return -1
+    return -1
 
 
 def payload_in_textbox(state_text: str, payload: str) -> bool:
@@ -1446,7 +1467,6 @@ async def run_browser_agent(
     batch_guard_blocks = 0
 
     # Staged-send script: prestage left a ready composer + the task quotes its payload -> code runs the fill/verify/send/verify tail the model spends 4-5 turns on. Success skips the loop entirely (turns=0); any pre-click ambiguity falls through untouched.
-    from backend.apps.agents.browser import browser_send_script
     p_script = None
     # A removal task ("delete the post that says 'X'") is also task_is_send (the classifier keys
     # on the verb), so the send-script must stand down or it TYPES the target into a composer and
@@ -2335,7 +2355,8 @@ async def run_browser_agent(
                             and browser_send_script.autosend_enabled()):
                         p_cs = await browser_send_script.complete_send(
                             composer_committed_payload, p_auto_state or "", browser_id, tab_id,
-                            execute_browser_tool, send_submit_index_in_state)
+                            execute_browser_tool, send_submit_index_in_state,
+                            composer_index=fill_index_of(tu.name, tool_input))
                         if p_cs.get("clicked"):
                             send_confirmed = True
                             action_log.extend(p_cs.get("log") or [])

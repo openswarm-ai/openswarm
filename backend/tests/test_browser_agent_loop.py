@@ -1570,6 +1570,19 @@ def test_send_submit_matcher_broad_but_hint_matcher_tight():
     assert send_index_in_state('[3]<button "Share">') is None
 
 
+def test_send_submit_scoped_below_composer():
+    # X ships its sidebar compose OPENER as button "Post" ABOVE the composer; picking it posts
+    # nothing (live 0/2). after_index scopes the scan to buttons BELOW the filled composer.
+    from backend.apps.agents.browser.browser_agent import send_submit_index_in_state
+    x_home = '[25]<button "Post">\n[35]<textbox "Post text" value="check two">\n[58]<button "Post">'
+    assert send_submit_index_in_state(x_home, 35) == (58, "Post")
+    # no submit below the composer = None (falls to by-name, never the opener above)
+    opener_only = '[25]<button "Post">\n[35]<textbox "Post text" value="check two">'
+    assert send_submit_index_in_state(opener_only, 35) is None
+    # unscoped callers keep the old first-match behavior
+    assert send_submit_index_in_state(x_home) == (25, "Post")
+
+
 def test_strip_lone_surrogates():
     from backend.apps.agents.browser.browser_agent import strip_lone_surrogates, format_tool_result
     # an orphan UTF-16 surrogate (half an emoji from the webview) is what crashes the turn at .encode('utf-8'); it must be swapped, not carried through

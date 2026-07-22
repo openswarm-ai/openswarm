@@ -117,6 +117,11 @@ def entry_url_from_brief(brief: str) -> str:
     return m.group(1).rstrip(".,;)") if m else ""
 
 
+# Opens the advisory-brief section of a composed task; consumers strip everything after it when a
+# check must apply only to the human's words (the brief once false-flagged a real send read-only).
+BRIEF_MARKER = "[routing brief"
+
+
 def compose_task(prompt: str, brief: str) -> str:
     """User's words first and authoritative; the brief is advisory routing.
     Skill replay keys on the parent's user message, so brief variance is safe."""
@@ -124,7 +129,7 @@ def compose_task(prompt: str, brief: str) -> str:
         return prompt
     return (
         f"{prompt}\n\n"
-        "[routing brief from a fast pre-pass; follow it unless the live page disagrees]\n"
+        f"{BRIEF_MARKER} from a fast pre-pass; follow it unless the live page disagrees]\n"
         f"{brief}"
     )
 

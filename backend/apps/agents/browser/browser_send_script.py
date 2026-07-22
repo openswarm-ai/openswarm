@@ -13,15 +13,17 @@ the untouched model path; ambiguity AFTER the click hands the model a truthful
 """
 
 import asyncio
+import json
 import logging
 import os
 import re
 import time
 from typing import Awaitable, Callable, Dict
 
-from backend.apps.agents.browser import browser_verified_action
+from backend.apps.agents.browser import browser_fast_path, browser_submit_click, browser_verified_action
 
 logger = logging.getLogger(__name__)
+
 
 # Double quotes are unambiguous. Single quotes only delimit when the opener is at a word boundary (start/space/colon), so an in-word apostrophe like "chen's" is never mistaken for a payload quote, that mispairing was silently corrupting the canonical "text him '...'" errand.
 P_QUOTED_DQ_RE = re.compile(r'"([^"]{4,300})"')
@@ -79,7 +81,8 @@ def autosend_enabled() -> bool:
 
 async def complete_send(
     payload: str, state_committed: str, browser_id: str, tab_id: str,
-    execute_tool: ToolRunner, send_index_in_state: Callable[[str], object],
+    execute_tool: ToolRunner, send_index_in_state: Callable[[str, int], object],
+    composer_index: int = -1,
 ) -> Dict[str, object]:
     """Send tail for a composer that ALREADY holds `payload` (visible in state_committed): find the
     Send control (ranked index first, else click-by-name over the full DOM), click it once, and
@@ -97,15 +100,29 @@ async def complete_send(
         except Exception:
             return ""
 
-    send_btn = send_index_in_state(state_committed)
+    send_btn = send_index_in_state(state_committed, composer_index)
+    via = "index"
     if send_btn:
         r_send = await execute_tool("BrowserClickIndex", {"index": send_btn[0]}, browser_id, tab_id)
         send_name = send_btn[1]
     else:
-        r_send = await execute_tool("BrowserClickByName", {"name": "Send", "role": "button"}, browser_id, tab_id)
-        send_name = "Send (by-name)"
+        # No submit listed below the composer (the capped listing can starve a modal of its own
+        # button): click the submit inside the composer's OWN container, then last-resort by-name.
+        r_send = await execute_tool(
+            "BrowserEvaluate",
+            {"expression": browser_submit_click.container_submit_expression(payload)}, browser_id, tab_id)
+        p_v = browser_submit_click.parse_eval_value(r_send)
+        if isinstance(p_v, dict) and p_v.get("ok"):
+            send_name = str(p_v.get("name") or "submit")
+            via = "container"
+        else:
+            p_why = p_v.get("why") if isinstance(p_v, dict) else "unreadable eval"
+            logger.info(f"[browser-sendscript] container submit miss ({p_why}); by-name fallback")
+            r_send = await execute_tool("BrowserClickByName", {"name": "Send", "role": "button"}, browser_id, tab_id)
+            send_name = "Send (by-name)"
+            via = "by-name"
     clicked = isinstance(r_send, dict) and "error" not in r_send
-    log.append({"tool": "send click", "input": {"via": "index" if send_btn else "by-name"},
+    log.append({"tool": "send click", "input": {"via": via},
                 "ok": clicked, "result_summary": f"send click {send_name!r}"[:200],
                 "elapsed_ms": 0, "clicked_role": "button", "clicked_name": send_name})
     if not clicked:
@@ -228,10 +245,12 @@ async def run_send_script(
         else:
             logger.info(f"[browser-sendscript] decline: no composer or opener after poll ({current_url[:50]!r})")
             return None
-    # Key read-only on the user's OWN words, not the advisory brief composed into `task`: the aux
-    # brief wrote "do not submit/post it" for a plain "start a post", which falsely read-only-flagged
-    # a real send. Fall back to task only when the raw prompt isn't threaded through.
-    if P_READONLY_RE.search(payload_source or task):
+    # Key read-only on words a HUMAN wrote: the task minus the aux routing brief (the brief wrote
+    # "do not submit it" for a plain "start a post", falsely read-only-flagging a real send) PLUS
+    # the raw prompt when threaded through. The task text itself must keep declining regardless: a
+    # read-only VERIFY probe arrives as the task, and one once delivered a real message (r243).
+    task_sans_brief = task.split(browser_fast_path.BRIEF_MARKER, 1)[0]
+    if P_READONLY_RE.search(task_sans_brief) or (payload_source and P_READONLY_RE.search(payload_source)):
         logger.info("[browser-sendscript] decline: read-only directive in user request")
         return None
     if looks_like_login_wall(current_url, state_text):
@@ -349,12 +368,13 @@ async def run_send_script(
     # doing the outward send. Everything up to here ran (surface gate passed, composer
     # found, fill committed); we stop before the irreversible click and report readiness.
     if os.environ.get("OSW_SENDSCRIPT_DRYRUN") == "1":
-        send_ready = bool(send_index_in_state(state2))
+        send_ready = bool(send_index_in_state(state2, composer[0]))
         logger.info(f"[browser-sendscript] DRYRUN: WOULD send (fill committed, send_button_listed={send_ready}); not clicking")
         return {"sent": False, "payload": payload, "log": log,
                 "note": "DRYRUN: filled + ready to send, stopped before the irreversible click"}
     # 3+4: the irreversible click + two-sided receipt, shared with the mid-loop takeover. A click error hands back to the model (fill committed, not sent); a clicked-but-unverified send returns sent=False so the caller never claims delivery.
-    r = await complete_send(payload, state2, browser_id, tab_id, execute_tool, send_index_in_state)
+    r = await complete_send(payload, state2, browser_id, tab_id, execute_tool, send_index_in_state,
+                            composer_index=composer[0])
     log.extend(r["log"])
     if not r["clicked"]:
         logger.info("[browser-sendscript] send click errored; handing to model (fill committed, NOT sent)")

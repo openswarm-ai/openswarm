@@ -208,6 +208,22 @@ async def test_composed_task_brief_quotes_fire_via_payload_source():
     assert r["payload"] == "[test] hello world r9-os"
 
 
+@pytest.mark.asyncio
+async def test_brief_readonly_wording_does_not_disarm():
+    """The aux brief wrote 'do not submit it' for a plain send once, false-flagging it read-only;
+    the brief section is stripped before the read-only check, so the send still fires."""
+    composed = (
+        f"{TASK}\n\n"
+        "[routing brief from a fast pre-pass; follow it unless the live page disagrees]\n"
+        "STEPS: type the text into the composer, do not submit anything else, read-only elsewhere"
+    )
+    ex, calls = make_exec([COMPOSER_FILLED, COMPOSER_FILLED, COMPOSER_SENT])
+    r = await ss.run_send_script(composed, "b1", "", COMPOSER_EMPTY, ex,
+                                 send_submit_index_in_state, payload_in_textbox,
+                                 payload_source=TASK, current_url=THREAD_URL)
+    assert r is not None and r["sent"] is True
+
+
 def test_dryrun_report_encodes_the_gate_funnel():
     """The coverage harness greps this one line for gate attribution: a staged composer
     reports composer=1, a bare page reports zeros, and armed/filled ride the booleans."""
