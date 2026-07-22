@@ -11,6 +11,9 @@ interface WindowControlsProps {
   // Full size view: the native macOS lights sit right above this corner, so a second dot cluster
   // reads as double chrome; collapse to ONE exit control and let the natives own window ops.
   fullscreen?: boolean;
+  // Green = direct fullscreen toggle, no Fill/Halves/Quarters submenu (for surfaces that only
+  // support fullscreen, like the Workflows window, where half-tiling has nowhere to land).
+  noTileMenu?: boolean;
 }
 
 // macOS-style traffic lights on every card = the "AI OS" window feel. Grey at rest so a canvas
@@ -54,10 +57,10 @@ export const ARC_CHIP_SX: Record<string, unknown> = {
   '.osw-pill-host:hover & .osw-window-lights > :nth-of-type(3)': { transform: 'translate(calc(-50% + 11px), calc(-50% + 5px)) scale(1)', opacity: 1, transitionDelay: '80ms' },
 };
 
-function WindowControls({ onClose, onMinimize, onTile, tiled, fullscreen }: WindowControlsProps): React.ReactElement {
+function WindowControls({ onClose, onMinimize, onTile, tiled, fullscreen, noTileMenu }: WindowControlsProps): React.ReactElement {
   const [menuOpen, setMenuOpen] = useState(false);
   const closeTimer = useRef<number | null>(null);
-  const openMenu = (): void => { if (closeTimer.current) window.clearTimeout(closeTimer.current); setMenuOpen(true); };
+  const openMenu = (): void => { if (noTileMenu) return; if (closeTimer.current) window.clearTimeout(closeTimer.current); setMenuOpen(true); };
   const scheduleClose = (): void => { closeTimer.current = window.setTimeout(() => setMenuOpen(false), 180); };
   const stop = (e: React.PointerEvent | React.MouseEvent): void => { e.stopPropagation(); };
 

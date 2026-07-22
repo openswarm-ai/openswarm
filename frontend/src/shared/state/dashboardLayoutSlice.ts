@@ -100,6 +100,8 @@ export interface WorkflowsHubPosition {
   width: number;
   height: number;
   zOrder: number;
+  // Full size view: the card fills the whole dashboard (reuses the fullscreen tile geometry).
+  fullscreen?: boolean;
 }
 
 
@@ -1125,6 +1127,13 @@ const dashboardLayoutSlice = createSlice({
       state.workflowsMonitorCard = null;
     },
 
+    toggleWorkflowsHubFullscreen(state) {
+      if (state.workflowsHub) {
+        state.workflowsHub.fullscreen = !state.workflowsHub.fullscreen;
+        state.workflowsHub.zOrder = state.nextZOrder++;
+      }
+    },
+
     clearWorkflowsAppTarget(state) {
       state.workflowsAppTarget = null;
     },
@@ -1823,6 +1832,7 @@ export const {
   closeWorkflowsHub,
   openWorkflowsApp,
   closeWorkflowsApp,
+  toggleWorkflowsHubFullscreen,
   clearWorkflowsAppTarget,
   openWorkflowMonitor,
   closeWorkflowMonitor,

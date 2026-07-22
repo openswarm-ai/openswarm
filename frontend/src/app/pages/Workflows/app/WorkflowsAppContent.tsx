@@ -1,14 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import EventRepeatIcon from '@mui/icons-material/EventRepeat';
-import CloseIcon from '@mui/icons-material/Close';
-import IconButton from '@mui/material/IconButton';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { clearWorkflowsAppTarget, closeWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
+import { clearWorkflowsAppTarget, closeWorkflowsApp, toggleWorkflowsHubFullscreen } from '@/shared/state/dashboardLayoutSlice';
+import WindowControls from '@/app/pages/Dashboard/cards/WindowControls';
 import {
   fetchWorkflows, fetchAllRuns, fetchPausedState, fetchActiveRuns, fetchDeletedWorkflows,
 } from '@/shared/state/workflowsSlice';
 import { fetchMissedRuns } from '@/shared/state/missedRunsSlice';
-import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import ShareButton from '@/app/components/share/ShareButton';
 import { FONT_SANS, FONT_SERIF, useWC } from './uiKit';
 import type { AppMode, CalView, AppNav, CardHeader } from './types';
@@ -22,9 +20,9 @@ import TrashView from './TrashView';
 // The three-pane Workflows body plus its title bar. The card wraps this with drag/resize geometry and passes the drag handlers in; the title bar lives here because Share needs to know which workflow is open.
 const WorkflowsAppContent: React.FC<{ header: CardHeader }> = ({ header }) => {
   const WC = useWC();
-  const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const target = useAppSelector((s) => s.dashboardLayout.workflowsAppTarget);
+  const isFullscreen = useAppSelector((s) => !!s.dashboardLayout.workflowsHub?.fullscreen);
   const dashboardId = useAppSelector((s) => s.tempState.lastDashboardId) || undefined;
 
   const [mode, setMode] = useState<AppMode>('home');
@@ -74,6 +72,23 @@ const WorkflowsAppContent: React.FC<{ header: CardHeader }> = ({ header }) => {
         onPointerUp={header.onPointerUp}
         style={{ height: 42, flex: 'none', display: 'flex', alignItems: 'center', padding: '0 16px', borderBottom: `1px solid ${WC.line}`, background: WC.panel, gap: 14, cursor: header.dragging ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none' }}
       >
+        {/* macOS traffic lights: the whole window gets close / minimize / full size view like every card. */}
+        <span
+          className="osw-card"
+          data-no-drag
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          style={{ display: 'flex', alignItems: 'center' }}
+        >
+          <WindowControls
+            onClose={() => dispatch(closeWorkflowsApp())}
+            onMinimize={() => dispatch(closeWorkflowsApp())}
+            onTile={() => dispatch(toggleWorkflowsHubFullscreen())}
+            tiled={isFullscreen}
+            fullscreen={isFullscreen}
+            noTileMenu
+          />
+        </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <EventRepeatIcon sx={{ fontSize: 18, color: WC.accent, display: 'block' }} />
           <span style={{ fontFamily: FONT_SERIF, fontSize: 14.5, fontWeight: 500, color: WC.ink, letterSpacing: '-0.01em', lineHeight: 1, transform: 'translateY(2.5px)' }}>Workflows</span>
@@ -93,16 +108,6 @@ const WorkflowsAppContent: React.FC<{ header: CardHeader }> = ({ header }) => {
             />
           </span>
         )}
-        <IconButton
-          aria-label="Close"
-          data-no-drag
-          size="small"
-          onClick={(e) => { e.stopPropagation(); dispatch(closeWorkflowsApp()); }}
-          onPointerDown={(e) => e.stopPropagation()}
-          sx={{ color: c.text.tertiary, '&:hover': { color: c.status.error, bgcolor: `${c.status.error}14` } }}
-        >
-          <CloseIcon fontSize="small" />
-        </IconButton>
       </div>
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>

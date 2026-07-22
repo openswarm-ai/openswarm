@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useAppDispatch } from '@/shared/hooks';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { setWorkflowsHubPosition, setWorkflowsHubSize } from '@/shared/state/dashboardLayoutSlice';
+import { useTiledStyle } from '@/app/pages/Dashboard/cards/tileZones';
 import { useWC } from './uiKit';
 import WorkflowsAppContent from './WorkflowsAppContent';
 
@@ -53,6 +54,18 @@ const WorkflowsAppCard: React.FC<Props> = ({
 }) => {
   const WC = useWC();
   const dispatch = useAppDispatch();
+  const isFullscreen = useAppSelector((s) => !!s.dashboardLayout.workflowsHub?.fullscreen);
+  // Fullscreen pins the card to the viewport, so its geometry must track pan/zoom like the tiled
+  // agent/browser cards; reuse the exact same helper. Subscribe to pan only while fullscreen.
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!isFullscreen) return undefined;
+    const onPan = (): void => forceTick((t) => t + 1);
+    window.addEventListener('openswarm:canvas-pan-changed', onPan);
+    return () => window.removeEventListener('openswarm:canvas-pan-changed', onPan);
+  }, [isFullscreen]);
+  const cam = getCanvasState();
+  const fsStyle = useTiledStyle(isFullscreen ? 'fullscreen' : undefined, cam.panX, cam.panY, cam.zoom);
 
 
   // ---- Drag (title bar is the handle) ----
@@ -67,6 +80,7 @@ const WorkflowsAppCard: React.FC<Props> = ({
 
   const onHeaderPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    if (isFullscreen) return;  // pinned to the viewport, no drag until restored
     const target = e.target as HTMLElement;
     if (target.closest('[data-no-drag], button, [role="button"], input, textarea, select')) return;
     e.preventDefault();
@@ -197,15 +211,20 @@ const WorkflowsAppCard: React.FC<Props> = ({
         position: 'absolute',
         contain: 'layout style',
         willChange: 'transform',
-        left: dx, top: dy, width: dw, height: dh,
+        left: fsStyle ? fsStyle.left : dx,
+        top: fsStyle ? fsStyle.top : dy,
+        width: fsStyle ? fsStyle.width : dw,
+        height: fsStyle ? fsStyle.height : dh,
+        transform: fsStyle ? fsStyle.transform : undefined,
+        transformOrigin: fsStyle ? fsStyle.transformOrigin : undefined,
         background: WC.page,
-        border,
+        border: fsStyle ? 'none' : border,
         borderRadius: WC.radius.lg,
         boxShadow: (isDragging || isResizing) ? WC.shadow.lg : WC.shadow.md,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: (isDragging || isResizing) ? 999999 : cardZOrder,
+        zIndex: fsStyle ? 999990 : (isDragging || isResizing) ? 999999 : cardZOrder,
         transition: noTransition ? 'none' : 'box-shadow 0.3s ease, border-color 0.2s ease',
       }}
     >
@@ -218,7 +237,7 @@ const WorkflowsAppCard: React.FC<Props> = ({
         }}
       />
 
-      {HANDLE_DEFS.map(({ dir, css }) => (
+      {!isFullscreen && HANDLE_DEFS.map(({ dir, css }) => (
         <div
           key={dir}
           data-no-drag
