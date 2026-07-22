@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo, RefObject } from 'react';
+import { store } from '@/shared/state/store';
 import { setCanvasInteractionActive } from '@/shared/canvasInteractionState';
 import { getLastInteractedBrowser } from '@/shared/browserFocus';
 import { getScrollFocusedCard } from '@/shared/cardScrollFocus';
@@ -297,6 +298,13 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
     const scrollableCache: WeakMap<HTMLElement, 'scrollable' | 'not'> = new WeakMap();
 
     const onWheel = (e: WheelEvent) => {
+      // Full size view owns the whole surface: any wheel that escapes the chat's scroll container
+      // (side gutters, header) must NOT zoom/pan the hidden canvas underneath, that read as a
+      // glitchy zoom while scrolling the chat. Fullscreen has no canvas nav, period.
+      const tiledCards = store.getState().dashboardLayout.tiledCards;
+      for (const z of Object.values(tiledCards)) {
+        if (z === 'fullscreen') return;
+      }
       // ctrl/cmd wheel is a modifier gesture: a real held key (cmd/ctrl + scroll → vertical pan) or a trackpad pinch, which also sets ctrlKey (→ zoom at cursor). Either way it bypasses scrollable children and acts on the canvas.
       const isModifierWheel = e.ctrlKey || e.metaKey;
 
