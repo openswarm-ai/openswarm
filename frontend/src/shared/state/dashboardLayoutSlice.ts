@@ -52,6 +52,9 @@ export interface ViewCardPosition {
   height: number;
   zOrder: number;
   parent_session_id?: string | null;
+  // Reveal-born apps start as a light "built for you, click to open" card so the onboarding curtain
+  // lifts INSTANTLY instead of booting a live Vite preview in-frame. Cleared on first click -> boots.
+  preview_deferred?: boolean;
 }
 
 // Record key + card identity for a view card. The primary keeps the bare output_id so persisted layouts and every existing by-output lookup stay valid; secondaries append #N.
@@ -802,8 +805,10 @@ const dashboardLayoutSlice = createSlice({
       x?: number; y?: number; width?: number; height?: number;
       // Open ANOTHER independent instance of an already-open app instead of no-op'ing.
       newInstance?: boolean;
+      // Reveal-only: start as a light "click to open" card instead of booting the preview eagerly.
+      previewDeferred?: boolean;
     }>) {
-      const { outputId, expandedSessionIds, parentSessionId, x, y, width, height, newInstance } = action.payload;
+      const { outputId, expandedSessionIds, parentSessionId, x, y, width, height, newInstance, previewDeferred } = action.payload;
       let instance = 1;
       if (state.viewCards[outputId]) {
         if (!newInstance) return;
@@ -839,8 +844,15 @@ const dashboardLayoutSlice = createSlice({
         height: h,
         zOrder: state.nextZOrder++,
         parent_session_id: parentSessionId || null,
+        preview_deferred: previewDeferred || undefined,
       };
       state.pendingFocusViewCardId = cardKey;
+    },
+
+    // First click on a reveal-parked app card: drop the defer so its live preview boots.
+    activateViewCardPreview(state, action: PayloadAction<string>) {
+      const card = state.viewCards[action.payload];
+      if (card && card.preview_deferred) card.preview_deferred = undefined;
     },
 
     clearPendingFocusViewCardId(state) {
@@ -1821,6 +1833,7 @@ export const {
   clearAllTiles,
   clearCardWindowState,
   clearPendingFocusBrowserId,
+  activateViewCardPreview,
   clearPendingFocusViewCardId,
   addWorkflowCard,
   setWorkflowCardPosition,

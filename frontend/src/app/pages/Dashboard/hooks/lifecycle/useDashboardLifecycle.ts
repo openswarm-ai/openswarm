@@ -345,7 +345,8 @@ export function useDashboardLifecycle({
         ? revealAppSpot(v3.revealAnchor)
         : null;
       if (revealSpot) {
-        dispatch(addViewCard({ outputId: output.id, expandedSessionIds, x: revealSpot.x, y: revealSpot.y }));
+        // Reveal: born as a light "click to open" card so the curtain lifts instantly, not behind a live Vite boot.
+        dispatch(addViewCard({ outputId: output.id, expandedSessionIds, x: revealSpot.x, y: revealSpot.y, previewDeferred: true }));
       } else {
         dispatch(addViewCard({ outputId: output.id, expandedSessionIds, parentSessionId: sid }));
       }

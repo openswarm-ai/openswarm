@@ -15,7 +15,7 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import AddIcon from '@mui/icons-material/Add';
 import KeyboardArrowUpRounded from '@mui/icons-material/KeyboardArrowUpRounded';
 import { Output, SERVE_BASE } from '@/shared/state/outputsSlice';
-import { setViewCardPosition, setViewCardSize, setActiveViewCardId, recordClosedCard, addViewCard, setTiledCard, clearTiledCard, toggleMinimizeCard } from '@/shared/state/dashboardLayoutSlice';
+import { setViewCardPosition, setViewCardSize, setActiveViewCardId, recordClosedCard, addViewCard, setTiledCard, clearTiledCard, toggleMinimizeCard, activateViewCardPreview } from '@/shared/state/dashboardLayoutSlice';
 import { removeViewCardCleanly } from '@/shared/viewTeardown';
 import WindowControls from './WindowControls';
 import { useTiledStyle } from './tileZones';
@@ -148,6 +148,12 @@ const DashboardViewCard: React.FC<Props> = ({
   const interactive = activeViewCardId === cardKey;
   const tileZone = useAppSelector((s) => s.dashboardLayout.tiledCards[cardKey]);
   const isMinimized = useAppSelector((s) => !!s.dashboardLayout.minimizedCards[cardKey]);
+  // Reveal-born apps stay a light "click to open" card until the first click, so the onboarding curtain
+  // lifts instantly instead of behind an in-frame live Vite boot. The click (selecting it) clears the flag.
+  const previewDeferred = useAppSelector((s) => !!s.dashboardLayout.viewCards[cardKey]?.preview_deferred);
+  useEffect(() => {
+    if (previewDeferred && (isSelected || interactive)) dispatch(activateViewCardPreview(cardKey));
+  }, [previewDeferred, isSelected, interactive, cardKey, dispatch]);
   // Tiled geometry must track pan/zoom, but the camera lives outside React now; subscribe to the pan event ONLY while tiled and read the live getter.
   const [tileTick, setTileTick] = useState(0);
   useEffect(() => {
@@ -165,14 +171,16 @@ const DashboardViewCard: React.FC<Props> = ({
   // when it's being interacted with, driven by an agent, tiled, or selected; otherwise gated on being
   // on-screen at a readable size. A suspended card shows its last frame (or a calm placeholder).
   const alwaysLive = interactive || isSelected || isFullscreen || !!tileZone || showAgentGlow;
-  const [previewLive, setPreviewLive] = useState(true);
+  const [previewLive, setPreviewLive] = useState(!previewDeferred);
   const [suspendSnapshot, setSuspendSnapshot] = useState<string | null>(null);
-  const previewLiveRef = useRef(true);
+  const previewLiveRef = useRef(!previewDeferred);
   const suspendTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const evaluate = (): void => {
       let want: boolean;
-      if (alwaysLive) {
+      if (previewDeferred) {
+        want = false; // reveal-parked: never boot until the first click clears the defer
+      } else if (alwaysLive) {
         want = true;
       } else {
         const now = getCanvasState();
@@ -196,6 +204,11 @@ const DashboardViewCard: React.FC<Props> = ({
         previewLiveRef.current = true;
         setSuspendSnapshot(null);
         setPreviewLive(true);
+      } else if (previewDeferred) {
+        // Reveal-parked from birth: never booted, so no settle + no frame to capture, just stay light.
+        if (suspendTimerRef.current) { clearTimeout(suspendTimerRef.current); suspendTimerRef.current = null; }
+        previewLiveRef.current = false;
+        setPreviewLive(false);
       } else if (!suspendTimerRef.current) {
         suspendTimerRef.current = window.setTimeout(() => {
           suspendTimerRef.current = null;
@@ -216,7 +229,7 @@ const DashboardViewCard: React.FC<Props> = ({
       window.removeEventListener('resize', evaluate);
       if (suspendTimerRef.current) { clearTimeout(suspendTimerRef.current); suspendTimerRef.current = null; }
     };
-  }, [alwaysLive, cardX, cardY, cardWidth, cardHeight, getCanvasState]);
+  }, [alwaysLive, previewDeferred, cardX, cardY, cardWidth, cardHeight, getCanvasState]);
 
   // Deselecting the card exits interact mode (click anywhere else on canvas).
   useEffect(() => {
@@ -752,6 +765,7 @@ const DashboardViewCard: React.FC<Props> = ({
           backendResult={backendResult}
           interactive={interactive}
           previewLive={previewLive}
+          previewDeferred={previewDeferred}
           suspendSnapshot={suspendSnapshot}
           onAppClicked={() => dispatch(setActiveViewCardId(cardKey))}
           onRuntimeLog={handleRuntimeLog}
@@ -899,10 +913,11 @@ const DashboardOutputPreview: React.FC<{
   backendResult: any;
   interactive: boolean;
   previewLive: boolean;
+  previewDeferred: boolean;
   suspendSnapshot: string | null;
   onAppClicked: () => void;
   onRuntimeLog?: (line: RuntimeLogLine) => void;
-}> = ({ previewRef, output, cardKey, instance = 1, inputData, backendResult, interactive, previewLive, suspendSnapshot, onAppClicked, onRuntimeLog }) => {
+}> = ({ previewRef, output, cardKey, instance = 1, inputData, backendResult, interactive, previewLive, previewDeferred, suspendSnapshot, onAppClicked, onRuntimeLog }) => {
   const tokens = useClaudeTokens();
   const dispatch = useAppDispatch();
   const workspaceId = output.workspace_id ?? null;
@@ -1006,9 +1021,21 @@ const DashboardOutputPreview: React.FC<{
     return <BootingBody />;
   }
 
-  // Parked (off-screen or too small to read): show the last frame (or a calm placeholder) instead of a
-  // live webview, so a zoomed-out canvas of apps doesn't run every Vite preview at once. Resumes on view.
+  // Parked: show the last frame (or a placeholder) instead of a live webview, so a zoomed-out canvas of
+  // apps doesn't run every Vite preview at once, and the reveal curtain lifts without an in-frame boot.
   if (!previewLive) {
+    // Reveal-deferred: an inviting "built for you, click to open" card (no snapshot yet, never booted).
+    if (previewDeferred) {
+      return (
+        <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.25, bgcolor: tokens.bg.surface, cursor: 'pointer' }}>
+          <Box sx={{ width: 44, height: 44, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: `${tokens.accent.primary}1F`, color: tokens.accent.primary }}>
+            <VisibilityRoundedIcon sx={{ fontSize: 22 }} />
+          </Box>
+          <Typography sx={{ color: tokens.text.primary, fontSize: '0.92rem', fontWeight: 600 }}>{output.name || 'Your app'}</Typography>
+          <Typography sx={{ color: tokens.text.muted, fontSize: '0.78rem' }}>Built for you, click to open</Typography>
+        </Box>
+      );
+    }
     return (
       <Box sx={{ width: '100%', height: '100%', position: 'relative', bgcolor: tokens.bg.surface, overflow: 'hidden' }}>
         {suspendSnapshot ? (
