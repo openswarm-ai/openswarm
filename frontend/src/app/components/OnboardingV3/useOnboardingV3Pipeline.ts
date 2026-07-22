@@ -38,6 +38,9 @@ function cadenceToSchedule(cadence: string): Record<string, unknown> {
 // has usually resolved; this only bites a user who outran it, and a brief wait for a COHERENT reveal beats
 // an instant one showing a previous run's stale greeting. Capped so it's never an open-ended spinner.
 const PREP_WAIT_CAP_MS = 5000;
+// Gap between auto-launched reveal jobs so four CLIs + a live app preview don't all boot in the same
+// frame on the user's first impression; also makes the cards populate one-by-one instead of at once.
+const JOB_STAGGER_MS = 2500;
 
 // Used when prep's aux dropped the automations field, so the reveal always demonstrates automation.
 // A useful digest (not a cleanup chore, which the value bar bans).
@@ -157,16 +160,20 @@ export function useOnboardingV3Pipeline() {
       // QA replay: run the flow, but never seed real jobs/schedules onto the tester's working canvas.
       if (isReplay) return;
       // The four auto-run showcase jobs, one per capability: build an app, dig the web, drive a real
-      // browser, and set up a scheduled task. Each fires INDEPENDENTLY (own draft session, own async
-      // launch, own error handling), so none waits on another and one failing never blocks the rest; a
-      // real first-run's provider token is fresh (just connected), so parallel launch is safe.
-      if (prep.app_title && prep.app_prompt) launchJob(prep.app_title, prep.app_prompt, 'app', prep.app_reason ?? '');
-      if (prep.research_title && prep.research_prompt) launchJob(prep.research_title, prep.research_prompt, 'research', prep.research_reason ?? '');
-      if (prep.browser_title && prep.browser_prompt) launchJob(prep.browser_title, prep.browser_prompt, 'browser', prep.browser_reason ?? '');
+      // browser, and set up a scheduled task. STAGGERED, not all-at-once: firing four CLIs + a live app
+      // preview in the same instant spiked the render on the user's very first impression. Spacing them
+      // ~2.5s apart spreads the load AND reads better, cards populate one-by-one ("watch it work") instead
+      // of lurching in together. Each still fires independently (own draft, own async launch, own errors);
+      // the app goes first so its build (the slowest) gets a head start.
+      const staggered: Array<() => void> = [];
+      if (prep.app_title && prep.app_prompt) staggered.push(() => launchJob(prep.app_title!, prep.app_prompt!, 'app', prep.app_reason ?? ''));
+      if (prep.research_title && prep.research_prompt) staggered.push(() => launchJob(prep.research_title!, prep.research_prompt!, 'research', prep.research_reason ?? ''));
+      if (prep.browser_title && prep.browser_prompt) staggered.push(() => launchJob(prep.browser_title!, prep.browser_prompt!, 'browser', prep.browser_reason ?? ''));
       // The scheduled task is a first-class part of the reveal (the "it automates for me" capability), so
       // guarantee one: use the model's automation when it emitted one (it sometimes drops the last JSON
       // field), else fall back to a safe, universally-useful weekly roundup.
-      createScheduledJob(prep.automations[0] ?? SCHEDULE_FALLBACK);
+      staggered.push(() => createScheduledJob(prep.automations[0] ?? SCHEDULE_FALLBACK));
+      staggered.forEach((fire, i) => { if (i === 0) fire(); else window.setTimeout(fire, i * JOB_STAGGER_MS); });
     });
   }, [launchJob, createScheduledJob, isReplay]);
 
