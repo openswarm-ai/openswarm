@@ -214,11 +214,20 @@ function DesktopDock({
         alignItems: 'center',
         gap: '9px',
         p: '7px',
-        borderRadius: '14px',
+        borderRadius: '16px',
         background: 'rgba(22,12,34,0.66)',
         backdropFilter: 'blur(20px) saturate(160%)',
         WebkitBackdropFilter: 'blur(20px) saturate(160%)',
         boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
+        // One tasteful hover for every tile: a spring-y lift (replaces the fisheye that read as wobble),
+        // and every tile is a rounder squircle so they feel like real app icons, not lame little squares.
+        '& .osw-dock-tile': {
+          borderRadius: '12px',
+          transition: 'transform 0.16s cubic-bezier(.34,1.56,.64,1)',
+          willChange: 'transform',
+        },
+        '& .osw-dock-tile:hover': { transform: 'scale(1.16)' },
+        '& .osw-dock-tile:active': { transform: 'scale(1.04)' },
       }}
     >
       {entries.map((entry) => {
@@ -226,6 +235,7 @@ function DesktopDock({
         return (
           <Box
             key={entry.id}
+            className="osw-dock-tile"
             onMouseEnter={(e) => beginHover(entry, e.currentTarget as HTMLElement)}
             onClick={() => {
               endHover();
@@ -235,7 +245,7 @@ function DesktopDock({
               position: 'relative',
               width: TILE,
               height: TILE,
-              borderRadius: '9px',
+              borderRadius: '12px',
               background: entry.tileBg,
               display: 'flex',
               alignItems: 'center',
@@ -253,7 +263,7 @@ function DesktopDock({
                 src={entry.faviconUrl}
                 alt=""
                 onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.style.display = 'none'; }}
-                sx={{ position: 'absolute', width: 18, height: 18, borderRadius: '4px' }}
+                sx={{ position: 'absolute', width: 18, height: 18, borderRadius: '6px' }}
               />
             )}
           </Box>
@@ -273,12 +283,13 @@ function DesktopDock({
       ] as const).map((a) => (
         <Tooltip key={a.label} title={a.label} placement="right">
           <Box
+            className="osw-dock-tile"
             onClick={a.act}
             onMouseEnter={endHover}
             sx={{
               width: TILE,
               height: TILE,
-              borderRadius: '9px',
+              borderRadius: '12px',
               background: 'linear-gradient(135deg, #5a5a62, #34343c)',
               display: 'flex',
               alignItems: 'center',
@@ -293,12 +304,13 @@ function DesktopDock({
       ))}
       <Box sx={{ width: TILE - 8, height: '1px', background: 'rgba(255,255,255,0.14)' }} />
       <Box
+        className="osw-dock-tile"
         onClick={() => dispatch(openSettingsModal(undefined))}
         onMouseEnter={endHover}
         sx={{
           width: TILE,
           height: TILE,
-          borderRadius: '9px',
+          borderRadius: '12px',
           background: 'linear-gradient(135deg, #5a5a62, #34343c)',
           display: 'flex',
           alignItems: 'center',
@@ -310,12 +322,13 @@ function DesktopDock({
         <SettingsIcon sx={{ fontSize: 18, color: '#e8e8ee' }} />
       </Box>
       <Box
+        className="osw-dock-tile"
         onClick={onApplications}
         onMouseEnter={endHover}
         sx={{
           width: TILE,
           height: TILE,
-          borderRadius: '9px',
+          borderRadius: '12px',
           background: 'linear-gradient(135deg, #3d3d46, #232329)',
           display: 'flex',
           alignItems: 'center',
