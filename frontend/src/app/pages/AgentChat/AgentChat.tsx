@@ -53,6 +53,7 @@ import WelcomeQuickReplies from './WelcomeQuickReplies';
 import { useWelcomeGreeting } from './useWelcomeGreeting';
 import { THINKING_LABELS } from './thinkingLabels';
 import MessageBubble from './bubbles/MessageBubble';
+import BurstRevealBubble from './bubbles/BurstRevealBubble';
 import { estimateRenderedTextHeight, RECHECK_VISIBILITY_EVENT } from './bubbles/markdownMeasure';
 import CompactionMarker from './bubbles/CompactionMarker';
 import MessageActionBar from './shell/MessageActionBar';
@@ -630,7 +631,12 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     };
   }, [id, session?.id, scheduleWindowRecompute]);
 
+  // Burst-reveal bookkeeping: ids present at open (or after a session/branch hop) are HISTORY and
+  // never animate; only ids that appear later, while the agent is working, type themselves out.
+  const seenMessageIdsRef = useRef<Set<string> | null>(null);
+
   React.useLayoutEffect(() => {
+    seenMessageIdsRef.current = null;
     const seed = initialSeedItems(viewportHeight);
     const total = renderItemsLengthRef.current;
     const end = total;
@@ -1715,6 +1721,18 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               }
               const msg = item;
               const isEditing = editingMessageId === msg.id;
+              // First pass after open/hop seeds the set; later unseen assistant ids arrived live.
+              if (seenMessageIdsRef.current === null) {
+                seenMessageIdsRef.current = new Set(renderItems.map((it) => it.id));
+              }
+              const burstAnimate =
+                msg.role === 'assistant' &&
+                typeof msg.content === 'string' &&
+                !isEditing &&
+                !seenMessageIdsRef.current.has(msg.id) &&
+                msg.id !== justStreamedId &&
+                (sessionRunning || awaitingResponse);
+              seenMessageIdsRef.current.add(msg.id);
               const siblings = getSiblingBranches(msg.id);
               const hasBranches = siblings.length > 0;
               const currentBranchIdx = hasBranches
@@ -1732,15 +1750,26 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                     containIntrinsicSize: 'auto 120px',
                   }}
                 >
-                  <MessageBubble
-                    message={msg}
-                    editing={isEditing}
-                    onSaveEdit={handleSaveEdit}
-                    onCancelEdit={handleCancelEdit}
-                    viewportHeight={viewportHeight}
-                    viewportWidth={viewportWidth}
-                    scrollRoot={scrollRoot}
-                  />
+                  {msg.role === 'assistant' && typeof msg.content === 'string' && !isEditing ? (
+                    <BurstRevealBubble
+                      message={msg}
+                      animate={burstAnimate}
+                      onGrew={stickToBottomIfNeeded}
+                      viewportHeight={viewportHeight}
+                      viewportWidth={viewportWidth}
+                      scrollRoot={scrollRoot}
+                    />
+                  ) : (
+                    <MessageBubble
+                      message={msg}
+                      editing={isEditing}
+                      onSaveEdit={handleSaveEdit}
+                      onCancelEdit={handleCancelEdit}
+                      viewportHeight={viewportHeight}
+                      viewportWidth={viewportWidth}
+                      scrollRoot={scrollRoot}
+                    />
+                  )}
                   {!isEditing && (msg.role === 'user' || (msg.role === 'assistant' && lastAssistantIdsInTurn.has(msg.id))) && (
                     <MessageActionBar
                       role={msg.role as 'user' | 'assistant'}
