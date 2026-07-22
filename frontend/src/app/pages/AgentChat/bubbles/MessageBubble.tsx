@@ -4,7 +4,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
-import InputBase from '@mui/material/InputBase';
+import MessageEditSurface from './MessageEditSurface';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
@@ -861,7 +861,6 @@ interface Props {
 const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, onSaveEdit, onCancelEdit, isStreaming, dynamicTurnLabel, viewportHeight = 0, viewportWidth = 0, scrollRoot = null, revealRef }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
-  const [editText, setEditText] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const bubbleRootRef = React.useRef<HTMLDivElement | null>(null);
   const contentRef = React.useRef<HTMLDivElement | null>(null);
@@ -1020,21 +1019,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
     }
   }, [message.id, openswarmError?.kind, dispatch]);
 
-  React.useEffect(() => {
-    if (editing) setEditText(rawText);
-  }, [editing, rawText]);
-
   const handleCancelEdit = () => {
-    setEditText('');
-    onCancelEdit?.();
-  };
-
-  const handleSaveEdit = () => {
-    const trimmed = editText.trim();
-    if (trimmed && trimmed !== rawText && onSaveEdit) {
-      onSaveEdit(message.id, trimmed);
-    }
-    setEditText('');
     onCancelEdit?.();
   };
 
@@ -1092,60 +1077,15 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
       >
         {isUser ? (
           editing ? (
-            // Claude's edit grammar: the message widens to the full column and becomes an editable
-            // field in place (subtle surface, no explainer banner), with two quiet controls under it.
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, width: '100%' }}>
-              <InputBase
-                multiline
-                fullWidth
-                value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-                autoFocus
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSaveEdit();
-                  }
-                  if (e.key === 'Escape') handleCancelEdit();
-                }}
-                sx={{
-                  color: c.text.primary,
-                  fontSize: '0.875rem',
-                  lineHeight: 1.55,
-                  bgcolor: 'rgba(255,255,255,0.06)',
-                  borderRadius: '10px',
-                  px: 1.25,
-                  py: 1,
-                  '& textarea': { p: 0 },
-                }}
-              />
-              <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end', alignItems: 'center' }}>
-                <Button
-                  size="small"
-                  onClick={handleCancelEdit}
-                  sx={{ color: c.text.muted, fontSize: '0.75rem', textTransform: 'none', minWidth: 0, px: 1 }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="small"
-                  onClick={handleSaveEdit}
-                  disabled={!editText.trim() || editText.trim() === rawText}
-                  sx={{
-                    color: c.accent.primary,
-                    fontWeight: 600,
-                    fontSize: '0.75rem',
-                    textTransform: 'none',
-                    minWidth: 0,
-                    px: 1,
-                    '&.Mui-disabled': { color: c.text.ghost },
-                  }}
-                >
-                  Save
-                </Button>
-              </Box>
-            </Box>
+            // Claude's edit grammar, pill-aware: skills render as chips and selected-elements stay
+            // attached (read-only) instead of the message dumping raw {{skill:...}} / element markup.
+            <MessageEditSurface
+              userMessage={displayText}
+              elementSuffix={rawText.slice(displayText.length)}
+              elementLabels={selectedElements.map((el) => el.label)}
+              onSave={(full) => { if (full !== rawText && onSaveEdit) onSaveEdit(message.id, full); onCancelEdit?.(); }}
+              onCancel={handleCancelEdit}
+            />
           ) : (
             <Box>
               {message.images && message.images.length > 0 && (
