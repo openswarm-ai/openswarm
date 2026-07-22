@@ -68,6 +68,13 @@ export function useOnboardingV3Pipeline() {
   const launchCtxRef = useRef({ connected: false, model: 'sonnet' });
   launchCtxRef.current = { connected, model: cheapModel };
   const launchedRef = useRef(false);
+  // Dev replay (osw_force_onboarding): show the whole flow WITHOUT spawning 4 real agents + a scheduled
+  // workflow onto the tester's live dashboard. The flag is stripped in prod, so a real first-run (empty
+  // machine) always gets its wow jobs; only a QA replay on an existing dashboard skips the clutter+lag.
+  const isReplay = ((): boolean => {
+    if (process.env.NODE_ENV === 'production') return false;
+    try { return localStorage.getItem('osw_force_onboarding') === '1'; } catch { return false; }
+  })();
 
   const kickIdentity = useCallback(() => {
     fetchIdentity().then((ids) => { identityRef.current = ids; setIdentity(ids); }).catch(() => {});
@@ -147,6 +154,8 @@ export function useOnboardingV3Pipeline() {
       prepReadyRef.current = prep;
       if (launchedRef.current || !prep || !prep.greeting || !launchCtxRef.current.connected) return;
       launchedRef.current = true;
+      // QA replay: run the flow, but never seed real jobs/schedules onto the tester's working canvas.
+      if (isReplay) return;
       // The four auto-run showcase jobs, one per capability: build an app, dig the web, drive a real
       // browser, and set up a scheduled task. Each fires INDEPENDENTLY (own draft session, own async
       // launch, own error handling), so none waits on another and one failing never blocks the rest; a
@@ -159,7 +168,7 @@ export function useOnboardingV3Pipeline() {
       // field), else fall back to a safe, universally-useful weekly roundup.
       createScheduledJob(prep.automations[0] ?? SCHEDULE_FALLBACK);
     });
-  }, [launchJob, createScheduledJob]);
+  }, [launchJob, createScheduledJob, isReplay]);
 
   const finish = useCallback(async (outcome: 'done' | 'skipped') => {
     if (outcome === 'skipped') {
