@@ -74,6 +74,7 @@ async def handle_result_message(
             await thinking_mod.emit_consolidated_thinking(
                 thinking, turn, session, session_id, sessions,
                 force_provider_unavailable=route_strips_reasoning,
+                analytics_final=True,
             )
         except Exception:
             pass

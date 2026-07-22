@@ -137,7 +137,11 @@ class ConnectionManager:
         if event == "agent:message":
             try:
                 from backend.apps.service.analytics.agent_bridge import bridge_agent_message, BroadcastMessage
-                bridge_agent_message(session_id, BroadcastMessage.model_validate(data.get("message") or {}))
+                bridge_agent_message(
+                    session_id,
+                    BroadcastMessage.model_validate(data.get("message") or {}),
+                    final=bool(data.get("analytics_final")),
+                )
             except Exception:
                 logger.debug("agent:message analytics bridge failed", exc_info=True)
 

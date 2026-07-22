@@ -1,7 +1,8 @@
 """Bridge a broadcast `agent:message` into the typed `events.agent.message`.
 
 Called from ws_manager.send_to_session, the single chokepoint every agent message
-flows through. Best-effort: never raises into the broadcast path.
+flows through. Live thinking snapshots are skipped until the finalized message.
+Best-effort: never raises into the broadcast path.
 """
 
 from __future__ import annotations
@@ -55,9 +56,16 @@ def p_branch_version(session: AgentSession, message: BroadcastMessage) -> int:
 
 
 @typechecked
-def bridge_agent_message(session_id: str, message: BroadcastMessage) -> None:
+def bridge_agent_message(
+    session_id: str,
+    message: BroadcastMessage,
+    *,
+    final: bool = False,
+) -> None:
     # seq is the message's stable index in the persisted history (survives close -> reopen -> restart); transient messages with no anchor are skipped.
     if not message.id or not message.role:
+        return
+    if message.role == "thinking" and not final:
         return
     try:
         from backend.apps.agents.agent_manager import agent_manager

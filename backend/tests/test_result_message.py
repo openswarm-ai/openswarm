@@ -70,3 +70,28 @@ async def test_resets_per_turn_state_at_completion():
     assert turn.tool_count == 0
     assert thinking.total_ms == 0
     assert thinking.block_starts == {}
+
+
+@pytest.mark.asyncio
+async def test_final_thinking_emit_is_marked_for_analytics():
+    session, turn, thinking = p_fixt()
+    thinking.text_parts.append("final thought")
+    emit = AsyncMock()
+    with (
+        patch.object(result_message.thinking_mod, "emit_consolidated_thinking", new=emit),
+        patch.object(result_message.ws_manager, "send_to_session", new=AsyncMock()),
+    ):
+        await result_message.handle_result_message(
+            p_result(),
+            session,
+            session.id,
+            turn,
+            thinking,
+            {},
+            "sonnet",
+            "anthropic",
+            load_settings(),
+        )
+
+    emit.assert_awaited_once()
+    assert emit.call_args.kwargs["analytics_final"] is True
