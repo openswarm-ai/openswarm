@@ -47,6 +47,15 @@ const CORNER_SIZE = 14;
 const MIN_W = 320;
 const MIN_H = 200;
 
+// App-card preview suspend: a live Vite webview is the heaviest thing on the canvas, and unlike browser
+// cards these never suspended, so 4 reveal apps + a zoomed-out canvas all ran live = jank. A built app
+// has no login/scroll state worth keeping, so we just unmount the webview when the card is off-screen or
+// too small to read, and remount (reload) on return. Asymmetric: resume instantly, suspend after a beat
+// so panning past a card doesn't reload it.
+const APP_PREVIEW_MIN_PX = 260;   // below this on-screen width the live page is indistinguishable from a still
+const APP_PREVIEW_MARGIN_PX = 400; // resume once the card is within this of the viewport
+const APP_SUSPEND_SETTLE_MS = 1200;
+
 const CURSOR_MAP: Record<ResizeDir, string> = {
   n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
   nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize',
@@ -151,6 +160,63 @@ const DashboardViewCard: React.FC<Props> = ({
   const cam = getCanvasState();
   const tiledStyle = useTiledStyle(tileZone, cam.panX, cam.panY, cam.zoom);
   const isFullscreen = tileZone === 'fullscreen';
+
+  // Keep the live preview mounted only when the user can actually see/use this app card. Always live
+  // when it's being interacted with, driven by an agent, tiled, or selected; otherwise gated on being
+  // on-screen at a readable size. A suspended card shows its last frame (or a calm placeholder).
+  const alwaysLive = interactive || isSelected || isFullscreen || !!tileZone || showAgentGlow;
+  const [previewLive, setPreviewLive] = useState(true);
+  const [suspendSnapshot, setSuspendSnapshot] = useState<string | null>(null);
+  const previewLiveRef = useRef(true);
+  const suspendTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    const evaluate = (): void => {
+      let want: boolean;
+      if (alwaysLive) {
+        want = true;
+      } else {
+        const now = getCanvasState();
+        const vpEl = document.querySelector('[data-canvas-viewport]');
+        const vpW = vpEl ? (vpEl as HTMLElement).clientWidth : window.innerWidth;
+        const vpH = vpEl ? (vpEl as HTMLElement).clientHeight : window.innerHeight;
+        if (cardWidth * now.zoom < APP_PREVIEW_MIN_PX) {
+          want = false;
+        } else {
+          const m = APP_PREVIEW_MARGIN_PX / now.zoom;
+          const vx = -now.panX / now.zoom - m;
+          const vy = -now.panY / now.zoom - m;
+          const vw = vpW / now.zoom + 2 * m;
+          const vh = vpH / now.zoom + 2 * m;
+          want = cardX < vx + vw && cardX + cardWidth > vx && cardY < vy + vh && cardY + cardHeight > vy;
+        }
+      }
+      if (want === previewLiveRef.current) return;
+      if (want) {
+        if (suspendTimerRef.current) { clearTimeout(suspendTimerRef.current); suspendTimerRef.current = null; }
+        previewLiveRef.current = true;
+        setSuspendSnapshot(null);
+        setPreviewLive(true);
+      } else if (!suspendTimerRef.current) {
+        suspendTimerRef.current = window.setTimeout(() => {
+          suspendTimerRef.current = null;
+          // Grab the last frame BEFORE unmounting so the parked card shows the app, not a blank box.
+          void (async () => {
+            try { const snap = await previewRef.current?.capture?.(); if (snap) setSuspendSnapshot(snap); } catch { /* no frame = calm placeholder */ }
+            previewLiveRef.current = false;
+            setPreviewLive(false);
+          })();
+        }, APP_SUSPEND_SETTLE_MS);
+      }
+    };
+    evaluate();
+    window.addEventListener('openswarm:canvas-pan-changed', evaluate);
+    window.addEventListener('resize', evaluate);
+    return () => {
+      window.removeEventListener('openswarm:canvas-pan-changed', evaluate);
+      window.removeEventListener('resize', evaluate);
+      if (suspendTimerRef.current) { clearTimeout(suspendTimerRef.current); suspendTimerRef.current = null; }
+    };
+  }, [alwaysLive, cardX, cardY, cardWidth, cardHeight, getCanvasState]);
 
   // Deselecting the card exits interact mode (click anywhere else on canvas).
   useEffect(() => {
@@ -685,6 +751,8 @@ const DashboardViewCard: React.FC<Props> = ({
           inputData={inputData}
           backendResult={backendResult}
           interactive={interactive}
+          previewLive={previewLive}
+          suspendSnapshot={suspendSnapshot}
           onAppClicked={() => dispatch(setActiveViewCardId(cardKey))}
           onRuntimeLog={handleRuntimeLog}
         />
@@ -830,9 +898,11 @@ const DashboardOutputPreview: React.FC<{
   inputData: Record<string, any>;
   backendResult: any;
   interactive: boolean;
+  previewLive: boolean;
+  suspendSnapshot: string | null;
   onAppClicked: () => void;
   onRuntimeLog?: (line: RuntimeLogLine) => void;
-}> = ({ previewRef, output, cardKey, instance = 1, inputData, backendResult, interactive, onAppClicked, onRuntimeLog }) => {
+}> = ({ previewRef, output, cardKey, instance = 1, inputData, backendResult, interactive, previewLive, suspendSnapshot, onAppClicked, onRuntimeLog }) => {
   const tokens = useClaudeTokens();
   const dispatch = useAppDispatch();
   const workspaceId = output.workspace_id ?? null;
@@ -934,6 +1004,22 @@ const DashboardOutputPreview: React.FC<{
 
   if (isBooting) {
     return <BootingBody />;
+  }
+
+  // Parked (off-screen or too small to read): show the last frame (or a calm placeholder) instead of a
+  // live webview, so a zoomed-out canvas of apps doesn't run every Vite preview at once. Resumes on view.
+  if (!previewLive) {
+    return (
+      <Box sx={{ width: '100%', height: '100%', position: 'relative', bgcolor: tokens.bg.surface, overflow: 'hidden' }}>
+        {suspendSnapshot ? (
+          <Box component="img" src={suspendSnapshot} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top left', display: 'block', filter: 'saturate(0.9)' }} />
+        ) : (
+          <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Typography sx={{ color: tokens.text.ghost, fontSize: '0.82rem' }}>{output.name || 'App'}</Typography>
+          </Box>
+        )}
+      </Box>
+    );
   }
 
   return (
