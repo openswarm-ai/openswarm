@@ -1054,7 +1054,9 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
       data-select-meta={JSON.stringify({ role, content: truncatedContent })}
       sx={{
         display: 'flex',
-        justifyContent: isUser ? 'flex-end' : 'flex-start',
+        // Editing a user message widens it to the full column (Claude's grammar), so the field is
+        // comfortable to type in instead of a cramped right-hugging box.
+        justifyContent: isUser && !editing ? 'flex-end' : 'flex-start',
         my: 0.75,
         // Isolates reflow so an expanding bubble doesn't shake the transcript.
         contain: 'layout style',
@@ -1064,10 +1066,11 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
         sx={{
           // Only USER messages wear a bubble (the ChatGPT/Claude grammar): the assistant's words sit
           // directly on the page, so its answers read as the page's voice, not another chat balloon.
-          maxWidth: isUser ? '85%' : '100%',
+          maxWidth: isUser && !editing ? '85%' : '100%',
+          width: editing ? '100%' : undefined,
           minWidth: 0,
           // Oversized messages are block-virtualized, so the set of rendered blocks (and thus the widest visible content) changes as you scroll. Pin them to a stable width so the bubble doesn't shrink-to-fit and resize horizontally frame to frame. Normal messages keep shrink-to-fit.
-          ...(isOversized ? { width: isUser ? '85%' : '100%' } : {}),
+          ...(isOversized && !editing ? { width: isUser ? '85%' : '100%' } : {}),
           bgcolor: isUser ? c.user.bubble : 'transparent',
           border: isUser && isFailed ? `1px solid ${c.status.error}` : 'none',
           borderRadius: isUser ? '18px' : 0,
@@ -1089,9 +1092,9 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
       >
         {isUser ? (
           editing ? (
-            // Claude's edit grammar: the SAME bubble becomes editable in place, no boxed field, no
-            // focus ring, no explainer banner; just the text with two quiet controls under it.
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, minWidth: 240 }}>
+            // Claude's edit grammar: the message widens to the full column and becomes an editable
+            // field in place (subtle surface, no explainer banner), with two quiet controls under it.
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, width: '100%' }}>
               <InputBase
                 multiline
                 fullWidth
@@ -1099,6 +1102,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                 onChange={(e) => setEditText(e.target.value)}
                 autoFocus
                 onKeyDown={(e) => {
+                  e.stopPropagation();
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     handleSaveEdit();
@@ -1109,7 +1113,10 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                   color: c.text.primary,
                   fontSize: '0.875rem',
                   lineHeight: 1.55,
-                  p: 0,
+                  bgcolor: 'rgba(255,255,255,0.06)',
+                  borderRadius: '10px',
+                  px: 1.25,
+                  py: 1,
                   '& textarea': { p: 0 },
                 }}
               />
