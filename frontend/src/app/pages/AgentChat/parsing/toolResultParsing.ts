@@ -24,14 +24,7 @@ export function getInputSummary(toolName: string, input: any): string {
     if (isSettingsReadTool(toolName)) return '';
 
     const mcp = parseMcpToolName(toolName);
-    if (mcp.isMcp) {
-      // Web tools (our openswarm-web MCP) get the clean source summary, a bare domain / quoted query,
-      // instead of the generic "url: https://… prompt: …" key-value dump. Reads like Perplexity sources.
-      const act = (mcp.action || '').toLowerCase();
-      if (act === 'websearch') return quoteQuery(input.query || input.search_term || '');
-      if (act === 'webfetch') return prettyUrl(input.url || '');
-      return getMcpInputSummary(input, mcp.action, mcp.serverSlug);
-    }
+    if (mcp.isMcp) return getMcpInputSummary(input, mcp.action, mcp.serverSlug);
 
     const n = toolName.toLowerCase();
     if (isBashTool(toolName)) {

@@ -166,6 +166,20 @@ function p_cleanSummaryText(s: string): string {
 
 export function getMcpInputSummary(input: any, action?: string, serverSlug?: string): string {
   if (!input || typeof input !== 'object') return '';
+  // Web tools read as SOURCES, not payload dumps: a quoted query for a search, a bare domain for a
+  // page read. Lives here so every caller (compact rows, labels, approvals) gets the clean form.
+  const p_act = (action || '').toLowerCase();
+  if (p_act === 'websearch') {
+    const q = input.query ?? input.search_term;
+    if (typeof q === 'string' && q.trim()) return `"${p_cleanSummaryText(q.trim())}"`;
+  }
+  if (p_act === 'webfetch' && typeof input.url === 'string' && input.url) {
+    try {
+      return new URL(input.url).host.replace(/^www\./, '');
+    } catch {
+      return input.url.replace(/^https?:\/\//, '').split(/[/?#]/)[0];
+    }
+  }
   if (serverSlug === 'openswarm-schedule' || (action && getWorkflowToolLabel(action))) {
     const workflowSummary = compactWorkflowSchedule(input);
     if (workflowSummary) return workflowSummary;

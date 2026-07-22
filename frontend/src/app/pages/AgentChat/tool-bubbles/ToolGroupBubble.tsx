@@ -12,6 +12,7 @@ import { useMountReveal } from './useMountReveal';
 import { sanitizeSvgString } from '@/shared/sanitizeSvg';
 import { parseMcpToolName, getWorkflowToolLabel } from '@/shared/mcpToolMeta';
 import ToolCallBubble, { ToolPair } from './ToolCallBubble';
+import { SourceFavicons, domainFromUrl } from './SourceFavicons';
 
 export type ToolGroupEntry =
   | { kind: 'pair'; pair: ToolPair }
@@ -107,8 +108,24 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
     }).filter(Boolean))) as string[];
     return parsedLabels.length === 1 ? parsedLabels[0] : 'Workflow actions';
   })();
-  const displayName = workflowGroupLabel || meta?.name || group.label;
-  const hasSvg = !!meta?.svg && !workflowGroupLabel;
+  // A web group is a SEARCH, so it wears its sources: favicon stack + "Searched the web", the
+  // Perplexity read (same special-case precedent as openswarm-schedule above).
+  const webDomains = useMemo(() => {
+    if (group.mcpServer !== 'openswarm-web') return null;
+    const domains: string[] = [];
+    for (const p of group.pairs) {
+      const cc = typeof p.call.content === 'object' ? p.call.content : {};
+      const url = (cc.input as { url?: unknown } | undefined)?.url;
+      if (typeof url === 'string' && url) {
+        const d = domainFromUrl(url);
+        if (d && !domains.includes(d)) domains.push(d);
+      }
+    }
+    return domains;
+  }, [group]);
+  const webGroupLabel = webDomains ? 'Searched the web' : null;
+  const displayName = workflowGroupLabel || webGroupLabel || meta?.name || group.label;
+  const hasSvg = !!meta?.svg && !workflowGroupLabel && !webGroupLabel;
 
   return (
     <Box
@@ -141,19 +158,25 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
             sx={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 0.5,
+              gap: 0.75,
               py: 0.4,
               cursor: 'pointer',
               color: c.text.tertiary,
               '&:hover': { color: c.text.secondary },
             }}
           >
+            {webDomains && webDomains.length > 0 && <SourceFavicons domains={webDomains} size={16} />}
             <Typography sx={{ fontSize: '0.8rem', fontWeight: 500, color: 'inherit' }}>
-              {group.callCount} tool call{group.callCount === 1 ? '' : 's'}
+              {webGroupLabel ?? `${group.callCount} tool call${group.callCount === 1 ? '' : 's'}`}
             </Typography>
             {!allDone && (
               <Typography sx={{ fontSize: '0.7rem', color: 'inherit', fontFamily: c.font.mono, fontVariantNumeric: 'tabular-nums' }}>
                 {completedCount}/{group.callCount}
+              </Typography>
+            )}
+            {allDone && webDomains && webDomains.length > 0 && (
+              <Typography sx={{ fontSize: '0.7rem', color: 'inherit', fontVariantNumeric: 'tabular-nums' }}>
+                {webDomains.length} source{webDomains.length === 1 ? '' : 's'}
               </Typography>
             )}
             {deniedCount > 0 && (
@@ -176,7 +199,9 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
             '&:hover': { bgcolor: 'rgba(0,0,0,0.02)' },
           }}
         >
-          {!meta ? (
+          {webDomains && webDomains.length > 0 ? (
+            <SourceFavicons domains={webDomains} size={16} />
+          ) : !meta ? (
             <SkeletonPulse width={15} height={15} borderRadius={8} />
           ) : hasSvg ? (
             <GeneratedSvgIcon svg={meta.svg} size={15} color={c.accent.primary} />
@@ -184,7 +209,7 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
             <TerminalIcon sx={{ fontSize: 15, color: c.accent.primary, flexShrink: 0 }} />
           )}
 
-          {!meta ? (
+          {!meta && !webGroupLabel && !workflowGroupLabel ? (
             <Box sx={{ flex: 1, display: 'flex', alignItems: 'center' }}>
               <SkeletonPulse width={100} height={12} />
             </Box>
@@ -231,8 +256,13 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
             sx={{
               borderTop: `0.5px solid ${c.border.medium}`,
               '& > *': {
-                animation: 'toolRowFadeIn 140ms ease-out',
+                animation: 'toolRowFadeIn 140ms ease-out backwards',
               },
+              // Staggered entrance (assistant-ui's tool-group treatment): rows cascade instead of popping at once.
+              '& > *:nth-of-type(2)': { animationDelay: '40ms' },
+              '& > *:nth-of-type(3)': { animationDelay: '80ms' },
+              '& > *:nth-of-type(4)': { animationDelay: '120ms' },
+              '& > *:nth-of-type(n+5)': { animationDelay: '160ms' },
               '@keyframes toolRowFadeIn': {
                 from: { opacity: 0, transform: 'translateY(-2px)' },
                 to: { opacity: 1, transform: 'translateY(0)' },

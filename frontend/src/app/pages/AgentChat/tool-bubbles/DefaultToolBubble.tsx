@@ -20,6 +20,7 @@ import { useTermColors, colorizeInput, colorizeOutput } from '../parsing/toolCol
 import { ParsedResult } from '../parsing/toolResultParsing';
 import { McpToolInfo } from '@/shared/mcpToolMeta';
 import { McpResultCard } from '../mcp-cards/McpResultCard';
+import { domainFromUrl, faviconUrlForDomain } from './SourceFavicons';
 
 interface DefaultToolBubbleProps {
   call: AgentMessage;
@@ -59,6 +60,10 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
   const reveal = useMountReveal();
   const enterStyle = (!mcpCompact && !suppressReveal) ? reveal : {};
   const canToggleDetails = !!inputSummary && !isStreaming;
+  // A web read shows its SOURCE (favicon + domain), not a url dump; the Perplexity treatment.
+  const webDomain = /webfetch$/i.test(toolName) && typeof input?.url === 'string'
+    ? domainFromUrl(input.url)
+    : '';
 
   return (
     <Box
@@ -82,7 +87,8 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
           }`,
           borderRadius: mcpCompact ? 0 : 2,
           overflow: 'hidden',
-          animation: (isPending || isStreaming) && !mcpCompact ? 'border-glow 2s ease-in-out infinite' : 'none',
+          // Live state stays calm: the accent border + the ElapsedTimer's small pulsing dot carry
+          // "working"; the old whole-bubble box-shadow glow loop read as noise (animation-purge rule).
           transition: 'border-color 0.3s, box-shadow 0.3s',
         } as any}
       >
@@ -134,18 +140,29 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
             </Typography>
           )}
           {inputSummary && !isStreaming && (
-            <Typography
-              noWrap
-              sx={{
-                color: c.text.tertiary,
-                fontSize: '0.75rem',
-                fontFamily: c.font.mono,
-                flex: 1,
-                minWidth: 0,
-              }}
-            >
-              {inputSummary}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1, minWidth: 0 }}>
+              {webDomain && (
+                <Box
+                  component="img"
+                  src={faviconUrlForDomain(webDomain)}
+                  alt=""
+                  loading="lazy"
+                  onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.style.display = 'none'; }}
+                  sx={{ width: 13, height: 13, borderRadius: '3px', flexShrink: 0 }}
+                />
+              )}
+              <Typography
+                noWrap
+                sx={{
+                  color: c.text.tertiary,
+                  fontSize: '0.75rem',
+                  fontFamily: webDomain ? undefined : c.font.mono,
+                  minWidth: 0,
+                }}
+              >
+                {inputSummary}
+              </Typography>
+            </Box>
           )}
           {!inputSummary && <Box sx={{ flex: 1 }} />}
           {isStreaming && <Box sx={{ flex: 1 }} />}

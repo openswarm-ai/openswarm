@@ -18,6 +18,7 @@ import { ParsedResult } from '../parsing/toolResultParsing';
 import { isSettingsWriteTool, settingsWriteSummary } from '../parsing/settingsToolMeta';
 import { McpToolInfo, getMcpShortAction, getMcpInputSummary, getWorkflowToolLabel } from '@/shared/mcpToolMeta';
 import { McpResultCard } from '../mcp-cards/McpResultCard';
+import { domainFromUrl, faviconUrlForDomain } from './SourceFavicons';
 
 interface CompactMcpBubbleProps {
   call: AgentMessage;
@@ -57,6 +58,9 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
   })();
   const serviceLabel = mcpInfo.isMcp ? mcpVerbLabel : shortAction;
   const inputSummary = mcpInfo.isMcp ? getMcpInputSummary(input, mcpInfo.action, mcpInfo.serverSlug) : '';
+  // Web rows read as sources: favicon beside the domain/query, body text instead of mono.
+  const isWebRow = /web(fetch|search)$/i.test(toolName);
+  const webDomain = /webfetch$/i.test(toolName) && typeof input?.url === 'string' ? domainFromUrl(input.url) : '';
   // A grouped settings write shows the masked change list (input-derived, so it reads even while pending) instead of the generic "Applied: theme" result line.
   const visibleSummary = isSettingsWriteTool(toolName)
     ? settingsWriteSummary(input)
@@ -95,21 +99,33 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
             </Typography>
           )}
           {visibleSummary && !isError && !stackBelow && (
-            <Typography
-              sx={{
-                color: hideVerbLabel ? c.text.primary : c.text.secondary,
-                fontSize: '0.74rem',
-                // Args are data (ids, URLs, params), so they read in mono, not the body serif.
-                fontFamily: c.font.mono,
-                flex: 1,
-                minWidth: 0,
-                ...(showBody && canToggleDetails
-                  ? { whiteSpace: 'normal', overflowWrap: 'anywhere' }
-                  : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
-              }}
-            >
-              {visibleSummary}
-            </Typography>
+            <>
+              {webDomain && (
+                <Box
+                  component="img"
+                  src={faviconUrlForDomain(webDomain)}
+                  alt=""
+                  loading="lazy"
+                  onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.style.display = 'none'; }}
+                  sx={{ width: 13, height: 13, borderRadius: '3px', flexShrink: 0 }}
+                />
+              )}
+              <Typography
+                sx={{
+                  color: hideVerbLabel ? c.text.primary : c.text.secondary,
+                  fontSize: '0.74rem',
+                  // Args are data (ids, URLs, params) and read in mono; web rows are SOURCES and read in body text.
+                  fontFamily: isWebRow ? undefined : c.font.mono,
+                  flex: 1,
+                  minWidth: 0,
+                  ...(showBody && canToggleDetails
+                    ? { whiteSpace: 'normal', overflowWrap: 'anywhere' }
+                    : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
+                }}
+              >
+                {visibleSummary}
+              </Typography>
+            </>
           )}
           {(stackBelow || !visibleSummary) && !showTimer && <Box sx={{ flex: 1 }} />}
           {showTimer && (
