@@ -8,6 +8,8 @@ import Box from '@mui/material/Box';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
@@ -29,6 +31,9 @@ const SEARCH_HOTKEY_LABEL = typeof navigator !== 'undefined' && /Mac|iPod|iPhone
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import CloseIcon from '@mui/icons-material/Close';
+import EditIcon from '@mui/icons-material/Edit';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
 // Settings modal lazy-loaded so its 2.3K LOC + Stripe/OAuth helpers don't ship on first paint.
@@ -40,7 +45,7 @@ import { useLastDashboardId } from '@/shared/hooks/useLastDashboardId';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { hasModelConnected as selectHasModelConnected } from '@/app/components/Onboarding/steps/skipPredicates';
 import { shallowEqual } from 'react-redux';
-import { fetchDashboards, createDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
+import { fetchDashboards, createDashboard, renameDashboard, deleteDashboard, duplicateDashboard } from '@/shared/state/dashboardsSlice';
 import { Typewriter } from '@/app/components/feedback/Animated';
 import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import { addBrowserCard, addBrowserTab, cycleBrowserTab, reopenLastClosed, addViewCard, selectFullscreenCardId, setTiledCard, clearTiledCard } from '@/shared/state/dashboardLayoutSlice';
@@ -90,6 +95,7 @@ const AppShell: React.FC = () => {
   const [renameValue, setRenameValue] = useState('');
   // Arc-style delete: the row vanishes at once but the real delete waits behind an Undo toast.
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [rowMenu, setRowMenu] = useState<{ top: number; left: number; kind: 'dashboard' | 'app'; id: string; name: string } | null>(null);
   const pendingDeleteRef = useRef<{ id: string; name: string } | null>(null);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Arc-style peek: hovering an app row (with intent, not a fly-by) floats a preview beside the sidebar.
@@ -619,6 +625,33 @@ const AppShell: React.FC = () => {
     setRenameValue(currentName);
   };
 
+  // Right-click a sidebar row for the same actions the Dashboards grid offers, Mac-style at the cursor.
+  const openRowMenu = (e: React.MouseEvent, kind: 'dashboard' | 'app', id: string, name: string): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRowMenu({ top: e.clientY, left: e.clientX, kind, id, name });
+  };
+  const closeRowMenu = (): void => setRowMenu(null);
+  const rowMenuRename = (): void => {
+    const m = rowMenu;
+    closeRowMenu();
+    if (!m) return;
+    // Defer so the menu's focus trap releases before the inline field autofocuses.
+    setTimeout(() => (m.kind === 'dashboard' ? handleStartDashboardRename(m.id, m.name) : handleStartAppRename(m.id, m.name)), 150);
+  };
+  const rowMenuDelete = (e: React.MouseEvent): void => {
+    const m = rowMenu;
+    closeRowMenu();
+    if (!m) return;
+    if (m.kind === 'dashboard') dispatch(deleteDashboard(m.id));
+    else handleDeleteApp(e, m.id, m.name);
+  };
+  const rowMenuDuplicate = (): void => {
+    const m = rowMenu;
+    closeRowMenu();
+    if (m?.kind === 'dashboard') dispatch(duplicateDashboard(m.id));
+  };
+
   const handleDashboardRenameSubmit = (id: string) => {
     const trimmed = renameValue.trim();
     const previousName = dashboardItems[id]?.name;
@@ -1033,6 +1066,7 @@ const AppShell: React.FC = () => {
                         idx === 0 ? 'dashboard-row-first' : `dashboard-row-${entry.id}`
                       }
                       onClick={() => handleDashboardItemClick(entry.id)}
+                      onContextMenu={(e) => openRowMenu(e, 'dashboard', entry.id, entry.name)}
                       sx={{
                         display: 'flex',
                         alignItems: 'center',
@@ -1173,6 +1207,7 @@ const AppShell: React.FC = () => {
                     <Box
                       key={app.id}
                       onClick={() => { if (!isRenamingApp) navigateToApp(app.id); }}
+                      onContextMenu={(e) => openRowMenu(e, 'app', app.id, appName)}
                       onMouseEnter={(e) => {
                         if (isRenamingApp) return;
                         const top = e.currentTarget.getBoundingClientRect().top;
@@ -1498,6 +1533,30 @@ const AppShell: React.FC = () => {
           </Box>
         </Box>
       )}
+
+      {/* Right-click a dashboard or app row: the same actions as the Dashboards grid, at the cursor. */}
+      <Menu
+        anchorReference="anchorPosition"
+        anchorPosition={rowMenu ? { top: rowMenu.top, left: rowMenu.left } : undefined}
+        open={!!rowMenu}
+        onClose={closeRowMenu}
+        slotProps={{ paper: { sx: { bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, boxShadow: c.shadow.lg, minWidth: 160 } } }}
+      >
+        <MenuItem onClick={rowMenuRename}>
+          <ListItemIcon><EditIcon sx={{ fontSize: 18 }} /></ListItemIcon>
+          <ListItemText>Rename</ListItemText>
+        </MenuItem>
+        {rowMenu?.kind === 'dashboard' && (
+          <MenuItem onClick={rowMenuDuplicate}>
+            <ListItemIcon><ContentCopyIcon sx={{ fontSize: 18 }} /></ListItemIcon>
+            <ListItemText>Duplicate</ListItemText>
+          </MenuItem>
+        )}
+        <MenuItem onClick={rowMenuDelete} sx={{ color: c.status.error }}>
+          <ListItemIcon><DeleteOutlineIcon sx={{ fontSize: 18, color: c.status.error }} /></ListItemIcon>
+          <ListItemText>Delete</ListItemText>
+        </MenuItem>
+      </Menu>
 
       {/* Arc-style Undo for a just-deleted app. Open while the delete is pending; our own 6s timer commits it and closes this. */}
       <Snackbar
