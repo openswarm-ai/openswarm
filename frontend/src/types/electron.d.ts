@@ -54,6 +54,10 @@ declare global {
     harvestUsage?: (provider: string) => Promise<{ ok: boolean; total: number; titles: string[]; memories: string[] } | null>;
     hardReset?: () => Promise<void>;
     clearBrowserData?: () => Promise<{ ok: boolean }>;
+    voiceWarmup?: () => Promise<{ ok: boolean; error?: string }>;
+    voiceTranscribe?: (wav: ArrayBuffer) => Promise<{ ok: boolean; text?: string; error?: string }>;
+    voiceInject?: (text: string) => Promise<{ ok: boolean; pasted?: boolean; error?: string }>;
+    onVoiceToggle?: (cb: () => void) => () => void;
     onAuthUrl?: (cb: (url: string) => void) => () => void;
     onOauthClaim?: (cb: (url: string) => void) => () => void;
   }
