@@ -58,6 +58,14 @@ def test_container_submit_expression_escapes_and_truncates():
     assert '"post"' in expr and '"send"' in expr
 
 
+def test_clean_button_name_strips_shortcut_suffix_and_bidi():
+    # Gmail's real Send accessible name: 'Send ‪(⌘Enter)‬'
+    assert sc.clean_button_name("Send ‪(⌘Enter)‬") == "send"
+    assert sc.clean_button_name("  Post ") == "post"
+    assert sc.clean_button_name("Reply (Ctrl-Enter)") == "reply"
+    assert sc.clean_button_name("") == ""
+
+
 def test_parse_eval_value_reads_value_text_and_garbage():
     assert sc.parse_eval_value({"value": {"ok": True}}) == {"ok": True}
     assert sc.parse_eval_value({"text": '{"ok": false, "why": "x"}'}) == {"ok": False, "why": "x"}

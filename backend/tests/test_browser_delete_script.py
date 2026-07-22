@@ -38,6 +38,8 @@ def make_exec(step_results, click_ok=True, verify_after_refresh=None):
             calls["steps"].append(step)
             if step == "verify" and calls["navs"] and verify_after_refresh is not None:
                 return {"value": verify_after_refresh}
+            if step not in step_results:  # menu-flow fixtures: no direct control on the item
+                return {"value": {"ok": False, "stage": step, "optional": True, "msg": "none"}}
             return {"value": step_results[step]}
         if tool == "BrowserClickPoint":
             calls["clicks"].append((params["xPercent"], params["yPercent"]))
@@ -106,6 +108,33 @@ async def test_missing_confirm_is_optional_verify_decides():
     r = await d.run_delete("coffee notes abc123", "b1", "", ex)
     assert r["removed"] is True
     assert len(calls["clicks"]) == 2            # confirm never clicked
+
+
+@pytest.mark.asyncio
+async def test_direct_delete_skips_menu_walk():
+    """Row-action sites (Gmail): a literal Delete control on the item is clicked straight; the
+    menu ladder never runs and a page-wide non-dialog 'Delete' earns NO bonus confirm click."""
+    ex, calls = make_exec({
+        "direct": {"ok": True, "stage": "direct", "label": "delete", **POS},
+        "confirm": {"ok": True, "stage": "confirm", "fromDialog": False, **POS},
+        "verify": {"ok": True, "stage": "verify"},
+    })
+    r = await d.run_delete("note to self abc123", "b1", "", ex)
+    assert r["removed"] is True
+    assert len(calls["clicks"]) == 1
+    assert "more" not in calls["steps"] and "menuitem" not in calls["steps"]
+
+
+@pytest.mark.asyncio
+async def test_direct_delete_confirms_only_in_dialog():
+    ex, calls = make_exec({
+        "direct": {"ok": True, "stage": "direct", "label": "move to trash", **POS},
+        "confirm": {"ok": True, "stage": "confirm", "fromDialog": True, **POS},
+        "verify": {"ok": True, "stage": "verify"},
+    })
+    r = await d.run_delete("note to self abc123", "b1", "", ex)
+    assert r["removed"] is True
+    assert len(calls["clicks"]) == 2   # direct + real-dialog confirm
 
 
 @pytest.mark.asyncio

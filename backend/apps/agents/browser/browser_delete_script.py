@@ -63,7 +63,7 @@ P_RESOLVE_JS = r"""(async () => {
              yPct: (r.top + r.height / 2) / window.innerHeight * 100,
              label: norm(el.getAttribute('aria-label') || el.textContent || '').slice(0, 40) };
   };
-  const CONTAINERS = 'article,[role="article"],li,[role="listitem"],shreddit-post,'
+  const CONTAINERS = 'article,[role="article"],li,[role="listitem"],tr,[role="row"],shreddit-post,'
     + '[data-testid*="tweet"],[data-testid*="post"],[data-testid*="comment"],[data-testid*="Post"],[id^="t3_"],[id^="t1_"]';
   const MORE = 'button[aria-label*="More" i],button[aria-label*="option" i],'
     + '[data-testid="caret"],button[aria-haspopup="menu"],button[aria-haspopup="true"],[aria-label*="menu" i]';
@@ -83,6 +83,28 @@ P_RESOLVE_JS = r"""(async () => {
       if (!hs.length || hs.every((h) => TOMB.test(h.textContent || ''))) return { ok: true, stage: 'verify' };
     }
     return { ok: false, stage: 'verify' };
+  }
+  if (STEP === 'direct') {
+    // Row-action sites (Gmail) put a literal Delete control ON the item, no kebab menu; click it
+    // straight and let verify arbitrate. Exact cleaned-label match so 'Delete row' etc never fires.
+    const clean = (s) => norm((s || '').replace(/[‪‬‎‏⁦-⁩]|\([^)]*\)/g, '')).toLowerCase();
+    const DIRECT = new Set(['delete', 'move to trash', 'trash']);
+    if (!holders().length) return { ok: false, stage: 'find', msg: 'target text not on this page' };
+    for (const h of holders()) {
+      const cands = deep(h, 'button,[role="button"],li,span[role]', [], 0)
+        .filter((b) => DIRECT.has(clean(b.getAttribute('aria-label') || b.textContent || '')));
+      const v = cands.find(vis);
+      if (v) { h.scrollIntoView({ block: 'center' }); return { ok: true, stage: 'direct', ...center(v) }; }
+      if (cands.length) {
+        h.scrollIntoView({ block: 'center' });
+        const hr = h.getBoundingClientRect();
+        return { ok: false, stage: 'direct', hoverFirst: true,
+                 xPct: (hr.left + hr.width / 2) / window.innerWidth * 100,
+                 yPct: (hr.top + Math.min(20, hr.height / 2)) / window.innerHeight * 100,
+                 msg: 'direct delete control hidden until hover' };
+      }
+    }
+    return { ok: false, stage: 'direct', optional: true, msg: 'no direct delete control on the item' };
   }
   if (STEP === 'more') {
     if (!holders().length) return { ok: false, stage: 'find', msg: 'target text not on this page' };
@@ -155,7 +177,7 @@ P_RESOLVE_JS = r"""(async () => {
       for (const dlg of scopes) {
         const conf = deep(dlg, '[data-testid="confirmationSheetConfirm"]', [], 0).find(vis)
           || deep(dlg, 'button', [], 0).find((b) => CONF.test(norm(b.textContent)) && vis(b));
-        if (conf) return { ok: true, stage: 'confirm', ...center(conf) };
+        if (conf) return { ok: true, stage: 'confirm', fromDialog: dlg !== document, ...center(conf) };
       }
     }
     return { ok: false, stage: 'confirm', optional: true, msg: 'no confirm dialog appeared' };
@@ -179,25 +201,47 @@ async def run_delete(target_text: str, browser_id: str, tab_id: str,
         return browser_submit_click.parse_eval_value(res) or {"ok": False, "stage": "eval",
                                                               "msg": "the remove flow returned no readable result"}
 
-    for step, settle_s in (("more", 1.0), ("menuitem", 1.0), ("confirm", 1.8)):
-        r = await resolve(step)
-        if not r.get("ok") and step == "more" and r.get("hoverFirst"):
-            # Reveal a hover-only kebab with a real mouse move over the tile, then re-resolve once.
-            logger.info("[browser-deletescript] kebab hidden; hovering the tile to reveal it")
-            await execute_tool("BrowserClickPoint",
-                               {"xPercent": float(r["xPct"]), "yPercent": float(r["yPct"]),
-                                "hoverOnly": True}, browser_id, tab_id)
-            await asyncio.sleep(0.7)
-            r = await resolve(step)
-        if not r.get("ok"):
-            if step == "confirm" and r.get("optional"):
-                break  # some sites delete without a confirm; the verify below is the arbiter
-            return {"removed": False, "stage": str(r.get("stage") or step), "msg": str(r.get("msg") or "")}
+    async def hover_then_retry(step: str, r: Dict[str, Any]) -> Dict[str, Any]:
+        # Reveal a hover-only control with a real mouse move over the tile, then re-resolve once.
+        logger.info(f"[browser-deletescript] {step} control hidden; hovering the tile to reveal it")
+        await execute_tool("BrowserClickPoint",
+                           {"xPercent": float(r["xPct"]), "yPercent": float(r["yPct"]),
+                            "hoverOnly": True}, browser_id, tab_id)
+        await asyncio.sleep(0.7)
+        return await resolve(step)
+
+    async def click_step(step: str, r: Dict[str, Any], settle_s: float) -> None:
         logger.info(f"[browser-deletescript] step={step} label={str(r.get('label') or '')[:40]!r} "
                     f"at {float(r['xPct']):.1f},{float(r['yPct']):.1f}")
         await execute_tool("BrowserClickPoint",
                            {"xPercent": float(r["xPct"]), "yPercent": float(r["yPct"])}, browser_id, tab_id)
         await asyncio.sleep(settle_s)
+
+    # Row-action shortcut first (Gmail): a literal Delete control on the item skips the menu walk;
+    # a confirm may still follow (Drive-style), so that step runs either way and stays optional.
+    p_direct = await resolve("direct")
+    if not p_direct.get("ok") and p_direct.get("hoverFirst"):
+        p_direct = await hover_then_retry("direct", p_direct)
+    p_via_direct = False
+    if p_direct.get("ok"):
+        await click_step("direct", p_direct, 1.5)
+        p_via_direct = True
+        steps = (("confirm", 1.8),)
+    elif str(p_direct.get("stage")) == "find":
+        return {"removed": False, "stage": "find", "msg": str(p_direct.get("msg") or "")}
+    else:
+        steps = (("more", 1.0), ("menuitem", 1.0), ("confirm", 1.8))
+    for step, settle_s in steps:
+        r = await resolve(step)
+        if not r.get("ok") and r.get("hoverFirst"):
+            r = await hover_then_retry(step, r)
+        if not r.get("ok"):
+            if step == "confirm" and r.get("optional"):
+                break  # some sites delete without a confirm; the verify below is the arbiter
+            return {"removed": False, "stage": str(r.get("stage") or step), "msg": str(r.get("msg") or "")}
+        if step == "confirm" and p_via_direct and not r.get("fromDialog"):
+            break  # after a direct delete, only a REAL dialog earns a confirm click
+        await click_step(step, r, settle_s)
     v = await resolve("verify")
     if not v.get("ok"):
         # Some clients keep the dead tile mounted until a reload (shreddit, measured live: the

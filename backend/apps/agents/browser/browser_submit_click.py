@@ -7,6 +7,7 @@ opener with the same label can never be chosen. A wrong resolution still fails t
 downstream, never a false delivery claim."""
 
 import json
+import re
 from typing import Any, Dict, Optional
 
 # BROAD submit vocabulary shared by the index picker (browser_agent) and the JS below, one source
@@ -17,6 +18,14 @@ SEND_LABELS = frozenset({
     "publish", "comment", "share",                   # articles / YouTube+FB comments / shares
 })
 
+# Gmail names its Send button 'Send ‪(⌘Enter)‬': a shortcut suffix wrapped in bidi
+# isolates that defeats exact matching. Strip control chars + any parenthesized tail before compare.
+P_NAME_NOISE_RE = re.compile(r"[‪‬‎‏⁦-⁩]|\([^)]*\)")
+
+
+def clean_button_name(name: str) -> str:
+    return P_NAME_NOISE_RE.sub("", name or "").strip().lower()
+
 # Resolves the submit and returns its viewport center; the caller clicks it through the REAL
 # input path (BrowserClickPoint). Synthetic el.click() is ignored by web-component sites
 # (shreddit live), and a real click lands on whatever is topmost, so overlays can't be fooled.
@@ -26,7 +35,9 @@ P_CONTAINER_SUBMIT_JS = r"""(() => {
   const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const vis = (el) => !!el && el.getClientRects().length > 0;
   const enabled = (el) => !el.disabled && el.getAttribute('aria-disabled') !== 'true';
-  const labelOf = (el) => norm(el.getAttribute('aria-label') || el.textContent || '');
+  // Same cleaning as clean_button_name: Gmail's Send is 'Send (⌘Enter)' in bidi isolates.
+  const clean = (s) => norm((s || '').replace(/[‪‬‎‏⁦-⁩]|\([^)]*\)/g, ''));
+  const labelOf = (el) => clean(el.getAttribute('aria-label') || el.textContent || '');
   const holds = (el) => ((el.value || el.textContent || '').indexOf(PAYLOAD) !== -1);
   // Shadow piercing both ways: reddit's composer AND its submit live in shreddit shadow roots.
   const deep = (root, sel, out, depth) => {

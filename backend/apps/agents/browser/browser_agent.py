@@ -535,7 +535,7 @@ def send_index_in_state(state_text: str):
     (Send family only) so it never mislabels a common feed 'Reply'/'Share'/'Comment' button."""
     for line in (state_text or "").splitlines():
         m = P_SEND_ROW_RE.search(line)
-        if m and m.group(2).strip().lower() in P_HINT_SEND_LABELS:
+        if m and browser_submit_click.clean_button_name(m.group(2)) in P_HINT_SEND_LABELS:
             return int(m.group(1)), m.group(2)
     return None
 
@@ -549,7 +549,7 @@ def send_submit_index_in_state(state_text: str, after_index: int = -1):
     posts nothing (measured live: 0/2 X deliveries the day X shipped its opener as a button)."""
     for line in (state_text or "").splitlines():
         m = P_SEND_ROW_RE.search(line)
-        if m and m.group(2).strip().lower() in P_SEND_LABELS and int(m.group(1)) > after_index:
+        if m and browser_submit_click.clean_button_name(m.group(2)) in P_SEND_LABELS and int(m.group(1)) > after_index:
             return int(m.group(1)), m.group(2)
     return None
 
