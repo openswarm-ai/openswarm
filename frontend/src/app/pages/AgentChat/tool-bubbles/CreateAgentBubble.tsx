@@ -53,7 +53,6 @@ export const CreateAgentBubble: React.FC<CreateAgentBubbleProps> = ({
           }`,
           borderRadius: 2,
           overflow: 'hidden',
-          animation: isPending ? 'border-glow 2s ease-in-out infinite' : 'none',
           transition: 'border-color 0.3s, box-shadow 0.3s',
         } as any}
       >

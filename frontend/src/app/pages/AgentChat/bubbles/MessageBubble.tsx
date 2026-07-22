@@ -599,9 +599,9 @@ const ThinkingBubble: React.FC<{
   const finalTokens = persistedTokens
     ?? (text && !isStreaming ? Math.max(1, Math.round(text.length / 3.6)) : null);
 
-  const activeLabel = dynamicLabel
-    ? (liveTokenEstimate > 0 ? `${dynamicLabel}… ~${liveTokenEstimate} tokens` : `${dynamicLabel}…`)
-    : (liveTokenEstimate > 0 ? `${turnLabel.live}… (~${liveTokenEstimate} tokens)` : `${turnLabel.live}…`);
+  // No token counter while streaming: the label carries WHAT it's doing, the shimmer carries "live".
+  void liveTokenEstimate;
+  const activeLabel = dynamicLabel ? `${dynamicLabel}…` : `${turnLabel.live}…`;
 
   const fmtTokens = (n: number) => {
     if (n >= 1000) {
@@ -637,70 +637,61 @@ const ThinkingBubble: React.FC<{
     return { total: combinedTotalTokens, output: finalTokens, input: inputSide };
   })();
 
+  // Resting line reads like ChatGPT's "Thought for 12s": duration only. The dev metrics (token
+  // breakdown, tool count) live in a hover tooltip so the curious still get them without the
+  // transcript reading as telemetry.
   const renderPostStreamLabel = () => {
-    const segments: React.ReactNode[] = [];
-    segments.push(
-      <span key="duration">
-        {finalSeconds != null
-          ? `${turnLabel.past} for ${fmtThoughtDuration(finalSeconds)}`
-          : turnLabel.past}
-      </span>
-    );
-    if (tokenBreakdown) {
-      const { total, input, output } = tokenBreakdown;
-      const tooltipBody = input != null && output != null ? (
-        <Box sx={{ p: 0.5, fontFamily: c.font.sans, fontSize: '0.78rem', lineHeight: 1.5 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
-            <span>Input</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{input.toLocaleString()}</span>
+    const durationText = finalSeconds != null
+      ? `${turnLabel.past} for ${fmtThoughtDuration(finalSeconds)}`
+      : turnLabel.past;
+    if (!tokenBreakdown && !(persistedToolCount != null && persistedToolCount > 0)) {
+      return <span key="duration">{durationText}</span>;
+    }
+    const { total, input, output } = tokenBreakdown ?? { total: 0, input: null, output: null };
+    const tooltipBody = (
+      <Box sx={{ p: 0.5, fontFamily: c.font.sans, fontSize: '0.78rem', lineHeight: 1.5 }}>
+        {input != null && output != null ? (
+          <>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+              <span>Input</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{input.toLocaleString()}</span>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+              <span>Output</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{output.toLocaleString()}</span>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mt: 0.25, pt: 0.25, borderTop: `1px solid ${c.border.subtle}`, fontWeight: 600 }}>
+              <span>Total</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{total.toLocaleString()}</span>
+            </Box>
+          </>
+        ) : tokenBreakdown ? (
+          <Box>{total.toLocaleString()} tokens (input + output + children)</Box>
+        ) : null}
+        {persistedToolCount != null && persistedToolCount > 0 && (
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mt: tokenBreakdown ? 0.25 : 0 }}>
+            <span>Tools used</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{persistedToolCount}</span>
           </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
-            <span>Output</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{output.toLocaleString()}</span>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mt: 0.25, pt: 0.25, borderTop: `1px solid ${c.border.subtle}`, fontWeight: 600 }}>
-            <span>Total</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{total.toLocaleString()}</span>
-          </Box>
+        )}
+        {input != null && output != null && (
           <Box sx={{ mt: 0.5, color: c.text.ghost, fontSize: '0.7rem', fontStyle: 'italic' }}>
             Input shown is your message, history, and tool outputs. The fixed
             framework preamble (system prompt, tool defs, MCP descriptions) is
             excluded, since it's constant overhead from the agent runtime,
             not anything you can shrink.
           </Box>
-        </Box>
-      ) : (
-        <Box sx={{ p: 0.5, fontFamily: c.font.sans, fontSize: '0.78rem' }}>
-          {total.toLocaleString()} tokens (input + output + children)
-        </Box>
-      );
-      segments.push(<span key="sep-1">, </span>);
-      segments.push(
-        <Tooltip
-          key="tokens"
-          title={tooltipBody}
-          placement="top"
-          arrow
-          slotProps={{ tooltip: { sx: { bgcolor: c.bg.elevated, color: c.text.primary, border: `1px solid ${c.border.medium}`, maxWidth: 'none' } } }}
-        >
-          <Box
-            component="span"
-            onClick={(e) => { e.stopPropagation(); }}
-            sx={{
-              cursor: 'help',
-              borderBottom: `1px dotted ${c.border.medium}`,
-              '&:hover': { color: c.text.secondary },
-            }}
-          >
-            {fmtTokens(total)} tokens
-          </Box>
-        </Tooltip>
-      );
-    }
-    if (persistedToolCount != null && persistedToolCount > 0) {
-      segments.push(<span key="sep-2">, </span>);
-      segments.push(
-        <span key="tools">{persistedToolCount} tool{persistedToolCount === 1 ? '' : 's'} used</span>
-      );
-    }
-    return segments;
+        )}
+      </Box>
+    );
+    return (
+      <Tooltip
+        key="duration"
+        title={tooltipBody}
+        placement="top"
+        arrow
+        enterDelay={400}
+        slotProps={{ tooltip: { sx: { bgcolor: c.bg.elevated, color: c.text.primary, border: `1px solid ${c.border.medium}`, maxWidth: 'none' } } }}
+      >
+        <span>{durationText}</span>
+      </Tooltip>
+    );
   };
 
   // Shimmer needs a flat string; post-stream label needs nodes for the token tooltip.
@@ -1053,16 +1044,18 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
     >
       <Box
         sx={{
-          maxWidth: '85%',
+          // Only USER messages wear a bubble (the ChatGPT/Claude grammar): the assistant's words sit
+          // directly on the page, so its answers read as the page's voice, not another chat balloon.
+          maxWidth: isUser ? '85%' : '100%',
           minWidth: 0,
           // Oversized messages are block-virtualized, so the set of rendered blocks (and thus the widest visible content) changes as you scroll. Pin them to a stable width so the bubble doesn't shrink-to-fit and resize horizontally frame to frame. Normal messages keep shrink-to-fit.
-          ...(isOversized ? { width: '85%' } : {}),
-          bgcolor: isUser ? c.user.bubble : c.bg.surface,
-          border: isUser ? (isFailed ? `1px solid ${c.status.error}` : 'none') : `1px solid ${c.border.subtle}`,
-          borderRadius: isUser ? '18px' : '16px 16px 16px 4px',
-          px: 2,
-          py: 1.25,
-          boxShadow: isUser ? 'none' : c.shadow.sm,
+          ...(isOversized ? { width: isUser ? '85%' : '100%' } : {}),
+          bgcolor: isUser ? c.user.bubble : 'transparent',
+          border: isUser && isFailed ? `1px solid ${c.status.error}` : 'none',
+          borderRadius: isUser ? '18px' : 0,
+          px: isUser ? 2 : 0,
+          py: isUser ? 1.25 : 0.5,
+          boxShadow: 'none',
           overflow: 'hidden',
           opacity: isPending ? 0.7 : 1,
           transition: 'opacity 0.2s, border-color 0.2s',

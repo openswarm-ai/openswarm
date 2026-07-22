@@ -169,26 +169,16 @@ const ThinkingBubble: React.FC<{ label?: string | null }> = ({ label }) => {
   // Aux-LLM label wins; otherwise the pill stays plain "Thinking". The whimsical verbs read as personality
   // in the per-message thinking bubble (MessageBubble), but as a vague, confusing status on a working card.
   const display = label ? `${label}…` : `${THINKING_LABELS[0].live}…`;
+  // A quiet shimmer LINE, not a bordered card: status shares one visual language with the
+  // per-message thinking row, so only real content gets bubbles (the ChatGPT/Claude pattern).
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75 }}>
       <style>{thinkingShimmerKeyframes}</style>
-      <Box
-        sx={{
-          bgcolor: c.bg.surface,
-          border: `1px solid ${c.border.subtle}`,
-          borderRadius: '16px 16px 16px 4px',
-          px: 2,
-          py: 1.5,
-          boxShadow: c.shadow.sm,
-          display: 'flex',
-          alignItems: 'center',
-          minHeight: 36,
-        }}
-      >
+      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, py: 0.5, px: 1, ml: -1 }}>
         <Box
           component="span"
           sx={{
-            fontSize: '0.85rem',
+            fontSize: '0.8rem',
             fontWeight: 500,
             background: `linear-gradient(90deg, ${shimmerBase} 0%, ${shimmerBase} 40%, ${shimmerHighlight} 50%, ${shimmerBase} 60%, ${shimmerBase} 100%)`,
             backgroundSize: '200% 100%',
