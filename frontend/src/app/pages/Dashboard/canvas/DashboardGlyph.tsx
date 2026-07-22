@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Timer, Clock, Calendar, ListChecks, Wallet, BarChart3, Megaphone, Code,
   Terminal, Palette, PenLine, FileText, BookOpen, FlaskConical, Mail,
-  MessageSquare, Plane, Map, Dumbbell, HeartPulse, Utensils, ChefHat, Coffee,
+  MessageCircle, Plane, Map, Dumbbell, HeartPulse, Utensils, ChefHat, Coffee,
   Music, Video, Image, Camera, ShoppingCart, Bot, Gamepad2, Home, Shield,
   Users, Scale, Building2, Newspaper, Briefcase, Rocket, Globe, Database,
   Wrench, Lightbulb, Target, Trophy, Bell, Folder, Package, Truck,
@@ -29,7 +29,7 @@ const KEYWORDS: Record<string, LucideIcon> = {
   research: BookOpen, study: BookOpen, learning: BookOpen, course: BookOpen, education: BookOpen, school: BookOpen, exam: BookOpen, thesis: BookOpen,
   science: FlaskConical, lab: FlaskConical, experiment: FlaskConical, chemistry: FlaskConical, biology: FlaskConical, physics: FlaskConical,
   mail: Mail, email: Mail, inbox: Mail, outreach: Mail, newsletter: Mail,
-  chat: MessageSquare, message: MessageSquare, messaging: MessageSquare, support: MessageSquare, dm: MessageSquare,
+  chat: MessageCircle, message: MessageCircle, messaging: MessageCircle, support: MessageCircle, dm: MessageCircle,
   travel: Plane, trip: Plane, flight: Plane, vacation: Plane, tour: Plane, itinerary: Plane,
   map: Map, location: Map, geo: Map, route: Map, navigation: Map,
   fitness: Dumbbell, workout: Dumbbell, gym: Dumbbell, exercise: Dumbbell, training: Dumbbell,

@@ -8,7 +8,7 @@ import EventRepeatIcon from '@mui/icons-material/EventRepeat';
 import StickyNote2OutlinedIcon from '@mui/icons-material/StickyNote2Outlined';
 import HistoryIcon from '@mui/icons-material/History';
 import { pickIcon } from '../canvas/DashboardGlyph';
-import { MessageSquare } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 import { openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded';
@@ -98,6 +98,37 @@ function DesktopDock({
   onAddNote,
 }: DesktopDockProps): React.ReactElement | null {
   const dispatch = useAppDispatch();
+  const dockBodyRef = useRef<HTMLDivElement | null>(null);
+  // macOS Dock magnification: the tile under the cursor grows on a bell curve and its neighbors
+  // SLIDE AWAY to make room (no horizontal pop-out, the part that read as wobble). Each tile that
+  // grows by `extra` pushes every tile past it by extra/2, so the column opens up smoothly.
+  const applyDockMagnify = useCallback((clientY: number | null) => {
+    const root = dockBodyRef.current;
+    if (!root) return;
+    const tiles = Array.from(root.querySelectorAll<HTMLElement>('.osw-dock-tile'));
+    if (tiles.length === 0) return;
+    if (clientY == null) {
+      tiles.forEach((t) => { t.style.transform = ''; t.style.zIndex = ''; });
+      return;
+    }
+    const rootTop = root.getBoundingClientRect().top;
+    const cy = clientY - rootTop;
+    const BOOST = 0.5;   // hovered tile grows to 1.5x
+    const FALLOFF = 44;  // px spread of the bell curve (how many neighbors react)
+    const bases = tiles.map((t) => t.offsetTop + t.offsetHeight / 2);
+    const scales = bases.map((b) => 1 + BOOST * Math.exp(-(((cy - b) / FALLOFF) ** 2)));
+    const extra = scales.map((s) => TILE * (s - 1));
+    tiles.forEach((t, i) => {
+      let shift = 0;
+      for (let j = 0; j < tiles.length; j++) {
+        if (j === i) continue;
+        shift += (extra[j] / 2) * Math.sign(bases[i] - bases[j]);
+      }
+      t.style.transform = `translateY(${shift.toFixed(1)}px) scale(${scales[i].toFixed(3)})`;
+      t.style.transformOrigin = 'left center';
+      t.style.zIndex = String(10 + Math.round((scales[i] - 1) * 100));
+    });
+  }, []);
   const [hovered, setHovered] = useState<{ id: string; top: number } | null>(null);
   const [liveShot, setLiveShot] = useState<{ id: string; dataUrl: string } | null>(null);
   const hoverTimer = useRef<number | null>(null);
@@ -108,7 +139,7 @@ function DesktopDock({
       const session = sessions[card.session_id];
       if (!session) continue;
       const title = displayChatTitle(session);
-      const ChatIcon = pickIcon(title) || MessageSquare;
+      const ChatIcon = pickIcon(title) || MessageCircle;
       list.push({
         id: card.session_id,
         label: title,
@@ -202,7 +233,9 @@ function DesktopDock({
 
   return (
     <Box
-      onMouseLeave={endHover}
+      ref={dockBodyRef}
+      onMouseMove={(e: React.MouseEvent) => applyDockMagnify(e.clientY)}
+      onMouseLeave={() => { endHover(); applyDockMagnify(null); }}
       sx={{
         position: 'absolute',
         left: 12,
@@ -219,15 +252,13 @@ function DesktopDock({
         backdropFilter: 'blur(20px) saturate(160%)',
         WebkitBackdropFilter: 'blur(20px) saturate(160%)',
         boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
-        // One tasteful hover for every tile: a spring-y lift (replaces the fisheye that read as wobble),
-        // and every tile is a rounder squircle so they feel like real app icons, not lame little squares.
+        // Rounder squircle tiles (real app icons, not lame squares). The magnify transform is set
+        // imperatively per-frame by applyDockMagnify; a short ease smooths the chase + the reset.
         '& .osw-dock-tile': {
           borderRadius: '12px',
-          transition: 'transform 0.16s cubic-bezier(.34,1.56,.64,1)',
+          transition: 'transform 0.12s ease-out',
           willChange: 'transform',
         },
-        '& .osw-dock-tile:hover': { transform: 'scale(1.16)' },
-        '& .osw-dock-tile:active': { transform: 'scale(1.04)' },
       }}
     >
       {entries.map((entry) => {
