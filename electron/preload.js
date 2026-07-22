@@ -62,6 +62,16 @@ contextBridge.exposeInMainWorld('openswarm', {
   // Clears cookies/cache/localStorage for the browser-card partition only (never the app's defaultSession). Logs you out of sites opened in browser cards.
   clearBrowserData: () => ipcRenderer.invoke('browser:clear-data'),
   connectSlack: () => ipcRenderer.invoke('connect-slack'),
+  // Voice dictation (local whisper.cpp). transcribe takes a 16kHz-mono WAV ArrayBuffer; inject pastes
+  // text into the frontmost app; warmup pre-loads the model; onVoiceToggle fires on the global hotkey.
+  voiceWarmup: () => ipcRenderer.invoke('voice:warmup'),
+  voiceTranscribe: (wavArrayBuffer) => ipcRenderer.invoke('voice:transcribe', wavArrayBuffer),
+  voiceInject: (text) => ipcRenderer.invoke('voice:inject', text),
+  onVoiceToggle: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on('voice:toggle', listener);
+    return () => ipcRenderer.removeListener('voice:toggle', listener);
+  },
   // Hands a vetted social platform's partition cookies to its session-backed MCP shim (allowlisted domains only, gated again in the main process).
   getPartitionCookies: (domain) => ipcRenderer.invoke('get-partition-cookies', domain),
   // Silently reads the user's own chatgpt.com/claude.ai history offscreen (no card) for onboarding personalization; main owns the injected script + gates the provider.

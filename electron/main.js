@@ -1,4 +1,6 @@
-const { app, components, BrowserWindow, ipcMain, shell, session, dialog, crashReporter, powerMonitor, Menu, clipboard } = require('electron');
+const { app, components, BrowserWindow, ipcMain, shell, session, dialog, crashReporter, powerMonitor, Menu, clipboard, globalShortcut } = require('electron');
+const whisperService = require('./voice/whisperService');
+const { injectText } = require('./voice/textInjector');
 
 // Browser cards live in their own persistent partition so cookies/localStorage/IndexedDB survive reload + quit (Discord etc. stay logged in) and site data stays isolated from the app's defaultSession. The "clear browsing data" wipe nukes only this partition. MUST match BROWSER_PARTITION in frontend BrowserCard.tsx.
 const BROWSER_PARTITION = 'persist:openswarm-browser';
@@ -1786,6 +1788,14 @@ app.whenReady().then(async () => {
   // Off-window mouse-release crash dodge (macOS). Safe to call before windows exist.
   installMacMouseClamp();
 
+  // Voice dictation toggle: press anywhere (even in another app) to start/stop dictating. globalShortcut
+  // can't see key-up, so this is a press-to-toggle, not hold-to-talk; the renderer owns the record state.
+  try {
+    globalShortcut.register('CommandOrControl+Shift+D', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('voice:toggle');
+    });
+  } catch (_) { /* a taken shortcut just means no global hotkey; the pill still works */ }
+
   // PASSKEY SPIKE (macOS only): turn on the Secure-Enclave/Touch ID WebAuthn authenticator that Electron 42 added. Without this, isUserVerifyingPlatformAuthenticatorAvailable() is hardwired false (why the old reject-shim existed). keychainAccessGroup MUST match the keychain-access-groups entitlement (Y26NUZH4NG.<bundle>.webauthn) or this throws. Windows has no equivalent, so the reject-shim still runs there.
   if (process.platform === 'darwin' && typeof app.configureWebAuthn === 'function') {
     try {
@@ -2773,6 +2783,8 @@ app.on('before-quit', async (event) => {
 
 app.on('will-quit', () => {
   if (!isDev) killBackend();
+  try { globalShortcut.unregisterAll(); } catch (_) {}
+  try { whisperService.stopServer(); } catch (_) {}
 });
 
 app.on('activate', () => {
@@ -2857,6 +2869,34 @@ ipcMain.handle = (channel, handler) => {
 };
 
 ipcMain.handle('get-backend-port', () => backendPort);
+
+// ---- Voice dictation (local whisper.cpp) ----
+function voiceResourceDir() {
+  return getResourcePath('whisper');
+}
+function voiceUserDataDir() {
+  try { return app.getPath('userData'); } catch (_) { return __dirname; }
+}
+// Renderer records the mic, encodes a 16kHz-mono WAV, and hands us the bytes; we run them through the
+// warm whisper server and return text. Fail-soft: any error becomes { ok:false } so the pill can show
+// a clean "couldn't hear that" instead of the app throwing.
+ipcMain.handle('voice:transcribe', async (_e, wavArrayBuffer) => {
+  try {
+    const buf = Buffer.from(wavArrayBuffer);
+    const text = await whisperService.transcribe(voiceResourceDir(), voiceUserDataDir(), buf);
+    return { ok: true, text };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+});
+// Warm the model ahead of the first phrase so dictation feels instant, not "1s to boot then type".
+ipcMain.handle('voice:warmup', async () => {
+  try { await whisperService.ensureServer(voiceResourceDir(), voiceUserDataDir()); return { ok: true }; } catch (err) { return { ok: false, error: String(err && err.message ? err.message : err) }; }
+});
+// Paste the text into the frontmost app (dictate-anywhere). Returns whether the OS paste actually fired.
+ipcMain.handle('voice:inject', async (_e, text) => {
+  try { const pasted = await injectText(String(text || '')); return { ok: true, pasted }; } catch (err) { return { ok: false, error: String(err && err.message ? err.message : err) }; }
+});
 // Sync mirrors so preload.js can expose window.openswarm synchronously (no await), closing the race where React renders before the async exposure resolves and window.openswarm is briefly undefined. backendPort is assigned in app.whenReady before any BrowserWindow is created, so it is always set by the time preload runs.
 ipcMain.on('get-backend-port-sync', (event) => { event.returnValue = backendPort; });
 ipcMain.on('get-webview-preload-path-sync', (event) => {
