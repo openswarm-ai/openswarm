@@ -24,7 +24,7 @@ type Stage = 'choose' | 'email_form' | 'code_form';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-export default function SignInDialog({ onClose }: { onClose: () => void }): JSX.Element {
+export default function SignInDialog({ onClose, initialStage = 'choose' }: { onClose: () => void; initialStage?: Stage }): JSX.Element {
   const tokens = useClaudeTokens();
   const dispatch = useAppDispatch();
   const proxyUrl = useAppSelector(
@@ -32,7 +32,8 @@ export default function SignInDialog({ onClose }: { onClose: () => void }): JSX.
   );
   const installId = useAppSelector((s) => s.settings.data.installation_id ?? '');
 
-  const [stage, setStage] = useState<Stage>('choose');
+  // Callers that already offered the Google/email choice (the onboarding beat) jump straight to the email form.
+  const [stage, setStage] = useState<Stage>(initialStage);
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -157,7 +158,9 @@ export default function SignInDialog({ onClose }: { onClose: () => void }): JSX.
       open
       onClose={onClose}
       hideBackdrop={false}
-      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      // Must clear the onboarding curtain (z ~2147483000): at MUI's default 1300 this dialog opened
+      // INVISIBLY behind it, so "Continue with email" looked dead during onboarding.
+      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2147483600 }}
       slotProps={{ backdrop: { sx: { backgroundColor: 'rgba(0,0,0,0.55)' } } }}
     >
       <Box
