@@ -1,0 +1,111 @@
+import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import GoogleIcon from '@mui/icons-material/Google';
+import EmailIcon from '@mui/icons-material/Email';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { fetchSettings } from '@/shared/state/settingsSlice';
+import { OPENSWARM_DEFAULT_PROXY_URL } from '@/shared/config';
+import { report } from '@/shared/serviceClient';
+import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
+import SignInDialog from '@/app/components/overlays/SignInDialog';
+import OnboardingLogo from '../OnboardingLogo';
+import BeatShell from './BeatShell';
+
+// The account gate: users sign in (Google or email) before anything else, so the free trial and their
+// setup are tied to a real account. Google hands off through the external browser and lands out-of-band
+// (the cloud page POSTs the bearer to the local backend), so we poll settings until user_id appears.
+// Email reuses the proven SignInDialog (magic-link 6-digit code) on top of the beat.
+const BeatSignIn: React.FC<{
+  c: ClaudeTokens;
+  onNext: () => void;
+  onBack: () => void;
+}> = ({ c, onNext, onBack }) => {
+  const dispatch = useAppDispatch();
+  const userId = useAppSelector((s) => s.settings.data.user_id ?? null);
+  const userEmail = useAppSelector((s) => s.settings.data.user_email ?? null);
+  const proxyUrl = useAppSelector((s) => s.settings.data.openswarm_proxy_url || OPENSWARM_DEFAULT_PROXY_URL);
+  const installId = useAppSelector((s) => s.settings.data.installation_id ?? '');
+  const [waitingGoogle, setWaitingGoogle] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const signedIn = !!userId;
+
+  useEffect(() => {
+    if (signedIn || !waitingGoogle) return undefined;
+    const id = window.setInterval(() => { void dispatch(fetchSettings()); }, 2000);
+    return () => window.clearInterval(id);
+  }, [signedIn, waitingGoogle, dispatch]);
+
+  const onGoogle = (): void => {
+    if (signedIn) return;
+    report('signin', 'google_clicked');
+    const localPort = (window as unknown as { __OPENSWARM_PORT__?: number }).__OPENSWARM_PORT__ || 8324;
+    const params = new URLSearchParams({ install_id: installId, local_port: String(localPort) });
+    const startUrl = `${proxyUrl.replace(/\/$/, '')}/api/auth/google/start?${params.toString()}`;
+    const api = (window as unknown as { openswarm?: { openExternal?: (u: string) => void } }).openswarm;
+    if (api?.openExternal) api.openExternal(startUrl);
+    else window.open(startUrl, '_blank');
+    setWaitingGoogle(true);
+  };
+
+  const rows: Array<{ id: string; name: string; icon: React.ReactNode; onClick: () => void; hint?: string }> = [
+    { id: 'google', name: 'Continue with Google', icon: <GoogleIcon sx={{ fontSize: 26, color: '#4285F4' }} />, onClick: onGoogle, hint: waitingGoogle && !signedIn ? 'waiting for your browser...' : undefined },
+    { id: 'email', name: 'Continue with email', icon: <EmailIcon sx={{ fontSize: 26, color: '#8a8a86' }} />, onClick: () => { if (!signedIn) setEmailOpen(true); } },
+  ];
+
+  return (
+    <BeatShell
+      c={c}
+      title="Sign in."
+      body="Your account keeps your setup, and your free trial, tied to you."
+      nextLabel="Continue"
+      onNext={onNext}
+      nextDisabled={!signedIn}
+      onBack={onBack}
+      wide
+      logo={<OnboardingLogo size={52} />}
+    >
+      <div style={{ width: 'min(440px, 100%)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {rows.map((row, i) => (
+          <motion.button
+            key={row.id}
+            onClick={row.onClick}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 26, delay: 0.1 + i * 0.08 }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 14, padding: '0 0 0 18px', textAlign: 'left', overflow: 'hidden',
+              borderRadius: 14, border: 'none',
+              boxShadow: signedIn ? '0 0 0 2px #1a9e6a, 0 10px 26px rgba(20,16,80,0.22)' : '0 10px 26px rgba(20,16,80,0.22)',
+              background: '#ffffff', cursor: signedIn ? 'default' : 'pointer', fontFamily: 'inherit', minHeight: 64,
+            }}
+          >
+            <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '11px 0' }}>
+              <span style={{ fontSize: '0.98rem', fontWeight: 600, color: '#3d3d3a' }}>{row.name}</span>
+              {row.hint && <span style={{ fontSize: '0.78rem', fontWeight: 400, color: '#8a8a86' }}>{row.hint}</span>}
+            </span>
+            <span style={{
+              alignSelf: 'stretch', width: 78, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'linear-gradient(135deg, rgba(0,0,0,0.05), rgba(0,0,0,0.02))',
+            }}>
+              {row.icon}
+            </span>
+          </motion.button>
+        ))}
+        {signedIn ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', padding: '6px 0', fontSize: '0.9rem', color: 'rgba(255,255,255,0.92)' }}>
+            <CheckRoundedIcon sx={{ fontSize: 17, color: '#4fdf9f' }} />
+            Signed in{userEmail ? ` as ${userEmail}` : ''}
+          </div>
+        ) : (
+          <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.6)', marginTop: 6 }}>
+            Sign in to continue.
+          </div>
+        )}
+      </div>
+      {emailOpen && !signedIn && <SignInDialog initialStage="email_form" onClose={() => setEmailOpen(false)} />}
+    </BeatShell>
+  );
+};
+
+export default BeatSignIn;

@@ -10,12 +10,13 @@ import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { useOnboardingV3Pipeline } from './useOnboardingV3Pipeline';
 import { GRAIN_URL } from '@/shared/styles/grainTexture';
 import { ARC_BLUE_BG, ONBOARDING_SANS } from './beats/BeatShell';
+import BeatSignIn from './beats/BeatSignIn';
 import BeatConnect from './beats/BeatConnect';
 import BeatApps from './beats/BeatApps';
 import BeatTheme from './beats/BeatTheme';
 import BeatCard from './beats/BeatCard';
 
-type Beat = 'welcome' | 'newos' | 'connect' | 'apps' | 'theme' | 'card';
+type Beat = 'welcome' | 'newos' | 'signin' | 'connect' | 'apps' | 'theme' | 'card';
 
 const V2_STORAGE_KEY = 'openswarm.onboarding.v2';
 const WINDOWED_BEATS: Beat[] = ['welcome', 'newos'];
@@ -194,14 +195,15 @@ const OnboardingV3Root: React.FC = () => {
               style={{ position: 'absolute', inset: 0 }}
             >
               {beat === 'welcome' && <IntroBeat c={c} line="Welcome." onNext={() => setBeat('newos')} />}
-              {beat === 'newos' && <IntroBeat c={c} line="This is your new OS." onNext={() => setBeat('connect')} />}
+              {beat === 'newos' && <IntroBeat c={c} line="This is your new OS." onNext={() => setBeat('signin')} />}
+              {beat === 'signin' && <BeatSignIn c={c} onNext={() => setBeat('connect')} onBack={() => setBeat('newos')} />}
               {beat === 'connect' && (
                 <BeatConnect
                   c={c}
                   identity={pipeline.identity}
                   onConnected={onConnected}
                   onNext={leaveConnect}
-                  onBack={() => setBeat('newos')}
+                  onBack={() => setBeat('signin')}
                 />
               )}
               {beat === 'apps' && <BeatApps c={c} picks={picks} setPicks={setPicks} onNext={leaveApps} onBack={() => setBeat('connect')} />}

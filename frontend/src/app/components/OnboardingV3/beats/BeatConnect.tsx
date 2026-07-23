@@ -4,7 +4,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { API_BASE } from '@/shared/config';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { fetchSubscriptionStatus, markSubscriptionConnected, selectSubscriptionConnections } from '@/shared/state/subscriptionsSlice';
-import { hasModelConnected } from '@/app/components/Onboarding/steps/skipPredicates';
+import { hasFreeTrialActive, hasModelConnected } from '@/app/components/Onboarding/steps/skipPredicates';
 import { SUBSCRIPTION_PROVIDERS } from '@/app/pages/Settings/sections/subscription/subscriptionProviders';
 import { runConnectFlow } from '@/app/pages/Settings/sections/subscription/subscriptionConnect';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
@@ -23,6 +23,7 @@ const BeatConnect: React.FC<{
 }> = ({ c, identity, onConnected, onNext, onBack }) => {
   const dispatch = useAppDispatch();
   const connected = useAppSelector((s) => hasModelConnected(s));
+  const freeTrial = useAppSelector((s) => hasFreeTrialActive(s));
   const [connecting, setConnecting] = useState<string | null>(null);
   const [userCode, setUserCode] = useState('');
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -66,10 +67,9 @@ const BeatConnect: React.FC<{
   // Which provider rows are live, so the tab itself shows "Connected", not a floating label below.
   const connections = useAppSelector(selectSubscriptionConnections);
   const connectedIds = new Set(connections.filter((cx) => cx.isActive !== false).map((cx) => cx.provider));
-  // Sign-in gate: the whole flow leans on a real connection (identity, chat-history read, personalized
-  // reveal), so Continue stays locked until the user actually connects their own AI (OAuth subscription
-  // or an API key). The silently-armed free trial no longer satisfies the gate, we require a sign-in.
-  const canContinue = connected;
+  // The account gate lives in the prior sign-in beat, so here the free trial is a legitimate model
+  // source again: Continue unlocks on a provider connection OR the armed trial (both mean "can run").
+  const canContinue = connected || freeTrial;
 
   return (
     <BeatShell
