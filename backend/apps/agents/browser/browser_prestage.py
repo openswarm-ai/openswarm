@@ -76,7 +76,7 @@ def click_refused(entry: str, li_text: str) -> bool:
     if P_HARD_BLOCK_RE.search(entry):
         return True
     if P_COMPOSE_ENTRY_RE.search(entry):
-        from backend.apps.agents.browser.browser_send_script import composer_index_in_state
+        from backend.apps.agents.browser.browser_send_parse import composer_index_in_state
         return bool(composer_index_in_state(li_text or ""))
     return False
 

@@ -63,6 +63,8 @@ from backend.apps.agents.browser import browser_batch_replay
 from backend.apps.agents.browser import browser_extract
 from backend.apps.agents.browser import browser_metrics
 from backend.apps.agents.browser import browser_send_script
+from backend.apps.agents.browser import browser_send_parse
+from backend.apps.agents.browser import browser_delivery_check
 from backend.apps.agents.browser import browser_submit_click
 from backend.apps.agents.browser import browser_playbook
 from backend.apps.agents.browser import browser_save
@@ -584,6 +586,41 @@ async def compose_send_confirmation(aux_client, aux_model, task: str, payload: s
         return ""
     low = text.lower()
     if not text or len(text) > 220 or any(t in low for t in P_NOT_A_REPLY):
+        return ""
+    return text
+
+
+async def compose_delivery_warning(aux_client, aux_model, task: str, payload: str, url: str) -> str:
+    """The 'I sent it but couldn't confirm it stayed live' line in the model's OWN voice, via one
+    cheap aux call, for a ghost-drop host where the composer cleared but the post did NOT persist.
+    Same fail-open contract as compose_send_confirmation: '' on any error or a non-sentence output,
+    so the caller falls back to the plain honest template. Never claims success."""
+    if not aux_client or not aux_model or not payload:
+        return ""
+    from urllib.parse import urlparse
+    host = urlparse(url or "").hostname or "the site"
+    if host.startswith("www."):
+        host = host[4:]
+    prompt = (
+        "You tried to post something for the user by controlling their web browser. You submitted "
+        "it and the compose box cleared, BUT when you re-checked the page the post did NOT stay up: "
+        f"{host} appears to have silently dropped it. This is NOT a confirmed success.\n"
+        f"The user asked: {task[:280]}\n"
+        f"What you tried to post: \"{payload[:200]}\"\n"
+        "Reply with ONE or TWO short, honest, first-person sentences: you submitted it but could NOT "
+        "confirm it actually went live, so they should check their posts. Warm and plain, no "
+        "technical words, no false reassurance that it worked."
+    )
+    try:
+        resp = await aux_client.messages.create(
+            model=aux_model, max_tokens=120,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = "".join(getattr(b, "text", "") for b in (resp.content or [])).strip().strip('"').strip()
+    except Exception:
+        return ""
+    low = text.lower()
+    if not text or len(text) > 400 or any(t in low for t in P_NOT_A_REPLY):
         return ""
     return text
 
@@ -1484,14 +1521,21 @@ async def run_browser_agent(
         if isinstance(p_script, dict):
             action_log.extend(p_script["log"])
             if p_script["sent"]:
-                # receipt verified (composer cleared): the send is DONE, end the run
                 send_confirmed = True
                 done_called = True
-                done_success = True
                 p_aux_c, p_aux_m = await p_get_aux_client()
-                await p_learn_write_recipe(execute_browser_tool, browser_id, tab_id, current_url, p_script["payload"])
-                done_message = (await compose_send_confirmation(p_aux_c, p_aux_m, task, p_script["payload"])
-                                or f'Done, I sent "{p_script["payload"]}" for you.')
+                if p_script.get("delivered") is False:
+                    # ghost-drop host: composer cleared but the post did NOT persist. Tell the
+                    # truth and don't learn a recipe for a send that never actually landed.
+                    done_success = False
+                    done_message = (await compose_delivery_warning(p_aux_c, p_aux_m, task, p_script["payload"], current_url)
+                                    or browser_delivery_check.unconfirmed_delivery_note(current_url, p_script["payload"]))
+                else:
+                    # receipt verified (composer cleared): the send is DONE, end the run
+                    done_success = True
+                    await p_learn_write_recipe(execute_browser_tool, browser_id, tab_id, current_url, p_script["payload"])
+                    done_message = (await compose_send_confirmation(p_aux_c, p_aux_m, task, p_script["payload"])
+                                    or f'Done, I sent "{p_script["payload"]}" for you.')
             else:
                 # Clicked but the composer did NOT clear: the send is UNVERIFIED. Leave send_confirmed False so the loop can't shortcut to a "done" it never earned (r264 set it True here and the model then FALSELY claimed delivery). The model gets ONE truthful verify pass, never a blind resend.
                 task = f"{task}\n\n[{p_script['note']}]"
@@ -1506,7 +1550,7 @@ async def run_browser_agent(
     if (browser_delete_script.delete_tool_enabled() and is_removal_task(task) and not app_mode
             and not done_called and preloaded_perception and not cancel_event.is_set()
             and os.environ.get("OSW_SENDSCRIPT_DRYRUN") != "1"):
-        p_del_target = browser_send_script.quoted_payload(user_prompt or task)
+        p_del_target = browser_send_parse.quoted_payload(user_prompt or task)
         if p_del_target and len(p_del_target) >= browser_delete_script.MIN_TARGET_CHARS:
             try:
                 p_del = await browser_delete_script.run_delete(p_del_target, browser_id, tab_id, execute_browser_tool)
@@ -1523,7 +1567,7 @@ async def run_browser_agent(
 
     # Dry-run is a measurement mode, so the run ENDS here either way: letting the model loop run would both risk the REAL send the flag exists to avoid and rescue declines the flag exists to attribute. Inert when the flag is off.
     if os.environ.get("OSW_SENDSCRIPT_DRYRUN") == "1" and not done_called:
-        p_dr = browser_send_script.dryrun_report(
+        p_dr = browser_send_parse.dryrun_report(
             preloaded_perception or "", bool(task_is_send and preloaded_perception),
             isinstance(p_script, dict), current_url)
         logger.info(p_dr)
@@ -1535,7 +1579,7 @@ async def run_browser_agent(
     # Code-side plan dispatch (the turn-collapser that doesn't wait for the model to adopt a tool): one aux call compiles the task's mechanical prefix into verified steps, code executes them, and the big model starts with that work DONE. Fail-open: no plan/steps = today's loop untouched.
     # A send task whose composer is ALREADY staged has no mechanical prefix left (the model's one fill turn + autosend own the rest), so skip the aux call instead of letting it poke the composer (measured 4.7s of nothing).
     from backend.apps.agents.browser import browser_plan_dispatch
-    p_composer_staged = bool(task_is_send and browser_send_script.composer_index_in_state(preloaded_perception or ""))
+    p_composer_staged = bool(task_is_send and browser_send_parse.composer_index_in_state(preloaded_perception or ""))
     if (browser_plan_dispatch.plan_dispatch_enabled() and not app_mode and not done_called
             and preloaded_perception and not p_composer_staged and not cancel_event.is_set()):
         try:
@@ -2352,19 +2396,27 @@ async def run_browser_agent(
                         p_cs = await browser_send_script.complete_send(
                             composer_committed_payload, p_auto_state or "", browser_id, tab_id,
                             execute_browser_tool, send_submit_index_in_state,
-                            composer_index=fill_index_of(tu.name, tool_input))
+                            composer_index=fill_index_of(tu.name, tool_input), current_url=current_url)
                         if p_cs.get("clicked"):
                             send_confirmed = True
                             action_log.extend(p_cs.get("log") or [])
                             if p_cs.get("sent"):
                                 done_called = True
-                                done_success = True
-                                await p_learn_write_recipe(execute_browser_tool, browser_id, tab_id, current_url, composer_committed_payload)
                                 p_aux_c, p_aux_m = await p_get_aux_client()
-                                done_message = (await compose_send_confirmation(
-                                    p_aux_c, p_aux_m, task, composer_committed_payload)
-                                    or f'Done, I sent "{composer_committed_payload}" for you.')
-                                logger.info(f"[browser-autosend {session_id}] post-fill code-send delivered (receipt verified)")
+                                if p_cs.get("delivered") is False:
+                                    # ghost-drop host: cleared but the post did NOT persist. Truthful hedge, no recipe.
+                                    done_success = False
+                                    done_message = (await compose_delivery_warning(
+                                        p_aux_c, p_aux_m, task, composer_committed_payload, current_url)
+                                        or browser_delivery_check.unconfirmed_delivery_note(current_url, composer_committed_payload))
+                                    logger.info(f"[browser-autosend {session_id}] post-fill code-send NOT confirmed (ghost-drop host; composer cleared, post did not persist)")
+                                else:
+                                    done_success = True
+                                    await p_learn_write_recipe(execute_browser_tool, browser_id, tab_id, current_url, composer_committed_payload)
+                                    done_message = (await compose_send_confirmation(
+                                        p_aux_c, p_aux_m, task, composer_committed_payload)
+                                        or f'Done, I sent "{composer_committed_payload}" for you.')
+                                    logger.info(f"[browser-autosend {session_id}] post-fill code-send delivered (receipt verified)")
                             else:
                                 task = f"{task}\n\n[{p_cs.get('note')}]"
                                 logger.info(f"[browser-autosend {session_id}] post-fill send click ran, receipt unverified; model verifies")

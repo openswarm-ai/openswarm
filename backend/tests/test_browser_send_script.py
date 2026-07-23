@@ -6,6 +6,7 @@ the correctness the live run would prove is."""
 import pytest
 
 from backend.apps.agents.browser import browser_send_script as ss
+from backend.apps.agents.browser import browser_send_parse as sp
 from backend.apps.agents.browser.browser_agent import send_submit_index_in_state, payload_in_textbox
 
 PROFILE = '[22]*<link "Tyler Chen Premium 1st">\n[50]*<link "Message">\n[51]<button "Follow">'
@@ -227,9 +228,9 @@ async def test_brief_readonly_wording_does_not_disarm():
 def test_dryrun_report_encodes_the_gate_funnel():
     """The coverage harness greps this one line for gate attribution: a staged composer
     reports composer=1, a bare page reports zeros, and armed/filled ride the booleans."""
-    r = ss.dryrun_report(COMPOSER_EMPTY, armed=True, filled=True, url=THREAD_URL)
+    r = sp.dryrun_report(COMPOSER_EMPTY, armed=True, filled=True, url=THREAD_URL)
     assert "armed=1" in r and "composer=1" in r and "filled=1" in r and "textboxes=1" in r
-    r0 = ss.dryrun_report(NO_COMPOSER, armed=False, filled=False)
+    r0 = sp.dryrun_report(NO_COMPOSER, armed=False, filled=False)
     assert "armed=0" in r0 and "composer=0" in r0 and "opener=0" in r0 and "textboxes=0" in r0
 
 
@@ -237,7 +238,7 @@ def test_dryrun_report_counts_unmatched_textboxes():
     """The X 'Post text' class: a textbox present but name-unmatched must be visible in
     the report (textboxes>0, composer=0), or the funnel can't tell R from N failures."""
     state = '[4]<textbox "Some Novel Label">\n[7]<button "Go">'
-    r = ss.dryrun_report(state, armed=True, filled=False)
+    r = sp.dryrun_report(state, armed=True, filled=False)
     assert "composer=0" in r and "textboxes=1" in r
 
 
@@ -260,18 +261,18 @@ async def test_readonly_probe_never_fires():
 
 def test_looks_like_login_wall_hits_and_false_positives():
     # login/auth URLs (the live instagram/threads mis-fire was one of these)
-    assert ss.looks_like_login_wall("https://www.instagram.com/accounts/login/?force_authentication", "")
-    assert ss.looks_like_login_wall("https://accounts.google.com/v3/signin/identifier", "")
-    assert ss.looks_like_login_wall("https://www.reddit.com/login/", "")
-    assert ss.looks_like_login_wall("https://x.com/i/flow/login", "")
+    assert sp.looks_like_login_wall("https://www.instagram.com/accounts/login/?force_authentication", "")
+    assert sp.looks_like_login_wall("https://accounts.google.com/v3/signin/identifier", "")
+    assert sp.looks_like_login_wall("https://www.reddit.com/login/", "")
+    assert sp.looks_like_login_wall("https://x.com/i/flow/login", "")
     # auth-form perception signals with an innocuous url
-    assert ss.looks_like_login_wall("https://site.com/x", '[3]<textbox "Password">')
-    assert ss.looks_like_login_wall("https://site.com/x", "Log in to X to continue")
+    assert sp.looks_like_login_wall("https://site.com/x", '[3]<textbox "Password">')
+    assert sp.looks_like_login_wall("https://site.com/x", "Log in to X to continue")
     # false positives: a real composer page, a blog path, gmail inbox, a /author/ path
-    assert not ss.looks_like_login_wall("https://x.com/home", X_COMPOSER)
-    assert not ss.looks_like_login_wall("https://example.com/blog/login-tips", "")
-    assert not ss.looks_like_login_wall("https://mail.google.com/mail/u/0/#inbox?compose=new", "")
-    assert not ss.looks_like_login_wall("https://site.com/author/jane", "")
+    assert not sp.looks_like_login_wall("https://x.com/home", X_COMPOSER)
+    assert not sp.looks_like_login_wall("https://example.com/blog/login-tips", "")
+    assert not sp.looks_like_login_wall("https://mail.google.com/mail/u/0/#inbox?compose=new", "")
+    assert not sp.looks_like_login_wall("https://site.com/author/jane", "")
 
 
 @pytest.mark.asyncio

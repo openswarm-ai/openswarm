@@ -13,55 +13,16 @@ the untouched model path; ambiguity AFTER the click hands the model a truthful
 """
 
 import asyncio
-import json
 import logging
 import os
-import re
 import time
 from typing import Awaitable, Callable, Dict
 
-from backend.apps.agents.browser import browser_fast_path, browser_submit_click, browser_verified_action
+from backend.apps.agents.browser import (
+    browser_delivery_check, browser_fast_path, browser_send_parse, browser_submit_click,
+    browser_verified_action)
 
 logger = logging.getLogger(__name__)
-
-
-# Double quotes are unambiguous. Single quotes only delimit when the opener is at a word boundary (start/space/colon), so an in-word apostrophe like "chen's" is never mistaken for a payload quote, that mispairing was silently corrupting the canonical "text him '...'" errand.
-P_QUOTED_DQ_RE = re.compile(r'"([^"]{4,300})"')
-P_QUOTED_SQ_RE = re.compile(r"(?:^|[\s:>])'([^']{4,300})'")
-P_COMPOSER_ROW_RE = re.compile(r"\[(\d+)\]\*?<\s*textbox\s+\"([^\"]*)\"", re.I)
-# A compose-shaped textbox name, generalized across messaging sites: LinkedIn "Write a
-# message", X/Slack "Message", Discord "Message @user", Gmail "Message Body", "Post your
-# reply", "What's happening", "Add a comment". Not per-site: one structural shape.
-P_COMPOSER_NAME_RE = re.compile(
-    r"write|messag|compose|reply|comment|post your|post text|what.?s happening|"
-    r"tweet|caption|say something|start a|new message|body|your (message|note)|"
-    r"add a comment|write something",
-    re.I,
-)
-
-# Login/auth walls: a logged-out card lands here, and the structural reveal-finder would
-# otherwise fill a login field and arm the page's own submit as a "send" (measured live on
-# instagram/threads). A real composer never lives on one of these, so decline outright.
-P_LOGIN_WALL_URL_RE = re.compile(
-    r"accounts\.google\.com|/i/flow/login|/accounts/login|/uas/login|/users/sign_in|"
-    r"/sessions/new|/checkpoint|force_authentication|"
-    r"/(?:log[_-]?in|sign[_-]?in|signin|logon)(?:[/?#]|$)",
-    re.I,
-)
-P_LOGIN_WALL_STATE_RE = re.compile(
-    r'<\s*textbox\s+"[^"]*(?:password|passwd)|(?:log|sign)\s?in to |'
-    r"continue with (?:google|apple|facebook)",
-    re.I,
-)
-
-
-def looks_like_login_wall(current_url: str, state_text: str) -> bool:
-    """A login/auth page (by URL) or an auth form in the perception (a password field, a
-    'Log in to X' heading, an OAuth 'Continue with ...'). The scripted send declines here:
-    a real composer never shares a page with these, and filling here types a login field."""
-    if current_url and P_LOGIN_WALL_URL_RE.search(current_url):
-        return True
-    return bool(state_text and P_LOGIN_WALL_STATE_RE.search(state_text))
 
 
 ToolRunner = Callable[[str, dict, str, str], Awaitable[dict]]
@@ -82,7 +43,7 @@ def autosend_enabled() -> bool:
 async def complete_send(
     payload: str, state_committed: str, browser_id: str, tab_id: str,
     execute_tool: ToolRunner, send_index_in_state: Callable[[str, int], object],
-    composer_index: int = -1,
+    composer_index: int = -1, current_url: str = "",
 ) -> Dict[str, object]:
     """Send tail for a composer that ALREADY holds `payload` (visible in state_committed): find the
     Send control (ranked index first, else click-by-name over the full DOM), click it once, and
@@ -138,72 +99,17 @@ async def complete_send(
         if state3 and browser_verified_action.expectation_met(f"cleared:{payload}", state_committed, state3):
             sent = True
             break
+    # A cleared composer is proof of delivery everywhere EXCEPT the ghost-drop hosts, which clear
+    # then silently eat the post; there we verify it persisted. delivered stays None (unchecked,
+    # composer-clear trusted) for every other site, so proven sends keep their exact speed.
+    delivered = None
+    if sent and browser_delivery_check.is_ghost_drop_host(current_url):
+        delivered = await browser_delivery_check.ghost_delivery_confirmed(
+            payload, browser_id, tab_id, execute_tool)
     note = ("" if sent else
             "A Send-class click already RAN for this payload but the composer state is unverified: "
             "verify on the page whether it delivered; do NOT send again unless verifiably absent.")
-    return {"clicked": True, "sent": sent, "log": log, "note": note}
-
-
-def quoted_payload(task: str) -> str:
-    """The exact text the user quoted, only when it's unambiguous: exactly one
-    distinct quoted span in the task. Anything else is the model's judgment call.
-    Double quotes win outright; single quotes must be word-boundary-delimited so
-    an apostrophe inside a name can't hijack the match."""
-    dq = {m.group(1).strip() for m in P_QUOTED_DQ_RE.finditer(task or "") if m.group(1).strip()}
-    if dq:
-        return dq.pop() if len(dq) == 1 else ""
-    sq = {m.group(1).strip() for m in P_QUOTED_SQ_RE.finditer(task or "") if m.group(1).strip()}
-    return sq.pop() if len(sq) == 1 else ""
-
-
-P_OPENER_ROW_RE = re.compile(
-    r"\[(\d+)\]\*?<\s*(?:link|button)\s+\"(Message|Reply|Compose|New message|"
-    r"Direct message|DM|Send message|Write|New chat|Comment|Post)\"", re.I)
-
-# A verification probe quotes the very payload it's checking for, which is exactly the trap this gate exists for: quoted payload + composer = fire. Caught live (r243): the read-only send-probe delivered a REAL message. Read-only directives decline in code, fail-safe (a false match just means the model path).
-P_READONLY_RE = re.compile(
-    r"read.?only|do\s+not\s+(?:send|type|click|post|submit)|don'?t\s+(?:send|post|submit)|"
-    r"verify\s+whether|check\s+whether|verification",
-    re.I,
-)
-
-
-def opener_index_in_state(state_text: str):
-    """(index, name) of the single exact-named composer OPENER, or None. Exact
-    names only, so an upsell like 'Send InMail' can never match."""
-    hits = [(int(m.group(1)), m.group(2)) for m in P_OPENER_ROW_RE.finditer(state_text or "")]
-    return hits[0] if len(hits) == 1 else None
-
-
-def composer_index_in_state(state_text: str):
-    """(index, name) of the single compose-shaped textbox, or None. Two
-    candidates = ambiguous = model's problem."""
-    hits = [(int(m.group(1)), m.group(2)) for m in P_COMPOSER_ROW_RE.finditer(state_text or "")
-            if P_COMPOSER_NAME_RE.search(m.group(2) or "")]
-    return hits[0] if len(hits) == 1 else None
-
-
-def surface_supports_script(current_url: str, state_text: str = "") -> bool:
-    """STRUCTURAL, not per-site: fire wherever the live perception actually carries a
-    person-composer (a compose-shaped textbox) OR a single messaging opener to reach
-    one, on ANY host. This is what generalizes the LinkedIn ~14s send to X/Slack/
-    Discord/Instagram/Gmail/etc without per-site URL gates. A page with neither
-    declines (net-negative to fire where there's no composer). All the downstream
-    safety gates (quoted payload, fill-seen-committed before the one send, two-sided
-    receipt) are already site-agnostic, so widening the surface can't loosen safety."""
-    if not state_text:
-        return False
-    return bool(composer_index_in_state(state_text) or opener_index_in_state(state_text))
-
-
-def dryrun_report(state_text: str, armed: bool, filled: bool, url: str = "") -> str:
-    """One grep-stable line for the coverage harness: what the staged perception held
-    and how far the script got. Only ever emitted in dry-run measurement mode."""
-    boxes = len(P_COMPOSER_ROW_RE.findall(state_text or ""))
-    return (f"[dryrun-report] armed={int(bool(armed))} "
-            f"composer={int(bool(composer_index_in_state(state_text or '')))} "
-            f"opener={int(bool(opener_index_in_state(state_text or '')))} "
-            f"textboxes={boxes} filled={int(bool(filled))} url={(url or '')[:120]}")
+    return {"clicked": True, "sent": sent, "delivered": delivered, "log": log, "note": note}
 
 
 async def run_send_script(
@@ -236,14 +142,14 @@ async def run_send_script(
 
     # The name-based surface gate can't see an unnamed/non-standard composer; under the
     # structural flag, don't early-decline on it, the in-page finder gets a chance below.
-    if not surface_supports_script(current_url, state_text) and not p_struct:
+    if not browser_send_parse.surface_supports_script(current_url, state_text) and not p_struct:
         # The composer lazy-renders a beat after prestage snapshotted (X home does this ~half the
         # time), so poll a fresh perception before declining, else a late box is a false "no
         # composer" and the whole write flakes to the slow model path.
         for wait_s in (0.6, 1.0, 1.4):
             await asyncio.sleep(wait_s)
             fresh = await fresh_list()
-            if surface_supports_script(current_url, fresh):
+            if browser_send_parse.surface_supports_script(current_url, fresh):
                 state_text = fresh
                 break
         else:
@@ -254,32 +160,32 @@ async def run_send_script(
     # the raw prompt when threaded through. The task text itself must keep declining regardless: a
     # read-only VERIFY probe arrives as the task, and one once delivered a real message (r243).
     task_sans_brief = task.split(browser_fast_path.BRIEF_MARKER, 1)[0]
-    if P_READONLY_RE.search(task_sans_brief) or (payload_source and P_READONLY_RE.search(payload_source)):
+    if browser_send_parse.is_readonly(task_sans_brief) or (payload_source and browser_send_parse.is_readonly(payload_source)):
         logger.info("[browser-sendscript] decline: read-only directive in user request")
         return None
-    if looks_like_login_wall(current_url, state_text):
+    if browser_send_parse.looks_like_login_wall(current_url, state_text):
         logger.info(f"[browser-sendscript] decline: login/auth wall ({(current_url or '')[:60]!r})")
         return None
-    payload = quoted_payload(payload_source or task)
+    payload = browser_send_parse.quoted_payload(payload_source or task)
     if not payload:
         logger.info("[browser-sendscript] decline: no unambiguous quoted payload")
         return None
     log: list[dict] = []
 
-    composer = composer_index_in_state(state_text)
+    composer = browser_send_parse.composer_index_in_state(state_text)
     if not composer:
         # The staged snapshot is prestage's, frozen the instant it clicked Message; the overlay composer lazy-renders a beat later (r263/r269 declined on exactly this, prestage's LAST step was the Message click). Poll a short window so the overlay has time to appear before we fall back to the opener.
         for wait_s in (0.6, 1.2, 1.4):
             await asyncio.sleep(wait_s)
             fresh = await fresh_list()
-            composer = composer_index_in_state(fresh)
+            composer = browser_send_parse.composer_index_in_state(fresh)
             if composer:
                 state_text = fresh
                 break
     p_struct_selector: str = ""
     if not composer:
         # Reversible-opener hop: prestage often stops on the profile with the "Message" opener visible (its settle raced the overlay). Opening a composer is the allowed opener class; the irreversible bar is unchanged.
-        opener = opener_index_in_state(state_text)
+        opener = browser_send_parse.opener_index_in_state(state_text)
         if opener:
             logger.info(f"[browser-sendscript] firing via opener {opener[1]!r} [{opener[0]}]")
             r_open = await execute_tool("BrowserClickIndex", {"index": opener[0]}, browser_id, tab_id)
@@ -290,7 +196,7 @@ async def run_send_script(
             for wait_s in (0.6, 1.2):
                 await asyncio.sleep(wait_s)
                 state_text = await fresh_list()
-                composer = composer_index_in_state(state_text)
+                composer = browser_send_parse.composer_index_in_state(state_text)
                 if composer:
                     break
         # Structural fallback: the AX-name detector missed it (an unnamed contenteditable, a
@@ -323,7 +229,7 @@ async def run_send_script(
                 dest = await fresh_list()
                 # open-first can land on a login redirect (a logged-out feed's first item);
                 # stop before the NEXT fill so we never type into the auth form we just opened.
-                if looks_like_login_wall("", dest):
+                if browser_send_parse.looks_like_login_wall("", dest):
                     logger.info("[browser-sendscript] decline: reveal landed on a login/auth wall")
                     fc = {}
                     break
@@ -378,10 +284,11 @@ async def run_send_script(
                 "note": "DRYRUN: filled + ready to send, stopped before the irreversible click"}
     # 3+4: the irreversible click + two-sided receipt, shared with the mid-loop takeover. A click error hands back to the model (fill committed, not sent); a clicked-but-unverified send returns sent=False so the caller never claims delivery.
     r = await complete_send(payload, state2, browser_id, tab_id, execute_tool, send_index_in_state,
-                            composer_index=composer[0])
+                            composer_index=composer[0], current_url=current_url)
     log.extend(r["log"])
     if not r["clicked"]:
         logger.info("[browser-sendscript] send click errored; handing to model (fill committed, NOT sent)")
         return None
-    logger.info(f"[browser-sendscript] done sent_receipt={r['sent']} in {int((time.monotonic() - t0) * 1000)}ms")
-    return {"sent": bool(r["sent"]), "payload": payload, "log": log, "note": str(r["note"])}
+    logger.info(f"[browser-sendscript] done sent_receipt={r['sent']} delivered={r.get('delivered')} in {int((time.monotonic() - t0) * 1000)}ms")
+    return {"sent": bool(r["sent"]), "delivered": r.get("delivered"),
+            "payload": payload, "log": log, "note": str(r["note"])}
