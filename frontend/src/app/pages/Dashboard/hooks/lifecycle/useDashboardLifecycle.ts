@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { report } from '@/shared/serviceClient';
 import { store } from '@/shared/state/store';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { revealAppSpot } from './useOnboardingRevealSeed';
 import {
   fetchSessions,
   fetchHistory,
@@ -338,28 +337,14 @@ export function useDashboardLifecycle({
       if (sess.dashboard_id !== dashboardId) continue;
       autoOpenedOutputsRef.current.add(output.id);
       if (viewCards[output.id]) continue;
-      // The onboarding reveal's app is born at its composed arc-end spot (right of the note), not in
-      // the parent's column, so no post-hoc move ever races layout persistence. One-shot per reveal.
-      const v3 = store.getState().onboardingV3;
-      const revealSpot = (v3.revealAnchor && v3.prepped.some((j) => j.kind === 'app' && j.sessionId === sid))
-        ? revealAppSpot(v3.revealAnchor)
-        : null;
-      if (revealSpot) {
-        // Reveal: born as a light "click to open" card so the curtain lifts instantly, not behind a live Vite boot.
-        dispatch(addViewCard({ outputId: output.id, expandedSessionIds, x: revealSpot.x, y: revealSpot.y, previewDeferred: true }));
-      } else {
-        dispatch(addViewCard({ outputId: output.id, expandedSessionIds, parentSessionId: sid }));
-      }
+      dispatch(addViewCard({ outputId: output.id, expandedSessionIds, parentSessionId: sid }));
       const outputId = output.id;
       setTimeout(() => {
         const vc = store.getState().dashboardLayout.viewCards[outputId];
         if (!vc) return;
         const rects = [{ x: vc.x, y: vc.y, width: vc.width, height: vc.height }];
-        // Reveal spot: frame just the app (the note edges into frame on its left); otherwise include the parent chat.
-        if (!revealSpot) {
-          const ac = store.getState().dashboardLayout.cards[sid];
-          if (ac) rects.push({ x: ac.x, y: ac.y, width: ac.width, height: ac.height });
-        }
+        const ac = store.getState().dashboardLayout.cards[sid];
+        if (ac) rects.push({ x: ac.x, y: ac.y, width: ac.width, height: ac.height });
         canvasActions.revealCards(rects);
         handleHighlightCard(outputId);
       }, 200);

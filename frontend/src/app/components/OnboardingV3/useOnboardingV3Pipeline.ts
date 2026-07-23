@@ -1,56 +1,22 @@
 import { useCallback, useRef, useState } from 'react';
-import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { updateSettingsPatch, type PersonalizedAutomation } from '@/shared/state/settingsSlice';
-import { createDraftSession, launchAndSendFirstMessage, type AgentConfig } from '@/shared/state/agentsSlice';
-import { createWorkflow } from '@/shared/state/workflowsSlice';
-import { hasModelConnected } from '@/app/components/Onboarding/steps/skipPredicates';
-import { getLastDashboardId } from '@/shared/lastDashboardId';
-import { setFlowActive, stageReveal, addPreppedJob } from '@/shared/state/onboardingV3Slice';
+import { useAppDispatch } from '@/shared/hooks';
+import { updateSettingsPatch } from '@/shared/state/settingsSlice';
+import { setFlowActive, stageReveal } from '@/shared/state/onboardingV3Slice';
 import { useThemeAccent, useThemeMode } from '@/shared/styles/ThemeContext';
 import {
   fetchIdentity, runPrep, runScan, summarizeScan,
   type PrepResponse, type ProviderIdentity, type ScanResult,
 } from './onboardingV3Api';
 import { summarizeUsage, type ProviderUsage, type UsageProvider } from '@/shared/providerUsage';
-import type { ModelOption } from '@/shared/state/modelsSlice';
-
-// The auto-launched onboarding jobs must ride the CHEAP tier, not the user's premium default; running two Sonnet/Opus agents unprompted on first launch would burn real quota. Pick the lowest-intelligence (cheapest) model in the default's provider group, so a Claude user's demo runs on Haiku, a ChatGPT user's on mini.
-function pickCheapModel(byProvider: Record<string, ModelOption[]>, def: string): string {
-  const groups = Object.values(byProvider);
-  const all = groups.flat();
-  if (!all.length) return def;
-  const defGroup = groups.find((g) => g.some((m) => m.value === def));
-  const pool = (defGroup && defGroup.length ? defGroup : all).filter((m) => Array.isArray(m.tiers));
-  if (!pool.length) return def;
-  return [...pool].sort((a, b) => (a.tiers![0]) - (b.tiers![0]))[0].value;
-}
-
-// Turn an automation's cadence into a real schedule (9am local): daily = every day, weekday = Mon-Fri,
-// weekly = Mondays. The first run is always in the future, so the keep/discard toast can cancel it first.
-function cadenceToSchedule(cadence: string): Record<string, unknown> {
-  const base = { enabled: true, repeat_every: 1, hour: 9, minute: 0, timezone: 'local', ends_at: null, max_runs: null, runs_count: 0 };
-  if (cadence === 'daily') return { ...base, repeat_unit: 'day', on_days: [] };
-  if (cadence === 'weekday') return { ...base, repeat_unit: 'week', on_days: [1, 2, 3, 4, 5] };
-  return { ...base, repeat_unit: 'week', on_days: [1] };
-}
 
 // How long finish() will wait for prep before staging the reveal. Prep is kicked early (theme beat) so it
 // has usually resolved; this only bites a user who outran it, and a brief wait for a COHERENT reveal beats
 // an instant one showing a previous run's stale greeting. Capped so it's never an open-ended spinner.
 const PREP_WAIT_CAP_MS = 5000;
-// Gap between auto-launched reveal jobs so four CLIs + a live app preview don't all boot in the same
-// frame on the user's first impression; also makes the cards populate one-by-one instead of at once.
-const JOB_STAGGER_MS = 2500;
 
-// Used when prep's aux dropped the automations field, so the reveal always demonstrates automation.
-// A useful digest (not a cleanup chore, which the value bar bans).
-const SCHEDULE_FALLBACK: PersonalizedAutomation = {
-  title: 'Weekly Roundup',
-  prompt: 'Search the web for the most notable new tools, articles, and releases from this past week in technology and design, and write a short, skimmable roundup to a dated file at Documents/weekly_roundup_<date>.md. Do it in one pass with no questions.',
-  cadence: 'weekly',
-};
-
-// The curtain machinery: scan kicks off during the OAuth wait, prep during the theme beat, and the moment prep resolves the audit AND the app build launch as REAL background agents, so the curtain lifts on work already in motion. Every stage fails soft; the flow never blocks on any of it.
+// The curtain machinery: scan kicks off during the OAuth wait, prep during the theme beat. No agents or
+// apps auto-spawn anymore, the reveal lands INSTANTLY on a clean welcome chat whose greeting + starters
+// are personalized from prep, and the user picks what to run first. Every stage fails soft; nothing blocks.
 export function useOnboardingV3Pipeline() {
   const dispatch = useAppDispatch();
   const { accent, gradient } = useThemeAccent();
@@ -60,24 +26,12 @@ export function useOnboardingV3Pipeline() {
   const scanRef = useRef<Promise<ScanResult | null> | null>(null);
   const prepRef = useRef<Promise<PrepResponse | null> | null>(null);
   // The resolved prep, readable SYNCHRONOUSLY at finish() time: lets the reveal seed with the real
-  // jobs/greeting the instant they're ready (the common case, prep finishes during the beats) without
+  // greeting/starters the instant they're ready (the common case, prep finishes during the beats) without
   // awaiting, so the curtain never blocks behind a spinner.
   const prepReadyRef = useRef<PrepResponse | null>(null);
   const scanResultRef = useRef<ScanResult | null>(null);
   const usageSummaryRef = useRef<string>('');
   const usageReadRef = useRef<Promise<void> | null>(null);
-  const connected = useAppSelector((s) => hasModelConnected(s));
-  const cheapModel = useAppSelector((s) => pickCheapModel(s.models.byProvider, s.settings.data.default_model));
-  const launchCtxRef = useRef({ connected: false, model: 'sonnet' });
-  launchCtxRef.current = { connected, model: cheapModel };
-  const launchedRef = useRef(false);
-  // Dev replay (osw_force_onboarding): show the whole flow WITHOUT spawning 4 real agents + a scheduled
-  // workflow onto the tester's live dashboard. The flag is stripped in prod, so a real first-run (empty
-  // machine) always gets its wow jobs; only a QA replay on an existing dashboard skips the clutter+lag.
-  const isReplay = ((): boolean => {
-    if (process.env.NODE_ENV === 'production') return false;
-    try { return localStorage.getItem('osw_force_onboarding') === '1'; } catch { return false; }
-  })();
 
   const kickIdentity = useCallback(() => {
     fetchIdentity().then((ids) => { identityRef.current = ids; setIdentity(ids); }).catch(() => {});
@@ -106,45 +60,6 @@ export function useOnboardingV3Pipeline() {
       : Promise.resolve(null);
   }, []);
 
-  // Fire one real background agent; the session exists in redux without a card until the reveal composes the canvas.
-  const launchJob = useCallback((title: string, prompt: string, kind: 'app' | 'research' | 'browser', reason: string) => {
-    const { model: liveModel } = launchCtxRef.current;
-    const dashboardId = getLastDashboardId() ?? undefined;
-    // All three run with full tools: the app build writes its own workspace, research + the browser task
-    // save their findings. The browser task is kept safe by its PROMPT (public pages, never log in/buy).
-    const config: AgentConfig = { name: title, model: liveModel, mode: 'agent', dashboard_id: dashboardId };
-    const draftId = dispatch(createDraftSession({ mode: 'agent', model: liveModel, dashboardId: dashboardId ?? '', setActive: false })).payload.draftId;
-    // Reveal cards open ENLARGED so the user sees the real work (not tiny collapsed stubs), and the
-    // yellow minimize button then has something to collapse. The seeder stacks them at expanded height.
-    void dispatch(launchAndSendFirstMessage({ draftId, config, prompt, mode: 'agent', model: liveModel, expand: true }))
-      .then((action) => {
-        if (launchAndSendFirstMessage.fulfilled.match(action)) {
-          dispatch(addPreppedJob({ sessionId: action.payload.session.id, title, kind, reason }));
-        }
-      })
-      .catch(() => {});
-  }, [dispatch]);
-
-  // Set up ONE real scheduled task from the automations, so the reveal shows OpenSwarm having already
-  // automated something for the user, not just run one-off jobs. It's a real workflow on a real schedule
-  // (first run in the future); the keep/discard toast can delete it. Rides the cheap model like the jobs.
-  const createScheduledJob = useCallback((auto: PersonalizedAutomation) => {
-    const { model: liveModel } = launchCtxRef.current;
-    const dashboardId = getLastDashboardId() ?? undefined;
-    void dispatch(createWorkflow({
-      title: auto.title,
-      description: 'Set up for you during onboarding.',
-      steps: [{ id: `step-${Date.now().toString(36)}`, text: auto.prompt, enabled: true }],
-      schedule: cadenceToSchedule(auto.cadence) as never,
-      dashboard_id: dashboardId,
-      model: liveModel,
-    })).unwrap()
-      .then((wf) => {
-        dispatch(addPreppedJob({ sessionId: '', workflowId: wf.id, title: auto.title, kind: 'schedule', reason: `runs ${auto.cadence} on its own` }));
-      })
-      .catch(() => {});
-  }, [dispatch]);
-
   const kickPrep = useCallback((pickedApps: string[]) => {
     if (prepRef.current) return;
     const scanPromise = scanRef.current ?? Promise.resolve(null);
@@ -152,30 +67,9 @@ export function useOnboardingV3Pipeline() {
     prepRef.current = Promise.all([scanPromise, usagePromise])
       .then(([scan]) => runPrep(scan, pickedApps, identityRef.current, usageSummaryRef.current))
       .catch(() => null);
-    // Launch the prepped work MID-FLOW (theme/card beats cover the latency): audit + app build, gated to a real connected model so the fragile free trial never carries it.
-    void prepRef.current.then((prep) => {
-      prepReadyRef.current = prep;
-      if (launchedRef.current || !prep || !prep.greeting || !launchCtxRef.current.connected) return;
-      launchedRef.current = true;
-      // QA replay: run the flow, but never seed real jobs/schedules onto the tester's working canvas.
-      if (isReplay) return;
-      // The four auto-run showcase jobs, one per capability: build an app, dig the web, drive a real
-      // browser, and set up a scheduled task. STAGGERED, not all-at-once: firing four CLIs + a live app
-      // preview in the same instant spiked the render on the user's very first impression. Spacing them
-      // ~2.5s apart spreads the load AND reads better, cards populate one-by-one ("watch it work") instead
-      // of lurching in together. Each still fires independently (own draft, own async launch, own errors);
-      // the app goes first so its build (the slowest) gets a head start.
-      const staggered: Array<() => void> = [];
-      if (prep.app_title && prep.app_prompt) staggered.push(() => launchJob(prep.app_title!, prep.app_prompt!, 'app', prep.app_reason ?? ''));
-      if (prep.research_title && prep.research_prompt) staggered.push(() => launchJob(prep.research_title!, prep.research_prompt!, 'research', prep.research_reason ?? ''));
-      if (prep.browser_title && prep.browser_prompt) staggered.push(() => launchJob(prep.browser_title!, prep.browser_prompt!, 'browser', prep.browser_reason ?? ''));
-      // The scheduled task is a first-class part of the reveal (the "it automates for me" capability), so
-      // guarantee one: use the model's automation when it emitted one (it sometimes drops the last JSON
-      // field), else fall back to a safe, universally-useful weekly roundup.
-      staggered.push(() => createScheduledJob(prep.automations[0] ?? SCHEDULE_FALLBACK));
-      staggered.forEach((fire, i) => { if (i === 0) fire(); else window.setTimeout(fire, i * JOB_STAGGER_MS); });
-    });
-  }, [launchJob, createScheduledJob, isReplay]);
+    // Cache the resolved prep so finish() can stage the reveal the instant it's ready, no await.
+    void prepRef.current.then((prep) => { prepReadyRef.current = prep; });
+  }, []);
 
   const finish = useCallback(async (outcome: 'done' | 'skipped') => {
     if (outcome === 'skipped') {
@@ -185,9 +79,9 @@ export function useOnboardingV3Pipeline() {
     }
     dispatch(updateSettingsPatch({ onboarding_v3: 'done', accent_color: accent, accent_gradient: gradient, theme: mode }));
     // Wait for prep (kicked early during the beats, usually already resolved) so the welcome greeting +
-    // starters are from the SAME prep as the launched jobs. A previous run's greeting persists in settings,
-    // so staging the reveal before this patch landed showed a stale, mismatched greeting; persist FIRST,
-    // then stage. Capped so a user who outran prep waits a beat, never an open-ended spinner.
+    // starters are coherent. A previous run's greeting persists in settings, so staging the reveal before
+    // this patch landed showed a stale greeting; persist FIRST, then stage. Capped so a user who outran
+    // prep waits a beat, never an open-ended spinner.
     let prep = prepReadyRef.current;
     if (!prep && prepRef.current) {
       prep = (await Promise.race([

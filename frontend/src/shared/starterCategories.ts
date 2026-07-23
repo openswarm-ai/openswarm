@@ -1,13 +1,13 @@
-import { Search, Hammer, Globe, Plug } from 'lucide-react';
+import { Search, Hammer, Globe, CalendarClock } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-// Two-level starters shared by the empty-state and the first-run welcome chat: pick a category, then a concrete prompt. Chosen to SHOWCASE what only OpenSwarm can do, and to feel PERSONAL: the agents can see the user's own computer/files, drive the browser, plug into their apps (MCPs), build real apps, and run agents in parallel, none of which a plain chatbot can do out of the box. Many prompts deliberately touch the user's own stuff so it matters to them. One-click-runnable (no [placeholders]); reads plainly for a non-dev. All run as a normal agent; the 'build' category (target 'app-builder') just prefills the composer in the welcome chat instead of auto-sending, since the agent builds the app in-place (it calls CreateApp and the live card drops on the canvas).
+// Two-level starters shared by the empty-state and the first-run welcome chat: pick a category, then a concrete prompt. Chosen to SHOWCASE what only OpenSwarm can do, and to feel PERSONAL: the agents can see the user's own computer/files, drive the browser, build real apps, and run recurring routines on a schedule, none of which a plain chatbot can do out of the box. Many prompts deliberately touch the user's own stuff so it matters to them. One-click-runnable (no [placeholders]); reads plainly for a non-dev. Labels name the END RESULT, not the mechanism. The 'build' category (target 'app-builder') prefills the composer since the agent builds the app in-place (CreateApp drops a live card); the 'schedule' category (target 'schedule') hands off to the automation chips, which turn a pick into a real scheduled workflow.
 export type StarterCategory = {
   id: string;
   label: string;
   Icon: LucideIcon;
   prompts: string[];
-  target?: 'app-builder';
+  target?: 'app-builder' | 'schedule';
 };
 
 export const STARTER_CATEGORIES: StarterCategory[] = [
@@ -42,13 +42,10 @@ export const STARTER_CATEGORIES: StarterCategory[] = [
     ],
   },
   {
-    // MCPs: plug your real tools in and let agents work across them.
-    id: 'connect', label: 'Connect your apps', Icon: Plug,
-    prompts: [
-      'Summarize my Gmail inbox and flag what actually needs a reply',
-      'Turn my Notion notes into a clear action plan',
-      'Look at my calendar and lay out a realistic plan for my week',
-      'Pull a sheet from my Google Drive and chart what matters',
-    ],
+    // Recurring routines on a real schedule: the pick hands off to AutomationChips (target 'schedule'),
+    // which shows THIS user's tailored automations and turns a click into a scheduled workflow. Label
+    // names the payoff (a brief waiting for you), not the machinery. No inline prompts: the chips own them.
+    id: 'schedule', label: 'Daily brief', Icon: CalendarClock, target: 'schedule',
+    prompts: [],
   },
 ];
