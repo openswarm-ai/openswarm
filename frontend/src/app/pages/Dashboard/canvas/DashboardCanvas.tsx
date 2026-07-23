@@ -310,6 +310,15 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         onMouseMove={onViewportMouseMove}
         onMouseUp={onViewportMouseUp}
         onDoubleClick={onViewportDoubleClick}
+        onContextMenu={(e) => {
+          // Right-drag is the canvas marquee-select (Google-Maps style), so the native menu (Inspect
+          // Element in dev) shouldn't pop over it. Suppress only on the bare canvas; cards, inputs, and
+          // webviews keep their own menus.
+          const t = e.target as HTMLElement;
+          if (!t.closest('[data-select-id]') && !t.closest('input, textarea, [contenteditable]')) {
+            e.preventDefault();
+          }
+        }}
         sx={{
           position: 'absolute',
           inset: 0,
