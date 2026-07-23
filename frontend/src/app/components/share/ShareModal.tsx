@@ -13,6 +13,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import LinkIcon from '@mui/icons-material/Link';
 import PublicIcon from '@mui/icons-material/Public';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
@@ -147,22 +148,53 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
                 <CircularProgress size={20} sx={{ color: c.accent.primary }} />
               </Box>
             ) : error ? (
-              <Box sx={{ py: 1 }}>
-                <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary, mb: 1 }}>{error}</Typography>
-                <Button size="small" onClick={load} sx={{ textTransform: 'none', color: c.accent.primary }}>
-                  Try again
-                </Button>
-                {secretOverridable && (
-                  <Button
-                    size="small"
-                    onClick={() => { setError(''); handleDownload(true); }}
-                    disabled={downloading}
-                    sx={{ textTransform: 'none', color: c.status.error, ml: 1 }}
-                  >
-                    Export anyway (includes the flagged value; only send to people you trust)
+              secretOverridable ? (
+                // macOS-alert style: icon + short bold title + quiet detail; the caveat lives in the
+                // body, never inside a button label. Export anyway is a small, bordered, clearly
+                // destructive action, not a paragraph of red text.
+                <Box sx={{ bgcolor: c.status.warningBg, border: `1px solid ${c.status.warning}40`, borderRadius: `${c.radius.md}px`, p: 2 }}>
+                  <Box sx={{ display: 'flex', gap: 1.25 }}>
+                    <WarningAmberRoundedIcon sx={{ fontSize: 20, color: c.status.warning, mt: '1px', flexShrink: 0 }} />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: '0.85rem', fontWeight: 600, color: c.text.primary, mb: 0.25 }}>
+                        This file may contain a secret
+                      </Typography>
+                      <Typography sx={{ fontSize: '0.8rem', color: c.text.secondary, lineHeight: 1.5 }}>
+                        {error} If you export it, only send the file to people you trust.
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 1.5 }}>
+                    <Button
+                      size="small"
+                      onClick={load}
+                      sx={{ textTransform: 'none', fontSize: '0.8rem', color: c.text.secondary, minWidth: 0 }}
+                    >
+                      Try again
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => { setError(''); handleDownload(true); }}
+                      disabled={downloading}
+                      sx={{
+                        textTransform: 'none', fontSize: '0.8rem', fontWeight: 600,
+                        color: c.status.error, borderColor: `${c.status.error}80`, borderRadius: '8px',
+                        '&:hover': { borderColor: c.status.error, bgcolor: `${c.status.error}0d` },
+                      }}
+                    >
+                      Export anyway
+                    </Button>
+                  </Box>
+                </Box>
+              ) : (
+                <Box sx={{ py: 1 }}>
+                  <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary, mb: 1 }}>{error}</Typography>
+                  <Button size="small" onClick={load} sx={{ textTransform: 'none', color: c.accent.primary }}>
+                    Try again
                   </Button>
-                )}
-              </Box>
+                </Box>
+              )
             ) : preflight ? (
               <IncludesList summary={preflight.summary} />
             ) : null}
