@@ -1004,6 +1004,7 @@ const BrowserCard: React.FC<Props> = ({
           />
         </Box>
         <Box
+          data-card-control
           sx={{
             display: 'flex',
             flex: 1,

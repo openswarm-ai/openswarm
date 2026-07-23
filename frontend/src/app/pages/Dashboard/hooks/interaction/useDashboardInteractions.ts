@@ -30,6 +30,9 @@ function pressLandedOnControl(target: EventTarget | null | undefined): boolean {
   while (el) {
     if (el.hasAttribute(SELECT_ATTR)) return false;
     if (CONTROL_TAGS.has(el.tagName) || el.isContentEditable || el.getAttribute('role') === 'button') return true;
+    // Card-chrome zones (browser tab strip + / x / tab-drag, resize handles) select+raise the card but
+    // must NOT re-center the camera on it, managing a card's frame or tabs is not a "focus this" gesture.
+    if (el.hasAttribute('data-card-control') || (el.classList && el.classList.contains('resize-handle'))) return true;
     el = el.parentElement;
   }
   return false;
