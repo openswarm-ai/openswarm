@@ -39,6 +39,7 @@ interface DashboardOverlaysProps {
   toolbarOpen: boolean;
   searchPaletteOpen: boolean;
   newAgentBounce: boolean;
+  canvasEmpty: boolean;
   toolbarRef: RefObject<HTMLDivElement>;
   onNewAgent: () => void;
   onToolbarCancel: () => void;
@@ -72,6 +73,7 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
   toolbarOpen,
   searchPaletteOpen,
   newAgentBounce,
+  canvasEmpty,
   toolbarRef,
   onNewAgent,
   onToolbarCancel,
@@ -105,6 +107,7 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
           onAddNote={onAddNote}
           dashboardId={dashboardId}
           newAgentBounce={newAgentBounce}
+          canvasEmpty={canvasEmpty}
           onNewAgentBounceEnd={onNewAgentBounceEnd}
           prefillPrompt={toolbarPrefill}
           prefillMode={toolbarPrefillMode}

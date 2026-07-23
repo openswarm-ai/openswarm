@@ -66,6 +66,7 @@ interface DashboardCanvasProps {
   toolbarOpen: boolean;
   searchPaletteOpen: boolean;
   newAgentBounce: boolean;
+  canvasEmpty: boolean;
   toolbarRef: RefObject<HTMLDivElement>;
   spawnOriginsRef: RefObject<Record<string, SpawnOrigin>>;
   revealSpawnedRef: RefObject<Set<string>>;
@@ -129,6 +130,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   toolbarOpen,
   searchPaletteOpen,
   newAgentBounce,
+  canvasEmpty,
   toolbarRef,
   spawnOriginsRef,
   revealSpawnedRef,
@@ -427,6 +429,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         toolbarOpen={toolbarOpen}
         searchPaletteOpen={searchPaletteOpen}
         newAgentBounce={newAgentBounce}
+        canvasEmpty={canvasEmpty}
         toolbarRef={toolbarRef}
         onNewAgent={onNewAgent}
         onToolbarCancel={onToolbarCancel}

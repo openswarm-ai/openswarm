@@ -88,8 +88,12 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
 
   // Nudge the chat button while the canvas is empty; the first click dismisses it for this visit.
   const bounceDismissedRef = useRef(false);
+  // Truly-empty canvas: matches the empty-state hero's own render condition (fullscreen is handled
+  // separately, it display:none's the whole overlay layer), so "pill hidden" always coincides with
+  // "hero shown" and a workflow-card-only canvas never ends up with no composer at all.
   const canvasEmpty = layoutInitialized && sessionList.length === 0
-    && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0;
+    && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0
+    && Object.keys(workflowCards).length === 0 && !workflowsHub;
   useEffect(() => {
     setNewAgentBounce(canvasEmpty && !bounceDismissedRef.current);
   }, [canvasEmpty, setNewAgentBounce]);
@@ -163,11 +167,10 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     spawnOriginsRef,
   });
 
-  // Onboarding v3 reveal: seeds the personalized note + welcome chat the instant the flow's curtain lifts.
+  // Onboarding v3 reveal: seeds the personalized welcome chat the instant the flow's curtain lifts.
   useOnboardingRevealSeed({
     isActive,
     dashboardId,
-    expandedSessionIds,
     viewportRef: canvas.viewportRef,
     canvasStateRef,
     createWelcomeDraft,
@@ -333,7 +336,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     workflowCards, workflowsHub,
     expandedSessionIds, tethers, highlightedCardId, autoFocusSessionId,
     focusedCardId, pendingFocusNoteId, multiDragDelta, shakeDirection,
-    neighborDirections, toolbarOpen, searchPaletteOpen, newAgentBounce,
+    neighborDirections, toolbarOpen, searchPaletteOpen, newAgentBounce, canvasEmpty,
     toolbarRef, spawnOriginsRef, revealSpawnedRef, measuredHeightsRef, getCanvasState,
     toolbarPrefill,
     toolbarPrefillMode,

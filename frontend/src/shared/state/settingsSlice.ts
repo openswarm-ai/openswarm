@@ -82,6 +82,8 @@ export interface AppSettings {
   accent_color?: string | null;
   /** Multi-stop gradient from the theme pad (2-3 hexes); washes the canvas. */
   accent_gradient?: string[] | null;
+  /** Global text-size ratio. Scales the root font-size so every rem-based size grows/shrinks together, no layout breakage. 1 = default. */
+  ui_font_scale?: number;
   personalized_greeting?: string | null;
   /** The short one-glance identity hook shown in the reveal's focal beat (greeting is the longer read). */
   personalized_headline?: string | null;
@@ -148,6 +150,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   default_max_turns: null,
   default_thinking_level: 'auto',
   zoom_sensitivity: 50,
+  ui_font_scale: 1,
   theme: 'light',
   new_agent_shortcut: 'Meta+l',
   anthropic_api_key: null,

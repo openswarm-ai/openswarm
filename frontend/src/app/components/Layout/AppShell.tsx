@@ -467,6 +467,14 @@ const AppShell: React.FC = () => {
     else root.style.removeProperty('--osw-header-inset');
     return () => { root.style.removeProperty('--osw-header-inset'); };
   }, [sidebarAway]);
+  // Global text-size ratio (Settings > Interface). Scaling the root font-size scales every rem-based
+  // size in one shot, so type grows or shrinks together with no layout breakage. Clamped to a sane band
+  // so a corrupt value can never wreck the whole UI.
+  const uiFontScale = useAppSelector((s) => s.settings.data.ui_font_scale ?? 1);
+  useEffect(() => {
+    const clamped = Math.min(1.4, Math.max(0.8, uiFontScale || 1));
+    document.documentElement.style.fontSize = `${Math.round(clamped * 100)}%`;
+  }, [uiFontScale]);
   // When the sidebar is docked, the macOS traffic lights sit over its top strip, which is a window
   // drag region that swallows mousemove, so the canvas hover-reveal can never fire there. Broadcast
   // "chrome docked" so the canvas keeps the native lights visible while the sidebar is open (they only

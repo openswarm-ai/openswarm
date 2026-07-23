@@ -44,6 +44,7 @@ interface Props {
   onAddNote: () => void;
   dashboardId?: string;
   newAgentBounce?: boolean;
+  canvasEmpty?: boolean;
   onNewAgentBounceEnd?: () => void;
   // Text to seed the composer with when it opens (starter-prompt click).
   prefillPrompt?: string;
@@ -70,7 +71,7 @@ function formatRelativeTime(dateStr: string | null): string {
 }
 
 const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
-  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, onAddNote, dashboardId, newAgentBounce, onNewAgentBounceEnd, prefillPrompt, prefillMode }, ref) => {
+  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, onAddNote, dashboardId, newAgentBounce, canvasEmpty, onNewAgentBounceEnd, prefillPrompt, prefillMode }, ref) => {
     const c = useClaudeTokens();
     const dispatch = useAppDispatch();
     const elementSelection = useElementSelection();
@@ -600,7 +601,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               )}
             </Box>
           </div>
-        ) : (
+        ) : canvasEmpty ? null : (
           <DesktopSpawnPill
             onOpenComposer={() => {
               if (newAgentBounce) onNewAgentBounceEnd?.();

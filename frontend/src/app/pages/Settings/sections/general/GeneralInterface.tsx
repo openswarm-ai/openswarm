@@ -67,6 +67,40 @@ const GeneralInterface: React.FC<{
         </ToggleButtonGroup>
       </Box>
 
+      <Box sx={inlineRowSx} {...settingSelectAttrs('ui_font_scale', 'Text size', 'Interface', 'Scales all text across the app; layout stays intact.')}>
+        <Box sx={{ mr: 3 }}>
+          <Typography sx={labelSx}>Text size</Typography>
+          <Typography sx={descSx}>Scales all text across the app. Layout stays intact.</Typography>
+        </Box>
+        <ToggleButtonGroup
+          value={form.ui_font_scale ?? 1}
+          exclusive
+          onChange={(_, v) => { if (v) setForm({ ...form, ui_font_scale: v }); }}
+          size="small"
+          sx={{
+            '& .MuiToggleButton-root': {
+              color: c.text.muted,
+              borderColor: c.border.medium,
+              textTransform: 'none',
+              px: 1.75,
+              py: 0.5,
+              fontSize: '0.8rem',
+              '&.Mui-selected': {
+                bgcolor: `${c.accent.primary}15`,
+                color: c.accent.primary,
+                borderColor: c.accent.primary,
+                '&:hover': { bgcolor: `${c.accent.primary}20` },
+              },
+            },
+          }}
+        >
+          <ToggleButton value={0.9}>Small</ToggleButton>
+          <ToggleButton value={1}>Default</ToggleButton>
+          <ToggleButton value={1.1}>Large</ToggleButton>
+          <ToggleButton value={1.2}>Largest</ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+
       <Box sx={rowSx} {...settingSelectAttrs('accent_color', 'Accent color', 'Interface', 'The accent color used across the app.')}>
         <Typography sx={labelSx}>Accent color</Typography>
         <Typography sx={{ ...descSx, mb: 1.5 }}>

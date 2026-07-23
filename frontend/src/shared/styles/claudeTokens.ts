@@ -1,3 +1,26 @@
+// The type scale. OpenSwarm had ~30 near-duplicate hardcoded rem sizes (0.78/0.8/0.82/0.85...), which
+// reads as noise; snap to these 7 steps so type feels intentional and consistent. px comments assume a
+// 16px root. Use c.font.size.* instead of a raw rem string in anything you touch.
+export interface FontSizeScale {
+  xs: string;      // 12px, captions, meta, micro labels
+  sm: string;      // 13px, secondary / small body
+  base: string;    // 14px, default body + most UI text
+  md: string;      // 16px, emphasized body, inputs
+  lg: string;      // 18px, subheads
+  xl: string;      // 22px, section headings
+  display: string; // 28px, hero / empty-state headline
+}
+
+export const fontSize: FontSizeScale = {
+  xs: '0.75rem',
+  sm: '0.8125rem',
+  base: '0.875rem',
+  md: '1rem',
+  lg: '1.125rem',
+  xl: '1.375rem',
+  display: '1.75rem',
+};
+
 export interface ClaudeTokens {
   bg: { page: string; surface: string; elevated: string; secondary: string; inverse: string };
   text: { primary: string; secondary: string; tertiary: string; muted: string; inverse: string; ghost: string };
@@ -7,7 +30,7 @@ export interface ClaudeTokens {
   radius: { xs: number; sm: number; md: number; lg: number; xl: number; full: number };
   status: { success: string; successBg: string; warning: string; warningBg: string; error: string; errorBg: string; info: string; infoBg: string };
   user: { bubble: string };
-  font: { sans: string; mono: string };
+  font: { sans: string; mono: string; size: FontSizeScale };
   transition: string;
 }
 
@@ -58,6 +81,7 @@ export const lightTokens: ClaudeTokens = {
   font: {
     sans: '"Anthropic Sans", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
     mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+    size: fontSize,
   },
   transition: 'all 150ms cubic-bezier(0.165, 0.85, 0.45, 1)',
 };
@@ -109,6 +133,7 @@ export const darkTokens: ClaudeTokens = {
   font: {
     sans: '"Anthropic Sans", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
     mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+    size: fontSize,
   },
   transition: 'all 150ms cubic-bezier(0.165, 0.85, 0.45, 1)',
 };

@@ -1,17 +1,37 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Search, Hammer, Globe, CalendarClock, FolderGit2, Sparkles, ArrowUp, Image as ImageIcon } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { useAppSelector } from '@/shared/hooks';
 import {
   hasModelConnected,
   hasFreeTrialActive,
 } from '@/app/components/Onboarding/steps/skipPredicates';
-import { STARTER_CATEGORIES } from '@/shared/starterCategories';
 
-// Returning-user empty state (the first-run greeting now lives in the auto-popped welcome chat). Quiet: a one-line prompt + the shared starter chips for users who can run, or a connect-a-model hint for users who can't. Two-level: category -> concrete prompts.
+// Empty canvas, styled after ChatGPT / Claude / Manus: a short question, a centered composer as the HERO, then a few TAILORED, icon-led suggestions (the onboarding scan wrote them), never abstract category buttons. Font sizes come from the shared type scale so it reads clean.
+type Suggestion = { title: string; prompt: string };
+
+const FALLBACK_SUGGESTIONS: Suggestion[] = [
+  { title: 'Research something and give me a clear comparison', prompt: 'Research a topic I care about and give me a tight, current comparison with dated sources. Ask me the topic first if you need to.' },
+  { title: 'Build me a small app I can use right now', prompt: 'Build me a simple, useful app I can use right now, and drop it on my canvas.' },
+  { title: 'Send an agent to find something on the web', prompt: 'Open a real website and do a multi-step task for me, then report what you found.' },
+];
+
+// Give each suggestion a leading icon inferred from what it does, so the list reads like real actions (the way ChatGPT tags suggestions with app icons) instead of a wall of identical rows.
+function iconForStarter(text: string): LucideIcon {
+  const t = text.toLowerCase();
+  if (/screenshot|image|photo|gallery|frame/.test(t)) return ImageIcon;
+  if (/schedule|daily|brief|weekly|morning|every day/.test(t)) return CalendarClock;
+  if (/build|app|tool|make me|dashboard/.test(t)) return Hammer;
+  if (/web|browse|site|online|flight|price|open a/.test(t)) return Globe;
+  if (/project|repo|readme|codebase/.test(t)) return FolderGit2;
+  if (/research|compare|find|look up|best|search/.test(t)) return Search;
+  return Sparkles;
+}
+
 const DashboardEmptyState: React.FC<{
   c: ClaudeTokens;
   onLaunch?: (prompt: string, mode: string, model: string) => void;
@@ -20,138 +40,120 @@ const DashboardEmptyState: React.FC<{
   const model = useAppSelector((s) => s.settings.data.default_model);
   const mode = useAppSelector((s) => s.settings.data.default_mode);
   const canRun = useAppSelector((s) => hasFreeTrialActive(s) || hasModelConnected(s));
+  const personalized = useAppSelector((s) => s.settings.data.personalized_starters ?? []);
+  const [text, setText] = React.useState('');
   const [launching, setLaunching] = React.useState(false);
-  const [expanded, setExpanded] = React.useState<string | null>(null);
-  const currentCategory = STARTER_CATEGORIES.find((cat) => cat.id === expanded);
-  const currentPrompts = currentCategory?.prompts ?? [];
 
-  const showChips = !!onLaunch && canRun;
-
-  // "Build an app" launches a normal agent like every other starter; the agent calls CreateApp and its live card drops on the canvas. No separate App Builder mode/page anymore.
   const launch = (prompt: string) => {
-    if (launching) return;
-    if (onLaunch) {
-      setLaunching(true);
-      onLaunch(prompt, mode, model);
-      return;
-    }
-    if (onStarter) onStarter(prompt);
+    const p = prompt.trim();
+    if (launching || !p) return;
+    if (onLaunch) { setLaunching(true); onLaunch(p, mode, model); return; }
+    if (onStarter) onStarter(p);
   };
+
+  const suggestions: Suggestion[] = personalized.length > 0
+    ? personalized.slice(0, 4).map((s) => ({ title: s.title, prompt: s.prompt }))
+    : FALLBACK_SUGGESTIONS;
 
   return (
     <Box
       sx={{
-        position: 'absolute',
-        inset: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        pointerEvents: 'none',
+        position: 'absolute', inset: 0,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        pointerEvents: 'none', px: 3,
       }}
     >
-      <Typography sx={{ color: c.text.secondary, fontSize: '1.3rem', fontWeight: 500, mb: 2.2, textAlign: 'center' }}>
-        What do you want done?
-      </Typography>
-
-      {showChips ? (
-        <Box sx={{ width: '100%', maxWidth: 560, pointerEvents: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <AnimatePresence mode="wait" initial={false}>
-            {expanded === null ? (
-              <motion.div
-                key="categories"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.2 }}
-                style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
-              >
-                <Typography sx={{ color: c.text.ghost, fontSize: '0.9rem', mb: 1.4 }}>
-                  pick one, or just tell me below
-                </Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.2, width: '100%', maxWidth: 460 }}>
-                  {STARTER_CATEGORIES.map((cat) => (
-                    <Box
-                      component="button"
-                      key={cat.id}
-                      onClick={() => setExpanded(cat.id)}
-                      sx={{
-                        display: 'flex', alignItems: 'center', gap: 1.1,
-                        px: 1.9, py: 1.3,
-                        borderRadius: 2.5,
-                        border: `1px solid ${c.border.medium}`,
-                        background: c.bg.surface,
-                        color: c.text.secondary,
-                        fontSize: '0.98rem', fontWeight: 500,
-                        cursor: 'pointer', fontFamily: 'inherit',
-                        transition: 'background 150ms, border-color 150ms',
-                        '&:hover': { background: c.bg.elevated, borderColor: c.border.strong },
-                      }}
-                    >
-                      <cat.Icon size={18} />
-                      {cat.label}
-                    </Box>
-                  ))}
-                </Box>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="specifics"
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.18 }}
-                style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
-              >
-                <Box
-                  component="button"
-                  onClick={() => setExpanded(null)}
-                  sx={{
-                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                    mb: 1.2, px: 1, py: 0.4,
-                    border: 'none', background: 'transparent',
-                    color: c.text.ghost, fontSize: '0.9rem',
-                    cursor: 'pointer', fontFamily: 'inherit',
-                    '&:hover': { color: c.text.secondary },
-                  }}
-                >
-                  <ArrowLeft size={15} /> back
-                </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, width: '100%', maxWidth: 480 }}>
-                  {currentPrompts.map((prompt) => (
-                    <Box
-                      component="button"
-                      key={prompt}
-                      onClick={() => launch(prompt)}
-                      disabled={launching}
-                      sx={{
-                        textAlign: 'left',
-                        px: 1.8, py: 1.1,
-                        borderRadius: 2,
-                        border: `1px solid ${c.border.medium}`,
-                        background: c.bg.surface,
-                        color: c.text.secondary,
-                        fontSize: '0.95rem',
-                        cursor: launching ? 'default' : 'pointer',
-                        opacity: launching ? 0.5 : 1,
-                        fontFamily: 'inherit',
-                        transition: 'background 150ms, border-color 150ms',
-                        '&:hover': launching ? {} : { background: c.bg.elevated, borderColor: c.border.strong },
-                      }}
-                    >
-                      {prompt}
-                    </Box>
-                  ))}
-                </Box>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </Box>
-      ) : (
-        <Typography sx={{ color: c.text.ghost, fontSize: '0.95rem' }}>
-          Connect a model in Settings to get started.
+      <Box sx={{ width: '100%', maxWidth: 620, pointerEvents: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <Typography sx={{ color: c.text.primary, fontSize: c.font.size.display, fontWeight: 600, textAlign: 'center', letterSpacing: '-0.01em', mb: 3 }}>
+          What do you want done?
         </Typography>
-      )}
+
+        {canRun && !!onLaunch ? (
+          <>
+            {/* The hero: a real composer you can just start typing into. Fixed-dark to match the app's
+                floating chrome (sidebar, pills, chat cards), not a stark white box that fights the canvas. */}
+            <Box
+              sx={{
+                display: 'flex', alignItems: 'center', gap: 1,
+                background: 'rgba(22,12,34,0.72)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px',
+                px: 2, py: 1.25, boxShadow: '0 12px 34px rgba(0,0,0,0.32)', mb: 2.5,
+                transition: 'border-color 150ms, box-shadow 150ms',
+                '&:focus-within': { borderColor: 'rgba(255,255,255,0.28)' },
+              }}
+            >
+              <Box
+                component="input"
+                value={text}
+                autoFocus
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setText(e.target.value)}
+                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); launch(text); setText(''); }
+                }}
+                placeholder="Ask me anything..."
+                disabled={launching}
+                sx={{
+                  flex: 1, border: 'none', outline: 'none', bgcolor: 'transparent',
+                  color: 'rgba(255,255,255,0.92)', fontFamily: 'inherit', fontSize: c.font.size.md,
+                  '&::placeholder': { color: 'rgba(255,255,255,0.45)' },
+                }}
+              />
+              <Box
+                component="button"
+                aria-label="Send"
+                onClick={() => { launch(text); setText(''); }}
+                disabled={launching || !text.trim()}
+                sx={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  width: 32, height: 32, borderRadius: '50%', border: 'none',
+                  bgcolor: text.trim() ? c.accent.primary : 'rgba(255,255,255,0.12)',
+                  color: text.trim() ? '#fff' : 'rgba(255,255,255,0.5)',
+                  cursor: text.trim() ? 'pointer' : 'default',
+                  transition: 'background 150ms, color 150ms',
+                }}
+              >
+                <ArrowUp size={17} />
+              </Box>
+            </Box>
+
+            {/* Tailored, icon-led suggestions. */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {suggestions.map((s, i) => {
+                const Ic = iconForStarter(`${s.title} ${s.prompt}`);
+                return (
+                  <Box
+                    key={s.title}
+                    component={motion.button}
+                    onClick={() => launch(s.prompt)}
+                    disabled={launching}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, delay: 0.05 + i * 0.05 }}
+                    sx={{
+                      display: 'flex', alignItems: 'center', gap: 1.5, textAlign: 'left', width: '100%',
+                      px: 1.75, py: 1.25, borderRadius: '12px',
+                      border: `1px solid transparent`, background: 'transparent',
+                      color: c.text.secondary, fontFamily: 'inherit', fontSize: c.font.size.base,
+                      cursor: launching ? 'default' : 'pointer',
+                      transition: 'background 150ms, border-color 150ms',
+                      '&:hover': launching ? {} : { background: c.bg.surface, borderColor: c.border.subtle },
+                    }}
+                  >
+                    <Ic size={17} style={{ color: c.text.muted, flexShrink: 0 }} />
+                    {s.title}
+                  </Box>
+                );
+              })}
+            </Box>
+          </>
+        ) : (
+          <Typography sx={{ color: c.text.ghost, fontSize: c.font.size.base, textAlign: 'center' }}>
+            Connect a model in Settings to get started.
+          </Typography>
+        )}
+      </Box>
     </Box>
   );
 };

@@ -137,7 +137,7 @@ function DesktopSpawnPill({
             mr: 1.5,
           }}
         >
-          Spawn an agent...
+          Ask me anything...
         </Typography>
         <Box
           role="button"
