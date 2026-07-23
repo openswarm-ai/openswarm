@@ -916,7 +916,9 @@ const BrowserCard: React.FC<Props> = ({
       }}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
-        onCardSelect?.(browserId, 'browser', e.shiftKey);
+        // Pass the target here too: with pointer capture the click after a resize lands on the handle,
+        // and without the target this bubbled path skipped the control carve-out and re-centered the camera.
+        onCardSelect?.(browserId, 'browser', e.shiftKey, e.target);
       }}
       onDoubleClick={(e: React.MouseEvent) => {
         e.stopPropagation();
