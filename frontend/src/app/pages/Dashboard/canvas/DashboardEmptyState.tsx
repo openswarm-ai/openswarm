@@ -63,7 +63,13 @@ const DashboardEmptyState: React.FC<{
         pointerEvents: 'none', px: 3,
       }}
     >
-      <Box sx={{ width: '100%', maxWidth: 620, pointerEvents: 'auto', display: 'flex', flexDirection: 'column' }}>
+      {/* Swallow pointerdown so the canvas's pan/marquee handler doesn't preventDefault the press and
+          steal focus from the composer, that's why clicking the input did nothing. Clicks/typing still work. */}
+      <Box
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        sx={{ width: '100%', maxWidth: 620, pointerEvents: 'auto', display: 'flex', flexDirection: 'column' }}
+      >
         <Typography sx={{ color: c.text.primary, fontSize: c.font.size.display, fontWeight: 600, textAlign: 'center', letterSpacing: '-0.01em', mb: 3 }}>
           What do you want done?
         </Typography>
