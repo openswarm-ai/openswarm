@@ -20,6 +20,7 @@ const ImportDigest = forwardRef<DigestHandle, { color?: string }>(({ color = '#c
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const busyRef = useRef(false);
   const rafRef = useRef(0);
+  const hideTimerRef = useRef(0);
 
   useImperativeHandle(ref, () => ({
     play(x: number, y: number): boolean {
@@ -29,11 +30,19 @@ const ImportDigest = forwardRef<DigestHandle, { color?: string }>(({ color = '#c
 
       const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
       busyRef.current = true;
+      window.clearTimeout(hideTimerRef.current);
+      canvas.style.display = 'block';
       canvas.style.opacity = '1';
 
       const finish = () => {
         busyRef.current = false;
         canvas.style.opacity = '0';
+        // Idle display:none + a zeroed backing store return the ~19MB full-window GPU layer this pinned 24/7.
+        hideTimerRef.current = window.setTimeout(() => {
+          canvas.style.display = 'none';
+          canvas.width = 0;
+          canvas.height = 0;
+        }, 240);
       };
       if (reduce) {
         // Honor reduced-motion: no flashing pixels, just a brief, calm beat.
@@ -114,6 +123,7 @@ const ImportDigest = forwardRef<DigestHandle, { color?: string }>(({ color = '#c
         pointerEvents: 'none',
         zIndex: 2100,
         opacity: 0,
+        display: 'none',
         transition: 'opacity 200ms ease',
       }}
     />
