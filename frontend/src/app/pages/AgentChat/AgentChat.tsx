@@ -74,7 +74,7 @@ import { setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCar
 import type { WorkflowsRunContext } from '@/shared/state/dashboardLayoutSlice';
 import { setCardSidecar, commitDraft, updateWorkflowCard, controlWorkflowRun } from '@/shared/state/workflowsSlice';
 import { shallowEqual } from 'react-redux';
-import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useClaudeTokens, useThemeAccent, useThemeMode } from '@/shared/styles/ThemeContext';
 import { parseMcpToolName, getMcpInputSummary } from '@/shared/mcpToolMeta';
 
 const CONTEXT_WINDOWS: Record<string, number> = {
@@ -235,6 +235,18 @@ interface AgentChatProps {
 
 const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, isGlowing, onDismissGlow, initialContextPaths, onBranch, workflowEditId, readOnly, fullscreenChat, prefillPrompt, runContext, onClearRunContext, onSendRunQuestion }) => {
   const c = useClaudeTokens();
+  // Fullscreen reads as a place of its own: the user's onboarding accent washes down from the top and
+  // fades into the theme ground (dark or light), instead of a flat card color stretched to the window.
+  const { accent, gradient: accentStops } = useThemeAccent();
+  const { mode: themeMode } = useThemeMode();
+  const fullscreenWash = (() => {
+    if (!fullscreenChat) return undefined;
+    const stops = (accentStops && accentStops.length ? accentStops : [accent || '#6b62f0']);
+    const a = stops[0];
+    const b = stops[1] || stops[0];
+    const ground = themeMode === 'dark' ? '#1a1918' : '#F5F5F0';
+    return `linear-gradient(180deg, ${a}30 0%, ${b}18 22%, ${ground} 55%)`;
+  })();
   const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
     running: { color: c.status.success, bg: c.status.successBg },
     waiting_approval: { color: c.status.warning, bg: c.status.warningBg },
@@ -1443,7 +1455,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const statusStyle = STATUS_STYLES[session.status] || { color: c.text.tertiary, bg: c.bg.secondary };
 
   return (
-    <Box sx={{ display: 'flex', height: '100%' }}>
+    <Box sx={{ display: 'flex', height: '100%', ...(fullscreenWash && { background: fullscreenWash }) }}>
       <ContextDrawer />
       <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden', ...(fullscreenChat && { maxWidth: FULLSCREEN_READING_MAX_W, width: '100%', mx: 'auto' }) }}>
         {!embedded && (
