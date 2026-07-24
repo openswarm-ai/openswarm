@@ -2974,6 +2974,19 @@ ipcMain.handle('get-webview-preload-path', () => {
   return `file://${path.join(__dirname, 'webview-preload.js')}`;
 });
 
+// Reveal a diagnostics bundle in the file manager so the user can drag it into a GitHub issue.
+// Scoped HARD to the backend's diagnostics dir: this must never become an arbitrary-path opener.
+ipcMain.handle('help:reveal-bundle', (event, folderPath) => {
+  try {
+    const p = path.resolve(String(folderPath || ''));
+    if (!p.includes(`${path.sep}diagnostics${path.sep}`) || !fs.existsSync(p)) return { ok: false };
+    shell.showItemInFolder(p);
+    return { ok: true };
+  } catch (_) {
+    return { ok: false };
+  }
+});
+
 // Wipe ONLY the browser-card partition (cookies/cache/localStorage/IndexedDB), never the app's defaultSession. Surfaced as Settings -> Data & Privacy -> Clear browsing data.
 ipcMain.handle('browser:clear-data', async () => {
   const ses = session.fromPartition(BROWSER_PARTITION);

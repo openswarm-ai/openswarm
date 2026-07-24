@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld('openswarm', {
     ipcRenderer.on('voice:toggle', listener);
     return () => ipcRenderer.removeListener('voice:toggle', listener);
   },
+  // Reveal a diagnostics folder in Finder/Explorer (path validated in main; diagnostics dir only).
+  revealBundle: (folderPath) => ipcRenderer.invoke('help:reveal-bundle', folderPath),
   // Main-process hold relay (before-input-event): fires down/up for the combo regardless of DOM focus.
   onVoiceHold: (onDown, onUp) => {
     const down = () => onDown();
