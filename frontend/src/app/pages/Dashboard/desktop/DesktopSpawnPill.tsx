@@ -160,7 +160,7 @@ function DesktopSpawnPill({
         >
           <AddRounded sx={{ fontSize: 18 }} />
         </Box>
-        <Tooltip title={recording ? 'Stop dictation' : preparing ? `Downloading voice model ${voicePct}%` : 'Dictate (Cmd+Shift+D)'} placement="top" arrow>
+        <Tooltip title={recording ? 'Stop dictation' : preparing ? `Downloading voice model ${voicePct}%` : 'Dictate (F5)'} placement="top" arrow>
           <Box
             role="button"
             aria-label="Voice dictation"

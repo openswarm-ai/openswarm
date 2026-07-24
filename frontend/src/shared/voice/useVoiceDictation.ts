@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/shared/config';
 import { encodeWav, VOICE_SAMPLE_RATE } from './encodeWav';
 import { injectAtFocus } from './injectAtFocus';
-import { playCancel, playDone, playStart } from './voiceSounds';
 
 export type VoiceState = 'idle' | 'recording' | 'transcribing' | 'preparing';
 
@@ -118,7 +117,6 @@ export function useVoiceDictation() {
       node.connect(ctx.destination);
       recRef.current = { ctx, stream, node, source, chunks };
       setState('recording');
-      playStart();
       // Warm the model the moment recording begins so transcription is instant on stop.
       void window.openswarm?.voiceWarmup?.();
     } catch (err) {
@@ -145,19 +143,15 @@ export function useVoiceDictation() {
         setLastText(text);
         // Land the text where the user's cursor is: focused field, then focused browser page, then
         // the OS paste fallback (other apps). The floating bubble is just confirmation, not the output.
-        // Success is silent-visual: the text landing at the cursor IS the feedback (plus the done blip).
-        // Only the clipboard fallback still speaks, because the user has to act (paste) to get the text.
+        // Success is silent: the text landing at the cursor IS the feedback. Only the clipboard
+        // fallback still speaks, because the user has to act (paste) to get the text.
         const target = injectAtFocus(text);
-        if (target) {
-          playDone();
-        } else {
+        if (!target) {
           const inj = await window.openswarm?.voiceInject?.(text);
-          if (inj?.pasted) playDone();
-          else setFeedback({ tone: 'ok', icon: 'clipboard', text: `${text}  (copied, press Cmd+V)`, at: Date.now() });
+          if (!inj?.pasted) setFeedback({ tone: 'ok', icon: 'clipboard', text: `${text}  (copied, press Cmd+V)`, at: Date.now() });
         }
         setState('idle');
       } else if (res?.ok && !res.text) {
-        playCancel();
         setFeedback({ tone: 'warn', icon: 'info', text: "Didn't catch that. Try again.", at: Date.now() });
         setState('idle');
       } else if (res?.error === 'model-downloading' || res?.error === 'no-model') {

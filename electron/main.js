@@ -1793,18 +1793,22 @@ app.whenReady().then(async () => {
   // focused, MAIN watches before-input-event (sees every keyDown/keyUp incl. modifiers, regardless of
   // which element or webview has focus, and immune to macOS's letter-keyup-under-Cmd suppression at the
   // DOM layer) and relays voice:hold-down / voice:hold-up; the renderer maps those to hold-vs-toggle.
-  const VOICE_COMBO = 'CommandOrControl+Shift+D';
+  // F5 is the mic/dictation key printed on Mac keyboards (the fn/globe key itself is invisible to
+  // Electron without a native event tap), so it's the simple primary; the old combo stays as backup.
+  const VOICE_COMBOS = ['F5', 'CommandOrControl+Shift+D'];
   const registerVoiceShortcut = () => {
-    try {
-      if (!globalShortcut.isRegistered(VOICE_COMBO)) {
-        globalShortcut.register(VOICE_COMBO, () => {
-          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('voice:toggle');
-        });
-      }
-    } catch (_) { /* a taken shortcut just means no global hotkey; the pill still works */ }
+    for (const combo of VOICE_COMBOS) {
+      try {
+        if (!globalShortcut.isRegistered(combo)) {
+          globalShortcut.register(combo, () => {
+            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('voice:toggle');
+          });
+        }
+      } catch (_) { /* a taken shortcut just means no global hotkey; the pill still works */ }
+    }
   };
   registerVoiceShortcut();
-  app.on('browser-window-focus', () => { try { globalShortcut.unregister(VOICE_COMBO); } catch (_) {} });
+  app.on('browser-window-focus', () => { for (const combo of VOICE_COMBOS) { try { globalShortcut.unregister(combo); } catch (_) {} } });
   app.on('browser-window-blur', registerVoiceShortcut);
 
   // Every discrete combo press relays (autorepeat filtered); the renderer toggles record state.
@@ -1813,8 +1817,10 @@ app.whenReady().then(async () => {
   // without a native event tap. Keyboard = press to start/stop; the mic buttons own true hold-to-talk.
   const installVoiceHoldRelay = (contents) => {
     contents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown' || input.isAutoRepeat) return;
       const isD = (input.code === 'KeyD' || (input.key || '').toLowerCase() === 'd');
-      if (input.type === 'keyDown' && isD && (input.meta || input.control) && input.shift && !input.isAutoRepeat) {
+      const combo = (isD && (input.meta || input.control) && input.shift) || input.code === 'F5';
+      if (combo) {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('voice:hold-down');
         event.preventDefault();
       }
