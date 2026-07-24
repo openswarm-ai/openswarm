@@ -49,8 +49,8 @@ const BeatSignIn: React.FC<{
   };
 
   const rows: Array<{ id: string; name: string; icon: React.ReactNode; onClick: () => void; hint?: string }> = [
-    { id: 'google', name: 'Continue with Google', icon: <GoogleIcon sx={{ fontSize: 26, color: '#4285F4' }} />, onClick: onGoogle, hint: waitingGoogle && !signedIn ? 'waiting for your browser...' : undefined },
-    { id: 'email', name: 'Continue with email', icon: <EmailIcon sx={{ fontSize: 26, color: '#8a8a86' }} />, onClick: () => { if (!signedIn) setEmailOpen(true); } },
+    { id: 'google', name: 'Continue with Google', icon: <GoogleIcon sx={{ fontSize: 20, color: '#4285F4' }} />, onClick: onGoogle, hint: waitingGoogle && !signedIn ? 'Waiting for your browser...' : undefined },
+    { id: 'email', name: 'Continue with email', icon: <EmailIcon sx={{ fontSize: 20, color: '#6f6e6a' }} />, onClick: () => { if (!signedIn) setEmailOpen(true); } },
   ];
 
   return (
@@ -65,42 +65,59 @@ const BeatSignIn: React.FC<{
       wide
       logo={<OnboardingLogo size={52} />}
     >
-      <div style={{ width: 'min(440px, 100%)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {rows.map((row, i) => (
-          <motion.button
-            key={row.id}
-            onClick={row.onClick}
-            initial={{ opacity: 0, y: 14 }}
+      <div style={{ width: 'min(380px, 100%)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {signedIn ? (
+          // Claude/ChatGPT-style done state: one quiet confirmation card, the buttons step aside.
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 26, delay: 0.1 + i * 0.08 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 26 }}
             style={{
-              display: 'flex', alignItems: 'center', gap: 14, padding: '0 0 0 18px', textAlign: 'left', overflow: 'hidden',
-              borderRadius: 14, border: 'none',
-              boxShadow: signedIn ? '0 0 0 2px #1a9e6a, 0 10px 26px rgba(20,16,80,0.22)' : '0 10px 26px rgba(20,16,80,0.22)',
-              background: '#ffffff', cursor: signedIn ? 'default' : 'pointer', fontFamily: 'inherit', minHeight: 64,
+              display: 'flex', alignItems: 'center', gap: 12, padding: '16px 18px',
+              borderRadius: 14, background: '#ffffff', boxShadow: '0 10px 26px rgba(20,16,80,0.22)',
             }}
           >
-            <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '11px 0' }}>
-              <span style={{ fontSize: '0.98rem', fontWeight: 600, color: '#3d3d3a' }}>{row.name}</span>
-              {row.hint && <span style={{ fontSize: '0.78rem', fontWeight: 400, color: '#8a8a86' }}>{row.hint}</span>}
-            </span>
             <span style={{
-              alignSelf: 'stretch', width: 78, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'linear-gradient(135deg, rgba(0,0,0,0.05), rgba(0,0,0,0.02))',
+              width: 34, height: 34, borderRadius: '50%', background: '#e7f6ee', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              {row.icon}
+              <CheckRoundedIcon sx={{ fontSize: 20, color: '#1a9e6a' }} />
             </span>
-          </motion.button>
-        ))}
-        {signedIn ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', padding: '6px 0', fontSize: '0.9rem', color: 'rgba(255,255,255,0.92)' }}>
-            <CheckRoundedIcon sx={{ fontSize: 17, color: '#4fdf9f' }} />
-            Signed in{userEmail ? ` as ${userEmail}` : ''}
-          </div>
+            <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#2a2a27' }}>You're signed in</span>
+              {userEmail && (
+                <span style={{ fontSize: '0.8rem', color: '#8a8a86', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userEmail}</span>
+              )}
+            </span>
+          </motion.div>
         ) : (
-          <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.6)', marginTop: 6 }}>
-            Sign in to continue.
-          </div>
+          <>
+            {rows.map((row, i) => (
+              // The Claude/ChatGPT auth grammar: full-width white button, brand mark on the left,
+              // label centered, thin border, generous height. No decoration doing the talking.
+              <motion.button
+                key={row.id}
+                onClick={row.onClick}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ type: 'spring', stiffness: 320, damping: 26, delay: 0.1 + i * 0.08 }}
+                style={{
+                  position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  height: 52, borderRadius: 12, border: '1px solid rgba(0,0,0,0.08)',
+                  background: '#ffffff', boxShadow: '0 8px 22px rgba(20,16,80,0.18)',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                <span style={{ position: 'absolute', left: 18, display: 'flex', alignItems: 'center' }}>{row.icon}</span>
+                <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#2a2a27' }}>
+                  {row.hint ? row.hint : row.name}
+                </span>
+              </motion.button>
+            ))}
+            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.65)', textAlign: 'center', marginTop: 2 }}>
+              Sign in to continue.
+            </div>
+          </>
         )}
       </div>
       {emailOpen && !signedIn && <SignInDialog initialStage="email_form" onClose={() => setEmailOpen(false)} />}
