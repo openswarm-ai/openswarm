@@ -32,6 +32,36 @@ function iconForStarter(text: string): LucideIcon {
   return Sparkles;
 }
 
+// The placeholder cycles agentic invitations with a typewriter feel (only while the field is empty),
+// so the hero reads like an agent offering to go DO things, not a search box waiting for keywords.
+const GHOST_DEFAULTS = [
+  'Send an agent to find me something great...',
+  'Build me a tool I can use right now...',
+  'Research something and report back...',
+  'Watch a site and tell me when it changes...',
+];
+
+function useTypedGhost(lines: string[], active: boolean): string {
+  const [out, setOut] = React.useState('');
+  React.useEffect(() => {
+    if (!active || lines.length === 0) return undefined;
+    let li = 0; let ci = 0; let deleting = false;
+    const id = window.setInterval(() => {
+      const line = lines[li % lines.length];
+      if (!deleting) {
+        ci += 1;
+        if (ci >= line.length + 24) deleting = true; // linger fully typed ~1s
+      } else {
+        ci -= 3;
+        if (ci <= 0) { deleting = false; ci = 0; li += 1; }
+      }
+      setOut(line.slice(0, Math.min(ci, line.length)));
+    }, 45);
+    return () => window.clearInterval(id);
+  }, [lines, active]);
+  return out;
+}
+
 const DashboardEmptyState: React.FC<{
   c: ClaudeTokens;
   onLaunch?: (prompt: string, mode: string, model: string) => void;
@@ -41,8 +71,16 @@ const DashboardEmptyState: React.FC<{
   const mode = useAppSelector((s) => s.settings.data.default_mode);
   const canRun = useAppSelector((s) => hasFreeTrialActive(s) || hasModelConnected(s));
   const personalized = useAppSelector((s) => s.settings.data.personalized_starters ?? []);
+  const userName = useAppSelector((s) => s.settings.data.user_name ?? null);
   const [text, setText] = React.useState('');
   const [launching, setLaunching] = React.useState(false);
+  const firstName = (userName ?? '').trim().split(/\s+/)[0] || null;
+  const headline = firstName ? `What should we get done, ${firstName}?` : 'What do you want done?';
+  const ghostLines = React.useMemo(
+    () => (personalized.length > 0 ? [...personalized.slice(0, 3).map((s) => `${s.title}...`), ...GHOST_DEFAULTS.slice(0, 2)] : GHOST_DEFAULTS),
+    [personalized],
+  );
+  const ghost = useTypedGhost(ghostLines, text.length === 0 && canRun);
 
   const launch = (prompt: string) => {
     const p = prompt.trim();
@@ -71,7 +109,7 @@ const DashboardEmptyState: React.FC<{
         sx={{ width: '100%', maxWidth: 620, pointerEvents: 'auto', display: 'flex', flexDirection: 'column' }}
       >
         <Typography sx={{ color: c.text.primary, fontSize: c.font.size.display, fontWeight: 600, textAlign: 'center', letterSpacing: '-0.01em', mb: 3 }}>
-          What do you want done?
+          {headline}
         </Typography>
 
         {canRun && !!onLaunch ? (
@@ -98,7 +136,7 @@ const DashboardEmptyState: React.FC<{
                 onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); launch(text); setText(''); }
                 }}
-                placeholder="Ask me anything..."
+                placeholder={ghost || "Ask me anything..."}
                 disabled={launching}
                 sx={{
                   flex: 1, border: 'none', outline: 'none', bgcolor: 'transparent',

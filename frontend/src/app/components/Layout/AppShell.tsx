@@ -936,13 +936,13 @@ const AppShell: React.FC = () => {
             transform: sidePeek ? 'translateX(0)' : 'translateX(-118%)',
             transition: 'transform 240ms cubic-bezier(0.22,1,0.36,1)',
             pointerEvents: sidePeek ? 'auto' : 'none',
-          } : {
-            // Docked mode reads as a pill too: the dashboard-facing right corners curve; the window
-            // edge keeps the left ones square (the OS rounds them with the window itself).
+          } : fsActive ? {
+            // Fullscreen with the sidebar pinned: the panel sits beside a full-bleed surface, so its
+            // dashboard-facing right corners curve like a pill; normal docked mode stays square.
             borderRadius: '0 14px 14px 0',
             overflow: 'hidden',
             borderRight: `1px solid ${c.border.subtle}`,
-          }),
+          } : {}),
         }}
       >
         {/* Sidebar header = the app's chrome home (Arc/Zen): window-light clearance, back/forward, collapse, then the search command bar. */}
