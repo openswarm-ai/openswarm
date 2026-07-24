@@ -501,8 +501,18 @@ const AppShell: React.FC = () => {
       if (e.clientX > 10 + sidebarWidth + 130) schedulePeekClose();
       else cancelPeekClose();
     };
+    // A cursor gliding over a webview GUEST sends the host zero mousemoves, so the move-based close
+    // above never fires and the peek looks stuck. Guest interactions bubble up as these app events;
+    // any of them means the cursor left the panel. Window blur (app switch) likewise must not park it.
+    const closeNow = (): void => setSidePeek(false);
     window.addEventListener('mousemove', onMove);
-    return () => window.removeEventListener('mousemove', onMove);
+    window.addEventListener('openswarm:browser-guest-select', closeNow);
+    window.addEventListener('blur', closeNow);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('openswarm:browser-guest-select', closeNow);
+      window.removeEventListener('blur', closeNow);
+    };
   }, [sidePeek, sidebarWidth, schedulePeekClose, cancelPeekClose]);
   // Fullscreen still hides the top-center island anchor + banners; the sidebar floats in on peek.
   const fsHideChrome = fsActive;
@@ -926,7 +936,13 @@ const AppShell: React.FC = () => {
             transform: sidePeek ? 'translateX(0)' : 'translateX(-118%)',
             transition: 'transform 240ms cubic-bezier(0.22,1,0.36,1)',
             pointerEvents: sidePeek ? 'auto' : 'none',
-          } : {}),
+          } : {
+            // Docked mode reads as a pill too: the dashboard-facing right corners curve; the window
+            // edge keeps the left ones square (the OS rounds them with the window itself).
+            borderRadius: '0 14px 14px 0',
+            overflow: 'hidden',
+            borderRight: `1px solid ${c.border.subtle}`,
+          }),
         }}
       >
         {/* Sidebar header = the app's chrome home (Arc/Zen): window-light clearance, back/forward, collapse, then the search command bar. */}
