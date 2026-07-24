@@ -76,10 +76,12 @@ function WindowControls({ onClose, onMinimize, onTile, tiled, fullscreen, noTile
           onPointerDown={stop}
           sx={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 22, height: 22, p: 0, border: 'none', borderRadius: '6px',
-            background: 'transparent', color: 'inherit', opacity: 0.65, cursor: 'pointer',
-            transition: 'opacity 120ms, background 120ms',
-            '&:hover': { opacity: 1, background: 'rgba(136,136,136,0.18)' },
+            width: 24, height: 24, p: 0, border: 'none', borderRadius: '7px',
+            // Neutral chip at rest so it reads on ANY ground (the fullscreen chat wash is dark, the
+            // browser chrome is light); hover goes explicit white-on-dark so it can never disappear.
+            background: 'rgba(128,128,128,0.28)', color: 'inherit', opacity: 0.9, cursor: 'pointer',
+            transition: 'opacity 120ms, background 120ms, color 120ms',
+            '&:hover': { opacity: 1, background: 'rgba(0,0,0,0.5)', color: '#fff' },
           }}
         >
           <FullscreenExitRoundedIcon sx={{ fontSize: 16 }} />

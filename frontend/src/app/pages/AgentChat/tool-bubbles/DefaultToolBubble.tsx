@@ -80,7 +80,9 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
           bgcolor: mcpCompact ? 'transparent' : c.bg.elevated,
           border: mcpCompact ? 'none' : `1px solid ${
             isPending || isStreaming
-              ? c.accent.primary
+              // Half-strength accent: still clearly "working", but a saturated user accent (greens
+              // especially) at full strength read as a loud alarm ring around a routine tool call.
+              ? c.accent.primary + '66'
               : isDenied
                 ? c.status.error + '60'
                 : c.border.subtle

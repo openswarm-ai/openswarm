@@ -219,7 +219,12 @@ const BrowserAgentInlineFeed: React.FC<Props> = ({ parentSessionId, browserId })
       const entries: FeedEntry[] = [];
       for (const msg of session.messages) {
         const entry = formatMessage(msg);
-        if (entry) entries.push(entry);
+        if (!entry) continue;
+        // Retries emit the same status line back-to-back ("Picking up what I learned..." x4); one
+        // row carries the information, the repeats were pure noise in the transcript.
+        const prev = entries[entries.length - 1];
+        if (prev && prev.type === entry.type && prev.text === entry.text) continue;
+        entries.push(entry);
       }
       return { session, entries };
     });

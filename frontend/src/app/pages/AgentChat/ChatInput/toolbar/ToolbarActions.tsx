@@ -7,6 +7,8 @@ import StopIcon from '@mui/icons-material/Stop';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import AdsClickIcon from '@mui/icons-material/AdsClick';
 import LanguageIcon from '@mui/icons-material/Language';
+import MicNoneOutlinedIcon from '@mui/icons-material/MicNoneOutlined';
+import { useVoice } from '@/shared/voice/VoiceDictationContext';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { ComposerPlusMenu, ActiveTogglePills, PlusMenuItem } from './ComposerPlusMenu';
@@ -49,12 +51,22 @@ export const ToolbarActions: React.FC<Props> = ({
       elementSelection.setSelectMode(true);
     }
   };
+  const { state: voiceState, toggle: voiceToggle } = useVoice();
   const plusItems: PlusMenuItem[] = [];
   plusItems.push({
     key: 'attach',
     label: 'Attach file',
     icon: <AttachFileIcon sx={{ fontSize: 17 }} />,
     onSelect: () => generalFileInputRef.current?.click(),
+  });
+  // A menu click can't be held, so this entry always toggles regardless of the hold-to-talk setting.
+  plusItems.push({
+    key: 'dictate',
+    label: voiceState === 'recording' ? 'Stop dictation' : 'Dictate',
+    icon: <MicNoneOutlinedIcon sx={{ fontSize: 17 }} />,
+    toggle: true,
+    active: voiceState === 'recording',
+    onSelect: voiceToggle,
   });
   if (onToggleWebSearch) {
     plusItems.push({
