@@ -73,6 +73,14 @@ contextBridge.exposeInMainWorld('openswarm', {
     ipcRenderer.on('voice:toggle', listener);
     return () => ipcRenderer.removeListener('voice:toggle', listener);
   },
+  // Main-process hold relay (before-input-event): fires down/up for the combo regardless of DOM focus.
+  onVoiceHold: (onDown, onUp) => {
+    const down = () => onDown();
+    const up = () => onUp();
+    ipcRenderer.on('voice:hold-down', down);
+    ipcRenderer.on('voice:hold-up', up);
+    return () => { ipcRenderer.removeListener('voice:hold-down', down); ipcRenderer.removeListener('voice:hold-up', up); };
+  },
   // Hands a vetted social platform's partition cookies to its session-backed MCP shim (allowlisted domains only, gated again in the main process).
   getPartitionCookies: (domain) => ipcRenderer.invoke('get-partition-cookies', domain),
   // Silently reads the user's own chatgpt.com/claude.ai history offscreen (no card) for onboarding personalization; main owns the injected script + gates the provider.

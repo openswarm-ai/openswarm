@@ -1789,8 +1789,10 @@ app.whenReady().then(async () => {
   installMacMouseClamp();
 
   // Voice dictation hotkey. globalShortcut can't see key-up, so hold-to-talk is impossible through it;
-  // instead the shortcut is only registered while OUR window is unfocused (background toggle), and when
-  // the app is focused the renderer sees the real keydown/keyup and owns hold-vs-toggle itself.
+  // the shortcut is only registered while OUR window is unfocused (background toggle). When the app is
+  // focused, MAIN watches before-input-event (sees every keyDown/keyUp incl. modifiers, regardless of
+  // which element or webview has focus, and immune to macOS's letter-keyup-under-Cmd suppression at the
+  // DOM layer) and relays voice:hold-down / voice:hold-up; the renderer maps those to hold-vs-toggle.
   const VOICE_COMBO = 'CommandOrControl+Shift+D';
   const registerVoiceShortcut = () => {
     try {
@@ -1804,6 +1806,27 @@ app.whenReady().then(async () => {
   registerVoiceShortcut();
   app.on('browser-window-focus', () => { try { globalShortcut.unregister(VOICE_COMBO); } catch (_) {} });
   app.on('browser-window-blur', registerVoiceShortcut);
+
+  // Every discrete combo press relays (autorepeat filtered); the renderer toggles record state.
+  // No held/release tracking: macOS delivers neither the letter keyup nor modifier releases to ANY
+  // Chromium layer while Cmd is down (verified empirically), so keyboard hold-release is undetectable
+  // without a native event tap. Keyboard = press to start/stop; the mic buttons own true hold-to-talk.
+  const installVoiceHoldRelay = (contents) => {
+    contents.on('before-input-event', (event, input) => {
+      const isD = (input.code === 'KeyD' || (input.key || '').toLowerCase() === 'd');
+      if (input.type === 'keyDown' && isD && (input.meta || input.control) && input.shift && !input.isAutoRepeat) {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('voice:hold-down');
+        event.preventDefault();
+      }
+    });
+  };
+  // Installed via web-contents-created (not directly on mainWindow): createWindow() runs LATER in this
+  // whenReady sequence, so mainWindow is still undefined here. The hook catches the main window when it
+  // is born, and every webview guest too (guests swallow keys when a page has focus).
+  app.on('web-contents-created', (event, contents) => {
+    const t = contents.getType();
+    if (t === 'window' || t === 'webview') installVoiceHoldRelay(contents);
+  });
 
   // PASSKEY SPIKE (macOS only): turn on the Secure-Enclave/Touch ID WebAuthn authenticator that Electron 42 added. Without this, isUserVerifyingPlatformAuthenticatorAvailable() is hardwired false (why the old reject-shim existed). keychainAccessGroup MUST match the keychain-access-groups entitlement (Y26NUZH4NG.<bundle>.webauthn) or this throws. Windows has no equivalent, so the reject-shim still runs there.
   if (process.platform === 'darwin' && typeof app.configureWebAuthn === 'function') {

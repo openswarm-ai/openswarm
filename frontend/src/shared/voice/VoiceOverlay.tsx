@@ -71,19 +71,10 @@ const VoiceOverlay: React.FC = () => {
   if (!visible) return null;
   const aurora = state === 'recording' ? <VoiceAurora volumeRef={volumeRef} /> : null;
 
-  let content: React.ReactElement;
+  let content: React.ReactElement | null;
   if (state === 'recording') {
-    content = (
-      <>
-        <MicIcon sx={{ fontSize: 16, color: '#ff8a8a' }} />
-        <span>Listening</span>
-        <Box component="span" sx={{
-          width: 6, height: 6, borderRadius: '50%', background: '#ff8a8a', ml: 0.25,
-          '@keyframes vpulse': { '0%,100%': { opacity: 0.3 }, '50%': { opacity: 1 } },
-          animation: 'vpulse 1s ease-in-out infinite',
-        }} />
-      </>
-    );
+    // The aurora IS the listening indicator; a pill on top of it read as clutter.
+    content = null;
   } else if (state === 'transcribing') {
     content = (<><CircularProgress size={13} thickness={5} sx={{ color: 'rgba(255,255,255,0.7)' }} /><span>Transcribing</span></>);
   } else if (state === 'preparing') {
@@ -104,6 +95,7 @@ const VoiceOverlay: React.FC = () => {
   return (
     <>
     {aurora}
+    {content && (
     <Box
       sx={{
         position: 'fixed',
@@ -132,6 +124,7 @@ const VoiceOverlay: React.FC = () => {
     >
       {content}
     </Box>
+    )}
     </>
   );
 };

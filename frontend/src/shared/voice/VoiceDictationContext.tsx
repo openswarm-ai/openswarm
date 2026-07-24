@@ -47,49 +47,20 @@ export function VoiceDictationProvider({ children }: { children: React.ReactNode
     }
   }, [holdMode, stop]);
 
-  // In-app hold-to-talk on the same combo as the global hotkey (Cmd/Ctrl+Shift+D). Main unregisters
-  // the global shortcut while our window is focused, so these real keydown/keyup events reach us;
-  // when the app is in the background the global shortcut still fires as a toggle (the OS gives us
-  // no key-up out there without a native event tap).
+  // The hotkey (Cmd/Ctrl+Shift+D) is press-to-start / press-to-stop, NOT hold: macOS delivers
+  // NEITHER the letter keyup nor the modifier releases to any Chromium layer while Cmd is held
+  // (proven empirically: DOM saw zero events, main's before-input-event saw only the first keyDown),
+  // so a keyboard hold-release is undetectable without a native event tap (uiohook class, the real
+  // fix, needs a packaged native module). Hold-to-talk lives on the mic buttons, which DO see
+  // pointerup. In-app presses arrive via main's before-input relay (works with webview focus and
+  // swallows the 'd' so it never types into a field); background presses via the global shortcut.
   useEffect(() => {
-    const isCombo = (e: KeyboardEvent): boolean => (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D');
-    let watchdog = 0;
-    const release = (): void => {
-      if (!heldRef.current) return;
-      heldRef.current = false;
-      window.clearTimeout(watchdog);
-      if (stateRef.current === 'recording') void stop();
-    };
-    const down = (e: KeyboardEvent): void => {
-      if (!isCombo(e)) return;
-      e.preventDefault();
-      if (!holdMode) { if (!e.repeat) toggle(); return; }
-      if (!e.repeat && stateRef.current === 'idle') { heldRef.current = true; void start(); }
-      // Belt-and-braces release detection: macOS suppresses letter keyups while Cmd is held, so once
-      // the OS autorepeat stream starts, its going quiet means the key was let go. Arms only after the
-      // first repeat, so keyboards with repeat disabled still rely on the plain keyup below.
-      if (e.repeat && heldRef.current) {
-        window.clearTimeout(watchdog);
-        watchdog = window.setTimeout(release, 900);
-      }
-    };
-    const up = (e: KeyboardEvent): void => {
-      if (!holdMode || !heldRef.current) return;
-      // Any piece of the combo lifting ends the hold; key-order on release varies by hand.
-      if (e.key === 'd' || e.key === 'D' || e.key === 'Meta' || e.key === 'Control' || e.key === 'Shift') release();
-    };
-    // Switching windows mid-hold must never leave the mic hot.
-    const onBlur = (): void => release();
-    window.addEventListener('keydown', down, true);
-    window.addEventListener('keyup', up, true);
-    window.addEventListener('blur', onBlur);
-    return () => {
-      window.clearTimeout(watchdog);
-      window.removeEventListener('keydown', down, true);
-      window.removeEventListener('keyup', up, true);
-      window.removeEventListener('blur', onBlur);
-    };
-  }, [holdMode, start, stop, toggle]);
+    const off = (window as unknown as { openswarm?: { onVoiceHold?: (d: () => void, u: () => void) => () => void } }).openswarm?.onVoiceHold?.(
+      () => toggle(),
+      () => {},
+    );
+    return () => { off?.(); };
+  }, [toggle]);
 
   return (
     <VoiceContext.Provider value={{ state, lastText, error, pct, feedback, toggle, pressStart, pressEnd, holdMode, volumeRef }}>

@@ -103,8 +103,10 @@ export const ToolbarActions: React.FC<Props> = ({
     });
   }
   // Claude-style flyouts: Skills attaches a real pill (same path as typing /skill); Tools shows the
-  // session's active connectors and jumps to Settings > Tools for management.
-  const skillList = Object.values(skills);
+  // session's active connectors and jumps to Settings > Tools for management. Platform built-ins
+  // (swarm-debug Logger etc.) stay out: they're dev plumbing the agent discovers on its own, and
+  // their jargon reads hostile to a non-dev picking a skill.
+  const skillList = Object.values(skills).filter((sk) => !sk.built_in);
   if (onAttachSkill && skillList.length > 0) {
     plusItems.push({
       key: 'skills',

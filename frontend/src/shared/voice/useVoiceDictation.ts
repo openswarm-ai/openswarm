@@ -145,16 +145,15 @@ export function useVoiceDictation() {
         setLastText(text);
         // Land the text where the user's cursor is: focused field, then focused browser page, then
         // the OS paste fallback (other apps). The floating bubble is just confirmation, not the output.
+        // Success is silent-visual: the text landing at the cursor IS the feedback (plus the done blip).
+        // Only the clipboard fallback still speaks, because the user has to act (paste) to get the text.
         const target = injectAtFocus(text);
         if (target) {
           playDone();
-          setFeedback({ tone: 'ok', icon: 'check', text, at: Date.now() });
         } else {
           const inj = await window.openswarm?.voiceInject?.(text);
           if (inj?.pasted) playDone();
-          setFeedback(inj?.pasted
-            ? { tone: 'ok', icon: 'check', text, at: Date.now() }
-            : { tone: 'ok', icon: 'clipboard', text: `${text}  (copied, press Cmd+V)`, at: Date.now() });
+          else setFeedback({ tone: 'ok', icon: 'clipboard', text: `${text}  (copied, press Cmd+V)`, at: Date.now() });
         }
         setState('idle');
       } else if (res?.ok && !res.text) {
