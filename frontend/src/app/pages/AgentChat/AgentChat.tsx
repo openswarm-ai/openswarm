@@ -50,6 +50,7 @@ import { fetchModes } from '@/shared/state/modesSlice';
 import { createSessionWs, acquireSessionWs, releaseSessionWs, seedSessionSeq } from '@/shared/ws/WebSocketManager';
 import StreamingBubble from './bubbles/StreamingBubble';
 import WelcomeQuickReplies from './WelcomeQuickReplies';
+import InlineSurfaceEmbeds from './shell/InlineSurfaceEmbeds';
 import { useWelcomeGreeting } from './useWelcomeGreeting';
 import { THINKING_LABELS } from './thinkingLabels';
 import MessageBubble from './bubbles/MessageBubble';
@@ -1916,6 +1917,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 </Box>
               </Box>
             )}
+            {/* The surfaces this agent is driving, live inside the chat: browser snapshots + built
+                apps, each one click from popping out onto the canvas. */}
+            {!isDraft && id && <InlineSurfaceEmbeds c={c} sessionId={id} fullscreen={fullscreenChat} />}
             {/* First-run welcome chips: sit UNDER the streamed greeting, appear once it finishes,
                 vanish the moment the user answers. The greeting itself is a real assistant bubble. */}
             {session.is_welcome_draft && isDraft && welcomeGreetingDone && !session.messages.some((m) => m.role === 'user') && (

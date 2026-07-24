@@ -918,6 +918,15 @@ const dashboardLayoutSlice = createSlice({
       state.pendingFocusBrowserId = null;
     },
 
+    // Camera-focus an EXISTING card (the inline chat embeds' "show on canvas"); the lifecycle
+    // pendingFocus effects own the fit + highlight + clear, same as a fresh add.
+    focusBrowserCard(state, action: PayloadAction<string>) {
+      if (state.browserCards[action.payload]) state.pendingFocusBrowserId = action.payload;
+    },
+    focusViewCard(state, action: PayloadAction<string>) {
+      if (state.viewCards[action.payload]) state.pendingFocusViewCardId = action.payload;
+    },
+
     addBrowserCardFromBackend(state, action: PayloadAction<BrowserCardPosition>) {
       const card = action.payload;
       if (state.browserCards[card.browser_id]) return;
@@ -1833,6 +1842,8 @@ export const {
   clearAllTiles,
   clearCardWindowState,
   clearPendingFocusBrowserId,
+  focusBrowserCard,
+  focusViewCard,
   activateViewCardPreview,
   clearPendingFocusViewCardId,
   addWorkflowCard,
